@@ -2,11 +2,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
 using Eidosup.Diagnostics;
+using Eidosup.Toolchains;
 
 namespace Eidosup.Installation;
 
 public sealed record InstallManifest(
     int Schema,
+    string ToolchainId,
+    string ManifestSha256,
     string ReleaseTag,
     string Version,
     string Rid,
@@ -17,7 +20,7 @@ public sealed record InstallManifest(
     DateTimeOffset InstalledAt,
     IReadOnlyList<InstalledFile> Files)
 {
-    public const int CurrentSchema = 1;
+    public const int CurrentSchema = 2;
     public const string FileName = ".eidosup-install.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -81,6 +84,7 @@ public sealed record InstallManifest(
         string? expectedVersion = null)
     {
         if (Schema != CurrentSchema ||
+            !HasValidIdentity(directory) ||
             !string.Equals(AssetSha256, expectedSha256, StringComparison.Ordinal) ||
             expectedRid != null && !string.Equals(Rid, expectedRid, StringComparison.Ordinal) ||
             expectedVersion != null && !string.Equals(Version, expectedVersion, StringComparison.Ordinal) ||
@@ -144,6 +148,30 @@ public sealed record InstallManifest(
 
         return TryCollectInstalledFiles(root, pathComparer, out var actualFiles) &&
                expectedFiles.SetEquals(actualFiles);
+    }
+
+    public bool HasValidIdentity(string directory)
+    {
+        try
+        {
+            var identity = ToolchainIdentity.Create(
+                Version,
+                Rid,
+                Source,
+                ReleaseTag,
+                AssetName,
+                AssetSha256,
+                AssetSize);
+            var directoryName = Path.GetFileName(
+                Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return string.Equals(identity.Id, ToolchainId, StringComparison.Ordinal) &&
+                   string.Equals(identity.ManifestSha256, ManifestSha256, StringComparison.Ordinal) &&
+                   string.Equals(directoryName, ToolchainId, StringComparison.Ordinal);
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or IOException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     private static bool TryNormalizeRelativePath(string? path, out string normalized)

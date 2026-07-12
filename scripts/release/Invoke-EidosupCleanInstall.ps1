@@ -218,7 +218,33 @@ try
     }
 
     $binaryName = if ($platform -eq "win") { "eidosc.exe" } else { "eidosc" }
-    $eidosc = Join-Path $installRoot "toolchains/eidosc/$Version/$binaryName"
+    $statePath = Join-Path $installRoot "state/toolchains.json"
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf))
+    {
+        throw "Installed toolchain state was not found at '$statePath'."
+    }
+
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    if ($state.schema -ne 1)
+    {
+        throw "Installed toolchain state uses unexpected schema '$($state.schema)'."
+    }
+
+    $matches = @($state.toolchains | Where-Object {
+        $_.version -ceq $Version -and $_.rid -ceq $rid
+    })
+    if ($matches.Count -ne 1)
+    {
+        throw "Expected exactly one registered $Version@$rid toolchain, found $($matches.Count)."
+    }
+
+    $toolchainId = [string]$matches[0].id
+    if ($toolchainId -notmatch '^eidosc-[0-9A-Za-z.+-]+-(?:win|linux|osx)-(?:x64|arm64)-[0-9a-f]{64}$')
+    {
+        throw "Registered toolchain ID '$toolchainId' is invalid."
+    }
+
+    $eidosc = Join-Path $installRoot "toolchains/$toolchainId/$binaryName"
     if (-not (Test-Path -LiteralPath $eidosc -PathType Leaf))
     {
         throw "Installed eidosc binary was not found at '$eidosc'."

@@ -1,6 +1,7 @@
 namespace Eidosup.Installation;
 
 using Eidosup.Distribution;
+using Eidosup.Toolchains;
 
 public sealed class SetupOrchestrator
 {
@@ -8,13 +9,19 @@ public sealed class SetupOrchestrator
     private readonly EnvironmentConfigurator _environmentConfigurator = new();
     private readonly Func<string, IEidosReleaseSource> _releaseSourceFactory;
     private readonly LlvmDependencyCoordinator _dependencyCoordinator;
+    private readonly ToolchainStateStore _stateStore;
+    private readonly Func<VerifiedToolchainInstaller> _installerFactory;
 
     public SetupOrchestrator(
         Func<string, IEidosReleaseSource>? releaseSourceFactory = null,
-        LlvmDependencyCoordinator? dependencyCoordinator = null)
+        LlvmDependencyCoordinator? dependencyCoordinator = null,
+        ToolchainStateStore? stateStore = null,
+        Func<VerifiedToolchainInstaller>? installerFactory = null)
     {
         _releaseSourceFactory = releaseSourceFactory ?? (repository => new GitHubReleaseClient(repository));
         _dependencyCoordinator = dependencyCoordinator ?? new LlvmDependencyCoordinator();
+        _stateStore = stateStore ?? new ToolchainStateStore();
+        _installerFactory = installerFactory ?? (() => new VerifiedToolchainInstaller());
     }
 
     public async Task<int> RunAsync(SetupOptions options, CancellationToken cancellationToken)
@@ -23,7 +30,7 @@ public sealed class SetupOrchestrator
         Console.WriteLine($"Detected platform: {platform.Rid}");
 
         EidosReleaseInfo? release = null;
-        string? versionDirectory = null;
+        string? toolchainDirectory = null;
 
         if (!options.SkipEidosc)
         {
@@ -31,21 +38,23 @@ public sealed class SetupOrchestrator
             release = await releaseSource.ResolveReleaseAsync(options.Version, options.Channel, cancellationToken);
             Console.WriteLine($"Resolved Eidos release: {release.TagName}");
 
-            var layout = ToolInstallLayout.Create(platform, release.NormalizedVersion, options.InstallRoot, options.DownloadRoot);
-            versionDirectory = layout.VersionDirectory;
+            var layout = ToolInstallLayout.Create(platform, options.InstallRoot, options.DownloadRoot);
 
             var bundleAsset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
             var checksumAsset = _assetLocator.ResolveChecksumAsset(release);
             if (options.DryRun)
             {
+                toolchainDirectory = layout.GetToolchainDirectory(
+                    $"eidosc-{release.NormalizedVersion}-{platform.Rid}-[manifest-sha256]");
                 Console.WriteLine($"[dry-run] Would download and verify '{checksumAsset.Name}'.");
                 Console.WriteLine($"[dry-run] Would install verified asset '{bundleAsset.Name}'.");
                 Console.WriteLine($"[dry-run] Content cache: {layout.CacheDirectory}");
-                Console.WriteLine($"[dry-run] Atomic install target: {layout.VersionDirectory}");
+                Console.WriteLine($"[dry-run] Immutable install target: {toolchainDirectory}");
+                Console.WriteLine($"[dry-run] Would initialize and reconcile '{Path.Combine(layout.StateDirectory, ToolchainStateStore.FileName)}'.");
             }
             else
             {
-                using var installer = new VerifiedToolchainInstaller();
+                using var installer = _installerFactory();
                 var result = await installer.InstallAsync(
                     new VerifiedInstallRequest(
                         release,
@@ -59,10 +68,20 @@ public sealed class SetupOrchestrator
                     cancellationToken);
                 Console.WriteLine(result.Disposition switch
                 {
-                    InstallDisposition.AlreadyInstalled => $"Verified toolchain is already installed at '{result.VersionDirectory}'.",
-                    InstallDisposition.Replaced => $"Replaced toolchain atomically at '{result.VersionDirectory}'.",
-                    _ => $"Installed toolchain atomically at '{result.VersionDirectory}'."
+                    InstallDisposition.AlreadyInstalled => $"Verified toolchain is already installed at '{result.ToolchainDirectory}'.",
+                    InstallDisposition.Replaced => $"Replaced toolchain atomically at '{result.ToolchainDirectory}'.",
+                    _ => $"Installed immutable toolchain at '{result.ToolchainDirectory}'."
                 });
+                toolchainDirectory = result.ToolchainDirectory;
+                var requestedChannel = options.Version == null
+                    ? options.Channel
+                    : (ReleaseChannel?)null;
+                await _stateStore.RegisterInstallAsync(
+                    layout,
+                    result.ToolchainDirectory,
+                    requestedChannel,
+                    cancellationToken);
+                Console.WriteLine($"Toolchain state: {Path.Combine(layout.StateDirectory, ToolchainStateStore.FileName)}");
                 Console.WriteLine($"Asset SHA-256: {result.AssetSha256}");
                 if (result.Disposition != InstallDisposition.AlreadyInstalled)
                 {
@@ -74,7 +93,8 @@ public sealed class SetupOrchestrator
                 }
             }
 
-            Console.WriteLine($"eidosc target directory: {layout.VersionDirectory}");
+            Console.WriteLine($"Toolchain ID: {(options.DryRun ? "resolved after checksum verification" : Path.GetFileName(toolchainDirectory))}");
+            Console.WriteLine($"eidosc target directory: {toolchainDirectory}");
         }
 
         var dependency = options.SkipClang
@@ -94,7 +114,7 @@ public sealed class SetupOrchestrator
 
         if (!options.SkipEnvironmentConfiguration)
         {
-            var eidoscHome = versionDirectory ?? ResolveExistingEidoscHome(platform);
+            var eidoscHome = toolchainDirectory ?? ResolveExistingEidoscHome(platform);
             if (string.IsNullOrWhiteSpace(eidoscHome))
             {
                 throw new InvalidOperationException("Environment configuration requires an installed eidosc. Run setup without --skip-eidosc first, or set EIDOSC_HOME.");
@@ -102,7 +122,6 @@ public sealed class SetupOrchestrator
 
             var layout = ToolInstallLayout.Create(
                 platform,
-                release?.NormalizedVersion ?? ReleaseAssetLocator.NormalizeVersion(options.Version ?? Path.GetFileName(eidoscHome.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))),
                 options.InstallRoot,
                 options.DownloadRoot);
             var pathEntries = new List<string> { eidoscHome };

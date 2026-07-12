@@ -6,6 +6,7 @@ using System.Text.Json;
 using Eidosup.Diagnostics;
 using Eidosup.Distribution;
 using Eidosup.Installation;
+using Eidosup.Toolchains;
 
 namespace Eidosc.Tests.Unit.Eidosup;
 
@@ -27,8 +28,8 @@ public sealed class VerifiedToolchainInstallerTests
 
         Assert.Equal(InstallDisposition.Installed, first.Disposition);
         Assert.Equal(InstallDisposition.AlreadyInstalled, second.Disposition);
-        Assert.True(File.Exists(Path.Combine(fixture.Layout.VersionDirectory, fixture.Platform.ExecutableName)));
-        var manifest = await InstallManifest.TryReadAsync(fixture.Layout.VersionDirectory, CancellationToken.None);
+        Assert.True(File.Exists(Path.Combine(fixture.ToolchainDirectory, fixture.Platform.ExecutableName)));
+        var manifest = await InstallManifest.TryReadAsync(fixture.ToolchainDirectory, CancellationToken.None);
         Assert.NotNull(manifest);
         Assert.Equal(fixture.BundleSha256, manifest.AssetSha256);
         Assert.Equal(fixture.Platform.Rid, manifest.Rid);
@@ -44,8 +45,8 @@ public sealed class VerifiedToolchainInstallerTests
     {
         using var temporary = new TemporaryDirectory();
         var fixture = CreateFixture(temporary.Path, force: true);
-        Directory.CreateDirectory(fixture.Layout.VersionDirectory);
-        await File.WriteAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker"), "old");
+        Directory.CreateDirectory(fixture.ToolchainDirectory);
+        await File.WriteAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker"), "old");
         using var httpClient = new HttpClient(fixture.Handler);
         using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
         using var installer = new VerifiedToolchainInstaller(
@@ -55,8 +56,8 @@ public sealed class VerifiedToolchainInstallerTests
         await Assert.ThrowsAsync<InjectedInstallFault>(() =>
             installer.InstallAsync(fixture.Request, progress: null, CancellationToken.None));
 
-        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker")));
-        Assert.False(File.Exists(Path.Combine(fixture.Layout.VersionDirectory, InstallManifest.FileName)));
+        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker")));
+        Assert.False(File.Exists(Path.Combine(fixture.ToolchainDirectory, InstallManifest.FileName)));
         Assert.Empty(Directory.EnumerateFiles(fixture.Layout.TransactionDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.StagingDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.BackupDirectory));
@@ -67,8 +68,8 @@ public sealed class VerifiedToolchainInstallerTests
     {
         using var temporary = new TemporaryDirectory();
         var fixture = CreateFixture(temporary.Path, force: true);
-        Directory.CreateDirectory(fixture.Layout.VersionDirectory);
-        await File.WriteAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker"), "old");
+        Directory.CreateDirectory(fixture.ToolchainDirectory);
+        await File.WriteAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker"), "old");
         using var httpClient = new HttpClient(fixture.Handler);
         using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
         using var installer = new VerifiedToolchainInstaller(
@@ -78,7 +79,7 @@ public sealed class VerifiedToolchainInstallerTests
         await Assert.ThrowsAsync<InjectedInstallFault>(() =>
             installer.InstallAsync(fixture.Request, progress: null, CancellationToken.None));
 
-        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker")));
+        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker")));
         Assert.Empty(Directory.EnumerateFiles(fixture.Layout.TransactionDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.StagingDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.BackupDirectory));
@@ -94,7 +95,7 @@ public sealed class VerifiedToolchainInstallerTests
         using var installer = new VerifiedToolchainInstaller(downloadManager);
         await installer.InstallAsync(fixture.Request, progress: null, CancellationToken.None);
         await File.WriteAllTextAsync(
-            Path.Combine(fixture.Layout.VersionDirectory, fixture.Platform.ExecutableName),
+            Path.Combine(fixture.ToolchainDirectory, fixture.Platform.ExecutableName),
             "tampered");
 
         var exception = await Assert.ThrowsAsync<EidosupException>(() =>
@@ -108,8 +109,8 @@ public sealed class VerifiedToolchainInstallerTests
     {
         using var temporary = new TemporaryDirectory();
         var fixture = CreateFixture(temporary.Path, force: true);
-        Directory.CreateDirectory(fixture.Layout.VersionDirectory);
-        await File.WriteAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker"), "old");
+        Directory.CreateDirectory(fixture.ToolchainDirectory);
+        await File.WriteAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker"), "old");
         using var httpClient = new HttpClient(fixture.Handler);
         using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
         using (var faultingInstaller = new VerifiedToolchainInstaller(
@@ -121,13 +122,13 @@ public sealed class VerifiedToolchainInstallerTests
             Assert.Equal(EidosupErrorCode.InstallFailure, exception.Code);
         }
 
-        Assert.True(File.Exists(Path.Combine(fixture.Layout.VersionDirectory, fixture.Platform.ExecutableName)));
+        Assert.True(File.Exists(Path.Combine(fixture.ToolchainDirectory, fixture.Platform.ExecutableName)));
         Assert.Single(Directory.EnumerateFiles(fixture.Layout.TransactionDirectory));
         Assert.Single(Directory.EnumerateDirectories(fixture.Layout.BackupDirectory));
         using var recoveringInstaller = new VerifiedToolchainInstaller(downloadManager);
         await recoveringInstaller.RecoverAsync(fixture.Layout, CancellationToken.None);
 
-        Assert.False(File.Exists(Path.Combine(fixture.Layout.VersionDirectory, "old.marker")));
+        Assert.False(File.Exists(Path.Combine(fixture.ToolchainDirectory, "old.marker")));
         Assert.Empty(Directory.EnumerateFiles(fixture.Layout.TransactionDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.BackupDirectory));
     }
@@ -149,20 +150,22 @@ public sealed class VerifiedToolchainInstallerTests
         var journalPath = Path.Combine(fixture.Layout.TransactionDirectory, $"install-{id}.json");
         await File.WriteAllTextAsync(journalPath, JsonSerializer.Serialize(new
         {
-            schema = 1,
+            schema = 2,
             id,
             state = "previousMoved",
-            targetDirectory = fixture.Layout.VersionDirectory,
+            targetDirectory = fixture.ToolchainDirectory,
             stageDirectory = stage,
             backupDirectory = backup,
             expectedSha256 = fixture.BundleSha256,
-            rid = fixture.Platform.Rid
+            rid = fixture.Platform.Rid,
+            version = "0.4.0-alpha.2",
+            toolchainId = fixture.ToolchainId
         }));
         using var installer = new VerifiedToolchainInstaller();
 
         await installer.RecoverAsync(fixture.Layout, CancellationToken.None);
 
-        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker")));
+        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker")));
         Assert.False(File.Exists(journalPath));
         Assert.False(Directory.Exists(stage));
         Assert.False(Directory.Exists(backup));
@@ -178,8 +181,8 @@ public sealed class VerifiedToolchainInstallerTests
         Directory.CreateDirectory(fixture.Layout.TransactionDirectory);
         Directory.CreateDirectory(fixture.Layout.StagingDirectory);
         Directory.CreateDirectory(fixture.Layout.BackupDirectory);
-        Directory.CreateDirectory(fixture.Layout.VersionDirectory);
-        await File.WriteAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker"), "old");
+        Directory.CreateDirectory(fixture.ToolchainDirectory);
+        await File.WriteAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker"), "old");
         var id = Guid.NewGuid().ToString("N");
         var stage = Path.Combine(fixture.Layout.StagingDirectory, $"install-{id}");
         var backup = Path.Combine(fixture.Layout.BackupDirectory, $"install-{id}");
@@ -190,7 +193,7 @@ public sealed class VerifiedToolchainInstallerTests
 
         await installer.RecoverAsync(fixture.Layout, CancellationToken.None);
 
-        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.Layout.VersionDirectory, "old.marker")));
+        Assert.Equal("old", await File.ReadAllTextAsync(Path.Combine(fixture.ToolchainDirectory, "old.marker")));
         Assert.False(File.Exists(journalPath));
         Assert.False(Directory.Exists(stage));
     }
@@ -257,9 +260,17 @@ public sealed class VerifiedToolchainInstallerTests
         var checksumAsset = new EidosReleaseAsset("SHA256SUMS", "https://example.invalid/checksums", checksum.Length);
         var layout = ToolInstallLayout.Create(
             platform,
-            "0.4.0-alpha.2",
             Path.Combine(root, "install"),
             Path.Combine(root, "downloads"));
+        var identity = ToolchainIdentity.Create(
+            release.NormalizedVersion,
+            platform.Rid,
+            "test/source",
+            release.TagName,
+            bundleName,
+            bundleSha256,
+            bundle.Length);
+        var toolchainDirectory = layout.GetToolchainDirectory(identity.Id);
         var request = new VerifiedInstallRequest(
             release,
             bundleAsset,
@@ -268,7 +279,7 @@ public sealed class VerifiedToolchainInstallerTests
             layout,
             "test/source",
             force);
-        return new InstallFixture(platform, layout, request, bundleSha256, handler);
+        return new InstallFixture(platform, layout, toolchainDirectory, identity.Id, request, bundleSha256, handler);
     }
 
     private static byte[] CreateBundle(string executableName)
@@ -293,14 +304,16 @@ public sealed class VerifiedToolchainInstallerTests
         bool hadPreviousTarget) =>
         File.WriteAllTextAsync(journalPath, JsonSerializer.Serialize(new
         {
-            schema = 1,
+            schema = 2,
             id,
             state,
-            targetDirectory = fixture.Layout.VersionDirectory,
+            targetDirectory = fixture.ToolchainDirectory,
             stageDirectory = stage,
             backupDirectory = backup,
             expectedSha256 = fixture.BundleSha256,
             rid = fixture.Platform.Rid,
+            version = "0.4.0-alpha.2",
+            toolchainId = fixture.ToolchainId,
             hadPreviousTarget
         }));
 
@@ -314,6 +327,8 @@ public sealed class VerifiedToolchainInstallerTests
     private sealed record InstallFixture(
         PlatformContext Platform,
         ToolInstallLayout Layout,
+        string ToolchainDirectory,
+        string ToolchainId,
         VerifiedInstallRequest Request,
         string BundleSha256,
         AssetHandler Handler);

@@ -14,7 +14,8 @@ public sealed class InstallOperationLock : IAsyncDisposable
     public static async Task<InstallOperationLock> AcquireAsync(
         string lockDirectory,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string operationName = "install")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(lockDirectory);
         if (timeout <= TimeSpan.Zero)
@@ -22,8 +23,14 @@ public sealed class InstallOperationLock : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(timeout), "Lock timeout must be positive.");
         }
 
+        if (string.IsNullOrWhiteSpace(operationName) ||
+            operationName.Any(static character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))
+        {
+            throw new ArgumentException("Operation name must contain only ASCII letters, digits, '-' or '_'.", nameof(operationName));
+        }
+
         Directory.CreateDirectory(lockDirectory);
-        var lockPath = Path.Combine(lockDirectory, "install.lock");
+        var lockPath = Path.Combine(lockDirectory, $"{operationName}.lock");
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (true)
         {
@@ -57,7 +64,7 @@ public sealed class InstallOperationLock : IAsyncDisposable
                 throw new EidosupException(
                     EidosupErrorCode.LockTimeout,
                     EidosupExitCodes.LockTimeout,
-                    $"Timed out waiting for install lock '{lockPath}'.",
+                    $"Timed out waiting for {operationName} lock '{lockPath}'.",
                     "Wait for the other Eidosup process to finish, then retry.",
                     exception);
             }

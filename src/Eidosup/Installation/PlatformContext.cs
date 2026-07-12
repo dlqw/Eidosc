@@ -9,6 +9,18 @@ public sealed record PlatformContext(
     bool IsLinux,
     bool IsMacOs)
 {
+    public static readonly IReadOnlyList<string> SupportedRids =
+    [
+        "win-x64",
+        "win-arm64",
+        "linux-x64",
+        "linux-arm64",
+        "osx-x64",
+        "osx-arm64"
+    ];
+
+    public static bool IsSupportedRid(string? rid) => SupportedRids.Contains(rid, StringComparer.Ordinal);
+
     public static PlatformContext Detect()
     {
         var architecture = RuntimeInformation.OSArchitecture switch
