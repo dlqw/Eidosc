@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Eidosup.Diagnostics;
 using Eidosup.Installation;
+using Eidosup.Toolchains;
 
 namespace Eidosc.Tests.Unit.Eidosup;
 
@@ -47,20 +48,72 @@ public sealed class DoctorReporterTests
         var executableName = environment.DetectPlatform().ExecutableName;
         environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
         var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-test");
-        var toolchainsDirectory = Path.Combine(installRoot, "toolchains", "eidosc");
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
+        var platform = environment.DetectPlatform();
+        var alpha10 = ToolchainIdentity.Create(
+            "0.4.0-alpha.10", platform.Rid, "test/source", "eidosc-v0.4.0-alpha.10",
+            "bundle-alpha10.zip", new string('a', 64), 100).Id;
+        var alpha2 = ToolchainIdentity.Create(
+            "0.4.0-alpha.2", platform.Rid, "test/source", "eidosc-v0.4.0-alpha.2",
+            "bundle-alpha2.zip", new string('b', 64), 100).Id;
         environment.ExistingDirectories.Add(installRoot);
         environment.ExistingDirectories.Add(toolchainsDirectory);
         environment.Directories[toolchainsDirectory] =
         [
-            Path.Combine(toolchainsDirectory, "0.4.0-alpha.10"),
-            Path.Combine(toolchainsDirectory, "0.4.0-alpha.2")
+            Path.Combine(toolchainsDirectory, alpha10),
+            Path.Combine(toolchainsDirectory, alpha2),
+            Path.Combine(toolchainsDirectory, ".staging")
         ];
-        var reporter = CreateReporter(environment, DependencyHealth.Compatible);
+        var reporter = CreateReporter(
+            environment,
+            DependencyHealth.Compatible,
+            CreateState(alpha10, alpha2));
 
         var report = await reporter.EvaluateAsync(installRoot);
 
         var check = Assert.Single(report.Checks, item => item.Id == "toolchains.installed");
-        Assert.Equal("0.4.0-alpha.10, 0.4.0-alpha.2", check.Detail);
+        Assert.Equal(string.Join(", ", new[] { alpha10, alpha2 }.Order(StringComparer.Ordinal)), check.Detail);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ReportsLegacyLayoutAsUnmanaged()
+    {
+        var environment = new FakeDoctorEnvironment();
+        var executableName = environment.DetectPlatform().ExecutableName;
+        environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
+        var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-legacy-test");
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
+        environment.ExistingDirectories.Add(installRoot);
+        environment.ExistingDirectories.Add(toolchainsDirectory);
+        environment.ExistingDirectories.Add(Path.Combine(toolchainsDirectory, "eidosc"));
+        var reporter = CreateReporter(environment, DependencyHealth.Compatible);
+
+        var report = await reporter.EvaluateAsync(installRoot);
+
+        var check = Assert.Single(report.Checks, item => item.Id == "toolchains.legacy-layout");
+        Assert.Equal(DoctorCheckStatus.Warning, check.Status);
+        Assert.Contains("not be activated", check.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ReportsCorruptStateAsErrorWithoutRepairingIt()
+    {
+        var environment = new FakeDoctorEnvironment();
+        var executableName = environment.DetectPlatform().ExecutableName;
+        environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
+        var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-corrupt-state");
+        environment.ExistingDirectories.Add(installRoot);
+        var reporter = new DoctorReporter(
+            environment,
+            new StaticDependencyProbe(CreateProbeResult(DependencyHealth.Compatible)),
+            new ThrowingStateReader());
+
+        var report = await reporter.EvaluateAsync(installRoot);
+
+        var check = Assert.Single(report.Checks, item => item.Id == "toolchains.state");
+        Assert.Equal(DoctorCheckStatus.Fail, check.Status);
+        Assert.Equal(DoctorSeverity.Error, check.Severity);
+        Assert.False(report.Healthy);
     }
 
     [Fact]
@@ -83,8 +136,32 @@ public sealed class DoctorReporterTests
                      check.GetProperty("severity").GetString() == "error");
     }
 
-    private static DoctorReporter CreateReporter(FakeDoctorEnvironment environment, DependencyHealth health) =>
-        new(environment, new StaticDependencyProbe(CreateProbeResult(health)));
+    private static DoctorReporter CreateReporter(
+        FakeDoctorEnvironment environment,
+        DependencyHealth health,
+        ToolchainState? state = null) =>
+        new(
+            environment,
+            new StaticDependencyProbe(CreateProbeResult(health)),
+            new StaticStateReader(state ?? ToolchainState.Empty(DateTimeOffset.Parse("2026-07-12T00:00:00Z"))));
+
+    private static ToolchainState CreateState(params string[] toolchainIds)
+    {
+        var installedAt = DateTimeOffset.Parse("2026-07-12T00:00:00Z");
+        var toolchains = toolchainIds.Select(id => new InstalledToolchainState(
+            id,
+            id.Contains("alpha.10", StringComparison.Ordinal) ? "0.4.0-alpha.10" : "0.4.0-alpha.2",
+            PlatformContext.Detect().Rid,
+            new string('a', 64),
+            new string('b', 64),
+            "test-release",
+            "test/source",
+            "bundle.zip",
+            new string('c', 64),
+            100,
+            installedAt)).ToArray();
+        return ToolchainState.Empty(installedAt) with { Toolchains = toolchains };
+    }
 
     private static DependencyProbeResult CreateProbeResult(DependencyHealth health) => new(
         EidosDependencyRequirements.Llvm,
@@ -105,6 +182,26 @@ public sealed class DoctorReporterTests
     private sealed class StaticDependencyProbe(DependencyProbeResult result) : ILlvmDependencyProbe
     {
         public Task<DependencyProbeResult> ProbeAsync(CancellationToken cancellationToken) => Task.FromResult(result);
+    }
+
+    private sealed class StaticStateReader(ToolchainState state) : IToolchainStateReader
+    {
+        public Task<ToolchainState> ReadAsync(
+            PlatformContext platform,
+            string installRoot,
+            CancellationToken cancellationToken) => Task.FromResult(state);
+    }
+
+    private sealed class ThrowingStateReader : IToolchainStateReader
+    {
+        public Task<ToolchainState> ReadAsync(
+            PlatformContext platform,
+            string installRoot,
+            CancellationToken cancellationToken) => throw new EidosupException(
+                EidosupErrorCode.StateCorrupt,
+                EidosupExitCodes.StateCorrupt,
+                "Toolchain state is corrupt.",
+                "Run setup to reconcile state.");
     }
 
     private sealed class FakeDoctorEnvironment : IDoctorEnvironment

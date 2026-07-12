@@ -19,6 +19,8 @@ public enum EidosupErrorCode
     DependencyIncompatible,
     DependencyProviderUnavailable,
     DependencyInstallFailure,
+    StateCorrupt,
+    StateUnsupported,
     PermissionDenied,
     IoFailure,
     Cancelled,
@@ -66,6 +68,8 @@ public static class EidosupExitCodes
     public const int DependencyIncompatible = 25;
     public const int DependencyProviderUnavailable = 26;
     public const int DependencyInstallFailure = 27;
+    public const int StateCorrupt = 28;
+    public const int StateUnsupported = 29;
     public const int PermissionDenied = 30;
     public const int IoFailure = 31;
     public const int DoctorUnhealthy = 50;

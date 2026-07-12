@@ -2,8 +2,9 @@
 
 Eidosup installs an Eidosc release for the current host, checks LLVM/Clang,
 and can configure the user environment. It is a prerelease bootstrap tool; the
-multi-toolchain commands described by mature toolchain managers are not part of
-the current public contract.
+multi-toolchain management commands are not yet part of the public contract,
+but installs now use the versioned state and immutable identity foundation those
+commands require.
 
 ## Release source and credentials
 
@@ -56,6 +57,36 @@ uses the same transaction path; it does not overwrite an existing directory in
 place. `--dry-run` resolves and validates release metadata but creates no install,
 download, cache, lock, staging, or journal directory.
 
+## Toolchain identity and state
+
+Each verified install uses an immutable internal ID containing the resolved
+Eidosc version, host RID, and a full SHA-256 identity digest. The digest covers
+the release tag, source, asset name, asset digest, and declared asset size. A
+typical directory has this shape:
+
+```text
+toolchains/eidosc-0.4.0-alpha.2-win-x64-<sha256>/
+```
+
+The schema 2 `.eidosup-install.json` records that identity and remains inside
+the immutable directory. Eidosup will not register a directory unless the ID,
+manifest identity, host, version, complete file list, sizes, and file digests
+all verify.
+
+The private state file is `state/toolchains.json`, currently schema 1. It
+defines installed toolchains, movable selectors, the global default, activation
+history, transaction records, and unmanaged-directory diagnostics. State writes
+use a separate state lock, write-through temporary file, atomic replacement,
+and `toolchains.json.bak`. Repeated initialization is idempotent. If the primary
+state is malformed, Eidosup reconciles a supported backup with verified
+immutable install manifests. An unknown or future schema is never overwritten;
+the user must upgrade Eidosup first.
+
+The older `toolchains/eidosc/<version>` layout is not imported or activated,
+even if its directory name looks like a release. Reinstall required toolchains
+into the immutable layout, verify they work, and then remove the legacy directory
+manually.
+
 ## LLVM dependency providers
 
 Eidosc currently supports LLVM/Clang major versions 18 through 22 and requires
@@ -80,6 +111,11 @@ future update operations; that policy cannot install system software.
 `eidosup doctor` reports the combined dependency contract as
 `dependency.llvm`. Missing commands are warnings; an installed but unsupported
 or unverifiable LLVM is an error.
+
+Doctor also reads `toolchains.state` without repairing it and compares recorded
+toolchains with fully verified install manifests. Schema incompatibility,
+corrupt state, stale entries, and modified installed files are error-level
+failures; legacy layout detection remains a warning with manual cleanup steps.
 
 ## Version and channel selection
 
@@ -122,7 +158,7 @@ important exit-code ranges are:
 | --- | --- |
 | `2` | invalid command or release input |
 | `10`-`16` | source, release, or asset failure |
-| `20`-`27` | integrity, transaction, lock, or dependency-provider failure |
+| `20`-`29` | integrity, transaction, lock, dependency-provider, or state failure |
 | `30`-`31` | local permission or file failure |
 | `50` | doctor found an error-level readiness failure |
 | `70` | unexpected internal failure |

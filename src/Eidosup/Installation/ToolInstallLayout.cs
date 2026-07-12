@@ -4,9 +4,7 @@ public sealed record ToolInstallLayout(
     string RootDirectory,
     string DownloadDirectory,
     string CacheDirectory,
-    string VersionsDirectory,
-    string VersionDirectory,
-    string RuntimeDirectory,
+    string ToolchainsDirectory,
     string StateDirectory,
     string LockDirectory,
     string TransactionDirectory,
@@ -15,7 +13,6 @@ public sealed record ToolInstallLayout(
 {
     public static ToolInstallLayout Create(
         PlatformContext platform,
-        string version,
         string? installRoot,
         string? downloadRoot)
     {
@@ -25,21 +22,29 @@ public sealed record ToolInstallLayout(
         var downloads = Path.GetFullPath(string.IsNullOrWhiteSpace(downloadRoot)
             ? Path.Combine(root, "downloads")
             : downloadRoot);
-        var versions = EnsureChild(root, Path.Combine(root, "toolchains", "eidosc"));
-        var versionDirectory = EnsureChild(versions, Path.Combine(versions, version));
+        var toolchains = EnsureChild(root, Path.Combine(root, "toolchains"));
         var state = EnsureChild(root, Path.Combine(root, "state"));
         return new ToolInstallLayout(
             root,
             downloads,
             Path.Combine(downloads, "sha256"),
-            versions,
-            versionDirectory,
-            EnsureChild(versionDirectory, Path.Combine(versionDirectory, "runtime")),
+            toolchains,
             state,
             EnsureChild(state, Path.Combine(state, "locks")),
             EnsureChild(state, Path.Combine(state, "transactions")),
-            EnsureChild(versions, Path.Combine(versions, ".staging")),
-            EnsureChild(versions, Path.Combine(versions, ".backup")));
+            EnsureChild(toolchains, Path.Combine(toolchains, ".staging")),
+            EnsureChild(toolchains, Path.Combine(toolchains, ".backup")));
+    }
+
+    public string GetToolchainDirectory(string toolchainId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toolchainId);
+        if (toolchainId.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
+        {
+            throw new ArgumentException("Toolchain ID must be a single path segment.", nameof(toolchainId));
+        }
+
+        return EnsureChild(ToolchainsDirectory, Path.Combine(ToolchainsDirectory, toolchainId));
     }
 
     public static bool IsWithin(string parent, string candidate)

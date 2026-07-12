@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Eidosup.Diagnostics;
 using Eidosup.Distribution;
+using Eidosup.Toolchains;
 
 namespace Eidosup.Installation;
 
@@ -23,7 +24,8 @@ public sealed record VerifiedInstallRequest(
 
 public sealed record VerifiedInstallResult(
     InstallDisposition Disposition,
-    string VersionDirectory,
+    string ToolchainId,
+    string ToolchainDirectory,
     string AssetSha256,
     long AssetSize,
     bool CacheHit,
@@ -85,7 +87,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         Directory.CreateDirectory(request.Layout.CacheDirectory);
-        Directory.CreateDirectory(request.Layout.VersionsDirectory);
+        Directory.CreateDirectory(request.Layout.ToolchainsDirectory);
         Directory.CreateDirectory(request.Layout.TransactionDirectory);
         Directory.CreateDirectory(request.Layout.StagingDirectory);
         Directory.CreateDirectory(request.Layout.BackupDirectory);
@@ -101,18 +103,31 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             cancellationToken);
         var expectedSha256 = ChecksumManifest.Parse(checksumText)
             .GetRequiredChecksum(request.BundleAsset.Name);
+        var identity = ToolchainIdentity.Create(
+            request.Release.NormalizedVersion,
+            request.Platform.Rid,
+            request.Source,
+            request.Release.TagName,
+            request.BundleAsset.Name,
+            expectedSha256,
+            request.BundleAsset.Size ?? throw new EidosupException(
+                EidosupErrorCode.InvalidReleaseMetadata,
+                EidosupExitCodes.InvalidRelease,
+                $"Release asset '{request.BundleAsset.Name}' does not declare its size.",
+                "Publish release metadata with a positive asset size before installing it."));
+        var toolchainDirectory = request.Layout.GetToolchainDirectory(identity.Id);
 
         var existingManifest = await InstallManifest.TryReadAsync(
-            request.Layout.VersionDirectory,
+            toolchainDirectory,
             cancellationToken);
         var installedExecutable = Path.Combine(
-            request.Layout.VersionDirectory,
+            toolchainDirectory,
             request.Platform.ExecutableName);
         if (!request.Force &&
             existingManifest != null &&
             File.Exists(installedExecutable) &&
             await existingManifest.VerifyAsync(
-                request.Layout.VersionDirectory,
+                toolchainDirectory,
                 expectedSha256,
                 cancellationToken,
                 request.Platform.Rid,
@@ -120,19 +135,20 @@ public sealed class VerifiedToolchainInstaller : IDisposable
         {
             return new VerifiedInstallResult(
                 InstallDisposition.AlreadyInstalled,
-                request.Layout.VersionDirectory,
+                identity.Id,
+                toolchainDirectory,
                 expectedSha256,
                 existingManifest.AssetSize,
                 CacheHit: false,
                 Resumed: false);
         }
 
-        if (!request.Force && Directory.Exists(request.Layout.VersionDirectory))
+        if (!request.Force && Directory.Exists(toolchainDirectory))
         {
-            throw InstallManifest.Conflict(request.Layout.VersionDirectory);
+            throw InstallManifest.Conflict(toolchainDirectory);
         }
 
-        var hadPreviousTarget = Directory.Exists(request.Layout.VersionDirectory);
+        var hadPreviousTarget = Directory.Exists(toolchainDirectory);
         var download = await _downloadManager.DownloadArtifactAsync(
             request.BundleAsset,
             request.Layout.CacheDirectory,
@@ -147,11 +163,13 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             InstallJournal.CurrentSchema,
             transactionId,
             InstallJournalState.Started,
-            request.Layout.VersionDirectory,
+            toolchainDirectory,
             stageDirectory,
             backupDirectory,
             expectedSha256,
             request.Platform.Rid,
+            request.Release.NormalizedVersion,
+            identity.Id,
             hadPreviousTarget);
         await WriteJournalAsync(journalPath, journal, cancellationToken);
 
@@ -172,6 +190,8 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             EnsureExecutablePermission(executablePath);
             var manifest = new InstallManifest(
                 InstallManifest.CurrentSchema,
+                identity.Id,
+                identity.ManifestSha256,
                 request.Release.TagName,
                 request.Release.NormalizedVersion,
                 request.Platform.Rid,
@@ -186,17 +206,17 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             await WriteJournalAsync(journalPath, journal, cancellationToken);
             await _faultInjector.OnCheckpointAsync(InstallCheckpoint.Staged, cancellationToken);
 
-            var replaced = Directory.Exists(request.Layout.VersionDirectory);
+            var replaced = Directory.Exists(toolchainDirectory);
             if (replaced)
             {
-                Directory.Move(request.Layout.VersionDirectory, backupDirectory);
+                Directory.Move(toolchainDirectory, backupDirectory);
             }
 
             journal = journal with { State = InstallJournalState.PreviousMoved };
             await WriteJournalAsync(journalPath, journal, cancellationToken);
             await _faultInjector.OnCheckpointAsync(InstallCheckpoint.PreviousMoved, cancellationToken);
 
-            Directory.Move(stageDirectory, request.Layout.VersionDirectory);
+            Directory.Move(stageDirectory, toolchainDirectory);
             journal = journal with { State = InstallJournalState.TargetCommitted };
             await WriteJournalAsync(journalPath, journal, cancellationToken);
             await _faultInjector.OnCheckpointAsync(InstallCheckpoint.TargetCommitted, cancellationToken);
@@ -205,7 +225,8 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             File.Delete(journalPath);
             return new VerifiedInstallResult(
                 replaced ? InstallDisposition.Replaced : InstallDisposition.Installed,
-                request.Layout.VersionDirectory,
+                identity.Id,
+                toolchainDirectory,
                 expectedSha256,
                 download.Size,
                 download.CacheHit,
@@ -216,11 +237,11 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             if (journal.State == InstallJournalState.TargetCommitted)
             {
                 var committedManifest = await InstallManifest.TryReadAsync(
-                    request.Layout.VersionDirectory,
+                    toolchainDirectory,
                     CancellationToken.None);
                 if (committedManifest != null &&
                     await committedManifest.VerifyAsync(
-                        request.Layout.VersionDirectory,
+                        toolchainDirectory,
                         expectedSha256,
                         CancellationToken.None,
                         request.Platform.Rid,
@@ -294,10 +315,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
                                   journal.ExpectedSha256,
                                   cancellationToken,
                                   journal.Rid,
-                                  expectedVersion: Path.GetFileName(
-                                      journal.TargetDirectory.TrimEnd(
-                                          Path.DirectorySeparatorChar,
-                                          Path.AltDirectorySeparatorChar)));
+                                  expectedVersion: journal.Version);
             if (targetValid)
             {
                 DeleteDirectoryIfExists(journal.StageDirectory, layout.StagingDirectory);
@@ -308,7 +326,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
 
             if (Directory.Exists(journal.BackupDirectory))
             {
-                DeleteDirectoryIfExists(journal.TargetDirectory, layout.VersionsDirectory);
+                DeleteDirectoryIfExists(journal.TargetDirectory, layout.ToolchainsDirectory);
                 Directory.Move(journal.BackupDirectory, journal.TargetDirectory);
                 DeleteDirectoryIfExists(journal.StageDirectory, layout.StagingDirectory);
                 File.Delete(journalPath);
@@ -333,7 +351,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
 
             if (Directory.Exists(journal.TargetDirectory))
             {
-                DeleteDirectoryIfExists(journal.TargetDirectory, layout.VersionsDirectory);
+                DeleteDirectoryIfExists(journal.TargetDirectory, layout.ToolchainsDirectory);
             }
 
             DeleteDirectoryIfExists(journal.StageDirectory, layout.StagingDirectory);
@@ -356,12 +374,12 @@ public sealed class VerifiedToolchainInstaller : IDisposable
     {
         if (Directory.Exists(journal.BackupDirectory))
         {
-            DeleteDirectoryIfExists(journal.TargetDirectory, layout.VersionsDirectory);
+            DeleteDirectoryIfExists(journal.TargetDirectory, layout.ToolchainsDirectory);
             Directory.Move(journal.BackupDirectory, journal.TargetDirectory);
         }
         else if (journal.State == InstallJournalState.TargetCommitted)
         {
-            DeleteDirectoryIfExists(journal.TargetDirectory, layout.VersionsDirectory);
+            DeleteDirectoryIfExists(journal.TargetDirectory, layout.ToolchainsDirectory);
         }
 
         DeleteDirectoryIfExists(journal.StageDirectory, layout.StagingDirectory);
@@ -403,12 +421,14 @@ public sealed class VerifiedToolchainInstaller : IDisposable
                     Guid.TryParseExact(journal.Id, "N", out _) &&
                     Enum.IsDefined(journal.State) &&
                     ChecksumManifest.IsSha256(journal.ExpectedSha256) &&
-                    IsSupportedRid(journal.Rid) &&
-                    SemanticVersion.TryParse(targetName, out var targetVersion) &&
+                    PlatformContext.IsSupportedRid(journal.Rid) &&
+                    SemanticVersion.TryParse(journal.Version, out var targetVersion) &&
                     targetVersion != null &&
-                    string.Equals(targetVersion.ToString(), targetName, StringComparison.Ordinal) &&
+                    string.Equals(targetVersion.ToString(), journal.Version, StringComparison.Ordinal) &&
+                    ToolchainIdentity.IsValidId(journal.ToolchainId) &&
+                    string.Equals(targetName, journal.ToolchainId, StringComparison.Ordinal) &&
                     targetParent != null &&
-                    ToolInstallLayout.PathEquals(targetParent, layout.VersionsDirectory) &&
+                    ToolInstallLayout.PathEquals(targetParent, layout.ToolchainsDirectory) &&
                     !ToolInstallLayout.PathEquals(journal.TargetDirectory, layout.StagingDirectory) &&
                     !ToolInstallLayout.PathEquals(journal.TargetDirectory, layout.BackupDirectory) &&
                     ToolInstallLayout.PathEquals(
@@ -452,11 +472,6 @@ public sealed class VerifiedToolchainInstaller : IDisposable
         }
     }
 
-    private static bool IsSupportedRid(string? rid) => rid is
-        "win-x64" or "win-arm64" or
-        "linux-x64" or "linux-arm64" or
-        "osx-x64" or "osx-arm64";
-
     private static void EnsureExecutablePermission(string executablePath)
     {
         if (OperatingSystem.IsWindows())
@@ -492,8 +507,10 @@ public sealed class VerifiedToolchainInstaller : IDisposable
         string BackupDirectory,
         string ExpectedSha256,
         string Rid,
+        string Version,
+        string ToolchainId,
         bool HadPreviousTarget = false)
     {
-        public const int CurrentSchema = 1;
+        public const int CurrentSchema = 2;
     }
 }

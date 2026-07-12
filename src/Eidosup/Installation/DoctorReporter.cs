@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Eidosup.Diagnostics;
+using Eidosup.Toolchains;
 
 namespace Eidosup.Installation;
 
@@ -46,6 +47,25 @@ public interface IDoctorEnvironment
     IEnumerable<string> EnumerateDirectories(string path);
 }
 
+public interface IToolchainStateReader
+{
+    Task<ToolchainState> ReadAsync(
+        PlatformContext platform,
+        string installRoot,
+        CancellationToken cancellationToken);
+}
+
+public sealed class SystemToolchainStateReader : IToolchainStateReader
+{
+    public Task<ToolchainState> ReadAsync(
+        PlatformContext platform,
+        string installRoot,
+        CancellationToken cancellationToken) =>
+        ToolchainStateStore.ReadVerifiedAsync(
+            ToolInstallLayout.Create(platform, installRoot, downloadRoot: null),
+            cancellationToken);
+}
+
 public sealed class SystemDoctorEnvironment : IDoctorEnvironment
 {
     public PlatformContext DetectPlatform() => PlatformContext.Detect();
@@ -71,13 +91,16 @@ public sealed class DoctorReporter
 
     private readonly IDoctorEnvironment _environment;
     private readonly ILlvmDependencyProbe _dependencyProbe;
+    private readonly IToolchainStateReader _stateReader;
 
     public DoctorReporter(
         IDoctorEnvironment? environment = null,
-        ILlvmDependencyProbe? dependencyProbe = null)
+        ILlvmDependencyProbe? dependencyProbe = null,
+        IToolchainStateReader? stateReader = null)
     {
         _environment = environment ?? new SystemDoctorEnvironment();
         _dependencyProbe = dependencyProbe ?? new LlvmDependencyProbe();
+        _stateReader = stateReader ?? new SystemToolchainStateReader();
     }
 
     public async Task<int> RunAsync(
@@ -152,7 +175,7 @@ public sealed class DoctorReporter
                     value));
         }
 
-        AddInstallRootChecks(checks, installRootOverride);
+        await AddInstallRootChecksAsync(checks, platform, installRootOverride, cancellationToken);
         return new DoctorReport(platform.Rid, checks);
     }
 
@@ -202,7 +225,11 @@ public sealed class DoctorReporter
             : new DoctorCheck(id, DoctorCheckStatus.Pass, DoctorSeverity.Info, $"Command '{command}' is available.", path));
     }
 
-    private void AddInstallRootChecks(ICollection<DoctorCheck> checks, string? installRootOverride)
+    private async Task AddInstallRootChecksAsync(
+        ICollection<DoctorCheck> checks,
+        PlatformContext platform,
+        string? installRootOverride,
+        CancellationToken cancellationToken)
     {
         var configuredRoot = string.IsNullOrWhiteSpace(installRootOverride)
             ? _environment.GetEnvironmentVariable("EIDOS_HOME")
@@ -237,28 +264,67 @@ public sealed class DoctorReporter
             DoctorSeverity.Info,
             "The install root exists.",
             installRoot));
-        var toolchainsDirectory = Path.Combine(installRoot, "toolchains", "eidosc");
-        var versions = _environment.DirectoryExists(toolchainsDirectory)
-            ? _environment.EnumerateDirectories(toolchainsDirectory)
-                .Select(Path.GetFileName)
-                .Where(static name => !string.IsNullOrWhiteSpace(name))
-                .Order(StringComparer.Ordinal)
-                .ToArray()
-            : [];
-        checks.Add(versions.Length == 0
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
+        ToolchainState? state = null;
+        try
+        {
+            state = await _stateReader.ReadAsync(platform, installRoot, cancellationToken);
+            checks.Add(new DoctorCheck(
+                "toolchains.state",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                $"Toolchain state schema {state.Schema} revision {state.Revision} is readable.",
+                Path.Combine(installRoot, "state", ToolchainStateStore.FileName)));
+        }
+        catch (EidosupException exception) when (exception.Code is EidosupErrorCode.StateCorrupt or EidosupErrorCode.StateUnsupported)
+        {
+            checks.Add(new DoctorCheck(
+                "toolchains.state",
+                DoctorCheckStatus.Fail,
+                DoctorSeverity.Error,
+                exception.Message,
+                Path.Combine(installRoot, "state", ToolchainStateStore.FileName),
+                exception.Hint));
+        }
+
+        var toolchains = state?.Toolchains.OrderBy(static toolchain => toolchain.Id, StringComparer.Ordinal).ToArray() ?? [];
+        checks.Add(toolchains.Length == 0
             ? new DoctorCheck(
                 "toolchains.installed",
                 DoctorCheckStatus.Warning,
                 DoctorSeverity.Warning,
-                "No installed Eidosc version directories were found.",
+                "No immutable Eidosc toolchain directories were found.",
                 toolchainsDirectory,
                 "Run 'eidosup setup' to install a verified release.")
             : new DoctorCheck(
                 "toolchains.installed",
                 DoctorCheckStatus.Pass,
                 DoctorSeverity.Info,
-                $"Found {versions.Length} installed Eidosc version director{(versions.Length == 1 ? "y" : "ies")}.",
-                string.Join(", ", versions)));
+                $"Found {toolchains.Length} immutable Eidosc toolchain{(toolchains.Length == 1 ? string.Empty : "s")}.",
+                string.Join(", ", toolchains.Select(static toolchain => toolchain.Id))));
+
+        if (state is { UnmanagedDirectories.Count: > 0 })
+        {
+            checks.Add(new DoctorCheck(
+                "toolchains.unmanaged",
+                DoctorCheckStatus.Warning,
+                DoctorSeverity.Warning,
+                $"Found {state.UnmanagedDirectories.Count} unmanaged toolchain director{(state.UnmanagedDirectories.Count == 1 ? "y" : "ies")}.",
+                string.Join(", ", state.UnmanagedDirectories.Select(static entry => entry.DirectoryName)),
+                "Follow the state guidance and remove only directories that are no longer needed."));
+        }
+
+        var legacyDirectory = Path.Combine(toolchainsDirectory, "eidosc");
+        if (_environment.DirectoryExists(legacyDirectory))
+        {
+            checks.Add(new DoctorCheck(
+                "toolchains.legacy-layout",
+                DoctorCheckStatus.Warning,
+                DoctorSeverity.Warning,
+                "A pre-state-layout Eidosc directory was found and will not be activated.",
+                legacyDirectory,
+                "Reinstall required toolchains, then remove the legacy directory manually after confirming it is no longer needed."));
+        }
     }
 
     private static void WriteHumanReadable(DoctorReport report, TextWriter writer)

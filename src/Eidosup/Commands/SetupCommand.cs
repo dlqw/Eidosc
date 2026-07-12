@@ -11,7 +11,7 @@ internal static class SetupCommand
     {
         var command = new Command("setup", "Install or update eidosc, resolve LLVM/Clang dependencies, and configure environment variables.");
 
-        var versionOption = new Option<string?>("--version", "Install a specific Eidosc release. Accepts 0.4.0-alpha.1, v0.4.0-alpha.1, or eidosc-v0.4.0-alpha.1.");
+        var versionOption = new Option<string?>("--version", "Install a specific Eidosc release. Accepts 0.4.0-alpha.2, v0.4.0-alpha.2, or eidosc-v0.4.0-alpha.2.");
         var repositoryOption = new Option<string>("--repo", () => "dlqw/Eidosc", "GitHub repository that hosts Eidos release assets.");
         var installRootOption = new Option<string?>("--install-root", "Override the install root directory.");
         var downloadRootOption = new Option<string?>("--download-root", "Override the download cache directory.");
