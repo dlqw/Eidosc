@@ -45,6 +45,31 @@ uses the same transaction path; it does not overwrite an existing directory in
 place. `--dry-run` resolves and validates release metadata but creates no install,
 download, cache, lock, staging, or journal directory.
 
+## LLVM dependency providers
+
+Eidosc currently supports LLVM/Clang major versions 18 through 22 and requires
+both `clang` and `llvm-ar` for the complete native toolchain contract. Eidosup
+probes required commands and parses `clang --version`; finding a command on PATH
+alone is not treated as compatibility proof.
+
+`eidosup setup` is the explicit dependency-install entry point. If LLVM is
+missing, it builds a platform provider plan before running anything:
+
+- Windows: winget, then Chocolatey, then Scoop;
+- Linux: apt, DNF, Yum, Pacman, or Zypper, with sudo only when required;
+- macOS: Homebrew LLVM.
+
+All package-manager arguments are fixed and non-interactive. An existing but
+unsupported LLVM installation is never replaced implicitly; setup stops with a
+version-range error and remediation. `--dry-run` prints every planned system
+command without executing it. `--skip-clang` skips both validation and provider
+actions. The dependency coordinator also exposes a diagnose-only policy for
+future update operations; that policy cannot install system software.
+
+`eidosup doctor` reports the combined dependency contract as
+`dependency.llvm`. Missing commands are warnings; an installed but unsupported
+or unverifiable LLVM is an error.
+
 ## Version and channel selection
 
 Exact versions accept one of these equivalent forms:
@@ -86,7 +111,7 @@ important exit-code ranges are:
 | --- | --- |
 | `2` | invalid command or release input |
 | `10`-`16` | source, release, or asset failure |
-| `20`-`24` | integrity, archive, conflict, transaction, or lock failure |
+| `20`-`27` | integrity, transaction, lock, or dependency-provider failure |
 | `30`-`31` | local permission or file failure |
 | `50` | doctor found an error-level readiness failure |
 | `70` | unexpected internal failure |

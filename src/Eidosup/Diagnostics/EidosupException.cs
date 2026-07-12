@@ -16,6 +16,9 @@ public enum EidosupErrorCode
     InstallConflict,
     InstallFailure,
     LockTimeout,
+    DependencyIncompatible,
+    DependencyProviderUnavailable,
+    DependencyInstallFailure,
     PermissionDenied,
     IoFailure,
     Cancelled,
@@ -60,6 +63,9 @@ public static class EidosupExitCodes
     public const int InstallConflict = 22;
     public const int InstallFailure = 23;
     public const int LockTimeout = 24;
+    public const int DependencyIncompatible = 25;
+    public const int DependencyProviderUnavailable = 26;
+    public const int DependencyInstallFailure = 27;
     public const int PermissionDenied = 30;
     public const int IoFailure = 31;
     public const int DoctorUnhealthy = 50;

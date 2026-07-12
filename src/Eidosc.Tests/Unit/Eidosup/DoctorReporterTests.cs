@@ -7,13 +7,13 @@ namespace Eidosc.Tests.Unit.Eidosup;
 public sealed class DoctorReporterTests
 {
     [Fact]
-    public void Run_MissingEidoscReturnsUnhealthyExitCodeAndStableCheckId()
+    public async Task RunAsync_MissingEidoscReturnsUnhealthyExitCodeAndStableCheckId()
     {
         var environment = new FakeDoctorEnvironment();
-        var reporter = new DoctorReporter(environment);
+        var reporter = CreateReporter(environment, DependencyHealth.Missing);
         using var writer = new StringWriter();
 
-        var exitCode = reporter.Run(installRootOverride: null, json: false, writer);
+        var exitCode = await reporter.RunAsync(installRootOverride: null, json: false, writer);
 
         Assert.Equal(EidosupExitCodes.DoctorUnhealthy, exitCode);
         Assert.Contains("[FAIL] command.eidosc", writer.ToString(), StringComparison.Ordinal);
@@ -21,15 +21,15 @@ public sealed class DoctorReporterTests
     }
 
     [Fact]
-    public void Run_JsonSeparatesWarningsFromErrorsAndReturnsHealthyWhenEidoscExists()
+    public async Task RunAsync_JsonSeparatesWarningsFromErrorsAndReturnsHealthyWhenEidoscExists()
     {
         var environment = new FakeDoctorEnvironment();
         var executableName = environment.DetectPlatform().ExecutableName;
         environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
-        var reporter = new DoctorReporter(environment);
+        var reporter = CreateReporter(environment, DependencyHealth.Missing);
         using var writer = new StringWriter();
 
-        var exitCode = reporter.Run(installRootOverride: null, json: true, writer);
+        var exitCode = await reporter.RunAsync(installRootOverride: null, json: true, writer);
 
         Assert.Equal(EidosupExitCodes.Success, exitCode);
         using var document = JsonDocument.Parse(writer.ToString());
@@ -41,7 +41,7 @@ public sealed class DoctorReporterTests
     }
 
     [Fact]
-    public void Evaluate_ReportsInstalledVersionsInOrdinalOrder()
+    public async Task EvaluateAsync_ReportsInstalledVersionsInOrdinalOrder()
     {
         var environment = new FakeDoctorEnvironment();
         var executableName = environment.DetectPlatform().ExecutableName;
@@ -55,12 +55,56 @@ public sealed class DoctorReporterTests
             Path.Combine(toolchainsDirectory, "0.4.0-alpha.10"),
             Path.Combine(toolchainsDirectory, "0.4.0-alpha.2")
         ];
-        var reporter = new DoctorReporter(environment);
+        var reporter = CreateReporter(environment, DependencyHealth.Compatible);
 
-        var report = reporter.Evaluate(installRoot);
+        var report = await reporter.EvaluateAsync(installRoot);
 
         var check = Assert.Single(report.Checks, item => item.Id == "toolchains.installed");
         Assert.Equal("0.4.0-alpha.10, 0.4.0-alpha.2", check.Detail);
+    }
+
+    [Fact]
+    public async Task RunAsync_IncompatibleLlvmIsAnErrorLevelFailure()
+    {
+        var environment = new FakeDoctorEnvironment();
+        var executableName = environment.DetectPlatform().ExecutableName;
+        environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
+        var reporter = CreateReporter(environment, DependencyHealth.Incompatible);
+        using var writer = new StringWriter();
+
+        var exitCode = await reporter.RunAsync(null, json: true, writer);
+
+        Assert.Equal(EidosupExitCodes.DoctorUnhealthy, exitCode);
+        using var document = JsonDocument.Parse(writer.ToString());
+        Assert.Contains(
+            document.RootElement.GetProperty("checks").EnumerateArray(),
+            check => check.GetProperty("id").GetString() == "dependency.llvm" &&
+                     check.GetProperty("status").GetString() == "fail" &&
+                     check.GetProperty("severity").GetString() == "error");
+    }
+
+    private static DoctorReporter CreateReporter(FakeDoctorEnvironment environment, DependencyHealth health) =>
+        new(environment, new StaticDependencyProbe(CreateProbeResult(health)));
+
+    private static DependencyProbeResult CreateProbeResult(DependencyHealth health) => new(
+        EidosDependencyRequirements.Llvm,
+        health,
+        health == DependencyHealth.Missing ? null : health == DependencyHealth.Compatible ? 22 : 23,
+        health == DependencyHealth.Missing ? null : health == DependencyHealth.Compatible ? "22.0.0" : "23.0.0",
+        health == DependencyHealth.Missing ? null : "/llvm/bin/clang",
+        health == DependencyHealth.Missing ? null : "/llvm",
+        new Dictionary<string, string>(),
+        health == DependencyHealth.Missing ? ["clang", "llvm-ar"] : [],
+        health switch
+        {
+            DependencyHealth.Compatible => "LLVM/Clang 22.0.0 is supported.",
+            DependencyHealth.Missing => "Required LLVM commands are missing.",
+            _ => "LLVM/Clang 23.0.0 is unsupported."
+        });
+
+    private sealed class StaticDependencyProbe(DependencyProbeResult result) : ILlvmDependencyProbe
+    {
+        public Task<DependencyProbeResult> ProbeAsync(CancellationToken cancellationToken) => Task.FromResult(result);
     }
 
     private sealed class FakeDoctorEnvironment : IDoctorEnvironment

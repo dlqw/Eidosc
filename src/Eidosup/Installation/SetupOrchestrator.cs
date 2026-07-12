@@ -5,13 +5,16 @@ using Eidosup.Distribution;
 public sealed class SetupOrchestrator
 {
     private readonly ReleaseAssetLocator _assetLocator = new();
-    private readonly ClangInstaller _clangInstaller = new();
     private readonly EnvironmentConfigurator _environmentConfigurator = new();
     private readonly Func<string, IEidosReleaseSource> _releaseSourceFactory;
+    private readonly LlvmDependencyCoordinator _dependencyCoordinator;
 
-    public SetupOrchestrator(Func<string, IEidosReleaseSource>? releaseSourceFactory = null)
+    public SetupOrchestrator(
+        Func<string, IEidosReleaseSource>? releaseSourceFactory = null,
+        LlvmDependencyCoordinator? dependencyCoordinator = null)
     {
         _releaseSourceFactory = releaseSourceFactory ?? (repository => new GitHubReleaseClient(repository));
+        _dependencyCoordinator = dependencyCoordinator ?? new LlvmDependencyCoordinator();
     }
 
     public async Task<int> RunAsync(SetupOptions options, CancellationToken cancellationToken)
@@ -74,11 +77,20 @@ public sealed class SetupOrchestrator
             Console.WriteLine($"eidosc target directory: {layout.VersionDirectory}");
         }
 
-        var clang = options.SkipClang
-            ? CreateSkippedClangResult()
-            : await _clangInstaller.EnsureInstalledAsync(platform, options.DryRun, cancellationToken);
-
-        Console.WriteLine($"clang: {clang.ClangPath}");
+        var dependency = options.SkipClang
+            ? null
+            : await _dependencyCoordinator.ResolveAsync(
+                platform,
+                DependencyInstallPolicy.InstallMissing,
+                options.DryRun,
+                cancellationToken);
+        var clangPath = dependency?.Probe.ClangPath ?? CommandProbe.TryFind("clang") ?? "clang";
+        var llvmHome = dependency?.Probe.LlvmHome ?? ResolveLlvmHome(clangPath);
+        Console.WriteLine(dependency == null
+            ? $"LLVM dependency: skipped (clang candidate: {clangPath})."
+            : dependency.Probe.IsCompatible
+                ? $"LLVM dependency: {dependency.Probe.Detail}"
+                : $"LLVM dependency: install planned via '{dependency.Plan!.ProviderId}'.");
 
         if (!options.SkipEnvironmentConfiguration)
         {
@@ -94,16 +106,16 @@ public sealed class SetupOrchestrator
                 options.InstallRoot,
                 options.DownloadRoot);
             var pathEntries = new List<string> { eidoscHome };
-            if (!string.IsNullOrWhiteSpace(clang.LlvmHome))
+            if (!string.IsNullOrWhiteSpace(llvmHome))
             {
-                pathEntries.Add(Path.Combine(clang.LlvmHome!, "bin"));
+                pathEntries.Add(Path.Combine(llvmHome!, "bin"));
             }
 
             var plan = new EnvironmentPlan(
                 layout.RootDirectory,
                 eidoscHome,
                 Path.Combine(eidoscHome, "runtime"),
-                clang.LlvmHome,
+                llvmHome,
                 pathEntries);
 
             _environmentConfigurator.Apply(plan, options.DryRun);
@@ -128,11 +140,12 @@ public sealed class SetupOrchestrator
         return string.IsNullOrWhiteSpace(commandPath) ? null : Path.GetDirectoryName(commandPath);
     }
 
-    private static ClangInstallationResult CreateSkippedClangResult()
+    private static string? ResolveLlvmHome(string clangPath)
     {
-        var clangPath = CommandProbe.TryFind("clang") ?? "clang";
-        var llvmHome = Path.GetDirectoryName(clangPath) is { } binDir ? Directory.GetParent(binDir)?.FullName : null;
-        return new ClangInstallationResult(clangPath, llvmHome);
+        var binDirectory = Path.GetDirectoryName(clangPath);
+        return string.IsNullOrWhiteSpace(binDirectory)
+            ? null
+            : Directory.GetParent(binDirectory)?.FullName;
     }
 
     private sealed class DownloadProgressReporter : IProgress<DownloadProgress>
