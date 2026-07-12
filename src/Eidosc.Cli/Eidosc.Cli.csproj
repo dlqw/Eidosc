@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <Import Project="..\..\eng\Eidosc.Version.props" />
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>Eidosc.Cli</RootNamespace>
+        <AssemblyName>Eidosc.Cli</AssemblyName>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <!-- 可作为全局工具安装 -->
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>eidosc</ToolCommandName>
+        <PackageOutputPath>./nupkg</PackageOutputPath>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Eidosc\Eidosc.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="..\Eidosc\Runtime\**\*" Exclude="..\Eidosc\Runtime\tests\**\*">
+            <Link>runtime\%(RecursiveDir)%(Filename)%(Extension)</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Spectre.Console" Version="0.49.1" />
+        <PackageReference Include="Spectre.Console.Cli" Version="0.49.1" />
+        <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+        <PackageReference Include="System.CommandLine.NamingConventionBinder" Version="2.0.0-beta4.22272.1" />
+    </ItemGroup>
+
+</Project>

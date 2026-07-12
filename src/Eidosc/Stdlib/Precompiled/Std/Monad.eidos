@@ -1,0 +1,47 @@
+Monad :: module {
+
+    Monad[M: kind2] :: trait {
+        pure[A] :: A -> M[A]
+        bind[A, B, E: effects] :: M[A] -> (A -> M[B] need E) -> M[B] need E
+    }
+
+    map[A, B, M: kind2 : Monad[M], E: effects] :: M[A] -> (A -> B need E) -> M[B] need E
+    {
+        values => f => Monad::bind(values)(value => Monad::pure(f(value)))
+    }
+
+    flat_map[A, B, M: kind2 : Monad[M], E: effects] :: M[A] -> (A -> M[B] need E) -> M[B] need E
+    {
+        values => f => Monad::bind(values)(f)
+    }
+
+    join[A, M: kind2 : Monad[M]] :: M[M[A]] -> M[A]
+    {
+        values => Monad::bind(values)(inner => inner)
+    }
+
+    flatten[A, M: kind2 : Monad[M]] :: M[M[A]] -> M[A]
+    {
+        values => Monad::join(values)
+    }
+
+    ap[A, B, M: kind2 : Monad[M]] :: M[A -> B] -> M[A] -> M[B]
+    {
+        functions => values => Monad::bind(functions)(f => Monad::map(values)(f))
+    }
+
+    map2[A, B, C, M: kind2 : Monad[M], E: effects] :: M[A] -> M[B] -> (A -> B -> C need E) -> M[C] need E
+    {
+        left => right => f => Monad::bind(left)(a => Monad::map(right)(f(a)))
+    }
+
+    compose_k[A, B, C, M: kind2 : Monad[M], E1: effects, E2: effects] :: (A -> M[B] need E1) -> (B -> M[C] need E2) -> A -> M[C] need E1, E2
+    {
+        f => g => value => Monad::bind(f(value))(g)
+    }
+
+    void[A, M: kind2 : Monad[M]] :: M[A] -> M[Unit]
+    {
+        values => Monad::map(values)(_ => ())
+    }
+}

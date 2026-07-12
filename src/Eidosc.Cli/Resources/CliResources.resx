@@ -1,0 +1,1767 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="LspCompilationFailed" xml:space="preserve">
+    <value>LSP compilation failed: {0}</value>
+  </data>
+  <data name="CliImportRootOptionDescription" xml:space="preserve">
+    <value>显式添加模块导入搜索根目录（可重复；相对路径按当前工作目录解析；覆盖项目配置中的 importRoots）</value>
+  </data>
+  <data name="CliNoColorOptionDescription" xml:space="preserve">
+    <value>禁用彩色输出</value>
+  </data>
+  <data name="CliRootDescription" xml:space="preserve">
+    <value>Eidos 语言编译器</value>
+  </data>
+  <data name="CliVerboseOptionDescription" xml:space="preserve">
+    <value>显示详细输出</value>
+  </data>
+  <data name="IdeCheckingDetail" xml:space="preserve">
+    <value>{0} (ide snapshot phase {1})</value>
+  </data>
+  <data name="IdeCheckingAction" xml:space="preserve">
+    <value>Checking</value>
+  </data>
+  <data name="IdeCommandDescription" xml:space="preserve">
+    <value>输出 IDE 使用的语义快照（JSON）</value>
+  </data>
+  <data name="IdeCommandFailed" xml:space="preserve">
+    <value>ide command failed: {0}</value>
+  </data>
+  <data name="IdeFinishedDetails" xml:space="preserve">
+    <value>phase {0}, diagnostics {1}</value>
+  </data>
+  <data name="IdePhaseOptionDescription" xml:space="preserve">
+    <value>分析到指定阶段</value>
+  </data>
+  <data name="IdePrettyOptionDescription" xml:space="preserve">
+    <value>格式化 JSON 输出</value>
+  </data>
+  <data name="IdeProjectOptionDescription" xml:space="preserve">
+    <value>项目目录或 eidos.toml 路径</value>
+  </data>
+  <data name="IdeSnapshotFailedDetail" xml:space="preserve">
+    <value>snapshot failed</value>
+  </data>
+  <data name="IdeSourceArgumentDescription" xml:space="preserve">
+    <value>源文件路径或项目路径（用于相对导入解析）</value>
+  </data>
+  <data name="IdeStdinOptionDescription" xml:space="preserve">
+    <value>从 stdin 读取源码文本</value>
+  </data>
+  <data name="IdeTargetNameOptionDescription" xml:space="preserve">
+    <value>要分析的入口目标名称</value>
+  </data>
+  <data name="LspFullDocumentSyncExpected" xml:space="preserve">
+    <value>Eidos LSP expects full document sync contentChanges with a single full text change.</value>
+  </data>
+  <data name="LspHoverBindingMetadata" xml:space="preserve">
+    <value>binding: `{0}`</value>
+  </data>
+  <data name="LspHoverFfiLibraryMetadata" xml:space="preserve">
+    <value>FFI library: `{0}`</value>
+  </data>
+  <data name="LspInferredTypeTooltip" xml:space="preserve">
+    <value>Inferred type</value>
+  </data>
+  <data name="LspServerAction" xml:space="preserve">
+    <value>Eidos LSP server (stdin/stdout)</value>
+  </data>
+  <data name="LspServerDescription" xml:space="preserve">
+    <value>启动 Eidos LSP 语言服务器（通过 stdin/stdout 通信）</value>
+  </data>
+  <data name="LspServerError" xml:space="preserve">
+    <value>LSP server error: {0}</value>
+  </data>
+  <data name="LspServerErrorDetail" xml:space="preserve">
+    <value>server error</value>
+  </data>
+  <data name="LspServerStarting" xml:space="preserve">
+    <value>Eidos LSP server starting (stdin/stdout)</value>
+  </data>
+  <data name="MirOptimizationDisableOptionDescription" xml:space="preserve">
+    <value>禁用 MIR 优化</value>
+  </data>
+  <data name="MirOptimizationDisabledStatus" xml:space="preserve">
+    <value>MIR 优化: 关闭</value>
+  </data>
+  <data name="MirOptimizationEnableOptionDescription" xml:space="preserve">
+    <value>启用 MIR 优化（默认已开启，保留兼容）</value>
+  </data>
+  <data name="MirOptimizationEnabledStatus" xml:space="preserve">
+    <value>MIR 优化: 开启 (默认)</value>
+  </data>
+  <data name="ProjectBuildGraphSummary" xml:space="preserve">
+    <value>构建图 {0}</value>
+  </data>
+  <data name="ProjectConfigSummary" xml:space="preserve">
+    <value>项目配置 {0}</value>
+  </data>
+  <data name="ProjectDependenciesSummary" xml:space="preserve">
+    <value>工程依赖 {0}</value>
+  </data>
+  <data name="ProjectDependencySearchRootsSummary" xml:space="preserve">
+    <value>依赖搜索根 {0}</value>
+  </data>
+  <data name="ProjectEntryTargetSummary" xml:space="preserve">
+    <value>入口目标 {0} ({1})</value>
+  </data>
+  <data name="ProjectImportRootsSummary" xml:space="preserve">
+    <value>导入根 {0}</value>
+  </data>
+  <data name="ProjectSourcePathRequired" xml:space="preserve">
+    <value>必须提供源文件路径，或在当前目录/父目录提供 eidos.toml。</value>
+  </data>
+  <data name="ProjectSourceRootsSummary" xml:space="preserve">
+    <value>源码根 {0}</value>
+  </data>
+  <data name="ProjectTargetDependenciesSummary" xml:space="preserve">
+    <value>目标依赖 {0}</value>
+  </data>
+  <data name="ProjectTargetEntrySummary" xml:space="preserve">
+    <value>目标入口 {0}</value>
+  </data>
+  <data name="ProjectTargetNameRequiresProjectInput" xml:space="preserve">
+    <value>选项 '--target-name' 只能与 '--project'、项目路径输入或当前项目目录一起使用。</value>
+  </data>
+  <data name="ReplBreakOutsideLoopError" xml:space="preserve">
+    <value>Error: break outside of loop</value>
+  </data>
+  <data name="ReplCommandDescription" xml:space="preserve">
+    <value>启动交互式 REPL 会话</value>
+  </data>
+  <data name="ReplCompilationError" xml:space="preserve">
+    <value>Compilation error: {0}</value>
+  </data>
+  <data name="ReplCouldNotDetermineType" xml:space="preserve">
+    <value>Could not determine type</value>
+  </data>
+  <data name="ReplEnvironmentCleared" xml:space="preserve">
+    <value>Environment cleared. (Note: builtins remain)</value>
+  </data>
+  <data name="ReplEnvironmentEmpty" xml:space="preserve">
+    <value>(empty environment)</value>
+  </data>
+  <data name="ReplError" xml:space="preserve">
+    <value>Error: {0}</value>
+  </data>
+  <data name="ReplFileLoaded" xml:space="preserve">
+    <value>Loaded: {0}</value>
+  </data>
+  <data name="ReplFileNotFound" xml:space="preserve">
+    <value>Error: file not found: {0}</value>
+  </data>
+  <data name="ReplHelpAvailableCommands" xml:space="preserve">
+    <value>Available commands:</value>
+  </data>
+  <data name="ReplHelpClear" xml:space="preserve">
+    <value>  :clear       Clear the environment</value>
+  </data>
+  <data name="ReplHelpEnv" xml:space="preserve">
+    <value>  :env         Show all current bindings</value>
+  </data>
+  <data name="ReplHelpEvaluate" xml:space="preserve">
+    <value>Enter any Eidos expression or declaration to evaluate it.</value>
+  </data>
+  <data name="ReplHelpExit" xml:space="preserve">
+    <value>  :quit, :q    Exit the REPL</value>
+  </data>
+  <data name="ReplHelpLoad" xml:space="preserve">
+    <value>  :load &lt;file&gt; Load and execute a file</value>
+  </data>
+  <data name="ReplHelpShowHelp" xml:space="preserve">
+    <value>  :help        Show this help message</value>
+  </data>
+  <data name="ReplHelpType" xml:space="preserve">
+    <value>  :type &lt;expr&gt; Show the type of an expression</value>
+  </data>
+  <data name="ReplLoadUsage" xml:space="preserve">
+    <value>Usage: :load &lt;file&gt;</value>
+  </data>
+  <data name="ReplNoHirError" xml:space="preserve">
+    <value>Error: compilation produced no HIR</value>
+  </data>
+  <data name="ReplProjectOptionDescription" xml:space="preserve">
+    <value>项目目录或 eidos.toml 路径</value>
+  </data>
+  <data name="ReplSessionAction" xml:space="preserve">
+    <value>interactive REPL session</value>
+  </data>
+  <data name="ReplTitle" xml:space="preserve">
+    <value>Eidos REPL</value>
+  </data>
+  <data name="ReplTypeUsage" xml:space="preserve">
+    <value>Usage: :type &lt;expression&gt;</value>
+  </data>
+  <data name="ReplUnknownCommand" xml:space="preserve">
+    <value>Unknown command: {0}. Type :help for available commands.</value>
+  </data>
+  <data name="ReplWelcomeHelp" xml:space="preserve">
+    <value>Type expressions or declarations. Use :help for commands, :quit to exit.</value>
+  </data>
+  <data name="TuiCommandDescription" xml:space="preserve">
+    <value>启动交互式终端界面</value>
+  </data>
+  <data name="TuiStartFailed" xml:space="preserve">
+    <value>TUI 启动失败: {0}</value>
+  </data>
+  <data name="TuiWorkspaceArgumentDescription" xml:space="preserve">
+    <value>工作空间路径（可选）</value>
+  </data>
+  <data name="TuiStartupFailedDetail" xml:space="preserve">
+    <value>startup failed</value>
+  </data>
+  <data name="SourceArgumentDescription" xml:space="preserve">
+    <value>源文件路径或项目路径</value>
+  </data>
+  <data name="SourceTextOptionDescription" xml:space="preserve">
+    <value>直接传入 Eidos 源码文本</value>
+  </data>
+  <data name="SourceStdinOptionDescription" xml:space="preserve">
+    <value>从 stdin 读取 Eidos 源码文本</value>
+  </data>
+  <data name="SourceTextAndStdinMutuallyExclusive" xml:space="preserve">
+    <value>--source-text cannot be combined with --stdin.</value>
+  </data>
+  <data name="ProjectOptionDescription" xml:space="preserve">
+    <value>项目目录或 eidos.toml 路径</value>
+  </data>
+  <data name="DebugLevelOptionDescription" xml:space="preserve">
+    <value>调试级别</value>
+  </data>
+  <data name="WerrorOptionDescription" xml:space="preserve">
+    <value>将指定 warning code 视为 error（可重复或逗号分隔）</value>
+  </data>
+  <data name="WerrorAllOptionDescription" xml:space="preserve">
+    <value>将所有 warning 视为 error</value>
+  </data>
+  <data name="InputResolutionFailedDetail" xml:space="preserve">
+    <value>input resolution failed</value>
+  </data>
+  <data name="SourceFileMissingDetail" xml:space="preserve">
+    <value>source file missing</value>
+  </data>
+  <data name="SourceFileNotFound" xml:space="preserve">
+    <value>找不到源文件 '{0}'</value>
+  </data>
+  <data name="WarningAsErrorAllStatus" xml:space="preserve">
+    <value>warning 升级: 全部 warning 视为 error</value>
+  </data>
+  <data name="WarningAsErrorCodesStatus" xml:space="preserve">
+    <value>warning 升级: {0}</value>
+  </data>
+  <data name="NativeCpuTuningStatus" xml:space="preserve">
+    <value>CPU 调优: native</value>
+  </data>
+  <data name="LtoEnabledStatus" xml:space="preserve">
+    <value>LTO: 开启</value>
+  </data>
+  <data name="AnalyzeCommandDescription" xml:space="preserve">
+    <value>分析源代码并输出诊断信息</value>
+  </data>
+  <data name="AnalyzeTargetNameOptionDescription" xml:space="preserve">
+    <value>要分析的入口目标名称</value>
+  </data>
+  <data name="AnalyzePhaseOptionDescription" xml:space="preserve">
+    <value>分析到指定阶段</value>
+  </data>
+  <data name="AnalyzeProfileOptionDescription" xml:space="preserve">
+    <value>启用非侵入式性能分析并输出表格</value>
+  </data>
+  <data name="AnalyzeProfileFormatOptionDescription" xml:space="preserve">
+    <value>性能表格格式: Markdown/Csv/Tsv</value>
+  </data>
+  <data name="AnalyzeProfileOutputOptionDescription" xml:space="preserve">
+    <value>将性能表格写入文件</value>
+  </data>
+  <data name="AnalyzeProfileSnapshotOutputOptionDescription" xml:space="preserve">
+    <value>将 profiling 快照写入 JSON 文件，供后续基线对比</value>
+  </data>
+  <data name="AnalyzeProfileBaselineOptionDescription" xml:space="preserve">
+    <value>读取历史 profiling JSON 快照并输出回归对比摘要</value>
+  </data>
+  <data name="AnalyzeTokenListHeader" xml:space="preserve">
+    <value>
+=== Token 列表 ===</value>
+  </data>
+  <data name="AnalyzeAstStructureHeader" xml:space="preserve">
+    <value>
+=== AST 结构 ===</value>
+  </data>
+  <data name="AnalyzeTypeInferenceHeader" xml:space="preserve">
+    <value>
+=== 类型推断结果 ===</value>
+  </data>
+  <data name="AnalyzeTypeInferenceCompleted" xml:space="preserve">
+    <value>  类型推断完成</value>
+  </data>
+  <data name="AnalyzePhaseCompletedHeader" xml:space="preserve">
+    <value>
+=== {0} 阶段完成 ===</value>
+  </data>
+  <data name="AnalyzeCompilationSummaryHeader" xml:space="preserve">
+    <value>
+=== 编译阶段摘要 ===</value>
+  </data>
+  <data name="AnalyzeCompletedPhaseSummary" xml:space="preserve">
+    <value>  完成阶段: {0}</value>
+  </data>
+  <data name="AnalyzeTokenCountSummary" xml:space="preserve">
+    <value>  Token 数量: {0}</value>
+  </data>
+  <data name="AnalyzeTotalTimeSummary" xml:space="preserve">
+    <value>  总耗时: {0:F2}ms</value>
+  </data>
+  <data name="AnalyzeAstGeneratedSummary" xml:space="preserve">
+    <value>  AST: 已生成</value>
+  </data>
+  <data name="AnalyzeSymbolCountSummary" xml:space="preserve">
+    <value>  符号数: {0}</value>
+  </data>
+  <data name="AnalyzeTypeInferenceCompletedSummary" xml:space="preserve">
+    <value>  类型推断: 已完成</value>
+  </data>
+  <data name="AnalyzePhaseTimingHeader" xml:space="preserve">
+    <value>  阶段耗时/分配:</value>
+  </data>
+  <data name="AnalyzeSubphaseTimingHeader" xml:space="preserve">
+    <value>  子阶段耗时/内存:</value>
+  </data>
+  <data name="AnalyzePhaseTimeLine" xml:space="preserve">
+    <value>    {0}: {1:F2}ms</value>
+  </data>
+  <data name="AnalyzePhaseTimeAllocationLine" xml:space="preserve">
+    <value>    {0}: {1:F2}ms, {2}</value>
+  </data>
+  <data name="AnalyzeSubphaseMetric" xml:space="preserve">
+    <value>      {0}: {1:F2}ms, alloc {2}, heap Δ {3}, GC {4}/{5}/{6}</value>
+  </data>
+  <data name="AnalyzeHotspotSummaryHeader" xml:space="preserve">
+    <value>
+=== 性能热点摘要 ===</value>
+  </data>
+  <data name="AnalyzeBaselineComparisonHeader" xml:space="preserve">
+    <value>
+=== 基线对比摘要 ===</value>
+  </data>
+  <data name="AnalyzeProfileTableWritten" xml:space="preserve">
+    <value>
+=== 性能分析表已写入 ===
+{0}</value>
+  </data>
+  <data name="AnalyzeProfileSnapshotWritten" xml:space="preserve">
+    <value>
+=== 性能快照已写入 ===
+{0}</value>
+  </data>
+  <data name="AnalyzeProfileTableHeader" xml:space="preserve">
+    <value>
+=== 性能分析表 ===</value>
+  </data>
+  <data name="AnalyzeCompletedStatus" xml:space="preserve">
+    <value>分析完成</value>
+  </data>
+  <data name="AnalyzeFailedStatus" xml:space="preserve">
+    <value>分析失败</value>
+  </data>
+  <data name="AnalyzePhaseStatus" xml:space="preserve">
+    <value>分析阶段 {0}</value>
+  </data>
+  <data name="AnalyzePhaseDiagnosticsDetails" xml:space="preserve">
+    <value>phase {0}, diagnostics {1}</value>
+  </data>
+  <data name="BuildCommandDescription" xml:space="preserve">
+    <value>编译 Eidos 源代码</value>
+  </data>
+  <data name="BuildTargetOptionDescription" xml:space="preserve">
+    <value>编译目标格式</value>
+  </data>
+  <data name="BuildOutputOptionDescription" xml:space="preserve">
+    <value>输出文件路径（未指定时自动生成）</value>
+  </data>
+  <data name="BuildPhaseOptionDescription" xml:space="preserve">
+    <value>停止在指定阶段（优先级高于 -t）</value>
+  </data>
+  <data name="BuildEmitLlvmOptionDescription" xml:space="preserve">
+    <value>输出 LLVM IR 文本（等效于 -t LlvmIr）</value>
+  </data>
+  <data name="BuildTargetNameOptionDescription" xml:space="preserve">
+    <value>要构建的入口目标名称</value>
+  </data>
+  <data name="BuildDebugOutputOptionDescription" xml:space="preserve">
+    <value>调试输出根目录（启用后默认按目标/源文件分目录）</value>
+  </data>
+  <data name="BuildDebugGraphFormatOptionDescription" xml:space="preserve">
+    <value>调试图产物格式: None, D2, Svg, Both</value>
+  </data>
+  <data name="BuildEmitCfgOptionDescription" xml:space="preserve">
+    <value>生成控制流图 (CFG)</value>
+  </data>
+  <data name="BuildTargetTripleOptionDescription" xml:space="preserve">
+    <value>目标平台三元组（例如: x86_64-pc-linux-gnu）</value>
+  </data>
+  <data name="BuildOptimizationLevelOptionDescription" xml:space="preserve">
+    <value>优化级别 (0=无, 1=基本, 2=标准 [默认], 3=激进)</value>
+  </data>
+  <data name="BuildLtoOptionDescription" xml:space="preserve">
+    <value>启用链接时优化 (LTO)</value>
+  </data>
+  <data name="BuildNativeCpuOptionDescription" xml:space="preserve">
+    <value>针对当前 CPU 优化 (-mcpu=native)</value>
+  </data>
+  <data name="BuildNativeLinkModeOptionDescription" xml:space="preserve">
+    <value>本地可执行文件链接模式: platform-default, no-pie, pie</value>
+  </data>
+  <data name="InvalidNativeLinkMode" xml:space="preserve">
+    <value>无效 native link mode '{0}'；支持: platform-default, no-pie, pie</value>
+  </data>
+  <data name="InvalidNativeLinkModeDetail" xml:space="preserve">
+    <value>invalid native link mode</value>
+  </data>
+  <data name="BuildTargetOptionHelp" xml:space="preserve">
+    <value>编译目标格式
+  Tokens    仅词法分析，输出 token 流
+  Ast       仅语法分析，输出语法树
+  Resolved  名称解析后的 AST
+  Typed     类型推断后的 AST
+  Hir       高级中间表示
+  Mir       中级中间表示
+  LlvmIr    输出 LLVM IR 文本
+  Native    生成本地可执行文件 [默认]
+  Cil       完整编译验证，不生成文件</value>
+  </data>
+  <data name="BuildOutputOptionHelp" xml:space="preserve">
+    <value>输出文件路径（未指定时项目输入使用 build/，裸源文件使用源文件同目录）</value>
+  </data>
+  <data name="BuildPhaseOptionHelp" xml:space="preserve">
+    <value>在指定编译阶段停止（优先级高于 -t 的默认停止点）
+  Lexer    词法分析
+  Parser   语法分析
+  Namer    名称解析
+  Types    类型推断
+  Effects  能力/效应推断
+  Borrow   借用检查
+  Hir      HIR 构建
+  Mir      MIR 构建
+  Llvm     LLVM IR 生成
+  CodeGen  代码生成</value>
+  </data>
+  <data name="BuildEmitLlvmOptionHelp" xml:space="preserve">
+    <value>输出 LLVM IR 文本（等效于 -t LlvmIr，自动切换目标）</value>
+  </data>
+  <data name="BuildNativeLinkModeOptionHelp" xml:space="preserve">
+    <value>本地可执行文件链接模式
+  platform-default  使用目标工具链默认链接模式
+  no-pie            生成非 PIE 可执行文件 [默认]
+  pie               生成 PIE 可执行文件</value>
+  </data>
+  <data name="CompilingAction" xml:space="preserve">
+    <value>Compiling</value>
+  </data>
+  <data name="CheckingAction" xml:space="preserve">
+    <value>Checking</value>
+  </data>
+  <data name="InvalidTargetTripleDetail" xml:space="preserve">
+    <value>invalid target triple</value>
+  </data>
+  <data name="CodegenFailedDetail" xml:space="preserve">
+    <value>codegen failed</value>
+  </data>
+  <data name="UnknownTargetPlatform" xml:space="preserve">
+    <value>未知目标平台: {0}</value>
+  </data>
+  <data name="SupportedTargetsStatus" xml:space="preserve">
+    <value>支持的目标: {0}</value>
+  </data>
+  <data name="BuildActionSubject" xml:space="preserve">
+    <value>{0} (target {1})</value>
+  </data>
+  <data name="CheckingActionSubject" xml:space="preserve">
+    <value>{0} (phase {1})</value>
+  </data>
+  <data name="CompileSourceStatus" xml:space="preserve">
+    <value>编译 {0}</value>
+  </data>
+  <data name="AnalyzeSourceStatus" xml:space="preserve">
+    <value>分析 {0}</value>
+  </data>
+  <data name="TargetStatus" xml:space="preserve">
+    <value>目标 {0}</value>
+  </data>
+  <data name="StopPhaseStatus" xml:space="preserve">
+    <value>停止阶段 {0}</value>
+  </data>
+  <data name="TargetPlatformStatus" xml:space="preserve">
+    <value>目标平台 {0}</value>
+  </data>
+  <data name="OptimizationLevelStatus" xml:space="preserve">
+    <value>优化级别: -O{0}</value>
+  </data>
+  <data name="DebugOutputStatus" xml:space="preserve">
+    <value>调试输出 {0}</value>
+  </data>
+  <data name="DebugGraphArtifactsStatus" xml:space="preserve">
+    <value>调试图产物 {0}</value>
+  </data>
+  <data name="LlvmIrWritten" xml:space="preserve">
+    <value>LLVM IR 已写入 {0}</value>
+  </data>
+  <data name="ExecutableGenerated" xml:space="preserve">
+    <value>可执行文件已生成 {0}</value>
+  </data>
+  <data name="CodeGenerationFailed" xml:space="preserve">
+    <value>代码生成失败: {0}</value>
+  </data>
+  <data name="BuildSucceededStatus" xml:space="preserve">
+    <value>编译成功</value>
+  </data>
+  <data name="BuildFailedStatus" xml:space="preserve">
+    <value>编译失败</value>
+  </data>
+  <data name="CompletedPhaseStatus" xml:space="preserve">
+    <value>完成阶段 {0}</value>
+  </data>
+  <data name="TotalTimeStatus" xml:space="preserve">
+    <value>总耗时 {0:F0}ms</value>
+  </data>
+  <data name="PhaseTimeStatus" xml:space="preserve">
+    <value>{0}: {1:F0}ms</value>
+  </data>
+  <data name="PhaseTimeAllocationStatus" xml:space="preserve">
+    <value>{0}: {1:F0}ms, {2}</value>
+  </data>
+  <data name="PhaseTargetDetails" xml:space="preserve">
+    <value>phase {0}, target {1}</value>
+  </data>
+  <data name="PhaseNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="HelpRootHint" xml:space="preserve">
+    <value>使用 'eidosc &lt;command&gt; --help' 查看各子命令的详细用法和选项说明。</value>
+  </data>
+  <data name="HelpNewExamples" xml:space="preserve">
+    <value>Examples:
+  eidosc new snake
+  eidosc new libs/math --kind library
+  eidosc new app --name com.example.app</value>
+  </data>
+  <data name="HelpNewNotes" xml:space="preserve">
+    <value>Notes:
+  new 会创建目标目录，并在其中生成 eidos.toml、src/、build/、debug/。
+  目标目录已存在时必须为空；已有目录初始化请使用 eidosc pkg init。</value>
+  </data>
+  <data name="HelpBuildExamples" xml:space="preserve">
+    <value>Examples:
+  eidosc build src/Main.eidos                       # 生成可执行文件（默认）
+  eidosc build src/Main.eidos -o myapp.exe
+  eidosc build src/Main.eidos -t LlvmIr -o out.ll
+  eidosc build src/Main.eidos --emit-llvm
+  eidosc build src/Main.eidos -t Cil                # 仅编译检查
+  eidosc build src/Main.eidos --target-triple x86_64-linux</value>
+  </data>
+  <data name="HelpBuildNotes" xml:space="preserve">
+    <value>Notes:
+  默认目标为 Native，自动生成可执行文件。
+  -o 未指定时，项目输入输出到项目 build/；裸源文件输出到源文件同目录。
+  --emit-llvm 等效于 -t LlvmIr，会自动切换目标。
+  --phase 可在任意阶段停止，优先级高于 -t 指定的默认停止点。</value>
+  </data>
+  <data name="HelpRunExamples" xml:space="preserve">
+    <value>Examples:
+  eidosc run .
+  eidosc run --project ./App --target-name app
+  eidosc run src/Main.eidos -- arg1 arg2</value>
+  </data>
+  <data name="HelpRunNotes" xml:space="preserve">
+    <value>Notes:
+  run 只支持 executable 目标。
+  -o 未指定时，项目输入输出到项目 build/；裸源文件输出到源文件同目录。</value>
+  </data>
+  <data name="HelpAnalyzeExamples" xml:space="preserve">
+    <value>Examples:
+  eidosc analyze src/Main.eidos
+  eidosc analyze src/Main.eidos --profile
+  eidosc analyze src/Main.eidos --profile --profile-format Json</value>
+  </data>
+  <data name="HelpAnalyzeNotes" xml:space="preserve">
+    <value>Phases:
+  Lexer    词法分析
+  Parser   语法分析
+  Namer    名称解析
+  Types    类型推断
+  Effects  能力/效应推断
+  Borrow   借用检查
+  Hir      HIR 构建
+  Mir      MIR 构建
+  Llvm     LLVM IR 生成
+  CodeGen  代码生成
+
+Profile Formats:
+  Markdown  Markdown 表格 [默认]
+  Csv       逗号分隔值
+  Tsv       制表符分隔值
+  Json      JSON 格式</value>
+  </data>
+  <data name="HelpDebugNotes" xml:space="preserve">
+    <value>Debug Levels:
+  Minimal     仅关键信息
+  Normal      常规信息
+  Verbose     详细信息
+  Diagnostic  所有中间结果 [默认]
+
+Graph Formats:
+  None  不生成图产物 [默认]
+  D2    为每个文本调试产物生成 .d2
+  Svg   为每个文本调试产物生成 .svg
+  Both  同时生成 .d2 和 .svg</value>
+  </data>
+  <data name="HelpIdeNotes" xml:space="preserve">
+    <value>Phases:
+  Lexer    词法分析
+  Parser   语法分析
+  Namer    名称解析
+  Types    类型推断 [默认]
+  Effects  能力/效应推断
+  Borrow   借用检查
+  Hir      HIR 构建
+  Mir      MIR 构建
+  Llvm     LLVM IR 生成
+  CodeGen  代码生成</value>
+  </data>
+  <data name="InfoCommandDescription" xml:space="preserve">
+    <value>显示编译器信息</value>
+  </data>
+  <data name="InfoVersionOptionDescription" xml:space="preserve">
+    <value>显示版本号</value>
+  </data>
+  <data name="InfoPhasesOptionDescription" xml:space="preserve">
+    <value>显示支持的编译阶段</value>
+  </data>
+  <data name="InfoStdlibOptionDescription" xml:space="preserve">
+    <value>显示预编译标准库模块</value>
+  </data>
+  <data name="InfoInspectingAction" xml:space="preserve">
+    <value>Inspecting</value>
+  </data>
+  <data name="InfoCompilerMetadataSubject" xml:space="preserve">
+    <value>compiler metadata</value>
+  </data>
+  <data name="InfoCompilerTitle" xml:space="preserve">
+    <value>Eidosc 编译器</value>
+  </data>
+  <data name="InfoVersionUnknown" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="InfoVersionLine" xml:space="preserve">
+    <value>版本: {0}</value>
+  </data>
+  <data name="InfoTargetFrameworkLine" xml:space="preserve">
+    <value>目标框架: {0}</value>
+  </data>
+  <data name="InfoSupportedPhasesHeader" xml:space="preserve">
+    <value>支持的编译阶段:</value>
+  </data>
+  <data name="InfoCompileTargetsHeader" xml:space="preserve">
+    <value>编译目标:</value>
+  </data>
+  <data name="InfoPhaseLine" xml:space="preserve">
+    <value>  {0,-10} - {1}</value>
+  </data>
+  <data name="InfoTargetLine" xml:space="preserve">
+    <value>  {0,-10} - {1}</value>
+  </data>
+  <data name="InfoPhaseLexerDescription" xml:space="preserve">
+    <value>词法分析 - 将源代码转换为 Token 序列</value>
+  </data>
+  <data name="InfoPhaseParserDescription" xml:space="preserve">
+    <value>语法分析 - 构建 AST</value>
+  </data>
+  <data name="InfoPhaseNamerDescription" xml:space="preserve">
+    <value>名称解析 - 绑定标识符到定义</value>
+  </data>
+  <data name="InfoPhaseTypesDescription" xml:space="preserve">
+    <value>类型推断 - Hindley-Milner 类型推断</value>
+  </data>
+  <data name="InfoPhaseAbilitiesDescription" xml:space="preserve">
+    <value>能力推断 - 推断表达式能力集合（兼容别名: Effects）</value>
+  </data>
+  <data name="InfoPhaseHirDescription" xml:space="preserve">
+    <value>HIR 构建 - 生成高级中间表示</value>
+  </data>
+  <data name="InfoPhaseMirDescription" xml:space="preserve">
+    <value>MIR 构建 - 生成中间中间表示</value>
+  </data>
+  <data name="InfoPhaseBorrowDescription" xml:space="preserve">
+    <value>借用检查 - 验证仿射/借用规则</value>
+  </data>
+  <data name="InfoPhaseLlvmDescription" xml:space="preserve">
+    <value>LLVM IR 生成 - 降低到 LLVM 模块</value>
+  </data>
+  <data name="InfoTargetTokensDescription" xml:space="preserve">
+    <value>Token 序列</value>
+  </data>
+  <data name="InfoTargetAstDescription" xml:space="preserve">
+    <value>抽象语法树</value>
+  </data>
+  <data name="InfoTargetResolvedDescription" xml:space="preserve">
+    <value>名称解析后的 AST</value>
+  </data>
+  <data name="InfoTargetTypedDescription" xml:space="preserve">
+    <value>类型标注后的 AST</value>
+  </data>
+  <data name="InfoTargetHirDescription" xml:space="preserve">
+    <value>高级中间表示</value>
+  </data>
+  <data name="InfoTargetMirDescription" xml:space="preserve">
+    <value>中间中间表示</value>
+  </data>
+  <data name="InfoTargetLlvmIrDescription" xml:space="preserve">
+    <value>LLVM IR 文本</value>
+  </data>
+  <data name="InfoTargetNativeDescription" xml:space="preserve">
+    <value>本地可执行文件</value>
+  </data>
+  <data name="InfoTargetCilDescription" xml:space="preserve">
+    <value>完整编译（当前终止于 LLVM 阶段）</value>
+  </data>
+  <data name="InfoStdlibHeader" xml:space="preserve">
+    <value>预编译标准库模块:</value>
+  </data>
+  <data name="InfoStdlibNone" xml:space="preserve">
+    <value>  (none)</value>
+  </data>
+  <data name="InfoStdlibCategoryHeader" xml:space="preserve">
+    <value>  [{0}]</value>
+  </data>
+  <data name="InfoStdlibSummaryLine" xml:space="preserve">
+    <value>    摘要     - {0}</value>
+  </data>
+  <data name="InfoStdlibRepresentativeApisLine" xml:space="preserve">
+    <value>    代表接口 - {0}</value>
+  </data>
+  <data name="InfoStdlibModuleLine" xml:space="preserve">
+    <value>    {0}</value>
+  </data>
+  <data name="InfoStdlibValuesLine" xml:space="preserve">
+    <value>      值       - {0}</value>
+  </data>
+  <data name="InfoStdlibFunctionsLine" xml:space="preserve">
+    <value>      函数     - {0}</value>
+  </data>
+  <data name="InfoStdlibTypesLine" xml:space="preserve">
+    <value>      类型     - {0}</value>
+  </data>
+  <data name="InfoStdlibTraitsLine" xml:space="preserve">
+    <value>      Traits   - {0}</value>
+  </data>
+  <data name="InfoStdlibModulesLine" xml:space="preserve">
+    <value>      模块     - {0}</value>
+  </data>
+  <data name="InfoStdlibConstructorsLine" xml:space="preserve">
+    <value>      构造器   - {0}</value>
+  </data>
+  <data name="InfoStdlibCategoryFunctional" xml:space="preserve">
+    <value>函数式能力</value>
+  </data>
+  <data name="InfoStdlibCategoryMath" xml:space="preserve">
+    <value>数学能力</value>
+  </data>
+  <data name="InfoStdlibCategoryContainers" xml:space="preserve">
+    <value>容器能力</value>
+  </data>
+  <data name="InfoStdlibCategoryFileIo" xml:space="preserve">
+    <value>文件 IO 能力</value>
+  </data>
+  <data name="InfoStdlibCategoryConsoleIo" xml:space="preserve">
+    <value>控制台 IO 能力</value>
+  </data>
+  <data name="InfoStdlibCategoryNetwork" xml:space="preserve">
+    <value>网络能力</value>
+  </data>
+  <data name="InfoStdlibCategorySerialization" xml:space="preserve">
+    <value>序列化能力</value>
+  </data>
+  <data name="InfoStdlibCategoryBasics" xml:space="preserve">
+    <value>其他基础能力</value>
+  </data>
+  <data name="InfoStdlibCategoryOther" xml:space="preserve">
+    <value>其他</value>
+  </data>
+  <data name="InfoStdlibSummaryFunctional" xml:space="preserve">
+    <value>函数组合、可选/错误流水线、trait 与 HKT 抽象（Functor/Applicative/Foldable/Traversable/Monad）。</value>
+  </data>
+  <data name="InfoStdlibSummaryMath" xml:space="preserve">
+    <value>标量数学、角度/插值辅助，以及面向网格与几何的游戏数学类型/运算。</value>
+  </data>
+  <data name="InfoStdlibSummaryContainers" xml:space="preserve">
+    <value>序列、哈希集合/映射、工程队列/栈/双端队列、优先级堆和有序树容器。</value>
+  </data>
+  <data name="InfoStdlibSummaryFileIo" xml:space="preserve">
+    <value>整文件读取、写入与存在性检查。</value>
+  </data>
+  <data name="InfoStdlibSummaryConsoleIo" xml:space="preserve">
+    <value>面向终端的基础输入输出。</value>
+  </data>
+  <data name="InfoStdlibSummaryNetwork" xml:space="preserve">
+    <value>最小 HTTP 文本/字节请求与响应辅助。</value>
+  </data>
+  <data name="InfoStdlibSummarySerialization" xml:space="preserve">
+    <value>基础二进制编码与 JSON 文本拼装。</value>
+  </data>
+  <data name="InfoStdlibSummaryBasics" xml:space="preserve">
+    <value>文本与区间这类通用基础 helper。</value>
+  </data>
+  <data name="InfoStdlibSummaryOther" xml:space="preserve">
+    <value>暂未归类的预编译模块。</value>
+  </data>
+  <data name="PkgAddCommandDescription" xml:space="preserve">
+    <value>Add a dependency to eidos.toml</value>
+  </data>
+  <data name="PkgCommandDescription" xml:space="preserve">
+    <value>Package management</value>
+  </data>
+  <data name="PkgInstallCommandDescription" xml:space="preserve">
+    <value>Resolve and install all dependencies</value>
+  </data>
+  <data name="PkgUpdateCommandDescription" xml:space="preserve">
+    <value>Re-resolve dependencies (ignoring lock)</value>
+  </data>
+  <data name="PkgRemoveCommandDescription" xml:space="preserve">
+    <value>Remove a dependency from eidos.toml</value>
+  </data>
+  <data name="PkgListCommandDescription" xml:space="preserve">
+    <value>List resolved dependencies</value>
+  </data>
+  <data name="PkgTreeCommandDescription" xml:space="preserve">
+    <value>Print dependency tree</value>
+  </data>
+  <data name="PkgInitCommandDescription" xml:space="preserve">
+    <value>Initialize a new Eidos project</value>
+  </data>
+  <data name="PkgDependencyNameArgumentDescription" xml:space="preserve">
+    <value>Dependency package name</value>
+  </data>
+  <data name="PkgDependencyNameToRemoveArgumentDescription" xml:space="preserve">
+    <value>Dependency name to remove</value>
+  </data>
+  <data name="PkgDependencyNameToUpdateArgumentDescription" xml:space="preserve">
+    <value>Specific dependency to update (omit for all)</value>
+  </data>
+  <data name="PkgPathOptionDescription" xml:space="preserve">
+    <value>Local path to dependency</value>
+  </data>
+  <data name="PkgGitOptionDescription" xml:space="preserve">
+    <value>Git repository URL</value>
+  </data>
+  <data name="PkgTagOptionDescription" xml:space="preserve">
+    <value>Git tag</value>
+  </data>
+  <data name="PkgBranchOptionDescription" xml:space="preserve">
+    <value>Git branch</value>
+  </data>
+  <data name="PkgCommitOptionDescription" xml:space="preserve">
+    <value>Git commit hash</value>
+  </data>
+  <data name="PkgVersionOptionDescription" xml:space="preserve">
+    <value>Version constraint</value>
+  </data>
+  <data name="PkgPackageNameOptionDescription" xml:space="preserve">
+    <value>Package name (reverse-DNS, e.g. com.example.myapp)</value>
+  </data>
+  <data name="PkgInitialVersionOptionDescription" xml:space="preserve">
+    <value>Initial version</value>
+  </data>
+  <data name="PkgKindOptionDescription" xml:space="preserve">
+    <value>Project kind: executable or library</value>
+  </data>
+  <data name="PkgSourceRootOptionDescription" xml:space="preserve">
+    <value>Source root directory to create and write to sourceRoots (repeatable, default: src)</value>
+  </data>
+  <data name="PkgDescriptionOptionDescription" xml:space="preserve">
+    <value>Package description</value>
+  </data>
+  <data name="PkgLicenseOptionDescription" xml:space="preserve">
+    <value>License identifier</value>
+  </data>
+  <data name="PkgAddingAction" xml:space="preserve">
+    <value>Adding</value>
+  </data>
+  <data name="PkgResolvingAction" xml:space="preserve">
+    <value>Resolving</value>
+  </data>
+  <data name="PkgUpdatingAction" xml:space="preserve">
+    <value>Updating</value>
+  </data>
+  <data name="PkgRemovingAction" xml:space="preserve">
+    <value>Removing</value>
+  </data>
+  <data name="PkgListingAction" xml:space="preserve">
+    <value>Listing</value>
+  </data>
+  <data name="PkgAddActionSubject" xml:space="preserve">
+    <value>{0} to {1}</value>
+  </data>
+  <data name="PkgDependenciesForSubject" xml:space="preserve">
+    <value>dependencies for {0}</value>
+  </data>
+  <data name="PkgAllDependenciesInSubject" xml:space="preserve">
+    <value>all dependencies in {0}</value>
+  </data>
+  <data name="PkgNamedDependencyInSubject" xml:space="preserve">
+    <value>{0} in {1}</value>
+  </data>
+  <data name="PkgRemoveActionSubject" xml:space="preserve">
+    <value>{0} from {1}</value>
+  </data>
+  <data name="PkgDependenciesFromSubject" xml:space="preserve">
+    <value>dependencies from {0}</value>
+  </data>
+  <data name="PkgDependencyTreeForSubject" xml:space="preserve">
+    <value>dependency tree for {0}</value>
+  </data>
+  <data name="PkgManifestMissingInitError" xml:space="preserve">
+    <value>No eidos.toml found. Run 'eidosc pkg init' first.</value>
+  </data>
+  <data name="PkgManifestMissingError" xml:space="preserve">
+    <value>No eidos.toml found.</value>
+  </data>
+  <data name="PkgDependencySourceMissingError" xml:space="preserve">
+    <value>Specify one of: --path, --git, or --version</value>
+  </data>
+  <data name="PkgNoDependenciesInManifest" xml:space="preserve">
+    <value>No dependencies found in eidos.toml.</value>
+  </data>
+  <data name="PkgNoLockFile" xml:space="preserve">
+    <value>No lock file found. Run 'eidosc pkg install' first.</value>
+  </data>
+  <data name="PkgLockReadFailed" xml:space="preserve">
+    <value>Failed to read lock file.</value>
+  </data>
+  <data name="PkgNoDependencies" xml:space="preserve">
+    <value>No dependencies.</value>
+  </data>
+  <data name="PkgStdEmbeddedTreeEntry" xml:space="preserve">
+    <value>  └── Std (embedded)</value>
+  </data>
+  <data name="PkgManifestMissingDetail" xml:space="preserve">
+    <value>manifest missing</value>
+  </data>
+  <data name="PkgDependencySourceMissingDetail" xml:space="preserve">
+    <value>dependency source missing</value>
+  </data>
+  <data name="PkgResolveFailedDetail" xml:space="preserve">
+    <value>resolve failed</value>
+  </data>
+  <data name="PkgLockReadFailedDetail" xml:space="preserve">
+    <value>lock read failed</value>
+  </data>
+  <data name="PkgNoLockFileDetail" xml:space="preserve">
+    <value>no lock file</value>
+  </data>
+  <data name="PkgNoDependenciesDetail" xml:space="preserve">
+    <value>no dependencies</value>
+  </data>
+  <data name="PkgZeroExplicitDependenciesDetail" xml:space="preserve">
+    <value>0 explicit dependencies</value>
+  </data>
+  <data name="PkgPathSourceKind" xml:space="preserve">
+    <value>path</value>
+  </data>
+  <data name="PkgGitSourceKind" xml:space="preserve">
+    <value>git</value>
+  </data>
+  <data name="PkgEmbeddedSourceKind" xml:space="preserve">
+    <value>embedded</value>
+  </data>
+  <data name="PkgUnknownSourceKind" xml:space="preserve">
+    <value>unknown</value>
+  </data>
+  <data name="PkgPathSource" xml:space="preserve">
+    <value>path: {0}</value>
+  </data>
+  <data name="PkgGitSource" xml:space="preserve">
+    <value>git: {0}</value>
+  </data>
+  <data name="PkgVersionSource" xml:space="preserve">
+    <value>version: {0}</value>
+  </data>
+  <data name="PkgDependencyLine" xml:space="preserve">
+    <value>  {0} ({1})</value>
+  </data>
+  <data name="PkgResolvedDependencies" xml:space="preserve">
+    <value>Resolved {0} dependencies. Lock file written.</value>
+  </data>
+  <data name="PkgDependencyCountDetail" xml:space="preserve">
+    <value>{0} dependencies</value>
+  </data>
+  <data name="PkgResolveDependenciesFailed" xml:space="preserve">
+    <value>Failed to resolve dependencies: {0}</value>
+  </data>
+  <data name="PkgUpdateLine" xml:space="preserve">
+    <value>  {0}: {1}</value>
+  </data>
+  <data name="PkgUpdatedDependencies" xml:space="preserve">
+    <value>Updated. {0} dependencies resolved.</value>
+  </data>
+  <data name="PkgUpdateFailed" xml:space="preserve">
+    <value>Failed to update: {0}</value>
+  </data>
+  <data name="PkgDependencyNotFound" xml:space="preserve">
+    <value>Dependency '{0}' not found in eidos.toml.</value>
+  </data>
+  <data name="PkgDependencyNotPresentDetail" xml:space="preserve">
+    <value>dependency {0} not present</value>
+  </data>
+  <data name="PkgAddedDependency" xml:space="preserve">
+    <value>Added dependency: {0}</value>
+  </data>
+  <data name="PkgRemovedDependency" xml:space="preserve">
+    <value>Removed dependency: {0}</value>
+  </data>
+  <data name="PkgDependencyDetail" xml:space="preserve">
+    <value>dependency {0}</value>
+  </data>
+  <data name="PkgDependenciesHeader" xml:space="preserve">
+    <value>{0} dependencies:</value>
+  </data>
+  <data name="PkgListLine" xml:space="preserve">
+    <value>  {0} {1}{2}</value>
+  </data>
+  <data name="ProjectCreatingAction" xml:space="preserve">
+    <value>Creating</value>
+  </data>
+  <data name="ProjectPackageInSubject" xml:space="preserve">
+    <value>package in {0}</value>
+  </data>
+  <data name="ProjectInvalidKind" xml:space="preserve">
+    <value>未知项目类型 '{0}'，支持 executable 或 library。</value>
+  </data>
+  <data name="ProjectInvalidKindDetail" xml:space="preserve">
+    <value>invalid project kind</value>
+  </data>
+  <data name="ProjectManifestAlreadyExists" xml:space="preserve">
+    <value>eidos.toml already exists in {0}</value>
+  </data>
+  <data name="ProjectManifestAlreadyExistsDetail" xml:space="preserve">
+    <value>manifest already exists</value>
+  </data>
+  <data name="ProjectCreatedManifest" xml:space="preserve">
+    <value>Created eidos.toml in {0}</value>
+  </data>
+  <data name="ProjectCreatedSourceFile" xml:space="preserve">
+    <value>Created {0}</value>
+  </data>
+  <data name="ProjectCreatedDirectory" xml:space="preserve">
+    <value>Created {0}</value>
+  </data>
+  <data name="ProjectPackageDetail" xml:space="preserve">
+    <value>package {0}</value>
+  </data>
+  <data name="NewCommandDescription" xml:space="preserve">
+    <value>创建新的 Eidos 项目目录</value>
+  </data>
+  <data name="NewPathArgumentDescription" xml:space="preserve">
+    <value>要创建的项目目录</value>
+  </data>
+  <data name="NewNameOptionDescription" xml:space="preserve">
+    <value>包名（未指定时使用目录名）</value>
+  </data>
+  <data name="NewVersionOptionDescription" xml:space="preserve">
+    <value>初始版本</value>
+  </data>
+  <data name="NewKindOptionDescription" xml:space="preserve">
+    <value>项目类型: executable 或 library</value>
+  </data>
+  <data name="NewSourceRootOptionDescription" xml:space="preserve">
+    <value>源码根目录，会创建目录并写入 sourceRoots（可重复，默认 src）</value>
+  </data>
+  <data name="NewDescriptionOptionDescription" xml:space="preserve">
+    <value>包描述</value>
+  </data>
+  <data name="NewLicenseOptionDescription" xml:space="preserve">
+    <value>许可证标识</value>
+  </data>
+  <data name="NewTargetPathIsFile" xml:space="preserve">
+    <value>目标路径是文件，不能创建项目目录: {0}</value>
+  </data>
+  <data name="NewTargetDirectoryNotEmpty" xml:space="preserve">
+    <value>目标目录已存在且不为空: {0}</value>
+  </data>
+  <data name="NewExistingDirectoryInitHelp" xml:space="preserve">
+    <value>要在已有目录初始化项目，请进入该目录后运行 `eidosc pkg init`。</value>
+  </data>
+  <data name="RunCommandDescription" xml:space="preserve">
+    <value>编译并运行 Eidos 可执行目标</value>
+  </data>
+  <data name="RunArgsArgumentDescription" xml:space="preserve">
+    <value>传递给程序的参数</value>
+  </data>
+  <data name="RunTargetNameOptionDescription" xml:space="preserve">
+    <value>要运行的入口目标名称</value>
+  </data>
+  <data name="RunOutputOptionDescription" xml:space="preserve">
+    <value>可执行文件输出路径（未指定时使用项目 build/）</value>
+  </data>
+  <data name="RunTargetNotExecutable" xml:space="preserve">
+    <value>目标 '{0}' 不是 executable，不能 run。</value>
+  </data>
+  <data name="RunTargetNotExecutableDetail" xml:space="preserve">
+    <value>target is not executable</value>
+  </data>
+  <data name="RunActionSubject" xml:space="preserve">
+    <value>{0} (run target)</value>
+  </data>
+  <data name="RunSourceStatus" xml:space="preserve">
+    <value>运行 {0}</value>
+  </data>
+  <data name="RunOutputStatus" xml:space="preserve">
+    <value>输出 {0}</value>
+  </data>
+  <data name="RunCompileFailedNoRun" xml:space="preserve">
+    <value>编译失败，未运行程序</value>
+  </data>
+  <data name="RunCompileFailedDetail" xml:space="preserve">
+    <value>compile failed</value>
+  </data>
+  <data name="RunExecutingStatus" xml:space="preserve">
+    <value>执行 {0}</value>
+  </data>
+  <data name="RunningAction" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="StartingAction" xml:space="preserve">
+    <value>Starting</value>
+  </data>
+  <data name="ArtifactAction" xml:space="preserve">
+    <value>Artifact</value>
+  </data>
+  <data name="ArtifactKindBuildDirectory" xml:space="preserve">
+    <value>build directory</value>
+  </data>
+  <data name="ArtifactKindDebugDirectory" xml:space="preserve">
+    <value>debug directory</value>
+  </data>
+  <data name="ArtifactKindDebugGraphs" xml:space="preserve">
+    <value>debug graphs</value>
+  </data>
+  <data name="ArtifactKindDocumentation" xml:space="preserve">
+    <value>documentation</value>
+  </data>
+  <data name="ArtifactKindExecutable" xml:space="preserve">
+    <value>executable</value>
+  </data>
+  <data name="ArtifactKindFormattedSource" xml:space="preserve">
+    <value>formatted source</value>
+  </data>
+  <data name="ArtifactKindLlvmIr" xml:space="preserve">
+    <value>LLVM IR</value>
+  </data>
+  <data name="ArtifactKindLockFile" xml:space="preserve">
+    <value>lock file</value>
+  </data>
+  <data name="ArtifactKindManifest" xml:space="preserve">
+    <value>manifest</value>
+  </data>
+  <data name="ArtifactKindProfileReport" xml:space="preserve">
+    <value>profile report</value>
+  </data>
+  <data name="ArtifactKindProfileSnapshot" xml:space="preserve">
+    <value>profile snapshot</value>
+  </data>
+  <data name="ArtifactKindProfileTable" xml:space="preserve">
+    <value>profile table</value>
+  </data>
+  <data name="ArtifactKindSource" xml:space="preserve">
+    <value>source</value>
+  </data>
+  <data name="DiagnosticLevelError" xml:space="preserve">
+    <value>error</value>
+  </data>
+  <data name="DiagnosticLevelWarning" xml:space="preserve">
+    <value>warning</value>
+  </data>
+  <data name="DiagnosticLevelInfo" xml:space="preserve">
+    <value>info</value>
+  </data>
+  <data name="DiagnosticLevelNote" xml:space="preserve">
+    <value>note</value>
+  </data>
+  <data name="DiagnosticLevelHelp" xml:space="preserve">
+    <value>help</value>
+  </data>
+  <data name="RunFinishedDetail" xml:space="preserve">
+    <value>program exit {0}, program time {1:F0}ms</value>
+  </data>
+  <data name="DebugCommandDescription" xml:space="preserve">
+    <value>生成详细的调试输出</value>
+  </data>
+  <data name="DebugTargetNameOptionDescription" xml:space="preserve">
+    <value>要调试的入口目标名称</value>
+  </data>
+  <data name="DebugOutputOptionDescription" xml:space="preserve">
+    <value>调试输出根目录（默认使用项目 debug/）</value>
+  </data>
+  <data name="DebugEmitCfgOptionDescription" xml:space="preserve">
+    <value>生成控制流图 (CFG) dot 文件</value>
+  </data>
+  <data name="DebuggingAction" xml:space="preserve">
+    <value>Debugging</value>
+  </data>
+  <data name="DebugActionSubject" xml:space="preserve">
+    <value>{0} (level {1})</value>
+  </data>
+  <data name="DebugCompileStatus" xml:space="preserve">
+    <value>调试编译 {0}</value>
+  </data>
+  <data name="DebugOutputDirectoryStatus" xml:space="preserve">
+    <value>输出目录 {0}</value>
+  </data>
+  <data name="DebugLevelStatus" xml:space="preserve">
+    <value>调试级别 {0}</value>
+  </data>
+  <data name="DebugSucceededStatus" xml:space="preserve">
+    <value>调试编译成功</value>
+  </data>
+  <data name="DebugFailedStatus" xml:space="preserve">
+    <value>调试编译失败</value>
+  </data>
+  <data name="DebugSavedStatus" xml:space="preserve">
+    <value>调试输出已保存到 {0}</value>
+  </data>
+  <data name="FmtCommandDescription" xml:space="preserve">
+    <value>格式化 Eidos 源代码</value>
+  </data>
+  <data name="FmtSourceArgumentDescription" xml:space="preserve">
+    <value>源文件路径</value>
+  </data>
+  <data name="FmtStdinOptionDescription" xml:space="preserve">
+    <value>从 stdin 读取源码文本</value>
+  </data>
+  <data name="FmtWriteOptionDescription" xml:space="preserve">
+    <value>将格式化结果写回源文件</value>
+  </data>
+  <data name="FmtCheckOptionDescription" xml:space="preserve">
+    <value>检查源码是否已经符合格式</value>
+  </data>
+  <data name="FmtIndentSizeOptionDescription" xml:space="preserve">
+    <value>缩进空格数</value>
+  </data>
+  <data name="FmtMaxLineLengthOptionDescription" xml:space="preserve">
+    <value>最大行宽（保留给换行策略）</value>
+  </data>
+  <data name="FmtNoFinalNewlineOptionDescription" xml:space="preserve">
+    <value>不在文件末尾追加换行</value>
+  </data>
+  <data name="FmtNoValidateOptionDescription" xml:space="preserve">
+    <value>跳过 Parser 阶段语法验证</value>
+  </data>
+  <data name="FmtWriteStdinInvalid" xml:space="preserve">
+    <value>fmt: --write cannot be combined with --stdin.</value>
+  </data>
+  <data name="FmtSourceRequiredUnlessStdin" xml:space="preserve">
+    <value>fmt: source file is required unless --stdin is specified.</value>
+  </data>
+  <data name="FmtSourceFileNotFound" xml:space="preserve">
+    <value>fmt: source file not found: {0}</value>
+  </data>
+  <data name="FmtFormattingChangesRequired" xml:space="preserve">
+    <value>fmt: formatting changes required: {0}</value>
+  </data>
+  <data name="FmtDiagnosticLine" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="FmtInvalidOptionsDetail" xml:space="preserve">
+    <value>invalid options</value>
+  </data>
+  <data name="FmtMissingSourceDetail" xml:space="preserve">
+    <value>missing source</value>
+  </data>
+  <data name="FmtSyntaxValidationFailedDetail" xml:space="preserve">
+    <value>syntax validation failed</value>
+  </data>
+  <data name="FmtAlreadyFormattedDetail" xml:space="preserve">
+    <value>already formatted</value>
+  </data>
+  <data name="FmtChangesRequiredDetail" xml:space="preserve">
+    <value>changes required</value>
+  </data>
+  <data name="FmtWrittenDetail" xml:space="preserve">
+    <value>written</value>
+  </data>
+  <data name="FmtStdoutDetail" xml:space="preserve">
+    <value>stdout</value>
+  </data>
+  <data name="FormattingAction" xml:space="preserve">
+    <value>Formatting</value>
+  </data>
+  <data name="DocCommandDescription" xml:space="preserve">
+    <value>从 Eidos 源码生成 API 文档</value>
+  </data>
+  <data name="DocTargetNameOptionDescription" xml:space="preserve">
+    <value>要文档化的入口目标名称</value>
+  </data>
+  <data name="DocOutputOptionDescription" xml:space="preserve">
+    <value>输出文件或目录路径</value>
+  </data>
+  <data name="DocFormatOptionDescription" xml:space="preserve">
+    <value>输出格式: markdown 或 html</value>
+  </data>
+  <data name="DocInvalidFormat" xml:space="preserve">
+    <value>doc 目前只支持 markdown、md 和 html 输出。</value>
+  </data>
+  <data name="DocInvalidFormatDetail" xml:space="preserve">
+    <value>invalid format</value>
+  </data>
+  <data name="DocumentingAction" xml:space="preserve">
+    <value>Documenting</value>
+  </data>
+  <data name="DocActionSubject" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
+  <data name="DocGeneratingStatus" xml:space="preserve">
+    <value>生成文档: {0}</value>
+  </data>
+  <data name="DocGeneratedStatus" xml:space="preserve">
+    <value>文档已生成: {0}</value>
+  </data>
+  <data name="DocModuleSummary" xml:space="preserve">
+    <value>模块: {0}, 类型: {1}, 函数: {2}, Traits: {3}</value>
+  </data>
+  <data name="DocFinishedDetail" xml:space="preserve">
+    <value>types {0}, funcs {1}, traits {2}</value>
+  </data>
+  <data name="ProfileBatchCommandDescription" xml:space="preserve">
+    <value>批量运行固定基准集 profiling 并输出汇总表</value>
+  </data>
+  <data name="ProfileBatchManifestArgumentDescription" xml:space="preserve">
+    <value>批量 profiling manifest JSON 路径</value>
+  </data>
+  <data name="ProfileBatchFormatOptionDescription" xml:space="preserve">
+    <value>输出格式: Markdown/Json</value>
+  </data>
+  <data name="ProfileBatchOutputOptionDescription" xml:space="preserve">
+    <value>将批量 profiling 报告写入文件</value>
+  </data>
+  <data name="ProfileBatchIterationsOptionDescription" xml:space="preserve">
+    <value>每个 case 的采样轮数</value>
+  </data>
+  <data name="ProfileBatchWarmupOptionDescription" xml:space="preserve">
+    <value>每个 case 的预热轮数</value>
+  </data>
+  <data name="ProfileBatchTopPhasesOptionDescription" xml:space="preserve">
+    <value>汇总表显示的 phase 数量</value>
+  </data>
+  <data name="ProfileBatchTopSubphasesOptionDescription" xml:space="preserve">
+    <value>汇总表显示的 subphase 数量</value>
+  </data>
+  <data name="ProfileBatchInvalidFormat" xml:space="preserve">
+    <value>profile-batch 目前只支持 Markdown 和 Json 输出。</value>
+  </data>
+  <data name="ProfileBatchInvalidFormatDetail" xml:space="preserve">
+    <value>invalid format</value>
+  </data>
+  <data name="ProfileBatchInvalidIterations" xml:space="preserve">
+    <value>选项 '--iterations' 必须大于 0。</value>
+  </data>
+  <data name="ProfileBatchInvalidIterationsDetail" xml:space="preserve">
+    <value>invalid iterations</value>
+  </data>
+  <data name="ProfileBatchInvalidWarmup" xml:space="preserve">
+    <value>选项 '--warmup' 不能小于 0。</value>
+  </data>
+  <data name="ProfileBatchInvalidWarmupDetail" xml:space="preserve">
+    <value>invalid warmup</value>
+  </data>
+  <data name="ProfileBatchManifestMissing" xml:space="preserve">
+    <value>找不到 manifest: {0}</value>
+  </data>
+  <data name="ProfileBatchManifestMissingDetail" xml:space="preserve">
+    <value>manifest missing</value>
+  </data>
+  <data name="ProfileBatchNoCases" xml:space="preserve">
+    <value>manifest 中没有任何 case。</value>
+  </data>
+  <data name="ProfileBatchNoCasesDetail" xml:space="preserve">
+    <value>no cases</value>
+  </data>
+  <data name="ProfilingAction" xml:space="preserve">
+    <value>Profiling</value>
+  </data>
+  <data name="ProfileBatchSubject" xml:space="preserve">
+    <value>{0} from {1}</value>
+  </data>
+  <data name="ProfileBatchStatus" xml:space="preserve">
+    <value>批量 profiling: {0}</value>
+  </data>
+  <data name="ProfileBatchCaseCountStatus" xml:space="preserve">
+    <value>case 数量 {0}, 采样轮数 {1}, 预热轮数 {2}</value>
+  </data>
+  <data name="ProfileBatchRunningCase" xml:space="preserve">
+    <value>运行 case {0}</value>
+  </data>
+  <data name="ProfileBatchCaseSucceeded" xml:space="preserve">
+    <value>{0}: 平均 {1:F2}ms, hottest {2}</value>
+  </data>
+  <data name="ProfileBatchCaseFailed" xml:space="preserve">
+    <value>{0}: 失败 ({1})</value>
+  </data>
+  <data name="ProfileBatchReportWritten" xml:space="preserve">
+    <value>批量 profiling 报告已写入 {0}</value>
+  </data>
+  <data name="ProfileBatchFinishedDetail" xml:space="preserve">
+    <value>{0}/{1} cases passed</value>
+  </data>
+  <data name="ProfileBatchParseManifestFailed" xml:space="preserve">
+    <value>无法解析 manifest: {0}</value>
+  </data>
+  <data name="ProfileBatchCompileFailed" xml:space="preserve">
+    <value>编译失败</value>
+  </data>
+  <data name="ProfileBatchMarkdownTitle" xml:space="preserve">
+    <value># Batch Profiling</value>
+  </data>
+  <data name="ProfileBatchMarkdownName" xml:space="preserve">
+    <value>- Name: `{0}`</value>
+  </data>
+  <data name="ProfileBatchMarkdownManifest" xml:space="preserve">
+    <value>- Manifest: `{0}`</value>
+  </data>
+  <data name="ProfileBatchMarkdownCases" xml:space="preserve">
+    <value>- Cases: {0}</value>
+  </data>
+  <data name="ProfileBatchMarkdownSuccessfulCases" xml:space="preserve">
+    <value>- Successful Cases: {0}</value>
+  </data>
+  <data name="ProfileBatchMarkdownIterations" xml:space="preserve">
+    <value>- Iterations: {0}</value>
+  </data>
+  <data name="ProfileBatchMarkdownWarmup" xml:space="preserve">
+    <value>- Warmup: {0}</value>
+  </data>
+  <data name="ProfileBatchCaseSummaryHeading" xml:space="preserve">
+    <value>## Case Summary</value>
+  </data>
+  <data name="ProfileBatchCaseSummaryHeader" xml:space="preserve">
+    <value>| Case | Status | Avg Total (ms) | Completed | Hot Phase | Hot Subphase |</value>
+  </data>
+  <data name="ProfileBatchCaseSummarySeparator" xml:space="preserve">
+    <value>| --- | --- | ---: | --- | --- | --- |</value>
+  </data>
+  <data name="ProfileBatchFailuresHeading" xml:space="preserve">
+    <value>## Failures</value>
+  </data>
+  <data name="ProfileBatchFailuresHeader" xml:space="preserve">
+    <value>| Case | Reason |</value>
+  </data>
+  <data name="ProfileBatchFailuresSeparator" xml:space="preserve">
+    <value>| --- | --- |</value>
+  </data>
+  <data name="ProfileBatchAggregatePhasesByTimeHeading" xml:space="preserve">
+    <value>## Aggregate Phases by Average Time</value>
+  </data>
+  <data name="ProfileBatchAggregatePhasesByAllocationHeading" xml:space="preserve">
+    <value>## Aggregate Phases by Average Allocation</value>
+  </data>
+  <data name="ProfileBatchAggregatePhaseTimeHeader" xml:space="preserve">
+    <value>| Phase | Cases | Avg Time (ms) | Max Time (ms) | Avg Alloc | Max Alloc |</value>
+  </data>
+  <data name="ProfileBatchAggregatePhaseAllocationHeader" xml:space="preserve">
+    <value>| Phase | Cases | Avg Alloc | Max Alloc | Avg Time (ms) | Max Time (ms) |</value>
+  </data>
+  <data name="ProfileBatchAggregatePhaseSeparator" xml:space="preserve">
+    <value>| --- | ---: | ---: | ---: | ---: | ---: |</value>
+  </data>
+  <data name="ProfileBatchAggregateSubphasesByTimeHeading" xml:space="preserve">
+    <value>## Aggregate Subphases by Average Time</value>
+  </data>
+  <data name="ProfileBatchAggregateSubphasesByAllocationHeading" xml:space="preserve">
+    <value>## Aggregate Subphases by Average Allocation</value>
+  </data>
+  <data name="ProfileBatchAggregateSubphaseTimeHeader" xml:space="preserve">
+    <value>| Phase | Subphase | Cases | Avg Time (ms) | Max Time (ms) | Avg Alloc | Max Alloc |</value>
+  </data>
+  <data name="ProfileBatchAggregateSubphaseAllocationHeader" xml:space="preserve">
+    <value>| Phase | Subphase | Cases | Avg Alloc | Max Alloc | Avg Time (ms) | Max Time (ms) |</value>
+  </data>
+  <data name="ProfileBatchAggregateSubphaseSeparator" xml:space="preserve">
+    <value>| --- | --- | ---: | ---: | ---: | ---: | ---: |</value>
+  </data>
+  <data name="ProfileBatchStatusOk" xml:space="preserve">
+    <value>ok</value>
+  </data>
+  <data name="ProfileBatchStatusFailed" xml:space="preserve">
+    <value>failed</value>
+  </data>
+  <data name="TuiSelectActionTitle" xml:space="preserve">
+    <value>[cyan]选择操作[/]</value>
+  </data>
+  <data name="TuiGoodbye" xml:space="preserve">
+    <value>[yellow]再见！[/]</value>
+  </data>
+  <data name="TuiPressAnyKey" xml:space="preserve">
+    <value>按任意键继续...</value>
+  </data>
+  <data name="TuiNoSourceFiles" xml:space="preserve">
+    <value>[yellow]未找到 .eidos 源文件！[/]</value>
+  </data>
+  <data name="TuiDirectoryMissing" xml:space="preserve">
+    <value>[red]目录不存在！[/]</value>
+  </data>
+  <data name="TuiDirectoryChoice" xml:space="preserve">
+    <value>📁 {0}</value>
+  </data>
+  <data name="TuiReturnChoice" xml:space="preserve">
+    <value>返回</value>
+  </data>
+  <data name="TuiChooseWorkspaceChoice" xml:space="preserve">
+    <value>📁 选择工作空间</value>
+  </data>
+  <data name="TuiBuildProjectChoice" xml:space="preserve">
+    <value>🔨 编译项目</value>
+  </data>
+  <data name="TuiDebugCompileChoice" xml:space="preserve">
+    <value>🔍 调试编译</value>
+  </data>
+  <data name="TuiAnalyzeProjectChoice" xml:space="preserve">
+    <value>📊 分析项目</value>
+  </data>
+  <data name="TuiViewLogsChoice" xml:space="preserve">
+    <value>📝 查看日志</value>
+  </data>
+  <data name="TuiConfigureChoice" xml:space="preserve">
+    <value>⚙️ 配置</value>
+  </data>
+  <data name="TuiExitChoice" xml:space="preserve">
+    <value>❌ 退出</value>
+  </data>
+  <data name="TuiError" xml:space="preserve">
+    <value>[red]错误: {0}[/]</value>
+  </data>
+  <data name="TuiHeader" xml:space="preserve">
+    <value>[bold cyan]Eidosc 编译器 TUI[/]
+
+[dim]工作空间:[/] [green]{0}[/]
+[dim]源文件目录:[/] [blue]{1}[/]
+[dim]调试输出:[/] [yellow]{2}[/]
+[dim]构建输出:[/] [magenta]{3}[/]
+[dim]日志目录:[/] [white]{4}[/]</value>
+  </data>
+  <data name="TuiCurrentWorkspace" xml:space="preserve">
+    <value>[cyan]当前工作空间:[/] {0}</value>
+  </data>
+  <data name="TuiInputPathChoice" xml:space="preserve">
+    <value>输入路径</value>
+  </data>
+  <data name="TuiBrowseDirectoryChoice" xml:space="preserve">
+    <value>浏览目录</value>
+  </data>
+  <data name="TuiSelectWorkspaceMethodTitle" xml:space="preserve">
+    <value>选择方式</value>
+  </data>
+  <data name="TuiWorkspacePathPrompt" xml:space="preserve">
+    <value>请输入工作空间路径:</value>
+  </data>
+  <data name="TuiWorkspaceUpdated" xml:space="preserve">
+    <value>[green]工作空间已更新！[/]</value>
+  </data>
+  <data name="TuiBrowseDirectoryHeader" xml:space="preserve">
+    <value>[cyan]浏览目录[/] - [yellow]{0}[/]</value>
+  </data>
+  <data name="TuiParentDirectoryChoice" xml:space="preserve">
+    <value>📁 .. (上级目录)</value>
+  </data>
+  <data name="TuiSelectCurrentDirectoryChoice" xml:space="preserve">
+    <value>✅ 选择当前目录</value>
+  </data>
+  <data name="TuiCancelChoice" xml:space="preserve">
+    <value>❌ 取消</value>
+  </data>
+  <data name="TuiSelectDirectoryTitle" xml:space="preserve">
+    <value>选择目录</value>
+  </data>
+  <data name="TuiSelectBuildFileTitle" xml:space="preserve">
+    <value>选择要编译的文件</value>
+  </data>
+  <data name="TuiOutputFilePrompt" xml:space="preserve">
+    <value>输出文件路径 (留空使用默认):</value>
+  </data>
+  <data name="TuiBuildInProgress" xml:space="preserve">
+    <value>编译中...</value>
+  </data>
+  <data name="TuiCompilingStatus" xml:space="preserve">
+    <value>正在编译...</value>
+  </data>
+  <data name="TuiCompleteStatus" xml:space="preserve">
+    <value>完成！</value>
+  </data>
+  <data name="TuiSelectDebugFileTitle" xml:space="preserve">
+    <value>选择要调试编译的文件</value>
+  </data>
+  <data name="TuiDebugOutputPrompt" xml:space="preserve">
+    <value>调试输出目录 (留空使用默认):</value>
+  </data>
+  <data name="TuiSelectDebugLevelTitle" xml:space="preserve">
+    <value>选择调试级别</value>
+  </data>
+  <data name="TuiDebugLevelMinimalChoice" xml:space="preserve">
+    <value>最小 (Minimal)</value>
+  </data>
+  <data name="TuiDebugLevelNormalChoice" xml:space="preserve">
+    <value>普通 (Normal)</value>
+  </data>
+  <data name="TuiDebugLevelVerboseChoice" xml:space="preserve">
+    <value>详细 (Verbose)</value>
+  </data>
+  <data name="TuiDebugLevelDiagnosticChoice" xml:space="preserve">
+    <value>诊断 (Diagnostic)</value>
+  </data>
+  <data name="TuiDebugInProgress" xml:space="preserve">
+    <value>调试编译中...</value>
+  </data>
+  <data name="TuiSelectAnalyzeFileTitle" xml:space="preserve">
+    <value>选择要分析的文件</value>
+  </data>
+  <data name="TuiSelectAnalyzePhaseTitle" xml:space="preserve">
+    <value>选择分析阶段</value>
+  </data>
+  <data name="TuiAnalyzePhaseAllChoice" xml:space="preserve">
+    <value>全部 (all)</value>
+  </data>
+  <data name="TuiAnalyzePhaseLexerChoice" xml:space="preserve">
+    <value>词法分析 (lexer)</value>
+  </data>
+  <data name="TuiAnalyzePhaseParserChoice" xml:space="preserve">
+    <value>语法分析 (parser)</value>
+  </data>
+  <data name="TuiAnalyzePhaseNamerChoice" xml:space="preserve">
+    <value>命名解析 (namer)</value>
+  </data>
+  <data name="TuiAnalyzePhaseTypesChoice" xml:space="preserve">
+    <value>类型推断 (types)</value>
+  </data>
+  <data name="TuiAnalyzePhaseAbilitiesChoice" xml:space="preserve">
+    <value>能力检查 (abilities)</value>
+  </data>
+  <data name="TuiAnalyzePhaseHirChoice" xml:space="preserve">
+    <value>HIR 降低 (hir)</value>
+  </data>
+  <data name="TuiAnalyzePhaseMirChoice" xml:space="preserve">
+    <value>MIR 降低 (mir)</value>
+  </data>
+  <data name="TuiAnalyzePhaseBorrowChoice" xml:space="preserve">
+    <value>借用检查 (borrow)</value>
+  </data>
+  <data name="TuiAnalyzePhaseLlvmChoice" xml:space="preserve">
+    <value>LLVM 降低 (llvm)</value>
+  </data>
+  <data name="TuiAnalyzeInProgress" xml:space="preserve">
+    <value>分析中...</value>
+  </data>
+  <data name="TuiAnalyzingStatus" xml:space="preserve">
+    <value>正在分析...</value>
+  </data>
+  <data name="TuiLogDirectoryMissing" xml:space="preserve">
+    <value>[yellow]日志目录不存在！[/]</value>
+  </data>
+  <data name="TuiNoLogFiles" xml:space="preserve">
+    <value>[yellow]没有日志文件！[/]</value>
+  </data>
+  <data name="TuiSelectLogFileTitle" xml:space="preserve">
+    <value>选择日志文件</value>
+  </data>
+  <data name="TuiLogFileChoice" xml:space="preserve">
+    <value>{0} ({1:yyyy-MM-dd HH:mm})</value>
+  </data>
+  <data name="TuiLogContentHeader" xml:space="preserve">
+    <value>[cyan]日志内容:[/]</value>
+  </data>
+  <data name="TuiLogPageHeader" xml:space="preserve">
+    <value>[cyan]日志: {0}[/] - 第 {1} 页</value>
+  </data>
+  <data name="TuiLogPageNavigation" xml:space="preserve">
+    <value>[dim]N=下一页, P=上一页, Q=返回[/]</value>
+  </data>
+  <data name="TuiConfigTitle" xml:space="preserve">
+    <value>[cyan]配置[/]</value>
+  </data>
+  <data name="TuiConfigOptionsTitle" xml:space="preserve">
+    <value>配置选项</value>
+  </data>
+  <data name="TuiWorkspacePathOption" xml:space="preserve">
+    <value>工作空间路径: {0}</value>
+  </data>
+  <data name="TuiSourceDirectoryOption" xml:space="preserve">
+    <value>源文件目录: {0}</value>
+  </data>
+  <data name="TuiDebugOutputDirectoryOption" xml:space="preserve">
+    <value>调试输出目录: {0}</value>
+  </data>
+  <data name="TuiBuildOutputDirectoryOption" xml:space="preserve">
+    <value>构建输出目录: {0}</value>
+  </data>
+  <data name="TuiLogDirectoryOption" xml:space="preserve">
+    <value>日志目录: {0}</value>
+  </data>
+  <data name="TuiCreateDirectoryStructureChoice" xml:space="preserve">
+    <value>创建目录结构</value>
+  </data>
+  <data name="TuiNewPathPrompt" xml:space="preserve">
+    <value>输入新路径 (当前: {0}):</value>
+  </data>
+  <data name="TuiUpdated" xml:space="preserve">
+    <value>[green]已更新！[/]</value>
+  </data>
+  <data name="TuiDirectoryStructureCreated" xml:space="preserve">
+    <value>[green]目录结构已创建！[/]</value>
+  </data>
+  <data name="TuiCreateDirectoryFailed" xml:space="preserve">
+    <value>[red]创建目录失败: {0}[/]</value>
+  </data>
+  <data name="TuiCompilerProcessStartFailed" xml:space="preserve">
+    <value>无法启动编译器进程</value>
+  </data>
+  <data name="TuiWorkspaceSubject" xml:space="preserve">
+    <value>TUI workspace {0}</value>
+  </data>
+  <data name="TuiCompileSucceeded" xml:space="preserve">
+    <value>[green]✓ 编译成功！[/]</value>
+  </data>
+  <data name="TuiCompileFailed" xml:space="preserve">
+    <value>[red]✗ 编译失败！[/]</value>
+  </data>
+  <data name="TuiOutputHeader" xml:space="preserve">
+    <value>[dim]输出:[/]</value>
+  </data>
+  <data name="TuiErrorHeader" xml:space="preserve">
+    <value>[red]错误:[/]</value>
+  </data>
+  <data name="FinishedAction" xml:space="preserve">
+    <value>Finished</value>
+  </data>
+  <data name="FailedAction" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="PhaseFinishedDetail" xml:space="preserve">
+    <value>phase {0}</value>
+  </data>
+  <data name="CommandFinishedMessage" xml:space="preserve">
+    <value>{0} in {1}</value>
+  </data>
+  <data name="CommandFinishedMessageWithDetails" xml:space="preserve">
+    <value>{0} in {1} ({2})</value>
+  </data>
+  <data name="ArtifactMessage" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+</root>

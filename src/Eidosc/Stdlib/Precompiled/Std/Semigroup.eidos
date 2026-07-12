@@ -1,0 +1,61 @@
+Semigroup :: module {
+    Semigroup :: trait {
+        append :: Self -> Self -> Self
+    }
+
+    append_int :: Int -> Int -> Int
+    {
+        left => right => left + right
+    }
+
+    append3_int :: Int -> Int -> Int -> Int
+    {
+        left => middle => right => left + middle + right
+    }
+
+    append_string :: String -> String -> String
+    {
+        left => right => left ++ right
+    }
+
+    append3_string :: String -> String -> String -> String
+    {
+        left => middle => right => left ++ middle ++ right
+    }
+
+    append_seq[T] :: Seq[T] -> Seq[T] -> Seq[T]
+    {
+        left => right => [x | xs <- [left, right], x <- xs]
+    }
+
+    append3_seq[T] :: Seq[T] -> Seq[T] -> Seq[T] -> Seq[T]
+    {
+        left => middle => right => [x | xs <- [left, middle, right], x <- xs]
+    }
+
+    append3[T: Semigroup::Semigroup] :: T -> T -> T -> T
+    {
+        left => middle => right => Semigroup::append(Semigroup::append(left)(middle))(right)
+    }
+
+    SemigroupInt :: instance Semigroup::Semigroup {
+        append :: Int -> Int -> Int
+            {
+                left => right => Semigroup::append_int(left)(right)
+            }
+    }
+
+    SemigroupString :: instance Semigroup::Semigroup {
+        append :: String -> String -> String
+            {
+                left => right => Semigroup::append_string(left)(right)
+            }
+    }
+
+    SemigroupSeq :: instance Semigroup::Semigroup {
+        append[T] :: Seq[T] -> Seq[T] -> Seq[T]
+            {
+                left => right => [x | xs <- [left, right], x <- xs]
+            }
+    }
+}

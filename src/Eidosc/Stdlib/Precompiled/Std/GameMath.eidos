@@ -1,0 +1,600 @@
+GameMath :: module {
+    import FloatMath
+    import Math
+    import Trait
+
+    IVec2 :: type { IVec2{x: Int, y: Int} }
+    Vec2 :: type { Vec2{x: Float, y: Float} }
+    IRect :: type { IRect{x: Int, y: Int, width: Int, height: Int} }
+    Rect :: type { Rect{x: Float, y: Float, width: Float, height: Float} }
+
+    zero_i :: IVec2 = IVec2{x: 0, y: 0};
+    unit_x_i :: IVec2 = IVec2{x: 1, y: 0};
+    unit_y_i :: IVec2 = IVec2{x: 0, y: 1};
+    up_i :: IVec2 = IVec2{x: 0, y: -1};
+    down_i :: IVec2 = IVec2{x: 0, y: 1};
+    left_i :: IVec2 = IVec2{x: -1, y: 0};
+    east_i :: IVec2 = IVec2{x: 1, y: 0};
+
+    zero :: Vec2 = Vec2{x: 0.0, y: 0.0};
+    unit_x :: Vec2 = Vec2{x: 1.0, y: 0.0};
+    unit_y :: Vec2 = Vec2{x: 0.0, y: 1.0};
+
+    ivec2 :: Int -> Int -> IVec2
+    {
+        x => y => IVec2{x: x, y: y}
+    }
+
+    vec2 :: Float -> Float -> Vec2
+    {
+        x => y => Vec2{x: x, y: y}
+    }
+
+    irect :: Int -> Int -> Int -> Int -> IRect
+    {
+        x => y => width => height => IRect{x: x, y: y, width: width, height: height}
+    }
+
+    rect :: Float -> Float -> Float -> Float -> Rect
+    {
+        x => y => width => height => Rect{x: x, y: y, width: width, height: height}
+    }
+
+    add_i :: IVec2 -> IVec2 -> IVec2
+    {
+        left => right => IVec2{x: left.x + right.x, y: left.y + right.y}
+    }
+
+    sub_i :: IVec2 -> IVec2 -> IVec2
+    {
+        left => right => IVec2{x: left.x - right.x, y: left.y - right.y}
+    }
+
+    scale_i :: IVec2 -> Int -> IVec2
+    {
+        value => scalar => IVec2{x: value.x * scalar, y: value.y * scalar}
+    }
+
+    neg_i :: IVec2 -> IVec2
+    {
+        value => IVec2{x: 0 - value.x, y: 0 - value.y}
+    }
+
+    min_i :: IVec2 -> IVec2 -> IVec2
+    {
+        left => right => IVec2{x: Math::min(left.x)(right.x), y: Math::min(left.y)(right.y)}
+    }
+
+    max_i :: IVec2 -> IVec2 -> IVec2
+    {
+        left => right => IVec2{x: Math::max(left.x)(right.x), y: Math::max(left.y)(right.y)}
+    }
+
+    clamp_i :: IVec2 -> IVec2 -> IVec2 -> IVec2
+    {
+        value => lower => upper =>
+            IVec2{
+                x: Math::clamp(value.x)(lower.x)(upper.x),
+                y: Math::clamp(value.y)(lower.y)(upper.y)
+            }
+    }
+
+    dot_i :: IVec2 -> IVec2 -> Int
+    {
+        left => right => left.x * right.x + left.y * right.y
+    }
+
+    cross_i :: IVec2 -> IVec2 -> Int
+    {
+        left => right => left.x * right.y - left.y * right.x
+    }
+
+    length_sq_i :: IVec2 -> Int
+    {
+        value => GameMath::dot_i(value)(value)
+    }
+
+    manhattan_len_i :: IVec2 -> Int
+    {
+        value => Math::abs(value.x) + Math::abs(value.y)
+    }
+
+    distance_sq_i :: IVec2 -> IVec2 -> Int
+    {
+        left => right => GameMath::length_sq_i(GameMath::sub_i(left)(right))
+    }
+
+    manhattan_distance_i :: IVec2 -> IVec2 -> Int
+    {
+        left => right => GameMath::manhattan_len_i(GameMath::sub_i(left)(right))
+    }
+
+    inside_bounds_i :: IVec2 -> Int -> Int -> Bool
+    {
+        point => width => height =>
+            point.x >= 0 && point.x < width && point.y >= 0 && point.y < height
+    }
+
+    wrap_i :: IVec2 -> Int -> Int -> IVec2
+    {
+        point => width => height =>
+            IVec2{
+                x: Math::wrap(point.x)(width),
+                y: Math::wrap(point.y)(height)
+            }
+    }
+
+    to_index_i :: Int -> IVec2 -> Int
+    {
+        width => point => point.y * width + point.x
+    }
+
+    from_index_i :: Int -> Int -> IVec2
+    {
+        width => index =>
+            if width <= 0
+            then { GameMath::zero_i }
+            else { IVec2{x: Math::wrap(index)(width), y: index / width} }
+    }
+
+    add :: Vec2 -> Vec2 -> Vec2
+    {
+        left => right => Vec2{x: left.x + right.x, y: left.y + right.y}
+    }
+
+    sub :: Vec2 -> Vec2 -> Vec2
+    {
+        left => right => Vec2{x: left.x - right.x, y: left.y - right.y}
+    }
+
+    scale :: Vec2 -> Float -> Vec2
+    {
+        value => scalar => Vec2{x: value.x * scalar, y: value.y * scalar}
+    }
+
+    div :: Vec2 -> Float -> Vec2
+    {
+        value => scalar =>
+            if scalar == 0.0
+            then { GameMath::zero }
+            else { Vec2{x: value.x / scalar, y: value.y / scalar} }
+    }
+
+    neg :: Vec2 -> Vec2
+    {
+        value => Vec2{x: 0.0 - value.x, y: 0.0 - value.y}
+    }
+
+    min_v :: Vec2 -> Vec2 -> Vec2
+    {
+        left => right =>
+            Vec2{
+                x: if left.x <= right.x then left.x else right.x,
+                y: if left.y <= right.y then left.y else right.y
+            }
+    }
+
+    max_v :: Vec2 -> Vec2 -> Vec2
+    {
+        left => right =>
+            Vec2{
+                x: if left.x >= right.x then left.x else right.x,
+                y: if left.y >= right.y then left.y else right.y
+            }
+    }
+
+    clamp_v :: Vec2 -> Vec2 -> Vec2 -> Vec2
+    {
+        value => lower => upper =>
+            Vec2{
+                x: FloatMath::clamp(value.x)(lower.x)(upper.x),
+                y: FloatMath::clamp(value.y)(lower.y)(upper.y)
+            }
+    }
+
+    dot :: Vec2 -> Vec2 -> Float
+    {
+        left => right => left.x * right.x + left.y * right.y
+    }
+
+    cross :: Vec2 -> Vec2 -> Float
+    {
+        left => right => left.x * right.y - left.y * right.x
+    }
+
+    length_sq :: Vec2 -> Float
+    {
+        value => GameMath::dot(value)(value)
+    }
+
+    length :: Vec2 -> Float need FFI
+    {
+        value => FloatMath::sqrt(GameMath::length_sq(value))
+    }
+
+    distance_sq :: Vec2 -> Vec2 -> Float
+    {
+        left => right => GameMath::length_sq(GameMath::sub(left)(right))
+    }
+
+    distance :: Vec2 -> Vec2 -> Float need FFI
+    {
+        left => right => GameMath::length(GameMath::sub(left)(right))
+    }
+
+    normalize :: Vec2 -> Vec2 need FFI
+    {
+        value => {
+            len := GameMath::length(value);
+            if len == 0.0 then { GameMath::zero } else { GameMath::div(value)(len) }
+        }
+    }
+
+    normalize_or :: Vec2 -> Vec2 -> Vec2 need FFI
+    {
+        value => fallback =>
+            if GameMath::length_sq(value) == 0.0 then { fallback } else { GameMath::normalize(value) }
+    }
+
+    lerp_vec2 :: Vec2 -> Vec2 -> Float -> Vec2
+    {
+        start => end => t =>
+            Vec2{
+                x: FloatMath::lerp(start.x)(end.x)(t),
+                y: FloatMath::lerp(start.y)(end.y)(t)
+            }
+    }
+
+    move_toward :: Vec2 -> Vec2 -> Float -> Vec2 need FFI
+    {
+        current => target => max_delta => {
+            delta := GameMath::sub(target)(current);
+            distance := GameMath::length(delta);
+            if max_delta <= 0.0 || distance == 0.0 then { current }
+            else if distance <= max_delta then { target }
+            else { GameMath::add(current)(GameMath::scale(GameMath::div(delta)(distance))(max_delta)) }
+        }
+    }
+
+    from_angle_radians :: Float -> Vec2 need FFI
+    {
+        radians => Vec2{x: FloatMath::cos(radians), y: FloatMath::sin(radians)}
+    }
+
+    from_angle_degrees :: Float -> Vec2 need FFI
+    {
+        degrees => GameMath::from_angle_radians(FloatMath::degrees_to_radians(degrees))
+    }
+
+    angle_radians :: Vec2 -> Float need FFI
+    {
+        value => FloatMath::atan2(value.y)(value.x)
+    }
+
+    angle_degrees :: Vec2 -> Float need FFI
+    {
+        value => FloatMath::radians_to_degrees(GameMath::angle_radians(value))
+    }
+
+    rotate_radians :: Vec2 -> Float -> Vec2 need FFI
+    {
+        value => radians => {
+            c := FloatMath::cos(radians);
+            s := FloatMath::sin(radians);
+            Vec2{x: value.x * c - value.y * s, y: value.x * s + value.y * c}
+        }
+    }
+
+    rotate_degrees :: Vec2 -> Float -> Vec2 need FFI
+    {
+        value => degrees => GameMath::rotate_radians(value)(FloatMath::degrees_to_radians(degrees))
+    }
+
+    perpendicular :: Vec2 -> Vec2
+    {
+        value => Vec2{x: 0.0 - value.y, y: value.x}
+    }
+
+    reflect :: Vec2 -> Vec2 -> Vec2
+    {
+        direction => normal => {
+            scale_factor := 2.0 * GameMath::dot(direction)(normal);
+            GameMath::sub(direction)(GameMath::scale(normal)(scale_factor))
+        }
+    }
+
+    floor_v :: Vec2 -> Vec2 need FFI
+    {
+        value => Vec2{x: FloatMath::floor(value.x), y: FloatMath::floor(value.y)}
+    }
+
+    ceil_v :: Vec2 -> Vec2 need FFI
+    {
+        value => Vec2{x: FloatMath::ceil(value.x), y: FloatMath::ceil(value.y)}
+    }
+
+    round_v :: Vec2 -> Vec2 need FFI
+    {
+        value => Vec2{x: FloatMath::round(value.x), y: FloatMath::round(value.y)}
+    }
+
+    trunc_v :: Vec2 -> Vec2 need FFI
+    {
+        value => Vec2{x: FloatMath::trunc(value.x), y: FloatMath::trunc(value.y)}
+    }
+
+    fract_v :: Vec2 -> Vec2 need FFI
+    {
+        value => Vec2{x: FloatMath::fract(value.x), y: FloatMath::fract(value.y)}
+    }
+
+    approx_eq_vec2 :: Vec2 -> Vec2 -> Float -> Bool need FFI
+    {
+        left => right => tolerance =>
+            FloatMath::approx_eq(left.x)(right.x)(tolerance) &&
+            FloatMath::approx_eq(left.y)(right.y)(tolerance)
+    }
+
+    origin_i :: IRect -> IVec2
+    {
+        rect => IVec2{x: rect.x, y: rect.y}
+    }
+
+    size_i :: IRect -> IVec2
+    {
+        rect => IVec2{x: rect.width, y: rect.height}
+    }
+
+    right_i :: IRect -> Int
+    {
+        rect => rect.x + rect.width
+    }
+
+    bottom_i :: IRect -> Int
+    {
+        rect => rect.y + rect.height
+    }
+
+    contains_point_i :: IRect -> IVec2 -> Bool
+    {
+        rect => point =>
+            point.x >= rect.x &&
+            point.x < GameMath::right_i(rect) &&
+            point.y >= rect.y &&
+            point.y < GameMath::bottom_i(rect)
+    }
+
+    intersects_i :: IRect -> IRect -> Bool
+    {
+        left => right =>
+            left.x < GameMath::right_i(right) &&
+            right.x < GameMath::right_i(left) &&
+            left.y < GameMath::bottom_i(right) &&
+            right.y < GameMath::bottom_i(left)
+    }
+
+    translate_rect_i :: IRect -> IVec2 -> IRect
+    {
+        rect => delta => IRect{x: rect.x + delta.x, y: rect.y + delta.y, width: rect.width, height: rect.height}
+    }
+
+    inflate_i :: IRect -> Int -> Int -> IRect
+    {
+        rect => dx => dy =>
+            IRect{
+                x: rect.x - dx,
+                y: rect.y - dy,
+                width: rect.width + dx * 2,
+                height: rect.height + dy * 2
+            }
+    }
+
+    deflate_i :: IRect -> Int -> Int -> IRect
+    {
+        rect => dx => dy =>
+            IRect{
+                x: rect.x + dx,
+                y: rect.y + dy,
+                width: Math::max(rect.width - dx * 2)(0),
+                height: Math::max(rect.height - dy * 2)(0)
+            }
+    }
+
+    clamp_point_i :: IRect -> IVec2 -> IVec2
+    {
+        rect => point =>
+            if rect.width <= 0 || rect.height <= 0
+            then { GameMath::origin_i(rect) }
+            else
+            {
+                IVec2{
+                    x: Math::clamp(point.x)(rect.x)(GameMath::right_i(rect) - 1),
+                    y: Math::clamp(point.y)(rect.y)(GameMath::bottom_i(rect) - 1)
+                }
+            }
+    }
+
+    grid_to_screen :: IVec2 -> Int -> IVec2 -> IVec2
+    {
+        origin => cell_size => coord =>
+            IVec2{
+                x: origin.x + coord.x * cell_size,
+                y: origin.y + coord.y * cell_size
+            }
+    }
+
+    grid_rect :: IVec2 -> Int -> IVec2 -> IRect
+    {
+        origin => cell_size => grid_size =>
+            IRect{
+                x: origin.x,
+                y: origin.y,
+                width: grid_size.x * cell_size,
+                height: grid_size.y * cell_size
+            }
+    }
+
+    grid_cell_rect :: IVec2 -> Int -> Int -> IVec2 -> IRect
+    {
+        origin => cell_size => shrink => coord => {
+            top_left := GameMath::grid_to_screen(origin)(cell_size)(coord);
+            IRect{
+                x: top_left.x,
+                y: top_left.y,
+                width: Math::max(cell_size - shrink)(0),
+                height: Math::max(cell_size - shrink)(0)
+            }
+        }
+    }
+
+    origin :: Rect -> Vec2
+    {
+        rect => Vec2{x: rect.x, y: rect.y}
+    }
+
+    size :: Rect -> Vec2
+    {
+        rect => Vec2{x: rect.width, y: rect.height}
+    }
+
+    right :: Rect -> Float
+    {
+        rect => rect.x + rect.width
+    }
+
+    bottom :: Rect -> Float
+    {
+        rect => rect.y + rect.height
+    }
+
+    center :: Rect -> Vec2
+    {
+        rect => Vec2{x: rect.x + rect.width / 2.0, y: rect.y + rect.height / 2.0}
+    }
+
+    contains_point :: Rect -> Vec2 -> Bool
+    {
+        rect => point =>
+            point.x >= rect.x &&
+            point.x < GameMath::right(rect) &&
+            point.y >= rect.y &&
+            point.y < GameMath::bottom(rect)
+    }
+
+    intersects :: Rect -> Rect -> Bool
+    {
+        left => right =>
+            left.x < GameMath::right(right) &&
+            right.x < GameMath::right(left) &&
+            left.y < GameMath::bottom(right) &&
+            right.y < GameMath::bottom(left)
+    }
+
+    translate_rect :: Rect -> Vec2 -> Rect
+    {
+        rect => delta => Rect{x: rect.x + delta.x, y: rect.y + delta.y, width: rect.width, height: rect.height}
+    }
+
+    inflate :: Rect -> Float -> Float -> Rect
+    {
+        rect => dx => dy =>
+            Rect{
+                x: rect.x - dx,
+                y: rect.y - dy,
+                width: rect.width + dx * 2.0,
+                height: rect.height + dy * 2.0
+            }
+    }
+
+    deflate :: Rect -> Float -> Float -> Rect
+    {
+        rect => dx => dy => {
+            next_width := rect.width - dx * 2.0;
+            next_height := rect.height - dy * 2.0;
+            Rect{
+                x: rect.x + dx,
+                y: rect.y + dy,
+                width: if next_width >= 0.0 then next_width else 0.0,
+                height: if next_height >= 0.0 then next_height else 0.0
+            }
+        }
+    }
+
+    clamp_point :: Rect -> Vec2 -> Vec2
+    {
+        rect => point =>
+            if rect.width <= 0.0 || rect.height <= 0.0
+            then { GameMath::origin(rect) }
+            else
+            {
+                Vec2{
+                    x: FloatMath::clamp(point.x)(rect.x)(GameMath::right(rect)),
+                    y: FloatMath::clamp(point.y)(rect.y)(GameMath::bottom(rect))
+                }
+            }
+    }
+
+    EqIVec2 :: instance Trait::Eq {
+        eq :: IVec2 -> IVec2 -> Bool
+        {
+            left => right => left.x == right.x && left.y == right.y
+        }
+    }
+
+    EqVec2 :: instance Trait::Eq {
+        eq :: Vec2 -> Vec2 -> Bool
+        {
+            left => right => left.x == right.x && left.y == right.y
+        }
+    }
+
+    EqIRect :: instance Trait::Eq {
+        eq :: IRect -> IRect -> Bool
+        {
+            left => right =>
+                left.x == right.x &&
+                left.y == right.y &&
+                left.width == right.width &&
+                left.height == right.height
+        }
+    }
+
+    EqRect :: instance Trait::Eq {
+        eq :: Rect -> Rect -> Bool
+        {
+            left => right =>
+                left.x == right.x &&
+                left.y == right.y &&
+                left.width == right.width &&
+                left.height == right.height
+        }
+    }
+
+    CloneIVec2 :: instance Trait::Clone {
+        clone :: IVec2 -> IVec2
+        {
+            value => value
+        }
+    }
+
+    CloneVec2 :: instance Trait::Clone {
+        clone :: Vec2 -> Vec2
+        {
+            value => value
+        }
+    }
+
+    CloneIRect :: instance Trait::Clone {
+        clone :: IRect -> IRect
+        {
+            value => value
+        }
+    }
+
+    CloneRect :: instance Trait::Clone {
+        clone :: Rect -> Rect
+        {
+            value => value
+        }
+    }
+}

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <Import Project="..\..\eng\EidosBindgen.Version.props" />
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>Eidosc.Bindgen</RootNamespace>
+        <AssemblyName>Eidosc.Bindgen</AssemblyName>
+    </PropertyGroup>
+
+</Project>

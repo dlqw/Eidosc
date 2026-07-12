@@ -1,0 +1,657 @@
+HashMap :: module {
+    import Trait
+    import TraitInvoke
+    import Hash
+    import Option
+    import Seq
+    import RuntimeArray
+    import Math
+
+    HashMap[K, V] :: type {
+        HashMap{buckets: Seq[Seq[(K, V)]], size: Int, capacity: Int}
+    }
+
+    // ── Constructors ──────────────────────────────────────────
+
+    empty[K, V] :: Unit -> HashMap[K, V]
+    {
+        _ => HashMap{
+            buckets: HashMap::make_empty_buckets(16),
+            size: 0,
+            capacity: 16
+        }
+    }
+
+    new[K, V] :: Int -> HashMap[K, V]
+    {
+        cap => {
+            c := if cap < 4 then { 4 } else { cap };
+            HashMap{
+                buckets: HashMap::make_empty_buckets(c),
+                size: 0,
+                capacity: c
+            }
+        }
+    }
+
+    // ── Internal helpers ──────────────────────────────────────
+
+    @internal
+    make_empty_buckets[K, V] :: Int -> Seq[Seq[(K, V)]]
+    {
+        n => {
+            count := if n < 0 then 0 else n
+            mut acc: Seq[Seq[(K, V)]] := []
+            mut index := 0
+            loop {
+                if index >= count then { break } else {
+                    acc = RuntimeArray::push(acc)([])
+                    index = index + 1
+                }
+            }
+            acc
+        }
+    }
+
+    @internal
+    bucket_index[K: Trait::Hash, V] :: HashMap[K, V] -> K -> Int
+    {
+        HashMap{buckets: _, size: _, capacity: cap} => key =>
+            Math::abs(TraitInvoke::hash_value(key)) % cap
+    }
+
+    @internal
+    get_bucket[K, V] :: Seq[Seq[(K, V)]] -> Int -> Seq[(K, V)]
+    {
+        buckets => index => {
+            if index < 0 then { [] } else { buckets[index] }
+        }
+    }
+
+    @internal
+    set_bucket[K, V] :: Seq[Seq[(K, V)]] -> Int -> Seq[(K, V)] -> Seq[Seq[(K, V)]]
+    {
+        // Rebuild the buckets Seq with the target index replaced by newBucket.
+        // fold_left over a (acc, index) pair; fold_left is borrow-safe in this
+        // module context (the conditional-push index loop is rejected by CPS).
+        buckets => index => newBucket => {
+            pair := Seq::fold_left(buckets)(([], 0))(acc => bucket =>
+                match acc {
+                    (built, i) =>
+                        (RuntimeArray::push(built)(if i == index then newBucket else bucket), i + 1)
+                })
+            match pair { (built, _) => built }
+        }
+    }
+
+    @internal
+    find_in_bucket[K: Trait::Eq, V] :: Seq[(K, V)] -> K -> Option[(K, V)]
+    {
+        bucket => key => {
+            len := Seq::len(bucket)
+            mut index := 0
+            mut result: Option[(K, V)] := None()
+            loop {
+                if index >= len then { break } else {
+                    pair := bucket[index]
+                    match pair {
+                        (k, v) => {
+                            if TraitInvoke::eq_value(k)(key) then { result = Some((k, v)); break } else { () }
+                        }
+                    }
+                    index = index + 1
+                }
+            }
+            result
+        }
+    }
+
+    @internal
+    find_in_buckets[K: Trait::Eq, V] :: Seq[Seq[(K, V)]] -> Int -> K -> Option[V]
+    {
+        buckets => index => key => {
+            bucket := HashMap::get_bucket(buckets)(index)
+            match HashMap::find_in_bucket(bucket)(key)
+            {
+                Some((_, value)) => Some(value),
+                None() => None()
+            }
+        }
+    }
+
+    @internal
+    replace_in_bucket[K: Trait::Eq, V] :: Seq[(K, V)] -> K -> V -> Seq[(K, V)]
+    {
+        bucket => key => value => {
+            len := Seq::len(bucket)
+            mut found := false
+            mut i := 0
+            loop {
+                if i >= len then { break } else {
+                    match bucket[i] {
+                        (k, _) => {
+                            if TraitInvoke::eq_value(k)(key) then { found = true; break } else { () }
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+            if found then {
+                Seq::map(bucket)(pair => match pair { (k, v) => if TraitInvoke::eq_value(k)(key) then (key, value) else (k, v) })
+            } else {
+                Seq::append(bucket)([(key, value)])
+            }
+        }
+    }
+
+    @internal
+    replace_in_bucket_with_flag[K: Trait::Eq, V] :: Seq[(K, V)] -> K -> V -> (Seq[(K, V)], Bool)
+    {
+        bucket => key => value => {
+            len := Seq::len(bucket)
+            mut found := false
+            mut i := 0
+            loop {
+                if i >= len then { break } else {
+                    match bucket[i] {
+                        (k, _) => {
+                            if TraitInvoke::eq_value(k)(key) then { found = true; break } else { () }
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+            if found then {
+                (Seq::map(bucket)(pair => match pair { (k, v) => if TraitInvoke::eq_value(k)(key) then (key, value) else (k, v) }), false)
+            } else {
+                (Seq::append(bucket)([(key, value)]), true)
+            }
+        }
+    }
+
+    @internal
+    insert_bucket_at[K: Trait::Eq, V] :: Seq[Seq[(K, V)]] -> Int -> K -> V -> (Seq[Seq[(K, V)]], Bool)
+    {
+        [] => _ => key => value => ([[(key, value)]], true),
+        [bucket, ..rest] => index => key => value =>
+            if index == 0
+            then {
+                match HashMap::replace_in_bucket_with_flag(bucket)(key)(value)
+                {
+                    (newBucket, inserted) => ([newBucket, ..rest], inserted)
+                }
+            }
+            else {
+                match HashMap::insert_bucket_at(rest)(index - 1)(key)(value)
+                {
+                    (newRest, inserted) => ([bucket, ..newRest], inserted)
+                }
+            }
+    }
+
+    @internal
+    remove_from_bucket[K: Trait::Eq, V] :: Seq[(K, V)] -> K -> Seq[(K, V)]
+    {
+        bucket => key =>
+            Seq::filter(bucket)(pair => match pair { (k, _) => !TraitInvoke::eq_value(k)(key) })
+    }
+
+    @internal
+    remove_from_bucket_with_flag[K: Trait::Eq, V] :: Seq[(K, V)] -> K -> (Seq[(K, V)], Bool)
+    {
+        bucket => key => {
+            len := Seq::len(bucket)
+            mut found := false
+            mut i := 0
+            loop {
+                if i >= len then { break } else {
+                    match bucket[i] {
+                        (k, _) => {
+                            if TraitInvoke::eq_value(k)(key) then { found = true; break } else { () }
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+            if found then {
+                (Seq::filter(bucket)(pair => match pair { (k, _) => !TraitInvoke::eq_value(k)(key) }), true)
+            } else {
+                (bucket, false)
+            }
+        }
+    }
+
+    @internal
+    remove_bucket_at[K: Trait::Eq, V] :: Seq[Seq[(K, V)]] -> Int -> K -> (Seq[Seq[(K, V)]], Bool)
+    {
+        [] => _ => _ => ([], false),
+        [bucket, ..rest] => index => key =>
+            if index == 0
+            then {
+                match HashMap::remove_from_bucket_with_flag(bucket)(key)
+                {
+                    (newBucket, removed) => ([newBucket, ..rest], removed)
+                }
+            }
+            else {
+                match HashMap::remove_bucket_at(rest)(index - 1)(key)
+                {
+                    (newRest, removed) => ([bucket, ..newRest], removed)
+                }
+            }
+    }
+
+    // ── Core operations ──────────────────────────────────────
+
+    insert[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> K -> V -> HashMap[K, V]
+    {
+        HashMap{buckets: buckets, size: size, capacity: capacity} => key => value => {
+            idx := Math::abs(TraitInvoke::hash_value(key)) % capacity;
+            match HashMap::insert_bucket_at(buckets)(idx)(key)(value)
+            {
+                (newBuckets, inserted) => {
+                    newSize := if inserted then { size + 1 } else { size };
+                    result := HashMap{buckets: newBuckets, size: newSize, capacity: capacity};
+                    HashMap::maybe_resize(result)
+                }
+            }
+        }
+    }
+
+    get[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> K -> Option[V]
+    {
+        HashMap{buckets: buckets, size: _, capacity: capacity} => key => {
+            idx := Math::abs(TraitInvoke::hash_value(key)) % capacity;
+            HashMap::find_in_buckets(buckets)(idx)(key)
+        }
+    }
+
+    get_or[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> K -> V -> V
+    {
+        self => key => fallback => Option::unwrap_or(HashMap::get(self)(key))(fallback)
+    }
+
+    contains_key[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> K -> Bool
+    {
+        self => key => Option::is_some(HashMap::get(self)(key))
+    }
+
+    contains_value[K, V: Trait::Eq] :: HashMap[K, V] -> V -> Bool
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => value => HashMap::buckets_contain_value(buckets)(value)
+    }
+
+    contains_all_keys[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> Seq[K] -> Bool
+    {
+        self => keys => HashMap::all_keys_contained(keys)(self)
+    }
+
+    contains_any_key[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> Seq[K] -> Bool
+    {
+        self => keys => HashMap::any_key_contained(keys)(self)
+    }
+
+    remove[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> K -> HashMap[K, V]
+    {
+        HashMap{buckets: buckets, size: size, capacity: capacity} => key => {
+            idx := Math::abs(TraitInvoke::hash_value(key)) % capacity;
+            match HashMap::remove_bucket_at(buckets)(idx)(key)
+            {
+                (newBuckets, removed) => {
+                    newSize := if removed then { size - 1 } else { size };
+                    HashMap{buckets: newBuckets, size: newSize, capacity: capacity}
+                }
+            }
+        }
+    }
+
+    insert_all[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> Seq[(K, V)] -> HashMap[K, V]
+    {
+        self => pairs => HashMap::insert_pairs(pairs)(self)
+    }
+
+    remove_all[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> Seq[K] -> HashMap[K, V]
+    {
+        self => keys => HashMap::remove_keys(keys)(self)
+    }
+
+    // ── Query operations ─────────────────────────────────────
+
+    keys[K, V] :: HashMap[K, V] -> Seq[K]
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => HashMap::collect_keys(buckets)
+    }
+
+    values[K, V] :: HashMap[K, V] -> Seq[V]
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => HashMap::collect_values(buckets)
+    }
+
+    len[K, V] :: HashMap[K, V] -> Int
+    {
+        HashMap{buckets: _, size: s, capacity: _} => s
+    }
+
+    is_empty[K, V] :: HashMap[K, V] -> Bool
+    {
+        HashMap{buckets: _, size: s, capacity: _} => s == 0
+    }
+
+    capacity[K, V] :: HashMap[K, V] -> Int
+    {
+        HashMap{buckets: _, size: _, capacity: c} => c
+    }
+
+    load_factor_percent[K, V] :: HashMap[K, V] -> Int
+    {
+        HashMap{buckets: _, size: s, capacity: c} =>
+            if c <= 0 then { 0 } else { (s * 100) / c }
+    }
+
+    // ── Internal collection helpers ──────────────────────────
+
+    @internal
+    collect_keys[K, V] :: Seq[Seq[(K, V)]] -> Seq[K]
+    {
+        buckets => {
+            bucketCount := Seq::len(buckets)
+            mut acc: Seq[K] := []
+            mut bi := 0
+            loop {
+                if bi >= bucketCount then { break } else {
+                    bucket := buckets[bi]
+                    len := Seq::len(bucket)
+                    mut pi := 0
+                    loop {
+                        if pi >= len then { break } else {
+                            match bucket[pi] {
+                                (k, _) => { acc = RuntimeArray::push(acc)(k) }
+                            }
+                            pi = pi + 1
+                        }
+                    }
+                    bi = bi + 1
+                }
+            }
+            acc
+        }
+    }
+
+    @internal
+    collect_values[K, V] :: Seq[Seq[(K, V)]] -> Seq[V]
+    {
+        buckets => {
+            bucketCount := Seq::len(buckets)
+            mut acc: Seq[V] := []
+            mut bi := 0
+            loop {
+                if bi >= bucketCount then { break } else {
+                    bucket := buckets[bi]
+                    len := Seq::len(bucket)
+                    mut pi := 0
+                    loop {
+                        if pi >= len then { break } else {
+                            match bucket[pi] {
+                                (_, v) => { acc = RuntimeArray::push(acc)(v) }
+                            }
+                            pi = pi + 1
+                        }
+                    }
+                    bi = bi + 1
+                }
+            }
+            acc
+        }
+    }
+
+    @internal
+    bucket_contains_value[K, V: Trait::Eq] :: Seq[(K, V)] -> V -> Bool
+    {
+        bucket => value => {
+            len := Seq::len(bucket)
+            mut index := 0
+            mut found := false
+            loop {
+                if index >= len then { break } else {
+                    match bucket[index] {
+                        (_, v) => {
+                            if TraitInvoke::eq_value(v)(value) then { found = true; break } else { () }
+                        }
+                    }
+                    index = index + 1
+                }
+            }
+            found
+        }
+    }
+
+    @internal
+    buckets_contain_value[K, V: Trait::Eq] :: Seq[Seq[(K, V)]] -> V -> Bool
+    {
+        buckets => value => {
+            bucketCount := Seq::len(buckets)
+            mut bi := 0
+            mut found := false
+            loop {
+                if bi >= bucketCount || found then { break } else {
+                    bucket := buckets[bi]
+                    if HashMap::bucket_contains_value(bucket)(value) then { found = true } else { () }
+                    bi = bi + 1
+                }
+            }
+            found
+        }
+    }
+
+    // ── Resize ───────────────────────────────────────────────
+
+    @internal
+    maybe_resize[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> HashMap[K, V]
+    {
+        HashMap{buckets: buckets, size: size, capacity: capacity} => {
+            loadFactorNum := size * 100;
+            threshold := capacity * 75;
+            if loadFactorNum > threshold
+            then { HashMap::resize_to(HashMap{buckets: buckets, size: size, capacity: capacity})(capacity * 2) }
+            else { HashMap{buckets: buckets, size: size, capacity: capacity} }
+        }
+    }
+
+    @internal
+    resize_to[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> Int -> HashMap[K, V]
+    {
+        HashMap{buckets: buckets, size: size, capacity: _} => newCapacity => {
+            allPairs := HashMap::collect_pairs(buckets);
+            freshBuckets := HashMap::make_empty_buckets(newCapacity);
+            rehashed := HashMap::rehash_all(allPairs)(freshBuckets)(newCapacity);
+            HashMap{buckets: rehashed, size: size, capacity: newCapacity}
+        }
+    }
+
+    @internal
+    collect_pairs[K, V] :: Seq[Seq[(K, V)]] -> Seq[(K, V)]
+    {
+        // Flatten buckets via flat_map (comprehension); each bucket is already a
+        // Seq[(K, V)], so the identity function concatenates them.
+        buckets => Seq::flat_map(buckets)(bucket => bucket)
+    }
+
+    @internal
+    rehash_all[K: Trait::Hash + Trait::Eq, V] :: Seq[(K, V)] -> Seq[Seq[(K, V)]] -> Int -> Seq[Seq[(K, V)]]
+    {
+        pairs => buckets => newCapacity => {
+            pairCount := Seq::len(pairs)
+            mut acc := buckets
+            mut index := 0
+            loop {
+                if index >= pairCount then { break } else {
+                    match pairs[index] {
+                        (key, value) => {
+                            idx := Math::abs(TraitInvoke::hash_value(key)) % newCapacity
+                            bucket := HashMap::get_bucket(acc)(idx)
+                            newBucket := Seq::append(bucket)([(key, value)])
+                            acc = HashMap::set_bucket(acc)(idx)(newBucket)
+                        }
+                    }
+                    index = index + 1
+                }
+            }
+            acc
+        }
+    }
+
+    // ── Conversion ───────────────────────────────────────────────
+
+    @internal
+    insert_pairs[K: Trait::Hash + Trait::Eq, V] :: Seq[(K, V)] -> HashMap[K, V] -> HashMap[K, V]
+    {
+        pairs => acc => {
+            len := Seq::len(pairs)
+            mut result := acc
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    match pairs[index] {
+                        (key, value) => { result = HashMap::insert(result)(key)(value) }
+                    }
+                    index = index + 1
+                }
+            }
+            result
+        }
+    }
+
+    from_seq[K: Trait::Hash + Trait::Eq, V] :: Seq[(K, V)] -> HashMap[K, V]
+    {
+        pairs => HashMap::insert_pairs(pairs)(HashMap::empty(()))
+    }
+
+    @internal
+    remove_keys[K: Trait::Hash + Trait::Eq, V] :: Seq[K] -> HashMap[K, V] -> HashMap[K, V]
+    {
+        keys => acc => {
+            len := Seq::len(keys)
+            mut result := acc
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    result = HashMap::remove(result)(keys[index])
+                    index = index + 1
+                }
+            }
+            result
+        }
+    }
+
+    @internal
+    all_keys_contained[K: Trait::Hash + Trait::Eq, V] :: Seq[K] -> HashMap[K, V] -> Bool
+    {
+        keys => self => {
+            len := Seq::len(keys)
+            mut index := 0
+            mut ok := true
+            loop {
+                if index >= len || !ok then { break } else {
+                    if HashMap::contains_key(self)(keys[index]) then { () } else { ok = false }
+                    index = index + 1
+                }
+            }
+            ok
+        }
+    }
+
+    @internal
+    any_key_contained[K: Trait::Hash + Trait::Eq, V] :: Seq[K] -> HashMap[K, V] -> Bool
+    {
+        keys => self => {
+            len := Seq::len(keys)
+            mut index := 0
+            mut found := false
+            loop {
+                if index >= len || found then { break } else {
+                    if HashMap::contains_key(self)(keys[index]) then { found = true } else { () }
+                    index = index + 1
+                }
+            }
+            found
+        }
+    }
+
+    to_seq[K, V] :: HashMap[K, V] -> Seq[(K, V)]
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => HashMap::collect_pairs(buckets)
+    }
+
+    merge[K: Trait::Hash + Trait::Eq, V] :: HashMap[K, V] -> HashMap[K, V] -> HashMap[K, V]
+    {
+        left => right => HashMap::insert_pairs(HashMap::to_seq(right))(left)
+    }
+
+    @internal
+    map_pair_values[K, V, U, E: effects] :: Seq[(K, V)] -> (V -> U need E) -> Seq[(K, U)] need E
+    {
+        pairs => f => {
+            len := Seq::len(pairs)
+            mut acc: Seq[(K, U)] := []
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    match pairs[index] {
+                        (key, value) => { acc = RuntimeArray::push(acc)((key, f(value))) }
+                    }
+                    index = index + 1
+                }
+            }
+            acc
+        }
+    }
+
+    map_values[K: Trait::Hash + Trait::Eq, V, U, E: effects] :: HashMap[K, V] -> (V -> U need E) -> HashMap[K, U] need E
+    {
+        self => f => HashMap::from_seq(HashMap::map_pair_values(HashMap::to_seq(self))(f))
+    }
+
+    // ── Fold ─────────────────────────────────────────────────────
+
+    @internal
+    fold_pairs[K, V, A, E: effects] :: Seq[(K, V)] -> A -> (A -> K -> V -> A need E) -> A need E
+    {
+        pairs => acc => f => {
+            len := Seq::len(pairs)
+            mut result := acc
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    match pairs[index] {
+                        (k, v) => { result = f(result)(k)(v) }
+                    }
+                    index = index + 1
+                }
+            }
+            result
+        }
+    }
+
+    @internal
+    fold_buckets[K, V, A, E: effects] :: Seq[Seq[(K, V)]] -> A -> (A -> K -> V -> A need E) -> A need E
+    {
+        buckets => acc => f => {
+            bucketCount := Seq::len(buckets)
+            mut result := acc
+            mut bi := 0
+            loop {
+                if bi >= bucketCount then { break } else {
+                    bucket := buckets[bi]
+                    result = HashMap::fold_pairs(bucket)(result)(f)
+                    bi = bi + 1
+                }
+            }
+            result
+        }
+    }
+
+    fold[K, V, A, E: effects] :: HashMap[K, V] -> A -> (A -> K -> V -> A need E) -> A need E
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => acc => f => HashMap::fold_buckets(buckets)(acc)(f)
+    }
+}

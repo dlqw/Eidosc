@@ -1,0 +1,158 @@
+name: Release Eidosc
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact Eidosc SemVer from eng/Eidosc.Version.props
+        required: true
+        type: string
+
+jobs:
+  verify-release:
+    name: verify-release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release input and main ancestry
+        id: version
+        shell: pwsh
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Release commit must be reachable from origin/main." }
+          $version = "${{ inputs.version }}"
+          ./scripts/versioning/verify-versions.ps1
+          [xml]$props = Get-Content -Raw eng/Eidosc.Version.props
+          $prefix = [string]$props.Project.PropertyGroup.EidoscVersionPrefix
+          $suffix = [string]$props.Project.PropertyGroup.EidoscVersionSuffix
+          $declared = if ($suffix) { "$prefix-$suffix" } else { $prefix }
+          if ($declared -ne $version) { throw "Input version $version does not match $declared." }
+          $tag = "eidosc-v$version"
+          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to query existing tags." }
+          if ($existingTag) { throw "Tag $tag already exists." }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+  publish-eidosc:
+    name: publish-eidosc (${{ matrix.rid }})
+    needs: verify-release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            runner: windows-latest
+          - rid: win-arm64
+            runner: windows-latest
+          - rid: linux-x64
+            runner: ubuntu-latest
+          - rid: linux-arm64
+            runner: ubuntu-latest
+          - rid: osx-x64
+            runner: macos-latest
+          - rid: osx-arm64
+            runner: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish eidosc
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify-release.outputs.version }}"
+          $rid = "${{ matrix.rid }}"
+          $publishDir = Join-Path $PWD "artifacts/publish/eidosc/$rid"
+          $binaryName = if ($rid.StartsWith('win-')) { 'eidosc.exe' } else { 'eidosc' }
+          $publishedBinaryName = if ($rid.StartsWith('win-')) { 'Eidosc.Cli.exe' } else { 'Eidosc.Cli' }
+          dotnet publish src/Eidosc.Cli/Eidosc.Cli.csproj `
+            -c Release `
+            -r $rid `
+            -p:SelfContained=true `
+            -p:PublishSingleFile=true `
+            -p:DebugType=None `
+            -o $publishDir
+          Move-Item (Join-Path $publishDir $publishedBinaryName) (Join-Path $publishDir $binaryName)
+          $bundle = Join-Path $PWD "artifacts/eidosc-v$version-$rid.zip"
+          if (Test-Path $bundle) { Remove-Item $bundle -Force }
+          Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $bundle
+
+      - name: Upload eidosc bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: eidosc-${{ matrix.rid }}
+          path: artifacts/eidosc-v${{ needs.verify-release.outputs.version }}-${{ matrix.rid }}.zip
+
+  pack-dotnet-tool:
+    name: pack-dotnet-tool
+    needs: verify-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Pack eidosc tool
+        run: |
+          dotnet pack src/Eidosc.Cli/Eidosc.Cli.csproj \
+            -c Release \
+            -o artifacts/nupkg \
+            /p:PackageVersion=${{ needs.verify-release.outputs.version }}
+
+      - name: Upload tool package
+        uses: actions/upload-artifact@v4
+        with:
+          name: eidosc-nupkg
+          path: artifacts/nupkg/*.nupkg
+
+  create-release:
+    name: create-release
+    needs:
+      - verify-release
+      - publish-eidosc
+      - pack-dotnet-tool
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download assets
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/release
+
+      - name: Flatten assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/final
+          find artifacts/release -type f -exec cp {} artifacts/final/ \;
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: eidosc-v${{ needs.verify-release.outputs.version }}
+          name: eidosc-v${{ needs.verify-release.outputs.version }}
+          body_path: changelogs/${{ needs.verify-release.outputs.version }}.md
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: artifacts/final/*

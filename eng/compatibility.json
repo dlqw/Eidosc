@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "component": "eidosc",
+  "version": "0.4.0-alpha.1",
+  "language": {
+    "default": "0.4.0-alpha.1",
+    "supported": ">=0.4.0-alpha.1 <0.5.0"
+  },
+  "manifestSchemas": [3],
+  "stdlib": "0.1.0-alpha.1",
+  "ideProtocol": "0.1.0-alpha.1"
+}

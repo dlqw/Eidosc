@@ -1,0 +1,87 @@
+Prelude :: module {
+    // ── Core Traits (trait names only, for type constraints) ──
+    export import Trait::{Eq, Ord, Show, Hash, Clone, Copy}
+    export import Functor::{Functor}
+    export import Applicative::{Applicative}
+    export import Monad::{Monad}
+    export import Foldable::{Foldable}
+    export import Traversable::{Traversable}
+    export import Semigroup::{Semigroup}
+    export import Monoid::{Monoid}
+    export import Alternative::{Alternative}
+
+    // ── Core Types ──
+    export import Ordering::{Ordering}
+    export import Option::{Option}
+    export import Result::{Result, ResultWith}
+
+    // ── Seq Operations ──
+    export import Seq::{
+        len, head, head_or, tail, tail_or, last, last_or,
+        map, filter, flat_map, fold_left, fold_right,
+        append, reverse, take, drop, zip, zip_with,
+        find, find_index, any, all, none, count,
+        for_each, sum, product, concat, partition,
+        singleton, cons, get_opt, get_or,
+        elem, not_elem
+    }
+
+    // ── Ordering Operations ──
+    export import Ordering::{
+        is_lt, is_eq, is_gt, is_le, is_ge, is_ne,
+        to_int, from_int, fold, select_le, select_ge, then_with,
+        compare_int, compare_char, compare_bool,
+        then_compare_int, then_compare_char, then_compare_bool,
+        then_compare_ordering,
+        compare_int_desc, compare_char_desc, compare_bool_desc
+    }
+
+    // ── Option Operations (non-conflicting names) ──
+    export import Option::{
+        is_some, is_none, map_or, map_or_else,
+        or_else_with, to_seq
+    }
+
+    // ── Result Operations (non-conflicting names) ──
+    export import Result::{
+        is_ok, is_err, map_err, ok, err,
+        map_both, contains_err, unwrap_err_or,
+        transpose, transpose_option
+    }
+
+    // ── Predicate Operations ──
+    export import Predicate::{accept, reject, is, is_not}
+
+    // ── Text Operations ──
+    export import Text::{
+        trim, trim_start, trim_end, is_blank,
+        char_code_at_opt, char_code_at_or,
+        char_at_opt, char_at_or,
+        starts_with, ends_with, contains,
+        index_of_opt, index_of_or,
+        last_index_of_opt, last_index_of_or,
+        to_lower_ascii, to_upper_ascii, capitalize_ascii,
+        pad_left, pad_right, join, split,
+        split_once, before_or, after_or
+    }
+
+    // ── File Operations ──
+    export import File::{
+        exists,
+        read_text, read_text_or_empty, read_text_or, read_text_opt,
+        read_text_or_else,
+        write_text, write_text_result, write_text_error_opt,
+        join_path, join_paths, normalize_separators,
+        ensure_trailing_separator, trim_trailing_separator,
+        file_name, file_name_without_extension,
+        directory_name, extension, extension_without_dot,
+        stem, normalize_extension, has_extension,
+        change_extension, without_extension
+    }
+
+    // ── Basic Utility Functions ──
+    export id[T] :: T -> T { x => x }
+    export const[A, B] :: A -> B -> A { a => _ => a }
+    export not :: Bool -> Bool { b => !b }
+    export otherwise :: Unit -> Bool { _ => true }
+}

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "description": "Regression guard for profile-batch. Local workspace runs snake-gui when available; standalone CI falls back to Std Prelude. Cold timing limits include GitHub-hosted runner and runtime/JIT variance; allocation limits remain strict. These are current-state guardrails, not the aspirational RFC targets.",
+  "cases": [
+    {
+      "name": "snake-gui-types",
+      "optional": true,
+      "maxTotalMs": 6000,
+      "phases": [
+        {
+          "name": "Namer",
+          "maxMs": 3500,
+          "maxAllocatedBytes": 52428800
+        },
+        {
+          "name": "Types",
+          "maxMs": 1500,
+          "maxAllocatedBytes": 67108864
+        }
+      ],
+      "subphases": [
+        {
+          "name": "Namer.resolve",
+          "maxMs": 3200,
+          "maxAllocatedBytes": 50331648
+        },
+        {
+          "name": "Types.infer",
+          "maxMs": 1200,
+          "maxAllocatedBytes": 20971520
+        }
+      ],
+      "counters": [
+        {
+          "name": "Namer.moduleRegistry.accessibleBindingsCache.hits",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "name": "stdlib-prelude-types",
+      "optional": true,
+      "maxTotalMs": 6000,
+      "phases": [
+        {
+          "name": "Namer",
+          "maxMs": 3500,
+          "maxAllocatedBytes": 52428800
+        },
+        {
+          "name": "Types",
+          "maxMs": 1500,
+          "maxAllocatedBytes": 26214400
+        }
+      ],
+      "subphases": [
+        {
+          "name": "Namer.resolve",
+          "maxMs": 3200,
+          "maxAllocatedBytes": 50331648
+        },
+        {
+          "name": "Types.infer",
+          "maxMs": 1200,
+          "maxAllocatedBytes": 25165824
+        }
+      ],
+      "counters": [
+        {
+          "name": "Namer.moduleRegistry.accessibleBindingsCache.hits",
+          "min": 1
+        }
+      ]
+    }
+  ]
+}

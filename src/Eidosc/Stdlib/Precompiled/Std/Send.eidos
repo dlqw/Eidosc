@@ -1,0 +1,6 @@
+Send :: module {
+
+/// Marker trait for types safe to send across thread boundaries.
+trait Send
+
+}

@@ -1,0 +1,34 @@
+name: Branch Flow Guard
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.base_ref }}"
+          head="${{ github.head_ref }}"
+
+          echo "base=$base"
+          echo "head=$head"
+
+          if [[ "$base" != "main" ]]; then
+            echo "Pull requests must target main."
+            exit 1
+          fi
+          if [[ ! "$head" =~ ^(feat|fix|chore|docs|perf|refactor|test)/ ]]; then
+            echo "Branch must use an approved short-lived prefix."
+            exit 1
+          fi

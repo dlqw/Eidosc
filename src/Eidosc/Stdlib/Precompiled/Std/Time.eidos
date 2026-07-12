@@ -1,0 +1,205 @@
+Time :: module {
+    Duration :: type {
+        Duration{seconds: Int}
+    }
+
+    @internal
+    @intrinsic("time_now")
+    @effects(IO)
+    time_now :: Unit -> Int
+
+    @internal
+    @intrinsic("time_now_ms")
+    @effects(IO)
+    time_now_ms :: Unit -> Int
+
+    @internal
+    @intrinsic("time_year")
+    time_year :: Int -> Int
+
+    @internal
+    @intrinsic("time_month")
+    time_month :: Int -> Int
+
+    @internal
+    @intrinsic("time_day")
+    time_day :: Int -> Int
+
+    @internal
+    @intrinsic("time_hour")
+    time_hour :: Int -> Int
+
+    @internal
+    @intrinsic("time_minute")
+    time_minute :: Int -> Int
+
+    @internal
+    @intrinsic("time_second")
+    time_second :: Int -> Int
+
+    // 核心操作
+    now :: Unit -> Int need IO { _ => time_now() }
+    now_ms :: Unit -> Int need IO { _ => time_now_ms() }
+
+    // 字段提取
+    year :: Int -> Int { ts => time_year(ts) }
+    month :: Int -> Int { ts => time_month(ts) }
+    day :: Int -> Int { ts => time_day(ts) }
+    hour :: Int -> Int { ts => time_hour(ts) }
+    minute :: Int -> Int { ts => time_minute(ts) }
+    second :: Int -> Int { ts => time_second(ts) }
+
+    // Duration 算术
+    add_seconds :: Int -> Int -> Int { ts => s => ts + s }
+    sub_seconds :: Int -> Int -> Int { ts => s => ts - s }
+    diff_seconds :: Int -> Int -> Int { a => b => b - a }
+
+    add_minutes :: Int -> Int -> Int { ts => minutes => Time::add_seconds(ts)(minutes * 60) }
+    add_hours :: Int -> Int -> Int { ts => hours => Time::add_seconds(ts)(hours * 3600) }
+    add_days :: Int -> Int -> Int { ts => days => Time::add_seconds(ts)(days * 86400) }
+    sub_minutes :: Int -> Int -> Int { ts => minutes => Time::sub_seconds(ts)(minutes * 60) }
+    sub_hours :: Int -> Int -> Int { ts => hours => Time::sub_seconds(ts)(hours * 3600) }
+    sub_days :: Int -> Int -> Int { ts => days => Time::sub_seconds(ts)(days * 86400) }
+
+    duration_seconds :: Int -> Duration
+    {
+        value => Duration{seconds: value}
+    }
+
+    duration_minutes :: Int -> Duration
+    {
+        value => Duration{seconds: value * 60}
+    }
+
+    duration_hours :: Int -> Duration
+    {
+        value => Duration{seconds: value * 3600}
+    }
+
+    duration_days :: Int -> Duration
+    {
+        value => Duration{seconds: value * 86400}
+    }
+
+    duration_weeks :: Int -> Duration
+    {
+        value => Duration{seconds: value * 604800}
+    }
+
+    to_seconds :: Duration -> Int
+    {
+        Duration{seconds: value} => value
+    }
+
+    to_minutes :: Duration -> Int
+    {
+        Duration{seconds: value} => value / 60
+    }
+
+    to_hours :: Duration -> Int
+    {
+        Duration{seconds: value} => value / 3600
+    }
+
+    to_days :: Duration -> Int
+    {
+        Duration{seconds: value} => value / 86400
+    }
+
+    duration_add :: Duration -> Duration -> Duration
+    {
+        left => right => Duration{seconds: Time::to_seconds(left) + Time::to_seconds(right)}
+    }
+
+    duration_sub :: Duration -> Duration -> Duration
+    {
+        left => right => Duration{seconds: Time::to_seconds(left) - Time::to_seconds(right)}
+    }
+
+    duration_negate :: Duration -> Duration
+    {
+        Duration{seconds: value} => Duration{seconds: 0 - value}
+    }
+
+    duration_abs :: Duration -> Duration
+    {
+        Duration{seconds: value} =>
+            if value < 0 then { Duration{seconds: 0 - value} } else { Duration{seconds: value} }
+    }
+
+    duration_scale :: Duration -> Int -> Duration
+    {
+        Duration{seconds: value} => factor => Duration{seconds: value * factor}
+    }
+
+    duration_min :: Duration -> Duration -> Duration
+    {
+        left => right =>
+            if Time::to_seconds(left) <= Time::to_seconds(right) then { left } else { right }
+    }
+
+    duration_max :: Duration -> Duration -> Duration
+    {
+        left => right =>
+            if Time::to_seconds(left) >= Time::to_seconds(right) then { left } else { right }
+    }
+
+    duration_clamp :: Duration -> Duration -> Duration -> Duration
+    {
+        duration => low => high => Time::duration_min(Time::duration_max(duration)(low))(high)
+    }
+
+    duration_is_zero :: Duration -> Bool
+    {
+        Duration{seconds: value} => value == 0
+    }
+
+    duration_is_positive :: Duration -> Bool
+    {
+        Duration{seconds: value} => value > 0
+    }
+
+    duration_is_negative :: Duration -> Bool
+    {
+        Duration{seconds: value} => value < 0
+    }
+
+    add_duration :: Int -> Duration -> Int
+    {
+        ts => duration => ts + Time::to_seconds(duration)
+    }
+
+    sub_duration :: Int -> Duration -> Int
+    {
+        ts => duration => ts - Time::to_seconds(duration)
+    }
+
+    diff_duration :: Int -> Int -> Duration
+    {
+        start => finish => Duration{seconds: finish - start}
+    }
+
+    // 便捷：时间是否在某个范围内
+    is_after :: Int -> Int -> Bool { ts => other => ts > other }
+    is_before :: Int -> Int -> Bool { ts => other => ts < other }
+
+    min_timestamp :: Int -> Int -> Int
+    {
+        left => right => if left <= right then { left } else { right }
+    }
+
+    max_timestamp :: Int -> Int -> Int
+    {
+        left => right => if left >= right then { left } else { right }
+    }
+
+    is_between_inclusive :: Int -> Int -> Int -> Bool
+    {
+        ts => start => finish => ts >= start && ts <= finish
+    }
+
+    is_between_exclusive :: Int -> Int -> Int -> Bool
+    {
+        ts => start => finish => ts > start && ts < finish
+    }
+}

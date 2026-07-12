@@ -1,0 +1,175 @@
+Regex :: module {
+    import Option
+
+    @internal
+    @intrinsic("regex_compile")
+    @effects(FFI)
+    regex_compile :: RawPtr -> Int -> RawPtr
+
+    @internal
+    @intrinsic("regex_free")
+    @effects(FFI)
+    regex_free :: RawPtr -> Unit
+
+    @internal
+    @intrinsic("regex_is_match")
+    @effects(FFI)
+    regex_is_match :: RawPtr -> RawPtr -> Int
+
+    @internal
+    @intrinsic("regex_find_string")
+    @effects(FFI)
+    regex_find_string :: RawPtr -> RawPtr -> String
+
+    @internal
+    @intrinsic("string_to_cstr")
+    @effects(FFI)
+    string_to_cstr :: String -> RawPtr
+
+    @internal
+    @intrinsic("ptr_null")
+    ptr_null :: Unit -> RawPtr
+
+    @internal
+    @intrinsic("ptr_is_null")
+    ptr_is_null :: RawPtr -> Bool
+
+    // 编译正则表达式
+    // 返回 RawPtr（编译后的 regex 句柄），失败返回 ptr_null()
+    compile :: String -> RawPtr need FFI
+    {
+        pattern => regex_compile(string_to_cstr(pattern))(0)
+    }
+
+    is_compiled :: RawPtr -> Bool need FFI
+    {
+        regex => !ptr_is_null(regex)
+    }
+
+    compile_opt :: String -> Option[RawPtr] need FFI
+    {
+        pattern => {
+            regex := Regex::compile(pattern);
+            if Regex::is_compiled(regex) then { Some(regex) } else { None() }
+        }
+    }
+
+    with_compiled[A, E: effects] :: String -> (RawPtr -> A need E) -> Option[A] need FFI, E
+    {
+        pattern => body => {
+            regex := Regex::compile(pattern);
+            if Regex::is_compiled(regex) then {
+                result := body(regex);
+                Regex::free(regex);
+                Some(result)
+            } else { None() }
+        }
+    }
+
+    with_compiled_or[A, E: effects] :: String -> (RawPtr -> A need E) -> A -> A need FFI, E
+    {
+        pattern => body => fallback => match Regex::with_compiled[A, E](pattern)(body) { Some(value) => value, None() => fallback }
+    }
+
+    with_compiled_or_else[A, E1: effects, E2: effects] :: String -> (RawPtr -> A need E1) -> (Unit -> A need E2) -> A need FFI, E1, E2
+    {
+        pattern => body => fallback => match Regex::with_compiled[A, E1](pattern)(body) { Some(value) => value, None() => fallback(()) }
+    }
+
+    // 测试是否完全匹配
+    is_match :: RawPtr -> String -> Bool need FFI
+    {
+        regex => text => regex_is_match(regex)(string_to_cstr(text)) == 1
+    }
+
+    // 查找第一个匹配，返回匹配的子串
+    // 使用 regex_find_string 在 C 运行时内部处理缓冲区
+    find :: RawPtr -> String -> Option[String] need FFI
+    {
+        regex => text => {
+            if Regex::is_match(regex)(text) then {
+                Some(regex_find_string(regex)(string_to_cstr(text)))
+            } else { None() }
+        }
+    }
+
+    // 释放正则
+    free :: RawPtr -> Unit need FFI
+    {
+        regex => regex_free(regex)
+    }
+
+    free_if_compiled :: RawPtr -> Unit need FFI
+    {
+        regex => if Regex::is_compiled(regex) then { Regex::free(regex) } else { () }
+    }
+
+    is_match_text :: String -> String -> Bool need FFI
+    {
+        pattern => text => {
+            regex := Regex::compile(pattern);
+            if Regex::is_compiled(regex) then {
+                matched := Regex::is_match(regex)(text);
+                Regex::free(regex);
+                matched
+            } else { false }
+        }
+    }
+
+    find_or :: RawPtr -> String -> String -> String need FFI
+    {
+        regex => text => fallback => match Regex::find(regex)(text) { Some(value) => value, None() => fallback }
+    }
+
+    find_or_else[E: effects] :: RawPtr -> String -> (Unit -> String need E) -> String need FFI, E
+    {
+        regex => text => fallback => match Regex::find(regex)(text) { Some(value) => value, None() => fallback(()) }
+    }
+
+    is_match_opt :: String -> String -> Option[Bool] need FFI
+    {
+        pattern => text => Regex::with_compiled(pattern)(regex => Regex::is_match(regex)(text))
+    }
+
+    is_match_or :: String -> String -> Bool -> Bool need FFI
+    {
+        pattern => text => fallback => match Regex::is_match_opt(pattern)(text) { Some(value) => value, None() => fallback }
+    }
+
+    is_match_or_else[E: effects] :: String -> String -> (Unit -> Bool need E) -> Bool need FFI, E
+    {
+        pattern => text => fallback => match Regex::is_match_opt(pattern)(text) { Some(value) => value, None() => fallback(()) }
+    }
+
+    find_text :: String -> String -> Option[String] need FFI
+    {
+        pattern => text => {
+            regex := Regex::compile(pattern);
+            if Regex::is_compiled(regex) then {
+                found := Regex::find(regex)(text);
+                Regex::free(regex);
+                found
+            } else { None() }
+        }
+    }
+
+    find_text_or :: String -> String -> String -> String need FFI
+    {
+        pattern => text => fallback => match Regex::find_text(pattern)(text) { Some(value) => value, None() => fallback }
+    }
+
+    find_text_or_else[E: effects] :: String -> String -> (Unit -> String need E) -> String need FFI, E
+    {
+        pattern => text => fallback => match Regex::find_text(pattern)(text) { Some(value) => value, None() => fallback(()) }
+    }
+
+    is_valid_pattern :: String -> Bool need FFI
+    {
+        pattern => {
+            regex := Regex::compile(pattern);
+            ok := Regex::is_compiled(regex);
+            Regex::free_if_compiled(regex);
+            ok
+        }
+    }
+}

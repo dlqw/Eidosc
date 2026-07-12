@@ -1,0 +1,257 @@
+Console :: module {
+    import Option
+    import Result
+
+    @internal
+    @intrinsic("print_int")
+    @effects(IO)
+    print_int :: Int -> Unit
+
+    @internal
+    @intrinsic("print_float")
+    @effects(IO)
+    print_float :: Float -> Unit
+
+    @internal
+    @intrinsic("print_string")
+    @effects(IO)
+    print_string :: String -> Unit
+
+    @internal
+    @intrinsic("print_newline")
+    @effects(IO)
+    print_newline :: Unit -> Unit
+
+    @internal
+    @intrinsic("print_char")
+    @effects(IO)
+    print_char :: Int -> Unit
+
+    @internal
+    @intrinsic("read_line")
+    @effects(IO)
+    read_line :: Unit -> String
+
+    @internal
+    @intrinsic("read_char")
+    @effects(IO)
+    read_char :: Unit -> Int
+
+    @internal
+    @intrinsic("terminal_set_raw")
+    @effects(IO)
+    terminal_set_raw :: Unit -> Unit
+
+    @internal
+    @intrinsic("terminal_restore")
+    @effects(IO)
+    terminal_restore :: Unit -> Unit
+
+    @internal
+    @intrinsic("sleep_ms")
+    @effects(IO)
+    sleep_ms :: Int -> Unit
+
+    @internal
+    @intrinsic("io_last_success")
+    @effects(IO)
+    io_last_success :: Unit -> Bool
+
+    @internal
+    @intrinsic("io_last_error")
+    @effects(IO)
+    io_last_error :: Unit -> String
+
+    write_text :: String -> Unit need IO
+    {
+        text => print_string(text)
+    }
+
+    write_line :: String -> Unit need IO
+    {
+        text => {
+            print_string(text);
+            print_newline()
+        }
+    }
+
+    write_int :: Int -> Unit need IO
+    {
+        value => print_int(value)
+    }
+
+    write_int_line :: Int -> Unit need IO
+    {
+        value => {
+            print_int(value);
+            print_newline()
+        }
+    }
+
+    write_float :: Float -> Unit need IO
+    {
+        value => print_float(value)
+    }
+
+    write_float_line :: Float -> Unit need IO
+    {
+        value => {
+            print_float(value);
+            print_newline()
+        }
+    }
+
+    write_char :: Int -> Unit need IO
+    {
+        value => print_char(value)
+    }
+
+    write_char_line :: Int -> Unit need IO
+    {
+        value => {
+            print_char(value);
+            print_newline()
+        }
+    }
+
+    write_bool :: Bool -> Unit need IO
+    {
+        true => print_string("true"),
+        false => print_string("false")
+    }
+
+    write_bool_line :: Bool -> Unit need IO
+    {
+        value => {
+            Console::write_bool(value);
+            print_newline()
+        }
+    }
+
+    write_text_text :: String -> String -> Unit need IO
+    {
+        prefix => value => {
+            print_string(prefix);
+            print_string(value)
+        }
+    }
+
+    write_text_text_line :: String -> String -> Unit need IO
+    {
+        prefix => value => {
+            Console::write_text_text(prefix)(value);
+            print_newline()
+        }
+    }
+
+    write_text_int :: String -> Int -> Unit need IO
+    {
+        prefix => value => {
+            print_string(prefix);
+            print_int(value)
+        }
+    }
+
+    write_text_int_line :: String -> Int -> Unit need IO
+    {
+        prefix => value => {
+            Console::write_text_int(prefix)(value);
+            print_newline()
+        }
+    }
+
+    write_text_float :: String -> Float -> Unit need IO
+    {
+        prefix => value => {
+            print_string(prefix);
+            print_float(value)
+        }
+    }
+
+    write_text_float_line :: String -> Float -> Unit need IO
+    {
+        prefix => value => {
+            Console::write_text_float(prefix)(value);
+            print_newline()
+        }
+    }
+
+    write_text_char :: String -> Int -> Unit need IO
+    {
+        prefix => value => {
+            print_string(prefix);
+            print_char(value)
+        }
+    }
+
+    write_text_char_line :: String -> Int -> Unit need IO
+    {
+        prefix => value => {
+            Console::write_text_char(prefix)(value);
+            print_newline()
+        }
+    }
+
+    write_text_bool :: String -> Bool -> Unit need IO
+    {
+        prefix => value => {
+            print_string(prefix);
+            Console::write_bool(value)
+        }
+    }
+
+    write_text_bool_line :: String -> Bool -> Unit need IO
+    {
+        prefix => value => {
+            Console::write_text_bool(prefix)(value);
+            print_newline()
+        }
+    }
+
+    newline :: Unit -> Unit need IO
+    {
+        _ => print_newline()
+    }
+
+    read_line_text :: Unit -> String need IO
+    {
+        _ => read_line()
+    }
+
+    read_line_result :: Unit -> Result[String, String] need IO
+    {
+        _ => {
+            text := read_line();
+            if io_last_success() then { Ok(text) } else { Err(io_last_error()) }
+        }
+    }
+
+    read_line_opt :: Unit -> Option[String] need IO
+    {
+        _ => {
+            text := read_line();
+            if io_last_success() then { Some(text) } else { None() }
+        }
+    }
+
+    read_line_or_empty :: Unit -> String need IO
+    {
+        _ => Console::read_line_or("")
+    }
+
+    read_line_or :: String -> String need IO
+    {
+        fallback => {
+            text := read_line();
+            if io_last_success() then { text } else { fallback }
+        }
+    }
+
+    read_line_or_else[E: effects] :: (Unit -> String need E) -> String need IO, E
+    {
+        fallback => {
+            text := read_line();
+            if io_last_success() then { text } else { fallback(()) }
+        }
+    }
+}

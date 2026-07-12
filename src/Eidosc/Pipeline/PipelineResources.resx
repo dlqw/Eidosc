@@ -1,0 +1,516 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="TokenListHeader" xml:space="preserve">
+    <value>// Token 列表</value>
+  </data>
+  <data name="TokenError" xml:space="preserve">
+    <value>Error: {0}</value>
+  </data>
+  <data name="TokenEof" xml:space="preserve">
+    <value>&lt;EOF&gt;</value>
+  </data>
+  <data name="TokenComment" xml:space="preserve">
+    <value>Comment "{0}"</value>
+  </data>
+  <data name="TotalCount" xml:space="preserve">
+    <value>// 总数: {0}</value>
+  </data>
+  <data name="CstHeader" xml:space="preserve">
+    <value>// CST (具体语法树)</value>
+  </data>
+  <data name="AstHeader" xml:space="preserve">
+    <value>// AST (抽象语法树)</value>
+  </data>
+  <data name="SymbolsHeader" xml:space="preserve">
+    <value>// 符号表</value>
+  </data>
+  <data name="SymbolCount" xml:space="preserve">
+    <value>// 符号数: {0}</value>
+  </data>
+  <data name="ScopesHeader" xml:space="preserve">
+    <value>// 作用域树</value>
+  </data>
+  <data name="InferredTypesHeader" xml:space="preserve">
+    <value>// 类型推断结果</value>
+  </data>
+  <data name="CompilationSummaryHeader" xml:space="preserve">
+    <value>// 编译摘要</value>
+  </data>
+  <data name="SummaryStatus" xml:space="preserve">
+    <value>// 状态: {0}</value>
+  </data>
+  <data name="StatusSuccess" xml:space="preserve">
+    <value>成功</value>
+  </data>
+  <data name="StatusFailed" xml:space="preserve">
+    <value>失败</value>
+  </data>
+  <data name="CompletedPhase" xml:space="preserve">
+    <value>// 完成阶段: {0}</value>
+  </data>
+  <data name="TotalTimeMs" xml:space="preserve">
+    <value>// 总耗时: {0:F2}ms</value>
+  </data>
+  <data name="ErrorsWarnings" xml:space="preserve">
+    <value>// 错误: {0}, 警告: {1}</value>
+  </data>
+  <data name="PhaseTimingsHeader" xml:space="preserve">
+    <value>// 各阶段耗时:</value>
+  </data>
+  <data name="SubphaseTimingsHeader" xml:space="preserve">
+    <value>// 各子阶段耗时/内存:</value>
+  </data>
+  <data name="SubstitutionHeader" xml:space="preserve">
+    <value>// 类型代换</value>
+  </data>
+  <data name="BindingCount" xml:space="preserve">
+    <value>// 绑定数: {0}</value>
+  </data>
+  <data name="NoSubstitutionBindings" xml:space="preserve">
+    <value>// (无代换绑定)</value>
+  </data>
+  <data name="TypeVariableColumn" xml:space="preserve">
+    <value>类型变量</value>
+  </data>
+  <data name="StatusColumn" xml:space="preserve">
+    <value>状态</value>
+  </data>
+  <data name="AbilitiesHeader" xml:space="preserve">
+    <value>// 能力推断结果</value>
+  </data>
+  <data name="NoAbilityRequirements" xml:space="preserve">
+    <value>// 无能力需求</value>
+  </data>
+  <data name="FunctionAbilityRequirementsHeader" xml:space="preserve">
+    <value>// 函数能力需求:</value>
+  </data>
+  <data name="FunctionNameColumn" xml:space="preserve">
+    <value>函数名</value>
+  </data>
+  <data name="AbilityRequirementsColumn" xml:space="preserve">
+    <value>能力需求</value>
+  </data>
+  <data name="PureAbility" xml:space="preserve">
+    <value>(纯)</value>
+  </data>
+  <data name="HirHeader" xml:space="preserve">
+    <value>// HIR (高级中间表示)</value>
+  </data>
+  <data name="ModuleLine" xml:space="preserve">
+    <value>// 模块: {0}</value>
+  </data>
+  <data name="PathLine" xml:space="preserve">
+    <value>// 路径: {0}</value>
+  </data>
+  <data name="DeclarationCount" xml:space="preserve">
+    <value>// 声明数: {0}</value>
+  </data>
+  <data name="MirHeader" xml:space="preserve">
+    <value>// MIR (中级中间表示)</value>
+  </data>
+  <data name="FunctionCount" xml:space="preserve">
+    <value>// 函数数: {0}</value>
+  </data>
+  <data name="MirOptimizationSummaryHeader" xml:space="preserve">
+    <value>// MIR 优化摘要</value>
+  </data>
+  <data name="LivenessHeader" xml:space="preserve">
+    <value>// 活性分析结果</value>
+  </data>
+  <data name="BasicBlockLiveVariablesHeader" xml:space="preserve">
+    <value>// 基本块活跃变量:</value>
+  </data>
+  <data name="BlockIdColumn" xml:space="preserve">
+    <value>块ID</value>
+  </data>
+  <data name="VariableLiveRangesHeader" xml:space="preserve">
+    <value>// 变量活跃范围:</value>
+  </data>
+  <data name="VariableColumn" xml:space="preserve">
+    <value>变量</value>
+  </data>
+  <data name="DefinitionPointColumn" xml:space="preserve">
+    <value>定义点</value>
+  </data>
+  <data name="LiveBlockCountColumn" xml:space="preserve">
+    <value>活跃块数</value>
+  </data>
+  <data name="VariableStateTrackingHeader" xml:space="preserve">
+    <value>// 变量状态跟踪</value>
+  </data>
+  <data name="VariableStateSimplifiedNote" xml:space="preserve">
+    <value>// (简化输出 - 显示检测到的错误)</value>
+  </data>
+  <data name="NoAffineTypeErrors" xml:space="preserve">
+    <value>// 无仿射类型错误</value>
+  </data>
+  <data name="AffineIssueCount" xml:space="preserve">
+    <value>// 检测到 {0} 个仿射类型问题:</value>
+  </data>
+  <data name="AffineTypeErrorsHeader" xml:space="preserve">
+    <value>// 仿射类型错误</value>
+  </data>
+  <data name="ErrorLine" xml:space="preserve">
+    <value>// 错误: {0}</value>
+  </data>
+  <data name="IndentedVariableLine" xml:space="preserve">
+    <value>//   变量: %{0}</value>
+  </data>
+  <data name="IndentedTypeLine" xml:space="preserve">
+    <value>//   类型: {0}</value>
+  </data>
+  <data name="IndentedLocationLine" xml:space="preserve">
+    <value>//   位置: bb{0}:{1}</value>
+  </data>
+  <data name="IndentedRelatedLocationLine" xml:space="preserve">
+    <value>//   相关位置: bb{0}:{1}</value>
+  </data>
+  <data name="ActiveBorrowsHeader" xml:space="preserve">
+    <value>// 活跃借用列表</value>
+  </data>
+  <data name="NoActiveBorrows" xml:space="preserve">
+    <value>// 无活跃借用</value>
+  </data>
+  <data name="BorrowerColumn" xml:space="preserve">
+    <value>借用者</value>
+  </data>
+  <data name="BorroweeColumn" xml:space="preserve">
+    <value>被借用者</value>
+  </data>
+  <data name="MutableColumn" xml:space="preserve">
+    <value>可变?</value>
+  </data>
+  <data name="CreatedColumn" xml:space="preserve">
+    <value>创建</value>
+  </data>
+  <data name="EndedColumn" xml:space="preserve">
+    <value>结束</value>
+  </data>
+  <data name="SourceColumn" xml:space="preserve">
+    <value>来源</value>
+  </data>
+  <data name="Yes" xml:space="preserve">
+    <value>是</value>
+  </data>
+  <data name="No" xml:space="preserve">
+    <value>否</value>
+  </data>
+  <data name="BorrowAliasStatesHeader" xml:space="preserve">
+    <value>// 借用 alias 状态</value>
+  </data>
+  <data name="NoActiveAlias" xml:space="preserve">
+    <value>  (无活跃 alias)</value>
+  </data>
+  <data name="NoAliasStates" xml:space="preserve">
+    <value>// 无 alias 状态</value>
+  </data>
+  <data name="BorrowCheckErrorsTitle" xml:space="preserve">
+    <value>借用检查错误</value>
+  </data>
+  <data name="LoanSignatureInferenceErrorsTitle" xml:space="preserve">
+    <value>借用签名推断错误</value>
+  </data>
+  <data name="NoBorrowErrors" xml:space="preserve">
+    <value>// 无借用相关错误</value>
+  </data>
+  <data name="IndentedHintLine" xml:space="preserve">
+    <value>//   提示: {0}</value>
+  </data>
+  <data name="LoanSignatureHeader" xml:space="preserve">
+    <value>// 借用签名</value>
+  </data>
+  <data name="ParameterRequirementsHeader" xml:space="preserve">
+    <value>// 参数要求:</value>
+  </data>
+  <data name="ReturnConstraint" xml:space="preserve">
+    <value>// 返回约束: {0}</value>
+  </data>
+  <data name="ReturnConstraintOwn" xml:space="preserve">
+    <value>// 返回约束: own</value>
+  </data>
+  <data name="LoanConstraintStatesHeader" xml:space="preserve">
+    <value>// 调用借用约束状态</value>
+  </data>
+  <data name="NoLoanConstraintStates" xml:space="preserve">
+    <value>// 无调用借用约束状态</value>
+  </data>
+  <data name="LoanConstraintErrorsHeader" xml:space="preserve">
+    <value>// 调用借用约束错误</value>
+  </data>
+  <data name="NoLoanConstraintErrors" xml:space="preserve">
+    <value>// 无调用约束错误</value>
+  </data>
+  <data name="PerceusHintsHeader" xml:space="preserve">
+    <value>// Perceus 优化提示 (RC 优化)</value>
+  </data>
+  <data name="OmittableDupHeader" xml:space="preserve">
+    <value>// 可省略的 dup 操作:</value>
+  </data>
+  <data name="NoneItem" xml:space="preserve">
+    <value>//   (无)</value>
+  </data>
+  <data name="OmittableDropHeader" xml:space="preserve">
+    <value>// 可省略的 drop 操作:</value>
+  </data>
+  <data name="LlvmModuleHeader" xml:space="preserve">
+    <value>// LLVM IR 模块</value>
+  </data>
+  <data name="ModuleNameLine" xml:space="preserve">
+    <value>// 模块名: {0}</value>
+  </data>
+  <data name="GlobalVariableCount" xml:space="preserve">
+    <value>// 全局变量数: {0}</value>
+  </data>
+  <data name="ExternalDeclarationCount" xml:space="preserve">
+    <value>// 外部声明数: {0}</value>
+  </data>
+  <data name="FunctionSignaturesHeader" xml:space="preserve">
+    <value>// 函数签名:</value>
+  </data>
+  <data name="NameColumn" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="ReturnTypeColumn" xml:space="preserve">
+    <value>返回类型</value>
+  </data>
+  <data name="ParameterCountColumn" xml:space="preserve">
+    <value>参数数</value>
+  </data>
+  <data name="ExternalDeclarationsHeader" xml:space="preserve">
+    <value>// 外部声明:</value>
+  </data>
+  <data name="LlvmIrTextHeader" xml:space="preserve">
+    <value>// LLVM IR 文本输出</value>
+  </data>
+  <data name="ProfilingSnapshotParseFailed" xml:space="preserve">
+    <value>无法解析 profiling 快照: {0}</value>
+  </data>
+  <data name="ProfilingHotspotSummaryHeader" xml:space="preserve">
+    <value>## Hotspot Summary</value>
+  </data>
+  <data name="ProfilingNoPhaseDataRecorded" xml:space="preserve">
+    <value>No phase profiling data recorded.</value>
+  </data>
+  <data name="ProfilingTopPhasesByTime" xml:space="preserve">
+    <value>Top Phases by Time</value>
+  </data>
+  <data name="ProfilingTopPhasesByAllocation" xml:space="preserve">
+    <value>Top Phases by Allocation</value>
+  </data>
+  <data name="ProfilingTopSubphasesByTime" xml:space="preserve">
+    <value>Top Subphases by Time</value>
+  </data>
+  <data name="ProfilingTopSubphasesByAllocation" xml:space="preserve">
+    <value>Top Subphases by Allocation</value>
+  </data>
+  <data name="ProfilingBaselineComparisonHeader" xml:space="preserve">
+    <value>## Baseline Comparison</value>
+  </data>
+  <data name="ProfilingCurrentInputLine" xml:space="preserve">
+    <value>Current Input: `{0}`</value>
+  </data>
+  <data name="ProfilingBaselineInputLine" xml:space="preserve">
+    <value>Baseline Input: `{0}`</value>
+  </data>
+  <data name="ProfilingNoOverlappingPhaseData" xml:space="preserve">
+    <value>No overlapping phase data between current run and baseline snapshot.</value>
+  </data>
+  <data name="ProfilingPhaseTimeRegressionHeader" xml:space="preserve">
+    <value>### Phase Time Regression</value>
+  </data>
+  <data name="ProfilingPhaseAllocationRegressionHeader" xml:space="preserve">
+    <value>### Phase Allocation Regression</value>
+  </data>
+  <data name="ProfilingSubphaseTimeRegressionHeader" xml:space="preserve">
+    <value>### Subphase Time Regression</value>
+  </data>
+  <data name="ProfilingSubphaseAllocationRegressionHeader" xml:space="preserve">
+    <value>### Subphase Allocation Regression</value>
+  </data>
+  <data name="ProfilingComparisonTimeTableHeader" xml:space="preserve">
+    <value>| Phase | Current | Baseline | Δ ms | Δ % |</value>
+  </data>
+  <data name="ProfilingComparisonAllocationTableHeader" xml:space="preserve">
+    <value>| Phase | Current | Baseline | Δ bytes | Δ % |</value>
+  </data>
+  <data name="ProfilingSubphaseComparisonTimeTableHeader" xml:space="preserve">
+    <value>| Phase.Subphase | Current | Baseline | Δ ms | Δ % |</value>
+  </data>
+  <data name="ProfilingSubphaseComparisonAllocationTableHeader" xml:space="preserve">
+    <value>| Phase.Subphase | Current | Baseline | Δ bytes | Δ % |</value>
+  </data>
+  <data name="ProfilingPhaseProfilingHeader" xml:space="preserve">
+    <value>## Phase Profiling</value>
+  </data>
+  <data name="ProfilingPhaseProfilingTableHeader" xml:space="preserve">
+    <value>| Phase | Time (ms) | Time % | Allocated | Alloc % |</value>
+  </data>
+  <data name="ProfilingSubphaseProfilingHeader" xml:space="preserve">
+    <value>## Subphase Profiling</value>
+  </data>
+  <data name="ProfilingSubphaseProfilingTableHeader" xml:space="preserve">
+    <value>| Phase | Subphase | Time (ms) | Phase % | Total % | Allocated | Heap Δ | GC0 | GC1 | GC2 |</value>
+  </data>
+  <data name="ProfilingHotspotPhaseTableHeader" xml:space="preserve">
+    <value>| Phase | Metric | Share |</value>
+  </data>
+  <data name="ProfilingHotspotSubphaseTableHeader" xml:space="preserve">
+    <value>| Phase | Subphase | Metric | Phase % | Total % |</value>
+  </data>
+  <data name="ProfilingOptimizationCandidatesHeader" xml:space="preserve">
+    <value>### Optimization Candidates</value>
+  </data>
+  <data name="ProfilingTimeHotspotPhaseLine" xml:space="preserve">
+    <value>- Time hotspot phase: `{0}` at {1:F2} ms ({2:F2}% of measured phase time).</value>
+  </data>
+  <data name="ProfilingAllocationHotspotPhaseLine" xml:space="preserve">
+    <value>- Allocation hotspot phase: `{0}` at {1} ({2:F2}% of measured phase allocation).</value>
+  </data>
+  <data name="ProfilingDeepestTimeHotspotLine" xml:space="preserve">
+    <value>- Deepest time hotspot: `{0}.{1}` at {2:F2} ms ({3:F2}% of its phase, {4:F2}% overall).</value>
+  </data>
+  <data name="ProfilingDeepestAllocationHotspotLine" xml:space="preserve">
+    <value>- Deepest allocation hotspot: `{0}.{1}` at {2} ({3:F2}% phase time, {4:F2}% measured subphase allocation).</value>
+  </data>
+  <data name="ProfilingRegressionSummaryHeader" xml:space="preserve">
+    <value>### Regression Summary</value>
+  </data>
+  <data name="ProfilingWorstPhaseTimeRegressionLine" xml:space="preserve">
+    <value>- Worst phase time regression: `{0}` {1} ms ({2}).</value>
+  </data>
+  <data name="ProfilingWorstPhaseAllocationRegressionLine" xml:space="preserve">
+    <value>- Worst phase allocation regression: `{0}` {1} ({2}).</value>
+  </data>
+  <data name="ProfilingBestPhaseTimeImprovementLine" xml:space="preserve">
+    <value>- Best phase time improvement: `{0}` {1} ms ({2}).</value>
+  </data>
+  <data name="ProfilingWorstSubphaseTimeRegressionLine" xml:space="preserve">
+    <value>- Worst subphase time regression: `{0}` {1} ms ({2}).</value>
+  </data>
+  <data name="GitNotInstalled" xml:space="preserve">
+    <value>git is not installed or not on PATH. Install git to use git dependencies.</value>
+  </data>
+  <data name="FailedToStartGitProcess" xml:space="preserve">
+    <value>Failed to start git process</value>
+  </data>
+  <data name="GitCloneFailed" xml:space="preserve">
+    <value>git clone failed for {0}</value>
+  </data>
+  <data name="GitCommandFailed" xml:space="preserve">
+    <value>git {0} failed (exit {1}): {2}</value>
+  </data>
+  <data name="FailedToDeserializeLockFile" xml:space="preserve">
+    <value>Failed to deserialize lock file</value>
+  </data>
+  <data name="VersionStringEmpty" xml:space="preserve">
+    <value>Version string is empty</value>
+  </data>
+  <data name="InvalidVersionFormat" xml:space="preserve">
+    <value>Invalid version format: {0}</value>
+  </data>
+  <data name="MajorVersionMustBeNonNegative" xml:space="preserve">
+    <value>Major version must be &gt;= 0</value>
+  </data>
+  <data name="MinorVersionMustBeNonNegative" xml:space="preserve">
+    <value>Minor version must be &gt;= 0</value>
+  </data>
+  <data name="PatchVersionMustBeNonNegative" xml:space="preserve">
+    <value>Patch version must be &gt;= 0</value>
+  </data>
+  <data name="VersionRangeSpecEmpty" xml:space="preserve">
+    <value>Version range spec is empty</value>
+  </data>
+  <data name="InvalidCompoundVersionRange" xml:space="preserve">
+    <value>Invalid compound version range: {0}</value>
+  </data>
+  <data name="FailedToLoadProjectConfig" xml:space="preserve">
+    <value>Failed to load project config '{0}': {1}</value>
+  </data>
+  <data name="FailedToResolveDependency" xml:space="preserve">
+    <value>Failed to resolve dependency '{0}': {1}</value>
+  </data>
+  <data name="UnknownDependencySource" xml:space="preserve">
+    <value>Unknown dependency source for '{0}'</value>
+  </data>
+  <data name="PathDependencyMissingPath" xml:space="preserve">
+    <value>Path dependency '{0}' has no path</value>
+  </data>
+  <data name="PathDependencyDirectoryNotFound" xml:space="preserve">
+    <value>Path dependency directory not found: {0}</value>
+  </data>
+  <data name="GitDependencyMissingUrl" xml:space="preserve">
+    <value>Git dependency '{0}' has no URL</value>
+  </data>
+  <data name="VersionDependencyRequiresRegistry" xml:space="preserve">
+    <value>Version-based dependency resolution for '{0}' requires a package index entry. Check the configured package index or use a path/git dependency.</value>
+  </data>
+  <data name="ProjectDoesNotDefineTarget" xml:space="preserve">
+    <value>Project '{0}' does not define target '{1}'. Available targets: {2}</value>
+  </data>
+  <data name="ProjectConfigNotFound" xml:space="preserve">
+    <value>Project config '{0}' was not found.</value>
+  </data>
+  <data name="LockFileNotFound" xml:space="preserve">
+    <value>Lock file not found: {0}</value>
+  </data>
+  <data name="DirectoryNotFound" xml:space="preserve">
+    <value>Directory not found: {0}</value>
+  </data>
+  <data name="ProjectBuildGraphDependencyCycleDetected" xml:space="preserve">
+    <value>Project build graph dependency cycle detected: {0}</value>
+  </data>
+  <data name="TargetDependsOnMissingTarget" xml:space="preserve">
+    <value>Target '{0}' in project '{1}' depends on missing target '{2}'.</value>
+  </data>
+  <data name="TargetDependsOnMissingProjectDependency" xml:space="preserve">
+    <value>Target '{0}' in project '{1}' depends on missing project dependency '{2}'.</value>
+  </data>
+  <data name="ProjectDependencyRequiresPath" xml:space="preserve">
+    <value>Project dependency '{0}' in project '{1}' must declare a valid path.</value>
+  </data>
+  <data name="ProjectContainsTargetWithEmptyName" xml:space="preserve">
+    <value>Project '{0}' contains a target with an empty name.</value>
+  </data>
+  <data name="ProjectDeclaresDuplicateTarget" xml:space="preserve">
+    <value>Project '{0}' declares duplicate target '{1}'.</value>
+  </data>
+  <data name="ProjectContainsDependencyWithEmptyName" xml:space="preserve">
+    <value>Project '{0}' contains a project dependency with an empty name.</value>
+  </data>
+  <data name="ProjectDeclaresDuplicateDependency" xml:space="preserve">
+    <value>Project '{0}' declares duplicate project dependency '{1}'.</value>
+  </data>
+  <data name="ProjectDefaultTargetMissing" xml:space="preserve">
+    <value>Project '{0}' declares defaultTarget '{1}', but that target does not exist.</value>
+  </data>
+  <data name="ProjectDeclaresNoTargets" xml:space="preserve">
+    <value>Project '{0}' does not declare any targets.</value>
+  </data>
+  <data name="ProjectDeclaresMultipleTargets" xml:space="preserve">
+    <value>Project '{0}' declares multiple targets. Specify a target name. Available targets: {1}</value>
+  </data>
+  <data name="TargetRequiresEntryFile" xml:space="preserve">
+    <value>Target '{0}' in project '{1}' must declare an entry file.</value>
+  </data>
+  <data name="TargetReferencesMissingEntryFile" xml:space="preserve">
+    <value>Target '{0}' in project '{1}' references missing entry file '{2}'.</value>
+  </data>
+  <data name="TargetDeclaresUnsupportedKind" xml:space="preserve">
+    <value>Target '{0}' in project '{1}' declares unsupported kind '{2}'. Supported kinds: executable, library.</value>
+  </data>
+  <data name="TargetDeclaresDuplicateReference" xml:space="preserve">
+    <value>Target '{0}' in project '{1}' declares duplicate {2} '{3}'.</value>
+  </data>
+</root>

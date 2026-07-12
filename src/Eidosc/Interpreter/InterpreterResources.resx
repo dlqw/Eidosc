@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="PerformRequiresHandlerContext" xml:space="preserve">
+    <value>perform requires a handler context</value>
+  </data>
+  <data name="HandleExpressionsUnsupported" xml:space="preserve">
+    <value>handle expressions are not yet supported</value>
+  </data>
+  <data name="ResumeUnsupportedOutsideHandlerContext" xml:space="preserve">
+    <value>resume is not supported outside handler context</value>
+  </data>
+  <data name="PatternGuardsNotEvaluable" xml:space="preserve">
+    <value>Pattern guards are not evaluable expressions</value>
+  </data>
+  <data name="SequentialGuardsNotEvaluable" xml:space="preserve">
+    <value>Sequential guards are not evaluable expressions</value>
+  </data>
+  <data name="UnsupportedHirNode" xml:space="preserve">
+    <value>Unsupported HIR node: {0}</value>
+  </data>
+  <data name="UnsupportedLiteralKind" xml:space="preserve">
+    <value>Unsupported literal kind: {0}</value>
+  </data>
+  <data name="UndefinedVariable" xml:space="preserve">
+    <value>Undefined variable: {0}</value>
+  </data>
+  <data name="UnsupportedBinaryOperator" xml:space="preserve">
+    <value>Unsupported binary operator: {0}</value>
+  </data>
+  <data name="CannotAdd" xml:space="preserve">
+    <value>Cannot add {0} and {1}</value>
+  </data>
+  <data name="CannotNegate" xml:space="preserve">
+    <value>Cannot negate {0}</value>
+  </data>
+  <data name="UnsupportedUnaryOperator" xml:space="preserve">
+    <value>Unsupported unary operator: {0}</value>
+  </data>
+  <data name="CannotCall" xml:space="preserve">
+    <value>Cannot call {0}</value>
+  </data>
+  <data name="FunctionArityMismatch" xml:space="preserve">
+    <value>Function expects {0} args, got {1}</value>
+  </data>
+  <data name="UnsupportedStatementType" xml:space="preserve">
+    <value>Unsupported statement type: {0}</value>
+  </data>
+  <data name="UnsupportedDeclarationType" xml:space="preserve">
+    <value>Unsupported declaration type: {0}</value>
+  </data>
+  <data name="CannotAssignTo" xml:space="preserve">
+    <value>Cannot assign to {0}</value>
+  </data>
+  <data name="FieldAssignmentUnsupported" xml:space="preserve">
+    <value>Field assignment is not yet supported</value>
+  </data>
+  <data name="IndexAssignmentUnsupported" xml:space="preserve">
+    <value>Index assignment is not yet supported</value>
+  </data>
+  <data name="TupleDestructuringMismatch" xml:space="preserve">
+    <value>Tuple destructuring mismatch</value>
+  </data>
+  <data name="ConstructorPatternMismatch" xml:space="preserve">
+    <value>Constructor pattern mismatch: expected {0}</value>
+  </data>
+  <data name="ConstructorFieldCountMismatch" xml:space="preserve">
+    <value>Constructor field count mismatch</value>
+  </data>
+  <data name="ListDestructuringRequiresList" xml:space="preserve">
+    <value>List destructuring requires a list value</value>
+  </data>
+  <data name="ListLengthMismatchInDestructuring" xml:space="preserve">
+    <value>List length mismatch in destructuring</value>
+  </data>
+  <data name="NonExhaustivePatternMatch" xml:space="preserve">
+    <value>Non-exhaustive pattern match</value>
+  </data>
+  <data name="CannotAccessField" xml:space="preserve">
+    <value>Cannot access field '{0}' on {1}</value>
+  </data>
+  <data name="IndexOutOfRange" xml:space="preserve">
+    <value>Index {0} out of range</value>
+  </data>
+  <data name="TupleIndexOutOfRange" xml:space="preserve">
+    <value>Tuple index {0} out of range</value>
+  </data>
+  <data name="CannotIndex" xml:space="preserve">
+    <value>Cannot index {0} with {1}</value>
+  </data>
+  <data name="StandaloneHandlerUnsupported" xml:space="preserve">
+    <value>Standalone handler for '{0}' is not yet supported</value>
+  </data>
+  <data name="CannotCompare" xml:space="preserve">
+    <value>Cannot compare {0} and {1}</value>
+  </data>
+  <data name="ExpectedRuntimeValueType" xml:space="preserve">
+    <value>Expected {0}, got {1}</value>
+  </data>
+  <data name="AbsExpectedIntOrFloat" xml:space="preserve">
+    <value>abs: expected Int or Float</value>
+  </data>
+  <data name="MinExpectedMatchingNumericTypes" xml:space="preserve">
+    <value>min: expected matching numeric types</value>
+  </data>
+  <data name="MaxExpectedMatchingNumericTypes" xml:space="preserve">
+    <value>max: expected matching numeric types</value>
+  </data>
+  <data name="CharAtIndexOutOfRange" xml:space="preserve">
+    <value>charAt: index {0} out of range</value>
+  </data>
+  <data name="HeadEmptyList" xml:space="preserve">
+    <value>head: empty list</value>
+  </data>
+  <data name="TailEmptyList" xml:space="preserve">
+    <value>tail: empty list</value>
+  </data>
+  <data name="FstTupleTooSmall" xml:space="preserve">
+    <value>fst: tuple too small</value>
+  </data>
+  <data name="SndTupleTooSmall" xml:space="preserve">
+    <value>snd: tuple too small</value>
+  </data>
+  <data name="StringToIntCannotParse" xml:space="preserve">
+    <value>stringToInt: cannot parse '{0}'</value>
+  </data>
+  <data name="StringToFloatCannotParse" xml:space="preserve">
+    <value>stringToFloat: cannot parse '{0}'</value>
+  </data>
+  <data name="RuntimeFunctionDisplay" xml:space="preserve">
+    <value>&lt;function({0})&gt;</value>
+  </data>
+  <data name="RuntimeBuiltinFunctionDisplay" xml:space="preserve">
+    <value>&lt;builtin:{0}&gt;</value>
+  </data>
+</root>

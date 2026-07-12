@@ -1,0 +1,12 @@
+manifestSchema = 3
+
+sourceRoots = ["."]
+
+[language]
+version = "0.4.0-alpha.1"
+
+[package]
+name = "Std"
+version = "0.1.0-alpha.1"
+description = "Eidos standard library"
+license = "MIT"

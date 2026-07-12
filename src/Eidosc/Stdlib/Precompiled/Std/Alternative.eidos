@@ -1,0 +1,112 @@
+Alternative :: module {
+    import Option
+
+    Alternative[F: kind2] :: trait {
+        empty[A] :: Unit -> F[A]
+        or_else[A] :: F[A] -> F[A] -> F[A]
+    }
+
+    empty_seq[A] :: Unit -> Seq[A]
+    {
+        _ => []
+    }
+
+    or_else_seq[A] :: Seq[A] -> Seq[A] -> Seq[A]
+    {
+        [] => fallback => fallback,
+        xs => fallback => xs
+    }
+
+    is_empty_seq[A] :: Seq[A] -> Bool
+    {
+        [] => true,
+        xs => false
+    }
+
+    or_else_seq_with[A, E: effects] :: Seq[A] -> (Unit -> Seq[A] need E) -> Seq[A] need E
+    {
+        [] => fallback => fallback(()),
+        xs => _ => xs
+    }
+
+    guard_seq :: Bool -> Seq[Unit]
+    {
+        true => [()],
+        false => []
+    }
+
+    when_seq[A, E: effects] :: Bool -> (Unit -> A need E) -> Seq[A] need E
+    {
+        true => body => [body(())],
+        false => _ => []
+    }
+
+    empty_option[A] :: Unit -> Option[A]
+    {
+        _ => None()
+    }
+
+    or_else_option[A] :: Option[A] -> Option[A] -> Option[A]
+    {
+        Some(value) => fallback => Some(value),
+        None() => fallback => fallback
+    }
+
+    is_empty_option[A] :: Option[A] -> Bool
+    {
+        Some(value) => false,
+        None() => true
+    }
+
+    or_else_option_with[A, E: effects] :: Option[A] -> (Unit -> Option[A] need E) -> Option[A] need E
+    {
+        Some(value) => _ => Some(value),
+        None() => fallback => fallback(())
+    }
+
+    guard_option :: Bool -> Option[Unit]
+    {
+        true => Some(()),
+        false => None()
+    }
+
+    when_option[A, E: effects] :: Bool -> (Unit -> A need E) -> Option[A] need E
+    {
+        true => body => Some(body(())),
+        false => _ => None()
+    }
+
+    empty_for[A, F: kind2 : Alternative[F]] :: Unit -> F[A]
+    {
+        _ => Alternative::empty(())
+    }
+
+    choose[A, F: kind2 : Alternative[F]] :: F[A] -> F[A] -> F[A]
+    {
+        values => fallback => Alternative::or_else(values)(fallback)
+    }
+
+    AlternativeSeq :: instance Alternative::Alternative[Seq] {
+        empty[A] :: Unit -> Seq[A]
+            {
+                _ => []
+            }
+        or_else[A] :: Seq[A] -> Seq[A] -> Seq[A]
+            {
+                [] => fallback => fallback,
+                xs => _ => xs
+            }
+    }
+
+    AlternativeOption :: instance Alternative::Alternative[Option] {
+        empty[A] :: Unit -> Option[A]
+            {
+                _ => None()
+            }
+        or_else[A] :: Option[A] -> Option[A] -> Option[A]
+            {
+                Some(value) => _ => Some(value),
+                None() => fallback => fallback
+            }
+    }
+}

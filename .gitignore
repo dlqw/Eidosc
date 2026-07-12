@@ -1,0 +1,15 @@
+bin/
+obj/
+artifacts/
+.idea/
+**/.idea/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+*.DotSettings
+*.exe
+*.nupkg
+*.snupkg
+**/nupkg/
+
+/debug/

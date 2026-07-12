@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-test:
+    name: build-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+
+    env:
+      DOTNET_NOLOGO: "1"
+      EIDOS_TEST_BASE_PATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: Eidosc
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install LLVM on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm lld
+
+      - name: Install LLVM on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install llvm -y --no-progress
+          "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Print toolchain versions
+        shell: pwsh
+        run: |
+          dotnet --info
+          clang --version
+          if (Get-Command llc -ErrorAction SilentlyContinue) { llc --version }
+
+      - name: Build solution
+        run: dotnet build Eidosc/Eidosc.sln /p:UseSharedCompilation=false /nr:false
+
+      - name: Verify product versions
+        shell: pwsh
+        run: ./Eidosc/scripts/versioning/verify-versions.ps1
+
+      - name: Run stable verification suite
+        run: >
+          dotnet test Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          --no-build
+          --filter
+          "FullyQualifiedName~Eidosup|FullyQualifiedName~InfoCommandTests|FullyQualifiedName~MirValidatorTests|FullyQualifiedName~MirToLlvmConverterTests|FullyQualifiedName~RuntimeEffectDispatch_MultiplePayloads_NativeSmoke|FullyQualifiedName~RuntimeEffectDispatch_NinePayloads_NativeSmoke|FullyQualifiedName~RuntimeEffectDispatch_WithThreePayloads_NativeSmoke|FullyQualifiedName~RuntimeContinuationFrameTake_NativeSmoke|FullyQualifiedName~StringLiteralInterning_NativeSmoke"
+          /p:UseSharedCompilation=false
+          /nr:false
+
+      - name: Run performance profile gate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/perf/run-benchmarks.ps1
+          -SkipBenchmarks
+          -GateThresholds Eidosc/scripts/perf/eidosc-local-thresholds.json
+          -ProfileIterations 1
+          -ProfileWarmup 0
+
+      - name: Smoke test eidosup help
+        run: dotnet run --project Eidosc/src/Eidosup -- --help

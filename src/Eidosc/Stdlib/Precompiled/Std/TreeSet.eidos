@@ -1,0 +1,72 @@
+TreeSet :: module {
+    import Seq
+    import Option
+    import Trait
+    import TreeMap
+
+    TreeSet[K] :: type {
+        TreeSet{inner: TreeMap[K, Bool]}
+    }
+
+    empty[K] :: Unit -> TreeSet[K]
+    {
+        _ => TreeSet{inner: TreeMap::empty(())}
+    }
+
+    singleton[K] :: K -> TreeSet[K]
+    {
+        key => TreeSet{inner: TreeMap::singleton(key)(true)}
+    }
+
+    from_seq[K: Trait::Ord + Trait::Clone] :: Seq[K] -> TreeSet[K]
+    {
+        values => Seq::fold_left(values)(TreeSet::empty(()))(set => key => TreeSet::insert(set)(key))
+    }
+
+    len[K] :: TreeSet[K] -> Int
+    {
+        TreeSet{inner: inner} => TreeMap::len(inner)
+    }
+
+    is_empty[K] :: TreeSet[K] -> Bool
+    {
+        set => TreeSet::len(set) == 0
+    }
+
+    insert[K: Trait::Ord + Trait::Clone] :: TreeSet[K] -> K -> TreeSet[K]
+    {
+        TreeSet{inner: inner} => key => TreeSet{inner: TreeMap::insert(inner)(key)(true)}
+    }
+
+    remove[K: Trait::Ord + Trait::Clone] :: TreeSet[K] -> K -> TreeSet[K]
+    {
+        TreeSet{inner: inner} => key => TreeSet{inner: TreeMap::remove(inner)(key)}
+    }
+
+    contains[K: Trait::Ord + Trait::Clone] :: TreeSet[K] -> K -> Bool
+    {
+        TreeSet{inner: inner} => key => TreeMap::contains_key(inner)(key)
+    }
+
+    to_seq[K] :: TreeSet[K] -> Seq[K]
+    {
+        TreeSet{inner: inner} => TreeMap::keys(inner)
+    }
+
+    union[K: Trait::Ord + Trait::Clone] :: TreeSet[K] -> TreeSet[K] -> TreeSet[K]
+    {
+        left => right => Seq::fold_left(TreeSet::to_seq(right))(left)(set => key => TreeSet::insert(set)(key))
+    }
+
+    intersection[K: Trait::Ord + Trait::Clone] :: TreeSet[K] -> TreeSet[K] -> TreeSet[K]
+    {
+        left => right => Seq::fold_left(TreeSet::to_seq(left))(TreeSet::empty(()))(acc => key =>
+            if TreeSet::contains(right)(key) then { TreeSet::insert(acc)(key) } else { acc })
+    }
+
+    difference[K: Trait::Ord + Trait::Clone] :: TreeSet[K] -> TreeSet[K] -> TreeSet[K]
+    {
+        left => right => Seq::fold_left(TreeSet::to_seq(left))(TreeSet::empty(()))(acc => key =>
+            if TreeSet::contains(right)(key) then { acc } else { TreeSet::insert(acc)(key) })
+    }
+}

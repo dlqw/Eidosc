@@ -1,0 +1,23 @@
+Shared :: module {
+    import Trait
+
+    Shared[T] :: type {
+    }
+
+    @intrinsic("shared_new")
+    new[T] :: T -> Shared[T]
+
+    @intrinsic("shared_borrow")
+    borrow[T] :: Shared[T] -> Ref[T]
+
+    @intrinsic("shared_clone")
+    shared_clone[T] :: Shared[T] -> Shared[T]
+
+    CloneSharedT :: instance Trait::Clone {
+        @intrinsic("shared_clone")
+        clone[T] :: Shared[T] -> Shared[T]
+    }
+
+    @intrinsic("shared_ptr_eq")
+    ptr_eq[T] :: Shared[T] -> Shared[T] -> Bool
+}

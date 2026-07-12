@@ -1,0 +1,123 @@
+Deque :: module {
+    import Seq
+    import Option
+    import Trait
+    import TraitInvoke
+
+    Deque[T] :: type {
+        Deque{front: Seq[T], back: Seq[T]}
+    }
+
+    empty[T] :: Unit -> Deque[T]
+    {
+        _ => Deque{front: [], back: []}
+    }
+
+    singleton[T] :: T -> Deque[T]
+    {
+        value => Deque{front: [value], back: []}
+    }
+
+    from_seq[T] :: Seq[T] -> Deque[T]
+    {
+        values => Deque{front: values, back: []}
+    }
+
+    len[T] :: Deque[T] -> Int
+    {
+        Deque{front: f, back: b} => Seq::len(f) + Seq::len(b)
+    }
+
+    is_empty[T] :: Deque[T] -> Bool
+    {
+        deque => Deque::len(deque) == 0
+    }
+
+    push_front[T] :: Deque[T] -> T -> Deque[T]
+    {
+        Deque{front: f, back: b} => value => Deque{front: [value, ..f], back: b}
+    }
+
+    push_back[T] :: Deque[T] -> T -> Deque[T]
+    {
+        Deque{front: f, back: b} => value => Deque{front: f, back: [value, ..b]}
+    }
+
+    @internal
+    normalize_front[T] :: Deque[T] -> Deque[T]
+    {
+        Deque{front: [], back: b} => Deque{front: Seq::reverse(b), back: []},
+        deque => deque
+    }
+
+    @internal
+    normalize_back[T] :: Deque[T] -> Deque[T]
+    {
+        Deque{front: f, back: []} => Deque{front: [], back: Seq::reverse(f)},
+        deque => deque
+    }
+
+    front[T] :: Deque[T] -> Option[T]
+    {
+        deque => match Deque::normalize_front(deque) {
+            Deque{front: [value, ..], back: _} => Some(value),
+            _ => None()
+        }
+    }
+
+    back[T] :: Deque[T] -> Option[T]
+    {
+        deque => match Deque::normalize_back(deque) {
+            Deque{front: _, back: [value, ..]} => Some(value),
+            _ => None()
+        }
+    }
+
+    pop_front[T] :: Deque[T] -> Option[(T, Deque[T])]
+    {
+        deque => match Deque::normalize_front(deque) {
+            Deque{front: [value, ..rest], back: b} => Some((value, Deque{front: rest, back: b})),
+            _ => None()
+        }
+    }
+
+    pop_back[T] :: Deque[T] -> Option[(T, Deque[T])]
+    {
+        deque => match Deque::normalize_back(deque) {
+            Deque{front: f, back: [value, ..rest]} => Some((value, Deque{front: f, back: rest})),
+            _ => None()
+        }
+    }
+
+    to_seq[T] :: Deque[T] -> Seq[T]
+    {
+        Deque{front: f, back: b} => Seq::append(f)(Seq::reverse(b))
+    }
+
+    get_opt[T] :: Deque[T] -> Int -> Option[T]
+    {
+        deque => index => Seq::get_opt(Deque::to_seq(deque))(index)
+    }
+
+    get_or[T] :: Deque[T] -> Int -> T -> T
+    {
+        deque => index => fallback => Option::unwrap_or(Deque::get_opt(deque)(index))(fallback)
+    }
+
+    CloneDequeT :: instance Trait::Clone {
+        clone[T: Trait::Clone] :: Deque[T] -> Deque[T]
+            {
+                Deque{front: f, back: b} => Deque{
+                    front: TraitInvoke::clone_value(f),
+                    back: TraitInvoke::clone_value(b)
+                }
+            }
+    }
+
+    EqDequeT :: instance Trait::Eq {
+        eq[T: Trait::Eq] :: Deque[T] -> Deque[T] -> Bool
+            {
+                left => right => TraitInvoke::eq_value(Deque::to_seq(left))(Deque::to_seq(right))
+            }
+    }
+}

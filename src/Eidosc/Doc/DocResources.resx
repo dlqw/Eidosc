@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="MarkdownModuleHeader" xml:space="preserve">
+    <value># Module `{0}`</value>
+  </data>
+  <data name="MarkdownTypesHeader" xml:space="preserve">
+    <value>## Types</value>
+  </data>
+  <data name="MarkdownTraitsHeader" xml:space="preserve">
+    <value>## Traits</value>
+  </data>
+  <data name="MarkdownFunctionsHeader" xml:space="preserve">
+    <value>## Functions</value>
+  </data>
+  <data name="MarkdownTypeParameters" xml:space="preserve">
+    <value>Type parameters: {0}</value>
+  </data>
+  <data name="MarkdownFieldsHeader" xml:space="preserve">
+    <value>#### Fields</value>
+  </data>
+  <data name="MarkdownFieldsTableHeader" xml:space="preserve">
+    <value>| Name | Type | Description |</value>
+  </data>
+  <data name="MarkdownConstructorsHeader" xml:space="preserve">
+    <value>#### Constructors</value>
+  </data>
+  <data name="MarkdownTraitHeader" xml:space="preserve">
+    <value>### Trait `{0}`</value>
+  </data>
+  <data name="MarkdownMethodsHeader" xml:space="preserve">
+    <value>#### Methods</value>
+  </data>
+  <data name="MarkdownDeprecated" xml:space="preserve">
+    <value>&gt; **Deprecated:** {0}</value>
+  </data>
+  <data name="MarkdownParametersHeader" xml:space="preserve">
+    <value>**Parameters:**</value>
+  </data>
+  <data name="MarkdownReturns" xml:space="preserve">
+    <value>**Returns:** `{0}`</value>
+  </data>
+  <data name="MarkdownExampleHeader" xml:space="preserve">
+    <value>**Example:**</value>
+  </data>
+  <data name="HtmlLanguage" xml:space="preserve">
+    <value>en</value>
+  </data>
+  <data name="HtmlTitle" xml:space="preserve">
+    <value>{0} — Documentation</value>
+  </data>
+  <data name="HtmlModuleHeader" xml:space="preserve">
+    <value>Module &lt;code&gt;{0}&lt;/code&gt;</value>
+  </data>
+  <data name="HtmlTypesHeader" xml:space="preserve">
+    <value>Types</value>
+  </data>
+  <data name="HtmlTraitsHeader" xml:space="preserve">
+    <value>Traits</value>
+  </data>
+  <data name="HtmlFunctionsHeader" xml:space="preserve">
+    <value>Functions</value>
+  </data>
+  <data name="HtmlFieldsHeader" xml:space="preserve">
+    <value>Fields</value>
+  </data>
+  <data name="HtmlFieldsTableHeader" xml:space="preserve">
+    <value>&lt;table&gt;&lt;tr&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Type&lt;/th&gt;&lt;th&gt;Description&lt;/th&gt;&lt;/tr&gt;</value>
+  </data>
+  <data name="HtmlConstructorsHeader" xml:space="preserve">
+    <value>Constructors</value>
+  </data>
+  <data name="HtmlTraitHeader" xml:space="preserve">
+    <value>Trait &lt;code&gt;{0}&lt;/code&gt;</value>
+  </data>
+  <data name="HtmlMethodsHeader" xml:space="preserve">
+    <value>Methods</value>
+  </data>
+  <data name="HtmlDeprecated" xml:space="preserve">
+    <value>&lt;div class="deprecated"&gt;&lt;strong&gt;Deprecated:&lt;/strong&gt; {0}&lt;/div&gt;</value>
+  </data>
+  <data name="HtmlParametersHeader" xml:space="preserve">
+    <value>Parameters</value>
+  </data>
+  <data name="HtmlReturns" xml:space="preserve">
+    <value>&lt;p&gt;&lt;strong&gt;Returns:&lt;/strong&gt; &lt;code&gt;{0}&lt;/code&gt;&lt;/p&gt;</value>
+  </data>
+  <data name="HtmlExampleHeader" xml:space="preserve">
+    <value>Example</value>
+  </data>
+</root>

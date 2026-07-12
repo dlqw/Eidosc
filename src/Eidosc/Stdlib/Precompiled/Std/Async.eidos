@@ -1,0 +1,29 @@
+Async :: module {
+import Task
+import FFI
+
+/// Spawn a scheduler-backed task that returns an unmanaged RawPtr payload.
+spawn_raw[E: effects] :: (Unit -> RawPtr need E) -> Task[RawPtr] need FFI, E
+{
+    thunk => Task::spawn_raw(thunk)
+}
+
+/// Spawn a scheduler-backed task that returns a boxed Eidos value.
+spawn[A, E: effects] :: (Unit -> A need E) -> Task[A] need FFI, E
+{
+    thunk => Task::spawn(thunk)
+}
+
+/// Register a raw continuation to run when a RawPtr task completes.
+await_raw[E: effects] :: Task[RawPtr] -> (RawPtr -> Unit need E) -> Unit need FFI, E
+{
+    task => continuation => Task::await_raw(task)(continuation)
+}
+
+/// Register a continuation to run when a boxed Eidos value task completes.
+await[A, E: effects] :: Task[A] -> (A -> Unit need E) -> Unit need FFI, E
+{
+    task => continuation => Task::await_value(task)(continuation)
+}
+
+}

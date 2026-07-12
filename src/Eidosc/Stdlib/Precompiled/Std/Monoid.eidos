@@ -1,0 +1,148 @@
+Monoid :: module {
+    import Semigroup
+    import Trait
+
+    Monoid :: trait {
+        empty :: Unit -> Self
+    }
+
+    LawUnit :: type {
+        LawUnit
+    }
+
+    law_unit :: Unit -> LawUnit
+    {
+        _ => LawUnit()
+    }
+
+    EqLawUnit :: instance Trait::Eq {
+        eq :: LawUnit -> LawUnit -> Bool
+            {
+                _ => _ => true
+            }
+    }
+
+    empty_int :: Unit -> Int
+    {
+        _ => 0
+    }
+
+    empty_string :: Unit -> String
+    {
+        _ => ""
+    }
+
+    empty_seq[T] :: Unit -> Seq[T]
+    {
+        _ => []
+    }
+
+    is_empty_int :: Int -> Bool
+    {
+        value => value == Monoid::empty_int(())
+    }
+
+    is_empty_string :: String -> Bool
+    {
+        value => value == Monoid::empty_string(())
+    }
+
+    is_empty_seq[T] :: Seq[T] -> Bool
+    {
+        [] => true,
+        _ => false
+    }
+
+    is_empty[T: Trait::Eq + Monoid::Monoid] :: T -> Bool
+    {
+        value => value == Monoid::empty(())
+    }
+
+    combine[T: Semigroup::Semigroup + Monoid::Monoid] :: Seq[T] -> T
+    {
+        [] => Monoid::empty(()),
+        [head, ..tail] => Semigroup::append(head)(Monoid::combine(tail))
+    }
+
+    combine_ints :: Seq[Int] -> Int
+    {
+        [] => Monoid::empty_int(()),
+        [head, ..tail] => Semigroup::append_int(head)(Monoid::combine_ints(tail))
+    }
+
+    combine_strings :: Seq[String] -> String
+    {
+        [] => Monoid::empty_string(()),
+        [head, ..tail] => Semigroup::append_string(head)(Monoid::combine_strings(tail))
+    }
+
+    combine_seqs[T] :: Seq[Seq[T]] -> Seq[T]
+    {
+        [] => Monoid::empty_seq(()),
+        [head, ..tail] => [x | xs <- [head, Monoid::combine_seqs(tail)], x <- xs]
+    }
+
+    append :: LawUnit -> LawUnit -> LawUnit
+    {
+        _ => _ => LawUnit()
+    }
+
+    MonoidDefaults :: instance Monoid::Monoid {
+        empty :: Unit -> LawUnit
+            {
+                _ => LawUnit()
+            }
+    }
+
+    inverse :: LawUnit -> LawUnit
+    {
+        _ => LawUnit()
+    }
+
+    add :: LawUnit -> LawUnit -> LawUnit
+    {
+        _ => _ => LawUnit()
+    }
+
+    zero :: Unit -> LawUnit
+    {
+        _ => LawUnit()
+    }
+
+    negate :: LawUnit -> LawUnit
+    {
+        _ => LawUnit()
+    }
+
+    multiply :: LawUnit -> LawUnit -> LawUnit
+    {
+        _ => _ => LawUnit()
+    }
+
+    one :: Unit -> LawUnit
+    {
+        _ => LawUnit()
+    }
+
+    MonoidInt :: instance Monoid::Monoid {
+        empty :: Unit -> Int
+            {
+                _ => Monoid::empty_int(())
+            }
+    }
+
+    MonoidString :: instance Monoid::Monoid {
+        empty :: Unit -> String
+            {
+                _ => Monoid::empty_string(())
+            }
+    }
+
+    MonoidSeq[T] :: instance Monoid::Monoid {
+        empty[T] :: Unit -> Seq[T]
+            {
+                _ => Monoid::empty_seq(())
+            }
+    }
+
+}

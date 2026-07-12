@@ -1,0 +1,65 @@
+name: Release Eidosup
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact Eidosup SemVer from eng/Eidosup.Version.props
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, runner: windows-latest, extension: ".exe" }
+          - { rid: win-arm64, runner: windows-latest, extension: ".exe" }
+          - { rid: linux-x64, runner: ubuntu-latest, extension: "" }
+          - { rid: linux-arm64, runner: ubuntu-latest, extension: "" }
+          - { rid: osx-x64, runner: macos-latest, extension: "" }
+          - { rid: osx-arm64, runner: macos-latest, extension: "" }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
+      - name: Verify version
+        shell: pwsh
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Release commit must be on main." }
+          [xml]$props = Get-Content -Raw eng/Eidosup.Version.props
+          $prefix = [string]$props.Project.PropertyGroup.EidosupVersionPrefix
+          $suffix = [string]$props.Project.PropertyGroup.EidosupVersionSuffix
+          $declared = if ($suffix) { "$prefix-$suffix" } else { $prefix }
+          if ($declared -ne "${{ inputs.version }}") { throw "Version mismatch: $declared" }
+      - name: Publish
+        shell: pwsh
+        run: |
+          $rid = "${{ matrix.rid }}"
+          dotnet publish src/Eidosup/Eidosup.csproj -c Release -r $rid -p:SelfContained=true -p:PublishSingleFile=true -p:DebugType=None -o artifacts/publish
+          $binary = if ($rid.StartsWith("win-")) { "Eidosup.exe" } else { "Eidosup" }
+          Copy-Item "artifacts/publish/$binary" "artifacts/eidosup-v${{ inputs.version }}-$rid${{ matrix.extension }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eidosup-${{ matrix.rid }}
+          path: artifacts/eidosup-v${{ inputs.version }}-${{ matrix.rid }}${{ matrix.extension }}
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts/release, merge-multiple: true }
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "eidosup-v${{ inputs.version }}" artifacts/release/* --target "$GITHUB_SHA" --prerelease --title "eidosup-v${{ inputs.version }}" --notes-file "changelogs/eidosup/${{ inputs.version }}.md"

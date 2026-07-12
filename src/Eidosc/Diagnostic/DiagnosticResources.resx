@@ -1,0 +1,2775 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="BinaryExpressionRequiresLeftOperand" xml:space="preserve">
+    <value>Binary expression requires a left operand</value>
+  </data>
+  <data name="BinaryExpressionRequiresRightOperand" xml:space="preserve">
+    <value>Binary expression requires a right operand</value>
+  </data>
+  <data name="DiagnosticLevelError" xml:space="preserve">
+    <value>error</value>
+  </data>
+  <data name="DiagnosticLevelWarning" xml:space="preserve">
+    <value>warning</value>
+  </data>
+  <data name="DiagnosticLevelInfo" xml:space="preserve">
+    <value>info</value>
+  </data>
+  <data name="DiagnosticLevelNote" xml:space="preserve">
+    <value>note</value>
+  </data>
+  <data name="DiagnosticLevelHelp" xml:space="preserve">
+    <value>help</value>
+  </data>
+  <data name="DiagnosticMemoryFilePath" xml:space="preserve">
+    <value>&lt;memory&gt;</value>
+  </data>
+  <data name="DiagnosticSuggestionHelpUrl" xml:space="preserve">
+    <value>see: {0}</value>
+  </data>
+  <data name="OpenDynamicTypeReachedLlvmLowering" xml:space="preserve">
+    <value>Open dynamic type '{0}' reached LLVM lowering as '{1}'.</value>
+  </data>
+  <data name="EffectAuthorizationAvailableNote" xml:space="preserve">
+    <value>available: {0}</value>
+  </data>
+  <data name="EffectAuthorizationCalleeNote" xml:space="preserve">
+    <value>callee: {0}</value>
+  </data>
+  <data name="EffectAuthorizationCallerNote" xml:space="preserve">
+    <value>caller: {0}</value>
+  </data>
+  <data name="EffectAuthorizationFailed" xml:space="preserve">
+    <value>Effect authorization failed: '{0}' cannot call '{1}'</value>
+  </data>
+  <data name="EffectAuthorizationFailedLabel" xml:space="preserve">
+    <value>effect authorization failed</value>
+  </data>
+  <data name="EffectAuthorizationHelp" xml:space="preserve">
+    <value>Declare the required effects in the caller's `need` clause.</value>
+  </data>
+  <data name="EffectAuthorizationMissingNote" xml:space="preserve">
+    <value>missing: {0}</value>
+  </data>
+  <data name="EffectAuthorizationRequiredNote" xml:space="preserve">
+    <value>required: {0}</value>
+  </data>
+  <data name="EffectRequiredForOperationDescription" xml:space="preserve">
+    <value>Effect '{0}' required for call '{1}'</value>
+  </data>
+  <data name="EffectRequiredDescription" xml:space="preserve">
+    <value>Effect '{0}' required</value>
+  </data>
+  <data name="AmbiguousImportedValueRequiresCallSiteTypeInfo" xml:space="preserve">
+    <value>Ambiguous imported value '{0}' requires call-site type information</value>
+  </data>
+  <data name="AmbiguousImportedValue" xml:space="preserve">
+    <value>Ambiguous imported value '{0}'</value>
+  </data>
+  <data name="AmbiguousImportedValueWithCandidates" xml:space="preserve">
+    <value>Ambiguous imported value '{0}'. Candidates: {1}. Use a module-qualified path.</value>
+  </data>
+  <data name="AmbiguousCallableOverload" xml:space="preserve">
+    <value>Ambiguous callable overload '{0}'. Candidates: {1}. Use a module-qualified path or add a more specific type annotation.</value>
+  </data>
+  <data name="DuplicateFunctionOverloadSignature" xml:space="preserve">
+    <value>Duplicate overload for function '{0}' with parameter signature '{1}'. Overloads must differ by parameter types; return type and abilities do not distinguish overloads.</value>
+  </data>
+  <data name="FunctionOverloadConflictsWithValue" xml:space="preserve">
+    <value>Function overload group '{0}' conflicts with an existing non-function value in the same scope.</value>
+  </data>
+  <data name="ValueConflictsWithFunctionOverload" xml:space="preserve">
+    <value>Value '{0}' conflicts with an existing function overload group in the same scope.</value>
+  </data>
+  <data name="AmbiguousModulePathWithCandidates" xml:space="preserve">
+    <value>Ambiguous module path '{0}'. Candidates: {1}. Use a package-qualified module path.</value>
+  </data>
+  <data name="AmbiguousPathWithCandidates" xml:space="preserve">
+    <value>Ambiguous path '{0}'. Candidates: {1}. Use a package-qualified path.</value>
+  </data>
+  <data name="AmbiguousCStructFieldAccess" xml:space="preserve">
+    <value>Ambiguous CStruct field access '{0}' - found in: {1}. Use explicit getter: {2}(ptr)</value>
+  </data>
+  <data name="AmbiguousEffect" xml:space="preserve">
+    <value>Ambiguous effect '{0}'</value>
+  </data>
+  <data name="AmbiguousEffectWithCandidates" xml:space="preserve">
+    <value>Ambiguous effect '{0}'. Candidates: {1}. Use a module-qualified effect path.</value>
+  </data>
+  <data name="AndPatternRequiresAtLeastTwoConjuncts" xml:space="preserve">
+    <value>And-pattern requires at least two conjuncts</value>
+  </data>
+  <data name="AndPatternConjunctsCannotBindSameVariableMoreThanOnce" xml:space="preserve">
+    <value>And-pattern conjuncts cannot bind the same variable more than once: {0}</value>
+  </data>
+  <data name="AndPatternConjunctsCannotBindSameVariableMoreThanOnceWithDetails" xml:space="preserve">
+    <value>And-pattern conjuncts cannot bind the same variable more than once: {0} ({1})</value>
+  </data>
+  <data name="AndPatternConjunctTypeMismatch" xml:space="preserve">
+    <value>And-pattern conjunct type mismatch</value>
+  </data>
+  <data name="ApplicativeApplyOperandsMustShareUnaryTypeConstructor" xml:space="preserve">
+    <value>Applicative apply operands must share a unary type constructor, got '{0}' and '{1}'</value>
+  </data>
+  <data name="AsPatternRequiresBindingName" xml:space="preserve">
+    <value>As-pattern requires a binding name after 'as'</value>
+  </data>
+  <data name="AsPatternBindingLabel" xml:space="preserve">
+    <value>as-pattern binding</value>
+  </data>
+  <data name="AsPatternInnerPatternLabel" xml:space="preserve">
+    <value>as-pattern inner pattern</value>
+  </data>
+  <data name="AsPatternInnerTypeMismatch" xml:space="preserve">
+    <value>As-pattern inner type mismatch: {0}</value>
+  </data>
+  <data name="AsPatternRequiresInnerTypeMatchNote" xml:space="preserve">
+    <value>as-pattern requires the inner pattern type to match the scrutinee type.</value>
+  </data>
+  <data name="AssignmentRequiresValueExpression" xml:space="preserve">
+    <value>Assignment requires a value expression</value>
+  </data>
+  <data name="ArrowTypeRequiresParameterType" xml:space="preserve">
+    <value>Arrow type requires a parameter type</value>
+  </data>
+  <data name="ArrowTypeRequiresReturnType" xml:space="preserve">
+    <value>Arrow type requires a return type</value>
+  </data>
+  <data name="BreakExpressionOutsideLoop" xml:space="preserve">
+    <value>Break expression can only be used inside a loop</value>
+  </data>
+  <data name="BindLeftOperandMustBeUnaryTypeConstructorValue" xml:space="preserve">
+    <value>Bind left operand must be a unary type constructor value, got '{0}'</value>
+  </data>
+  <data name="CallExpressionMissingTarget" xml:space="preserve">
+    <value>Call expression is missing a target</value>
+  </data>
+  <data name="CannotConstructAdtTypeMissingAdtSymbol" xml:space="preserve">
+    <value>Cannot construct ADT type for constructor '{0}' because its ADT symbol is unavailable</value>
+  </data>
+  <data name="CannotConstructAdtTypeMissingTypeParameter" xml:space="preserve">
+    <value>Cannot construct ADT type '{0}' because type parameter '{1}' has no inferred type</value>
+  </data>
+  <data name="CannotDereferenceNonReferenceType" xml:space="preserve">
+    <value>Cannot dereference non-reference type '{0}'</value>
+  </data>
+  <data name="CannotInferAdtTypeForConstructor" xml:space="preserve">
+    <value>Cannot infer ADT type for constructor '{0}'</value>
+  </data>
+  <data name="CannotInferCallableTypeForVariable" xml:space="preserve">
+    <value>Cannot infer callable type for variable '{0}' because its binding type is unavailable</value>
+  </data>
+  <data name="CannotInferCallableTypeMissingSymbol" xml:space="preserve">
+    <value>Cannot infer callable type because symbol '{0}' is unavailable</value>
+  </data>
+  <data name="CannotInferIdentifierTypeMissingSymbol" xml:space="preserve">
+    <value>Cannot infer type for identifier '{0}' because its symbol is unavailable</value>
+  </data>
+  <data name="CannotInferPathTypeMissingSymbol" xml:space="preserve">
+    <value>Cannot infer type for path '{0}' because its symbol is unavailable</value>
+  </data>
+  <data name="CannotInferVariablePathTypeUnavailable" xml:space="preserve">
+    <value>Cannot infer type for variable path '{0}' because its binding type is unavailable</value>
+  </data>
+  <data name="CannotInferVariableTypeUnavailable" xml:space="preserve">
+    <value>Cannot infer type for variable '{0}' because its binding type is unavailable</value>
+  </data>
+  <data name="CannotResolvePath" xml:space="preserve">
+    <value>Cannot resolve path '{0}'</value>
+  </data>
+  <data name="EmptyPath" xml:space="preserve">
+    <value>Empty path</value>
+  </data>
+  <data name="CannotResolveImportedModulePath" xml:space="preserve">
+    <value>Cannot resolve imported module path '{0}'</value>
+  </data>
+  <data name="ImportedModulePathIsEmpty" xml:space="preserve">
+    <value>Imported module path is empty</value>
+  </data>
+  <data name="ModuleNotFound" xml:space="preserve">
+    <value>Module '{0}' not found</value>
+  </data>
+  <data name="UnknownImportKind" xml:space="preserve">
+    <value>Unknown import kind</value>
+  </data>
+  <data name="SymbolNotFoundInModule" xml:space="preserve">
+    <value>Symbol '{0}' not found in module '{1}'</value>
+  </data>
+  <data name="SymbolNotFoundInImportedModule" xml:space="preserve">
+    <value>Symbol '{0}' not found in imported module</value>
+  </data>
+  <data name="TypeHasNoConstructors" xml:space="preserve">
+    <value>Type '{0}' has no constructors</value>
+  </data>
+  <data name="ConstructorNotFound" xml:space="preserve">
+    <value>Constructor '{0}' not found</value>
+  </data>
+  <data name="CannotUnifyTypes" xml:space="preserve">
+    <value>Cannot unify '{0}' with '{1}'</value>
+  </data>
+  <data name="CannotUnifyTypeConstructors" xml:space="preserve">
+    <value>Cannot unify type '{0}' with '{1}'</value>
+  </data>
+  <data name="OccursCheckFailed" xml:space="preserve">
+    <value>Occurs check failed: type variable 't{0}' occurs in '{1}'</value>
+  </data>
+  <data name="KindOccursCheckFailed" xml:space="preserve">
+    <value>Occurs check failed: kind variable 'k{0}' occurs in '{1}'</value>
+  </data>
+  <data name="TypeArgumentCountMismatch" xml:space="preserve">
+    <value>Type argument count mismatch: '{0}' has {1}, '{2}' has {3}</value>
+  </data>
+  <data name="AppendOperandsMustHaveSameType" xml:space="preserve">
+    <value>Append operands must have the same type</value>
+  </data>
+  <data name="ApplicativeApplyLeftOperandTypeMismatch" xml:space="preserve">
+    <value>Applicative apply left operand type mismatch</value>
+  </data>
+  <data name="ApplicativeApplyRightOperandTypeMismatch" xml:space="preserve">
+    <value>Applicative apply right operand type mismatch</value>
+  </data>
+  <data name="ArithmeticOperandTypeMismatch" xml:space="preserve">
+    <value>Arithmetic operand type mismatch</value>
+  </data>
+  <data name="AssignmentTypeMismatch" xml:space="preserve">
+    <value>Assignment type mismatch</value>
+  </data>
+  <data name="BindLeftOperandTypeMismatch" xml:space="preserve">
+    <value>Bind left operand type mismatch</value>
+  </data>
+  <data name="BindRightOperandMustReturnSameMonadicType" xml:space="preserve">
+    <value>Bind right operand must return the same monadic type</value>
+  </data>
+  <data name="CallArgumentTypeMismatch" xml:space="preserve">
+    <value>Call argument type mismatch</value>
+  </data>
+  <data name="CallTargetIsNotCallable" xml:space="preserve">
+    <value>Call target is not callable</value>
+  </data>
+  <data name="CallTargetIsNotZeroArgumentFunction" xml:space="preserve">
+    <value>Call target is not a zero-argument function</value>
+  </data>
+  <data name="CoalesceLeftOperandMustBeOption" xml:space="preserve">
+    <value>Coalesce left operand must be Option</value>
+  </data>
+  <data name="ComparisonOperandTypeMismatch" xml:space="preserve">
+    <value>Comparison operand type mismatch</value>
+  </data>
+  <data name="ComposeLeftOperandMustBeCallable" xml:space="preserve">
+    <value>Compose left operand must be callable</value>
+  </data>
+  <data name="ComposeRightOperandMustBeCallable" xml:space="preserve">
+    <value>Compose right operand must be callable</value>
+  </data>
+  <data name="AppendLastLeftOperandMustBeList" xml:space="preserve">
+    <value>Append (:+) left operand must be List</value>
+  </data>
+  <data name="PrependRightOperandMustBeList" xml:space="preserve">
+    <value>Prepend (+:) right operand must be List</value>
+  </data>
+  <data name="ConstructorPatternTypeMismatch" xml:space="preserve">
+    <value>Constructor pattern type mismatch</value>
+  </data>
+  <data name="FmapLeftOperandMustBeCallable" xml:space="preserve">
+    <value>Fmap left operand must be callable</value>
+  </data>
+  <data name="FmapRightOperandTypeMismatch" xml:space="preserve">
+    <value>Fmap right operand type mismatch</value>
+  </data>
+  <data name="FunctionBodyResultTypeMismatch" xml:space="preserve">
+    <value>Function '{0}' body result type mismatch</value>
+  </data>
+  <data name="HandlerResultTypeMismatch" xml:space="preserve">
+    <value>Handler '{0}' result type mismatch</value>
+  </data>
+  <data name="HandlerBranchResultTypeMismatch" xml:space="preserve">
+    <value>Handler branch result type mismatch</value>
+  </data>
+  <data name="IfBranchTypeMismatch" xml:space="preserve">
+    <value>If branch type mismatch</value>
+  </data>
+  <data name="IfConditionMustBeBool" xml:space="preserve">
+    <value>If condition must be Bool</value>
+  </data>
+  <data name="IfLetBranchTypeMismatch" xml:space="preserve">
+    <value>If-let branch type mismatch</value>
+  </data>
+  <data name="IfLetPatternTypeMismatch" xml:space="preserve">
+    <value>If-let pattern type mismatch</value>
+  </data>
+  <data name="IndexExpressionMustBeInt" xml:space="preserve">
+    <value>Index expression must be Int</value>
+  </data>
+  <data name="IndexedObjectMustBeList" xml:space="preserve">
+    <value>Indexed object must be Seq</value>
+  </data>
+  <data name="InlineHandlerResultTypeMismatch" xml:space="preserve">
+    <value>Inline handler result type mismatch</value>
+  </data>
+  <data name="LambdaBodyResultTypeMismatch" xml:space="preserve">
+    <value>Lambda body result type mismatch</value>
+  </data>
+  <data name="LetPatternTypeMismatch" xml:space="preserve">
+    <value>Let pattern type mismatch</value>
+  </data>
+  <data name="ListComprehensionGeneratorMustIterateList" xml:space="preserve">
+    <value>Seq comprehension generator must iterate a Seq</value>
+  </data>
+  <data name="ListComprehensionGeneratorPatternTypeMismatch" xml:space="preserve">
+    <value>Seq comprehension generator pattern type mismatch</value>
+  </data>
+  <data name="ListComprehensionGuardMustBeBool" xml:space="preserve">
+    <value>Seq comprehension guard must be Bool</value>
+  </data>
+  <data name="ListElementTypeMismatch" xml:space="preserve">
+    <value>List element type mismatch</value>
+  </data>
+  <data name="ListPatternElementTypeMismatch" xml:space="preserve">
+    <value>Seq-pattern element type mismatch</value>
+  </data>
+  <data name="ListPatternExpectedTypeMismatch" xml:space="preserve">
+    <value>Seq-pattern expected type mismatch</value>
+  </data>
+  <data name="ListPatternRestBindingTypeMismatch" xml:space="preserve">
+    <value>Seq-pattern rest binding type mismatch</value>
+  </data>
+  <data name="ListPrefixElementTypeMismatch" xml:space="preserve">
+    <value>List prefix element type mismatch</value>
+  </data>
+  <data name="ListRestExpressionTypeMismatch" xml:space="preserve">
+    <value>Seq rest expression type mismatch</value>
+  </data>
+  <data name="LiteralPatternTypeMismatch" xml:space="preserve">
+    <value>Literal pattern type mismatch</value>
+  </data>
+  <data name="LogicalLeftOperandMustBeBool" xml:space="preserve">
+    <value>Logical left operand must be Bool</value>
+  </data>
+  <data name="LogicalNegationOperandMustBeBool" xml:space="preserve">
+    <value>Logical negation operand must be Bool</value>
+  </data>
+  <data name="LogicalRightOperandMustBeBool" xml:space="preserve">
+    <value>Logical right operand must be Bool</value>
+  </data>
+  <data name="MatchBranchTypeMismatch" xml:space="preserve">
+    <value>Match branch type mismatch</value>
+  </data>
+  <data name="NotPatternInnerTypeMismatch" xml:space="preserve">
+    <value>Not-pattern inner type mismatch</value>
+  </data>
+  <data name="OrPatternAlternativeTypeMismatch" xml:space="preserve">
+    <value>Or-pattern alternative type mismatch</value>
+  </data>
+  <data name="OrPatternExpectedTypeMismatch" xml:space="preserve">
+    <value>Or-pattern expected type mismatch</value>
+  </data>
+  <data name="PatternBranchGuardMustBeBool" xml:space="preserve">
+    <value>Pattern branch guard must be Bool</value>
+  </data>
+  <data name="PatternBranchResultTypeMismatch" xml:space="preserve">
+    <value>Pattern branch result type mismatch</value>
+  </data>
+  <data name="PatternGuardSourceTypeMismatch" xml:space="preserve">
+    <value>Pattern guard source type mismatch</value>
+  </data>
+  <data name="RangePatternEndTypeMismatch" xml:space="preserve">
+    <value>Range-pattern end type mismatch</value>
+  </data>
+  <data name="RangePatternStartTypeMismatch" xml:space="preserve">
+    <value>Range-pattern start type mismatch</value>
+  </data>
+  <data name="RecordUpdateSpreadBaseTypeMismatch" xml:space="preserve">
+    <value>Record update spread base type mismatch</value>
+  </data>
+  <data name="ReturnValueTypeMismatch" xml:space="preserve">
+    <value>Return value type mismatch</value>
+  </data>
+  <data name="SequentialGuardMustBeBool" xml:space="preserve">
+    <value>Sequential guard must be Bool</value>
+  </data>
+  <data name="StringConcatenationLeftOperandMustBeString" xml:space="preserve">
+    <value>String concatenation left operand must be String</value>
+  </data>
+  <data name="StringConcatenationRightOperandMustBeString" xml:space="preserve">
+    <value>String concatenation right operand must be String</value>
+  </data>
+  <data name="TuplePatternTypeMismatch" xml:space="preserve">
+    <value>Tuple pattern type mismatch</value>
+  </data>
+  <data name="ValueTypeMismatch" xml:space="preserve">
+    <value>Value '{0}' type mismatch</value>
+  </data>
+  <data name="VariableTypeMismatch" xml:space="preserve">
+    <value>Variable '{0}' type mismatch</value>
+  </data>
+  <data name="ViewPatternInnerTypeMismatch" xml:space="preserve">
+    <value>View-pattern inner type mismatch</value>
+  </data>
+  <data name="WhileLetPatternTypeMismatch" xml:space="preserve">
+    <value>While-let pattern type mismatch</value>
+  </data>
+  <data name="ExpectedTypeArgumentCount" xml:space="preserve">
+    <value>Expected {0} type argument(s), but got {1}</value>
+  </data>
+  <data name="CannotUnifyKinds" xml:space="preserve">
+    <value>Cannot unify kind '{0}' with '{1}'</value>
+  </data>
+  <data name="KindAnnotationIsEmpty" xml:space="preserve">
+    <value>Kind annotation is empty</value>
+  </data>
+  <data name="UnexpectedTokenInKindAnnotation" xml:space="preserve">
+    <value>Unexpected token '{0}' in kind annotation</value>
+  </data>
+  <data name="ExpectedKindClosingParen" xml:space="preserve">
+    <value>Expected ')' in kind annotation, got '{0}'</value>
+  </data>
+  <data name="InvalidCharacter" xml:space="preserve">
+    <value>Invalid character: '{0}' (U+{1:X4})</value>
+  </data>
+  <data name="InvalidToken" xml:space="preserve">
+    <value>Invalid Token</value>
+  </data>
+  <data name="UnexpectedEndOfFile" xml:space="preserve">
+    <value>Unexpected end of file</value>
+  </data>
+  <data name="MissingProofForImpl" xml:space="preserve">
+    <value>Missing proof '{0}' for @impl({1}) on {2}</value>
+  </data>
+  <data name="UnableToInferConstructorPlaceholderPositions" xml:space="preserve">
+    <value>Unable to infer constructor placeholder positions for higher-kinded application</value>
+  </data>
+  <data name="ThirtyTwoBitWindowsUnsupported" xml:space="preserve">
+    <value>32-bit Windows is not supported</value>
+  </data>
+  <data name="UnknownTarget" xml:space="preserve">
+    <value>Unknown target: {0}. Supported targets: {1}</value>
+  </data>
+  <data name="CannotMoveBackInSource" xml:space="preserve">
+    <value>Cannot move source stream backwards from {1} to {0}</value>
+  </data>
+  <data name="CurrentScopeRequired" xml:space="preserve">
+    <value>A current scope is required for this symbol-table operation.</value>
+  </data>
+  <data name="CfnCallFirstArgumentNotCfn" xml:space="preserve">
+    <value>Cannot infer cfn_call return type because the first argument is not a Cfn[..., Ret] value</value>
+  </data>
+  <data name="CfnFromArgumentNotFunction" xml:space="preserve">
+    <value>Cannot infer cfn_from result type because the argument is not a function value</value>
+  </data>
+  <data name="CfnFromCapturedClosureUnsupported" xml:space="preserve">
+    <value>cfn_from does not support closures with captures yet. Use a zero-capture function, such as a top-level function or zero-capture lambda.</value>
+  </data>
+  <data name="ConstructorCannotUseRecordUpdateUnknownFields" xml:space="preserve">
+    <value>Constructor '{0}' cannot use record update because its fields are unknown</value>
+  </data>
+  <data name="ConstructorDoesNotAcceptTypeArguments" xml:space="preserve">
+    <value>Constructor '{0}' does not accept type arguments</value>
+  </data>
+  <data name="ConstructorExpectsTypeArguments" xml:space="preserve">
+    <value>Constructor '{0}' expects {1} type argument(s), but got {2}</value>
+  </data>
+  <data name="GadtConstructorReturnTypeMustTargetOwnAdt" xml:space="preserve">
+    <value>GADT constructor return type must be an instance of its enclosing ADT '{0}'</value>
+  </data>
+  <data name="ConstructorPathDoesNotAcceptExplicitTypeArguments" xml:space="preserve">
+    <value>Constructor path '{0}' does not accept explicit type arguments in expression position</value>
+  </data>
+  <data name="ConstructorRequiresArgumentsInExpressionPosition" xml:space="preserve">
+    <value>Constructor '{0}' requires arguments in expression position</value>
+  </data>
+  <data name="ConstructExpressionMissingScrutinee" xml:space="preserve">
+    <value>{0} expression is missing a scrutinee</value>
+  </data>
+  <data name="ContinueExpressionOutsideLoop" xml:space="preserve">
+    <value>Continue expression can only be used inside a loop</value>
+  </data>
+  <data name="DeclarationRequiresInitializer" xml:space="preserve">
+    <value>{0}{1} requires an initializer</value>
+  </data>
+  <data name="DoBindingRequiresValueExpression" xml:space="preserve">
+    <value>Do binding requires a value expression</value>
+  </data>
+  <data name="DoBindExpectsMonadicValue" xml:space="preserve">
+    <value>Do bind expects a monadic value, got '{0}'</value>
+  </data>
+  <data name="DoBindRequiresPattern" xml:space="preserve">
+    <value>Do bind requires a pattern</value>
+  </data>
+  <data name="DoLetBindingMissingResolvedSymbol" xml:space="preserve">
+    <value>Do let binding '{0}' has no resolved symbol</value>
+  </data>
+  <data name="DoLetBindingRequiresVariableName" xml:space="preserve">
+    <value>Do let binding requires a variable name</value>
+  </data>
+  <data name="EffectfulTypeRequiresInputType" xml:space="preserve">
+    <value>Effectful type requires an input type</value>
+  </data>
+  <data name="ExplicitTypeApplicationCannotMixWithIndexExpression" xml:space="preserve">
+    <value>Explicit type application cannot be mixed with runtime index expression</value>
+  </data>
+  <data name="ExplicitTypeApplicationMissingTarget" xml:space="preserve">
+    <value>Missing target expression for explicit type application</value>
+  </data>
+  <data name="ExplicitTypeApplicationRequiresNamedPolymorphicValue" xml:space="preserve">
+    <value>Explicit type arguments can only be applied to named polymorphic values</value>
+  </data>
+  <data name="FieldInitializerRequiresFieldName" xml:space="preserve">
+    <value>Field initializer requires a field name</value>
+  </data>
+  <data name="FieldInitializerRequiresValueExpression" xml:space="preserve">
+    <value>Field initializer '{0}' requires a value expression</value>
+  </data>
+  <data name="FmapRightOperandMustBeUnaryTypeConstructorValue" xml:space="preserve">
+    <value>Fmap right operand must be a unary type constructor value, got '{0}'</value>
+  </data>
+  <data name="FunctionBodyBranchRequiresBodyExpression" xml:space="preserve">
+    <value>Function '{0}' body branch requires a body expression</value>
+  </data>
+  <data name="FunctionTypeDoesNotImplementTrait" xml:space="preserve">
+    <value>Function type does not implement trait '{0}'</value>
+  </data>
+  <data name="HandlerBranchMissingOperationName" xml:space="preserve">
+    <value>Handler branch missing operation name</value>
+  </data>
+  <data name="HandlerBranchRequiresBodyExpression" xml:space="preserve">
+    <value>Handler branch '{0}' requires a body expression</value>
+  </data>
+  <data name="HandlerMustBeFunctionType" xml:space="preserve">
+    <value>Handler must be a function type, got {0}</value>
+  </data>
+  <data name="HandlerNamedMustBeFunctionType" xml:space="preserve">
+    <value>Handler '{0}' must be a function type, got {1}</value>
+  </data>
+  <data name="HandlerNotFound" xml:space="preserve">
+    <value>Handler '{0}' not found</value>
+  </data>
+  <data name="HandlerOperationCouldNotBeResolved" xml:space="preserve">
+    <value>Handler operation '{0}' could not be resolved</value>
+  </data>
+  <data name="HandlerOperationExpectsArguments" xml:space="preserve">
+    <value>Handler operation '{0}' expects {1} argument(s), got {2}</value>
+  </data>
+  <data name="HandlerOperationNotDefinedByAbility" xml:space="preserve">
+    <value>Handler operation '{0}' is not defined by ability '{1}'</value>
+  </data>
+  <data name="IfExpressionMissingCondition" xml:space="preserve">
+    <value>If expression is missing a condition</value>
+  </data>
+  <data name="IfExpressionRequiresThenBranch" xml:space="preserve">
+    <value>If expression requires a then branch</value>
+  </data>
+  <data name="IfLetExpressionMissingPattern" xml:space="preserve">
+    <value>If-let expression is missing a pattern</value>
+  </data>
+  <data name="IfLetExpressionRequiresThenBranch" xml:space="preserve">
+    <value>If-let expression requires a then branch</value>
+  </data>
+  <data name="InfixOperatorCannotBeApplied" xml:space="preserve">
+    <value>Infix operator '{0}' cannot be applied: {1}</value>
+  </data>
+  <data name="InfixCallRequiresLeftOperand" xml:space="preserve">
+    <value>Infix call requires a left operand</value>
+  </data>
+  <data name="InfixCallRequiresRightOperand" xml:space="preserve">
+    <value>Infix call requires a right operand</value>
+  </data>
+  <data name="InvalidHigherKindedTypeApplication" xml:space="preserve">
+    <value>Invalid higher-kinded type application for '{0}'</value>
+  </data>
+  <data name="InvalidTypeArgumentsForTrait" xml:space="preserve">
+    <value>Invalid type arguments for trait '{0}'</value>
+  </data>
+  <data name="InvalidKindApplicationForType" xml:space="preserve">
+    <value>Invalid kind application for type '{0}'</value>
+  </data>
+  <data name="KindMismatch" xml:space="preserve">
+    <value>Kind mismatch: expected '{0}', got '{1}' ({2})</value>
+  </data>
+  <data name="KindCannotBeAppliedToAdditionalTypeArguments" xml:space="preserve">
+    <value>Kind '{0}' cannot be applied to additional type arguments</value>
+  </data>
+  <data name="KindMismatchInTypeApplication" xml:space="preserve">
+    <value>Kind mismatch in type application: expected '{0}', got '{1}'</value>
+  </data>
+  <data name="KindMismatchForTypeArgument" xml:space="preserve">
+    <value>Kind mismatch for type argument #{0} ('{1}') of '{2}': expected '{3}', got '{4}'</value>
+  </data>
+  <data name="KindMismatchForTraitArgument" xml:space="preserve">
+    <value>Kind mismatch for trait argument #{0} ('{1}') of '{2}': expected '{3}', got '{4}' ({5})</value>
+  </data>
+  <data name="KindMismatchInDefinition" xml:space="preserve">
+    <value>Kind mismatch in {0} '{1}' definition: {2}</value>
+  </data>
+  <data name="LambdaExpressionRequiresBody" xml:space="preserve">
+    <value>Lambda expression requires a body</value>
+  </data>
+  <data name="ListComprehensionGeneratorRequiresPattern" xml:space="preserve">
+    <value>Seq comprehension generator requires a pattern</value>
+  </data>
+  <data name="ListComprehensionGeneratorRequiresSourceExpression" xml:space="preserve">
+    <value>Seq comprehension generator requires a source expression</value>
+  </data>
+  <data name="ListComprehensionGuardRequiresExpression" xml:space="preserve">
+    <value>Seq comprehension guard requires an expression</value>
+  </data>
+  <data name="ListComprehensionRequiresOutputExpression" xml:space="preserve">
+    <value>Seq comprehension requires an output expression</value>
+  </data>
+  <data name="ListComprehensionMissingGeneratorPatternLabel" xml:space="preserve">
+    <value>missing generator pattern</value>
+  </data>
+  <data name="ListComprehensionMissingGeneratorSourceLabel" xml:space="preserve">
+    <value>missing generator source</value>
+  </data>
+  <data name="ListComprehensionMissingGuardExpressionLabel" xml:space="preserve">
+    <value>missing guard expression</value>
+  </data>
+  <data name="LoopExpressionRequiresBody" xml:space="preserve">
+    <value>Loop expression requires a body</value>
+  </data>
+  <data name="MatchExpressionRequiresBranch" xml:space="preserve">
+    <value>Match expression requires at least one branch</value>
+  </data>
+  <data name="MethodCallMissingMethodName" xml:space="preserve">
+    <value>Method call missing method name</value>
+  </data>
+  <data name="MissingIndexExpression" xml:space="preserve">
+    <value>Missing index expression</value>
+  </data>
+  <data name="MissingIndexedObject" xml:space="preserve">
+    <value>Missing indexed object</value>
+  </data>
+  <data name="NamedArgumentRequiresValueExpression" xml:space="preserve">
+    <value>Named argument '{0}' requires a value expression</value>
+  </data>
+  <data name="NoImportedOverloadAcceptsArgumentTypes" xml:space="preserve">
+    <value>No imported overload of '{0}' accepts the provided argument types</value>
+  </data>
+  <data name="NoMethodOverloadAcceptsReceiverType" xml:space="preserve">
+    <value>No overload of method '{0}' accepts receiver type '{1}'</value>
+  </data>
+  <data name="InnerPatternInferredAs" xml:space="preserve">
+    <value>Inner pattern inferred as: {0}</value>
+  </data>
+  <data name="InvalidRangeOrderingLabel" xml:space="preserve">
+    <value>invalid range ordering</value>
+  </data>
+  <data name="InvalidRangePatternLabel" xml:space="preserve">
+    <value>invalid range pattern</value>
+  </data>
+  <data name="MissingRangeEndBoundaryLiteralNote" xml:space="preserve">
+    <value>Missing range end boundary literal.</value>
+  </data>
+  <data name="MissingRangeStartBoundaryLiteralNote" xml:space="preserve">
+    <value>Missing range start boundary literal.</value>
+  </data>
+  <data name="NotPatternMissingInnerPattern" xml:space="preserve">
+    <value>Not-pattern is missing inner pattern</value>
+  </data>
+  <data name="NotPatternMissingInnerLabel" xml:space="preserve">
+    <value>missing not-pattern inner</value>
+  </data>
+  <data name="OrPatternRequiresAtLeastTwoAlternatives" xml:space="preserve">
+    <value>Or-pattern requires at least two alternatives</value>
+  </data>
+  <data name="OrPatternAliasResolvesDifferentValueSlots" xml:space="preserve">
+    <value>Or-pattern alias '{0}' resolves to different value slots across alternatives</value>
+  </data>
+  <data name="OrPatternAlternativesMustBindSameValueSlots" xml:space="preserve">
+    <value>Or-pattern alternatives must bind the same value slots</value>
+  </data>
+  <data name="OrPatternAlternativesMustBindSameValueSlotsWithDetails" xml:space="preserve">
+    <value>Or-pattern alternatives must bind the same value slots ({0})</value>
+  </data>
+  <data name="OrPatternAlternativesMustUseSameBindingMode" xml:space="preserve">
+    <value>Or-pattern alternatives must use the same binding mode for each binding slot ({0})</value>
+  </data>
+  <data name="OrPatternAlternativesMustUseSameLegacyBindingMode" xml:space="preserve">
+    <value>Or-pattern alternatives must use the same binding mode for each legacy binding slot ({0})</value>
+  </data>
+  <data name="PathDoesNotAcceptExplicitTypeArguments" xml:space="preserve">
+    <value>Path '{0}' does not accept explicit type arguments</value>
+  </data>
+  <data name="PatternBranchRequiresBodyExpression" xml:space="preserve">
+    <value>Pattern branch requires a body expression</value>
+  </data>
+  <data name="PatternGuardRequiresPattern" xml:space="preserve">
+    <value>Pattern guard requires a pattern before '&lt;-'</value>
+  </data>
+  <data name="PatternGuardRequiresSourceExpression" xml:space="preserve">
+    <value>Pattern guard requires a source expression after '&lt;-'</value>
+  </data>
+  <data name="ParsedEndBoundaryLabel" xml:space="preserve">
+    <value>parsed end boundary</value>
+  </data>
+  <data name="ParsedStartBoundaryLabel" xml:space="preserve">
+    <value>parsed start boundary</value>
+  </data>
+  <data name="PipeTargetNotCallable" xml:space="preserve">
+    <value>Pipe target is not callable: {0}</value>
+  </data>
+  <data name="ProofCaseContainsCaptureProneSubstitution" xml:space="preserve">
+    <value>Proof '{0}' case contains a capture-prone substitution</value>
+  </data>
+  <data name="ProofCaseOnlySupportsReflEvidence" xml:space="preserve">
+    <value>Proof '{0}' case only supports refl evidence</value>
+  </data>
+  <data name="ProofCasePatternCannotConvertToEvidence" xml:space="preserve">
+    <value>Proof '{0}' case pattern cannot be converted to proof evidence</value>
+  </data>
+  <data name="ProofCaseReflNotDefinitionallyEqual" xml:space="preserve">
+    <value>Proof '{0}' case uses refl, but the refined equality sides are not definitionally equal</value>
+  </data>
+  <data name="ProofCaseRequiresPattern" xml:space="preserve">
+    <value>Proof '{0}' case requires a pattern</value>
+  </data>
+  <data name="ProofCaseExhaustivenessCannotBeProven" xml:space="preserve">
+    <value>Proof '{0}' case exhaustiveness cannot be proven for this scrutinee type</value>
+  </data>
+  <data name="ProofCasesMissingBranches" xml:space="preserve">
+    <value>Proof '{0}' uses cases without branches</value>
+  </data>
+  <data name="ProofCasesMissingScrutinee" xml:space="preserve">
+    <value>Proof '{0}' uses cases without a scrutinee</value>
+  </data>
+  <data name="ProofCasesNotExhaustive" xml:space="preserve">
+    <value>Proof '{0}' cases are not exhaustive; missing: {1}</value>
+  </data>
+  <data name="ProofInductionCaseContainsCaptureProneSubstitution" xml:space="preserve">
+    <value>Proof '{0}' induction case contains a capture-prone substitution</value>
+  </data>
+  <data name="ProofInductionCaseOnlySupportsReflEvidence" xml:space="preserve">
+    <value>Proof '{0}' induction case only supports refl evidence</value>
+  </data>
+  <data name="ProofInductionCasePatternCannotConvertToEvidence" xml:space="preserve">
+    <value>Proof '{0}' induction case pattern cannot be converted to proof evidence</value>
+  </data>
+  <data name="ProofInductionCaseReflNotDefinitionallyEqualUnderHypothesis" xml:space="preserve">
+    <value>Proof '{0}' induction case uses refl, but the refined equality sides are not definitionally equal under the induction hypothesis</value>
+  </data>
+  <data name="ProofInductionCaseRequiresPattern" xml:space="preserve">
+    <value>Proof '{0}' induction case requires a pattern</value>
+  </data>
+  <data name="ProofInductionMissingBranches" xml:space="preserve">
+    <value>Proof '{0}' uses induction without branches</value>
+  </data>
+  <data name="ProofInductionMissingScrutinee" xml:space="preserve">
+    <value>Proof '{0}' uses induction without a scrutinee</value>
+  </data>
+  <data name="ProofInductionRequiresVariableScrutinee" xml:space="preserve">
+    <value>Proof '{0}' induction requires a variable scrutinee</value>
+  </data>
+  <data name="ProofInductionSupportsStructuralScrutineeOnly" xml:space="preserve">
+    <value>Proof '{0}' induction supports List or user ADT scrutinees only</value>
+  </data>
+  <data name="ProofInductionRequiresQuantifiedListVariableScrutinee" xml:space="preserve">
+    <value>Proof '{0}' induction currently requires a quantified list variable scrutinee</value>
+  </data>
+  <data name="ProofInductionSupportsListScrutineeOnly" xml:space="preserve">
+    <value>Proof '{0}' induction currently supports List scrutinees only</value>
+  </data>
+  <data name="ProofParameterRequiresTypeAnnotation" xml:space="preserve">
+    <value>Proof parameter '{0}' requires a type annotation</value>
+  </data>
+  <data name="ProofPropositionsMustBePure" xml:space="preserve">
+    <value>Proof propositions must be pure; effectful expressions are not valid proof evidence</value>
+  </data>
+  <data name="ProofReflNotDefinitionallyEqual" xml:space="preserve">
+    <value>Proof '{0}' uses refl, but the equality sides are not definitionally equal</value>
+  </data>
+  <data name="ProofRequiresEqualityProposition" xml:space="preserve">
+    <value>Proof '{0}' requires an equality proposition</value>
+  </data>
+  <data name="ProofRequiresEvidence" xml:space="preserve">
+    <value>Proof '{0}' requires proof evidence</value>
+  </data>
+  <data name="ProofHoleIncomplete" xml:space="preserve">
+    <value>Proof '{0}' contains an incomplete proof hole; replace '_' or 'todo_proof' with a proof term</value>
+  </data>
+  <data name="RecordUpdateCannotMixPositionalArgumentsWithBase" xml:space="preserve">
+    <value>Record update cannot mix positional constructor arguments with '..base'</value>
+  </data>
+  <data name="RecordUpdateCouldNotResolveBaseAdt" xml:space="preserve">
+    <value>Record update shorthand could not resolve the base ADT</value>
+  </data>
+  <data name="RecordUpdateFieldNotPresentOnEveryConstructor" xml:space="preserve">
+    <value>Record update field '{0}' is not present on every constructor of '{1}'</value>
+  </data>
+  <data name="RecordUpdateRequiresAdtRecordBase" xml:space="preserve">
+    <value>Record update shorthand requires an ADT record base, got '{0}'</value>
+  </data>
+  <data name="RecordUpdateRequiresStableBasePlace" xml:space="preserve">
+    <value>Record update shorthand currently requires a stable base place</value>
+  </data>
+  <data name="RecordUpdateShorthandMissingBaseExpression" xml:space="preserve">
+    <value>Record update shorthand is missing its base expression</value>
+  </data>
+  <data name="RecordUpdateSpreadRequiresStableBasePlace" xml:space="preserve">
+    <value>Record update spread '..base' currently requires a stable base place</value>
+  </data>
+  <data name="RangeEndBoundaryLabel" xml:space="preserve">
+    <value>range end boundary</value>
+  </data>
+  <data name="RangeOrderingCheckNote" xml:space="preserve">
+    <value>Range pattern ordering check expects: start &lt;= end.</value>
+  </data>
+  <data name="RangePatternExpectsIntOrCharScrutinee" xml:space="preserve">
+    <value>Range pattern expects Int or Char scrutinee, got {0}</value>
+  </data>
+  <data name="RangePatternRequiresStartAndEndLiterals" xml:space="preserve">
+    <value>Range pattern requires both start and end literals</value>
+  </data>
+  <data name="RangePatternSupportsOnlyIntAndCharNote" xml:space="preserve">
+    <value>Only Int and Char support range pattern matching.</value>
+  </data>
+  <data name="RangePatternTypeMismatchLabel" xml:space="preserve">
+    <value>range pattern type mismatch</value>
+  </data>
+  <data name="RangeStartBoundaryLabel" xml:space="preserve">
+    <value>range start boundary</value>
+  </data>
+  <data name="RangeStartMustBeLessThanOrEqualToEnd" xml:space="preserve">
+    <value>Range pattern start must be less than or equal to end</value>
+  </data>
+  <data name="ReturnExpressionOutsideFunction" xml:space="preserve">
+    <value>return expression can only be used inside function or lambda bodies</value>
+  </data>
+  <data name="ScrutineeTypeInferredAs" xml:space="preserve">
+    <value>Scrutinee type inferred as: {0}</value>
+  </data>
+  <data name="SymbolIsNotValue" xml:space="preserve">
+    <value>Symbol '{0}' is a {1} and is not a value</value>
+  </data>
+  <data name="SymbolKindTypeParameter" xml:space="preserve">
+    <value>type parameter</value>
+  </data>
+  <data name="SymbolKindType" xml:space="preserve">
+    <value>type</value>
+  </data>
+  <data name="SymbolKindTypeAlias" xml:space="preserve">
+    <value>type alias</value>
+  </data>
+  <data name="SymbolKindEffect" xml:space="preserve">
+    <value>ability</value>
+  </data>
+  <data name="SymbolKindTrait" xml:space="preserve">
+    <value>trait</value>
+  </data>
+  <data name="SymbolKindModule" xml:space="preserve">
+    <value>module</value>
+  </data>
+  <data name="SymbolKindField" xml:space="preserve">
+    <value>field</value>
+  </data>
+  <data name="SymbolKindTraitImplementation" xml:space="preserve">
+    <value>trait implementation</value>
+  </data>
+  <data name="SymbolKindProof" xml:space="preserve">
+    <value>proof</value>
+  </data>
+  <data name="TypeHasNoReadableField" xml:space="preserve">
+    <value>Type '{0}' has no readable field '{1}'</value>
+  </data>
+  <data name="TypeHasNoRecordConstructorForUpdate" xml:space="preserve">
+    <value>Type '{0}' has no record constructor for update shorthand</value>
+  </data>
+  <data name="TooManyConstraintErrors" xml:space="preserve">
+    <value>Too many constraint errors (max {0}), stopping</value>
+  </data>
+  <data name="TooManyTypeErrors" xml:space="preserve">
+    <value>Too many type errors (max {0}), stopping type inference</value>
+  </data>
+  <data name="TypeExpectsAtLeastTypeArguments" xml:space="preserve">
+    <value>Type '{0}' expects at least {1} type argument(s), but got {2}</value>
+  </data>
+  <data name="TypeExpectsTypeArguments" xml:space="preserve">
+    <value>Type '{0}' expects {1} type argument(s), but got {2}</value>
+  </data>
+  <data name="TraitExpectsTypeArguments" xml:space="preserve">
+    <value>Trait '{0}' expects {1} type argument(s), but got {2}</value>
+  </data>
+  <data name="TupleElementTypeDoesNotImplementTrait" xml:space="preserve">
+    <value>Tuple element #{0} type '{1}' does not implement trait '{2}'</value>
+  </data>
+  <data name="TypeArgumentDoesNotImplementTrait" xml:space="preserve">
+    <value>Type argument #{0} of '{1}' ({2}) does not implement trait '{3}'</value>
+  </data>
+  <data name="TypeDoesNotImplementTrait" xml:space="preserve">
+    <value>Type '{0}' does not implement trait '{1}'</value>
+  </data>
+  <data name="TypeMissingTypeArgumentRequiredByTraitImpl" xml:space="preserve">
+    <value>Type '{0}' is missing type argument #{1} required by trait impl '{2}'</value>
+  </data>
+  <data name="TypeParameterCannotBeUsedAsTypeConstructor" xml:space="preserve">
+    <value>Type parameter '{0}' cannot be used as a type constructor here</value>
+  </data>
+  <data name="TypeParameterDoesNotAcceptTypeArguments" xml:space="preserve">
+    <value>Type parameter '{0}' does not accept type arguments</value>
+  </data>
+  <data name="TypeParameterExpectsTypeArguments" xml:space="preserve">
+    <value>Type parameter '{0}' expects {1} type argument(s), but got {2}</value>
+  </data>
+  <data name="UndefinedIdentifier" xml:space="preserve">
+    <value>Undefined identifier '{0}'</value>
+  </data>
+  <data name="UnaryExpressionRequiresOperand" xml:space="preserve">
+    <value>Unary expression requires an operand</value>
+  </data>
+  <data name="UnsupportedDoBindingKind" xml:space="preserve">
+    <value>Unsupported do binding kind '{0}'</value>
+  </data>
+  <data name="UnsupportedExpressionKind" xml:space="preserve">
+    <value>Unsupported expression kind '{0}'</value>
+  </data>
+  <data name="UnsupportedBinaryOperator" xml:space="preserve">
+    <value>Operator '{0}' is not supported by type inference</value>
+  </data>
+  <data name="UnsupportedListComprehensionQualifierKind" xml:space="preserve">
+    <value>Unsupported seq comprehension qualifier kind '{0}'</value>
+  </data>
+  <data name="UnsupportedKindAnnotation" xml:space="preserve">
+    <value>Unsupported kind annotation '{0}'</value>
+  </data>
+  <data name="UnsupportedLiteralKind" xml:space="preserve">
+    <value>Unsupported literal kind '{0}'</value>
+  </data>
+  <data name="UnsupportedLiteralPatternKind" xml:space="preserve">
+    <value>Unsupported literal pattern kind '{0}'</value>
+  </data>
+  <data name="UnsupportedUnaryOperator" xml:space="preserve">
+    <value>Unary operator '{0}' is not supported by type inference</value>
+  </data>
+  <data name="UnsupportedPatternKind" xml:space="preserve">
+    <value>Unsupported pattern kind '{0}'</value>
+  </data>
+  <data name="UnsupportedTypeNodeKind" xml:space="preserve">
+    <value>Unsupported type node kind '{0}'</value>
+  </data>
+  <data name="ViewPatternMissingInnerPattern" xml:space="preserve">
+    <value>View pattern is missing inner pattern</value>
+  </data>
+  <data name="ViewPatternMissingViewExpression" xml:space="preserve">
+    <value>View pattern is missing view expression</value>
+  </data>
+  <data name="ViewPatternMissingViewExpressionLabel" xml:space="preserve">
+    <value>missing view expression</value>
+  </data>
+  <data name="ViewPatternMissingInnerPatternLabel" xml:space="preserve">
+    <value>missing inner pattern</value>
+  </data>
+  <data name="ViewExpressionInferredAs" xml:space="preserve">
+    <value>View expression inferred as: {0}</value>
+  </data>
+  <data name="ViewExpressionIsNotCallable" xml:space="preserve">
+    <value>View expression is not callable.</value>
+  </data>
+  <data name="ViewExpressionLabel" xml:space="preserve">
+    <value>view expression</value>
+  </data>
+  <data name="ViewExpressionMustAcceptOneArgument" xml:space="preserve">
+    <value>View expression must accept exactly one argument, but inferred {0} parameters.</value>
+  </data>
+  <data name="ViewExpressionTypeMismatch" xml:space="preserve">
+    <value>View expression type mismatch: {0}</value>
+  </data>
+  <data name="ViewPatternCallableNote" xml:space="preserve">
+    <value>`(expr -&gt; pattern)` requires `expr` to be callable as `expr(scrutinee)`.</value>
+  </data>
+  <data name="ViewPatternExpressionInvalid" xml:space="preserve">
+    <value>View-pattern expression is invalid: {0}</value>
+  </data>
+  <data name="ViewPatternLabel" xml:space="preserve">
+    <value>view pattern</value>
+  </data>
+  <data name="WhileLetExpressionMissingPattern" xml:space="preserve">
+    <value>While-let expression is missing a pattern</value>
+  </data>
+  <data name="WhileLetExpressionRequiresBody" xml:space="preserve">
+    <value>While-let expression requires a body</value>
+  </data>
+  <data name="BorrowRequiresCapabilityTag" xml:space="preserve">
+    <value>@borrow requires at least one capability tag: read, write, move</value>
+  </data>
+  <data name="AmbiguousOverlappingImplRegistration" xml:space="preserve">
+    <value>Ambiguous overlapping impl registration</value>
+  </data>
+  <data name="CannotAssignToImmutableVariable" xml:space="preserve">
+    <value>Cannot assign to immutable variable '{0}'</value>
+  </data>
+  <data name="ConservativelySuppressedCoveredWarnings" xml:space="preserve">
+    <value>Conservatively suppressed covered warnings: {0} (reason: {1})</value>
+  </data>
+  <data name="ConstraintSolvingStoppedBeforeAllConstraintsChecked" xml:space="preserve">
+    <value>constraint solving stopped before all constraints were checked</value>
+  </data>
+  <data name="ConstructorPatternDisallowsNamedForPositionalForm" xml:space="preserve">
+    <value>Constructor '{0}' uses positional form; named field patterns are not allowed</value>
+  </data>
+  <data name="ConstructorPatternDisallowsPositionalForNamedForm" xml:space="preserve">
+    <value>Constructor '{0}' uses named-field form; positional patterns are not allowed</value>
+  </data>
+  <data name="ConstructorPatternExpectsPositionalCount" xml:space="preserve">
+    <value>Constructor '{0}' expects {1} positional pattern(s), but got {2}</value>
+  </data>
+  <data name="ConstructorPatternHasNoNamedField" xml:space="preserve">
+    <value>Constructor '{0}' has no named field '{1}'</value>
+  </data>
+  <data name="CoveredCaseLowerBoundTraces" xml:space="preserve">
+    <value>Covered-case lower-bound traces: {0}</value>
+  </data>
+  <data name="CoveredCaseTraces" xml:space="preserve">
+    <value>Covered-case traces: {0}</value>
+  </data>
+  <data name="CoveredCaseWitnesses" xml:space="preserve">
+    <value>Covered-case witnesses: {0}</value>
+  </data>
+  <data name="CStructFieldMissingName" xml:space="preserve">
+    <value>@cstruct '{0}' 的第 {1} 个字段缺少名称</value>
+  </data>
+  <data name="CStructFieldTypeMustBeSimpleTypePath" xml:space="preserve">
+    <value>@cstruct '{0}' 字段 '{1}' 的类型暂不支持（仅支持简单类型路径）</value>
+  </data>
+  <data name="CStructFieldTypeNotFfiSafe" xml:space="preserve">
+    <value>@cstruct '{0}' 字段 '{1}' 的类型 '{2}' 不是 FFI 安全类型</value>
+  </data>
+  <data name="CStructTypeDoesNotSupportConstructorVariants" xml:space="preserve">
+    <value>@cstruct 类型 '{0}' 不支持构造器变体，请使用积类型字段语法</value>
+  </data>
+  <data name="CStructTypeDoesNotSupportTypeParameters" xml:space="preserve">
+    <value>@cstruct 类型 '{0}' 暂不支持类型参数</value>
+  </data>
+  <data name="CStructTypeRequiresAtLeastOneField" xml:space="preserve">
+    <value>@cstruct 类型 '{0}' 必须至少有一个字段</value>
+  </data>
+  <data name="DeriveTypeHasNoConstructors" xml:space="preserve">
+    <value>@derive({0}): type '{1}' has no constructors</value>
+  </data>
+  <data name="DeriveUnsupportedTrait" xml:space="preserve">
+    <value>@derive: unsupported trait '{0}'</value>
+  </data>
+  <data name="DisplayNameIsNotEffect" xml:space="preserve">
+    <value>'{0}' is not an effect</value>
+  </data>
+  <data name="DisplayNameIsNotTrait" xml:space="preserve">
+    <value>'{0}' is not a trait</value>
+  </data>
+  <data name="DuplicateNamedFieldInConstructorPattern" xml:space="preserve">
+    <value>Duplicate named field '{0}' in constructor pattern '{1}'</value>
+  </data>
+  <data name="DuplicateExportedName" xml:space="preserve">
+    <value>Duplicate exported name '{0}' in module '{1}'</value>
+  </data>
+  <data name="FfiFunctionCannotHaveBody" xml:space="preserve">
+    <value>@ffi 函数 '{0}' 不能有函数体</value>
+  </data>
+  <data name="IntrinsicFunctionCannotHaveBody" xml:space="preserve">
+    <value>@intrinsic 函数 '{0}' 不能有函数体</value>
+  </data>
+  <data name="FfiDuplicateBinding" xml:space="preserve">
+    <value>重复的 @ffi 绑定 '{0}/{1}'</value>
+  </data>
+  <data name="FfiLinkWithoutFunction" xml:space="preserve">
+    <value>link '{0}' 被声明但模块中没有 @ffi 函数</value>
+  </data>
+  <data name="FfiUndeclaredLibraryReference" xml:space="preserve">
+    <value>@ffi('{0}/{1}') 引用了未声明的库 '{0}'。请在 eidos.toml 的 ffi.libraries 中添加 "{0}"</value>
+  </data>
+  <data name="FfiParameterRole" xml:space="preserve">
+    <value>参数</value>
+  </data>
+  <data name="FfiParameterLocation" xml:space="preserve">
+    <value>第 {0} 个{1}</value>
+  </data>
+  <data name="FfiReturnRole" xml:space="preserve">
+    <value>返回值</value>
+  </data>
+  <data name="FfiStringRequiresCstrConversionHelp" xml:space="preserve">
+    <value>String 需要先通过 string_to_cstr 转换为 Ptr[Char]</value>
+  </data>
+  <data name="FfiTypeDisplayFunction" xml:space="preserve">
+    <value>函数类型</value>
+  </data>
+  <data name="FfiTypeDisplayMutableReference" xml:space="preserve">
+    <value>可变引用</value>
+  </data>
+  <data name="FfiTypeDisplayReference" xml:space="preserve">
+    <value>引用类型</value>
+  </data>
+  <data name="FfiTypeDisplayTuple" xml:space="preserve">
+    <value>元组</value>
+  </data>
+  <data name="FfiTypeDisplayUnknown" xml:space="preserve">
+    <value>未知类型</value>
+  </data>
+  <data name="FfiUnsafeTypeForFunctionLocation" xml:space="preserve">
+    <value>类型 '{0}' 不是 FFI 安全类型，不能用于 @ffi 函数的{1}</value>
+  </data>
+  <data name="ExistingOverlappingImplRegisteredHere" xml:space="preserve">
+    <value>existing overlapping impl registered here</value>
+  </data>
+  <data name="GuardedBranchesExcludedFromExactCoverage" xml:space="preserve">
+    <value>Guarded branches with unresolved predicates were conservatively excluded from exact coverage: {0}.</value>
+  </data>
+  <data name="GuardedBranchesNotExhaustiveNote" xml:space="preserve">
+    <value>Guarded branches are not considered exhaustive by coverage analysis.</value>
+  </data>
+  <data name="IfLetExpressionRequiresBindingPattern" xml:space="preserve">
+    <value>if let expression requires a binding pattern</value>
+  </data>
+  <data name="ImportError" xml:space="preserve">
+    <value>Import error</value>
+  </data>
+  <data name="ImportModuleAliasMustStartWithUppercase" xml:space="preserve">
+    <value>Import module alias '{0}' must start with an uppercase letter</value>
+  </data>
+  <data name="SelectiveImportAliasTierMismatch" xml:space="preserve">
+    <value>Selective import alias '{0}' for symbol '{1}' must match the imported symbol tier: {2}</value>
+  </data>
+  <data name="ImplRequiresConcreteFirstParameter" xml:space="preserve">
+    <value>@impl requires the first function parameter to be a concrete type</value>
+  </data>
+  <data name="ImplSpecializationEquivalent" xml:space="preserve">
+    <value>equivalent</value>
+  </data>
+  <data name="ImplSpecializationIncomparable" xml:space="preserve">
+    <value>incomparable</value>
+  </data>
+  <data name="ImplSpecializationRequestedLessSpecific" xml:space="preserve">
+    <value>requested is less specific than existing</value>
+  </data>
+  <data name="ImplSpecializationRequestedMoreSpecific" xml:space="preserve">
+    <value>requested is more specific than existing</value>
+  </data>
+  <data name="LetDeclarationRequiresBindingPattern" xml:space="preserve">
+    <value>let declaration requires a binding pattern</value>
+  </data>
+  <data name="LetDeclarationRequiresIrrefutablePattern" xml:space="preserve">
+    <value>let declaration requires an irrefutable pattern (use match for refutable patterns)</value>
+  </data>
+  <data name="LetQuestionRequiresBindingPattern" xml:space="preserve">
+    <value>let? binding requires a binding pattern</value>
+  </data>
+  <data name="LetQuestionRequiresIrrefutablePattern" xml:space="preserve">
+    <value>let? binding requires an irrefutable pattern (use match or let else for refutable patterns)</value>
+  </data>
+  <data name="LetQuestionRequiresValueExpression" xml:space="preserve">
+    <value>let? binding requires a value expression</value>
+  </data>
+  <data name="LetQuestionOutsideFunction" xml:space="preserve">
+    <value>let? can only be used inside a function or lambda with a return context</value>
+  </data>
+  <data name="LetQuestionRhsMustBeOptionOrResult" xml:space="preserve">
+    <value>let? right-hand side must have type Option[T] or Result[T, E]</value>
+  </data>
+  <data name="ComptimeBindingRhsMustBeEvaluable" xml:space="preserve">
+    <value>comptime binding RHS must be evaluable at compile time: {0}</value>
+  </data>
+  <data name="LetQuestionOptionRequiresOptionReturn" xml:space="preserve">
+    <value>let? on Option[T] requires the enclosing function or lambda to return Option[R]</value>
+  </data>
+  <data name="LetQuestionResultRequiresResultReturn" xml:space="preserve">
+    <value>let? on Result[T, E] requires the enclosing function or lambda to return Result[R, E]</value>
+  </data>
+  <data name="LetQuestionMissingConstructor" xml:space="preserve">
+    <value>let? could not resolve {0}.{1} constructor</value>
+  </data>
+  <data name="MethodCallMissingMethodNameLabel" xml:space="preserve">
+    <value>Method call missing method name</value>
+  </data>
+  <data name="MissingCaseTraceGroups" xml:space="preserve">
+    <value>Missing-case trace groups: {0}</value>
+  </data>
+  <data name="MissingCaseTraceKv" xml:space="preserve">
+    <value>Missing-case trace kv: {0}</value>
+  </data>
+  <data name="MissingCaseTraces" xml:space="preserve">
+    <value>Missing-case traces: {0}</value>
+  </data>
+  <data name="MissingCaseWitnesses" xml:space="preserve">
+    <value>Missing-case witnesses: {0}</value>
+  </data>
+  <data name="NamedFieldPatternRequiresFieldName" xml:space="preserve">
+    <value>Named field pattern must specify a field name</value>
+  </data>
+  <data name="NotPatternCannotBindVariables" xml:space="preserve">
+    <value>Not-pattern cannot bind variables: {0}</value>
+  </data>
+  <data name="NonExhaustivePatternMatchingAddWildcardBranch" xml:space="preserve">
+    <value>Non-exhaustive pattern matching in {0}; add '_' branch or cover all cases.</value>
+  </data>
+  <data name="NonExhaustivePatternMatchingMissingAdtConstructors" xml:space="preserve">
+    <value>Non-exhaustive pattern matching in {0}; missing constructors: {1}</value>
+  </data>
+  <data name="NonExhaustivePatternMatchingMissingBoolCases" xml:space="preserve">
+    <value>Non-exhaustive pattern matching in {0}; missing bool cases: {1}</value>
+  </data>
+  <data name="NonExhaustivePatternMatchingMissingListCases" xml:space="preserve">
+    <value>Non-exhaustive pattern matching in {0}; missing list cases: {1}</value>
+  </data>
+  <data name="NonExhaustivePatternMatchingMissingTupleAdtCases" xml:space="preserve">
+    <value>Non-exhaustive pattern matching in {0}; missing tuple constructor cases: {1}</value>
+  </data>
+  <data name="NonExhaustivePatternMatchingMissingTupleBoolCases" xml:space="preserve">
+    <value>Non-exhaustive pattern matching in {0}; missing tuple bool cases: {1}</value>
+  </data>
+  <data name="OperatorAlreadyDeclared" xml:space="preserve">
+    <value>@operator: '{0}' is already declared as an operator</value>
+  </data>
+  <data name="OperatorPrecedenceMustBeInteger" xml:space="preserve">
+    <value>@operator: precedence must be an integer, got '{0}'</value>
+  </data>
+  <data name="OperatorPrecedenceOutOfRange" xml:space="preserve">
+    <value>@operator: precedence must be between 0 and 9, got {0}</value>
+  </data>
+  <data name="OperatorUnsupportedFixity" xml:space="preserve">
+    <value>@operator: unsupported fixity '{0}', expected infixl, infixr, prefix, or postfix</value>
+  </data>
+  <data name="OverlappingImplExistingCanonicalHead" xml:space="preserve">
+    <value>existing canonical head: {0}</value>
+  </data>
+  <data name="OverlappingImplExistingHead" xml:space="preserve">
+    <value>existing impl head: {0}</value>
+  </data>
+  <data name="OverlappingImplHelp" xml:space="preserve">
+    <value>Keep only one impl head per canonical trait/type shape. Different aliases that canonicalize to the same underlying constructor currently overlap.</value>
+  </data>
+  <data name="OverlappingImplRequestedCanonicalHead" xml:space="preserve">
+    <value>requested canonical head: {0}</value>
+  </data>
+  <data name="OverlappingImplRequestedHead" xml:space="preserve">
+    <value>requested impl head: {0}</value>
+  </data>
+  <data name="OverlappingImplRequestedHere" xml:space="preserve">
+    <value>overlapping impl requested here: {0}</value>
+  </data>
+  <data name="OverlappingImplSpecializationRelation" xml:space="preserve">
+    <value>specialization relation: {0}</value>
+  </data>
+  <data name="PatternCoverageLabel" xml:space="preserve">
+    <value>pattern coverage</value>
+  </data>
+  <data name="PatternDiagnosticWithContext" xml:space="preserve">
+    <value>{0} [context: {1}]</value>
+  </data>
+  <data name="PatternGuardRequiresBindingPattern" xml:space="preserve">
+    <value>Pattern guard requires a pattern before '&lt;-'</value>
+  </data>
+  <data name="PatternVariableBoundMoreThanOnce" xml:space="preserve">
+    <value>Pattern variable '{0}' is bound more than once in the same scope</value>
+  </data>
+  <data name="ProofCaseIndexRequiresPattern" xml:space="preserve">
+    <value>Proof case #{0} requires a pattern</value>
+  </data>
+  <data name="ProofImplMatchingDeclarationHelp" xml:space="preserve">
+    <value>Provide a proof declaration with the same @impl(...) head and a name matching the trait proof member.</value>
+  </data>
+  <data name="ProofImplRequiresConcreteFirstTraitArgument" xml:space="preserve">
+    <value>Proof @impl requires the first trait type argument to be a concrete type</value>
+  </data>
+  <data name="PtrIntrinsicRequiresExactlyOneTypeArgument" xml:space="preserve">
+    <value>{0} requires exactly one type argument</value>
+  </data>
+  <data name="PtrIntrinsicRequiresExplicitTypeArgument" xml:space="preserve">
+    <value>{0} requires an explicit type argument, e.g., {0}[Float](ptr)</value>
+  </data>
+  <data name="ReservedSelfDeclaration" xml:space="preserve">
+    <value>'Self' is reserved for trait self type and cannot be declared as a {0}</value>
+  </data>
+  <data name="ReservedInternalNameDeclaration" xml:space="preserve">
+    <value>'{0}' uses compiler-reserved internal prefix '{1}' and cannot be declared as a {2}</value>
+  </data>
+  <data name="ReservedInternalNameDeclarationHelp" xml:space="preserve">
+    <value>Rename the declaration; names beginning with compiler internal prefixes are reserved for generated code.</value>
+  </data>
+  <data name="CyclicSupertrait" xml:space="preserve">
+    <value>Supertrait cycle detected for trait '{0}': {1}</value>
+  </data>
+  <data name="UndefinedSupertrait" xml:space="preserve">
+    <value>Undefined supertrait '{0}' in trait '{1}'</value>
+  </data>
+  <data name="SupertraitTypeArgumentCountMismatch" xml:space="preserve">
+    <value>Supertrait '{0}' expects {1} type argument(s) but {2} were provided in trait '{3}'</value>
+  </data>
+  <data name="SelfReferentialSupertrait" xml:space="preserve">
+    <value>Trait '{0}' cannot be its own supertrait</value>
+  </data>
+  <data name="DuplicateSupertrait" xml:space="preserve">
+    <value>Duplicate supertrait '{0}' in trait '{1}'</value>
+  </data>
+  <data name="SuppressedCoveredTraceKv" xml:space="preserve">
+    <value>Suppressed-covered trace kv: {0}</value>
+  </data>
+  <data name="UndefinedEffect" xml:space="preserve">
+    <value>Undefined effect '{0}'</value>
+  </data>
+  <data name="UndefinedEffectWithCandidates" xml:space="preserve">
+    <value>Undefined effect '{0}'. Available effects named '{1}': {2}</value>
+  </data>
+  <data name="UndefinedConstructor" xml:space="preserve">
+    <value>Undefined constructor '{0}'</value>
+  </data>
+  <data name="UndefinedFunction" xml:space="preserve">
+    <value>Undefined function '{0}'</value>
+  </data>
+  <data name="UndefinedHandler" xml:space="preserve">
+    <value>Undefined handler '{0}'</value>
+  </data>
+  <data name="UndefinedTrait" xml:space="preserve">
+    <value>Undefined trait '{0}'</value>
+  </data>
+  <data name="UndefinedTraitInImpl" xml:space="preserve">
+    <value>Undefined trait '{0}' in @impl</value>
+  </data>
+  <data name="UndefinedType" xml:space="preserve">
+    <value>Undefined type '{0}'</value>
+  </data>
+  <data name="UndefinedVariable" xml:space="preserve">
+    <value>Undefined variable '{0}'</value>
+  </data>
+  <data name="UnreachablePatternBranchLabel" xml:space="preserve">
+    <value>unreachable pattern branch</value>
+  </data>
+  <data name="UnreachablePatternBranchFalseGuard" xml:space="preserve">
+    <value>Unreachable pattern branch #{0}: guard is constant false</value>
+  </data>
+  <data name="UnreachablePatternBranchCoveredByPrevious" xml:space="preserve">
+    <value>Unreachable pattern branch #{0}: all finite cases are already covered by previous branches ({1})</value>
+  </data>
+  <data name="UnreachablePatternBranchPreviousIrrefutable" xml:space="preserve">
+    <value>Unreachable pattern branch #{0}: previous branch #{1} is irrefutable and has no guard</value>
+  </data>
+  <data name="UnreachablePatternBranchUnsatisfiable" xml:space="preserve">
+    <value>Unreachable pattern branch #{0}: pattern is unsatisfiable in finite coverage space</value>
+  </data>
+  <data name="UnreachablePatternCannotMatchNote" xml:space="preserve">
+    <value>This pattern cannot match any value; simplify or remove this branch.</value>
+  </data>
+  <data name="UnreachablePatternMoveEarlierOrAddGuardNote" xml:space="preserve">
+    <value>Move this branch earlier or add a guard to the previous irrefutable branch.</value>
+  </data>
+  <data name="UnreachablePatternMoveEarlierOrRefineNote" xml:space="preserve">
+    <value>Move this branch earlier or refine its pattern/guard to introduce new coverage.</value>
+  </data>
+  <data name="UnreachablePatternRemoveOrChangeGuardNote" xml:space="preserve">
+    <value>Remove this branch or change its guard condition.</value>
+  </data>
+  <data name="UnresolvedGuardBranchHints" xml:space="preserve">
+    <value>Unresolved-guard branch hints: {0}</value>
+  </data>
+  <data name="UnsupportedBorrowCapability" xml:space="preserve">
+    <value>Unsupported @borrow capability '{0}'. Expected one of: read, write, move</value>
+  </data>
+  <data name="UnsupportedConstrainedImplHead" xml:space="preserve">
+    <value>Unsupported constrained impl head</value>
+  </data>
+  <data name="UnsupportedPtrIntrinsicTypeArgument" xml:space="preserve">
+    <value>Unsupported type argument '{0}' for {1}. Supported: Int, Float, RawPtr, Ptr, Int32, Int8, Bool</value>
+  </data>
+  <data name="WhileLetExpressionRequiresBindingPattern" xml:space="preserve">
+    <value>while let expression requires a binding pattern</value>
+  </data>
+  <data name="TooManyBorrowErrors" xml:space="preserve">
+    <value>Too many borrow errors (max {0}), stopping</value>
+  </data>
+  <data name="TooManyAffineTypeErrors" xml:space="preserve">
+    <value>Too many affine type errors (max {0}), stopping</value>
+  </data>
+  <data name="AffineVariableMovedTwice" xml:space="preserve">
+    <value>变量被移动两次</value>
+  </data>
+  <data name="AffineUseAfterMove" xml:space="preserve">
+    <value>移动后使用变量</value>
+  </data>
+  <data name="AffineUseBeforeInit" xml:space="preserve">
+    <value>使用未初始化的变量</value>
+  </data>
+  <data name="BorrowReturnValueStillActive" xml:space="preserve">
+    <value>返回值仍有活跃借用</value>
+  </data>
+  <data name="BorrowCreateMutableConflict" xml:space="preserve">
+    <value>创建可变借用时存在其他借用</value>
+  </data>
+  <data name="BorrowCreateImmutableWhileMutable" xml:space="preserve">
+    <value>创建不可变借用时存在可变借用</value>
+  </data>
+  <data name="BorrowCreateSharedWhileMutable" xml:space="preserve">
+    <value>创建共享借用时存在可变借用</value>
+  </data>
+  <data name="BorrowLifetimeExceedsBorrowee" xml:space="preserve">
+    <value>借用生命周期超过被借用值</value>
+  </data>
+  <data name="BorrowSharedWhileMutable" xml:space="preserve">
+    <value>存在可变借用时无法创建共享借用</value>
+  </data>
+  <data name="BorrowSharedWhileMutableResult" xml:space="preserve">
+    <value>值被可变借用中，无法创建共享借用</value>
+  </data>
+  <data name="BorrowMultipleMutable" xml:space="preserve">
+    <value>已存在可变借用，无法创建新的可变借用</value>
+  </data>
+  <data name="BorrowSharedExistsCannotCreateMutable" xml:space="preserve">
+    <value>存在共享借用时无法创建可变借用</value>
+  </data>
+  <data name="BorrowMutableBorrowedCannotBorrowAgain" xml:space="preserve">
+    <value>值已被可变借用，无法再次可变借用</value>
+  </data>
+  <data name="BorrowSharedBorrowedCannotCreateMutable" xml:space="preserve">
+    <value>值被共享借用中，无法创建可变借用</value>
+  </data>
+  <data name="BorrowArgumentRequiresOwnershipButAlias" xml:space="preserve">
+    <value>参数需要所有权，但传入的是借用别名</value>
+  </data>
+  <data name="BorrowArgumentRequiresOwnershipButBorrowed" xml:space="preserve">
+    <value>参数需要所有权，但传入的是借用</value>
+  </data>
+  <data name="BorrowReturnBoundToInvalidValue" xml:space="preserve">
+    <value>返回借用绑定到了已失效的值</value>
+  </data>
+  <data name="BorrowReturnedValueLifetimeExceedsArgument" xml:space="preserve">
+    <value>返回值的生命周期超过被借用参数</value>
+  </data>
+  <data name="BorrowValueBorrowedCannotModify" xml:space="preserve">
+    <value>值被借用中，无法修改</value>
+  </data>
+  <data name="BorrowUseAfterMove" xml:space="preserve">
+    <value>变量在移动后使用</value>
+  </data>
+  <data name="BorrowUseAfterMoveCannotUse" xml:space="preserve">
+    <value>变量已被移动，无法再次使用</value>
+  </data>
+  <data name="BorrowUseAfterMoveCannotRead" xml:space="preserve">
+    <value>变量已被移动，无法再次读取</value>
+  </data>
+  <data name="BorrowCannotMoveBorrowedValue" xml:space="preserve">
+    <value>无法移动被借用的值</value>
+  </data>
+  <data name="BorrowReturnedBorrowMustComeFromInputParameter" xml:space="preserve">
+    <value>返回借用必须直接来自输入参数，不能从局部或临时值借出后返回</value>
+  </data>
+  <data name="BorrowWaitMutableEndsBeforeShared" xml:space="preserve">
+    <value>等待可变借用结束后再创建共享借用</value>
+  </data>
+  <data name="BorrowWaitExistingEndsBeforeMutable" xml:space="preserve">
+    <value>等待已有借用结束后再创建可变借用</value>
+  </data>
+  <data name="BorrowOwnershipRequiredHint" xml:space="preserve">
+    <value>参数需要所有权，请传入原值而不是借用结果</value>
+  </data>
+  <data name="BorrowKeepBorroweeAliveHint" xml:space="preserve">
+    <value>确保被借用的值在返回借用使用期间保持有效</value>
+  </data>
+  <data name="BorrowMoveOrCopyHint" xml:space="preserve">
+    <value>考虑 clone、copy，或调整所有权流转</value>
+  </data>
+  <data name="BorrowReadBeforeMoveHint" xml:space="preserve">
+    <value>考虑 clone、copy，或在移动前先完成读取</value>
+  </data>
+  <data name="BorrowWaitEndsBeforeWrite" xml:space="preserve">
+    <value>等待借用结束后再写入</value>
+  </data>
+  <data name="BorrowWaitEndsBeforeMove" xml:space="preserve">
+    <value>等待借用结束后再移动值</value>
+  </data>
+  <data name="BorrowReturnReferenceFromParameterHint" xml:space="preserve">
+    <value>把返回引用改成直接来自参数，或改为按值返回</value>
+  </data>
+  <data name="BorrowActionCreateSharedBorrow" xml:space="preserve">
+    <value>创建共享借用</value>
+  </data>
+  <data name="BorrowActionCreateMutableBorrow" xml:space="preserve">
+    <value>创建可变借用</value>
+  </data>
+  <data name="BorrowActionWrite" xml:space="preserve">
+    <value>写入</value>
+  </data>
+  <data name="BorrowActionMoveValue" xml:space="preserve">
+    <value>移动值</value>
+  </data>
+  <data name="BorrowActionCreateSharedBorrowThroughCallArgument" xml:space="preserve">
+    <value>通过调用参数创建共享借用</value>
+  </data>
+  <data name="BorrowActionCreateMutableBorrowThroughCallArgument" xml:space="preserve">
+    <value>通过调用参数创建可变借用</value>
+  </data>
+  <data name="BorrowActionReadThroughCallArgument" xml:space="preserve">
+    <value>通过调用参数读取</value>
+  </data>
+  <data name="BorrowActionMoveValueThroughCallArgument" xml:space="preserve">
+    <value>通过调用参数移动值</value>
+  </data>
+  <data name="BorrowActionBindReturnedSharedBorrow" xml:space="preserve">
+    <value>绑定调用返回共享借用</value>
+  </data>
+  <data name="BorrowActionBindReturnedMutableBorrow" xml:space="preserve">
+    <value>绑定调用返回可变借用</value>
+  </data>
+  <data name="BorrowReadCapabilityDenied" xml:space="preserve">
+    <value>缺少 read 能力，无法{0}（{1}）</value>
+  </data>
+  <data name="BorrowWriteCapabilityDenied" xml:space="preserve">
+    <value>缺少 write 能力，无法{0}（{1}）</value>
+  </data>
+  <data name="BorrowMoveCapabilityDenied" xml:space="preserve">
+    <value>缺少 move 能力，无法{0}（{1}）</value>
+  </data>
+  <data name="BorrowReadCapabilityRequiredHint" xml:space="preserve">
+    <value>需要能力 read；目标 {0}。可在相关 ability/effect 上添加 @borrow(read) 或 @borrow(write) 标签，或避免该借用读取。命中路径: {1}</value>
+  </data>
+  <data name="BorrowWriteCapabilityRequiredHint" xml:space="preserve">
+    <value>需要能力 write；目标 {0}。可在相关 ability/effect 上添加 @borrow(write) 标签，或改为共享借用/只读路径。命中路径: {1}</value>
+  </data>
+  <data name="BorrowMoveLocalCapabilityRequiredHint" xml:space="preserve">
+    <value>需要能力 move；值 {0}。可在相关 ability/effect 上添加 @borrow(move) 标签，或改为 copy/borrow。命中路径: {1}</value>
+  </data>
+  <data name="BorrowMoveTargetCapabilityRequiredHint" xml:space="preserve">
+    <value>需要能力 move；目标 {0}。可在相关 ability/effect 上添加 @borrow(move) 标签，或改为 copy/borrow。命中路径: {1}</value>
+  </data>
+  <data name="BorrowReadCapabilityAdjustmentHint" xml:space="preserve">
+    <value>可在相关 ability/effect 上添加 @borrow(read) 或 @borrow(write) 标签，或调整为不创建该借用读取。命中路径: {0}</value>
+  </data>
+  <data name="BorrowWriteCapabilityAdjustmentHint" xml:space="preserve">
+    <value>可在相关 ability/effect 上添加 @borrow(write) 标签，或调整为共享借用/只读路径。命中路径: {0}</value>
+  </data>
+  <data name="BorrowMoveCapabilityAdjustmentHint" xml:space="preserve">
+    <value>可在相关 ability/effect 上添加 @borrow(move) 标签，或改为 copy/borrow。命中路径: {0}</value>
+  </data>
+  <data name="ParserDiagnosticWithPosition" xml:space="preserve">
+    <value>{0} (pos={1}, token='{2}')</value>
+  </data>
+  <data name="ParserHereLabel" xml:space="preserve">
+    <value>here</value>
+  </data>
+  <data name="ParserExpectedToken" xml:space="preserve">
+    <value>expected '{0}'</value>
+  </data>
+  <data name="ParserExpectedTokenBefore" xml:space="preserve">
+    <value>expected '{0}' before {1}</value>
+  </data>
+  <data name="ParserExpectedTokenAfter" xml:space="preserve">
+    <value>expected '{0}' after {1}</value>
+  </data>
+  <data name="ParserExpectedTokenIn" xml:space="preserve">
+    <value>expected '{0}' in {1}</value>
+  </data>
+  <data name="ParserExpectedType" xml:space="preserve">
+    <value>expected type, got '{0}'</value>
+  </data>
+  <data name="ParserExpectedKind" xml:space="preserve">
+    <value>expected kind ('*' or '('), got '{0}'</value>
+  </data>
+  <data name="ParserUnexpectedToken" xml:space="preserve">
+    <value>unexpected token '{0}'</value>
+  </data>
+  <data name="ParserUnexpectedTokenInPattern" xml:space="preserve">
+    <value>unexpected token '{0}' in pattern</value>
+  </data>
+  <data name="ParserExpectedFunctionName" xml:space="preserve">
+    <value>expected function name</value>
+  </data>
+  <data name="ParserExpectedProofName" xml:space="preserve">
+    <value>expected proof name</value>
+  </data>
+  <data name="ParserProofNameMustStartWithUppercase" xml:space="preserve">
+    <value>proof name must start with an uppercase letter</value>
+  </data>
+  <data name="ParserRuntimeDeclarationNameMustStartWithLowercase" xml:space="preserve">
+    <value>{0} name must start with a lowercase letter</value>
+  </data>
+  <data name="ParserCompileTimeDeclarationNameMustStartWithUppercase" xml:space="preserve">
+    <value>{0} name must start with an uppercase letter</value>
+  </data>
+  <data name="ParserTypeParameterNameMustStartWithUppercase" xml:space="preserve">
+    <value>type parameter name must start with an uppercase letter</value>
+  </data>
+  <data name="ParserGenericWhereTargetMustStartWithUppercase" xml:space="preserve">
+    <value>generic where-clause target must start with an uppercase letter</value>
+  </data>
+  <data name="ParserModulePathSegmentMustStartWithUppercase" xml:space="preserve">
+    <value>module path segment must start with an uppercase letter</value>
+  </data>
+  <data name="ParserModuleAliasMustStartWithUppercase" xml:space="preserve">
+    <value>module import alias must start with an uppercase letter</value>
+  </data>
+  <data name="ParserImportAliasUseNameFirstForm" xml:space="preserve">
+    <value>in Eidos 0.4.0-alpha.1, module alias imports must use the binding form 'Alias :: import Module.Path;' instead of 'import Module.Path as Alias;'</value>
+  </data>
+  <data name="ParserImportBindingExpectsModulePath" xml:space="preserve">
+    <value>name-first import binding expects a module path; selective and wildcard imports are not valid in 'Alias :: import ...;' form</value>
+  </data>
+  <data name="ParserExpectedProofParameterName" xml:space="preserve">
+    <value>expected proof parameter name</value>
+  </data>
+  <data name="ParserExpectedCasesOrInductionAfterBy" xml:space="preserve">
+    <value>expected 'cases' or 'induction' after 'by'</value>
+  </data>
+  <data name="ParserExpectedProofTerm" xml:space="preserve">
+    <value>expected proof term 'refl', 'by cases', or 'by induction'</value>
+  </data>
+  <data name="ParserExpectedTraitBodyMember" xml:space="preserve">
+    <value>expected 'func' or 'proof' in trait body, got '{0}'</value>
+  </data>
+  <data name="ParserIndexExpressionRequiresIndex" xml:space="preserve">
+    <value>index expression requires an index before ']'</value>
+  </data>
+  <data name="ParserExpectedExpression" xml:space="preserve">
+    <value>expected expression, got '{0}'</value>
+  </data>
+  <data name="ParserRecordUpdateSpreadPosition" xml:space="preserve">
+    <value>record update spread '..base' must appear once at the start of constructor fields</value>
+  </data>
+  <data name="ParserInlineWithRequiresEffectPath" xml:space="preserve">
+    <value>inline with clauses require an explicit effect path before handler branches</value>
+  </data>
+  <data name="ParserRangePatternStartMustBeLiteral" xml:space="preserve">
+    <value>range pattern start must be a literal</value>
+  </data>
+  <data name="ParserExpectedPattern" xml:space="preserve">
+    <value>expected pattern, got '{0}'</value>
+  </data>
+  <data name="ParserInvalidListRestPatternUsage" xml:space="preserve">
+    <value>Invalid list rest pattern usage.</value>
+  </data>
+  <data name="ParserListRestMarkerLabel" xml:space="preserve">
+    <value>list rest marker</value>
+  </data>
+  <data name="ParserListRestUseHelp" xml:space="preserve">
+    <value>Use `..` only in list patterns: `[head, ..tail]`, `[..tail]`, or `[..]`.</value>
+  </data>
+  <data name="ParserListRestValidFormsHelp" xml:space="preserve">
+    <value>Valid list-rest forms: `[a, ..rest]`, `[..rest]`, `[..]`.</value>
+  </data>
+  <data name="ParserListRestExplicitElementsHelp" xml:space="preserve">
+    <value>Tuple/constructor patterns must list explicit elements, for example `(a, b)` or `Some(x)`.</value>
+  </data>
+  <data name="ParserExpectedRightBraceToCloseEffectSet" xml:space="preserve">
+    <value>expected '}' to close effect set</value>
+  </data>
+  <data name="ParserEffectfulTypeSyntaxRemoved" xml:space="preserve">
+    <value>Function effect requirements now use `need`: write `A -&gt; B need Effect` instead of `A -&gt;{Effect} -&gt; B`.</value>
+  </data>
+  <data name="ParserLegacyEffectSyntaxRemoved" xml:space="preserve">
+    <value>`ability` declarations have been removed; declare a marker tag with `Name :: effect;`.</value>
+  </data>
+  <data name="ParserEffectTagTypeParametersNotSupported" xml:space="preserve">
+    <value>effect tags are nominal markers and cannot declare type parameters</value>
+  </data>
+  <data name="ParserEffectTagMembersNotSupported" xml:space="preserve">
+    <value>effect tags cannot declare operation members; use ordinary functions with a `need` clause</value>
+  </data>
+  <data name="ParserEffectTagRequiresSemicolon" xml:space="preserve">
+    <value>effect tag declarations must end with ';'</value>
+  </data>
+  <data name="ParserHandlerSyntaxRemoved" xml:space="preserve">
+    <value>`handler` and `resume` have been removed; effects are compile-time tags and cannot be handled at runtime</value>
+  </data>
+  <data name="ParserWithClauseSyntaxRemoved" xml:space="preserve">
+    <value>`with` effect handlers have been removed; propagate the callee's effects through the caller's `need` clause</value>
+  </data>
+  <data name="ParserNeedClauseRequiresEffectPath" xml:space="preserve">
+    <value>need clause requires at least one effect path</value>
+  </data>
+  <data name="ParserNeedClauseAllowsEffectPathsOnly" xml:space="preserve">
+    <value>need clause only accepts effect paths, not value expressions or type applications</value>
+  </data>
+  <data name="ParserExpectedRightParenToCloseViewPattern" xml:space="preserve">
+    <value>expected ')' to close view pattern</value>
+  </data>
+  <data name="ParserExpectedColonBeforeSignature" xml:space="preserve">
+    <value>expected ':' before signature</value>
+  </data>
+  <data name="ParserExpectedRightParenAfterOperatorFunctionName" xml:space="preserve">
+    <value>expected ')' after operator function name</value>
+  </data>
+  <data name="ParserExpectedProofKeyword" xml:space="preserve">
+    <value>expected 'proof'</value>
+  </data>
+  <data name="ParserExpectedColonBeforeProofProposition" xml:space="preserve">
+    <value>expected ':' before proof proposition</value>
+  </data>
+  <data name="ParserExpectedDotAfterProofParameters" xml:space="preserve">
+    <value>expected '.' after proof parameters</value>
+  </data>
+  <data name="ParserExpectedEqualInProofProposition" xml:space="preserve">
+    <value>expected '==' in proof proposition</value>
+  </data>
+  <data name="ParserExpectedRightBraceAfterProofBody" xml:space="preserve">
+    <value>expected '}' after proof body</value>
+  </data>
+  <data name="ParserExpectedColonAfterProofParameterName" xml:space="preserve">
+    <value>expected ':' after proof parameter name</value>
+  </data>
+  <data name="ParserExpectedLeftBraceBeforeProofCases" xml:space="preserve">
+    <value>expected '{' before proof cases</value>
+  </data>
+  <data name="ParserExpectedRightBraceAfterProofCases" xml:space="preserve">
+    <value>expected '}' after proof cases</value>
+  </data>
+  <data name="ParserExpectedFatArrowInProofCase" xml:space="preserve">
+    <value>expected '=&gt;' in proof case</value>
+  </data>
+  <data name="ParserExpectedProofReflTerm" xml:space="preserve">
+    <value>expected proof term 'refl'</value>
+  </data>
+  <data name="ParserExpectedLeftBraceAfterDo" xml:space="preserve">
+    <value>expected '{' after 'do'</value>
+  </data>
+  <data name="ParserExpectedRightBraceAfterDoExpression" xml:space="preserve">
+    <value>expected '}' after do expression</value>
+  </data>
+  <data name="ParserExpectedEqualInDoLetBinding" xml:space="preserve">
+    <value>expected '=' in do let binding</value>
+  </data>
+  <data name="ParserExpectedLeftArrowInDoBinding" xml:space="preserve">
+    <value>expected '&lt;-' in do binding</value>
+  </data>
+  <data name="ParserExpectedIdentifierAfterQualifiedSeparator" xml:space="preserve">
+    <value>expected identifier after '::'</value>
+  </data>
+  <data name="ParserExpectedTypeIdentifierAfterQualifiedSeparator" xml:space="preserve">
+    <value>expected type identifier after '::'</value>
+  </data>
+  <data name="ParserListRestStandaloneNote" xml:space="preserve">
+    <value>`..` is a list-rest marker, not a standalone pattern.</value>
+  </data>
+  <data name="ParserListRestMustBeLastNote" xml:space="preserve">
+    <value>list pattern elements must be separated with commas, and `..rest` can only appear once.</value>
+  </data>
+  <data name="MissingPatternDuringHirLowering" xml:space="preserve">
+    <value>Missing pattern during HIR lowering</value>
+  </data>
+  <data name="MissingExpressionWhileLowering" xml:space="preserve">
+    <value>Missing expression while lowering {0}.</value>
+  </data>
+  <data name="UnsupportedAstExpressionDuringHirLowering" xml:space="preserve">
+    <value>Unsupported AST expression '{0}' during HIR lowering.</value>
+  </data>
+  <data name="UnsupportedAstPatternDuringHirLowering" xml:space="preserve">
+    <value>Unsupported AST pattern '{0}' during HIR lowering.</value>
+  </data>
+  <data name="UnsupportedAstPatternReason" xml:space="preserve">
+    <value>Unsupported AST pattern '{0}'</value>
+  </data>
+  <data name="UnsupportedPatternLabel" xml:space="preserve">
+    <value>unsupported pattern</value>
+  </data>
+  <data name="PipelineInternalError" xml:space="preserve">
+    <value>编译管道内部错误。当前编译结果不完整。</value>
+  </data>
+  <data name="PipelineInternalErrorHelp" xml:space="preserve">
+    <value>使用 `eidosc debug --debug-level diagnostic` 并指定调试输出目录来收集编译器内部细节。</value>
+  </data>
+  <data name="ExceptionNote" xml:space="preserve">
+    <value>exception: {0}: {1}</value>
+  </data>
+  <data name="StackTraceNote" xml:space="preserve">
+    <value>stack trace: {0}</value>
+  </data>
+  <data name="StackTraceUnavailable" xml:space="preserve">
+    <value>&lt;unavailable&gt;</value>
+  </data>
+  <data name="SendCheckFailed" xml:space="preserve">
+    <value>Send check failed in {0}: {1}</value>
+  </data>
+  <data name="SpawnArgumentTypeMustImplementSend" xml:space="preserve">
+    <value>spawn argument type does not implement Send: {0}</value>
+  </data>
+  <data name="CircularImportDetected" xml:space="preserve">
+    <value>检测到循环导入: {0}</value>
+  </data>
+  <data name="FailedToLoadImportedModuleFile" xml:space="preserve">
+    <value>Failed to load imported module file '{0}': {1}</value>
+  </data>
+  <data name="UnableToResolveImportedModule" xml:space="preserve">
+    <value>Unable to resolve imported module '{0}'</value>
+  </data>
+  <data name="ImportedModuleFailedToParse" xml:space="preserve">
+    <value>Imported module '{0}' failed to parse</value>
+  </data>
+  <data name="ImportedFileDoesNotDeclareModule" xml:space="preserve">
+    <value>Imported file '{0}' does not declare module '{1}'</value>
+  </data>
+  <data name="EntryFileNote" xml:space="preserve">
+    <value>entry file: {0}</value>
+  </data>
+  <data name="SearchedRootNote" xml:space="preserve">
+    <value>searched root: {0}</value>
+  </data>
+  <data name="FileNote" xml:space="preserve">
+    <value>file: {0}</value>
+  </data>
+  <data name="ReportedDiagnosticsNote" xml:space="preserve">
+    <value>reported diagnostics: {0}</value>
+  </data>
+  <data name="LoadedImportedFileLabel" xml:space="preserve">
+    <value>loaded imported file</value>
+  </data>
+  <data name="RequestedImportNote" xml:space="preserve">
+    <value>requested import: {0}</value>
+  </data>
+  <data name="ResolvedFromRootNote" xml:space="preserve">
+    <value>resolved from root: {0}</value>
+  </data>
+  <data name="FilesystemModulePathNote" xml:space="preserve">
+    <value>filesystem module path: {0}</value>
+  </data>
+  <data name="DuplicateModulePath" xml:space="preserve">
+    <value>Duplicate module path '{0}' is declared multiple times</value>
+  </data>
+  <data name="DuplicateModuleDeclarationLabel" xml:space="preserve">
+    <value>duplicate module declaration</value>
+  </data>
+  <data name="FirstDeclarationOfModuleHere" xml:space="preserve">
+    <value>First declaration of module '{0}' is here</value>
+  </data>
+  <data name="FirstModuleDeclarationLabel" xml:space="preserve">
+    <value>first module declaration</value>
+  </data>
+  <data name="FunctionNote" xml:space="preserve">
+    <value>function: {0}</value>
+  </data>
+  <data name="LocalNote" xml:space="preserve">
+    <value>local: %{0}</value>
+  </data>
+  <data name="MirLocationNote" xml:space="preserve">
+    <value>mir: bb{0}:{1}</value>
+  </data>
+  <data name="MirLocationShortNote" xml:space="preserve">
+    <value>mir: bb{0}:{1}</value>
+  </data>
+  <data name="FirstMirLocationNote" xml:space="preserve">
+    <value>first: bb{0}:{1}</value>
+  </data>
+  <data name="SecondMirLocationNote" xml:space="preserve">
+    <value>second: bb{0}:{1}</value>
+  </data>
+  <data name="RelatedMirLocationNote" xml:space="preserve">
+    <value>related: bb{0}:{1}</value>
+  </data>
+  <data name="RoleNote" xml:space="preserve">
+    <value>role: {0}</value>
+  </data>
+  <data name="TargetNote" xml:space="preserve">
+    <value>target: {0}</value>
+  </data>
+  <data name="ReasonNote" xml:space="preserve">
+    <value>reason: {0}</value>
+  </data>
+  <data name="RelatedAffineOperationNote" xml:space="preserve">
+    <value>related affine operation</value>
+  </data>
+  <data name="RelatedBorrowNote" xml:space="preserve">
+    <value>related borrow</value>
+  </data>
+  <data name="RelatedLabel" xml:space="preserve">
+    <value>related</value>
+  </data>
+  <data name="RelatedDiagnosticMessageWithLabel" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="AliasTraceIdNote" xml:space="preserve">
+    <value>alias trace id: {0}</value>
+  </data>
+  <data name="AliasStateLookupNote" xml:space="preserve">
+    <value>alias state lookup: search "id={0}" in {1}_borrow_aliases / {1}_loan_constraint_states</value>
+  </data>
+  <data name="AliasTraceNote" xml:space="preserve">
+    <value>alias trace: {0}</value>
+  </data>
+  <data name="MatchedAliasTraceHint" xml:space="preserve">
+    <value>命中的 alias trace[{0}]: {1}</value>
+  </data>
+  <data name="MirUnsupportedNode" xml:space="preserve">
+    <value>Unsupported MIR {0} '{1}' reached backend boundary.</value>
+  </data>
+  <data name="MirUnsupportedNodeLabel" xml:space="preserve">
+    <value>unsupported MIR {0}</value>
+  </data>
+  <data name="MirUnsupportedNodeHelp" xml:space="preserve">
+    <value>MIR validation must reject unsupported nodes before LLVM lowering.</value>
+  </data>
+  <data name="MirMissingTerminator" xml:space="preserve">
+    <value>MIR basic block reached backend boundary without a terminator.</value>
+  </data>
+  <data name="MirMissingTerminatorLabel" xml:space="preserve">
+    <value>unterminated MIR basic block</value>
+  </data>
+  <data name="MirMissingTerminatorHelp" xml:space="preserve">
+    <value>LLVM lowering must not synthesize default control flow for an invalid MIR block.</value>
+  </data>
+  <data name="MirMissingBlockTarget" xml:space="preserve">
+    <value>Unsupported MIR {0} '{1}' reached backend boundary: target basic block does not exist.</value>
+  </data>
+  <data name="MirMissingBlockTargetLabel" xml:space="preserve">
+    <value>missing MIR target block</value>
+  </data>
+  <data name="MirMissingBlockTargetHelp" xml:space="preserve">
+    <value>MIR validation must reject invalid control-flow targets before LLVM lowering.</value>
+  </data>
+  <data name="MirUnknownTypeId" xml:space="preserve">
+    <value>Unknown MIR TypeId '{0}' reached backend boundary.</value>
+  </data>
+  <data name="MirUnknownTypeIdLabel" xml:space="preserve">
+    <value>unknown MIR type id</value>
+  </data>
+  <data name="MirExpectedKnownTypeIdNote" xml:space="preserve">
+    <value>expected builtin type, TypeDescriptor, dynamic type key, or constructor layout metadata</value>
+  </data>
+  <data name="MirMissingTypeId" xml:space="preserve">
+    <value>Missing MIR TypeId for {0} reached backend boundary.</value>
+  </data>
+  <data name="MirMissingTypeIdLabel" xml:space="preserve">
+    <value>missing MIR type id</value>
+  </data>
+  <data name="MirMissingFunctionIdentity" xml:space="preserve">
+    <value>MIR function reference '{0}' lacks structured identity before backend lowering.</value>
+  </data>
+  <data name="MirMissingFunctionIdentityLabel" xml:space="preserve">
+    <value>missing MIR function identity</value>
+  </data>
+  <data name="MirMissingFunctionIdentityHelp" xml:space="preserve">
+    <value>Function references must carry SymbolId or structured FunctionId metadata; runtime refs must be marked explicitly.</value>
+  </data>
+  <data name="MirPoisonOperand" xml:space="preserve">
+    <value>MIR poison operand reached backend boundary.</value>
+  </data>
+  <data name="MirPoisonOperandLabel" xml:space="preserve">
+    <value>poison operand</value>
+  </data>
+  <data name="MirFunctionRequiresConcreteReturnType" xml:space="preserve">
+    <value>MIR function requires a concrete return type before LLVM lowering</value>
+  </data>
+  <data name="MirAllocRequiresConcreteAllocationType" xml:space="preserve">
+    <value>MIR alloc requires a concrete allocation type before LLVM lowering</value>
+  </data>
+  <data name="HirErrorPatternReachedMirLowering" xml:space="preserve">
+    <value>HIR error pattern reached MIR lowering</value>
+  </data>
+  <data name="CannotLowerHirErrorPattern" xml:space="preserve">
+    <value>Cannot lower HIR error pattern: {0}</value>
+  </data>
+  <data name="MirPatternPoisonLabel" xml:space="preserve">
+    <value>mir pattern poison</value>
+  </data>
+  <data name="UnsupportedHirPatternDuringMirLowering" xml:space="preserve">
+    <value>Unsupported HIR pattern '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnsupportedHirPatternReason" xml:space="preserve">
+    <value>Unsupported HIR pattern '{0}'</value>
+  </data>
+  <data name="AmbiguousFieldAcrossConstructors" xml:space="preserve">
+    <value>Field '{0}' is ambiguous across constructors and cannot be lowered by ordinal.</value>
+  </data>
+  <data name="AmbiguousFieldAccessLabel" xml:space="preserve">
+    <value>ambiguous field access</value>
+  </data>
+  <data name="InconsistentAdtFieldOrdinal" xml:space="preserve">
+    <value>Field '{0}' has inconsistent ordinal positions across constructors of ADT '{1}'.</value>
+  </data>
+  <data name="AmbiguousAdtFieldAccessLabel" xml:space="preserve">
+    <value>ambiguous ADT field access</value>
+  </data>
+  <data name="UseConstructorPatternMatchingFieldHelp" xml:space="preserve">
+    <value>Use constructor pattern matching to disambiguate field access.</value>
+  </data>
+  <data name="NonTotalAdtField" xml:space="preserve">
+    <value>Field '{0}' is not present on every constructor of ADT '{1}'.</value>
+  </data>
+  <data name="NonTotalAdtFieldAccessLabel" xml:space="preserve">
+    <value>non-total ADT field access</value>
+  </data>
+  <data name="UseMatchBeforeConstructorSpecificFieldHelp" xml:space="preserve">
+    <value>Use match on constructors before accessing constructor-specific fields.</value>
+  </data>
+  <data name="UnknownAdtField" xml:space="preserve">
+    <value>Field '{0}' does not exist on ADT '{1}'.</value>
+  </data>
+  <data name="UnknownAdtFieldLabel" xml:space="preserve">
+    <value>unknown ADT field</value>
+  </data>
+  <data name="ModuleValueInitializerCannotCall" xml:space="preserve">
+    <value>Module-level value '{0}' initializer cannot contain function calls; use a function declaration instead.</value>
+  </data>
+  <data name="UnsupportedModuleInitializerLabel" xml:space="preserve">
+    <value>unsupported module-level initializer</value>
+  </data>
+  <data name="ModuleLambdaCapturesState" xml:space="preserve">
+    <value>Module-level lambda '{0}' captures local state and cannot be lowered as a standalone function.</value>
+  </data>
+  <data name="ModuleLambdaValueLabel" xml:space="preserve">
+    <value>module-level lambda value</value>
+  </data>
+  <data name="ListComprehensionMirPoison" xml:space="preserve">
+    <value>ListComprehension lowered to poison in MIR: {0}.</value>
+  </data>
+  <data name="ListComprehensionMissingGeneratorSourceReason" xml:space="preserve">
+    <value>missing generator source</value>
+  </data>
+  <data name="ListComprehensionGeneratorRequiredReason" xml:space="preserve">
+    <value>at least one generator is required</value>
+  </data>
+  <data name="ListComprehensionLoweringPoisonLabel" xml:space="preserve">
+    <value>seq comprehension lowering poison</value>
+  </data>
+  <data name="ListComprehensionVarPatternGeneratorHelp" xml:space="preserve">
+    <value>Current MIR lowering supports generator qualifiers with VarPattern binding.</value>
+  </data>
+  <data name="ListComprehensionLoweringFailedReason" xml:space="preserve">
+    <value>ListComprehension lowering failed: {0}</value>
+  </data>
+  <data name="ListComprehensionUnsupportedGeneratorPattern" xml:space="preserve">
+    <value>Seq comprehension generator pattern '{0}' is not supported by MIR lowering.</value>
+  </data>
+  <data name="ListComprehensionUnsupportedGeneratorPatternLabel" xml:space="preserve">
+    <value>unsupported generator pattern</value>
+  </data>
+  <data name="ListComprehensionUnsupportedGeneratorPatternHelp" xml:space="preserve">
+    <value>Use a simple variable or wildcard binding in generator qualifiers until MIR lowering supports refutable generator patterns.</value>
+  </data>
+  <data name="ListComprehensionUnsupportedGeneratorPatternReason" xml:space="preserve">
+    <value>unsupported seq comprehension generator pattern: {0}</value>
+  </data>
+  <data name="BorrowRequiresStablePlace" xml:space="preserve">
+    <value>`{0}` can only borrow from a stable place. Temporary expressions are not borrowable.</value>
+  </data>
+  <data name="TraitDoesNotAcceptTypeArgumentsInImpl" xml:space="preserve">
+    <value>Trait '{0}' does not accept type arguments in @impl</value>
+  </data>
+  <data name="TraitExpectsTypeArgumentsInImpl" xml:space="preserve">
+    <value>Trait '{0}' expects {1} type argument(s) in @impl, got {2}</value>
+  </data>
+  <data name="TraitDefinitionUnavailableForImplSignature" xml:space="preserve">
+    <value>Trait '{0}' definition is unavailable; cannot validate impl signature</value>
+  </data>
+  <data name="TraitFunctionDoesNotMatchMethods" xml:space="preserve">
+    <value>Function '{0}' does not match trait '{1}' methods; expected one of: {2}</value>
+  </data>
+  <data name="TraitMethodSignatureMismatch" xml:space="preserve">
+    <value>Trait method signature mismatch: expected '{0}', got '{1}'</value>
+  </data>
+  <data name="TraitDefinitionUnavailableForProofImpl" xml:space="preserve">
+    <value>Trait '{0}' definition is unavailable; cannot validate proof impl</value>
+  </data>
+  <data name="ProofDoesNotMatchTraitNoObligations" xml:space="preserve">
+    <value>Proof '{0}' does not match trait '{1}' because the trait declares no proof obligations</value>
+  </data>
+  <data name="ProofDoesNotMatchTraitObligations" xml:space="preserve">
+    <value>Proof '{0}' does not match trait '{1}' proof obligations; expected one of: {2}</value>
+  </data>
+  <data name="ProofObligationPropositionMismatch" xml:space="preserve">
+    <value>Proof '{0}' does not match trait '{1}' proof obligation proposition</value>
+  </data>
+  <data name="ConventionGenericTraitHint" xml:space="preserve">
+    <value>Function '{0}' matches generic trait '{1}', but convention-based impl registration cannot infer trait type arguments. Use explicit @impl({1}[...]).</value>
+  </data>
+  <data name="ConventionGenericTraitsHint" xml:space="preserve">
+    <value>Function '{0}' may match generic traits ({1}), but convention-based impl registration cannot infer trait type arguments. Use explicit @impl(Trait[...]).</value>
+  </data>
+  <data name="FunctionArityMismatch" xml:space="preserve">
+    <value>Function arity mismatch: {0} vs {1}</value>
+  </data>
+  <data name="FunctionEffectMismatch" xml:space="preserve">
+    <value>Function effect mismatch: '{0}' vs '{1}'</value>
+  </data>
+  <data name="TupleSizeMismatch" xml:space="preserve">
+    <value>Tuple size mismatch: {0} vs {1}</value>
+  </data>
+  <data name="InnerPatternRecoveredAfterEarlierMismatch" xml:space="preserve">
+    <value>inner pattern type was recovered after an earlier mismatch</value>
+  </data>
+  <data name="StyleSuggestionPreferFluentPrefixCalls" xml:space="preserve">
+    <value>Style suggestion: prefer fluent syntax for prefix calls.</value>
+  </data>
+  <data name="StyleSuggestionPreferInfixBinaryCalls" xml:space="preserve">
+    <value>Style suggestion: prefer backtick infix syntax for natural binary calls.</value>
+  </data>
+  <data name="StyleSuggestionPreferPatternGuardBranches" xml:space="preserve">
+    <value>Style suggestion: prefer pattern guard branches for this predicate split.</value>
+  </data>
+  <data name="PrefixCallCanBeRewrittenLabel" xml:space="preserve">
+    <value>prefix call can be rewritten</value>
+  </data>
+  <data name="PatternGuardBranchConditionChainLabel" xml:space="preserve">
+    <value>boolean condition chain can be split into guarded branches</value>
+  </data>
+  <data name="PrefixCallRewriteHelp" xml:space="preserve">
+    <value>Use the quick fix to rewrite the call without changing argument order.</value>
+  </data>
+  <data name="PatternGuardBranchRewriteHelp" xml:space="preserve">
+    <value>Use one guarded branch per case, for example `value when value &gt;= 97 &amp;&amp; value &lt;= 102 =&gt; true`, then add a fallback branch.</value>
+  </data>
+  <data name="InfixCallRewriteHelp" xml:space="preserve">
+    <value>Use the quick fix to rewrite a two-argument call as a backtick infix call.</value>
+  </data>
+  <data name="RewriteAsInfixSuggestion" xml:space="preserve">
+    <value>Rewrite as backtick infix call</value>
+  </data>
+  <data name="RewriteAsSuggestion" xml:space="preserve">
+    <value>Rewrite as `{0}`</value>
+  </data>
+  <data name="UnsupportedMirInstructionDuringLlvmLowering" xml:space="preserve">
+    <value>Unsupported MIR instruction '{0}' during LLVM lowering.</value>
+  </data>
+  <data name="UnsupportedInstructionLabel" xml:space="preserve">
+    <value>unsupported instruction</value>
+  </data>
+  <data name="UnsupportedMirTerminatorDuringLlvmLowering" xml:space="preserve">
+    <value>Unsupported MIR terminator '{0}' during LLVM lowering.</value>
+  </data>
+  <data name="UnsupportedTerminatorLabel" xml:space="preserve">
+    <value>unsupported terminator</value>
+  </data>
+  <data name="UnresolvedValueTypeDuringLlvmOperandLowering" xml:space="preserve">
+    <value>Unresolved value type leaked into LLVM operand lowering during {0}.</value>
+  </data>
+  <data name="OnlyGenericPartialPlaceholdersMayRemainTypeErased" xml:space="preserve">
+    <value>only generic/partial callable placeholders may remain type-erased at this stage</value>
+  </data>
+  <data name="SiteNote" xml:space="preserve">
+    <value>site: {0}</value>
+  </data>
+  <data name="ContextNote" xml:space="preserve">
+    <value>context: {0}</value>
+  </data>
+  <data name="UnresolvedOperandValueTypeLabel" xml:space="preserve">
+    <value>unresolved operand/value type</value>
+  </data>
+  <data name="UnknownTypeIdOpaquePointerFallback" xml:space="preserve">
+    <value>Unknown TypeId '{0}' fell back to opaque pointer during LLVM type lowering.</value>
+  </data>
+  <data name="UnknownTypeIdFallbackLabel" xml:space="preserve">
+    <value>unknown type id fallback</value>
+  </data>
+  <data name="UnsupportedTargetOperandFallback" xml:space="preserve">
+    <value>Unsupported MIR target operand '{0}' fell back to an unknown LLVM local during {1}.</value>
+  </data>
+  <data name="ExpectedMirPlaceOrTempTargetBeforeLlvm" xml:space="preserve">
+    <value>expected MirPlace or MirTemp target operand before LLVM lowering</value>
+  </data>
+  <data name="UnsupportedTargetOperandLabel" xml:space="preserve">
+    <value>unsupported target operand</value>
+  </data>
+  <data name="UnsupportedTargetOperandFallbackLabel" xml:space="preserve">
+    <value>unsupported target operand fallback</value>
+  </data>
+  <data name="UnsupportedPlaceKindFallback" xml:space="preserve">
+    <value>Unsupported MIR place kind '{0}' fell back to LLVM zero during {1}.</value>
+  </data>
+  <data name="ExpectedLocalDerefFieldOrIndexPlaceBeforeLlvm" xml:space="preserve">
+    <value>expected Local, Deref, Field, or Index place before LLVM lowering</value>
+  </data>
+  <data name="UnsupportedPlaceKindLabel" xml:space="preserve">
+    <value>unsupported place kind</value>
+  </data>
+  <data name="UnsupportedPlaceKindFallbackLabel" xml:space="preserve">
+    <value>unsupported place kind fallback</value>
+  </data>
+  <data name="MissingMirTargetPlaceForContext" xml:space="preserve">
+    <value>Missing MIR target place for {0} reached LLVM lowering.</value>
+  </data>
+  <data name="ExpectedMirPlaceTargetBeforeLlvm" xml:space="preserve">
+    <value>expected MirPlace target operand before LLVM lowering</value>
+  </data>
+  <data name="MissingTargetPlaceLabel" xml:space="preserve">
+    <value>missing target place</value>
+  </data>
+  <data name="UnsupportedMirTargetPlaceKind" xml:space="preserve">
+    <value>Unsupported MIR target place kind '{0}' for {1} reached LLVM lowering.</value>
+  </data>
+  <data name="ExpectedLocalMirPlaceTargetBeforeTargetLowering" xml:space="preserve">
+    <value>expected local MirPlace target operand before target-specific LLVM lowering</value>
+  </data>
+  <data name="UnsupportedTargetPlaceKindLabel" xml:space="preserve">
+    <value>unsupported target place kind</value>
+  </data>
+  <data name="FunctionSymbolMultipleLlvmSignatures" xml:space="preserve">
+    <value>Function symbol '{0}' is associated with multiple LLVM signatures during lowering; latest signature is used.</value>
+  </data>
+  <data name="SourceFunctionNote" xml:space="preserve">
+    <value>source function: {0}</value>
+  </data>
+  <data name="UnresolvedFunctionSignatureRole" xml:space="preserve">
+    <value>Unresolved {0} reached LLVM lowering.</value>
+  </data>
+  <data name="EnsureInferenceMonomorphizationBeforeLlvm" xml:space="preserve">
+    <value>ensure type inference/monomorphization is complete before LLVM lowering</value>
+  </data>
+  <data name="UnresolvedFunctionSignatureTypeLabel" xml:space="preserve">
+    <value>unresolved function signature type</value>
+  </data>
+  <data name="GenericCallEscapedMirSpecialization" xml:space="preserve">
+    <value>Generic call to '{0}' escaped MIR specialization; LLVM lowering requires monomorphic call targets.</value>
+  </data>
+  <data name="SpecializeCallWithConcreteTypesNote" xml:space="preserve">
+    <value>specialize this call by providing concrete type instantiation at the call site</value>
+  </data>
+  <data name="ZeroArgumentGenericPartialCannotMonomorphize" xml:space="preserve">
+    <value>zero-argument partial application of generic function cannot be monomorphized</value>
+  </data>
+  <data name="GenericCallLabel" xml:space="preserve">
+    <value>generic call</value>
+  </data>
+  <data name="IndirectGenericCallEscapedMirSpecialization" xml:space="preserve">
+    <value>Indirect call through local '%{0}' escaped MIR specialization; LLVM lowering requires monomorphic call targets.</value>
+  </data>
+  <data name="BindLocalFunctionToConcreteSpecializationNote" xml:space="preserve">
+    <value>bind the local function value to a concrete specialization before calling</value>
+  </data>
+  <data name="GenericIndirectCallLabel" xml:space="preserve">
+    <value>generic indirect call</value>
+  </data>
+  <data name="FunctionReferenceUnresolvedDuringLlvm" xml:space="preserve">
+    <value>Function reference '{0}' could not be resolved during LLVM lowering.</value>
+  </data>
+  <data name="MissingTerminatorDuringLlvmLowering" xml:space="preserve">
+    <value>MIR block is missing a terminator during LLVM lowering.</value>
+  </data>
+  <data name="MissingReturnValueDuringLlvmLowering" xml:space="preserve">
+    <value>MIR return is missing a value for a non-Unit LLVM function return.</value>
+  </data>
+  <data name="DefaultReturnValueRejectedDuringLlvmLowering" xml:space="preserve">
+    <value>MIR return value cannot be coerced to the LLVM function return type.</value>
+  </data>
+  <data name="LlvmFallbackLoweredToUnreachableHelp" xml:space="preserve">
+    <value>LLVM lowering emits unreachable here instead of synthesizing a default zero value.</value>
+  </data>
+  <data name="OnlyRuntimeIntrinsicsMayRemainUnresolvedNote" xml:space="preserve">
+    <value>only known runtime intrinsics or explicitly permitted external protocol entrypoints may remain unresolved here</value>
+  </data>
+  <data name="EnsureResolutionMonomorphizationBeforeLlvmNote" xml:space="preserve">
+    <value>if this is an internal function, ensure symbol/name resolution and monomorphization completed before LLVM lowering</value>
+  </data>
+  <data name="SymbolIdNote" xml:space="preserve">
+    <value>symbol id: {0}</value>
+  </data>
+  <data name="UnresolvedFunctionReferenceLabel" xml:space="preserve">
+    <value>unresolved function reference</value>
+  </data>
+  <data name="UnresolvedExternalDeclarationRetained" xml:space="preserve">
+    <value>LLVM module retained unresolved external declaration '{0}'.</value>
+  </data>
+  <data name="LlvmDuplicateGlobalDefinition" xml:space="preserve">
+    <value>LLVM module contains multiple global definitions named '{0}'.</value>
+  </data>
+  <data name="LlvmDuplicateGlobalDefinitionNote" xml:space="preserve">
+    <value>definitions: {0}</value>
+  </data>
+  <data name="InternalFunctionReferencesMustResolveBeforeLlvmNote" xml:space="preserve">
+    <value>ordinary internal function references must be resolved before LLVM lowering</value>
+  </data>
+  <data name="OnlyRuntimeIntrinsicsMayRemainAsDeclarationsNote" xml:space="preserve">
+    <value>only runtime intrinsics and explicitly permitted effect protocol entrypoints may remain as declarations</value>
+  </data>
+  <data name="MissedResolutionSpecializationOrRewritingNote" xml:space="preserve">
+    <value>this usually indicates missed symbol resolution, specialization, or call-target rewriting before code generation</value>
+  </data>
+  <data name="RemainingGenericArityUnknown" xml:space="preserve">
+    <value>remaining generic arity at call site: unknown</value>
+  </data>
+  <data name="RemainingGenericArity" xml:space="preserve">
+    <value>remaining generic arity at call site: {0}</value>
+  </data>
+  <data name="SpecializationRejectedUnresolvedTypes" xml:space="preserve">
+    <value>Specialization of '{0}' with signature '{1}' was rejected: contains unresolved type variables.</value>
+  </data>
+  <data name="MirSpecializationLoopDidNotConverge" xml:space="preserve">
+    <value>MIR generic specialization did not converge after {0} iterations</value>
+  </data>
+  <data name="MirSpecializationLoopDidNotConvergeHelp" xml:space="preserve">
+    <value>this usually means a MIR optimization or specialization rewrite keeps changing structured MIR metadata; inspect the MIR convergence fingerprint inputs instead of relying on another blind specialization pass</value>
+  </data>
+  <data name="GenericCallWillRemainUnresolvedNote" xml:space="preserve">
+    <value>the generic call will remain unresolved and may fail at LLVM lowering (E5301)</value>
+  </data>
+  <data name="TemplateSpecializedNameNote" xml:space="preserve">
+    <value>template: {0}, specialized name: {1}</value>
+  </data>
+  <data name="MirSpecializationFailureTemplateLabel" xml:space="preserve">
+    <value>specialization template</value>
+  </data>
+  <data name="MirSpecializationFailureReasonNote" xml:space="preserve">
+    <value>MIR specialization failure reason: {0}</value>
+  </data>
+  <data name="MirSpecializationFailureSignatureNote" xml:space="preserve">
+    <value>rejected specialization template: {0}, signature: {1}, specialized name: {2}</value>
+  </data>
+  <data name="MirSpecializationFailureSuggestionUnresolvedTypes" xml:space="preserve">
+    <value>provide concrete type arguments or add annotations so MIR specialization sees a closed signature</value>
+  </data>
+  <data name="MirSpecializationFailureSuggestionUnresolvedConstructorBinding" xml:space="preserve">
+    <value>ensure higher-kinded constructor arguments are carried as structured TypeId metadata before specialization</value>
+  </data>
+  <data name="MirSpecializationFailureSuggestionTypeInferenceFailed" xml:space="preserve">
+    <value>check explicit type argument count/order and call-site types; the specialization signature could not be inferred</value>
+  </data>
+  <data name="MirSpecializationFailureSuggestionPartialBindingIncomplete" xml:space="preserve">
+    <value>store the partial application in a local function value or call it with enough arguments before LLVM lowering</value>
+  </data>
+  <data name="MirSpecializationFailureSuggestionNoConcreteDispatchType" xml:space="preserve">
+    <value>ensure trait Self metadata points to a concrete argument/result carrier before trait dispatch</value>
+  </data>
+  <data name="MirSpecializationFailureSuggestionDefault" xml:space="preserve">
+    <value>inspect MIR specialization metadata to determine why the generic call remained unresolved</value>
+  </data>
+  <data name="EnsureConcreteTypesBeforeLlvmNote" xml:space="preserve">
+    <value>ensure the call site carries concrete type arguments before LLVM lowering</value>
+  </data>
+  <data name="CannotLowerAggregateFieldToByteOffset" xml:space="preserve">
+    <value>Cannot lower aggregate field '{0}' to a byte offset.</value>
+  </data>
+  <data name="UnresolvedAggregateFieldLabel" xml:space="preserve">
+    <value>unresolved aggregate field</value>
+  </data>
+  <data name="UnresolvedTypeVariableReachedLlvm" xml:space="preserve">
+    <value>Unresolved type variable 't{0}' reached LLVM lowering.</value>
+  </data>
+  <data name="GrammarCacheSaveFailed" xml:space="preserve">
+    <value>Grammar cache save failed: {0}</value>
+  </data>
+  <data name="SourceContainsNoDeclarations" xml:space="preserve">
+    <value>源文件不包含任何声明（仅有注释或空白）</value>
+  </data>
+  <data name="UnknownEscapeSequence" xml:space="preserve">
+    <value>未知的转义序列 '\{0}'</value>
+  </data>
+  <data name="IdentifierLengthExceeded" xml:space="preserve">
+    <value>标识符长度超过限制（最大 {0} 字符，实际 {1} 字符）</value>
+  </data>
+  <data name="LlvmToolsNotFound" xml:space="preserve">
+    <value>Cannot find llc or clang. Please install LLVM/Clang tools.</value>
+  </data>
+  <data name="NativeFfiSourceFileNotFound" xml:space="preserve">
+    <value>Native FFI source file was not found: '{0}'.</value>
+  </data>
+  <data name="ClangNotFoundForNativeFfi" xml:space="preserve">
+    <value>Cannot find clang for native FFI source compilation.</value>
+  </data>
+  <data name="ClangNotFound" xml:space="preserve">
+    <value>Cannot find clang. Please install Clang.</value>
+  </data>
+  <data name="ExecutableEntryNotFound" xml:space="preserve">
+    <value>No executable entry found. Expected function 'eidos_main' or native 'main'.</value>
+  </data>
+  <data name="ClangNotFoundForEntryShim" xml:space="preserve">
+    <value>Cannot find clang for entry shim compilation.</value>
+  </data>
+  <data name="FailedToRunProcess" xml:space="preserve">
+    <value>Failed to run {0}: {1}</value>
+  </data>
+  <data name="FailedToCompileRuntimeFromConfiguredPath" xml:space="preserve">
+    <value>Failed to compile runtime source from configured runtime path '{0}': {1}</value>
+  </data>
+  <data name="ConfiguredRuntimePathMissing" xml:space="preserve">
+    <value>Configured runtime path points to a missing path: {0}</value>
+  </data>
+  <data name="RuntimeLinkInputNotFound" xml:space="preserve">
+    <value>Cannot locate runtime link input. Expected runtime library like '{0}' or runtime source 'eidos_memory.c'.</value>
+  </data>
+  <data name="FailedToCompileRuntimeSource" xml:space="preserve">
+    <value>Failed to compile runtime source '{0}': {1}</value>
+  </data>
+  <data name="ClangNotFoundForRuntime" xml:space="preserve">
+    <value>Cannot find clang to compile runtime source.</value>
+  </data>
+  <data name="CannotUnifyEffectVariable" xml:space="preserve">
+    <value>Cannot unify effect variable '{0}' with required ability '{1}'</value>
+  </data>
+  <data name="InvalidSyntax" xml:space="preserve">
+    <value>Invalid syntax</value>
+  </data>
+  <data name="InvalidSyntaxLabel" xml:space="preserve">
+    <value>invalid syntax</value>
+  </data>
+  <data name="StyleSuggestionCurriedPrefixCallsUseFluentOrGroupedCallSyntax" xml:space="preserve">
+    <value>Style suggestion: curried prefix calls can use fluent or grouped-call syntax.</value>
+  </data>
+  <data name="StyleSuggestionCurriedQualifiedCallsUseGroupedCallSyntax" xml:space="preserve">
+    <value>Style suggestion: curried qualified calls can use grouped-call syntax.</value>
+  </data>
+  <data name="CurriedPrefixCallCanBeRewrittenLabel" xml:space="preserve">
+    <value>curried prefix call can be rewritten</value>
+  </data>
+  <data name="CurriedCallUseBestLocalStyleHelp" xml:space="preserve">
+    <value>Use the quick fix that best matches the local style.</value>
+  </data>
+  <data name="GroupedCallPreservesQualifiedFunctionPathHelp" xml:space="preserve">
+    <value>Grouped-call syntax preserves the qualified function path.</value>
+  </data>
+  <data name="IfExpressionMissingElseNonUnitDuringMir" xml:space="preserve">
+    <value>If expression without an else branch reached MIR lowering with a non-Unit result type.</value>
+  </data>
+  <data name="MissingElseBranchValueLabel" xml:space="preserve">
+    <value>missing else branch value</value>
+  </data>
+  <data name="MissingNonUnitElseBranchReason" xml:space="preserve">
+    <value>missing non-Unit else branch</value>
+  </data>
+  <data name="ReturnExpressionMissingValueNonUnitDuringMir" xml:space="preserve">
+    <value>Return expression without a value reached MIR lowering for a non-Unit function.</value>
+  </data>
+  <data name="MissingReturnValueLabel" xml:space="preserve">
+    <value>missing return value</value>
+  </data>
+  <data name="MissingNonUnitReturnValueReason" xml:space="preserve">
+    <value>missing non-Unit return value</value>
+  </data>
+  <data name="UnreachableAfterReturnReason" xml:space="preserve">
+    <value>unreachable after return</value>
+  </data>
+  <data name="BreakExpressionOnlyInsideLoop" xml:space="preserve">
+    <value>break expression can only be used inside loop/while-let bodies.</value>
+  </data>
+  <data name="BreakOutsideLoopLabel" xml:space="preserve">
+    <value>break outside loop</value>
+  </data>
+  <data name="ContinueExpressionOnlyInsideLoop" xml:space="preserve">
+    <value>continue expression can only be used inside loop/while-let bodies.</value>
+  </data>
+  <data name="ContinueOutsideLoopLabel" xml:space="preserve">
+    <value>continue outside loop</value>
+  </data>
+  <data name="ModuleValueDependencyCycleDetected" xml:space="preserve">
+    <value>Module-level value dependency cycle detected: {0}</value>
+  </data>
+  <data name="ModuleLevelValueCycleLabel" xml:space="preserve">
+    <value>module-level value cycle</value>
+  </data>
+  <data name="RecursiveClosureCaptureParameterResolutionFailed" xml:space="preserve">
+    <value>Failed to resolve recursive closure capture parameter '{0}' while rebuilding self closure.</value>
+  </data>
+  <data name="RecursiveClosureSelfBindingLabel" xml:space="preserve">
+    <value>recursive closure self binding</value>
+  </data>
+  <data name="CannotResolveMirTypePreparingPoison" xml:space="preserve">
+    <value>Cannot resolve MIR type while preparing {0} because the operand is poison.</value>
+  </data>
+  <data name="MirPoisonTypeLabel" xml:space="preserve">
+    <value>mir poison type</value>
+  </data>
+  <data name="CannotResolveMirTypePreparingMissingFallback" xml:space="preserve">
+    <value>Cannot resolve MIR type while preparing {0} because neither the operand nor fallback has a valid TypeId.</value>
+  </data>
+  <data name="MissingMirTypeLabel" xml:space="preserve">
+    <value>missing MIR type</value>
+  </data>
+  <data name="MissingMirTypeForPlaceOperandReason" xml:space="preserve">
+    <value>missing MIR type for place operand</value>
+  </data>
+  <data name="UnsupportedHirExpressionDuringMirLowering" xml:space="preserve">
+    <value>Unsupported HIR expression '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnsupportedHirExpressionReason" xml:space="preserve">
+    <value>Unsupported HIR expression '{0}'</value>
+  </data>
+  <data name="MirFallbackLabel" xml:space="preserve">
+    <value>mir fallback</value>
+  </data>
+  <data name="UnsupportedHirUnaryOperatorDuringMirLowering" xml:space="preserve">
+    <value>Unsupported HIR unary operator '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnsupportedHirUnaryOperatorReason" xml:space="preserve">
+    <value>Unsupported HIR unary operator '{0}'</value>
+  </data>
+  <data name="UnsupportedUnaryOperatorLabel" xml:space="preserve">
+    <value>unsupported unary operator</value>
+  </data>
+  <data name="UnsupportedHirBinaryOperatorDuringMirLowering" xml:space="preserve">
+    <value>Unsupported HIR binary operator '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnsupportedHirBinaryOperatorReason" xml:space="preserve">
+    <value>Unsupported HIR binary operator '{0}'</value>
+  </data>
+  <data name="UnsupportedBinaryOperatorLabel" xml:space="preserve">
+    <value>unsupported binary operator</value>
+  </data>
+  <data name="HirErrorNodeReachedMirLowering" xml:space="preserve">
+    <value>HIR error node reached MIR lowering</value>
+  </data>
+  <data name="CannotLowerHirErrorNode" xml:space="preserve">
+    <value>Cannot lower HIR error node: {0}</value>
+  </data>
+  <data name="MirPoisonLabel" xml:space="preserve">
+    <value>mir poison</value>
+  </data>
+  <data name="UnsupportedHirStatementDuringMirLowering" xml:space="preserve">
+    <value>Unsupported HIR statement '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnsupportedHirStatementReason" xml:space="preserve">
+    <value>Unsupported HIR statement '{0}'</value>
+  </data>
+  <data name="UnsupportedStatementLabel" xml:space="preserve">
+    <value>unsupported statement</value>
+  </data>
+  <data name="UnsupportedDeclarationInMirBlockStatement" xml:space="preserve">
+    <value>Unsupported declaration '{0}' in MIR block statement.</value>
+  </data>
+  <data name="UnsupportedDeclarationLabel" xml:space="preserve">
+    <value>unsupported declaration</value>
+  </data>
+  <data name="UnsupportedAssignmentTargetDuringMirLowering" xml:space="preserve">
+    <value>Unsupported assignment target '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnsupportedAssignmentTargetLabel" xml:space="preserve">
+    <value>unsupported assignment target</value>
+  </data>
+  <data name="EmptyMatchExpressionDuringMirLowering" xml:space="preserve">
+    <value>Match expression without branches reached MIR lowering.</value>
+  </data>
+  <data name="EmptyMatchExpressionLabel" xml:space="preserve">
+    <value>empty match expression</value>
+  </data>
+  <data name="MatchContainsPoisonedPatternReason" xml:space="preserve">
+    <value>match contains poisoned pattern</value>
+  </data>
+  <data name="NonExhaustiveMatchFallbackDuringMirLowering" xml:space="preserve">
+    <value>Non-exhaustive match fallback reached MIR lowering; fallback lowers to unreachable instead of a placeholder value.</value>
+  </data>
+  <data name="NonExhaustiveMatchFallbackLabel" xml:space="preserve">
+    <value>non-exhaustive match fallback</value>
+  </data>
+  <data name="NonExhaustiveMatchFallbackHelp" xml:space="preserve">
+    <value>Pattern coverage should report the missing cases before MIR; MIR must not synthesize a default result value for the fallback path.</value>
+  </data>
+  <data name="UnresolvedVariableDuringMirLowering" xml:space="preserve">
+    <value>Unresolved variable '{0}' during MIR lowering.</value>
+  </data>
+  <data name="UnresolvedVariableLabel" xml:space="preserve">
+    <value>unresolved variable</value>
+  </data>
+  <data name="UnresolvedVariableReason" xml:space="preserve">
+    <value>Unresolved variable '{0}'</value>
+  </data>
+  <data name="BlockedModuleValueReferenceReason" xml:space="preserve">
+    <value>Blocked module-level value reference '{0}'</value>
+  </data>
+  <data name="CapturedVariableResolutionFailed" xml:space="preserve">
+    <value>Failed to resolve captured variable '{0}' during closure lowering.</value>
+  </data>
+  <data name="CaptureTypeInferenceFailed" xml:space="preserve">
+    <value>Failed to infer capture type for '{0}' during closure lowering.</value>
+  </data>
+  <data name="CapturedLambdaLabel" xml:space="preserve">
+    <value>captured lambda</value>
+  </data>
+  <data name="RefutableLetPatternUnsupportedInMir" xml:space="preserve">
+    <value>Refutable let pattern is not supported in MIR lowering; use `match` for refutable patterns.</value>
+  </data>
+  <data name="RefutableLetPatternLabel" xml:space="preserve">
+    <value>refutable let pattern</value>
+  </data>
+  <data name="ResumeOutsideHandlerBranch" xml:space="preserve">
+    <value>resume cannot be used outside of a handler branch</value>
+  </data>
+  <data name="ResumeContinuationAlreadyConsumed" xml:space="preserve">
+    <value>resume continuation has already been consumed in this handler branch</value>
+  </data>
+  <data name="EmptyHandlerWarning" xml:space="preserve">
+    <value>Handler for ability '{0}' has no branches — effect operations will not be handled</value>
+  </data>
+  <data name="IncompleteHandlerWarning" xml:space="preserve">
+    <value>Handler for ability '{0}' does not handle operations: {1}</value>
+  </data>
+  <data name="FailedCapturedLambdaLoweringReason" xml:space="preserve">
+    <value>failed captured lambda lowering</value>
+  </data>
+  <data name="BlockContainsPoisonedStatementReason" xml:space="preserve">
+    <value>block contains poisoned statement</value>
+  </data>
+  <data name="UnsupportedHirDeclarationReason" xml:space="preserve">
+    <value>Unsupported HIR declaration '{0}'</value>
+  </data>
+  <data name="FailedRecursiveClosureGroupEnvironmentReason" xml:space="preserve">
+    <value>failed recursive closure group environment</value>
+  </data>
+  <data name="MissingMirTypeForReadValueReason" xml:space="preserve">
+    <value>missing MIR type for read value</value>
+  </data>
+  <data name="MissingMirTypeForCallArgumentReason" xml:space="preserve">
+    <value>missing MIR type for call argument</value>
+  </data>
+  <data name="MissingMirTypeForForcedCopyCallArgumentReason" xml:space="preserve">
+    <value>missing MIR type for forced-copy call argument</value>
+  </data>
+  <data name="MissingMirTypeForProjectedCallArgumentReason" xml:space="preserve">
+    <value>missing MIR type for projected call argument</value>
+  </data>
+  <data name="MissingMirTypeForReadonlyStringArgumentReason" xml:space="preserve">
+    <value>missing MIR type for readonly string argument</value>
+  </data>
+  <data name="MissingMirTypeForInitializationReason" xml:space="preserve">
+    <value>missing MIR type for initialization</value>
+  </data>
+  <data name="MissingMirTypeForStoreValueReason" xml:space="preserve">
+    <value>missing MIR type for store value</value>
+  </data>
+  <data name="MirTerminatorRole" xml:space="preserve">
+    <value>terminator</value>
+  </data>
+  <data name="HirFallbackLabel" xml:space="preserve">
+    <value>hir fallback</value>
+  </data>
+  <data name="ProofEqualitySidesContext" xml:space="preserve">
+    <value>Proof '{0}' equality sides</value>
+  </data>
+  <data name="ParserDidNotProduceAst" xml:space="preserve">
+    <value>parser did not produce an AST</value>
+  </data>
+  <data name="ParsePhaseIncomplete" xml:space="preserve">
+    <value>parse phase is incomplete</value>
+  </data>
+  <data name="NameResolutionIncomplete" xml:space="preserve">
+    <value>name resolution is incomplete</value>
+  </data>
+  <data name="FfiTypeValidationFailed" xml:space="preserve">
+    <value>FFI type validation failed</value>
+  </data>
+  <data name="DependencyPhaseIncomplete" xml:space="preserve">
+    <value>dependency phase is incomplete</value>
+  </data>
+  <data name="HirBuilderReportedErrors" xml:space="preserve">
+    <value>HIR builder reported errors</value>
+  </data>
+  <data name="MirOptimizationSkippedDueToLoweringErrors" xml:space="preserve">
+    <value>skipped: MIR lowering has errors</value>
+  </data>
+  <data name="MirOptimizationDisabledByOption" xml:space="preserve">
+    <value>disabled by option</value>
+  </data>
+  <data name="IdeBuiltinIntDocumentation" xml:space="preserve">
+    <value>Builtin signed integer type.</value>
+  </data>
+  <data name="IdeBuiltinFloatDocumentation" xml:space="preserve">
+    <value>Builtin floating-point number type.</value>
+  </data>
+  <data name="IdeBuiltinBoolDocumentation" xml:space="preserve">
+    <value>Builtin boolean type with `true`/`false`.</value>
+  </data>
+  <data name="IdeBuiltinStringDocumentation" xml:space="preserve">
+    <value>Builtin UTF-8 string type.</value>
+  </data>
+  <data name="IdeBuiltinCharDocumentation" xml:space="preserve">
+    <value>Builtin single character type.</value>
+  </data>
+  <data name="IdeBuiltinUnitDocumentation" xml:space="preserve">
+    <value>Builtin unit type for expressions with no meaningful value.</value>
+  </data>
+  <data name="IdeBuiltinNeverDocumentation" xml:space="preserve">
+    <value>Builtin bottom type for expressions that never return normally.</value>
+  </data>
+  <data name="IdeModulePathDetail" xml:space="preserve">
+    <value>module path</value>
+  </data>
+  <data name="IdeModulePathDocumentation" xml:space="preserve">
+    <value>Module path `{0}`.</value>
+  </data>
+  <data name="IdeQualifiedPathDetail" xml:space="preserve">
+    <value>qualified path</value>
+  </data>
+  <data name="IdeQualifiedSymbolDetail" xml:space="preserve">
+    <value>qualified {0}</value>
+  </data>
+  <data name="IdeKeywordDocumentation" xml:space="preserve">
+    <value>Language keyword.</value>
+  </data>
+  <data name="IdeTraitSelfDocumentation" xml:space="preserve">
+    <value>Trait self type placeholder. Only valid inside trait method signatures.</value>
+  </data>
+  <data name="IdeKeywordDetail" xml:space="preserve">
+    <value>keyword</value>
+  </data>
+  <data name="IdeAttributeDetail" xml:space="preserve">
+    <value>attribute</value>
+  </data>
+  <data name="IdeAttributeDocumentation" xml:space="preserve">
+    <value>Language attribute.</value>
+  </data>
+  <data name="IdeDeriveTraitDetail" xml:space="preserve">
+    <value>derive trait</value>
+  </data>
+  <data name="IdeDeriveTraitDocumentation" xml:space="preserve">
+    <value>Trait supported by @derive.</value>
+  </data>
+  <data name="IdeOutlineDetailDeclaration" xml:space="preserve">
+    <value>declaration</value>
+  </data>
+  <data name="IdeSymbolDetailImport" xml:space="preserve">
+    <value>import</value>
+  </data>
+  <data name="IdeSymbolDetailOperator" xml:space="preserve">
+    <value>operator</value>
+  </data>
+  <data name="IdeSymbolDetailFunction" xml:space="preserve">
+    <value>function</value>
+  </data>
+  <data name="IdeSymbolDetailParameter" xml:space="preserve">
+    <value>parameter</value>
+  </data>
+  <data name="IdeSymbolDetailPatternBinding" xml:space="preserve">
+    <value>pattern binding</value>
+  </data>
+  <data name="IdeSymbolDetailMutableVariable" xml:space="preserve">
+    <value>mutable variable</value>
+  </data>
+  <data name="IdeSymbolDetailValue" xml:space="preserve">
+    <value>value</value>
+  </data>
+  <data name="IdeSymbolDetailConstructor" xml:space="preserve">
+    <value>constructor</value>
+  </data>
+  <data name="IdeSymbolDetailTypeParameter" xml:space="preserve">
+    <value>type parameter</value>
+  </data>
+  <data name="IdeSymbolDetailField" xml:space="preserve">
+    <value>field</value>
+  </data>
+  <data name="IdeSymbolDetailTraitImpl" xml:space="preserve">
+    <value>trait impl</value>
+  </data>
+  <data name="IdeFunctionDocumentation" xml:space="preserve">
+    <value>Function `{0}`.</value>
+  </data>
+  <data name="IdeTypeDocumentation" xml:space="preserve">
+    <value>Type `{0}`.</value>
+  </data>
+  <data name="IdeConstructorDocumentation" xml:space="preserve">
+    <value>Constructor `{0}`.</value>
+  </data>
+  <data name="IdeTraitDocumentation" xml:space="preserve">
+    <value>Trait `{0}`.</value>
+  </data>
+  <data name="IdeEffectDocumentation" xml:space="preserve">
+    <value>Ability `{0}`.</value>
+  </data>
+  <data name="IdeProofDocumentation" xml:space="preserve">
+    <value>Proof `{0}`.</value>
+  </data>
+  <data name="IdeTypeParameterDocumentation" xml:space="preserve">
+    <value>Type parameter `{0}`.</value>
+  </data>
+  <data name="IdeModuleDocumentation" xml:space="preserve">
+    <value>Module `{0}`.</value>
+  </data>
+  <data name="IdeFieldDocumentation" xml:space="preserve">
+    <value>Field `{0}`.</value>
+  </data>
+  <data name="IdeTraitImplementationDocumentation" xml:space="preserve">
+    <value>Trait implementation `{0}`.</value>
+  </data>
+  <data name="IdeValueDocumentation" xml:space="preserve">
+    <value>Value `{0}`.</value>
+  </data>
+  <data name="IdeSymbolDocumentation" xml:space="preserve">
+    <value>{0} `{1}`.</value>
+  </data>
+</root>
