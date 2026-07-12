@@ -1,12 +1,12 @@
 <Project>
   <PropertyGroup>
-    <EidosupVersionPrefix>0.1.0</EidosupVersionPrefix>
-    <EidosupVersionSuffix>alpha.2</EidosupVersionSuffix>
+    <EidosupVersionPrefix>0.2.0</EidosupVersionPrefix>
+    <EidosupVersionSuffix>alpha.1</EidosupVersionSuffix>
     <EidosupVersion>$(EidosupVersionPrefix)</EidosupVersion>
     <EidosupVersion Condition="'$(EidosupVersionSuffix)' != ''">$(EidosupVersionPrefix)-$(EidosupVersionSuffix)</EidosupVersion>
     <Version>$(EidosupVersion)</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
     <InformationalVersion>$(EidosupVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>
