@@ -4,6 +4,7 @@ using System.CommandLine.Parsing;
 using System.Reflection;
 using Eidosup.Commands;
 using Eidosup.Diagnostics;
+using Eidosup.Proxies;
 
 namespace Eidosup;
 
@@ -11,6 +12,21 @@ internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
+        try
+        {
+            if (ProxyInvocation.TryCreate(Environment.ProcessPath, out var proxyInvocation))
+            {
+                return await new ProxyHost().RunAsync(
+                    proxyInvocation!,
+                    args,
+                    CancellationToken.None);
+            }
+        }
+        catch (Exception exception)
+        {
+            return ErrorReporter.Write(exception, verbose: false, json: false);
+        }
+
         if (args is ["--version"])
         {
             Console.WriteLine(GetProductVersion());

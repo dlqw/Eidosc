@@ -1,6 +1,6 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Security.Cryptography;
+using Eidosup.Serialization;
 using Eidosup.Diagnostics;
 using Eidosup.Toolchains;
 
@@ -23,12 +23,7 @@ public sealed record InstallManifest(
     public const int CurrentSchema = 2;
     public const string FileName = ".eidosup-install.json";
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-    };
+    private const string CompilerGrammarCachePath = "cache/grammar.bin";
 
     public async Task WriteAsync(string directory, CancellationToken cancellationToken)
     {
@@ -42,7 +37,11 @@ public sealed record InstallManifest(
                          bufferSize: 16 * 1024,
                          FileOptions.Asynchronous | FileOptions.WriteThrough))
         {
-            await JsonSerializer.SerializeAsync(stream, this, JsonOptions, cancellationToken);
+            await JsonSerializer.SerializeAsync(
+                stream,
+                this,
+                EidosupJsonContext.Default.InstallManifest,
+                cancellationToken);
             await stream.FlushAsync(cancellationToken);
             stream.Flush(flushToDisk: true);
         }
@@ -67,7 +66,10 @@ public sealed record InstallManifest(
                 FileShare.Read,
                 bufferSize: 16 * 1024,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var manifest = await JsonSerializer.DeserializeAsync<InstallManifest>(stream, JsonOptions, cancellationToken);
+            var manifest = await JsonSerializer.DeserializeAsync(
+                stream,
+                EidosupJsonContext.Default.InstallManifest,
+                cancellationToken);
             return manifest is { Schema: CurrentSchema } ? manifest : null;
         }
         catch (JsonException)
@@ -132,14 +134,15 @@ public sealed record InstallManifest(
                 return false;
             }
 
-            await using var stream = new FileStream(
+            using var stream = new FileStream(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
-                bufferSize: 128 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var digest = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
+                bufferSize: 1024 * 1024,
+                FileOptions.SequentialScan);
+            var digest = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            cancellationToken.ThrowIfCancellationRequested();
             if (!string.Equals(digest, file.Sha256, StringComparison.Ordinal))
             {
                 return false;
@@ -230,6 +233,11 @@ public sealed record InstallManifest(
                 var relativePath = Path.GetRelativePath(root, file)
                     .Replace(Path.DirectorySeparatorChar, '/');
                 if (string.Equals(relativePath, FileName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (string.Equals(relativePath, CompilerGrammarCachePath, StringComparison.Ordinal))
                 {
                     continue;
                 }

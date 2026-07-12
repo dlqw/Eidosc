@@ -1,6 +1,7 @@
 namespace Eidosup.Installation;
 
 using Eidosup.Distribution;
+using Eidosup.Proxies;
 using Eidosup.Toolchains;
 
 public sealed class SetupOrchestrator
@@ -11,23 +12,30 @@ public sealed class SetupOrchestrator
     private readonly LlvmDependencyCoordinator _dependencyCoordinator;
     private readonly ToolchainStateStore _stateStore;
     private readonly Func<VerifiedToolchainInstaller> _installerFactory;
+    private readonly IShimInstaller _shimInstaller;
+    private readonly ToolchainResolver _toolchainResolver;
 
     public SetupOrchestrator(
         Func<string, IEidosReleaseSource>? releaseSourceFactory = null,
         LlvmDependencyCoordinator? dependencyCoordinator = null,
         ToolchainStateStore? stateStore = null,
-        Func<VerifiedToolchainInstaller>? installerFactory = null)
+        Func<VerifiedToolchainInstaller>? installerFactory = null,
+        IShimInstaller? shimInstaller = null,
+        ToolchainResolver? toolchainResolver = null)
     {
         _releaseSourceFactory = releaseSourceFactory ?? (repository => new GitHubReleaseClient(repository));
         _dependencyCoordinator = dependencyCoordinator ?? new LlvmDependencyCoordinator();
         _stateStore = stateStore ?? new ToolchainStateStore();
         _installerFactory = installerFactory ?? (() => new VerifiedToolchainInstaller());
+        _shimInstaller = shimInstaller ?? new ShimInstaller();
+        _toolchainResolver = toolchainResolver ?? new ToolchainResolver();
     }
 
     public async Task<int> RunAsync(SetupOptions options, CancellationToken cancellationToken)
     {
         var platform = PlatformContext.Detect();
         Console.WriteLine($"Detected platform: {platform.Rid}");
+        var layout = ToolInstallLayout.Create(platform, options.InstallRoot, options.DownloadRoot);
 
         EidosReleaseInfo? release = null;
         string? toolchainDirectory = null;
@@ -37,8 +45,6 @@ public sealed class SetupOrchestrator
             using var releaseSource = _releaseSourceFactory(options.Repository);
             release = await releaseSource.ResolveReleaseAsync(options.Version, options.Channel, cancellationToken);
             Console.WriteLine($"Resolved Eidos release: {release.TagName}");
-
-            var layout = ToolInstallLayout.Create(platform, options.InstallRoot, options.DownloadRoot);
 
             var bundleAsset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
             var checksumAsset = _assetLocator.ResolveChecksumAsset(release);
@@ -97,6 +103,22 @@ public sealed class SetupOrchestrator
             Console.WriteLine($"eidosc target directory: {toolchainDirectory}");
         }
 
+        if (!options.DryRun)
+        {
+            await _toolchainResolver.ResolveAsync(
+                layout,
+                "eidosc",
+                selector: null,
+                cancellationToken);
+        }
+
+        var shim = await _shimInstaller.InstallAsync(layout, options.DryRun, cancellationToken);
+        Console.WriteLine(options.DryRun
+            ? $"[dry-run] Would install stable commands '{shim.ManagerPath}' and '{shim.ShimPath}'."
+            : shim.Changed
+                ? $"Stable commands installed in '{layout.BinDirectory}' ({shim.Materialization.ToString().ToLowerInvariant()})."
+                : $"Stable commands are already current in '{layout.BinDirectory}'.");
+
         var dependency = options.SkipClang
             ? null
             : await _dependencyCoordinator.ResolveAsync(
@@ -114,17 +136,7 @@ public sealed class SetupOrchestrator
 
         if (!options.SkipEnvironmentConfiguration)
         {
-            var eidoscHome = toolchainDirectory ?? ResolveExistingEidoscHome(platform);
-            if (string.IsNullOrWhiteSpace(eidoscHome))
-            {
-                throw new InvalidOperationException("Environment configuration requires an installed eidosc. Run setup without --skip-eidosc first, or set EIDOSC_HOME.");
-            }
-
-            var layout = ToolInstallLayout.Create(
-                platform,
-                options.InstallRoot,
-                options.DownloadRoot);
-            var pathEntries = new List<string> { eidoscHome };
+            var pathEntries = new List<string> { layout.BinDirectory };
             if (!string.IsNullOrWhiteSpace(llvmHome))
             {
                 pathEntries.Add(Path.Combine(llvmHome!, "bin"));
@@ -132,8 +144,6 @@ public sealed class SetupOrchestrator
 
             var plan = new EnvironmentPlan(
                 layout.RootDirectory,
-                eidoscHome,
-                Path.Combine(eidoscHome, "runtime"),
                 llvmHome,
                 pathEntries);
 
@@ -145,18 +155,6 @@ public sealed class SetupOrchestrator
 
         Console.WriteLine("Setup completed.");
         return 0;
-    }
-
-    private static string? ResolveExistingEidoscHome(PlatformContext platform)
-    {
-        var configured = Environment.GetEnvironmentVariable("EIDOSC_HOME");
-        if (!string.IsNullOrWhiteSpace(configured))
-        {
-            return configured;
-        }
-
-        var commandPath = CommandProbe.TryFind(platform.ExecutableName);
-        return string.IsNullOrWhiteSpace(commandPath) ? null : Path.GetDirectoryName(commandPath);
     }
 
     private static string? ResolveLlvmHome(string clangPath)

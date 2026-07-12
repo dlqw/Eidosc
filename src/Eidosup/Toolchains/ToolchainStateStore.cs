@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Eidosup.Diagnostics;
 using Eidosup.Distribution;
 using Eidosup.Installation;
+using Eidosup.Serialization;
 
 namespace Eidosup.Toolchains;
 
@@ -13,10 +14,9 @@ public sealed class ToolchainStateStore
     public const string BackupFileName = "toolchains.json.bak";
     public const string CorruptFileName = "toolchains.json.corrupt";
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new(EidosupJsonContext.Default.Options)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true,
+        TypeInfoResolver = EidosupJsonContext.Default,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) }
     };
 
@@ -40,7 +40,11 @@ public sealed class ToolchainStateStore
             _lockTimeout,
             cancellationToken,
             operationName: "state");
-        return await LoadReconcileAndWriteAsync(layout, selectors: null, cancellationToken);
+        return await LoadReconcileAndWriteAsync(
+            layout,
+            selectors: null,
+            activateSelector: null,
+            cancellationToken);
     }
 
     public async Task<ToolchainState> RegisterInstallAsync(
@@ -95,7 +99,14 @@ public sealed class ToolchainStateStore
             _lockTimeout,
             cancellationToken,
             operationName: "state");
-        return await LoadReconcileAndWriteAsync(layout, selectors, cancellationToken);
+        var activateSelector = requestedChannel is { } selectedChannel
+            ? selectedChannel.ToString().ToLowerInvariant()
+            : manifest.Version;
+        return await LoadReconcileAndWriteAsync(
+            layout,
+            selectors,
+            activateSelector,
+            cancellationToken);
     }
 
     public static async Task<ToolchainState> ReadAsync(
@@ -137,6 +148,7 @@ public sealed class ToolchainStateStore
     private async Task<ToolchainState> LoadReconcileAndWriteAsync(
         ToolInstallLayout layout,
         IReadOnlyList<ToolchainSelectorState>? selectors,
+        string? activateSelector,
         CancellationToken cancellationToken)
     {
         var path = Path.Combine(layout.StateDirectory, FileName);
@@ -158,7 +170,12 @@ public sealed class ToolchainStateStore
 
         var scan = await ScanToolchainsAsync(layout, cancellationToken);
         var now = _clock();
-        var reconciled = Reconcile(basis ?? ToolchainState.Empty(now), scan, selectors, now);
+        var reconciled = Reconcile(
+            basis ?? ToolchainState.Empty(now),
+            scan,
+            selectors,
+            activateSelector,
+            now);
         if (basis == null || !StateContentEquals(basis, reconciled))
         {
             mustWrite = true;
@@ -198,6 +215,7 @@ public sealed class ToolchainStateStore
         ToolchainState basis,
         ToolchainScan scan,
         IReadOnlyList<ToolchainSelectorState>? selectorUpdates,
+        string? activateSelector,
         DateTimeOffset now)
     {
         var installedIds = scan.Toolchains.Select(static toolchain => toolchain.Id)
@@ -221,13 +239,37 @@ public sealed class ToolchainStateStore
         }
 
         var orderedSelectors = selectors.Values.OrderBy(static selector => selector.Selector, StringComparer.Ordinal).ToArray();
-        var defaultState = basis.Default;
+        var previousDefault = basis.Default;
+        var defaultState = previousDefault;
         if (defaultState != null &&
             (!installedIds.Contains(defaultState.ToolchainId) ||
              !selectors.TryGetValue(defaultState.Selector, out var selected) ||
              !string.Equals(selected.ToolchainId, defaultState.ToolchainId, StringComparison.Ordinal)))
         {
             defaultState = null;
+        }
+
+        var activationHistory = basis.ActivationHistory.ToList();
+        if (activateSelector != null &&
+            selectors.TryGetValue(activateSelector, out var activatedSelector) &&
+            (defaultState == null ||
+             string.Equals(defaultState.Selector, activateSelector, StringComparison.Ordinal) &&
+             !string.Equals(defaultState.ToolchainId, activatedSelector.ToolchainId, StringComparison.Ordinal)))
+        {
+            var reason = previousDefault != null &&
+                         string.Equals(previousDefault.Selector, activateSelector, StringComparison.Ordinal) &&
+                         activatedSelector.Kind == ToolchainSelectorKind.Channel
+                ? ToolchainActivationReason.ChannelUpdated
+                : ToolchainActivationReason.DefaultChanged;
+            defaultState = new ToolchainDefaultState(
+                activateSelector,
+                activatedSelector.ToolchainId,
+                now);
+            activationHistory.Add(new ToolchainActivationState(
+                activateSelector,
+                activatedSelector.ToolchainId,
+                reason,
+                now));
         }
 
         return new ToolchainState(
@@ -237,7 +279,7 @@ public sealed class ToolchainStateStore
             scan.Toolchains,
             orderedSelectors,
             defaultState,
-            basis.ActivationHistory,
+            activationHistory,
             basis.Transactions,
             scan.UnmanagedDirectories);
     }

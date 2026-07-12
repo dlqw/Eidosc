@@ -184,9 +184,49 @@ public sealed class ToolchainStateStoreTests
                 Assert.Equal("preview", selector.Selector);
                 Assert.Equal(ToolchainSelectorKind.Channel, selector.Kind);
             });
-        Assert.Null(second.Default);
-        Assert.Empty(second.ActivationHistory);
+        Assert.NotNull(second.Default);
+        Assert.Equal("preview", second.Default.Selector);
+        Assert.Equal(installed.Id, second.Default.ToolchainId);
+        var activation = Assert.Single(second.ActivationHistory);
+        Assert.Equal("preview", activation.Selector);
+        Assert.Equal(installed.Id, activation.ToolchainId);
+        Assert.Equal(ToolchainActivationReason.DefaultChanged, activation.Reason);
         Assert.Empty(second.Transactions);
+    }
+
+    [Fact]
+    public async Task RegisterInstallAsync_AdvancesDefaultChannelToNewImmutableToolchain()
+    {
+        using var temporary = new TemporaryDirectory();
+        var layout = CreateLayout(temporary.Path);
+        var firstToolchain = await CreateVerifiedToolchainAsync(layout);
+        var secondToolchain = await CreateVerifiedToolchainAsync(
+            layout,
+            "0.4.0-alpha.3",
+            "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
+        var store = new ToolchainStateStore(static () => FixedTime);
+        await store.RegisterInstallAsync(
+            layout,
+            firstToolchain.Directory,
+            ReleaseChannel.Preview,
+            CancellationToken.None);
+
+        var state = await store.RegisterInstallAsync(
+            layout,
+            secondToolchain.Directory,
+            ReleaseChannel.Preview,
+            CancellationToken.None);
+
+        Assert.Equal(secondToolchain.Manifest.ToolchainId, state.Default?.ToolchainId);
+        Assert.Equal("preview", state.Default?.Selector);
+        Assert.Collection(
+            state.ActivationHistory,
+            activation => Assert.Equal(ToolchainActivationReason.DefaultChanged, activation.Reason),
+            activation =>
+            {
+                Assert.Equal(ToolchainActivationReason.ChannelUpdated, activation.Reason);
+                Assert.Equal(secondToolchain.Manifest.ToolchainId, activation.ToolchainId);
+            });
     }
 
     [Fact]
@@ -228,16 +268,19 @@ public sealed class ToolchainStateStoreTests
         Path.Combine(root, "install"),
         Path.Combine(root, "downloads"));
 
-    private static async Task<VerifiedToolchainFixture> CreateVerifiedToolchainAsync(ToolInstallLayout layout)
+    private static async Task<VerifiedToolchainFixture> CreateVerifiedToolchainAsync(
+        ToolInstallLayout layout,
+        string version = "0.4.0-alpha.2",
+        string assetHash = AssetHash)
     {
         var platform = PlatformContext.Detect();
         var identity = ToolchainIdentity.Create(
-            "0.4.0-alpha.2",
+            version,
             platform.Rid,
             "test/source",
-            "eidosc-v0.4.0-alpha.2",
-            $"eidosc-v0.4.0-alpha.2-{platform.Rid}.zip",
-            AssetHash,
+            $"eidosc-v{version}",
+            $"eidosc-v{version}-{platform.Rid}.zip",
+            assetHash,
             123);
         var directory = layout.GetToolchainDirectory(identity.Id);
         Directory.CreateDirectory(Path.Combine(directory, "runtime"));
@@ -249,12 +292,12 @@ public sealed class ToolchainStateStoreTests
             InstallManifest.CurrentSchema,
             identity.Id,
             identity.ManifestSha256,
-            "eidosc-v0.4.0-alpha.2",
-            "0.4.0-alpha.2",
+            $"eidosc-v{version}",
+            version,
             platform.Rid,
             "test/source",
-            $"eidosc-v0.4.0-alpha.2-{platform.Rid}.zip",
-            AssetHash,
+            $"eidosc-v{version}-{platform.Rid}.zip",
+            assetHash,
             123,
             FixedTime,
             [

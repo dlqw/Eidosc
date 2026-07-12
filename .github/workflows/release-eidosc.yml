@@ -128,6 +128,7 @@ jobs:
             -r "${{ matrix.rid }}" `
             -p:SelfContained=true `
             -p:PublishSingleFile=true `
+            -p:PublishReadyToRun=true `
             -p:DebugType=None `
             -o artifacts/eidosup
           if ($LASTEXITCODE -ne 0) { throw "Eidosup candidate publish failed." }

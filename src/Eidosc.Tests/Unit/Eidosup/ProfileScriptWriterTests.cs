@@ -9,18 +9,16 @@ public sealed class ProfileScriptWriterTests
     {
         var plan = new EnvironmentPlan(
             "/home/test/.local/share/eidos",
-            "/home/test/.local/share/eidos/toolchains/eidosc/0.3.3-alpha.1",
-            "/home/test/.local/share/eidos/toolchains/eidosc/0.3.3-alpha.1/runtime",
             "/opt/llvm",
-            ["/home/test/.local/share/eidos/toolchains/eidosc/0.3.3-alpha.1", "/opt/llvm/bin"]);
+            ["/home/test/.local/share/eidos/bin", "/opt/llvm/bin"]);
 
         var block = ProfileScriptWriter.BuildUnixProfileBlock(plan);
 
         Assert.Contains("export EIDOS_HOME=\"/home/test/.local/share/eidos\"", block, StringComparison.Ordinal);
-        Assert.Contains("export EIDOSC_HOME=\"/home/test/.local/share/eidos/toolchains/eidosc/0.3.3-alpha.1\"", block, StringComparison.Ordinal);
-        Assert.Contains("export EIDOS_RUNTIME_PATH=\"/home/test/.local/share/eidos/toolchains/eidosc/0.3.3-alpha.1/runtime\"", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("EIDOSC_HOME", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("EIDOS_RUNTIME_PATH", block, StringComparison.Ordinal);
         Assert.Contains("export EIDOS_LLVM_HOME=\"/opt/llvm\"", block, StringComparison.Ordinal);
-        Assert.Contains("export PATH=\"/home/test/.local/share/eidos/toolchains/eidosc/0.3.3-alpha.1:/opt/llvm/bin:$PATH\"", block, StringComparison.Ordinal);
+        Assert.Contains("export PATH=\"/home/test/.local/share/eidos/bin:/opt/llvm/bin:$PATH\"", block, StringComparison.Ordinal);
     }
 
     [Fact]

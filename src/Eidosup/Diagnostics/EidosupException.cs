@@ -23,6 +23,9 @@ public enum EidosupErrorCode
     StateUnsupported,
     PermissionDenied,
     IoFailure,
+    NoActiveToolchain,
+    ToolchainUnavailable,
+    ProxyFailure,
     Cancelled,
     InternalError
 }
@@ -72,6 +75,9 @@ public static class EidosupExitCodes
     public const int StateUnsupported = 29;
     public const int PermissionDenied = 30;
     public const int IoFailure = 31;
+    public const int NoActiveToolchain = 32;
+    public const int ToolchainUnavailable = 33;
+    public const int ProxyFailure = 34;
     public const int DoctorUnhealthy = 50;
     public const int InternalError = 70;
     public const int Cancelled = 130;
