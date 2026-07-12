@@ -12,12 +12,15 @@ internal static class DoctorCommand
         var installRootOption = new Option<string?>("--install-root", "Override the install root to inspect.");
         command.AddOption(installRootOption);
 
-        command.SetHandler((InvocationContext context) =>
+        command.SetHandler(async (InvocationContext context) =>
         {
             var installRoot = context.ParseResult.GetValueForOption(installRootOption);
             var doctor = new DoctorReporter();
             var json = context.ParseResult.GetValueForOption(GlobalOptions.Json);
-            context.ExitCode = doctor.Run(installRoot, json);
+            context.ExitCode = await doctor.RunAsync(
+                installRoot,
+                json,
+                cancellationToken: context.GetCancellationToken());
         });
 
         return command;

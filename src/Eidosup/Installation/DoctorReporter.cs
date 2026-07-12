@@ -70,16 +70,24 @@ public sealed class DoctorReporter
     };
 
     private readonly IDoctorEnvironment _environment;
+    private readonly ILlvmDependencyProbe _dependencyProbe;
 
-    public DoctorReporter(IDoctorEnvironment? environment = null)
+    public DoctorReporter(
+        IDoctorEnvironment? environment = null,
+        ILlvmDependencyProbe? dependencyProbe = null)
     {
         _environment = environment ?? new SystemDoctorEnvironment();
+        _dependencyProbe = dependencyProbe ?? new LlvmDependencyProbe();
     }
 
-    public int Run(string? installRootOverride, bool json, TextWriter? writer = null)
+    public async Task<int> RunAsync(
+        string? installRootOverride,
+        bool json,
+        TextWriter? writer = null,
+        CancellationToken cancellationToken = default)
     {
         writer ??= Console.Out;
-        var report = Evaluate(installRootOverride);
+        var report = await EvaluateAsync(installRootOverride, cancellationToken);
         if (json)
         {
             writer.WriteLine(JsonSerializer.Serialize(report, JsonOptions));
@@ -92,7 +100,9 @@ public sealed class DoctorReporter
         return report.Healthy ? EidosupExitCodes.Success : EidosupExitCodes.DoctorUnhealthy;
     }
 
-    public DoctorReport Evaluate(string? installRootOverride)
+    public async Task<DoctorReport> EvaluateAsync(
+        string? installRootOverride,
+        CancellationToken cancellationToken = default)
     {
         var platform = _environment.DetectPlatform();
         var checks = new List<DoctorCheck>
@@ -122,6 +132,7 @@ public sealed class DoctorReporter
             platform.IsWindows ? "llc.exe" : "llc",
             DoctorSeverity.Warning,
             "Install the LLVM command-line tools and ensure their bin directory is on PATH.");
+        AddLlvmDependencyCheck(checks, await _dependencyProbe.ProbeAsync(cancellationToken));
 
         foreach (var variable in new[] { "EIDOS_HOME", "EIDOSC_HOME", "EIDOS_RUNTIME_PATH", "EIDOS_LLVM_HOME" })
         {
@@ -143,6 +154,34 @@ public sealed class DoctorReporter
 
         AddInstallRootChecks(checks, installRootOverride);
         return new DoctorReport(platform.Rid, checks);
+    }
+
+    private static void AddLlvmDependencyCheck(
+        ICollection<DoctorCheck> checks,
+        DependencyProbeResult probe)
+    {
+        checks.Add(probe.Health switch
+        {
+            DependencyHealth.Compatible => new DoctorCheck(
+                "dependency.llvm",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                probe.Detail,
+                probe.ClangPath),
+            DependencyHealth.Missing => new DoctorCheck(
+                "dependency.llvm",
+                DoctorCheckStatus.Warning,
+                DoctorSeverity.Warning,
+                probe.Detail,
+                Remediation: "Run 'eidosup setup' to install the supported LLVM dependency explicitly."),
+            _ => new DoctorCheck(
+                "dependency.llvm",
+                DoctorCheckStatus.Fail,
+                DoctorSeverity.Error,
+                probe.Detail,
+                probe.ClangPath,
+                $"Install LLVM/Clang major version {probe.Requirement.MinimumMajorVersion}-{probe.Requirement.MaximumMajorVersion} and retry.")
+        });
     }
 
     private void AddCommandCheck(
