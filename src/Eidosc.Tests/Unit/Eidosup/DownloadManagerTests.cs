@@ -7,8 +7,45 @@ using Eidosup.Installation;
 
 namespace Eidosc.Tests.Unit.Eidosup;
 
+[Collection(EidosupEnvironmentTestCollection.Name)]
 public sealed class DownloadManagerTests
 {
+    [Fact]
+    public async Task DownloadArtifactAsync_AllowsOnlyConfiguredLoopbackTestOrigin()
+    {
+        const string variable = "EIDOSUP_TEST_RELEASE_SERVER";
+        var previous = Environment.GetEnvironmentVariable(variable);
+        using var temporary = new TemporaryDirectory();
+        var payload = "candidate"u8.ToArray();
+        var hash = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        try
+        {
+            Environment.SetEnvironmentVariable(variable, "http://127.0.0.1:43129/");
+            using var httpClient = new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(payload)
+            }));
+            using var manager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
+
+            var result = await manager.DownloadArtifactAsync(
+                new EidosReleaseAsset("asset.zip", "http://127.0.0.1:43129/assets/asset.zip", payload.Length),
+                temporary.Path,
+                hash,
+                CancellationToken.None);
+
+            Assert.Equal(payload, await File.ReadAllBytesAsync(result.Path));
+            await Assert.ThrowsAsync<ArgumentException>(() => manager.DownloadArtifactAsync(
+                new EidosReleaseAsset("other.zip", "http://127.0.0.1:43130/assets/other.zip", payload.Length),
+                temporary.Path,
+                hash,
+                CancellationToken.None));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, previous);
+        }
+    }
+
     [Fact]
     public async Task DownloadArtifactAsync_ResumesPartialAndThenUsesVerifiedCache()
     {

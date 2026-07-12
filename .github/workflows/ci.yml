@@ -61,6 +61,10 @@ jobs:
         shell: pwsh
         run: ./Eidosc/scripts/versioning/verify-versions.ps1
 
+      - name: Test release automation
+        shell: pwsh
+        run: ./Eidosc/scripts/release/Test-ReleaseAutomation.ps1
+
       - name: Run stable verification suite
         run: >
           dotnet test Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj

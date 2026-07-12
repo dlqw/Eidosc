@@ -227,8 +227,13 @@ public sealed class GitHubReleaseClient : IEidosReleaseSource, IDisposable
             $"Retry after the limit resets or provide GITHUB_TOKEN or GH_TOKEN for a higher authenticated limit.{resetHint}");
     }
 
-    private static Uri BuildApiUri(GitHubRepositoryId repository, string suffix) =>
-        new($"https://api.github.com/repos/{Uri.EscapeDataString(repository.Owner)}/{Uri.EscapeDataString(repository.Name)}/{suffix}");
+    private static Uri BuildApiUri(GitHubRepositoryId repository, string suffix)
+    {
+        var path = $"repos/{Uri.EscapeDataString(repository.Owner)}/{Uri.EscapeDataString(repository.Name)}/{suffix}";
+        return ReleaseTransportPolicy.GetTestServerBaseUri() is { } testServer
+            ? new Uri(testServer, path)
+            : new Uri($"https://api.github.com/{path}");
+    }
 }
 
 public sealed record GitHubRepositoryId(string Owner, string Name)

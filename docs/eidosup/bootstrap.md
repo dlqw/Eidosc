@@ -19,6 +19,17 @@ The new public repository does not contain releases copied from the private
 archive. Installation becomes available when a new public Eidosc candidate is
 published with an `eidosc-v<SemVer>` tag, host assets, and `SHA256SUMS`.
 
+Eidosc releases are assembled as short-lived CI artifacts before publication.
+The candidate must contain all six Windows, Linux, and macOS x64/arm64 bundles,
+the .NET tool package, deterministic `SHA256SUMS`, and `eidosc-release.json`.
+CI validates every digest and ZIP path, then performs native Windows x64 and
+Linux x64 clean installations with the candidate Eidosup binary. Each installed
+compiler must pass `eidosc info` and compile the tutorial smoke source. arm64 and
+macOS assets receive checksum and archive-structure verification when native
+runners are unavailable. The GitHub tag and prerelease are created only after
+all candidate gates succeed; Eidosup continues to reject draft releases during
+normal release selection.
+
 ## Verified and atomic installation
 
 Eidosup requires the selected release to publish `SHA256SUMS`. It downloads the
