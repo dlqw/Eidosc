@@ -232,35 +232,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "${{ needs.verify-release.outputs.version }}"
-          ./scripts/release/Test-ReleaseAssets.ps1 `
+          ./scripts/release/Publish-VerifiedRelease.ps1 `
             -Product eidosc `
-            -Version $version `
+            -Version "${{ needs.verify-release.outputs.version }}" `
             -CommitSha "$env:GITHUB_SHA" `
-            -AssetDirectory artifacts/final
-          $assets = @(Get-ChildItem -LiteralPath artifacts/final -File | Sort-Object Name | ForEach-Object FullName)
-          $arguments = @(
-            "release", "create", "eidosc-v$version"
-          ) + $assets + @(
-            "--target", $env:GITHUB_SHA,
-            "--title", "eidosc-v$version",
-            "--notes-file", "changelogs/$version.md",
-            "--draft"
-          )
-          & gh @arguments
-          if ($LASTEXITCODE -ne 0) { throw "GitHub draft release creation failed." }
-
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/eidosc-v$version" | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0 -or -not $release.draft) { throw "Draft release verification failed." }
-          if (@($release.assets).Count -ne $assets.Count) { throw "Draft release asset count mismatch." }
-          foreach ($asset in $assets) {
-            $local = Get-Item -LiteralPath $asset
-            $remote = @($release.assets | Where-Object { $_.name -ceq $local.Name })
-            if ($remote.Count -ne 1 -or $remote[0].size -ne $local.Length) {
-              throw "Draft release asset mismatch: $($local.Name)"
-            }
-          }
-
-          $isPrerelease = $version.Contains('-').ToString().ToLowerInvariant()
-          gh release edit "eidosc-v$version" --draft=false "--prerelease=$isPrerelease"
-          if ($LASTEXITCODE -ne 0) { throw "GitHub release publication failed." }
+            -AssetDirectory artifacts/final `
+            -NotesFile "changelogs/${{ needs.verify-release.outputs.version }}.md" `
+            -Repository "$env:GITHUB_REPOSITORY"
