@@ -6,14 +6,11 @@ using Eidosup.Toolchains;
 
 public sealed class SetupOrchestrator
 {
-    private readonly ReleaseAssetLocator _assetLocator = new();
     private readonly EnvironmentConfigurator _environmentConfigurator = new();
-    private readonly Func<string, IEidosReleaseSource> _releaseSourceFactory;
     private readonly LlvmDependencyCoordinator _dependencyCoordinator;
-    private readonly ToolchainStateStore _stateStore;
-    private readonly Func<VerifiedToolchainInstaller> _installerFactory;
     private readonly IShimInstaller _shimInstaller;
     private readonly ToolchainResolver _toolchainResolver;
+    private readonly ToolchainManager _toolchainManager;
 
     public SetupOrchestrator(
         Func<string, IEidosReleaseSource>? releaseSourceFactory = null,
@@ -23,12 +20,14 @@ public sealed class SetupOrchestrator
         IShimInstaller? shimInstaller = null,
         ToolchainResolver? toolchainResolver = null)
     {
-        _releaseSourceFactory = releaseSourceFactory ?? (repository => new GitHubReleaseClient(repository));
         _dependencyCoordinator = dependencyCoordinator ?? new LlvmDependencyCoordinator();
-        _stateStore = stateStore ?? new ToolchainStateStore();
-        _installerFactory = installerFactory ?? (() => new VerifiedToolchainInstaller());
         _shimInstaller = shimInstaller ?? new ShimInstaller();
         _toolchainResolver = toolchainResolver ?? new ToolchainResolver();
+        _toolchainManager = new ToolchainManager(
+            releaseSourceFactory: releaseSourceFactory,
+            stateStore: stateStore,
+            installerFactory: installerFactory,
+            resolver: _toolchainResolver);
     }
 
     public async Task<int> RunAsync(SetupOptions options, CancellationToken cancellationToken)
@@ -39,39 +38,40 @@ public sealed class SetupOrchestrator
 
         EidosReleaseInfo? release = null;
         string? toolchainDirectory = null;
+        string? installedSelector = null;
 
         if (!options.SkipEidosc)
         {
-            using var releaseSource = _releaseSourceFactory(options.Repository);
-            release = await releaseSource.ResolveReleaseAsync(options.Version, options.Channel, cancellationToken);
+            var spec = options.Version == null
+                ? ToolchainSpec.Parse(options.Channel.ToString().ToLowerInvariant())
+                : ToolchainSpec.Parse(options.Version);
+            installedSelector = spec.Canonical;
+            var outcome = await _toolchainManager.InstallAsync(
+                new ToolchainManagementOptions(
+                    options.Repository,
+                    options.InstallRoot,
+                    options.DownloadRoot),
+                spec,
+                options.Force,
+                options.DryRun,
+                new DownloadProgressReporter(),
+                cancellationToken);
+            release = outcome.Release;
             Console.WriteLine($"Resolved Eidos release: {release.TagName}");
 
-            var bundleAsset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
-            var checksumAsset = _assetLocator.ResolveChecksumAsset(release);
             if (options.DryRun)
             {
                 toolchainDirectory = layout.GetToolchainDirectory(
                     $"eidosc-{release.NormalizedVersion}-{platform.Rid}-[manifest-sha256]");
-                Console.WriteLine($"[dry-run] Would download and verify '{checksumAsset.Name}'.");
-                Console.WriteLine($"[dry-run] Would install verified asset '{bundleAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Would download and verify '{outcome.ChecksumAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Would install verified asset '{outcome.BundleAsset.Name}'.");
                 Console.WriteLine($"[dry-run] Content cache: {layout.CacheDirectory}");
                 Console.WriteLine($"[dry-run] Immutable install target: {toolchainDirectory}");
                 Console.WriteLine($"[dry-run] Would initialize and reconcile '{Path.Combine(layout.StateDirectory, ToolchainStateStore.FileName)}'.");
             }
             else
             {
-                using var installer = _installerFactory();
-                var result = await installer.InstallAsync(
-                    new VerifiedInstallRequest(
-                        release,
-                        bundleAsset,
-                        checksumAsset,
-                        platform,
-                        layout,
-                        options.Repository,
-                        options.Force),
-                    new DownloadProgressReporter(),
-                    cancellationToken);
+                var result = outcome.Install!;
                 Console.WriteLine(result.Disposition switch
                 {
                     InstallDisposition.AlreadyInstalled => $"Verified toolchain is already installed at '{result.ToolchainDirectory}'.",
@@ -79,14 +79,6 @@ public sealed class SetupOrchestrator
                     _ => $"Installed immutable toolchain at '{result.ToolchainDirectory}'."
                 });
                 toolchainDirectory = result.ToolchainDirectory;
-                var requestedChannel = options.Version == null
-                    ? options.Channel
-                    : (ReleaseChannel?)null;
-                await _stateStore.RegisterInstallAsync(
-                    layout,
-                    result.ToolchainDirectory,
-                    requestedChannel,
-                    cancellationToken);
                 Console.WriteLine($"Toolchain state: {Path.Combine(layout.StateDirectory, ToolchainStateStore.FileName)}");
                 Console.WriteLine($"Asset SHA-256: {result.AssetSha256}");
                 if (result.Disposition != InstallDisposition.AlreadyInstalled)
@@ -108,7 +100,7 @@ public sealed class SetupOrchestrator
             await _toolchainResolver.ResolveAsync(
                 layout,
                 "eidosc",
-                selector: null,
+                installedSelector,
                 cancellationToken);
         }
 

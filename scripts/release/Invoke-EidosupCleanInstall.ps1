@@ -265,6 +265,48 @@ try
         throw "Stable Eidosup manager and eidosc shim were not installed in '$installRoot/bin'."
     }
 
+    $list = (& $manager toolchain list --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or @($list.toolchains).Count -ne 1 -or
+        [string]$list.toolchains[0].id -cne $toolchainId)
+    {
+        throw "Eidosup toolchain list did not report the clean-installed immutable toolchain."
+    }
+
+    $which = (& $manager which eidosc --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or [string]$which.toolchainId -cne $toolchainId -or
+        -not [IO.Path]::GetFullPath([string]$which.commandPath).Equals(
+            [IO.Path]::GetFullPath($eidosc),
+            [StringComparison]::OrdinalIgnoreCase))
+    {
+        throw "Eidosup which did not resolve the exact-version toolchain."
+    }
+
+    & $manager run $Version --install-root $installRoot -- eidosc --version *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup run failed for the exact-version toolchain." }
+
+    $check = (& $manager check $Version --repo $Repository --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or [string]$check.toolchains[0].status -cne "current")
+    {
+        throw "Eidosup check did not report the candidate exact version as current."
+    }
+
+    & $manager update $Version `
+        --repo $Repository `
+        --install-root $installRoot `
+        --download-root $downloadRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup exact-version update convergence failed." }
+
+    & $manager default none --install-root $installRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to clear the global default." }
+    & $shim --version *> $null
+    if ($LASTEXITCODE -ne 32)
+    {
+        throw "The stable shim returned '$LASTEXITCODE' instead of 32 after clearing the default."
+    }
+
+    & $manager default $Version --install-root $installRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to restore the exact-version default." }
+
     & $shim info
     if ($LASTEXITCODE -ne 0) { throw "Installed eidosc shim info command failed." }
 
@@ -302,6 +344,26 @@ try
     if ($shimOverhead -gt 200)
     {
         throw "Median eidosc shim startup overhead $([Math]::Round($shimOverhead, 1))ms exceeds the 200ms release baseline."
+    }
+
+    & $manager toolchain uninstall $Version --install-root $installRoot *> $null
+    if ($LASTEXITCODE -ne 22)
+    {
+        throw "Eidosup returned '$LASTEXITCODE' instead of 22 when uninstalling the active default."
+    }
+
+    & $manager default none --install-root $installRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to clear the default before uninstall." }
+    & $manager toolchain uninstall $Version --install-root $installRoot
+    if ($LASTEXITCODE -ne 0 -or (Test-Path -LiteralPath (Join-Path $installRoot "toolchains/$toolchainId")))
+    {
+        throw "Eidosup failed to transactionally uninstall the inactive exact-version toolchain."
+    }
+
+    $emptyList = (& $manager toolchain list --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or @($emptyList.toolchains).Count -ne 0)
+    {
+        throw "Eidosup toolchain list was not empty after verified uninstall."
     }
 
     Write-Host "Clean install verification passed for $rid using eidosc-v$Version (shim median overhead $([Math]::Round($shimOverhead, 1))ms)."

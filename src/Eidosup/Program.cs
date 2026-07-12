@@ -33,15 +33,28 @@ internal static class Program
             return EidosupExitCodes.Success;
         }
 
-        var root = new RootCommand("Bootstrap and maintain an Eidos development environment.")
+        return await CreateParser().InvokeAsync(args);
+    }
+
+    internal static Parser CreateParser()
+    {
+        var root = new RootCommand("Install, select, and maintain Eidos development toolchains.")
         {
             SetupCommand.Create(),
-            DoctorCommand.Create()
+            DoctorCommand.Create(),
+            ToolchainCommands.CreateToolchainCommand(),
+            ToolchainCommands.CreateDefaultCommand(),
+            ToolchainCommands.CreateUpdateCommand(),
+            ToolchainCommands.CreateCheckCommand(),
+            ToolchainCommands.CreateShowCommand(),
+            ToolchainCommands.CreateRunCommand(),
+            ToolchainCommands.CreateWhichCommand(),
+            ToolchainCommands.CreateRollbackCommand()
         };
         root.AddGlobalOption(GlobalOptions.Verbose);
         root.AddGlobalOption(GlobalOptions.Json);
 
-        var parser = new CommandLineBuilder(root)
+        return new CommandLineBuilder(root)
             .UseHelp()
             .UseTypoCorrections()
             .UseParseErrorReporting(EidosupExitCodes.InvalidArgument)
@@ -53,8 +66,6 @@ internal static class Program
                 context.ExitCode = ErrorReporter.Write(exception, verbose, json);
             }, EidosupExitCodes.InternalError)
             .Build();
-
-        return await parser.InvokeAsync(args);
     }
 
     private static string GetProductVersion()

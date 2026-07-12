@@ -7,6 +7,7 @@ public sealed record ToolchainState(
     IReadOnlyList<InstalledToolchainState> Toolchains,
     IReadOnlyList<ToolchainSelectorState> Selectors,
     ToolchainDefaultState? Default,
+    bool DefaultConfigured,
     IReadOnlyList<ToolchainActivationState> ActivationHistory,
     IReadOnlyList<ToolchainTransactionState> Transactions,
     IReadOnlyList<UnmanagedToolchainState> UnmanagedDirectories)
@@ -20,6 +21,7 @@ public sealed record ToolchainState(
         [],
         [],
         Default: null,
+        DefaultConfigured: false,
         [],
         [],
         []);
@@ -59,6 +61,7 @@ public sealed record ToolchainDefaultState(
 public enum ToolchainActivationReason
 {
     DefaultChanged,
+    SelectorChanged,
     ChannelUpdated,
     Rollback,
     ProjectOverride
