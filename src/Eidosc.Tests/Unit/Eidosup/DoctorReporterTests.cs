@@ -23,10 +23,9 @@ public sealed class DoctorReporterTests
     [Fact]
     public void Run_JsonSeparatesWarningsFromErrorsAndReturnsHealthyWhenEidoscExists()
     {
-        var environment = new FakeDoctorEnvironment
-        {
-            Commands = { ["eidosc.exe"] = @"C:\tools\eidosc.exe" }
-        };
+        var environment = new FakeDoctorEnvironment();
+        var executableName = environment.DetectPlatform().ExecutableName;
+        environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
         var reporter = new DoctorReporter(environment);
         using var writer = new StringWriter();
 
@@ -44,23 +43,21 @@ public sealed class DoctorReporterTests
     [Fact]
     public void Evaluate_ReportsInstalledVersionsInOrdinalOrder()
     {
-        var environment = new FakeDoctorEnvironment
-        {
-            Commands = { ["eidosc.exe"] = @"C:\tools\eidosc.exe" },
-            ExistingDirectories =
-            {
-                @"C:\eidos",
-                @"C:\eidos\toolchains\eidosc"
-            },
-            Directories =
-            {
-                [@"C:\eidos\toolchains\eidosc"] =
-                [@"C:\eidos\toolchains\eidosc\0.4.0-alpha.10", @"C:\eidos\toolchains\eidosc\0.4.0-alpha.2"]
-            }
-        };
+        var environment = new FakeDoctorEnvironment();
+        var executableName = environment.DetectPlatform().ExecutableName;
+        environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
+        var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-test");
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains", "eidosc");
+        environment.ExistingDirectories.Add(installRoot);
+        environment.ExistingDirectories.Add(toolchainsDirectory);
+        environment.Directories[toolchainsDirectory] =
+        [
+            Path.Combine(toolchainsDirectory, "0.4.0-alpha.10"),
+            Path.Combine(toolchainsDirectory, "0.4.0-alpha.2")
+        ];
         var reporter = new DoctorReporter(environment);
 
-        var report = reporter.Evaluate(@"C:\eidos");
+        var report = reporter.Evaluate(installRoot);
 
         var check = Assert.Single(report.Checks, item => item.Id == "toolchains.installed");
         Assert.Equal("0.4.0-alpha.10, 0.4.0-alpha.2", check.Detail);
@@ -76,7 +73,7 @@ public sealed class DoctorReporterTests
 
         public Dictionary<string, string[]> Directories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-        public PlatformContext DetectPlatform() => new("win-x64", "eidosc.exe", true, false, false);
+        public PlatformContext DetectPlatform() => PlatformContext.Detect();
 
         public string? FindCommand(string command) => Commands.GetValueOrDefault(command);
 
