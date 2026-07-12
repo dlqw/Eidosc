@@ -187,6 +187,13 @@ jobs:
           - { rid: linux-x64, runner: ubuntu-latest, binary: eidosup-candidate }
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout pinned tutorial smoke fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dlqw/eidos-tutorial
+          ref: 6d1374f2123ee90f7d04341728d666fe925f6669
+          path: artifacts/tutorial
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: eidosc-release-candidate
@@ -204,7 +211,7 @@ jobs:
             -CommitSha "$env:GITHUB_SHA" `
             -CandidateDirectory artifacts/candidate `
             -EidosupPath "artifacts/eidosup/${{ matrix.binary }}" `
-            -TutorialExample "docs/tutorial/examples/01_literals_bindings.eidos"
+            -TutorialExample "artifacts/tutorial/examples/01_literals_bindings.eidos"
 
   create-release:
     name: publish-verified-release
