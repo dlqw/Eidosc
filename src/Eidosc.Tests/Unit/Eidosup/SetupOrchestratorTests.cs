@@ -78,9 +78,10 @@ public sealed class SetupOrchestratorTests
             using var httpClient = new HttpClient(handler);
             using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
             var clock = DateTimeOffset.Parse("2026-07-12T00:00:00Z");
+            var stateStore = new ToolchainStateStore(() => clock);
             var orchestrator = new SetupOrchestrator(
                 _ => new StubReleaseSource(release),
-                stateStore: new ToolchainStateStore(() => clock),
+                stateStore: stateStore,
                 installerFactory: () => new VerifiedToolchainInstaller(downloadManager, clock: () => clock),
                 shimInstaller: new StubShimInstaller());
 
@@ -105,6 +106,22 @@ public sealed class SetupOrchestratorTests
             Assert.Equal("preview", state.Default?.Selector);
             Assert.True(File.Exists(Path.Combine(layout.GetToolchainDirectory(installed.Id), platform.ExecutableName)));
             Assert.Equal(0, exitCode);
+
+            await stateStore.SetDefaultAsync(layout, selector: null, CancellationToken.None);
+            var repeatedExitCode = await orchestrator.RunAsync(
+                new SetupOptions
+                {
+                    InstallRoot = installRoot,
+                    DownloadRoot = downloadRoot,
+                    SkipClang = true,
+                    SkipEnvironmentConfiguration = true
+                },
+                CancellationToken.None);
+            var repeatedState = await ToolchainStateStore.ReadAsync(layout, CancellationToken.None);
+
+            Assert.Equal(0, repeatedExitCode);
+            Assert.True(repeatedState.DefaultConfigured);
+            Assert.Null(repeatedState.Default);
         }
         finally
         {

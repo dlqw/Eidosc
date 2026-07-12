@@ -127,6 +127,47 @@ public sealed class DoctorReporterTests
     }
 
     [Fact]
+    public async Task EvaluateAsync_TreatsExplicitlyClearedDefaultAsInformationalWarning()
+    {
+        var environment = new FakeDoctorEnvironment();
+        var platform = environment.DetectPlatform();
+        var executableName = platform.ExecutableName;
+        var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-default-none");
+        var stableBin = Path.Combine(installRoot, "bin");
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
+        var shimPath = Path.Combine(stableBin, executableName);
+        var managerName = platform.IsWindows ? "eidosup.exe" : "eidosup";
+        var toolchainId = ToolchainIdentity.Create(
+            "0.4.0-alpha.2",
+            platform.Rid,
+            "test/source",
+            "eidosc-v0.4.0-alpha.2",
+            "bundle.zip",
+            new string('a', 64),
+            100).Id;
+        environment.Commands[executableName] = shimPath;
+        environment.ExistingDirectories.Add(installRoot);
+        environment.ExistingDirectories.Add(toolchainsDirectory);
+        environment.ExistingFiles.Add(shimPath);
+        environment.ExistingFiles.Add(Path.Combine(stableBin, managerName));
+        environment.ExistingFiles.Add(Path.Combine(stableBin, ShimInstaller.ManifestFileName));
+        var state = CreateState(toolchainId) with
+        {
+            Default = null,
+            DefaultConfigured = true
+        };
+        var reporter = CreateReporter(environment, DependencyHealth.Compatible, state);
+
+        var report = await reporter.EvaluateAsync(installRoot);
+
+        var check = Assert.Single(report.Checks, item => item.Id == "toolchains.default");
+        Assert.Equal(DoctorCheckStatus.Warning, check.Status);
+        Assert.Equal(DoctorSeverity.Info, check.Severity);
+        Assert.Contains("explicitly cleared", check.Summary, StringComparison.Ordinal);
+        Assert.True(report.Healthy);
+    }
+
+    [Fact]
     public async Task RunAsync_IncompatibleLlvmIsAnErrorLevelFailure()
     {
         var environment = new FakeDoctorEnvironment();
@@ -186,6 +227,7 @@ public sealed class DoctorReporterTests
             Toolchains = toolchains,
             Selectors = [selector],
             Default = new ToolchainDefaultState(selector.Selector, selector.ToolchainId, installedAt),
+            DefaultConfigured = true,
             ActivationHistory =
             [
                 new ToolchainActivationState(

@@ -109,6 +109,133 @@ public sealed class ToolchainStateStore
             cancellationToken);
     }
 
+    public async Task<ToolchainState> SetDefaultAsync(
+        ToolInstallLayout layout,
+        string? selector,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        Directory.CreateDirectory(layout.StateDirectory);
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "state");
+        var state = await LoadReconcileAndWriteAsync(
+            layout,
+            selectors: null,
+            activateSelector: null,
+            cancellationToken);
+        var now = _clock();
+        ToolchainDefaultState? updatedDefault;
+        var history = state.ActivationHistory.ToList();
+        if (selector == null)
+        {
+            updatedDefault = null;
+        }
+        else
+        {
+            var selected = state.Selectors.SingleOrDefault(candidate =>
+                               string.Equals(candidate.Selector, selector, StringComparison.Ordinal))
+                           ?? throw ToolchainUnavailable(
+                               $"Toolchain selector '{selector}' is not installed.",
+                               "Install the requested toolchain before setting it as the default.");
+            var changed = state.Default == null ||
+                          !string.Equals(state.Default.Selector, selected.Selector, StringComparison.Ordinal) ||
+                          !string.Equals(state.Default.ToolchainId, selected.ToolchainId, StringComparison.Ordinal);
+            updatedDefault = changed
+                ? new ToolchainDefaultState(selected.Selector, selected.ToolchainId, now)
+                : state.Default;
+            if (changed)
+            {
+                history.Add(new ToolchainActivationState(
+                    selected.Selector,
+                    selected.ToolchainId,
+                    ToolchainActivationReason.DefaultChanged,
+                    now));
+            }
+        }
+
+        var updated = state with
+        {
+            Default = updatedDefault,
+            DefaultConfigured = true,
+            ActivationHistory = history
+        };
+        return await PersistMutationAsync(layout, state, updated, cancellationToken);
+    }
+
+    public async Task<ToolchainState> RollbackAsync(
+        ToolInstallLayout layout,
+        string selector,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentException.ThrowIfNullOrWhiteSpace(selector);
+        Directory.CreateDirectory(layout.StateDirectory);
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "state");
+        var state = await LoadReconcileAndWriteAsync(
+            layout,
+            selectors: null,
+            activateSelector: null,
+            cancellationToken);
+        var current = state.Selectors.SingleOrDefault(candidate =>
+                          string.Equals(candidate.Selector, selector, StringComparison.Ordinal))
+                      ?? throw ToolchainUnavailable(
+                          $"Toolchain selector '{selector}' is not installed.",
+                          "Install the channel before attempting to roll it back.");
+        if (current.Kind != ToolchainSelectorKind.Channel)
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InvalidArgument,
+                EidosupExitCodes.InvalidArgument,
+                $"Toolchain selector '{selector}' is immutable and cannot be rolled back.",
+                "Rollback accepts a movable channel selector such as 'stable' or 'preview'.");
+        }
+
+        var installedIds = state.Toolchains.Select(static toolchain => toolchain.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var previous = state.ActivationHistory
+            .Reverse()
+            .FirstOrDefault(activation =>
+                string.Equals(activation.Selector, selector, StringComparison.Ordinal) &&
+                !string.Equals(activation.ToolchainId, current.ToolchainId, StringComparison.Ordinal) &&
+                installedIds.Contains(activation.ToolchainId));
+        if (previous == null)
+        {
+            throw ToolchainUnavailable(
+                $"Toolchain selector '{selector}' has no installed rollback target.",
+                "Install or retain an earlier verified channel toolchain before using rollback.");
+        }
+
+        var now = _clock();
+        var selectors = state.Selectors
+            .Select(candidate => string.Equals(candidate.Selector, selector, StringComparison.Ordinal)
+                ? candidate with { ToolchainId = previous.ToolchainId, ResolvedAt = now }
+                : candidate)
+            .ToArray();
+        var defaultState = state.Default != null &&
+                           string.Equals(state.Default.Selector, selector, StringComparison.Ordinal)
+            ? state.Default with { ToolchainId = previous.ToolchainId, SetAt = now }
+            : state.Default;
+        var history = state.ActivationHistory.Append(new ToolchainActivationState(
+            selector,
+            previous.ToolchainId,
+            ToolchainActivationReason.Rollback,
+            now)).ToArray();
+        var updated = state with
+        {
+            Selectors = selectors,
+            Default = defaultState,
+            ActivationHistory = history
+        };
+        return await PersistMutationAsync(layout, state, updated, cancellationToken);
+    }
+
     public static async Task<ToolchainState> ReadAsync(
         ToolInstallLayout layout,
         CancellationToken cancellationToken)
@@ -220,6 +347,9 @@ public sealed class ToolchainStateStore
     {
         var installedIds = scan.Toolchains.Select(static toolchain => toolchain.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var previousSelectors = basis.Selectors
+            .Where(selector => installedIds.Contains(selector.ToolchainId))
+            .ToDictionary(static selector => selector.Selector, StringComparer.Ordinal);
         var selectors = basis.Selectors
             .Where(selector => installedIds.Contains(selector.ToolchainId))
             .ToDictionary(static selector => selector.Selector, StringComparer.Ordinal);
@@ -234,12 +364,25 @@ public sealed class ToolchainStateStore
                         "Reinstall and verify the toolchain before updating selectors.");
                 }
 
+                if (selectors.TryGetValue(selector.Selector, out var existingSelector) &&
+                    existingSelector.Kind == ToolchainSelectorKind.ExactVersion &&
+                    selector.Kind == ToolchainSelectorKind.ExactVersion &&
+                    !string.Equals(existingSelector.ToolchainId, selector.ToolchainId, StringComparison.Ordinal))
+                {
+                    throw new EidosupException(
+                        EidosupErrorCode.InstallConflict,
+                        EidosupExitCodes.InstallConflict,
+                        $"Exact-version selector '{selector.Selector}' already identifies a different immutable toolchain.",
+                        "Use the original verified source for this version or publish a new Eidosc version; exact selectors never move between manifest identities.");
+                }
+
                 selectors[selector.Selector] = selector;
             }
         }
 
         var orderedSelectors = selectors.Values.OrderBy(static selector => selector.Selector, StringComparer.Ordinal).ToArray();
         var previousDefault = basis.Default;
+        var defaultConfigured = basis.DefaultConfigured || previousDefault != null;
         var defaultState = previousDefault;
         if (defaultState != null &&
             (!installedIds.Contains(defaultState.ToolchainId) ||
@@ -251,25 +394,70 @@ public sealed class ToolchainStateStore
 
         var activationHistory = basis.ActivationHistory.ToList();
         if (activateSelector != null &&
-            selectors.TryGetValue(activateSelector, out var activatedSelector) &&
-            (defaultState == null ||
-             string.Equals(defaultState.Selector, activateSelector, StringComparison.Ordinal) &&
-             !string.Equals(defaultState.ToolchainId, activatedSelector.ToolchainId, StringComparison.Ordinal)))
+            selectors.TryGetValue(activateSelector, out var activatedSelector))
         {
-            var reason = previousDefault != null &&
-                         string.Equals(previousDefault.Selector, activateSelector, StringComparison.Ordinal) &&
-                         activatedSelector.Kind == ToolchainSelectorKind.Channel
-                ? ToolchainActivationReason.ChannelUpdated
-                : ToolchainActivationReason.DefaultChanged;
-            defaultState = new ToolchainDefaultState(
-                activateSelector,
-                activatedSelector.ToolchainId,
-                now);
-            activationHistory.Add(new ToolchainActivationState(
-                activateSelector,
-                activatedSelector.ToolchainId,
-                reason,
-                now));
+            var selectorChanged = previousSelectors.TryGetValue(activateSelector, out var previousSelector) &&
+                                  !string.Equals(previousSelector.ToolchainId, activatedSelector.ToolchainId, StringComparison.Ordinal);
+            if (defaultState == null &&
+                (!defaultConfigured ||
+                 previousDefault != null &&
+                 string.Equals(previousDefault.Selector, activateSelector, StringComparison.Ordinal)))
+            {
+                defaultState = new ToolchainDefaultState(
+                    activateSelector,
+                    activatedSelector.ToolchainId,
+                    now);
+                defaultConfigured = true;
+                AddActivation(
+                    activationHistory,
+                    activateSelector,
+                    activatedSelector.ToolchainId,
+                    previousDefault != null &&
+                    string.Equals(previousDefault.Selector, activateSelector, StringComparison.Ordinal) &&
+                    activatedSelector.Kind == ToolchainSelectorKind.Channel
+                        ? ToolchainActivationReason.ChannelUpdated
+                        : ToolchainActivationReason.DefaultChanged,
+                    now);
+            }
+            else if (defaultState != null &&
+                     string.Equals(defaultState.Selector, activateSelector, StringComparison.Ordinal) &&
+                     !string.Equals(defaultState.ToolchainId, activatedSelector.ToolchainId, StringComparison.Ordinal))
+            {
+                defaultState = new ToolchainDefaultState(
+                    activateSelector,
+                    activatedSelector.ToolchainId,
+                    now);
+                AddActivation(
+                    activationHistory,
+                    activateSelector,
+                    activatedSelector.ToolchainId,
+                    activatedSelector.Kind == ToolchainSelectorKind.Channel
+                        ? ToolchainActivationReason.ChannelUpdated
+                        : ToolchainActivationReason.DefaultChanged,
+                    now);
+            }
+            else if (activatedSelector.Kind == ToolchainSelectorKind.Channel &&
+                     (!previousSelectors.ContainsKey(activateSelector) || selectorChanged))
+            {
+                if (selectorChanged && previousSelector != null)
+                {
+                    AddActivation(
+                        activationHistory,
+                        activateSelector,
+                        previousSelector.ToolchainId,
+                        ToolchainActivationReason.SelectorChanged,
+                        previousSelector.ResolvedAt);
+                }
+
+                AddActivation(
+                    activationHistory,
+                    activateSelector,
+                    activatedSelector.ToolchainId,
+                    selectorChanged
+                        ? ToolchainActivationReason.ChannelUpdated
+                        : ToolchainActivationReason.SelectorChanged,
+                    now);
+            }
         }
 
         return new ToolchainState(
@@ -279,9 +467,54 @@ public sealed class ToolchainStateStore
             scan.Toolchains,
             orderedSelectors,
             defaultState,
+            defaultConfigured,
             activationHistory,
             basis.Transactions,
             scan.UnmanagedDirectories);
+    }
+
+    private static void AddActivation(
+        List<ToolchainActivationState> history,
+        string selector,
+        string toolchainId,
+        ToolchainActivationReason reason,
+        DateTimeOffset activatedAt)
+    {
+        var last = history.LastOrDefault(activation =>
+            string.Equals(activation.Selector, selector, StringComparison.Ordinal));
+        if (last != null && string.Equals(last.ToolchainId, toolchainId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        history.Add(new ToolchainActivationState(selector, toolchainId, reason, activatedAt));
+    }
+
+    private async Task<ToolchainState> PersistMutationAsync(
+        ToolInstallLayout layout,
+        ToolchainState original,
+        ToolchainState updated,
+        CancellationToken cancellationToken)
+    {
+        if (StateContentEquals(original, updated))
+        {
+            return original;
+        }
+
+        var now = _clock();
+        updated = updated with
+        {
+            Revision = checked(original.Revision + 1),
+            UpdatedAt = now
+        };
+        await WriteAtomicAsync(
+            Path.Combine(layout.StateDirectory, FileName),
+            Path.Combine(layout.StateDirectory, BackupFileName),
+            updated,
+            replacePrimary: true,
+            cancellationToken);
+        CleanupTemporaryFiles(layout.StateDirectory);
+        return updated;
     }
 
     private static async Task<ToolchainScan> ScanToolchainsAsync(
@@ -546,6 +779,7 @@ public sealed class ToolchainStateStore
         left.Toolchains.SequenceEqual(right.Toolchains) &&
         left.Selectors.SequenceEqual(right.Selectors) &&
         Equals(left.Default, right.Default) &&
+        left.DefaultConfigured == right.DefaultConfigured &&
         left.ActivationHistory.SequenceEqual(right.ActivationHistory) &&
         left.Transactions.SequenceEqual(right.Transactions) &&
         left.UnmanagedDirectories.SequenceEqual(right.UnmanagedDirectories);
@@ -605,6 +839,12 @@ public sealed class ToolchainStateStore
     private static EidosupException StateCorrupt(string message, string hint) => new(
         EidosupErrorCode.StateCorrupt,
         EidosupExitCodes.StateCorrupt,
+        message,
+        hint);
+
+    private static EidosupException ToolchainUnavailable(string message, string hint) => new(
+        EidosupErrorCode.ToolchainUnavailable,
+        EidosupExitCodes.ToolchainUnavailable,
         message,
         hint);
 

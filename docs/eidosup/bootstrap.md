@@ -1,10 +1,11 @@
 # Eidosup bootstrap guide
 
-Eidosup installs an Eidosc release for the current host, checks LLVM/Clang,
-and can configure the user environment. It is a prerelease bootstrap tool; the
-multi-toolchain management commands are not yet part of the public contract,
-but installation now creates a stable `eidosc` shim backed by versioned state,
-an immutable toolchain identity, and a movable global default.
+Eidosup installs Eidosc releases for the current host, checks LLVM/Clang, and
+can configure the user environment. It also manages multiple immutable
+toolchains through a stable `eidosc` shim, movable channel selectors, an
+explicit global default, verified update and uninstall operations, and channel
+rollback. See [Toolchain management](toolchain-management.md) for the complete
+command contract.
 
 ## Release source and credentials
 
@@ -25,11 +26,13 @@ The candidate must contain all six Windows, Linux, and macOS x64/arm64 bundles,
 the .NET tool package, deterministic `SHA256SUMS`, and `eidosc-release.json`.
 CI validates every digest and ZIP path, then performs native Windows x64 and
 Linux x64 clean installations with the candidate Eidosup binary. Each installed
-compiler must pass `eidosc info` and compile the tutorial smoke source. arm64 and
-macOS assets receive checksum and archive-structure verification when native
-runners are unavailable. The GitHub tag and prerelease are created only after
-all candidate gates succeed; Eidosup continues to reject draft releases during
-normal release selection.
+compiler must pass `eidosc info`, compile the tutorial smoke source, and pass
+management-command smoke checks for list, which, explicit run, check, convergent
+update, default clearing/restoration, active-uninstall refusal, and transactional
+uninstall. arm64 and macOS assets receive checksum and archive-structure
+verification when native runners are unavailable. The GitHub tag and prerelease
+are created only after all candidate gates succeed; Eidosup continues to reject
+draft releases during normal release selection.
 
 ## Verified and atomic installation
 
@@ -75,9 +78,10 @@ all verify.
 
 The private state file is `state/toolchains.json`, currently schema 1. It
 defines installed toolchains, movable selectors, the global default, activation
-history, transaction records, and unmanaged-directory diagnostics. State writes
-use a separate state lock, write-through temporary file, atomic replacement,
-and `toolchains.json.bak`. Repeated initialization is idempotent. If the primary
+history, whether the default was explicitly configured or cleared, transaction
+records, and unmanaged-directory diagnostics. State writes use a separate state
+lock, write-through temporary file, atomic replacement, and
+`toolchains.json.bak`. Repeated initialization is idempotent. If the primary
 state is malformed, Eidosup reconciles a supported backup with verified
 immutable install manifests. An unknown or future schema is never overwritten;
 the user must upgrade Eidosup first.
@@ -105,10 +109,11 @@ restore them if the pair cannot be committed. Existing command files without a
 valid ownership manifest are never overwritten.
 
 The first verified installation becomes the global default. A channel install
-such as `preview` moves that channel selector and its default pointer to the new
-immutable toolchain without changing PATH. Exact-version selectors continue to
-point at their original immutable installs. Management commands for explicitly
-changing the default arrive in the next command-management phase.
+such as `preview` moves that channel selector and, when active, its default
+pointer to the new immutable toolchain without changing PATH. Exact-version
+selectors continue to point at their original immutable installs. Use
+`eidosup default <selector>` or `eidosup default none` to change the global
+selection explicitly.
 
 When invoked as `eidosc`, the multi-call binary derives `EIDOS_HOME` from its
 managed `bin` location, reads the state schema, resolves the default selector,
@@ -208,7 +213,9 @@ important exit-code ranges are:
 `command.clang`, `install.root`, `shims.installed`, `shims.path`,
 `toolchains.installed`, and `toolchains.default`. Missing Eidosc is
 an error and returns `50`; advisory LLVM or environment findings remain
-warnings. Use JSON for automation:
+warnings. An explicitly cleared default is an informational warning rather than
+state corruption; the stable shim remains inactive until `eidosup default
+<selector>` is used. Use JSON for automation:
 
 ```powershell
 eidosup doctor --json

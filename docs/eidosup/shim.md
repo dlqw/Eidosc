@@ -32,14 +32,15 @@ proxy without changing user projects or selector data.
 
 ## Selection
 
-Proxy resolution currently has two defined sources:
+WP1 proxy resolution has two defined sources:
 
 1. an explicit selector supplied by an internal caller;
 2. the global default stored in `state/toolchains.json`.
 
-The command-line shim uses the global default. Environment, directory override,
-and project-file selection remain reserved for the project-selection phase and
-do not silently affect this release.
+The command-line shim uses the global default. `eidosup run` and `which
+--toolchain` use the explicit source. Environment, directory override, and
+project-file selection remain reserved for the project-selection phase and do
+not silently affect this release.
 
 Resolution rejects a missing default, missing selector, host RID mismatch,
 unknown command, unsupported state schema, changed install manifest, modified

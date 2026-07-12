@@ -373,19 +373,26 @@ public sealed class DoctorReporter
 
         if (state != null)
         {
-            checks.Add(state.Default == null
+            checks.Add(state.Default != null
                 ? new DoctorCheck(
-                    "toolchains.default",
-                    DoctorCheckStatus.Fail,
-                    DoctorSeverity.Error,
-                    "No global default toolchain is configured.",
-                    Remediation: "Run 'eidosup setup' to install and activate a verified toolchain.")
-                : new DoctorCheck(
                     "toolchains.default",
                     DoctorCheckStatus.Pass,
                     DoctorSeverity.Info,
                     $"Global default selector '{state.Default.Selector}' is active.",
-                    state.Default.ToolchainId));
+                    state.Default.ToolchainId)
+                : state.DefaultConfigured
+                    ? new DoctorCheck(
+                        "toolchains.default",
+                        DoctorCheckStatus.Warning,
+                        DoctorSeverity.Info,
+                        "The global default toolchain was explicitly cleared.",
+                        Remediation: "Run 'eidosup default <selector>' when the stable shim should become active again.")
+                    : new DoctorCheck(
+                    "toolchains.default",
+                    DoctorCheckStatus.Fail,
+                    DoctorSeverity.Error,
+                    "No global default toolchain is configured.",
+                    Remediation: "Run 'eidosup default <selector>' or install the first verified toolchain."));
         }
 
         if (state is { UnmanagedDirectories.Count: > 0 })

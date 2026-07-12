@@ -78,6 +78,12 @@ public sealed record ToolInstallLayout(
 
     private static string GetDefaultInstallRoot(PlatformContext platform)
     {
+        var configuredHome = Environment.GetEnvironmentVariable("EIDOS_HOME");
+        if (!string.IsNullOrWhiteSpace(configuredHome))
+        {
+            return configuredHome;
+        }
+
         if (platform.IsWindows)
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
