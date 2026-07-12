@@ -1,24 +1,32 @@
 namespace Eidosup.Installation;
 
+using Eidosup.Distribution;
+
 public sealed class SetupOrchestrator
 {
     private readonly ReleaseAssetLocator _assetLocator = new();
     private readonly ArchiveInstaller _archiveInstaller = new();
     private readonly ClangInstaller _clangInstaller = new();
     private readonly EnvironmentConfigurator _environmentConfigurator = new();
+    private readonly Func<string, IEidosReleaseSource> _releaseSourceFactory;
+
+    public SetupOrchestrator(Func<string, IEidosReleaseSource>? releaseSourceFactory = null)
+    {
+        _releaseSourceFactory = releaseSourceFactory ?? (repository => new GitHubReleaseClient(repository));
+    }
 
     public async Task<int> RunAsync(SetupOptions options, CancellationToken cancellationToken)
     {
         var platform = PlatformContext.Detect();
         Console.WriteLine($"Detected platform: {platform.Rid}");
 
-        GitHubReleaseInfo? release = null;
+        EidosReleaseInfo? release = null;
         string? versionDirectory = null;
 
         if (!options.SkipEidosc)
         {
-            using var releaseClient = new GitHubReleaseClient();
-            release = await releaseClient.ResolveReleaseAsync(options.Repository, options.Version, options.IncludePreRelease, cancellationToken);
+            using var releaseSource = _releaseSourceFactory(options.Repository);
+            release = await releaseSource.ResolveReleaseAsync(options.Version, options.Channel, cancellationToken);
             Console.WriteLine($"Resolved Eidos release: {release.TagName}");
 
             var layout = ToolInstallLayout.Create(platform, release.NormalizedVersion, options.InstallRoot, options.DownloadRoot);
@@ -26,7 +34,7 @@ public sealed class SetupOrchestrator
 
             var asset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
             var archivePath = await _archiveInstaller.DownloadAsync(
-                asset.BrowserDownloadUrl,
+                asset.DownloadUrl,
                 layout.DownloadDirectory,
                 asset.Name,
                 options.DryRun,

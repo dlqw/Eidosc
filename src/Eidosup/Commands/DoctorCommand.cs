@@ -16,7 +16,8 @@ internal static class DoctorCommand
         {
             var installRoot = context.ParseResult.GetValueForOption(installRootOption);
             var doctor = new DoctorReporter();
-            doctor.Run(installRoot);
+            var json = context.ParseResult.GetValueForOption(GlobalOptions.Json);
+            context.ExitCode = doctor.Run(installRoot, json);
         });
 
         return command;
