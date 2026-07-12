@@ -11,4 +11,4 @@ public sealed record EidosReleaseInfo(
     public string NormalizedVersion => Installation.ReleaseAssetLocator.NormalizeVersion(TagName);
 }
 
-public sealed record EidosReleaseAsset(string Name, string DownloadUrl);
+public sealed record EidosReleaseAsset(string Name, string DownloadUrl, long? Size = null);

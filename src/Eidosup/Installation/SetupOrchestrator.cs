@@ -5,7 +5,6 @@ using Eidosup.Distribution;
 public sealed class SetupOrchestrator
 {
     private readonly ReleaseAssetLocator _assetLocator = new();
-    private readonly ArchiveInstaller _archiveInstaller = new();
     private readonly ClangInstaller _clangInstaller = new();
     private readonly EnvironmentConfigurator _environmentConfigurator = new();
     private readonly Func<string, IEidosReleaseSource> _releaseSourceFactory;
@@ -32,24 +31,43 @@ public sealed class SetupOrchestrator
             var layout = ToolInstallLayout.Create(platform, release.NormalizedVersion, options.InstallRoot, options.DownloadRoot);
             versionDirectory = layout.VersionDirectory;
 
-            var asset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
-            var archivePath = await _archiveInstaller.DownloadAsync(
-                asset.DownloadUrl,
-                layout.DownloadDirectory,
-                asset.Name,
-                options.DryRun,
-                cancellationToken);
-            Console.WriteLine(options.DryRun
-                ? $"[dry-run] Would extract '{archivePath}' to '{layout.VersionDirectory}'."
-                : $"Installing eidosc into '{layout.VersionDirectory}'.");
-            _archiveInstaller.ExtractZip(archivePath, layout.VersionDirectory, overwrite: options.Force, options.DryRun);
-
-            if (!options.DryRun)
+            var bundleAsset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
+            var checksumAsset = _assetLocator.ResolveChecksumAsset(release);
+            if (options.DryRun)
             {
-                var executablePath = Path.Combine(layout.VersionDirectory, platform.ExecutableName);
-                if (!File.Exists(executablePath))
+                Console.WriteLine($"[dry-run] Would download and verify '{checksumAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Would install verified asset '{bundleAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Content cache: {layout.CacheDirectory}");
+                Console.WriteLine($"[dry-run] Atomic install target: {layout.VersionDirectory}");
+            }
+            else
+            {
+                using var installer = new VerifiedToolchainInstaller();
+                var result = await installer.InstallAsync(
+                    new VerifiedInstallRequest(
+                        release,
+                        bundleAsset,
+                        checksumAsset,
+                        platform,
+                        layout,
+                        options.Repository,
+                        options.Force),
+                    new DownloadProgressReporter(),
+                    cancellationToken);
+                Console.WriteLine(result.Disposition switch
                 {
-                    throw new InvalidOperationException($"Installed bundle is missing '{platform.ExecutableName}'.");
+                    InstallDisposition.AlreadyInstalled => $"Verified toolchain is already installed at '{result.VersionDirectory}'.",
+                    InstallDisposition.Replaced => $"Replaced toolchain atomically at '{result.VersionDirectory}'.",
+                    _ => $"Installed toolchain atomically at '{result.VersionDirectory}'."
+                });
+                Console.WriteLine($"Asset SHA-256: {result.AssetSha256}");
+                if (result.Disposition != InstallDisposition.AlreadyInstalled)
+                {
+                    Console.WriteLine(result.CacheHit
+                        ? "Artifact cache: verified hit."
+                        : result.Resumed
+                            ? "Artifact download: resumed and verified."
+                            : "Artifact download: completed and verified.");
                 }
             }
 
@@ -115,5 +133,27 @@ public sealed class SetupOrchestrator
         var clangPath = CommandProbe.TryFind("clang") ?? "clang";
         var llvmHome = Path.GetDirectoryName(clangPath) is { } binDir ? Directory.GetParent(binDir)?.FullName : null;
         return new ClangInstallationResult(clangPath, llvmHome);
+    }
+
+    private sealed class DownloadProgressReporter : IProgress<DownloadProgress>
+    {
+        private long _lastReportedBytes;
+
+        public void Report(DownloadProgress value)
+        {
+            var completed = value.TotalBytes is { } total && value.BytesReceived >= total;
+            if (!completed && value.BytesReceived - _lastReportedBytes < 8L * 1024 * 1024)
+            {
+                return;
+            }
+
+            _lastReportedBytes = value.BytesReceived;
+            var totalText = value.TotalBytes is { } length ? $"/{FormatBytes(length)}" : string.Empty;
+            Console.WriteLine($"Downloading {value.AssetName}: {FormatBytes(value.BytesReceived)}{totalText}{(value.Resumed ? " (resumed)" : string.Empty)}");
+        }
+
+        private static string FormatBytes(long bytes) => bytes >= 1024 * 1024
+            ? $"{bytes / (1024d * 1024d):F1} MiB"
+            : $"{bytes / 1024d:F1} KiB";
     }
 }

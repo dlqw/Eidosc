@@ -17,7 +17,33 @@ are not written to configuration, install state, output, or diagnostic stacks.
 
 The new public repository does not contain releases copied from the private
 archive. Installation becomes available when a new public Eidosc candidate is
-published with an `eidosc-v<SemVer>` tag and host assets.
+published with an `eidosc-v<SemVer>` tag, host assets, and `SHA256SUMS`.
+
+## Verified and atomic installation
+
+Eidosup requires the selected release to publish `SHA256SUMS`. It downloads the
+checksum file with a bounded size, then verifies the host bundle's declared
+size and SHA-256 digest before the bundle can enter the content-addressed cache.
+Interrupted bundle downloads use HTTP range requests when the release host
+supports them. Transient transfers have a finite retry limit.
+
+Verified bundles are cached below `downloads/sha256/<prefix>/<digest>`. A cache
+hit is rehashed before use; a path or filename is never trusted as proof of
+integrity.
+
+Archives are extracted into a unique staging directory. Absolute paths, parent
+traversal, links, duplicate or conflicting paths, excessive expansion, and
+unsupported special files are rejected. Eidosup records every installed file,
+size, and digest in `.eidosup-install.json` and rehashes the complete installed
+file set before treating an existing toolchain as valid.
+
+Installation changes are serialized by a per-root lock. The previous target is
+moved to a transaction-specific rollback directory before the staged tree is
+renamed atomically into place. A durable journal lets the next setup operation
+finish cleanup or restore the previous target after interruption. `--force`
+uses the same transaction path; it does not overwrite an existing directory in
+place. `--dry-run` resolves and validates release metadata but creates no install,
+download, cache, lock, staging, or journal directory.
 
 ## Version and channel selection
 
@@ -60,6 +86,7 @@ important exit-code ranges are:
 | --- | --- |
 | `2` | invalid command or release input |
 | `10`-`16` | source, release, or asset failure |
+| `20`-`24` | integrity, archive, conflict, transaction, or lock failure |
 | `30`-`31` | local permission or file failure |
 | `50` | doctor found an error-level readiness failure |
 | `70` | unexpected internal failure |

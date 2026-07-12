@@ -11,6 +11,11 @@ public enum EidosupErrorCode
     NoMatchingRelease,
     InvalidReleaseMetadata,
     MissingReleaseAsset,
+    IntegrityFailure,
+    UnsafeArchive,
+    InstallConflict,
+    InstallFailure,
+    LockTimeout,
     PermissionDenied,
     IoFailure,
     Cancelled,
@@ -50,6 +55,11 @@ public static class EidosupExitCodes
     public const int ReleaseNotFound = 14;
     public const int InvalidRelease = 15;
     public const int MissingAsset = 16;
+    public const int IntegrityFailure = 20;
+    public const int UnsafeArchive = 21;
+    public const int InstallConflict = 22;
+    public const int InstallFailure = 23;
+    public const int LockTimeout = 24;
     public const int PermissionDenied = 30;
     public const int IoFailure = 31;
     public const int DoctorUnhealthy = 50;
