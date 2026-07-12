@@ -296,9 +296,12 @@ public sealed class DownloadManager : IDisposable
 
     private static HttpRequestMessage CreateRequest(string downloadUrl)
     {
-        if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) ||
+            !ReleaseTransportPolicy.IsAllowedAssetUri(uri))
         {
-            throw new ArgumentException("Release asset URLs must use absolute HTTPS URLs.", nameof(downloadUrl));
+            throw new ArgumentException(
+                "Release asset URLs must use absolute HTTPS URLs (or the configured loopback release test server).",
+                nameof(downloadUrl));
         }
 
         var request = new HttpRequestMessage(HttpMethod.Get, uri);
