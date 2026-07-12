@@ -6,6 +6,7 @@ using Eidosup.Distribution;
 public sealed class ReleaseAssetLocator
 {
     public const string EidoscTagPrefix = "eidosc-v";
+    public const string ChecksumAssetName = "SHA256SUMS";
 
     public string GetEidoscBundleAssetName(string version, PlatformContext platform)
     {
@@ -23,6 +24,14 @@ public sealed class ReleaseAssetLocator
                 $"Release '{release.TagName}' does not contain asset '{expected}'.",
                 "Select a release that publishes an Eidosc bundle for the detected host RID.");
     }
+
+    public EidosReleaseAsset ResolveChecksumAsset(EidosReleaseInfo release) =>
+        release.Assets.FirstOrDefault(asset => string.Equals(asset.Name, ChecksumAssetName, StringComparison.Ordinal))
+        ?? throw new EidosupException(
+            EidosupErrorCode.MissingReleaseAsset,
+            EidosupExitCodes.MissingAsset,
+            $"Release '{release.TagName}' does not contain '{ChecksumAssetName}'.",
+            "Use a release that publishes a checksum manifest for every installable asset.");
 
     public static string NormalizeVersion(string version)
     {

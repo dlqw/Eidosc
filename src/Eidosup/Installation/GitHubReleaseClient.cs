@@ -276,9 +276,10 @@ internal sealed record GitHubReleasePayload(
         Draft,
         PreRelease,
         PublishedAt,
-        Assets.Select(static asset => new EidosReleaseAsset(asset.Name, asset.BrowserDownloadUrl)).ToArray());
+        Assets.Select(static asset => new EidosReleaseAsset(asset.Name, asset.BrowserDownloadUrl, asset.Size)).ToArray());
 }
 
 internal sealed record GitHubReleaseAssetPayload(
     [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("browser_download_url")] string BrowserDownloadUrl);
+    [property: JsonPropertyName("browser_download_url")] string BrowserDownloadUrl,
+    [property: JsonPropertyName("size")] long? Size);
