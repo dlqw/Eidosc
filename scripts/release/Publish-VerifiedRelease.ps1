@@ -58,6 +58,7 @@ try
         -AssetDirectory $assetRoot
 
     $release = Get-ReleaseByTag
+    $releaseCommitSha = $CommitSha
     $verificationRoot = $assetRoot
     if ($null -eq $release)
     {
@@ -85,9 +86,24 @@ try
         {
             throw "Release '$tag' already exists and is not a draft."
         }
-        if ([string]$release.target_commitish -cne $CommitSha)
+        $releaseCommitSha = [string]$release.target_commitish
+        if ($releaseCommitSha -notmatch "^[0-9a-fA-F]{40}$")
         {
-            throw "Existing draft '$tag' targets '$($release.target_commitish)', not '$CommitSha'."
+            throw "Existing draft '$tag' does not target an immutable commit SHA."
+        }
+        if ($releaseCommitSha -cne $CommitSha)
+        {
+            $comparisonJson = (& gh api "repos/$Repository/compare/$releaseCommitSha...$CommitSha" | Out-String)
+            if ($LASTEXITCODE -ne 0)
+            {
+                throw "Failed to compare the existing draft commit with the requested release commit."
+            }
+
+            $comparison = $comparisonJson | ConvertFrom-Json
+            if ($comparison.status -cne "ahead")
+            {
+                throw "Existing draft '$tag' does not target an ancestor of the requested release commit."
+            }
         }
 
         $recoveryRoot = Join-Path ([IO.Path]::GetTempPath()) "$Product-$Version-$([Guid]::NewGuid().ToString('N'))"
@@ -101,7 +117,7 @@ try
         & $testAssets `
             -Product $Product `
             -Version $Version `
-            -CommitSha $CommitSha `
+            -CommitSha $releaseCommitSha `
             -AssetDirectory $recoveryRoot
         $verificationRoot = $recoveryRoot
     }
@@ -110,7 +126,7 @@ try
     {
         throw "Draft release verification failed."
     }
-    if ([string]$release.target_commitish -cne $CommitSha)
+    if ([string]$release.target_commitish -cne $releaseCommitSha)
     {
         throw "Draft release target mismatch."
     }
