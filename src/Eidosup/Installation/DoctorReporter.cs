@@ -1,52 +1,244 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Eidosup.Diagnostics;
+
 namespace Eidosup.Installation;
+
+public enum DoctorCheckStatus
+{
+    Pass,
+    Warning,
+    Fail
+}
+
+public enum DoctorSeverity
+{
+    Info,
+    Warning,
+    Error
+}
+
+public sealed record DoctorCheck(
+    string Id,
+    DoctorCheckStatus Status,
+    DoctorSeverity Severity,
+    string Summary,
+    string? Detail = null,
+    string? Remediation = null);
+
+public sealed record DoctorReport(string Platform, IReadOnlyList<DoctorCheck> Checks)
+{
+    public bool Healthy => Checks.All(static check => check.Status != DoctorCheckStatus.Fail || check.Severity != DoctorSeverity.Error);
+}
+
+public interface IDoctorEnvironment
+{
+    PlatformContext DetectPlatform();
+
+    string? FindCommand(string command);
+
+    string? GetEnvironmentVariable(string name);
+
+    string GetFullPath(string path);
+
+    bool DirectoryExists(string path);
+
+    IEnumerable<string> EnumerateDirectories(string path);
+}
+
+public sealed class SystemDoctorEnvironment : IDoctorEnvironment
+{
+    public PlatformContext DetectPlatform() => PlatformContext.Detect();
+
+    public string? FindCommand(string command) => CommandProbe.TryFind(command);
+
+    public string? GetEnvironmentVariable(string name) => Environment.GetEnvironmentVariable(name);
+
+    public string GetFullPath(string path) => Path.GetFullPath(path);
+
+    public bool DirectoryExists(string path) => Directory.Exists(path);
+
+    public IEnumerable<string> EnumerateDirectories(string path) => Directory.EnumerateDirectories(path);
+}
 
 public sealed class DoctorReporter
 {
-    public void Run(string? installRootOverride)
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        var platform = PlatformContext.Detect();
-        var eidoscPath = CommandProbe.TryFind(platform.ExecutableName);
-        var clangPath = CommandProbe.TryFind(platform.IsWindows ? "clang.exe" : "clang");
-        var llcPath = CommandProbe.TryFind(platform.IsWindows ? "llc.exe" : "llc");
-        var installRoot = string.IsNullOrWhiteSpace(installRootOverride)
-            ? Environment.GetEnvironmentVariable("EIDOS_HOME")
-            : Path.GetFullPath(installRootOverride);
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
 
-        Console.WriteLine($"Platform: {platform.Rid}");
-        PrintStatus("eidosc", eidoscPath);
-        PrintStatus("clang", clangPath);
-        PrintStatus("llc", llcPath);
-        PrintValue("EIDOS_HOME", Environment.GetEnvironmentVariable("EIDOS_HOME"));
-        PrintValue("EIDOSC_HOME", Environment.GetEnvironmentVariable("EIDOSC_HOME"));
-        PrintValue("EIDOS_RUNTIME_PATH", Environment.GetEnvironmentVariable("EIDOS_RUNTIME_PATH"));
-        PrintValue("EIDOS_LLVM_HOME", Environment.GetEnvironmentVariable("EIDOS_LLVM_HOME"));
+    private readonly IDoctorEnvironment _environment;
 
-        if (!string.IsNullOrWhiteSpace(installRoot))
+    public DoctorReporter(IDoctorEnvironment? environment = null)
+    {
+        _environment = environment ?? new SystemDoctorEnvironment();
+    }
+
+    public int Run(string? installRootOverride, bool json, TextWriter? writer = null)
+    {
+        writer ??= Console.Out;
+        var report = Evaluate(installRootOverride);
+        if (json)
         {
-            Console.WriteLine($"Install root: {installRoot}");
-            if (Directory.Exists(installRoot))
+            writer.WriteLine(JsonSerializer.Serialize(report, JsonOptions));
+        }
+        else
+        {
+            WriteHumanReadable(report, writer);
+        }
+
+        return report.Healthy ? EidosupExitCodes.Success : EidosupExitCodes.DoctorUnhealthy;
+    }
+
+    public DoctorReport Evaluate(string? installRootOverride)
+    {
+        var platform = _environment.DetectPlatform();
+        var checks = new List<DoctorCheck>
+        {
+            new(
+                "platform.supported",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                $"Host platform '{platform.Rid}' is supported.")
+        };
+
+        AddCommandCheck(
+            checks,
+            "command.eidosc",
+            platform.ExecutableName,
+            DoctorSeverity.Error,
+            "Run 'eidosup setup' to install a verified Eidosc toolchain.");
+        AddCommandCheck(
+            checks,
+            "command.clang",
+            platform.IsWindows ? "clang.exe" : "clang",
+            DoctorSeverity.Warning,
+            "Install a supported LLVM/Clang toolchain or run the dependency setup explicitly.");
+        AddCommandCheck(
+            checks,
+            "command.llc",
+            platform.IsWindows ? "llc.exe" : "llc",
+            DoctorSeverity.Warning,
+            "Install the LLVM command-line tools and ensure their bin directory is on PATH.");
+
+        foreach (var variable in new[] { "EIDOS_HOME", "EIDOSC_HOME", "EIDOS_RUNTIME_PATH", "EIDOS_LLVM_HOME" })
+        {
+            var value = _environment.GetEnvironmentVariable(variable);
+            checks.Add(string.IsNullOrWhiteSpace(value)
+                ? new DoctorCheck(
+                    $"environment.{variable.ToLowerInvariant()}",
+                    DoctorCheckStatus.Warning,
+                    DoctorSeverity.Info,
+                    $"{variable} is not set.",
+                    Remediation: "Run 'eidosup setup' without --skip-env after installing the toolchain.")
+                : new DoctorCheck(
+                    $"environment.{variable.ToLowerInvariant()}",
+                    DoctorCheckStatus.Pass,
+                    DoctorSeverity.Info,
+                    $"{variable} is set.",
+                    value));
+        }
+
+        AddInstallRootChecks(checks, installRootOverride);
+        return new DoctorReport(platform.Rid, checks);
+    }
+
+    private void AddCommandCheck(
+        ICollection<DoctorCheck> checks,
+        string id,
+        string command,
+        DoctorSeverity missingSeverity,
+        string remediation)
+    {
+        var path = _environment.FindCommand(command);
+        checks.Add(path == null
+            ? new DoctorCheck(
+                id,
+                missingSeverity == DoctorSeverity.Error ? DoctorCheckStatus.Fail : DoctorCheckStatus.Warning,
+                missingSeverity,
+                $"Command '{command}' was not found on PATH.",
+                Remediation: remediation)
+            : new DoctorCheck(id, DoctorCheckStatus.Pass, DoctorSeverity.Info, $"Command '{command}' is available.", path));
+    }
+
+    private void AddInstallRootChecks(ICollection<DoctorCheck> checks, string? installRootOverride)
+    {
+        var configuredRoot = string.IsNullOrWhiteSpace(installRootOverride)
+            ? _environment.GetEnvironmentVariable("EIDOS_HOME")
+            : installRootOverride;
+        if (string.IsNullOrWhiteSpace(configuredRoot))
+        {
+            checks.Add(new DoctorCheck(
+                "install.root",
+                DoctorCheckStatus.Warning,
+                DoctorSeverity.Info,
+                "No install root is configured.",
+                Remediation: "Run 'eidosup setup' or pass --install-root to inspect a specific location."));
+            return;
+        }
+
+        var installRoot = _environment.GetFullPath(configuredRoot);
+        if (!_environment.DirectoryExists(installRoot))
+        {
+            checks.Add(new DoctorCheck(
+                "install.root",
+                DoctorCheckStatus.Warning,
+                DoctorSeverity.Warning,
+                "The configured install root does not exist.",
+                installRoot,
+                "Run 'eidosup setup' or correct EIDOS_HOME."));
+            return;
+        }
+
+        checks.Add(new DoctorCheck(
+            "install.root",
+            DoctorCheckStatus.Pass,
+            DoctorSeverity.Info,
+            "The install root exists.",
+            installRoot));
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains", "eidosc");
+        var versions = _environment.DirectoryExists(toolchainsDirectory)
+            ? _environment.EnumerateDirectories(toolchainsDirectory)
+                .Select(Path.GetFileName)
+                .Where(static name => !string.IsNullOrWhiteSpace(name))
+                .Order(StringComparer.Ordinal)
+                .ToArray()
+            : [];
+        checks.Add(versions.Length == 0
+            ? new DoctorCheck(
+                "toolchains.installed",
+                DoctorCheckStatus.Warning,
+                DoctorSeverity.Warning,
+                "No installed Eidosc version directories were found.",
+                toolchainsDirectory,
+                "Run 'eidosup setup' to install a verified release.")
+            : new DoctorCheck(
+                "toolchains.installed",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                $"Found {versions.Length} installed Eidosc version director{(versions.Length == 1 ? "y" : "ies")}.",
+                string.Join(", ", versions)));
+    }
+
+    private static void WriteHumanReadable(DoctorReport report, TextWriter writer)
+    {
+        writer.WriteLine($"Platform: {report.Platform}");
+        foreach (var check in report.Checks)
+        {
+            writer.WriteLine($"[{check.Status.ToString().ToUpperInvariant()}] {check.Id}: {check.Summary}");
+            if (!string.IsNullOrWhiteSpace(check.Detail))
             {
-                var versions = Path.Combine(installRoot, "toolchains", "eidosc");
-                if (Directory.Exists(versions))
-                {
-                    foreach (var directory in Directory.EnumerateDirectories(versions).OrderBy(static path => path, StringComparer.OrdinalIgnoreCase))
-                    {
-                        Console.WriteLine($"  installed version dir: {directory}");
-                    }
-                }
+                writer.WriteLine($"  detail: {check.Detail}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(check.Remediation))
+            {
+                writer.WriteLine($"  fix: {check.Remediation}");
             }
         }
-    }
 
-    private static void PrintStatus(string label, string? value)
-    {
-        Console.WriteLine(value == null
-            ? $"[missing] {label}"
-            : $"[ok] {label}: {value}");
-    }
-
-    private static void PrintValue(string label, string? value)
-    {
-        Console.WriteLine($"{label}: {(string.IsNullOrWhiteSpace(value) ? "<unset>" : value)}");
+        writer.WriteLine(report.Healthy ? "Doctor result: healthy" : "Doctor result: action required");
     }
 }

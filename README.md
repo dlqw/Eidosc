@@ -15,7 +15,8 @@ tooling interfaces may still change between prereleases.
 - `Eidosc.Benchmarks`: repeatable compiler and LSP benchmarks.
 
 See [Compiler architecture](docs/architecture/compiler-overview.md) for a
-source-level overview.
+source-level overview. See [Eidosup bootstrap guide](docs/eidosup/bootstrap.md)
+for installer channels, release sources, diagnostics, and exit behavior.
 
 ## Requirements
 

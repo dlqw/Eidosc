@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using Eidosup.Distribution;
 using Eidosup.Installation;
 
 namespace Eidosup.Commands;
@@ -17,7 +18,7 @@ internal static class SetupCommand
         var skipEidoscOption = new Option<bool>("--skip-eidosc", "Skip installing or updating eidosc.");
         var skipClangOption = new Option<bool>("--skip-clang", "Skip installing or updating clang/LLVM.");
         var skipEnvOption = new Option<bool>("--skip-env", "Skip writing environment variables and PATH changes.");
-        var includePreReleaseOption = new Option<bool>("--include-prerelease", () => true, "Allow prerelease versions when resolving the latest release.");
+        var channelOption = new Option<string>("--channel", () => "preview", "Release channel used when --version is omitted: stable or preview.");
         var dryRunOption = new Option<bool>("--dry-run", "Print planned actions without mutating the machine.");
         var forceOption = new Option<bool>("--force", "Reinstall even if the requested version is already present.");
 
@@ -28,7 +29,7 @@ internal static class SetupCommand
         command.AddOption(skipEidoscOption);
         command.AddOption(skipClangOption);
         command.AddOption(skipEnvOption);
-        command.AddOption(includePreReleaseOption);
+        command.AddOption(channelOption);
         command.AddOption(dryRunOption);
         command.AddOption(forceOption);
 
@@ -44,7 +45,7 @@ internal static class SetupCommand
                 SkipEidosc = parseResult.GetValueForOption(skipEidoscOption),
                 SkipClang = parseResult.GetValueForOption(skipClangOption),
                 SkipEnvironmentConfiguration = parseResult.GetValueForOption(skipEnvOption),
-                IncludePreRelease = parseResult.GetValueForOption(includePreReleaseOption),
+                Channel = ReleaseChannelParser.Parse(parseResult.GetValueForOption(channelOption) ?? "preview"),
                 DryRun = parseResult.GetValueForOption(dryRunOption),
                 Force = parseResult.GetValueForOption(forceOption)
             };

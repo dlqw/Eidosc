@@ -1,3 +1,5 @@
+using Eidosup.Distribution;
+
 namespace Eidosup.Installation;
 
 public sealed class SetupOptions
@@ -16,7 +18,7 @@ public sealed class SetupOptions
 
     public bool SkipEnvironmentConfiguration { get; init; }
 
-    public bool IncludePreRelease { get; init; } = true;
+    public ReleaseChannel Channel { get; init; } = ReleaseChannel.Preview;
 
     public bool DryRun { get; init; }
 
