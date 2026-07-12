@@ -250,13 +250,61 @@ try
         throw "Installed eidosc binary was not found at '$eidosc'."
     }
 
-    & $eidosc info
-    if ($LASTEXITCODE -ne 0) { throw "Installed eidosc info command failed." }
+    if ($null -eq $state.default -or [string]$state.default.toolchainId -cne $toolchainId)
+    {
+        throw "The installed toolchain was not activated as the global default."
+    }
 
-    & $eidosc build $example --phase hir --no-color --no-cache
-    if ($LASTEXITCODE -ne 0) { throw "Installed eidosc failed to compile the tutorial smoke example." }
+    $managerName = if ($platform -eq "win") { "eidosup.exe" } else { "eidosup" }
+    $shim = Join-Path $installRoot "bin/$binaryName"
+    $manager = Join-Path $installRoot "bin/$managerName"
+    if (-not (Test-Path -LiteralPath $shim -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $manager -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $installRoot "bin/.eidosup-shims.json") -PathType Leaf))
+    {
+        throw "Stable Eidosup manager and eidosc shim were not installed in '$installRoot/bin'."
+    }
 
-    Write-Host "Clean install verification passed for $rid using eidosc-v$Version."
+    & $shim info
+    if ($LASTEXITCODE -ne 0) { throw "Installed eidosc shim info command failed." }
+
+    & $shim build $example --phase hir --no-color --no-cache
+    if ($LASTEXITCODE -ne 0) { throw "Installed eidosc shim failed to compile the tutorial smoke example." }
+
+    $missingInput = Join-Path $temporaryRoot "missing-input.eidos"
+    & $eidosc build $missingInput --phase hir --no-color --no-cache *> $null
+    $directFailure = $LASTEXITCODE
+    & $shim build $missingInput --phase hir --no-color --no-cache *> $null
+    $shimFailure = $LASTEXITCODE
+    if ($directFailure -eq 0 -or $shimFailure -ne $directFailure)
+    {
+        throw "The eidosc shim did not preserve the compiler exit code (direct=$directFailure, shim=$shimFailure)."
+    }
+
+    function Measure-MedianStartup([string]$Command)
+    {
+        for ($warmup = 0; $warmup -lt 2; $warmup++) { & $Command --version *> $null }
+        $samples = for ($iteration = 0; $iteration -lt 9; $iteration++)
+        {
+            $timer = [Diagnostics.Stopwatch]::StartNew()
+            & $Command --version *> $null
+            if ($LASTEXITCODE -ne 0) { throw "Startup benchmark command failed: $Command" }
+            $timer.Stop()
+            $timer.Elapsed.TotalMilliseconds
+        }
+
+        return ($samples | Sort-Object)[[Math]::Floor($samples.Count / 2)]
+    }
+
+    $directMedian = Measure-MedianStartup $eidosc
+    $shimMedian = Measure-MedianStartup $shim
+    $shimOverhead = [Math]::Max(0, $shimMedian - $directMedian)
+    if ($shimOverhead -gt 200)
+    {
+        throw "Median eidosc shim startup overhead $([Math]::Round($shimOverhead, 1))ms exceeds the 200ms release baseline."
+    }
+
+    Write-Host "Clean install verification passed for $rid using eidosc-v$Version (shim median overhead $([Math]::Round($shimOverhead, 1))ms)."
 }
 finally
 {

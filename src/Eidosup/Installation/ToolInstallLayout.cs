@@ -11,6 +11,8 @@ public sealed record ToolInstallLayout(
     string StagingDirectory,
     string BackupDirectory)
 {
+    public string BinDirectory => EnsureChild(RootDirectory, Path.Combine(RootDirectory, "bin"));
+
     public static ToolInstallLayout Create(
         PlatformContext platform,
         string? installRoot,

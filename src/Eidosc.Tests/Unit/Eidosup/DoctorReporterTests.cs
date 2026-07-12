@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Eidosup.Diagnostics;
 using Eidosup.Installation;
+using Eidosup.Proxies;
 using Eidosup.Toolchains;
 
 namespace Eidosc.Tests.Unit.Eidosup;
@@ -46,9 +47,12 @@ public sealed class DoctorReporterTests
     {
         var environment = new FakeDoctorEnvironment();
         var executableName = environment.DetectPlatform().ExecutableName;
-        environment.Commands[executableName] = Path.Combine(Path.GetTempPath(), executableName);
         var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-test");
         var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
+        var stableBin = Path.Combine(installRoot, "bin");
+        var managerName = OperatingSystem.IsWindows() ? "eidosup.exe" : "eidosup";
+        var shimPath = Path.Combine(stableBin, executableName);
+        environment.Commands[executableName] = shimPath;
         var platform = environment.DetectPlatform();
         var alpha10 = ToolchainIdentity.Create(
             "0.4.0-alpha.10", platform.Rid, "test/source", "eidosc-v0.4.0-alpha.10",
@@ -58,6 +62,9 @@ public sealed class DoctorReporterTests
             "bundle-alpha2.zip", new string('b', 64), 100).Id;
         environment.ExistingDirectories.Add(installRoot);
         environment.ExistingDirectories.Add(toolchainsDirectory);
+        environment.ExistingFiles.Add(shimPath);
+        environment.ExistingFiles.Add(Path.Combine(stableBin, managerName));
+        environment.ExistingFiles.Add(Path.Combine(stableBin, ShimInstaller.ManifestFileName));
         environment.Directories[toolchainsDirectory] =
         [
             Path.Combine(toolchainsDirectory, alpha10),
@@ -73,6 +80,9 @@ public sealed class DoctorReporterTests
 
         var check = Assert.Single(report.Checks, item => item.Id == "toolchains.installed");
         Assert.Equal(string.Join(", ", new[] { alpha10, alpha2 }.Order(StringComparer.Ordinal)), check.Detail);
+        Assert.Equal(DoctorCheckStatus.Pass, Assert.Single(report.Checks, item => item.Id == "shims.installed").Status);
+        Assert.Equal(DoctorCheckStatus.Pass, Assert.Single(report.Checks, item => item.Id == "shims.path").Status);
+        Assert.Equal(DoctorCheckStatus.Pass, Assert.Single(report.Checks, item => item.Id == "toolchains.default").Status);
     }
 
     [Fact]
@@ -160,7 +170,31 @@ public sealed class DoctorReporterTests
             new string('c', 64),
             100,
             installedAt)).ToArray();
-        return ToolchainState.Empty(installedAt) with { Toolchains = toolchains };
+        if (toolchains.Length == 0)
+        {
+            return ToolchainState.Empty(installedAt);
+        }
+
+        var selected = toolchains[0];
+        var selector = new ToolchainSelectorState(
+            "preview",
+            ToolchainSelectorKind.Channel,
+            selected.Id,
+            installedAt);
+        return ToolchainState.Empty(installedAt) with
+        {
+            Toolchains = toolchains,
+            Selectors = [selector],
+            Default = new ToolchainDefaultState(selector.Selector, selector.ToolchainId, installedAt),
+            ActivationHistory =
+            [
+                new ToolchainActivationState(
+                    selector.Selector,
+                    selector.ToolchainId,
+                    ToolchainActivationReason.DefaultChanged,
+                    installedAt)
+            ]
+        };
     }
 
     private static DependencyProbeResult CreateProbeResult(DependencyHealth health) => new(
@@ -212,6 +246,8 @@ public sealed class DoctorReporterTests
 
         public HashSet<string> ExistingDirectories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+        public HashSet<string> ExistingFiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
         public Dictionary<string, string[]> Directories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
         public PlatformContext DetectPlatform() => PlatformContext.Detect();
@@ -223,6 +259,8 @@ public sealed class DoctorReporterTests
         public string GetFullPath(string path) => path;
 
         public bool DirectoryExists(string path) => ExistingDirectories.Contains(path);
+
+        public bool FileExists(string path) => ExistingFiles.Contains(path);
 
         public IEnumerable<string> EnumerateDirectories(string path) => Directories.GetValueOrDefault(path) ?? [];
     }

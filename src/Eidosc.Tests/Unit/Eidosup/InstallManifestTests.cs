@@ -25,6 +25,25 @@ public sealed class InstallManifestTests
     }
 
     [Fact]
+    public async Task VerifyAsync_AllowsCompilerOwnedGrammarCacheWithoutTrustingItAsPayload()
+    {
+        using var temporary = new TemporaryDirectory();
+        var toolchainDirectory = CreateToolchainDirectory(temporary.Path);
+        var executablePath = Path.Combine(toolchainDirectory, "eidosc");
+        await File.WriteAllTextAsync(executablePath, "binary");
+        var manifest = CreateManifest(new InstalledFile("eidosc", 6, await HashAsync(executablePath)));
+        await manifest.WriteAsync(toolchainDirectory, CancellationToken.None);
+        var cacheDirectory = Path.Combine(toolchainDirectory, "cache");
+        Directory.CreateDirectory(cacheDirectory);
+        await File.WriteAllTextAsync(Path.Combine(cacheDirectory, "grammar.bin"), "generated cache");
+
+        Assert.True(await manifest.VerifyAsync(toolchainDirectory, AssetHash, CancellationToken.None));
+
+        await File.WriteAllTextAsync(Path.Combine(cacheDirectory, "unexpected.bin"), "extra");
+        Assert.False(await manifest.VerifyAsync(toolchainDirectory, AssetHash, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task VerifyAsync_RejectsDuplicateAndEscapingManifestPaths()
     {
         using var temporary = new TemporaryDirectory();

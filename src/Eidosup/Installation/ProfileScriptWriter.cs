@@ -10,9 +10,7 @@ public static class ProfileScriptWriter
         var lines = new List<string>
         {
             BeginMarker,
-            $"export EIDOS_HOME=\"{EscapeForUnix(plan.EidosHome)}\"",
-            $"export EIDOSC_HOME=\"{EscapeForUnix(plan.EidoscHome)}\"",
-            $"export EIDOS_RUNTIME_PATH=\"{EscapeForUnix(plan.RuntimePath)}\""
+            $"export EIDOS_HOME=\"{EscapeForUnix(plan.EidosHome)}\""
         };
 
         if (!string.IsNullOrWhiteSpace(plan.LlvmHome))

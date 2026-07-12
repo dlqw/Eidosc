@@ -17,13 +17,12 @@ public sealed class EnvironmentConfigurator
     {
         if (dryRun)
         {
-            Console.WriteLine("[dry-run] Would write user environment variables for Eidos and update the user PATH.");
+            Console.WriteLine("[dry-run] Would configure EIDOS_HOME, remove legacy version-bound variables, and update the user PATH with the stable Eidos bin directory.");
             return;
         }
 
         ApplyVariable("EIDOS_HOME", plan.EidosHome, EnvironmentVariableTarget.Process);
-        ApplyVariable("EIDOSC_HOME", plan.EidoscHome, EnvironmentVariableTarget.Process);
-        ApplyVariable("EIDOS_RUNTIME_PATH", plan.RuntimePath, EnvironmentVariableTarget.Process);
+        ClearLegacyVariables(EnvironmentVariableTarget.Process);
         if (!string.IsNullOrWhiteSpace(plan.LlvmHome))
         {
             ApplyVariable("EIDOS_LLVM_HOME", plan.LlvmHome!, EnvironmentVariableTarget.Process);
@@ -33,8 +32,7 @@ public sealed class EnvironmentConfigurator
         ApplyVariable("PATH", mergedProcessPath, EnvironmentVariableTarget.Process);
 
         ApplyVariable("EIDOS_HOME", plan.EidosHome, EnvironmentVariableTarget.User);
-        ApplyVariable("EIDOSC_HOME", plan.EidoscHome, EnvironmentVariableTarget.User);
-        ApplyVariable("EIDOS_RUNTIME_PATH", plan.RuntimePath, EnvironmentVariableTarget.User);
+        ClearLegacyVariables(EnvironmentVariableTarget.User);
         if (!string.IsNullOrWhiteSpace(plan.LlvmHome))
         {
             ApplyVariable("EIDOS_LLVM_HOME", plan.LlvmHome!, EnvironmentVariableTarget.User);
@@ -50,8 +48,7 @@ public sealed class EnvironmentConfigurator
         if (!dryRun)
         {
             ApplyVariable("EIDOS_HOME", plan.EidosHome, EnvironmentVariableTarget.Process);
-            ApplyVariable("EIDOSC_HOME", plan.EidoscHome, EnvironmentVariableTarget.Process);
-            ApplyVariable("EIDOS_RUNTIME_PATH", plan.RuntimePath, EnvironmentVariableTarget.Process);
+            ClearLegacyVariables(EnvironmentVariableTarget.Process);
             if (!string.IsNullOrWhiteSpace(plan.LlvmHome))
             {
                 ApplyVariable("EIDOS_LLVM_HOME", plan.LlvmHome!, EnvironmentVariableTarget.Process);
@@ -110,5 +107,11 @@ public sealed class EnvironmentConfigurator
     private static void ApplyVariable(string name, string value, EnvironmentVariableTarget target)
     {
         Environment.SetEnvironmentVariable(name, value, target);
+    }
+
+    private static void ClearLegacyVariables(EnvironmentVariableTarget target)
+    {
+        Environment.SetEnvironmentVariable("EIDOSC_HOME", null, target);
+        Environment.SetEnvironmentVariable("EIDOS_RUNTIME_PATH", null, target);
     }
 }

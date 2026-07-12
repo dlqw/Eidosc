@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Eidosup.Diagnostics;
+using Eidosup.Proxies;
 using Eidosup.Toolchains;
 
 namespace Eidosup.Installation;
@@ -44,6 +45,8 @@ public interface IDoctorEnvironment
 
     bool DirectoryExists(string path);
 
+    bool FileExists(string path);
+
     IEnumerable<string> EnumerateDirectories(string path);
 }
 
@@ -77,6 +80,8 @@ public sealed class SystemDoctorEnvironment : IDoctorEnvironment
     public string GetFullPath(string path) => Path.GetFullPath(path);
 
     public bool DirectoryExists(string path) => Directory.Exists(path);
+
+    public bool FileExists(string path) => File.Exists(path);
 
     public IEnumerable<string> EnumerateDirectories(string path) => Directory.EnumerateDirectories(path);
 }
@@ -157,7 +162,7 @@ public sealed class DoctorReporter
             "Install the LLVM command-line tools and ensure their bin directory is on PATH.");
         AddLlvmDependencyCheck(checks, await _dependencyProbe.ProbeAsync(cancellationToken));
 
-        foreach (var variable in new[] { "EIDOS_HOME", "EIDOSC_HOME", "EIDOS_RUNTIME_PATH", "EIDOS_LLVM_HOME" })
+        foreach (var variable in new[] { "EIDOS_HOME", "EIDOS_LLVM_HOME" })
         {
             var value = _environment.GetEnvironmentVariable(variable);
             checks.Add(string.IsNullOrWhiteSpace(value)
@@ -173,6 +178,24 @@ public sealed class DoctorReporter
                     DoctorSeverity.Info,
                     $"{variable} is set.",
                     value));
+        }
+
+        foreach (var variable in new[] { "EIDOSC_HOME", "EIDOS_RUNTIME_PATH" })
+        {
+            var value = _environment.GetEnvironmentVariable(variable);
+            checks.Add(string.IsNullOrWhiteSpace(value)
+                ? new DoctorCheck(
+                    $"environment.{variable.ToLowerInvariant()}",
+                    DoctorCheckStatus.Pass,
+                    DoctorSeverity.Info,
+                    $"Legacy version-bound variable {variable} is not set.")
+                : new DoctorCheck(
+                    $"environment.{variable.ToLowerInvariant()}",
+                    DoctorCheckStatus.Warning,
+                    DoctorSeverity.Warning,
+                    $"Legacy version-bound variable {variable} is still set.",
+                    value,
+                    "Run 'eidosup setup' without --skip-env; the shim now supplies this value only to the selected compiler process."));
         }
 
         await AddInstallRootChecksAsync(checks, platform, installRootOverride, cancellationToken);
@@ -264,6 +287,51 @@ public sealed class DoctorReporter
             DoctorSeverity.Info,
             "The install root exists.",
             installRoot));
+        var extension = platform.IsWindows ? ".exe" : string.Empty;
+        var stableBin = Path.Combine(installRoot, "bin");
+        var managerPath = Path.Combine(stableBin, $"eidosup{extension}");
+        var shimPath = Path.Combine(stableBin, $"eidosc{extension}");
+        var shimManifestPath = Path.Combine(stableBin, ShimInstaller.ManifestFileName);
+        var stableCommandsExist = _environment.FileExists(managerPath) &&
+                                  _environment.FileExists(shimPath) &&
+                                  _environment.FileExists(shimManifestPath);
+        checks.Add(stableCommandsExist
+            ? new DoctorCheck(
+                "shims.installed",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                "The stable Eidosup manager and eidosc shim are installed.",
+                stableBin)
+            : new DoctorCheck(
+                "shims.installed",
+                DoctorCheckStatus.Fail,
+                DoctorSeverity.Error,
+                "The stable Eidosup manager or eidosc shim is missing.",
+                stableBin,
+                "Run 'eidosup setup' to reinstall the owned stable commands."));
+
+        var commandPath = _environment.FindCommand(platform.ExecutableName);
+        if (commandPath != null &&
+            !ToolInstallLayout.PathEquals(_environment.GetFullPath(commandPath), _environment.GetFullPath(shimPath)))
+        {
+            checks.Add(new DoctorCheck(
+                "shims.path",
+                DoctorCheckStatus.Fail,
+                DoctorSeverity.Error,
+                "PATH resolves eidosc outside the managed stable bin directory.",
+                commandPath,
+                $"Put '{stableBin}' before legacy toolchain directories on PATH."));
+        }
+        else if (commandPath != null)
+        {
+            checks.Add(new DoctorCheck(
+                "shims.path",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                "PATH resolves eidosc to the managed stable shim.",
+                commandPath));
+        }
+
         var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
         ToolchainState? state = null;
         try
@@ -302,6 +370,23 @@ public sealed class DoctorReporter
                 DoctorSeverity.Info,
                 $"Found {toolchains.Length} immutable Eidosc toolchain{(toolchains.Length == 1 ? string.Empty : "s")}.",
                 string.Join(", ", toolchains.Select(static toolchain => toolchain.Id))));
+
+        if (state != null)
+        {
+            checks.Add(state.Default == null
+                ? new DoctorCheck(
+                    "toolchains.default",
+                    DoctorCheckStatus.Fail,
+                    DoctorSeverity.Error,
+                    "No global default toolchain is configured.",
+                    Remediation: "Run 'eidosup setup' to install and activate a verified toolchain.")
+                : new DoctorCheck(
+                    "toolchains.default",
+                    DoctorCheckStatus.Pass,
+                    DoctorSeverity.Info,
+                    $"Global default selector '{state.Default.Selector}' is active.",
+                    state.Default.ToolchainId));
+        }
 
         if (state is { UnmanagedDirectories.Count: > 0 })
         {

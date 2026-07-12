@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Eidosup.Distribution;
 using Eidosup.Installation;
+using Eidosup.Proxies;
 using Eidosup.Toolchains;
 
 namespace Eidosc.Tests.Unit.Eidosup;
@@ -28,7 +29,10 @@ public sealed class SetupOrchestratorTests
                 new EidosReleaseAsset(bundleName, "https://example.invalid/bundle.zip", 100),
                 new EidosReleaseAsset(ReleaseAssetLocator.ChecksumAssetName, "https://example.invalid/SHA256SUMS", 100)
             ]);
-        var orchestrator = new SetupOrchestrator(_ => new StubReleaseSource(release));
+        var shimInstaller = new StubShimInstaller();
+        var orchestrator = new SetupOrchestrator(
+            _ => new StubReleaseSource(release),
+            shimInstaller: shimInstaller);
 
         var exitCode = await orchestrator.RunAsync(
             new SetupOptions
@@ -43,6 +47,8 @@ public sealed class SetupOrchestratorTests
 
         Assert.Equal(0, exitCode);
         Assert.False(Directory.Exists(root));
+        Assert.True(shimInstaller.Called);
+        Assert.True(shimInstaller.DryRun);
     }
 
     [Fact]
@@ -75,7 +81,8 @@ public sealed class SetupOrchestratorTests
             var orchestrator = new SetupOrchestrator(
                 _ => new StubReleaseSource(release),
                 stateStore: new ToolchainStateStore(() => clock),
-                installerFactory: () => new VerifiedToolchainInstaller(downloadManager, clock: () => clock));
+                installerFactory: () => new VerifiedToolchainInstaller(downloadManager, clock: () => clock),
+                shimInstaller: new StubShimInstaller());
 
             var exitCode = await orchestrator.RunAsync(
                 new SetupOptions
@@ -94,6 +101,8 @@ public sealed class SetupOrchestratorTests
             Assert.StartsWith($"eidosc-0.4.0-alpha.2-{platform.Rid}-", installed.Id, StringComparison.Ordinal);
             Assert.Contains(state.Selectors, selector =>
                 selector.Selector == "preview" && selector.ToolchainId == installed.Id);
+            Assert.Equal(installed.Id, state.Default?.ToolchainId);
+            Assert.Equal("preview", state.Default?.Selector);
             Assert.True(File.Exists(Path.Combine(layout.GetToolchainDirectory(installed.Id), platform.ExecutableName)));
             Assert.Equal(0, exitCode);
         }
@@ -150,6 +159,29 @@ public sealed class SetupOrchestratorTests
             {
                 Content = new ByteArrayContent(payload)
             });
+        }
+    }
+
+    private sealed class StubShimInstaller : IShimInstaller
+    {
+        public bool Called { get; private set; }
+
+        public bool DryRun { get; private set; }
+
+        public Task<ShimInstallResult> InstallAsync(
+            ToolInstallLayout layout,
+            bool dryRun,
+            CancellationToken cancellationToken)
+        {
+            Called = true;
+            DryRun = dryRun;
+            var extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
+            return Task.FromResult(new ShimInstallResult(
+                Path.Combine(layout.BinDirectory, $"eidosup{extension}"),
+                Path.Combine(layout.BinDirectory, $"eidosc{extension}"),
+                ShimMaterialization.HardLink,
+                Changed: true,
+                DryRun: dryRun));
         }
     }
 }

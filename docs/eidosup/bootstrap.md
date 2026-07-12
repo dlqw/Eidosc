@@ -3,8 +3,8 @@
 Eidosup installs an Eidosc release for the current host, checks LLVM/Clang,
 and can configure the user environment. It is a prerelease bootstrap tool; the
 multi-toolchain management commands are not yet part of the public contract,
-but installs now use the versioned state and immutable identity foundation those
-commands require.
+but installation now creates a stable `eidosc` shim backed by versioned state,
+an immutable toolchain identity, and a movable global default.
 
 ## Release source and credentials
 
@@ -16,9 +16,9 @@ For a private custom source, Eidosup reads a token from `GITHUB_TOKEN`, then
 `GH_TOKEN`. Tokens are used only in the GitHub HTTP authorization header. They
 are not written to configuration, install state, output, or diagnostic stacks.
 
-The new public repository does not contain releases copied from the private
-archive. Installation becomes available when a new public Eidosc candidate is
-published with an `eidosc-v<SemVer>` tag, host assets, and `SHA256SUMS`.
+The public repository does not contain releases copied from the private archive.
+Only newly built public releases with an `eidosc-v<SemVer>` tag, host assets,
+and `SHA256SUMS` are installable.
 
 Eidosc releases are assembled as short-lived CI artifacts before publication.
 The candidate must contain all six Windows, Linux, and macOS x64/arm64 bundles,
@@ -86,6 +86,46 @@ The older `toolchains/eidosc/<version>` layout is not imported or activated,
 even if its directory name looks like a release. Reinstall required toolchains
 into the immutable layout, verify they work, and then remove the legacy directory
 manually.
+
+## Stable shim and default selection
+
+`setup` installs the running Eidosup executable into the stable command
+directory and materializes the `eidosc` shim from the same multi-call binary:
+
+```text
+<EIDOS_HOME>/bin/eidosup[.exe]
+<EIDOS_HOME>/bin/eidosc[.exe]
+<EIDOS_HOME>/bin/.eidosup-shims.json
+```
+
+Eidosup prefers a hard link so the two command names share one on-disk binary;
+filesystems that do not support hard links use a verified copy. Updates stage
+both commands in the destination directory, preserve owned previous files, and
+restore them if the pair cannot be committed. Existing command files without a
+valid ownership manifest are never overwritten.
+
+The first verified installation becomes the global default. A channel install
+such as `preview` moves that channel selector and its default pointer to the new
+immutable toolchain without changing PATH. Exact-version selectors continue to
+point at their original immutable installs. Management commands for explicitly
+changing the default arrive in the next command-management phase.
+
+When invoked as `eidosc`, the multi-call binary derives `EIDOS_HOME` from its
+managed `bin` location, reads the state schema, resolves the default selector,
+and fully verifies the selected install manifest and files before starting the
+compiler. Arguments, working directory, standard streams, console signal group,
+and child exit code are preserved. The child receives version-specific
+`EIDOSC_HOME` and `EIDOS_RUNTIME_PATH` values only for that process.
+
+User environment configuration now adds only the stable `bin` directory and
+LLVM directory to PATH. It keeps `EIDOS_HOME`, removes the old global
+`EIDOSC_HOME` and `EIDOS_RUNTIME_PATH` bindings, and therefore does not need to
+change when the default selector moves.
+
+The release clean-install gate compares direct and shim exit codes and measures
+the median incremental shim startup cost after warmup. The current release
+baseline is at most 200 ms on native Windows x64 and Linux x64 runners. See
+[Shim architecture and forwarding contract](shim.md) for the detailed contract.
 
 ## LLVM dependency providers
 
@@ -159,13 +199,14 @@ important exit-code ranges are:
 | `2` | invalid command or release input |
 | `10`-`16` | source, release, or asset failure |
 | `20`-`29` | integrity, transaction, lock, dependency-provider, or state failure |
-| `30`-`31` | local permission or file failure |
+| `30`-`34` | local permission, file, active-toolchain, or proxy failure |
 | `50` | doctor found an error-level readiness failure |
 | `70` | unexpected internal failure |
 | `130` | cancellation |
 
 `eidosup doctor` emits stable check IDs such as `command.eidosc`,
-`command.clang`, `install.root`, and `toolchains.installed`. Missing Eidosc is
+`command.clang`, `install.root`, `shims.installed`, `shims.path`,
+`toolchains.installed`, and `toolchains.default`. Missing Eidosc is
 an error and returns `50`; advisory LLVM or environment findings remain
 warnings. Use JSON for automation:
 
