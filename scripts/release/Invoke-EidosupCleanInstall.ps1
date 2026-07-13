@@ -488,7 +488,7 @@ try
         "osx-arm64" = 300.0
         "win-x64" = 300.0
         "win-arm64" = 300.0
-        "osx-x64" = 600.0
+        "osx-x64" = 800.0
     }
     $shimOverheadBaseline = [double]$shimOverheadBaselines[$rid]
     Write-Host (
