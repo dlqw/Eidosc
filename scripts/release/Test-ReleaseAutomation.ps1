@@ -5,16 +5,17 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $scriptRoot = Split-Path -Parent $PSCommandPath
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "../.."))
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("eidos-release-test-" + [Guid]::NewGuid().ToString("N"))
-[xml]$eidoscVersionProps = Get-Content -Raw -LiteralPath "eng/Eidosc.Version.props"
+[xml]$eidoscVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Eidosc.Version.props")
 $eidoscVersionPrefix = [string]$eidoscVersionProps.Project.PropertyGroup.EidoscVersionPrefix
 $eidoscVersionSuffix = [string]$eidoscVersionProps.Project.PropertyGroup.EidoscVersionSuffix
 $eidoscVersion = if ($eidoscVersionSuffix) { "$eidoscVersionPrefix-$eidoscVersionSuffix" } else { $eidoscVersionPrefix }
-[xml]$eidosupVersionProps = Get-Content -Raw -LiteralPath "eng/Eidosup.Version.props"
+[xml]$eidosupVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Eidosup.Version.props")
 $eidosupVersionPrefix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionPrefix
 $eidosupVersionSuffix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionSuffix
 $eidosupVersion = if ($eidosupVersionSuffix) { "$eidosupVersionPrefix-$eidosupVersionSuffix" } else { $eidosupVersionPrefix }
-$commit = (& git rev-parse HEAD).Trim()
+$commit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$')
 {
     throw "Release automation self-test requires a Git commit."
@@ -24,7 +25,7 @@ $nativeRunnerLabels = @("windows-latest", "windows-11-arm", "ubuntu-latest", "ub
 
 foreach ($workflowPath in @(".github/workflows/release-eidosc.yml", ".github/workflows/release-eidosup.yml"))
 {
-    $workflow = Get-Content -Raw -LiteralPath $workflowPath
+    $workflow = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot $workflowPath)
     if (-not $workflow.Contains("published-install:", [StringComparison]::Ordinal) -or
         -not $workflow.Contains("29_precompiled_stdlib.eidos", [StringComparison]::Ordinal) -or
         @($nativeRunnerLabels | Where-Object { -not $workflow.Contains($_, [StringComparison]::Ordinal) }).Count -ne 0)
@@ -40,7 +41,7 @@ foreach ($scriptPath in @(
     $tokens = $null
     $parseErrors = $null
     [void][Management.Automation.Language.Parser]::ParseFile(
-        (Resolve-Path -LiteralPath $scriptPath).Path,
+        (Join-Path $repositoryRoot $scriptPath),
         [ref]$tokens,
         [ref]$parseErrors)
     if ($parseErrors.Count -ne 0)
@@ -59,6 +60,7 @@ function Add-ZipText(
     try { $writer.Write($Content) } finally { $writer.Dispose() }
 }
 
+Push-Location -LiteralPath $repositoryRoot
 try
 {
     $eidoscRoot = Join-Path $temporaryRoot "eidosc"
@@ -79,7 +81,7 @@ try
                 "tools/eidos-bindgen/eidos-bindgen"
             }
             Add-ZipText $archive $binaryName "fixture-$rid"
-            Add-ZipText $archive "compatibility.json" (Get-Content -Raw -LiteralPath "eng/compatibility.json")
+            Add-ZipText $archive "compatibility.json" (Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/compatibility.json"))
             Add-ZipText $archive "stdlib/eidos.toml" "[package]`nname = `"EidosStd`"`nversion = `"0.1.0-alpha.1`"`n"
             Add-ZipText $archive "stdlib/Std/Core.eidos" "module Std::Core"
             Add-ZipText $archive "runtime/eidos_runtime.h" "host runtime"
@@ -146,4 +148,6 @@ finally
     {
         Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
     }
+
+    Pop-Location
 }
