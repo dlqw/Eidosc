@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eidos.dev/schemas/eidosup/signed-release-index-v1.schema.json",
+  "type": "object",
+  "required": ["payload", "signatures"],
+  "properties": {
+    "payload": {
+      "type": "object",
+      "required": ["schema", "version", "generatedAt", "expiresAt", "nextKeys", "releases"],
+      "properties": {
+        "schema": { "const": 1 },
+        "version": { "type": "integer", "minimum": 1 },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "nextKeys": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/publicKey" }
+        },
+        "releases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/release" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "signatures": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/signature" }
+    }
+  },
+  "$defs": {
+    "keyId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$"
+    },
+    "base64": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "publicKey": {
+      "type": "object",
+      "required": ["keyId", "algorithm", "publicKey"],
+      "properties": {
+        "keyId": { "$ref": "#/$defs/keyId" },
+        "algorithm": { "const": "ed25519" },
+        "publicKey": { "$ref": "#/$defs/base64" }
+      },
+      "additionalProperties": false
+    },
+    "signature": {
+      "type": "object",
+      "required": ["keyId", "algorithm", "signature"],
+      "properties": {
+        "keyId": { "$ref": "#/$defs/keyId" },
+        "algorithm": { "const": "ed25519" },
+        "signature": { "$ref": "#/$defs/base64" }
+      },
+      "additionalProperties": false
+    },
+    "asset": {
+      "type": "object",
+      "required": ["name", "url", "size", "sha256"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "pattern": "^[^/\\\\]+$" },
+        "url": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "required": ["tagName", "name", "preRelease", "publishedAt", "assets"],
+      "properties": {
+        "tagName": {
+          "type": "string",
+          "pattern": "^eidosc-v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "preRelease": { "type": "boolean" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/asset" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

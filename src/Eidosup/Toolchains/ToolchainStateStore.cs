@@ -23,6 +23,14 @@ public sealed class ToolchainStateStore
     private readonly Func<DateTimeOffset> _clock;
     private readonly TimeSpan _lockTimeout;
 
+    private static StringComparer PathComparer => OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
+    private static StringComparison PathComparison => OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     public ToolchainStateStore(Func<DateTimeOffset>? clock = null, TimeSpan? lockTimeout = null)
     {
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
@@ -51,6 +59,19 @@ public sealed class ToolchainStateStore
         ToolInstallLayout layout,
         string toolchainDirectory,
         ReleaseChannel? requestedChannel,
+        CancellationToken cancellationToken) =>
+        await RegisterInstallAsync(
+            layout,
+            toolchainDirectory,
+            requestedChannel,
+            requestedSelector: null,
+            cancellationToken);
+
+    public async Task<ToolchainState> RegisterInstallAsync(
+        ToolInstallLayout layout,
+        string toolchainDirectory,
+        ReleaseChannel? requestedChannel,
+        string? requestedSelector,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(layout);
@@ -75,9 +96,13 @@ public sealed class ToolchainStateStore
                 "Reinstall the toolchain; Eidosup will not register modified or incomplete files.");
         }
 
+        var requestedHost = requestedSelector == null ? null : ToolchainSpec.Parse(requestedSelector).HostRid;
+        var exactSelector = requestedChannel == null && requestedSelector != null
+            ? requestedSelector
+            : requestedHost == null ? manifest.Version : $"{manifest.Version}@{requestedHost}";
         var selectors = new List<ToolchainSelectorState>
         {
-            new(manifest.Version, ToolchainSelectorKind.ExactVersion, manifest.ToolchainId, manifest.InstalledAt)
+            new(exactSelector, ToolchainSelectorKind.ExactVersion, manifest.ToolchainId, manifest.InstalledAt)
         };
         if (requestedChannel is { } channel)
         {
@@ -87,7 +112,7 @@ public sealed class ToolchainStateStore
             }
 
             selectors.Add(new ToolchainSelectorState(
-                channel.ToString().ToLowerInvariant(),
+                requestedSelector ?? channel.ToString().ToLowerInvariant(),
                 ToolchainSelectorKind.Channel,
                 manifest.ToolchainId,
                 manifest.InstalledAt));
@@ -99,9 +124,9 @@ public sealed class ToolchainStateStore
             _lockTimeout,
             cancellationToken,
             operationName: "state");
-        var activateSelector = requestedChannel is { } selectedChannel
+        var activateSelector = requestedSelector ?? (requestedChannel is { } selectedChannel
             ? selectedChannel.ToString().ToLowerInvariant()
-            : manifest.Version;
+            : manifest.Version);
         return await LoadReconcileAndWriteAsync(
             layout,
             selectors,
@@ -163,6 +188,149 @@ public sealed class ToolchainStateStore
             ActivationHistory = history
         };
         return await PersistMutationAsync(layout, state, updated, cancellationToken);
+    }
+
+    public async Task<ToolchainState> LinkCustomAsync(
+        ToolInstallLayout layout,
+        CustomToolchainState customToolchain,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(customToolchain);
+        Directory.CreateDirectory(layout.StateDirectory);
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "state");
+        var state = await LoadReconcileAndWriteAsync(layout, null, null, cancellationToken);
+        var existing = state.CustomToolchains.SingleOrDefault(candidate =>
+            string.Equals(candidate.Name, customToolchain.Name, StringComparison.Ordinal));
+        if (existing != null && !ToolInstallLayout.PathEquals(existing.RootDirectory, customToolchain.RootDirectory))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InstallConflict,
+                EidosupExitCodes.InstallConflict,
+                $"Custom toolchain '{customToolchain.Name}' is already linked to '{existing.RootDirectory}'.",
+                "Unlink the existing custom toolchain before reusing its name.");
+        }
+
+        var customs = state.CustomToolchains
+            .Where(candidate => !string.Equals(candidate.Name, customToolchain.Name, StringComparison.Ordinal))
+            .Append(customToolchain)
+            .OrderBy(static candidate => candidate.Name, StringComparer.Ordinal)
+            .ToArray();
+        var selectors = state.Selectors
+            .Where(candidate => !string.Equals(candidate.Selector, customToolchain.Selector, StringComparison.Ordinal))
+            .Append(new ToolchainSelectorState(
+                customToolchain.Selector,
+                ToolchainSelectorKind.Custom,
+                customToolchain.ToolchainId,
+                customToolchain.LinkedAt))
+            .OrderBy(static candidate => candidate.Selector, StringComparer.Ordinal)
+            .ToArray();
+        return await PersistMutationAsync(
+            layout,
+            state,
+            state with { CustomToolchains = customs, Selectors = selectors },
+            cancellationToken);
+    }
+
+    public async Task<ToolchainState> UnlinkCustomAsync(
+        ToolInstallLayout layout,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        Directory.CreateDirectory(layout.StateDirectory);
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "state");
+        var state = await LoadReconcileAndWriteAsync(layout, null, null, cancellationToken);
+        var custom = state.CustomToolchains.SingleOrDefault(candidate =>
+                         string.Equals(candidate.Name, name, StringComparison.Ordinal))
+                     ?? throw ToolchainUnavailable(
+                         $"Custom toolchain '{name}' is not linked.",
+                         "Link it before attempting to unlink it.");
+        if (state.Default != null && string.Equals(state.Default.ToolchainId, custom.ToolchainId, StringComparison.Ordinal))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InstallConflict,
+                EidosupExitCodes.InstallConflict,
+                $"Custom toolchain '{name}' is active as the global default.",
+                "Set another default or run 'eidosup default none' before unlinking it.");
+        }
+
+        var updated = state with
+        {
+            CustomToolchains = state.CustomToolchains.Where(candidate => candidate != custom).ToArray(),
+            Selectors = state.Selectors.Where(candidate =>
+                !string.Equals(candidate.Selector, custom.Selector, StringComparison.Ordinal)).ToArray(),
+            Overrides = state.Overrides.Where(candidate =>
+                !string.Equals(candidate.Selector, custom.Selector, StringComparison.Ordinal)).ToArray()
+        };
+        return await PersistMutationAsync(layout, state, updated, cancellationToken);
+    }
+
+    public async Task<ToolchainState> SetOverrideAsync(
+        ToolInstallLayout layout,
+        string directory,
+        string selector,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(layout.StateDirectory);
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "state");
+        var state = await LoadReconcileAndWriteAsync(layout, null, null, cancellationToken);
+        _ = state.Selectors.SingleOrDefault(candidate => string.Equals(candidate.Selector, selector, StringComparison.Ordinal))
+            ?? throw ToolchainUnavailable(
+                $"Toolchain selector '{selector}' is not installed or linked.",
+                $"Install or link '{selector}' before setting a directory override.");
+        var canonicalDirectory = CanonicalizeOverrideDirectory(directory);
+        var overrides = state.Overrides
+            .Where(candidate => !PathEquals(candidate.Directory, canonicalDirectory))
+            .Append(new ToolchainOverrideState(canonicalDirectory, selector, _clock()))
+            .OrderBy(static candidate => candidate.Directory, PathComparer)
+            .ToArray();
+        return await PersistMutationAsync(layout, state, state with { Overrides = overrides }, cancellationToken);
+    }
+
+    public async Task<ToolchainState> RemoveOverridesAsync(
+        ToolInstallLayout layout,
+        string? directory,
+        bool nonexistentOnly,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(layout.StateDirectory);
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "state");
+        var state = await LoadReconcileAndWriteAsync(layout, null, null, cancellationToken);
+        ToolchainOverrideState[] overrides;
+        if (nonexistentOnly)
+        {
+            overrides = state.Overrides.Where(candidate => Directory.Exists(candidate.Directory)).ToArray();
+        }
+        else
+        {
+            var canonicalDirectory = CanonicalizeOverrideDirectory(directory ?? Environment.CurrentDirectory);
+            overrides = state.Overrides.Where(candidate => !PathEquals(candidate.Directory, canonicalDirectory)).ToArray();
+            if (overrides.Length == state.Overrides.Count)
+            {
+                throw ToolchainUnavailable(
+                    $"No directory override exists for '{canonicalDirectory}'.",
+                    "Use 'eidosup override list' to inspect configured overrides.");
+            }
+        }
+
+        return await PersistMutationAsync(layout, state, state with { Overrides = overrides }, cancellationToken);
     }
 
     public async Task<ToolchainState> RollbackAsync(
@@ -286,7 +454,7 @@ public sealed class ToolchainStateStore
             throw Unsupported(path, primary.Schema);
         }
 
-        var mustWrite = primary.Status != StateLoadStatus.Valid;
+        var mustWrite = primary.Status != StateLoadStatus.Valid || primary.Schema != ToolchainState.CurrentSchema;
         var backupResult = await TryLoadAsync(backupPath, cancellationToken);
         if (backupResult.Status == StateLoadStatus.Unsupported)
         {
@@ -345,7 +513,11 @@ public sealed class ToolchainStateStore
         string? activateSelector,
         DateTimeOffset now)
     {
+        var customToolchains = basis.CustomToolchains
+            .OrderBy(static candidate => candidate.Name, StringComparer.Ordinal)
+            .ToArray();
         var installedIds = scan.Toolchains.Select(static toolchain => toolchain.Id)
+            .Concat(customToolchains.Select(static toolchain => toolchain.ToolchainId))
             .ToHashSet(StringComparer.Ordinal);
         var previousSelectors = basis.Selectors
             .Where(selector => installedIds.Contains(selector.ToolchainId))
@@ -470,7 +642,12 @@ public sealed class ToolchainStateStore
             defaultConfigured,
             activationHistory,
             basis.Transactions,
-            scan.UnmanagedDirectories);
+            scan.UnmanagedDirectories,
+            customToolchains,
+            basis.Overrides
+                .Where(overrideState => selectors.ContainsKey(overrideState.Selector))
+                .OrderBy(static overrideState => overrideState.Directory, PathComparer)
+                .ToArray());
     }
 
     private static void AddActivation(
@@ -660,12 +837,14 @@ public sealed class ToolchainStateStore
                 return new StateLoadResult(StateLoadStatus.Corrupt, null, null);
             }
 
-            if (schema != ToolchainState.CurrentSchema)
+            if (schema is not (1 or ToolchainState.CurrentSchema))
             {
                 return new StateLoadResult(StateLoadStatus.Unsupported, null, schema);
             }
 
-            var state = document.RootElement.Deserialize<ToolchainState>(JsonOptions);
+            var state = schema == ToolchainState.CurrentSchema
+                ? document.RootElement.Deserialize<ToolchainState>(JsonOptions)
+                : MigrateV1(document.RootElement.Deserialize<ToolchainStateV1>(JsonOptions));
             return state != null && Validate(state)
                 ? new StateLoadResult(StateLoadStatus.Valid, state, schema)
                 : new StateLoadResult(StateLoadStatus.Corrupt, null, schema);
@@ -685,7 +864,9 @@ public sealed class ToolchainStateStore
             state.Selectors == null ||
             state.ActivationHistory == null ||
             state.Transactions == null ||
-            state.UnmanagedDirectories == null)
+            state.UnmanagedDirectories == null ||
+            state.CustomToolchains == null ||
+            state.Overrides == null)
         {
             return false;
         }
@@ -708,6 +889,26 @@ public sealed class ToolchainStateStore
                 string.IsNullOrWhiteSpace(toolchain.Source) ||
                 string.IsNullOrWhiteSpace(toolchain.AssetName) ||
                 !toolchainIds.Add(toolchain.Id))
+            {
+                return false;
+            }
+        }
+
+        var customNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var custom in state.CustomToolchains)
+        {
+            if (custom == null ||
+                !CustomToolchain.IsValidName(custom.Name) ||
+                !string.Equals(custom.Selector, CustomToolchain.GetSelector(custom.Name), StringComparison.Ordinal) ||
+                !string.Equals(custom.ToolchainId, CustomToolchain.GetId(custom.Name), StringComparison.Ordinal) ||
+                !Path.IsPathFullyQualified(custom.RootDirectory) ||
+                !Path.IsPathFullyQualified(custom.CommandPath) ||
+                !Path.IsPathFullyQualified(custom.RuntimePath) ||
+                !ToolInstallLayout.IsWithin(custom.RootDirectory, custom.CommandPath) ||
+                !ToolInstallLayout.IsWithin(custom.RootDirectory, custom.RuntimePath) ||
+                custom.LinkedAt == default ||
+                !customNames.Add(custom.Name) ||
+                !toolchainIds.Add(custom.ToolchainId))
             {
                 return false;
             }
@@ -741,7 +942,9 @@ public sealed class ToolchainStateStore
         if (state.ActivationHistory.Any(activation =>
                 activation == null ||
                 !IsSafeName(activation.Selector) ||
-                !ToolchainIdentity.IsValidId(activation.ToolchainId) ||
+                !toolchainIds.Contains(activation.ToolchainId) &&
+                !ToolchainIdentity.IsValidId(activation.ToolchainId) &&
+                !CustomToolchain.IsValidId(activation.ToolchainId) ||
                 !Enum.IsDefined(activation.Reason) ||
                 activation.ActivatedAt == default))
         {
@@ -753,10 +956,23 @@ public sealed class ToolchainStateStore
                 !Guid.TryParseExact(transaction.Id, "N", out _) ||
                 !Enum.IsDefined(transaction.Kind) ||
                 !Enum.IsDefined(transaction.Status) ||
-                transaction.ToolchainId != null && !ToolchainIdentity.IsValidId(transaction.ToolchainId) ||
+                transaction.ToolchainId != null &&
+                !ToolchainIdentity.IsValidId(transaction.ToolchainId) &&
+                !CustomToolchain.IsValidId(transaction.ToolchainId) ||
                 !IsSafeName(transaction.JournalFile) ||
                 transaction.StartedAt == default ||
                 transaction.UpdatedAt < transaction.StartedAt))
+        {
+            return false;
+        }
+
+        var overrideDirectories = new HashSet<string>(PathComparer);
+        if (state.Overrides.Any(overrideState =>
+                overrideState == null ||
+                !Path.IsPathFullyQualified(overrideState.Directory) ||
+                !selectorNames.Contains(overrideState.Selector) ||
+                overrideState.SetAt == default ||
+                !overrideDirectories.Add(overrideState.Directory)))
         {
             return false;
         }
@@ -782,7 +998,31 @@ public sealed class ToolchainStateStore
         left.DefaultConfigured == right.DefaultConfigured &&
         left.ActivationHistory.SequenceEqual(right.ActivationHistory) &&
         left.Transactions.SequenceEqual(right.Transactions) &&
-        left.UnmanagedDirectories.SequenceEqual(right.UnmanagedDirectories);
+        left.UnmanagedDirectories.SequenceEqual(right.UnmanagedDirectories) &&
+        left.CustomToolchains.SequenceEqual(right.CustomToolchains) &&
+        left.Overrides.SequenceEqual(right.Overrides);
+
+    private static ToolchainState? MigrateV1(ToolchainStateV1? state) => state == null
+        ? null
+        : new ToolchainState(
+            ToolchainState.CurrentSchema,
+            state.Revision,
+            state.UpdatedAt,
+            state.Toolchains,
+            state.Selectors,
+            state.Default,
+            state.DefaultConfigured,
+            state.ActivationHistory,
+            state.Transactions,
+            state.UnmanagedDirectories,
+            [],
+            []);
+
+    private static string CanonicalizeOverrideDirectory(string directory) =>
+        Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    private static bool PathEquals(string left, string right) =>
+        string.Equals(left, right, PathComparison);
 
     private static async Task WriteAtomicAsync(
         string path,

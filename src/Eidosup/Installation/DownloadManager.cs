@@ -38,6 +38,19 @@ public sealed class DownloadManager : IDisposable
         CancellationToken cancellationToken)
     {
         ValidateAsset(asset, MaximumChecksumBytes);
+        if (TryGetLocalPath(asset.DownloadUrl, out var localPath))
+        {
+            var info = new FileInfo(localPath);
+            if (!info.Exists || info.Length != asset.Size || info.Length > MaximumChecksumBytes)
+            {
+                throw IntegrityFailure($"Local checksum asset '{asset.Name}' is missing or does not match its declared size.");
+            }
+
+            var bytes = await File.ReadAllBytesAsync(localPath, cancellationToken);
+            VerifyDeclaredDigest(asset, bytes);
+            return new UTF8Encoding(false, true).GetString(bytes);
+        }
+
         Exception? lastException = null;
         for (var attempt = 1; attempt <= DefaultAttempts; attempt++)
         {
@@ -70,8 +83,10 @@ public sealed class DownloadManager : IDisposable
                         $"Checksum asset '{asset.Name}' did not match its declared size.");
                 }
 
+                var bytes = buffer.ToArray();
+                VerifyDeclaredDigest(asset, bytes);
                 return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
-                    .GetString(buffer.GetBuffer(), 0, checked((int)buffer.Length));
+                    .GetString(bytes);
             }
             catch (Exception exception) when (IsTransient(exception, cancellationToken))
             {
@@ -115,10 +130,28 @@ public sealed class DownloadManager : IDisposable
             var cached = await VerifyFileAsync(finalPath, expectedSha256, asset.Size, cancellationToken);
             if (cached.Valid)
             {
+                Touch(finalPath);
                 return new DownloadResult(finalPath, expectedSha256, cached.Size, CacheHit: true, Resumed: false);
             }
 
             File.Delete(finalPath);
+        }
+
+        if (TryGetLocalPath(asset.DownloadUrl, out var localPath))
+        {
+            if (!File.Exists(localPath))
+            {
+                throw new FileNotFoundException($"Local release asset '{asset.Name}' does not exist.", localPath);
+            }
+
+            var localVerification = await VerifyFileAsync(localPath, expectedSha256, asset.Size, cancellationToken);
+            if (!localVerification.Valid)
+            {
+                throw IntegrityFailure($"Local release asset '{asset.Name}' failed size or SHA-256 verification.");
+            }
+
+            File.Copy(localPath, finalPath, overwrite: true);
+            return new DownloadResult(finalPath, expectedSha256, localVerification.Size, CacheHit: false, Resumed: false);
         }
 
         Exception? lastException = null;
@@ -294,6 +327,17 @@ public sealed class DownloadManager : IDisposable
         return (string.Equals(digest, expectedSha256, StringComparison.Ordinal), info.Length);
     }
 
+    private static void Touch(string path)
+    {
+        try
+        {
+            File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
     private static HttpRequestMessage CreateRequest(string downloadUrl)
     {
         if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) ||
@@ -309,6 +353,43 @@ public sealed class DownloadManager : IDisposable
         return request;
     }
 
+    private static bool TryGetLocalPath(string downloadUrl, out string path)
+    {
+        path = string.Empty;
+        if (Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri) && uri.IsFile)
+        {
+            path = uri.LocalPath;
+            return true;
+        }
+
+        if (Path.IsPathFullyQualified(downloadUrl))
+        {
+            path = downloadUrl;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void VerifyDeclaredDigest(EidosReleaseAsset asset, ReadOnlySpan<byte> bytes)
+    {
+        if (asset.Sha256 == null)
+        {
+            return;
+        }
+
+        if (!ChecksumManifest.IsSha256(asset.Sha256))
+        {
+            throw IntegrityFailure($"Asset '{asset.Name}' declares an invalid SHA-256 digest.");
+        }
+
+        var digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        if (!string.Equals(digest, asset.Sha256, StringComparison.Ordinal))
+        {
+            throw IntegrityFailure($"Asset '{asset.Name}' did not match its signed SHA-256 digest.");
+        }
+    }
+
     private static void ValidateAsset(EidosReleaseAsset asset, long maximumBytes)
     {
         ArgumentNullException.ThrowIfNull(asset);
@@ -317,7 +398,10 @@ public sealed class DownloadManager : IDisposable
             throw IntegrityFailure($"Asset '{asset.Name}' is missing a valid bounded size declaration.");
         }
 
-        using var request = CreateRequest(asset.DownloadUrl);
+        if (!TryGetLocalPath(asset.DownloadUrl, out _))
+        {
+            using var request = CreateRequest(asset.DownloadUrl);
+        }
     }
 
     private static void EnsureDownloadSuccess(HttpResponseMessage response, string assetName)

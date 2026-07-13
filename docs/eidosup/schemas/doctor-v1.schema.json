@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eidos.dev/schemas/eidosup/doctor-v1.schema.json",
+  "type": "object",
+  "required": ["platform", "checks", "schemaVersion", "healthy"],
+  "properties": {
+    "platform": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "healthy": { "type": "boolean" },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "severity", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "enum": ["pass", "warning", "fail"] },
+          "severity": { "enum": ["info", "warning", "error"] },
+          "summary": { "type": "string" },
+          "detail": { "type": ["string", "null"] },
+          "remediation": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

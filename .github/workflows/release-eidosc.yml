@@ -78,6 +78,7 @@ jobs:
             -o $publishDir
           if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $rid." }
           Move-Item (Join-Path $publishDir $publishedBinaryName) (Join-Path $publishDir $binaryName)
+          Copy-Item eng/compatibility.json (Join-Path $publishDir 'compatibility.json')
           $bundle = Join-Path $PWD "artifacts/eidosc-v$version-$rid.zip"
           Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $bundle
       - uses: actions/upload-artifact@v4
@@ -148,6 +149,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
       - uses: actions/download-artifact@v4
         with:
           pattern: eidosc-*
@@ -155,6 +158,9 @@ jobs:
           merge-multiple: true
       - name: Generate and verify release metadata
         shell: pwsh
+        env:
+          EIDOSUP_METADATA_ED25519_PRIVATE_KEY: ${{ secrets.EIDOSUP_METADATA_ED25519_PRIVATE_KEY }}
+          EIDOSUP_METADATA_NEXT_ED25519_KEYS: ${{ vars.EIDOSUP_METADATA_NEXT_ED25519_KEYS }}
         run: |
           ./scripts/release/New-ReleaseArtifacts.ps1 `
             -Product eidosc `
@@ -166,6 +172,24 @@ jobs:
             -Version "${{ needs.verify-release.outputs.version }}" `
             -CommitSha "$env:GITHUB_SHA" `
             -AssetDirectory artifacts/candidate
+          dotnet run --project scripts/release/Eidosup.MetadataSigner/Eidosup.MetadataSigner.csproj `
+            --configuration Release -- `
+            "${{ needs.verify-release.outputs.version }}" `
+            artifacts/candidate `
+            "$env:GITHUB_REPOSITORY" `
+            "$env:GITHUB_RUN_ID" `
+            "eidos-official-2026-01" `
+            "uI3NaPeqfaueCrteGQUAXDXc/FxNWqWaUVo3NrLLXiw=" `
+            artifacts/candidate/eidosup-index.json
+          if ($LASTEXITCODE -ne 0) { throw "Signed Eidosup index generation failed." }
+          dotnet run --project scripts/release/Eidosup.MetadataSigner/Eidosup.MetadataSigner.csproj `
+            --configuration Release -- `
+            verify artifacts/candidate/eidosup-index.json `
+            "eidos-official-2026-01" `
+            "uI3NaPeqfaueCrteGQUAXDXc/FxNWqWaUVo3NrLLXiw=" `
+            "${{ needs.verify-release.outputs.version }}" `
+            artifacts/candidate
+          if ($LASTEXITCODE -ne 0) { throw "Signed Eidosup index verification failed." }
       - uses: actions/upload-artifact@v4
         with:
           name: eidosc-release-candidate
@@ -224,6 +248,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
       - uses: actions/download-artifact@v4
         with:
           name: eidosc-release-candidate
@@ -233,6 +259,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          dotnet run --project scripts/release/Eidosup.MetadataSigner/Eidosup.MetadataSigner.csproj `
+            --configuration Release -- `
+            verify artifacts/final/eidosup-index.json `
+            "eidos-official-2026-01" `
+            "uI3NaPeqfaueCrteGQUAXDXc/FxNWqWaUVo3NrLLXiw=" `
+            "${{ needs.verify-release.outputs.version }}" `
+            artifacts/final
+          if ($LASTEXITCODE -ne 0) { throw "Signed Eidosup index verification failed before release." }
           ./scripts/release/Publish-VerifiedRelease.ps1 `
             -Product eidosc `
             -Version "${{ needs.verify-release.outputs.version }}" `

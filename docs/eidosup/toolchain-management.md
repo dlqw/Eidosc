@@ -1,5 +1,13 @@
 # Eidosup toolchain management
 
+WP2 extensions are documented in:
+
+- [Project toolchain selection](project-selection.md)
+- [Custom toolchains](custom-toolchains.md)
+- [Distribution sources and offline bundles](distribution-sources.md)
+- [Self lifecycle](self-lifecycle.md)
+- [CLI automation](automation.md)
+
 Eidosup installs verified Eidosc releases into immutable toolchain directories
 and selects them through stable commands in `<EIDOS_HOME>/bin`. Toolchain
 selection changes state only; it never adds version-specific directories to

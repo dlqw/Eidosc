@@ -1,6 +1,7 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Eidosup.Installation;
 using Eidosup.Proxies;
@@ -23,7 +24,20 @@ internal static class ToolchainCommands
         {
             CreateInstallCommand(),
             CreateListCommand(),
-            CreateUninstallCommand()
+            CreateUninstallCommand(),
+            CreateLinkCommand(),
+            CreateUnlinkCommand()
+        };
+        return command;
+    }
+
+    public static Command CreateOverrideCommand()
+    {
+        var command = new Command("override", "Manage directory-specific toolchain selectors.")
+        {
+            CreateOverrideSetCommand(),
+            CreateOverrideUnsetCommand(),
+            CreateOverrideListCommand()
         };
         return command;
     }
@@ -110,7 +124,7 @@ internal static class ToolchainCommands
                 options,
                 specs,
                 dryRun,
-                new ConsoleDownloadProgressReporter(),
+                CreateProgressReporter(context),
                 context.GetCancellationToken());
             WriteInstallResults(results, context.ParseResult.GetValueForOption(GlobalOptions.Json), "update");
         });
@@ -298,7 +312,7 @@ internal static class ToolchainCommands
                 ToolchainSpec.Parse(context.ParseResult.GetValueForArgument(specArgument)),
                 context.ParseResult.GetValueForOption(forceOption),
                 context.ParseResult.GetValueForOption(dryRunOption),
-                new ConsoleDownloadProgressReporter(),
+                CreateProgressReporter(context),
                 context.GetCancellationToken());
             WriteInstallResults([result], context.ParseResult.GetValueForOption(GlobalOptions.Json), "install");
         });
@@ -355,6 +369,180 @@ internal static class ToolchainCommands
                     Console.WriteLine(result.DryRun
                         ? $"[dry-run] Would uninstall '{id}'."
                         : $"Uninstalled '{id}'.");
+                }
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateLinkCommand()
+    {
+        var command = new Command("link", "Link a read-only local Eidosc development build as a custom toolchain.");
+        var nameArgument = new Argument<string>("name", "Custom toolchain name.");
+        var pathArgument = new Argument<string>("path", "Local build root containing eidosc and runtime/.");
+        var installRootOption = CreateInstallRootOption();
+        var dryRunOption = CreateDryRunOption();
+        command.AddArgument(nameArgument);
+        command.AddArgument(pathArgument);
+        command.AddOption(installRootOption);
+        command.AddOption(dryRunOption);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var dryRun = context.ParseResult.GetValueForOption(dryRunOption);
+            var linked = await new ToolchainManager().LinkCustomAsync(
+                CreateOptions(context, installRootOption),
+                context.ParseResult.GetValueForArgument(nameArgument),
+                context.ParseResult.GetValueForArgument(pathArgument),
+                dryRun,
+                context.GetCancellationToken());
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { action = "link", dryRun, toolchain = linked });
+            }
+            else
+            {
+                Console.WriteLine(dryRun
+                    ? $"[dry-run] Would link '{linked.Selector}' to '{linked.RootDirectory}'."
+                    : $"Linked '{linked.Selector}' to '{linked.RootDirectory}'.");
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateUnlinkCommand()
+    {
+        var command = new Command("unlink", "Remove a custom toolchain link without deleting its external files.");
+        var nameArgument = new Argument<string>("name", "Custom toolchain name.");
+        var installRootOption = CreateInstallRootOption();
+        var dryRunOption = CreateDryRunOption();
+        command.AddArgument(nameArgument);
+        command.AddOption(installRootOption);
+        command.AddOption(dryRunOption);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var name = context.ParseResult.GetValueForArgument(nameArgument);
+            var dryRun = context.ParseResult.GetValueForOption(dryRunOption);
+            await new ToolchainManager().UnlinkCustomAsync(
+                CreateOptions(context, installRootOption),
+                name,
+                dryRun,
+                context.GetCancellationToken());
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { action = "unlink", name, dryRun });
+            }
+            else
+            {
+                Console.WriteLine(dryRun
+                    ? $"[dry-run] Would unlink 'custom:{name}'."
+                    : $"Unlinked 'custom:{name}'. External files were not changed.");
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateOverrideSetCommand()
+    {
+        var command = new Command("set", "Set a toolchain override for a directory.");
+        var specArgument = new Argument<string>("spec", "Installed or linked toolchain selector.");
+        var pathOption = new Option<string?>("--path", "Directory to override; defaults to the current directory.");
+        var installRootOption = CreateInstallRootOption();
+        var dryRunOption = CreateDryRunOption();
+        command.AddArgument(specArgument);
+        command.AddOption(pathOption);
+        command.AddOption(installRootOption);
+        command.AddOption(dryRunOption);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var spec = ToolchainSpec.Parse(context.ParseResult.GetValueForArgument(specArgument));
+            var path = context.ParseResult.GetValueForOption(pathOption) ?? Environment.CurrentDirectory;
+            var dryRun = context.ParseResult.GetValueForOption(dryRunOption);
+            await new ToolchainManager().SetOverrideAsync(
+                CreateOptions(context, installRootOption),
+                spec,
+                path,
+                dryRun,
+                context.GetCancellationToken());
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { action = "set", selector = spec.Canonical, path = Path.GetFullPath(path), dryRun });
+            }
+            else
+            {
+                Console.WriteLine(dryRun
+                    ? $"[dry-run] Would set '{Path.GetFullPath(path)}' to '{spec.Canonical}'."
+                    : $"Directory override set: '{Path.GetFullPath(path)}' -> '{spec.Canonical}'.");
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateOverrideUnsetCommand()
+    {
+        var command = new Command("unset", "Remove a directory override or all overrides whose directories no longer exist.");
+        var pathOption = new Option<string?>("--path", "Directory override to remove; defaults to the current directory.");
+        var nonexistentOption = new Option<bool>("--nonexistent", "Remove every override whose directory no longer exists.");
+        var installRootOption = CreateInstallRootOption();
+        var dryRunOption = CreateDryRunOption();
+        command.AddOption(pathOption);
+        command.AddOption(nonexistentOption);
+        command.AddOption(installRootOption);
+        command.AddOption(dryRunOption);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var path = context.ParseResult.GetValueForOption(pathOption);
+            var nonexistent = context.ParseResult.GetValueForOption(nonexistentOption);
+            if (path != null && nonexistent)
+            {
+                throw new ArgumentException("--path and --nonexistent are mutually exclusive.");
+            }
+
+            var dryRun = context.ParseResult.GetValueForOption(dryRunOption);
+            var state = await new ToolchainManager().RemoveOverridesAsync(
+                CreateOptions(context, installRootOption),
+                path,
+                nonexistent,
+                dryRun,
+                context.GetCancellationToken());
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { action = "unset", path, nonexistent, dryRun, remaining = state.Overrides });
+            }
+            else
+            {
+                Console.WriteLine(dryRun
+                    ? "[dry-run] Override removal validated."
+                    : nonexistent
+                        ? "Removed overrides for nonexistent directories."
+                        : $"Removed override for '{Path.GetFullPath(path ?? Environment.CurrentDirectory)}'.");
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateOverrideListCommand()
+    {
+        var command = new Command("list", "List configured directory overrides.");
+        var installRootOption = CreateInstallRootOption();
+        command.AddOption(installRootOption);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var state = await new ToolchainManager().ListAsync(
+                CreateOptions(context, installRootOption),
+                context.GetCancellationToken());
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { overrides = state.Overrides });
+            }
+            else if (state.Overrides.Count == 0)
+            {
+                Console.WriteLine("No directory overrides configured.");
+            }
+            else
+            {
+                foreach (var item in state.Overrides)
+                {
+                    Console.WriteLine($"{item.Directory}\t{item.Selector}{(Directory.Exists(item.Directory) ? string.Empty : " (missing)")}");
                 }
             }
         });
@@ -489,6 +677,7 @@ internal static class ToolchainCommands
                 state.UpdatedAt,
                 state.Default,
                 state.Toolchains,
+                state.CustomToolchains,
                 state.Selectors,
                 activationHistory = verbose ? state.ActivationHistory : null,
                 state.UnmanagedDirectories
@@ -496,9 +685,9 @@ internal static class ToolchainCommands
             return;
         }
 
-        if (state.Toolchains.Count == 0)
+        if (state.Toolchains.Count == 0 && state.CustomToolchains.Count == 0)
         {
-            Console.WriteLine("No verified toolchains installed.");
+            Console.WriteLine("No verified or custom toolchains configured.");
             return;
         }
 
@@ -517,6 +706,19 @@ internal static class ToolchainCommands
                 Console.WriteLine($"    id: {toolchain.Id}");
                 Console.WriteLine($"    source: {toolchain.Source} {toolchain.ReleaseTag}");
                 Console.WriteLine($"    installed: {toolchain.InstalledAt:O}");
+            }
+        }
+
+        foreach (var custom in state.CustomToolchains)
+        {
+            var active = state.Default != null &&
+                         string.Equals(state.Default.ToolchainId, custom.ToolchainId, StringComparison.Ordinal);
+            Console.WriteLine($"{(active ? "*" : " ")} {custom.Selector} [custom] -> {custom.RootDirectory}");
+            if (verbose)
+            {
+                Console.WriteLine($"    command: {custom.CommandPath}");
+                Console.WriteLine($"    runtime: {custom.RuntimePath}");
+                Console.WriteLine($"    linked: {custom.LinkedAt:O}");
             }
         }
     }
@@ -551,7 +753,9 @@ internal static class ToolchainCommands
                 profile = "default",
                 state.Default,
                 installed = state.Toolchains.Count,
+                custom = state.CustomToolchains.Count,
                 state.Toolchains,
+                state.CustomToolchains,
                 state.Selectors,
                 activationHistory = verbose ? state.ActivationHistory : null,
                 unmanagedDirectories = verbose ? state.UnmanagedDirectories : null
@@ -565,11 +769,16 @@ internal static class ToolchainCommands
             ? "default: none"
             : $"default: {state.Default.Selector} ({state.Default.ToolchainId})");
         Console.WriteLine($"installed toolchains: {state.Toolchains.Count}");
+        Console.WriteLine($"custom toolchains: {state.CustomToolchains.Count}");
         if (verbose)
         {
             foreach (var toolchain in state.Toolchains)
             {
                 Console.WriteLine($"  {toolchain.Id}");
+            }
+            foreach (var custom in state.CustomToolchains)
+            {
+                Console.WriteLine($"  {custom.Selector} -> {custom.RootDirectory}");
             }
 
             Console.WriteLine($"activation history entries: {state.ActivationHistory.Count}");
@@ -586,15 +795,13 @@ internal static class ToolchainCommands
         InvocationContext context,
         Option<string?> installRootOption,
         Option<string?>? downloadRootOption = null,
-        Option<string>? repositoryOption = null) => new(
-        repositoryOption == null
-            ? "dlqw/Eidosc"
-            : context.ParseResult.GetValueForOption(repositoryOption) ?? "dlqw/Eidosc",
+        Option<string?>? repositoryOption = null) => new(
+        repositoryOption == null ? null : context.ParseResult.GetValueForOption(repositoryOption),
         context.ParseResult.GetValueForOption(installRootOption),
         downloadRootOption == null ? null : context.ParseResult.GetValueForOption(downloadRootOption));
 
-    private static Option<string> CreateRepositoryOption() =>
-        new("--repo", () => "dlqw/Eidosc", "GitHub repository that hosts Eidos release assets.");
+    private static Option<string?> CreateRepositoryOption() =>
+        new("--repo", "Override the configured source with a GitHub owner/repository for this command.");
 
     private static Option<string?> CreateInstallRootOption() =>
         new("--install-root", "Override EIDOS_HOME for this command.");
@@ -605,8 +812,17 @@ internal static class ToolchainCommands
     private static Option<bool> CreateDryRunOption() =>
         new("--dry-run", "Print the resolved operation without changing files or state.");
 
-    private static void WriteJson(object value) =>
-        Console.WriteLine(JsonSerializer.Serialize(value, JsonOptions));
+    private static IProgress<DownloadProgress> CreateProgressReporter(InvocationContext context) =>
+        new ConsoleDownloadProgressReporter(
+            context.ParseResult.GetValueForOption(GlobalOptions.Quiet) ? TextWriter.Null : Console.Error);
+
+    private static void WriteJson(object value)
+    {
+        var node = JsonSerializer.SerializeToNode(value, JsonOptions) as JsonObject
+                   ?? throw new InvalidOperationException("Eidosup JSON command results must be objects.");
+        node["schemaVersion"] = 1;
+        Console.WriteLine(node.ToJsonString(JsonOptions));
+    }
 
     private static string ToKebabCase(string value) =>
         string.Concat(value.SelectMany((character, index) =>
@@ -614,7 +830,7 @@ internal static class ToolchainCommands
                 ? new[] { '-', char.ToLowerInvariant(character) }
                 : new[] { char.ToLowerInvariant(character) }));
 
-    private sealed class ConsoleDownloadProgressReporter : IProgress<DownloadProgress>
+    private sealed class ConsoleDownloadProgressReporter(TextWriter writer) : IProgress<DownloadProgress>
     {
         private long _lastReportedBytes;
 
@@ -628,7 +844,7 @@ internal static class ToolchainCommands
 
             _lastReportedBytes = value.BytesReceived;
             var totalText = value.TotalBytes is { } length ? $"/{FormatBytes(length)}" : string.Empty;
-            Console.WriteLine($"Downloading {value.AssetName}: {FormatBytes(value.BytesReceived)}{totalText}{(value.Resumed ? " (resumed)" : string.Empty)}");
+            writer.WriteLine($"Downloading {value.AssetName}: {FormatBytes(value.BytesReceived)}{totalText}{(value.Resumed ? " (resumed)" : string.Empty)}");
         }
 
         private static string FormatBytes(long bytes) => bytes >= 1024 * 1024

@@ -131,6 +131,28 @@ try
         throw "Draft release target mismatch."
     }
 
+    if ($Product -eq "eidosc")
+    {
+        $signedIndex = Join-Path $verificationRoot "eidosup-index.json"
+        if (-not (Test-Path -LiteralPath $signedIndex -PathType Leaf))
+        {
+            throw "Signed Eidosup release index is missing."
+        }
+
+        & dotnet run `
+            --project (Join-Path $PSScriptRoot "Eidosup.MetadataSigner/Eidosup.MetadataSigner.csproj") `
+            --configuration Release -- `
+            verify $signedIndex `
+            "eidos-official-2026-01" `
+            "uI3NaPeqfaueCrteGQUAXDXc/FxNWqWaUVo3NrLLXiw=" `
+            $Version `
+            $verificationRoot
+        if ($LASTEXITCODE -ne 0)
+        {
+            throw "Signed Eidosup index verification failed for the draft release."
+        }
+    }
+
     $verifiedAssets = @(Get-ChildItem -LiteralPath $verificationRoot -File | Sort-Object Name)
     if (@($release.assets).Count -ne $verifiedAssets.Count)
     {

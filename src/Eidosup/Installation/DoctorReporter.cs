@@ -30,6 +30,8 @@ public sealed record DoctorCheck(
 
 public sealed record DoctorReport(string Platform, IReadOnlyList<DoctorCheck> Checks)
 {
+    public int SchemaVersion => 1;
+
     public bool Healthy => Checks.All(static check => check.Status != DoctorCheckStatus.Fail || check.Severity != DoctorSeverity.Error);
 }
 
@@ -361,18 +363,19 @@ public sealed class DoctorReporter
                 "toolchains.installed",
                 DoctorCheckStatus.Warning,
                 DoctorSeverity.Warning,
-                "No immutable Eidosc toolchain directories were found.",
+                "No immutable managed Eidosc toolchain directories were found.",
                 toolchainsDirectory,
                 "Run 'eidosup setup' to install a verified release.")
             : new DoctorCheck(
                 "toolchains.installed",
                 DoctorCheckStatus.Pass,
                 DoctorSeverity.Info,
-                $"Found {toolchains.Length} immutable Eidosc toolchain{(toolchains.Length == 1 ? string.Empty : "s")}.",
+                $"Found {toolchains.Length} immutable managed Eidosc toolchain{(toolchains.Length == 1 ? string.Empty : "s")}.",
                 string.Join(", ", toolchains.Select(static toolchain => toolchain.Id))));
 
         if (state != null)
         {
+            AddCustomToolchainCheck(checks, state.CustomToolchains);
             checks.Add(state.Default != null
                 ? new DoctorCheck(
                     "toolchains.default",
@@ -417,6 +420,48 @@ public sealed class DoctorReporter
                 legacyDirectory,
                 "Reinstall required toolchains, then remove the legacy directory manually after confirming it is no longer needed."));
         }
+    }
+
+    private void AddCustomToolchainCheck(
+        ICollection<DoctorCheck> checks,
+        IReadOnlyList<CustomToolchainState> customToolchains)
+    {
+        if (customToolchains.Count == 0)
+        {
+            checks.Add(new DoctorCheck(
+                "toolchains.custom",
+                DoctorCheckStatus.Pass,
+                DoctorSeverity.Info,
+                "No custom toolchains are linked."));
+            return;
+        }
+
+        var invalid = customToolchains.Where(toolchain =>
+                !_environment.DirectoryExists(toolchain.RootDirectory) ||
+                !_environment.FileExists(toolchain.CommandPath) ||
+                !_environment.DirectoryExists(toolchain.RuntimePath))
+            .OrderBy(static toolchain => toolchain.Selector, StringComparer.Ordinal)
+            .ToArray();
+        if (invalid.Length != 0)
+        {
+            checks.Add(new DoctorCheck(
+                "toolchains.custom",
+                DoctorCheckStatus.Fail,
+                DoctorSeverity.Error,
+                $"{invalid.Length} linked custom toolchain{(invalid.Length == 1 ? " is" : "s are")} no longer usable.",
+                string.Join(", ", invalid.Select(static toolchain => $"{toolchain.Selector}={toolchain.RootDirectory}")),
+                "Restore each external build directory, or unlink and relink the affected custom toolchain."));
+            return;
+        }
+
+        checks.Add(new DoctorCheck(
+            "toolchains.custom",
+            DoctorCheckStatus.Pass,
+            DoctorSeverity.Info,
+            $"Validated {customToolchains.Count} linked custom toolchain{(customToolchains.Count == 1 ? string.Empty : "s")}.",
+            string.Join(", ", customToolchains
+                .OrderBy(static toolchain => toolchain.Selector, StringComparer.Ordinal)
+                .Select(static toolchain => $"{toolchain.Selector}={toolchain.RootDirectory}"))));
     }
 
     private static void WriteHumanReadable(DoctorReport report, TextWriter writer)

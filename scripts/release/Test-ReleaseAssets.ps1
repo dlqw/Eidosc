@@ -50,6 +50,10 @@ else
 }
 
 $allowedNames = @($expectedNames) + @("SHA256SUMS", "$Product-release.json")
+if ($Product -eq "eidosc")
+{
+    $allowedNames += "eidosup-index.json"
+}
 $unexpectedFiles = Get-ChildItem -LiteralPath $assetRoot -File | Where-Object { $_.Name -notin $allowedNames }
 $unexpectedDirectories = Get-ChildItem -LiteralPath $assetRoot -Directory
 if ($unexpectedFiles -or $unexpectedDirectories)

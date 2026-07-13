@@ -12,7 +12,12 @@ public static class ErrorReporter
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
-    public static int Write(Exception exception, bool verbose, bool json, TextWriter? writer = null)
+    public static int Write(
+        Exception exception,
+        bool verbose,
+        bool json,
+        TextWriter? writer = null,
+        string colorMode = "auto")
     {
         writer ??= Console.Error;
         var error = Describe(exception);
@@ -20,6 +25,7 @@ public static class ErrorReporter
         {
             writer.WriteLine(JsonSerializer.Serialize(new
             {
+                schemaVersion = 1,
                 error.Code,
                 error.Message,
                 error.Hint,
@@ -29,10 +35,14 @@ public static class ErrorReporter
         }
         else
         {
-            writer.WriteLine($"error[{ToKebabCase(error.Code.ToString())}]: {error.Message}");
+            var useColor = ShouldUseColor(colorMode, writer);
+            var errorPrefix = useColor ? "\u001b[31;1m" : string.Empty;
+            var hintPrefix = useColor ? "\u001b[33m" : string.Empty;
+            var reset = useColor ? "\u001b[0m" : string.Empty;
+            writer.WriteLine($"{errorPrefix}error[{ToKebabCase(error.Code.ToString())}]{reset}: {error.Message}");
             if (!string.IsNullOrWhiteSpace(error.Hint))
             {
-                writer.WriteLine($"hint: {error.Hint}");
+                writer.WriteLine($"{hintPrefix}hint{reset}: {error.Hint}");
             }
 
             if (verbose)
@@ -43,6 +53,14 @@ public static class ErrorReporter
 
         return error.ExitCode;
     }
+
+    private static bool ShouldUseColor(string colorMode, TextWriter writer) => colorMode switch
+    {
+        "always" => true,
+        "never" => false,
+        "auto" => ReferenceEquals(writer, Console.Error) && !Console.IsErrorRedirected,
+        _ => false
+    };
 
     public static EidosupException Describe(Exception exception) => exception switch
     {

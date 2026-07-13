@@ -76,6 +76,25 @@ public sealed class ShimInstallerTests
         Assert.Equal(EidosupErrorCode.InstallConflict, exception.Code);
     }
 
+    [Fact]
+    public async Task InstallAsync_RefusesToOverwriteModifiedOwnedCommands()
+    {
+        using var temporary = new TemporaryDirectory();
+        var source = await CreateSourceAsync(temporary.Path, "manager-v1");
+        var layout = CreateLayout(temporary.Path);
+        var installed = await new ShimInstaller(source, static () => FixedTime)
+            .InstallAsync(layout, dryRun: false, CancellationToken.None);
+        await File.WriteAllTextAsync(installed.ShimPath, "locally-modified");
+        await File.WriteAllTextAsync(source, "manager-v2");
+
+        var exception = await Assert.ThrowsAsync<EidosupException>(() =>
+            new ShimInstaller(source, static () => FixedTime.AddMinutes(1))
+                .InstallAsync(layout, dryRun: false, CancellationToken.None));
+
+        Assert.Equal(EidosupErrorCode.InstallConflict, exception.Code);
+        Assert.Equal("locally-modified", await File.ReadAllTextAsync(installed.ShimPath));
+    }
+
     private static ToolInstallLayout CreateLayout(string root) => ToolInstallLayout.Create(
         PlatformContext.Detect(),
         Path.Combine(root, "install"),

@@ -6,9 +6,14 @@ public sealed record EidosReleaseInfo(
     bool Draft,
     bool PreRelease,
     DateTimeOffset? PublishedAt,
-    IReadOnlyList<EidosReleaseAsset> Assets)
+    IReadOnlyList<EidosReleaseAsset> Assets,
+    string? SourceIdentity = null)
 {
     public string NormalizedVersion => Installation.ReleaseAssetLocator.NormalizeVersion(TagName);
 }
 
-public sealed record EidosReleaseAsset(string Name, string DownloadUrl, long? Size = null);
+public sealed record EidosReleaseAsset(
+    string Name,
+    string DownloadUrl,
+    long? Size = null,
+    string? Sha256 = null);

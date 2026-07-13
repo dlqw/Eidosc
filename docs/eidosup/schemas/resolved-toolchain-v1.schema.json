@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eidos.dev/schemas/eidosup/resolved-toolchain-v1.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "selector", "selectionSource", "toolchainId", "toolchainDirectory", "commandPath", "runtimePath", "rootDirectory", "isCustom"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "selector": { "type": "string" },
+    "selectionSource": { "enum": ["explicit", "environment", "projectFile", "directoryOverride", "default"] },
+    "toolchainId": { "type": "string" },
+    "toolchainDirectory": { "type": "string" },
+    "commandPath": { "type": "string" },
+    "runtimePath": { "type": "string" },
+    "rootDirectory": { "type": "string" },
+    "selectionSourcePath": { "type": ["string", "null"] },
+    "isCustom": { "type": "boolean" },
+    "compatibility": { "type": ["object", "null"] }
+  },
+  "additionalProperties": false
+}
