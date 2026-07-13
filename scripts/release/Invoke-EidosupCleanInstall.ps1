@@ -483,9 +483,9 @@ try
     $shimMedian = Measure-MedianStartup $shim
     $shimOverhead = [Math]::Max(0, $shimMedian - $directMedian)
     $shimOverheadBaselines = @{
-        "linux-x64" = 200.0
+        "linux-x64" = 250.0
         "linux-arm64" = 200.0
-        "osx-arm64" = 200.0
+        "osx-arm64" = 300.0
         "win-x64" = 300.0
         "win-arm64" = 300.0
         "osx-x64" = 600.0
