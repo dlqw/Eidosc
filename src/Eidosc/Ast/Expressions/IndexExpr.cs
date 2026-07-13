@@ -30,19 +30,46 @@ public record IndexExpr : Expression
     /// </summary>
     public List<TypeNode> TypeArgs { get; private set; } = [];
 
+    public List<GenericArgumentNode> GenericArguments { get; private set; } = [];
+
     public bool IsRecoveredMissingIndex { get; private set; }
 
     /// <summary>
     /// 是否为显式类型应用
     /// </summary>
-    public bool IsTypeApplication => TypeArgs.Count > 0;
+    public bool IsTypeApplication => GenericArguments.Count > 0 || TypeArgs.Count > 0;
 
     /// <summary>
     /// 反糖化时清除类型参数列表
     /// </summary>
-    internal void ClearTypeArgs() => TypeArgs.Clear();
+    internal void ClearTypeArgs()
+    {
+        TypeArgs.Clear();
+        GenericArguments.Clear();
+    }
 
     internal void SetTypeArgs(IEnumerable<TypeNode> typeArgs) => TypeArgs = [..typeArgs];
+
+    internal void SetGenericArguments(IEnumerable<GenericArgumentNode> arguments)
+    {
+        GenericArguments = [.. arguments];
+        TypeArgs = GenericArguments
+            .Select(static argument => argument switch
+            {
+                UnresolvedGenericArgumentNode { TypeCandidate: { } type } => type,
+                TypeGenericArgumentNode typeArgument => typeArgument.Type,
+                _ => null
+            })
+            .OfType<TypeNode>()
+            .ToList();
+    }
+
+    internal void ReinterpretAsGenericApplication(IEnumerable<GenericArgumentNode> arguments)
+    {
+        SetGenericArguments(arguments);
+        Index = null;
+        IsRecoveredMissingIndex = false;
+    }
 
     /// <summary>
     /// 设置位置
@@ -69,6 +96,7 @@ public record IndexExpr : Expression
     {
         Span = node.Span;
         TypeArgs.Clear();
+        GenericArguments.Clear();
         Object = null;
         Index = null;
 

@@ -468,6 +468,15 @@ public sealed partial class NameResolver
                 requireTypeLikeTarget: true);
         }
 
+        if (typePath.GenericArguments.Count > 0)
+        {
+            typePath.SetGenericArguments(ResolveGenericArguments(
+                typePath.SymbolId,
+                typePath.GenericArguments,
+                typePath.Span));
+            return;
+        }
+
         foreach (var arg in typePath.TypeArgs)
         {
             ResolveTypeReferences(arg);
@@ -574,11 +583,6 @@ public sealed partial class NameResolver
 
     private void ResolveTraitRefReferences(TraitRef traitRef)
     {
-        foreach (var typeArg in traitRef.TypeArgs)
-        {
-            ResolveTypeReferences(typeArg);
-        }
-
         var pathParts = new List<string>(traitRef.ModulePath);
         if (!string.IsNullOrWhiteSpace(traitRef.TraitName))
         {
@@ -593,6 +597,20 @@ public sealed partial class NameResolver
 
         var result = ResolvePathWithImports(pathParts);
         traitRef.SymbolId = result.IsSuccess ? result.SymbolId : SymbolId.None;
+
+        if (traitRef.GenericArguments.Count > 0)
+        {
+            traitRef.SetGenericArguments(ResolveGenericArguments(
+                traitRef.SymbolId,
+                traitRef.GenericArguments,
+                traitRef.Span));
+            return;
+        }
+
+        foreach (var typeArg in traitRef.TypeArgs)
+        {
+            ResolveTypeReferences(typeArg);
+        }
     }
 
     private static string ComposeTraitRefDisplayName(TraitRef traitRef)

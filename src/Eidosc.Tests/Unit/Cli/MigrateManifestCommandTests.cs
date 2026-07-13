@@ -22,7 +22,7 @@ public sealed class MigrateManifestCommandTests
 
         Assert.Contains("manifestSchema = 3", migrated, StringComparison.Ordinal);
         Assert.Contains("[language]", migrated, StringComparison.Ordinal);
-        Assert.Contains("version = \"0.4.0-alpha.1\"", migrated, StringComparison.Ordinal);
+        Assert.Contains("version = \"0.5.0-alpha.1\"", migrated, StringComparison.Ordinal);
         Assert.DoesNotContain("eidosVersion", migrated, StringComparison.Ordinal);
         Assert.DoesNotContain("syntax =", migrated, StringComparison.Ordinal);
     }
@@ -39,6 +39,6 @@ public sealed class MigrateManifestCommandTests
 
         Assert.StartsWith("manifestSchema = 3", migrated, StringComparison.Ordinal);
         Assert.Contains("[language]", migrated, StringComparison.Ordinal);
-        Assert.Contains("version = \"0.4.0-alpha.1\"", migrated, StringComparison.Ordinal);
+        Assert.Contains("version = \"0.5.0-alpha.1\"", migrated, StringComparison.Ordinal);
     }
 }

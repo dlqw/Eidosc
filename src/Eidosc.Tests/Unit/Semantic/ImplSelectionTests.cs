@@ -19,6 +19,21 @@ public class ImplSelectionTests
     private static ImplTypeRefKey VarKey(string name) =>
         new(SymbolId.None, TypeId.None, name, []);
 
+    private static ImplTypeRefKey ConstIntKey(int parameterIndex, int value) =>
+        ImplTypeRefKey.FromValueArgument(new ImplValueRefKey(
+            parameterIndex,
+            $"int:{value}",
+            new TypeId(BaseTypes.IntId),
+            DisplayText: value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+    private static ImplTypeRefKey ConstIntVarKey(int parameterIndex, string name) =>
+        ImplTypeRefKey.FromValueArgument(new ImplValueRefKey(
+            parameterIndex,
+            "",
+            new TypeId(BaseTypes.IntId),
+            $"param:{parameterIndex}",
+            name));
+
     [Fact]
     public void LookupImplForTrait_OldApiWithMultipleCandidates_RemainsConservative()
     {
@@ -638,5 +653,80 @@ public class ImplSelectionTests
         Assert.NotNull(selectedByDefaultKey);
         Assert.Equal(implId, selectedByNoArgs!.Id);
         Assert.Equal(implId, selectedByDefaultKey!.Id);
+    }
+
+    [Fact]
+    public void LookupImplForTraitByKeys_ValueArguments_SelectConcreteBeforeSymbolicImpl()
+    {
+        var symbolTable = new SymbolTable();
+        var traitId = symbolTable.DeclareTrait("Show", TestSpan);
+        var bufferId = symbolTable.DeclareAdt("Buffer", TestSpan);
+        var buffer = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(bufferId));
+        var genericKey = TypeKey(bufferId, buffer.TypeId, "Buffer", ConstIntVarKey(0, "N"), IntKey);
+        var fourKey = TypeKey(bufferId, buffer.TypeId, "Buffer", ConstIntKey(0, 4), IntKey);
+        var fiveKey = TypeKey(bufferId, buffer.TypeId, "Buffer", ConstIntKey(0, 5), IntKey);
+
+        var genericImpl = symbolTable.DeclareImpl(
+            traitId,
+            buffer.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Buffer[N, Int]",
+            canonicalImplementingType: "Buffer",
+            implementingTypeKey: genericKey);
+        var concreteImpl = symbolTable.DeclareImpl(
+            traitId,
+            buffer.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Buffer[4, Int]",
+            canonicalImplementingType: "Buffer",
+            implementingTypeKey: fourKey);
+
+        var selectedFour = symbolTable.LookupImplForTraitByKeys(
+            buffer.TypeId,
+            traitId,
+            fourKey,
+            traitTypeArgKeys: null);
+        var selectedFive = symbolTable.LookupImplForTraitByKeys(
+            buffer.TypeId,
+            traitId,
+            fiveKey,
+            traitTypeArgKeys: null);
+
+        Assert.Equal(concreteImpl, selectedFour?.Id);
+        Assert.Equal(genericImpl, selectedFive?.Id);
+    }
+
+    [Fact]
+    public void DeclareImpl_DifferentConcreteValueArguments_KeepDistinctImplementations()
+    {
+        var symbolTable = new SymbolTable();
+        var traitId = symbolTable.DeclareTrait("Show", TestSpan);
+        var bufferId = symbolTable.DeclareAdt("Buffer", TestSpan);
+        var buffer = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(bufferId));
+        var fourKey = TypeKey(bufferId, buffer.TypeId, "Buffer", ConstIntKey(0, 4), IntKey);
+        var fiveKey = TypeKey(bufferId, buffer.TypeId, "Buffer", ConstIntKey(0, 5), IntKey);
+
+        var fourImpl = symbolTable.DeclareImpl(
+            traitId,
+            buffer.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Buffer[4, Int]",
+            canonicalImplementingType: "Buffer",
+            implementingTypeKey: fourKey);
+        var fiveImpl = symbolTable.DeclareImpl(
+            traitId,
+            buffer.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Buffer[5, Int]",
+            canonicalImplementingType: "Buffer",
+            implementingTypeKey: fiveKey);
+
+        Assert.NotEqual(fourImpl, fiveImpl);
+        Assert.Equal(
+            fourImpl,
+            symbolTable.LookupImplForTraitByKeys(buffer.TypeId, traitId, fourKey, null)?.Id);
+        Assert.Equal(
+            fiveImpl,
+            symbolTable.LookupImplForTraitByKeys(buffer.TypeId, traitId, fiveKey, null)?.Id);
     }
 }

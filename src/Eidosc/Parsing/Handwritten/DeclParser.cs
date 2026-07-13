@@ -201,7 +201,7 @@ public sealed class DeclParser(ParserContext ctx)
                 return CreateNameFirstValueBinding(attrs, isExport, startToken, name, typeAnnotation: null, value, isComptime: true);
             }
 
-            ctx.Error("comptime generic static value bindings are not supported in 0.4.0-alpha.1 phase 1.");
+            ctx.Error("comptime generic static value bindings are not supported in 0.5.0-alpha.1 phase 1.");
         }
 
         if ((typeParams is null || typeParams.Count == 0) && CanStartNameFirstValueExpr(ctx.Current))
@@ -2094,7 +2094,7 @@ public sealed class DeclParser(ParserContext ctx)
             var alias = ctx.GetText();
             if (decl.Kind == ImportKind.Module)
             {
-                // 0.4.0-alpha.1 name-first mode: module alias imports must use the
+                // 0.5.0-alpha.1 name-first mode: module alias imports must use the
                 // `Alias :: import Module.Path;` binding form, not `import ... as`.
                 ctx.Error(DiagnosticMessages.ParserImportAliasUseNameFirstForm);
             }
@@ -2162,7 +2162,7 @@ public sealed class DeclParser(ParserContext ctx)
     }
 
     /// <summary>
-    /// Parses a 0.4.0-alpha.1 import module path: an optional <c>packageAlias::</c> prefix
+    /// Parses a 0.5.0-alpha.1 import module path: an optional <c>packageAlias::</c> prefix
     /// followed by dot- or slash-separated module path segments. Returns the package
     /// alias (null when absent) and the module path segments.
     /// </summary>

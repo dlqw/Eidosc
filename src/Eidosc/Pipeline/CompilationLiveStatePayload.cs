@@ -24,7 +24,7 @@ public sealed record CompilationLiveStatePayload(
     LiveStateRemapPlan RemapPlan,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "compilation-live-state-payload-v1";
+    public const string CurrentSchemaVersion = "compilation-live-state-payload-v2";
 
     public static CompilationLiveStatePayload Create(
         string sourceText,
@@ -86,7 +86,8 @@ public sealed record CompilationLiveStatePayload(
                          RemapPlan.IsIdentity &&
                          current.RemapPlan.IsIdentity &&
                          SymbolTable.Symbols.Count == current.SymbolTable.Symbols.Count &&
-                         TypeSubstitution.Bindings.Count == current.TypeSubstitution.Bindings.Count;
+                         TypeSubstitution.Bindings.Count == current.TypeSubstitution.Bindings.Count &&
+                         TypeSubstitution.ValueBindings.Count == current.TypeSubstitution.ValueBindings.Count;
 
         return new CompilationLiveStatePayloadValidationResult(
             IsValid: failures.Count == 0,
@@ -337,6 +338,7 @@ public sealed record SymbolPayload(
                 break;
             case TypeParamSymbol typeParam:
                 facts["kindAnnotation"] = typeParam.KindAnnotation;
+                facts["parameterKind"] = typeParam.ParameterKind.ToString();
                 facts["isComptime"] = typeParam.IsComptime.ToString();
                 facts["comptimeTypeAnnotation"] = typeParam.ComptimeTypeAnnotation ?? "";
                 facts["traitConstraints"] = JoinSymbolIds(typeParam.TraitConstraints);
@@ -532,15 +534,17 @@ public sealed record TypeSubstitutionPayload(
     string SchemaVersion,
     int NextFreshVarIndex,
     IReadOnlyList<TypeSubstitutionBindingPayload> Bindings,
+    int NextFreshValueVarIndex,
+    IReadOnlyList<ValueSubstitutionBindingPayload> ValueBindings,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "type-substitution-payload-v1";
+    public const string CurrentSchemaVersion = "type-substitution-payload-v2";
 
     public static TypeSubstitutionPayload Create(Substitution? substitution)
     {
         if (substitution == null)
         {
-            var empty = new TypeSubstitutionPayload(CurrentSchemaVersion, 0, [], "");
+            var empty = new TypeSubstitutionPayload(CurrentSchemaVersion, 0, [], 0, [], "");
             return empty with { Hash = ModuleArtifactHash.ComputeJsonHash(empty with { Hash = "" }) };
         }
 
@@ -550,6 +554,11 @@ public sealed record TypeSubstitutionPayload(
             substitution.GetBindingsSnapshot()
                 .OrderBy(static binding => binding.TypeVarIndex)
                 .Select(static binding => TypeSubstitutionBindingPayload.Create(binding))
+                .ToArray(),
+            substitution.NextFreshValueVarIndex,
+            substitution.GetValueBindingsSnapshot()
+                .OrderBy(static binding => binding.ValueVarIndex)
+                .Select(static binding => ValueSubstitutionBindingPayload.Create(binding))
                 .ToArray(),
             "");
 
@@ -585,9 +594,47 @@ public sealed record TypeSubstitutionPayload(
             bindings.Add(restored);
         }
 
+        var valueBindings = new List<ValueSubstitutionBinding>(ValueBindings.Count);
+        foreach (var binding in ValueBindings.OrderBy(static binding => binding.ValueVarIndex))
+        {
+            if (!binding.TryRestoreBinding(remapper, out var restored))
+            {
+                return false;
+            }
+
+            valueBindings.Add(restored);
+        }
+
         substitution.RestoreFromSnapshot(
             bindings,
-            remapper?.RemapNextTypeVariable(NextFreshVarIndex) ?? NextFreshVarIndex);
+            remapper?.RemapNextTypeVariable(NextFreshVarIndex) ?? NextFreshVarIndex,
+            valueBindings,
+            remapper?.RemapNextValueVariable(NextFreshValueVarIndex) ?? NextFreshValueVarIndex);
+        return true;
+    }
+}
+
+public sealed record ValueSubstitutionBindingPayload(
+    int ValueVarIndex,
+    GenericValueArgumentPayload RawValue,
+    GenericValueArgumentPayload ResolvedValue)
+{
+    public static ValueSubstitutionBindingPayload Create(ValueSubstitutionBinding binding) =>
+        new(
+            binding.ValueVarIndex,
+            GenericValueArgumentPayload.Create(binding.RawValue),
+            GenericValueArgumentPayload.Create(binding.ResolvedValue));
+
+    internal bool TryRestoreBinding(
+        LiveStateIdRemapper? remapper,
+        out ValueSubstitutionBinding binding)
+    {
+        var raw = RawValue.Restore(remapper);
+        var resolved = ResolvedValue.Restore(remapper);
+        binding = new ValueSubstitutionBinding(
+            remapper?.RemapValueVariable(ValueVarIndex) ?? ValueVarIndex,
+            raw,
+            resolved);
         return true;
     }
 }
@@ -666,6 +713,43 @@ public sealed record TypeSubstitutionBindingPayload(
     }
 }
 
+public sealed record GenericValueArgumentPayload(
+    int ParameterIndex,
+    string CanonicalText,
+    string CanonicalHash,
+    string DisplayText,
+    int TypeId,
+    int ReferencedParameterIndex,
+    int ValueVariableIndex)
+{
+    public static GenericValueArgumentPayload Create(GenericValueArgument argument) =>
+        new(
+            argument.ParameterIndex,
+            argument.CanonicalText,
+            argument.CanonicalHash,
+            argument.DisplayText,
+            argument.TypeId.Value,
+            argument.ReferencedParameterIndex,
+            argument.ValueVariableIndex);
+
+    public GenericValueArgumentPayload RemapIds(LiveStateIdRemapper remapper) =>
+        this with
+        {
+            TypeId = remapper.RemapType(TypeId),
+            ValueVariableIndex = remapper.RemapValueVariable(ValueVariableIndex)
+        };
+
+    public GenericValueArgument Restore(LiveStateIdRemapper? remapper) =>
+        new(
+            ParameterIndex,
+            CanonicalText,
+            CanonicalHash,
+            DisplayText,
+            new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
+            ReferencedParameterIndex,
+            remapper?.RemapValueVariable(ValueVariableIndex) ?? ValueVariableIndex);
+}
+
 public sealed record TypeShapePayload(
     string Kind,
     int TypeId,
@@ -679,6 +763,7 @@ public sealed record TypeShapePayload(
     string? Name = null,
     int? ConstructorVarIndex = null,
     IReadOnlyList<TypeShapePayload>? Arguments = null,
+    IReadOnlyList<GenericValueArgumentPayload>? ValueArguments = null,
     IReadOnlyList<TypeShapePayload>? Parameters = null,
     TypeShapePayload? Result = null,
     TypeShapePayload? Inner = null,
@@ -742,6 +827,9 @@ public sealed record TypeShapePayload(
                 ? remapper.RemapTypeVariable(ConstructorVarIndex.Value)
                 : null,
             Arguments = RemapList(Arguments, remapper),
+            ValueArguments = ValueArguments?
+                .Select(value => value.RemapIds(remapper))
+                .ToArray(),
             Parameters = RemapList(Parameters, remapper),
             Result = Result?.RemapIds(remapper),
             Inner = Inner?.RemapIds(remapper),
@@ -817,7 +905,8 @@ public sealed record TypeShapePayload(
                 SymbolId: constructor.Symbol.Value,
                 Name: constructor.Name,
                 ConstructorVarIndex: constructor.ConstructorVarIndex,
-                Arguments: constructor.Args.Select(argument => Create(argument, visited)).ToArray()),
+                Arguments: constructor.Args.Select(argument => Create(argument, visited)).ToArray(),
+                ValueArguments: constructor.ValueArgs.Select(GenericValueArgumentPayload.Create).ToArray()),
 
             TyReflProof proof => new TypeShapePayload(
                 nameof(TyReflProof),
@@ -981,7 +1070,10 @@ public sealed record TypeShapePayload(
                     Symbol = new global::Eidosc.SymbolId(payload.SymbolId ?? global::Eidosc.SymbolId.None.Value),
                     Name = payload.Name ?? "",
                     ConstructorVarIndex = payload.ConstructorVarIndex,
-                    Args = arguments
+                    Args = arguments,
+                    ValueArgs = (payload.ValueArguments ?? [])
+                        .Select(static value => value.Restore(remapper: null))
+                        .ToList()
                 };
                 return true;
 

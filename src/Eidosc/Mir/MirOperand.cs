@@ -1,6 +1,7 @@
 using Eidosc.Symbols;
 using Eidosc.Semantic;
 using Eidosc.Utils;
+using Eidosc.Types;
 
 namespace Eidosc.Mir;
 
@@ -46,6 +47,21 @@ public sealed record MirConstant : MirOperand
 }
 
 /// <summary>
+/// Symbolic reference to a value-domain generic parameter in a generic MIR body.
+/// The generic specializer must replace it with a concrete constant before code generation.
+/// </summary>
+public sealed record MirConstGenericValue : MirOperand
+{
+    public SymbolId SymbolId { get; init; } = SymbolId.None;
+
+    public string Name { get; init; } = "";
+
+    public int ParameterIndex { get; init; } = -1;
+
+    public override string ToString() => $"comptime({Name}@{ParameterIndex})";
+}
+
+/// <summary>
 /// 函数引用（模块级函数符号）
 /// </summary>
 public sealed record MirFunctionRef : MirOperand
@@ -84,6 +100,8 @@ public sealed record MirFunctionRef : MirOperand
     /// 显式类型实参（def + type arguments 中的 type arguments）。
     /// </summary>
     public IReadOnlyList<TypeId> TypeArgumentIds { get; init; } = [];
+
+    public IReadOnlyList<GenericValueArgumentDescriptor> ValueArguments { get; init; } = [];
 
     /// <summary>
     /// Gets the owner trait when this function reference names a trait method.

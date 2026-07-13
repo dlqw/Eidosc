@@ -127,6 +127,81 @@ ShowPerson :: instance Show
     }
 
     [Fact]
+    public void CompilationPipeline_ConstGenericImplHeads_DistinguishConcreteValuesAndAllowSpecialization()
+    {
+        const string source = """
+Show :: trait
+{
+    show :: Self -> String
+}
+
+Buffer[comptime N: Int, comptime T: Type] :: type
+{
+    Buffer(T)
+}
+
+ShowBufferN[comptime N: Int] :: instance Show
+{
+    show :: Buffer[N, Int] -> String
+    {
+        _ => "generic"
+    }
+}
+
+ShowBuffer4 :: instance Show
+{
+    show :: Buffer[4, Int] -> String
+    {
+        _ => "four"
+    }
+}
+
+ShowBuffer5 :: instance Show
+{
+    show :: Buffer[5, Int] -> String
+    {
+        _ => "five"
+    }
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "const_generic_impl_coherence.eidos",
+            StopAtPhase = CompilationPhase.Namer,
+            LanguageVersion = EidosLanguageVersions.Current,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => d.Message)));
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var traitId = symbolTable.LookupTrait("Show");
+        Assert.True(traitId.HasValue);
+        var impls = symbolTable.GetImplsForTrait(traitId.Value);
+        Assert.Equal(3, impls.Count);
+        Assert.Equal(
+            ["Buffer[4,Int]", "Buffer[5,Int]", "Buffer[N,Int]"],
+            impls
+                .Select(static impl => impl.CanonicalImplementingType)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray());
+
+        var valueShapes = impls
+            .Select(impl => Assert.IsType<ImplConstructorShapeNode>(impl.ImplementingTypeShape))
+            .Select(shape => shape.Args[0])
+            .ToList();
+        Assert.Single(valueShapes.OfType<ImplValueVariableShapeNode>());
+        Assert.Equal(
+            ["int:4", "int:5"],
+            valueShapes
+                .OfType<ImplConcreteValueShapeNode>()
+                .Select(static value => value.CanonicalPayload)
+                .OrderBy(static value => value, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    [Fact]
     public void CompilationPipeline_NameFirstConstructorBridgeInstance_GeneratesTraitImplementation()
     {
         const string source = """

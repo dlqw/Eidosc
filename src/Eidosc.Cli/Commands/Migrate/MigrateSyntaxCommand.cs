@@ -1320,7 +1320,7 @@ public static class SyntaxMigrationPlanner
                 tokens[i].Length,
                 ".",
                 "import-module-path",
-                "Rewrite legacy slash-separated import module path to 0.4.0-alpha.1 dot-separated module path."));
+                "Rewrite legacy slash-separated import module path to 0.5.0-alpha.1 dot-separated module path."));
             converted++;
         }
 
@@ -1332,7 +1332,7 @@ public static class SyntaxMigrationPlanner
 
     /// <summary>
     /// Rewrites a legacy module-alias import <c>import PackageAlias::Mod.Path as Alias;</c>
-    /// to the 0.4.0-alpha.1 name-first binding form <c>Alias :: import PackageAlias::Mod.Path;</c>.
+    /// to the 0.5.0-alpha.1 name-first binding form <c>Alias :: import PackageAlias::Mod.Path;</c>.
     /// Only the module-kind aliased import is rewritten; selective/wildcard/unaliased imports
     /// and the leading <c>export</c> modifier are left untouched.
     /// </summary>
@@ -1380,7 +1380,7 @@ public static class SyntaxMigrationPlanner
             replacementEnd - start,
             $"{importDecl.Alias} :: import {qualifiedPath}",
             "import-module-alias-name-first",
-            "Rewrite legacy module-alias import to 0.4.0-alpha.1 name-first binding form."));
+            "Rewrite legacy module-alias import to 0.5.0-alpha.1 name-first binding form."));
     }
 
     private static int FindImportPathEndTokenIndex(IReadOnlyList<Token> tokens, SourceSpan span, int startIndex)
@@ -1444,7 +1444,7 @@ public static class SyntaxMigrationPlanner
             tokens[assignIndex].Length,
             "=",
             "assignment-operator",
-            "Rewrite legacy assignment operator to 0.4.0-alpha.1 assignment operator."));
+            "Rewrite legacy assignment operator to 0.5.0-alpha.1 assignment operator."));
     }
 
     private static void AddWhitespaceSeparatedConsEdits(
@@ -1469,7 +1469,7 @@ public static class SyntaxMigrationPlanner
                 token.Length,
                 "+:",
                 "cons-operator",
-                "Rewrite legacy list cons operator to 0.4.0-alpha.1 cons operator."));
+                "Rewrite legacy list cons operator to 0.5.0-alpha.1 cons operator."));
         }
     }
 

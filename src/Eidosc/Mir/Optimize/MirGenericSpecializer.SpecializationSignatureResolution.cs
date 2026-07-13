@@ -142,7 +142,7 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        signature = new SpecializationSignature(returnType, parameterTypes);
+        signature = new SpecializationSignature(returnType, parameterTypes, GetCallValueArguments(call));
         if (TryDefaultErasedOpenTypeVariables(template, signature, out var defaultedSignature))
         {
             signature = defaultedSignature;
@@ -152,6 +152,7 @@ public sealed partial class MirGenericSpecializer
     }
 
     private bool TryResolveFunctionValueSignature(
+        MirFunctionRef functionRef,
         MirFunc template,
         TypeId expectedFunctionTypeId,
         out SpecializationSignature signature)
@@ -183,7 +184,10 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        signature = new SpecializationSignature(directReturnType, directParameterTypes);
+        signature = new SpecializationSignature(
+            directReturnType,
+            directParameterTypes,
+            functionRef.ValueArguments);
         if (TryDefaultErasedOpenTypeVariables(template, signature, out var defaultedSignature))
         {
             signature = defaultedSignature;
@@ -230,7 +234,7 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        signature = new SpecializationSignature(returnType, parameterTypes);
+        signature = new SpecializationSignature(returnType, parameterTypes, GetCallValueArguments(call));
         if (TryDefaultErasedOpenTypeVariables(template, signature, out var defaultedSignature))
         {
             signature = defaultedSignature;
@@ -327,7 +331,10 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        signature = new SpecializationSignature(resolvedReturnType, parameterTypes);
+        signature = new SpecializationSignature(
+            resolvedReturnType,
+            parameterTypes,
+            functionRef.ValueArguments);
         if (TryDefaultErasedOpenTypeVariables(template, signature, out var defaultedSignature))
         {
             signature = defaultedSignature;
@@ -435,7 +442,10 @@ public sealed partial class MirGenericSpecializer
                 }
 
                 parameterTypes.AddRange(remainingParameterTypes);
-                signature = new SpecializationSignature(remainingResultType, parameterTypes);
+                signature = new SpecializationSignature(
+                    remainingResultType,
+                    parameterTypes,
+                    GetCallValueArguments(call));
                 if (TryDefaultErasedOpenTypeVariables(template, signature, out var defaultedSignature))
                 {
                     signature = defaultedSignature;
@@ -518,7 +528,10 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        signature = new SpecializationSignature(resolvedReturnType, resolvedParameterTypes);
+        signature = new SpecializationSignature(
+            resolvedReturnType,
+            resolvedParameterTypes,
+            GetCallValueArguments(call));
         if (TryDefaultErasedOpenTypeVariables(template, signature, out var defaultedPartialSignature))
         {
             signature = defaultedPartialSignature;
@@ -659,6 +672,11 @@ public sealed partial class MirGenericSpecializer
 
     private bool HasMeaningfulSpecializationSignature(MirFunc template, SpecializationSignature signature)
     {
+        if (signature.GenericValueArguments is { Count: > 0 })
+        {
+            return true;
+        }
+
         if (HasMeaningfulSpecializationBindings(template, signature))
         {
             return true;
@@ -692,7 +710,8 @@ public sealed partial class MirGenericSpecializer
 
         _stats.MeaningfulSignatureCacheMisses++;
         var templateSource = template.TemplateSource;
-        var meaningful = HasMeaningfulSpecializationBindings(template, signature);
+        var meaningful = signature.GenericValueArguments is { Count: > 0 } ||
+                         HasMeaningfulSpecializationBindings(template, signature);
         if (!meaningful && templateSource.GenericParameterCount > 0 && IsMonomorphicSignature(signature))
         {
             meaningful = true;
@@ -784,7 +803,10 @@ public sealed partial class MirGenericSpecializer
         var parameterTypes = signature.ParameterTypes
             .Select(parameterType => SubstituteTypeId(parameterType, bindings))
             .ToList();
-        var candidate = new SpecializationSignature(returnType, parameterTypes);
+        var candidate = new SpecializationSignature(
+            returnType,
+            parameterTypes,
+            signature.GenericValueArguments);
         if (!IsMonomorphicSignature(candidate))
         {
             return false;
@@ -792,6 +814,13 @@ public sealed partial class MirGenericSpecializer
 
         defaultedSignature = candidate;
         return true;
+    }
+
+    private static IReadOnlyList<GenericValueArgumentDescriptor> GetCallValueArguments(MirCall call)
+    {
+        return call.Function is MirFunctionRef functionRef
+            ? functionRef.ValueArguments
+            : [];
     }
 
     private bool CanDefaultErasedOpenTypeVariablesInTemplateBody(

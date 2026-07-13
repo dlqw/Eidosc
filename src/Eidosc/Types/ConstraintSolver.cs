@@ -729,7 +729,8 @@ public sealed class ConstraintSolver
         return type switch
         {
             TyVar => true,
-            TyCon con => con.Args.Any(ContainsTypeVariable),
+            TyCon con => con.Args.Any(ContainsTypeVariable) ||
+                         con.ValueArgs.Any(static argument => !argument.IsConcrete),
             TyTuple tuple => tuple.Elements.Any(ContainsTypeVariable),
             TyFun fun => fun.Params.Any(ContainsTypeVariable) || ContainsTypeVariable(fun.Result),
             _ => false

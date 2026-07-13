@@ -51,15 +51,23 @@ public sealed partial class MirGenericSpecializer
             });
         }
 
+        var specializedBlocks = CloneBlocksWithTypeSubstitution(
+            template.BasicBlocks,
+            typeBindings,
+            substitutionService,
+            resolvingTypeIds);
+        RewriteConstGenericValues(specializedBlocks, signature.GenericValueArguments);
+
         return new MirFunc
         {
             Name = specializationName,
             SourceName = string.IsNullOrWhiteSpace(template.SourceName) ? template.Name : template.SourceName,
             Locals = specializedLocals,
-            BasicBlocks = CloneBlocksWithTypeSubstitution(template.BasicBlocks, typeBindings, substitutionService, resolvingTypeIds),
+            BasicBlocks = specializedBlocks,
             EntryBlockId = template.EntryBlockId,
             ReturnType = substitutionService.SubstituteTypeId(signature.ReturnType, typeBindings, resolvingTypeIds),
             GenericParameterCount = 0,
+            GenericParameters = [],
             GenericTypeParameterIds = [],
             IsRuntimeWordAbi = template.IsRuntimeWordAbi,
             IsExternal = template.IsExternal,

@@ -65,14 +65,16 @@ public sealed partial class NameResolver
             }
 
             var canonicalTraitTypeArgs = CanonicalizeImplTraitTypeArgs(traitRef);
-            var traitTypeArgKeys = BuildImplTraitTypeArgKeys(traitRef);
-            var canonicalTraitTypeArgKeys = BuildCanonicalImplTraitTypeArgKeys(canonicalTraitTypeArgs);
+            var traitTypeArgKeys = BuildImplTraitTypeArgKeys(traitId, traitRef);
+            var canonicalTraitTypeArgKeys = BuildCanonicalImplTraitTypeArgKeys(
+                canonicalTraitTypeArgs,
+                traitTypeArgKeys);
             var implementingTypeKey = BuildImplTypeRefKey(implementingTypePath);
             var implementingTypeDisplay = NormalizeTypePath(implementingTypePath, selfType: null, traitTypeArgBindings: null);
             var canonicalImplementingType = CanonicalizeTypePathForImplHead(implementingTypePath);
             var requestedHeadShape = BuildCanonicalImplHeadShape(
                 traitId,
-                traitRef.TypeArgs,
+                traitRef.GenericArguments.Count > 0 ? [] : traitRef.TypeArgs,
                 implementingTypePath,
                 canonicalTraitTypeArgs,
                 canonicalTraitTypeArgKeys,
@@ -472,6 +474,16 @@ public sealed partial class NameResolver
         if (key.IsEmpty)
         {
             return string.Empty;
+        }
+
+        if (key.ValueArgument is { } valueArgument)
+        {
+            var identity = valueArgument.IsConcrete
+                ? valueArgument.CanonicalPayload
+                : string.IsNullOrWhiteSpace(valueArgument.DisplayText)
+                    ? valueArgument.VariableIdentity
+                    : $"param:{valueArgument.DisplayText}";
+            return $"value:{valueArgument.ParameterIndex}:{valueArgument.TypeId.Value}:{identity}";
         }
 
         var head = FormatStableImplTypeRefKeyHead(key);

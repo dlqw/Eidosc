@@ -268,7 +268,10 @@ public sealed partial class MirGenericSpecializer
             ImplEffectfulShapeNode effectful =>
                 ShapeUsesOnlyStructuredConstructors(effectful.InputType) &&
                 (effectful.OutputType == null || ShapeUsesOnlyStructuredConstructors(effectful.OutputType)),
-            ImplVariableShapeNode or ImplWildcardShapeNode => true,
+            ImplVariableShapeNode or
+            ImplValueVariableShapeNode or
+            ImplConcreteValueShapeNode or
+            ImplWildcardShapeNode => true,
             _ => false
         };
     }

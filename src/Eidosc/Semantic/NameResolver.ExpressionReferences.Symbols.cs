@@ -123,6 +123,15 @@ public sealed partial class NameResolver
                     string.Join(WellKnownStrings.Separators.Path, fullPath)));
         }
 
+        if (path.GenericArguments.Count > 0)
+        {
+            path.SetGenericArguments(ResolveGenericArguments(
+                path.SymbolId,
+                path.GenericArguments,
+                path.Span));
+            return;
+        }
+
         foreach (var typeArg in path.TypeArgs)
         {
             ResolveTypeReferences(typeArg);

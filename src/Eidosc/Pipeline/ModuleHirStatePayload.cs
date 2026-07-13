@@ -17,7 +17,7 @@ public sealed record ModuleHirStatePayload(
     IReadOnlyList<string> UnsupportedNodeKinds,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-hir-state-payload-v2";
+    public const string CurrentSchemaVersion = "module-hir-state-payload-v6";
 
     public bool IsRestorable => Module != null &&
                                 AttachedState.HasValidHash() &&
@@ -473,6 +473,7 @@ public sealed record HirStateNodePayload(
     HirStateLiteralValuePayload? LiteralValue,
     string Name,
     IReadOnlyList<int> TypeArgumentIds,
+    IReadOnlyList<GenericValueArgumentDescriptorPayload> ValueArguments,
     string Operator,
     HirStateNodePayload? Left,
     HirStateNodePayload? Right,
@@ -515,6 +516,7 @@ public sealed record HirStateNodePayload(
     public const string ErrorKind = nameof(HirError);
     public const string LiteralKindName = nameof(HirLiteral);
     public const string VarKind = nameof(HirVar);
+    public const string ConstGenericValueKind = nameof(HirConstGenericValue);
     public const string BinOpKind = nameof(HirBinOp);
     public const string UnaryOpKind = nameof(HirUnaryOp);
     public const string CallKind = nameof(HirCall);
@@ -553,7 +555,15 @@ public sealed record HirStateNodePayload(
             HirVar variable => Empty(VarKind, variable) with
             {
                 Name = variable.Name,
-                TypeArgumentIds = variable.TypeArgumentIds.Select(static id => id.Value).ToArray()
+                TypeArgumentIds = variable.TypeArgumentIds.Select(static id => id.Value).ToArray(),
+                ValueArguments = variable.ValueArguments
+                    .Select(GenericValueArgumentDescriptorPayload.Create)
+                    .ToArray()
+            },
+            HirConstGenericValue constGeneric => Empty(ConstGenericValueKind, constGeneric) with
+            {
+                Name = constGeneric.Name,
+                ParameterIndex = constGeneric.ParameterIndex
             },
             HirBinOp binOp => Empty(BinOpKind, binOp) with
             {
@@ -678,7 +688,16 @@ public sealed record HirStateNodePayload(
                 {
                     Name = Name,
                     SymbolId = new SymbolId(Header.SymbolId),
-                    TypeArgumentIds = TypeArgumentIds.Select(static id => new TypeId(id)).ToList()
+                    TypeArgumentIds = TypeArgumentIds.Select(static id => new TypeId(id)).ToList(),
+                    ValueArguments = ValueArguments.Select(static argument => argument.Restore()).ToList()
+                });
+                return true;
+            case ConstGenericValueKind:
+                node = ApplyHeader(new HirConstGenericValue
+                {
+                    Name = Name,
+                    SymbolId = new SymbolId(Header.SymbolId),
+                    ParameterIndex = ParameterIndex
                 });
                 return true;
             case BinOpKind:
@@ -929,6 +948,7 @@ public sealed record HirStateNodePayload(
             null,
             "",
             [],
+            [],
             "",
             null,
             null,
@@ -1009,6 +1029,8 @@ public sealed record HirStateNodePayload(
 
         return true;
     }
+
+    public int ParameterIndex { get; init; } = -1;
 }
 
 public sealed record HirStatePatternPayload(
@@ -1462,6 +1484,7 @@ public sealed record HirStateTypeParamPayload(
     string Name,
     int SymbolId,
     int TypeId,
+    GenericParameterKind ParameterKind,
     string KindAnnotation,
     bool IsComptime,
     string? ComptimeTypeAnnotation,
@@ -1472,6 +1495,7 @@ public sealed record HirStateTypeParamPayload(
             typeParam.Name,
             typeParam.SymbolId.Value,
             typeParam.TypeId.Value,
+            typeParam.ParameterKind,
             typeParam.KindAnnotation,
             typeParam.IsComptime,
             typeParam.ComptimeTypeAnnotation,
@@ -1483,6 +1507,7 @@ public sealed record HirStateTypeParamPayload(
             Name = Name,
             SymbolId = new SymbolId(SymbolId),
             TypeId = new TypeId(TypeId),
+            ParameterKind = ParameterKind,
             KindAnnotation = KindAnnotation,
             IsComptime = IsComptime,
             ComptimeTypeAnnotation = ComptimeTypeAnnotation,

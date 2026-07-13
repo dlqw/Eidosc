@@ -1,4 +1,5 @@
 using Eidosc.Symbols;
+using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
@@ -56,6 +57,12 @@ public sealed partial class TypeInferer
     private readonly Dictionary<SymbolId, AdtTypeParamConstraintBinding> _adtTypeParamConstraintBindings = [];
     private readonly Dictionary<SymbolId, TypeParamConstraintBinding> _ctorTypeParamConstraintBindings = [];
     private readonly Dictionary<SymbolId, IReadOnlyList<Type>> _functionTypeParametersBySymbol = [];
+    private readonly Dictionary<SymbolId, Type> _valueGenericParameterTypesBySymbol = [];
+    private readonly Dictionary<SymbolId, int> _valueGenericParameterOrdinalsBySymbol = [];
+    private readonly Dictionary<Dictionary<string, Type>, Dictionary<SymbolId, GenericValueArgument>>
+        _valueGenericArgumentsByTypeEnv = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<EidosAstNode, List<GenericValueArgument>>
+        _valueGenericArgumentsByApplication = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<(SymbolId ImplId, string AssociatedTypeName), TypeNode> _associatedTypeImplementations = [];
     private readonly Dictionary<(SymbolId ImplId, string AssociatedConstName), AssociatedConstDecl> _associatedConstImplementations = [];
     private readonly Dictionary<SymbolId, ComptimeValue> _comptimeValues = [];
@@ -77,6 +84,8 @@ public sealed partial class TypeInferer
     private sealed record CtorTypeBinding(
         SymbolId CtorId,
         SymbolId AdtId,
+        List<TypeParam> AdtGenericParameters,
+        List<TypeParam> CtorGenericParameters,
         List<string> AdtTypeParamNames,
         List<string> CtorTypeParamNames,
         List<TypeNode> PositionalArgTypes,
@@ -163,6 +172,13 @@ public sealed partial class TypeInferer
     public IReadOnlyDictionary<SymbolId, IReadOnlyList<Type>> FunctionTypeParametersBySymbol => _functionTypeParametersBySymbol;
 
     public IReadOnlyList<TypeEnvBindingSnapshot> TypeEnvBindings => _env.GetBindingsSnapshot();
+
+    internal IReadOnlyList<GenericValueArgument> GetValueGenericArguments(EidosAstNode application)
+    {
+        return _valueGenericArgumentsByApplication.TryGetValue(application, out var arguments)
+            ? arguments.Select(_substitution.Apply).ToArray()
+            : [];
+    }
 
     internal IReadOnlyDictionary<SymbolId, ComptimeValue> ComptimeValues => _comptimeValues;
 
@@ -323,6 +339,10 @@ public sealed partial class TypeInferer
         _substitution.RestoreFrom(substitution);
         _constraintGenerator.Constraints.RestoreFromSnapshot(constraints);
         _functionTypeParametersBySymbol.Clear();
+        _valueGenericParameterTypesBySymbol.Clear();
+        _valueGenericParameterOrdinalsBySymbol.Clear();
+        _valueGenericArgumentsByTypeEnv.Clear();
+        _valueGenericArgumentsByApplication.Clear();
         foreach (var (symbol, parameters) in functionTypeParameters.OrderBy(static binding => binding.Key.Value))
         {
             _functionTypeParametersBySymbol[symbol] = parameters.ToArray();
@@ -609,6 +629,11 @@ public sealed partial class TypeInferer
 
         _adtDefinitionsBySymbol[adt.SymbolId] = adt;
         var typeParamNames = GetAdtTypeParamNames(adt);
+        var adtTypeVarEnv = typeParamNames.ToDictionary(
+            static name => name,
+            _ => (Type)_substitution.FreshTypeVariable(),
+            StringComparer.Ordinal);
+        ResolveValueGenericParameterTypes(adt.TypeParams, adtTypeVarEnv);
         RegisterAdtTypeParamKinds(adt, typeParamNames);
         RegisterAdtTypeParamConstraints(adt, typeParamNames);
 
@@ -629,12 +654,20 @@ public sealed partial class TypeInferer
             }
 
             var ctorTypeParamNames = GetConstructorTypeParamNames(ctor);
+            var ctorValueTypeEnv = new Dictionary<string, Type>(adtTypeVarEnv, StringComparer.Ordinal);
+            foreach (var ctorTypeParamName in ctorTypeParamNames)
+            {
+                ctorValueTypeEnv[ctorTypeParamName] = _substitution.FreshTypeVariable();
+            }
+            ResolveValueGenericParameterTypes(ctor.TypeParams, ctorValueTypeEnv);
             RegisterConstructorTypeParamKinds(adt, ctor, typeParamNames, ctorTypeParamNames);
             RegisterConstructorTypeParamConstraints(ctor, ctorTypeParamNames);
 
             _ctorTypeBindings[ctor.SymbolId] = new CtorTypeBinding(
                 ctor.SymbolId,
                 adt.SymbolId,
+                [.. adt.TypeParams],
+                [.. ctor.TypeParams],
                 typeParamNames,
                 ctorTypeParamNames,
                 [.. ctor.PositionalArgs],
@@ -668,6 +701,9 @@ public sealed partial class TypeInferer
             typeVarEnv[typeParamName] = _substitution.FreshTypeVariable();
         }
 
+        PopulateValueGenericArgumentEnv(typeVarEnv, adt.TypeParams);
+        PopulateValueGenericArgumentEnv(typeVarEnv, ctor.TypeParams);
+
         var kindEnvByName = CreateTypeParamKindMapForCtorBinding(adt.SymbolId, typeParamNames, ctor.SymbolId, ctorTypeParamNames);
         var returnType = ctor.ReturnType != null
             ? ConvertTypeWithAdditionalKindContext(ctor.ReturnType, typeVarEnv, kindEnvByName)
@@ -677,7 +713,19 @@ public sealed partial class TypeInferer
                 Symbol = adt.SymbolId,
                 Args = typeParamNames
                     .Select(name => typeVarEnv.TryGetValue(name, out var type) ? type : _substitution.FreshTypeVariable())
-                    .ToList()
+                    .ToList(),
+                ValueArgs = _valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var valueArguments)
+                    ? adt.TypeParams
+                        .Select((parameter, index) => (parameter, index))
+                        .Where(static entry => entry.parameter.ParameterKind == GenericParameterKind.Value)
+                        .Select(entry => valueArguments.TryGetValue(entry.parameter.SymbolId, out var argument)
+                            ? argument with { ParameterIndex = entry.index }
+                            : CreateValueGenericArgumentTemplate(
+                                entry.parameter.Name,
+                                new TyCon { Id = _symbolTable.GetSymbol<TypeParamSymbol>(entry.parameter.SymbolId)?.TypeId ?? TypeId.None },
+                                entry.index))
+                        .ToList()
+                    : []
             };
 
         _symbolTable.UpdateSymbol(symbol with
@@ -703,8 +751,9 @@ public sealed partial class TypeInferer
 
     private void RegisterAdtTypeParamKinds(AdtDef adt, IReadOnlyList<string> typeParamNames)
     {
+        var typeParameters = GetTypeDomainParameters(adt.TypeParams);
         var expectedKinds = InferAndFinalizeTypeParamKinds(
-            adt.TypeParams,
+            typeParameters,
             typeParamNames,
             EnumerateAdtKindInferenceTypeNodes(adt),
             ownerKind: "ADT",
@@ -725,11 +774,12 @@ public sealed partial class TypeInferer
         }
 
         var typeParamNames = GetTraitTypeParamNames(trait);
+        var typeParameters = GetTypeDomainParameters(trait.TypeParams);
         var kindUnifier = new KindInferer(
             _symbolTable,
             typeConstructorKindsBySymbol: _typeConstructorKindsBySymbol);
         var expectedKinds = CreateExpectedKinds(
-            trait.TypeParams,
+            typeParameters,
             typeParamNames,
             kindUnifier);
         var kindByTypeParamName = CreateTypeParamKindBindings(typeParamNames, expectedKinds);
@@ -745,7 +795,7 @@ public sealed partial class TypeInferer
         }
 
         FinalizeExpectedKindsInPlace(expectedKinds);
-        UpdateTypeParamSymbolsWithKinds(trait.TypeParams, expectedKinds);
+        UpdateTypeParamSymbolsWithKinds(typeParameters, expectedKinds);
 
         _typeParamKindBindingsBySymbol[trait.SymbolId] = new TypeParamKindBinding(
             trait.SymbolId,

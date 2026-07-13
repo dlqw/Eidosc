@@ -346,11 +346,17 @@ public sealed partial class NameResolver
             path.Add(trait.TraitName);
         }
 
-        var typeArgTexts = trait.TypeArgs
-            .Select(RenderImplAttributeTypeArgText)
-            .Where(static text => !string.IsNullOrWhiteSpace(text))
-            .ToList();
-        traitRef = new(path, typeArgTexts, trait.TypeArgs.ToList());
+        var genericArguments = trait.GenericArguments.ToList();
+        var typeArgTexts = genericArguments.Count > 0
+            ? genericArguments
+                .Select(RenderImplAttributeGenericArgText)
+                .Where(static text => !string.IsNullOrWhiteSpace(text))
+                .ToList()
+            : trait.TypeArgs
+                .Select(RenderImplAttributeTypeArgText)
+                .Where(static text => !string.IsNullOrWhiteSpace(text))
+                .ToList();
+        traitRef = new(path, typeArgTexts, trait.TypeArgs.ToList(), genericArguments);
         traitId = SymbolId.None;
 
         if (path.Count == 0)
@@ -363,6 +369,7 @@ public sealed partial class NameResolver
         {
             traitId = result.SymbolId;
             trait.SymbolId = traitId;
+            traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, trait.Span);
             return true;
         }
 
@@ -373,6 +380,7 @@ public sealed partial class NameResolver
             {
                 traitId = fallbackId;
                 trait.SymbolId = traitId;
+                traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, trait.Span);
                 return true;
             }
         }
@@ -658,12 +666,14 @@ public sealed partial class NameResolver
         }
 
         var canonicalTraitTypeArgs = CanonicalizeImplTraitTypeArgs(traitRef);
-        var traitTypeArgKeys = BuildImplTraitTypeArgKeys(traitRef);
-        var canonicalTraitTypeArgKeys = BuildCanonicalImplTraitTypeArgKeys(canonicalTraitTypeArgs);
+        var traitTypeArgKeys = BuildImplTraitTypeArgKeys(traitId, traitRef);
+        var canonicalTraitTypeArgKeys = BuildCanonicalImplTraitTypeArgKeys(
+            canonicalTraitTypeArgs,
+            traitTypeArgKeys);
         var canonicalImplementingType = CanonicalizeTypePathForImplHead(implementingTypePath);
         var requestedHeadShape = BuildCanonicalImplHeadShape(
             traitId,
-            traitRef.TypeArgs,
+            traitRef.GenericArguments.Count > 0 ? [] : traitRef.TypeArgs,
             implementingTypePath,
             canonicalTraitTypeArgs,
             canonicalTraitTypeArgKeys,

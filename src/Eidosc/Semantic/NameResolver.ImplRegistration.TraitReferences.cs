@@ -4,6 +4,8 @@ using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Types;
+using Eidosc.Utils;
 using EidosAttribute = Eidosc.Ast.Attribute;
 
 namespace Eidosc.Semantic;
@@ -132,7 +134,7 @@ public sealed partial class NameResolver
     {
         traitId = SymbolId.None;
         traitName = "";
-        traitRef = new([], [], []);
+        traitRef = new([], [], [], []);
 
         if (!TryExtractTraitReferenceFromAttribute(attribute, out traitRef))
         {
@@ -145,6 +147,7 @@ public sealed partial class NameResolver
         if (result.IsSuccess && _symbolTable.GetSymbol(result.SymbolId) is TraitSymbol)
         {
             traitId = result.SymbolId;
+            traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, attribute.Span);
             return true;
         }
 
@@ -154,6 +157,7 @@ public sealed partial class NameResolver
             if (fallback is { } fallbackId && _symbolTable.GetSymbol(fallbackId) is TraitSymbol)
             {
                 traitId = fallbackId;
+                traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, attribute.Span);
                 return true;
             }
         }
@@ -161,25 +165,84 @@ public sealed partial class NameResolver
         return false;
     }
 
+    private ImplTraitReference ResolveImplTraitReferenceGenericArguments(
+        SymbolId traitId,
+        ImplTraitReference traitRef,
+        SourceSpan applicationSpan)
+    {
+        var genericArguments = traitRef.GenericArguments.Count > 0
+            ? traitRef.GenericArguments
+            : traitRef.TypeArgs
+                .Select(static typeArgument => (GenericArgumentNode)new UnresolvedGenericArgumentNode
+                {
+                    TypeCandidate = typeArgument,
+                    Span = typeArgument.Span
+                })
+                .ToList();
+        if (genericArguments.Count == 0)
+        {
+            return traitRef;
+        }
+
+        var resolvedArguments = _traitDefinitions.TryGetValue(traitId, out var traitDefinition)
+            ? genericArguments
+                .Select((argument, index) => ResolveGenericArgument(
+                    argument,
+                    index < traitDefinition.TypeParams.Count
+                        ? traitDefinition.TypeParams[index].ParameterKind
+                        : GenericParameterKind.Type,
+                    index,
+                    applicationSpan))
+                .ToList()
+            : ResolveGenericArguments(traitId, genericArguments, applicationSpan);
+        return traitRef with
+        {
+            GenericArguments = resolvedArguments,
+            TypeArgs = resolvedArguments
+                .Select(static argument => argument switch
+                {
+                    TypeGenericArgumentNode typeArgument => typeArgument.Type,
+                    UnresolvedGenericArgumentNode { TypeCandidate: { } typeCandidate } => typeCandidate,
+                    _ => null
+                })
+                .OfType<TypeNode>()
+                .ToList(),
+            TypeArgTexts = resolvedArguments
+                .Select(RenderImplAttributeGenericArgText)
+                .Where(static text => !string.IsNullOrWhiteSpace(text))
+                .ToList()
+        };
+    }
+
     private static bool TryExtractTraitReferenceFromAttribute(EidosAttribute attribute, out ImplTraitReference traitRef)
     {
-        traitRef = new([], [], []);
+        traitRef = new([], [], [], []);
         if (attribute.Arguments.Count > 0)
         {
             var firstArg = attribute.Arguments[0];
             if (firstArg is PathExpr pathExpr && pathExpr.Path.Count > 0)
             {
-                var typeArgs = pathExpr.TypeArgs
-                    .Select(RenderImplAttributeTypeArgText)
-                    .Where(text => !string.IsNullOrWhiteSpace(text))
-                    .ToList();
-                traitRef = new(new List<string>(pathExpr.Path), typeArgs, pathExpr.TypeArgs.ToList());
+                var genericArguments = pathExpr.GenericArguments.ToList();
+                var typeArgs = genericArguments.Count > 0
+                    ? genericArguments
+                        .Select(RenderImplAttributeGenericArgText)
+                        .Where(text => !string.IsNullOrWhiteSpace(text))
+                        .ToList()
+                    : pathExpr.TypeArgs
+                        .Select(RenderImplAttributeTypeArgText)
+                        .Where(text => !string.IsNullOrWhiteSpace(text))
+                        .ToList();
+                traitRef = new(
+                    new List<string>(pathExpr.Path),
+                    typeArgs,
+                    pathExpr.TypeArgs.ToList(),
+                    genericArguments);
                 return true;
             }
 
             if (firstArg is IdentifierExpr identifier && !string.IsNullOrWhiteSpace(identifier.Name))
             {
-                traitRef = new([identifier.Name], [], []);
+                traitRef = new([identifier.Name], [], [], []);
                 return true;
             }
 
@@ -187,18 +250,24 @@ public sealed partial class NameResolver
             {
                 var path = new List<string>(typePath.ModulePath);
                 path.Add(typePath.TypeName);
-                var typeArgs = typePath.TypeArgs
-                    .Select(RenderImplAttributeTypeArgText)
-                    .Where(text => !string.IsNullOrWhiteSpace(text))
-                    .ToList();
-                traitRef = new(path, typeArgs, typePath.TypeArgs.ToList());
+                var genericArguments = typePath.GenericArguments.ToList();
+                var typeArgs = genericArguments.Count > 0
+                    ? genericArguments
+                        .Select(RenderImplAttributeGenericArgText)
+                        .Where(text => !string.IsNullOrWhiteSpace(text))
+                        .ToList()
+                    : typePath.TypeArgs
+                        .Select(RenderImplAttributeTypeArgText)
+                        .Where(text => !string.IsNullOrWhiteSpace(text))
+                        .ToList();
+                traitRef = new(path, typeArgs, typePath.TypeArgs.ToList(), genericArguments);
                 return true;
             }
 
             if (TryExtractQualifiedPathFromExpression(firstArg, out var exprPath) &&
                 exprPath.Count > 0)
             {
-                traitRef = new(exprPath, [], []);
+                traitRef = new(exprPath, [], [], []);
                 return true;
             }
         }
@@ -234,7 +303,7 @@ public sealed partial class NameResolver
 
     private static bool TryParseTraitReferenceText(string traitRefText, out ImplTraitReference traitRef)
     {
-        traitRef = new([], [], []);
+        traitRef = new([], [], [], []);
         if (string.IsNullOrWhiteSpace(traitRefText))
         {
             return false;
@@ -255,7 +324,7 @@ public sealed partial class NameResolver
         var typeArgTexts = string.IsNullOrWhiteSpace(typeArgText)
             ? new List<string>()
             : SplitTopLevelCommaList(typeArgText);
-        traitRef = new(path, typeArgTexts, []);
+        traitRef = new(path, typeArgTexts, [], []);
         return true;
     }
 

@@ -5,7 +5,7 @@ using Eidosc.Utils;
 namespace Eidosc.Ast.Declarations;
 
 /// <summary>
-/// Named trait instance declaration for 0.4.0-alpha.1 name-first syntax.
+/// Named trait instance declaration for 0.5.0-alpha.1 name-first syntax.
 /// </summary>
 /// <example>
 /// EqInt :: instance Eq[Int] { ... }

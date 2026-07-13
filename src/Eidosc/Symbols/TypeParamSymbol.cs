@@ -1,5 +1,7 @@
 namespace Eidosc.Symbols;
 
+using Eidosc.Types;
+
 /// <summary>
 /// 类型参数符号
 /// </summary>
@@ -11,6 +13,11 @@ public sealed record TypeParamSymbol : Symbol
     /// Kind（类型参数的 Kind）
     /// </summary>
     public string KindAnnotation { get; init; } = "kind1";
+
+    /// <summary>
+    /// Semantic domain ranged over by this generic parameter.
+    /// </summary>
+    public GenericParameterKind ParameterKind { get; init; } = GenericParameterKind.Type;
 
     /// <summary>
     /// Whether this parameter was declared with the comptime generic marker.

@@ -70,7 +70,20 @@ public sealed class ModuleHirStatePayloadTests
             [1] = new TypeDescriptor.Builtin(1),
             [2] = new TypeDescriptor.Function([Tid(10), Tid(11)], Tid(12), "Console"),
             [3] = new TypeDescriptor.Tuple([Tid(13), Tid(14)]),
-            [4] = new TypeDescriptor.TyCon(new TypeConstructorKey(TypeConstructorKeyKind.Symbol, 20), [Tid(15)]),
+            [4] = new TypeDescriptor.TyCon(new TypeConstructorKey(TypeConstructorKeyKind.Symbol, 20), [Tid(15)])
+            {
+                ValueArgs =
+                [
+                    new GenericValueArgumentDescriptor(
+                        0,
+                        "typed:496e74:int:4",
+                        "hash-4",
+                        "4",
+                        Tid(BaseTypes.IntId),
+                        ReferencedParameterIndex: 0,
+                        ValueVariableIndex: 7)
+                ]
+            },
             [5] = new TypeDescriptor.Ref(Tid(16)),
             [6] = new TypeDescriptor.MutRef(Tid(17)),
             [7] = new TypeDescriptor.Shared(Tid(18)),
@@ -167,6 +180,13 @@ public sealed class ModuleHirStatePayloadTests
             Bool(false),
             Unit(),
             Var("value") with { TypeArgumentIds = [Tid(100)] },
+            new HirConstGenericValue
+            {
+                Name = "N",
+                SymbolId = Sid(101),
+                ParameterIndex = 1,
+                TypeId = Tid(BaseTypes.IntId)
+            },
             new HirBinOp { Operator = BinaryOp.Add, Left = Int(1), Right = Int(2) },
             new HirUnaryOp { Operator = UnaryOp.Not, Operand = Bool(false) },
             new HirCall

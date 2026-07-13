@@ -370,6 +370,12 @@ public sealed partial class MirGenericSpecializer
 
     private bool IsMonomorphicSignature(SpecializationSignature signature)
     {
+        if (signature.GenericValueArguments is { } valueArguments &&
+            valueArguments.Any(static argument => !argument.IsConcrete))
+        {
+            return false;
+        }
+
         if (ContainsOpenTypeVariable(signature.ReturnType))
         {
             return false;

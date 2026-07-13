@@ -317,7 +317,7 @@ public sealed class ModuleArtifactCacheTests
         {
             ModuleKey = "App/Main",
             SourceHash = ModuleArtifactHash.ComputeSourceHash("main :: Unit { _ => () }"),
-            LanguageVersion = "0.4.0-alpha.1",
+            LanguageVersion = "0.5.0-alpha.1",
             DependencySignatureHash = dependencySignatureHash,
             TargetTriple = "x86_64-pc-windows-msvc",
             FlagsHash = ModuleArtifactHash.ComputeFlagsHash(["mir-opt=true"])

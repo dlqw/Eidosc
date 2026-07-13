@@ -240,7 +240,7 @@ Lib :: module {
 sourceRoots = ["src"]
 
 [language]
-version = "0.4.0-alpha.1"
+version = "0.5.0-alpha.1"
 
 [package]
 name = "types-payload-gate"
@@ -319,7 +319,7 @@ char_val :: 'a';
 sourceRoots = ["src"]
 
 [language]
-version = "0.4.0-alpha.1"
+version = "0.5.0-alpha.1"
 
 [package]
 name = "mir-payload-gate"
@@ -405,7 +405,7 @@ Main :: module {
 sourceRoots = ["src"]
 
 [language]
-version = "0.4.0-alpha.1"
+version = "0.5.0-alpha.1"
 
 [package]
 name = "mir-payload-llvm-gate"

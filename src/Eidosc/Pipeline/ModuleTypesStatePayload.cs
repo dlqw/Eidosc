@@ -25,7 +25,7 @@ public sealed record ModuleTypesStatePayload(
     AstTypesStatePayload AstState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-types-state-payload-v11";
+    public const string CurrentSchemaVersion = "module-types-state-payload-v13";
 
     public static ModuleTypesStatePayload Create(
         string moduleKey,
@@ -1016,7 +1016,8 @@ public sealed record ImplTypeRefKeyPayload(
     int SymbolId,
     int TypeId,
     string Text,
-    IReadOnlyList<ImplTypeRefKeyPayload> TypeArguments)
+    IReadOnlyList<ImplTypeRefKeyPayload> TypeArguments,
+    ImplValueRefKeyPayload? ValueArgument = null)
 {
     public static ImplTypeRefKeyPayload Create(ImplTypeRefKey key) =>
         new(
@@ -1025,7 +1026,10 @@ public sealed record ImplTypeRefKeyPayload(
             key.Text,
             key.TypeArguments.IsDefaultOrEmpty
                 ? []
-                : key.TypeArguments.Select(Create).ToArray());
+                : key.TypeArguments.Select(Create).ToArray(),
+            key.ValueArgument is { } valueArgument
+                ? ImplValueRefKeyPayload.Create(valueArgument)
+                : null);
 
     public bool TryRestore(out ImplTypeRefKey key)
         => TryRestore(remapper: null, out key);
@@ -1048,7 +1052,42 @@ public sealed record ImplTypeRefKeyPayload(
             new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
             new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
             Text,
-            arguments.ToImmutableArray());
+            arguments.ToImmutableArray(),
+            ValueArgument?.Restore(remapper));
         return true;
+    }
+}
+
+public sealed record ImplValueRefKeyPayload(
+    int ParameterIndex,
+    string CanonicalPayload,
+    int TypeId,
+    string VariableIdentity,
+    string DisplayText)
+{
+    public static ImplValueRefKeyPayload Create(ImplValueRefKey value) =>
+        new(
+            value.ParameterIndex,
+            value.CanonicalPayload,
+            value.TypeId.Value,
+            value.VariableIdentity,
+            value.DisplayText);
+
+    internal ImplValueRefKey Restore(LiveStateIdRemapper? remapper)
+    {
+        var variableIdentity = VariableIdentity;
+        if (remapper != null &&
+            variableIdentity.StartsWith("var:", StringComparison.Ordinal) &&
+            int.TryParse(variableIdentity["var:".Length..], out var valueVariableIndex))
+        {
+            variableIdentity = $"var:{remapper.RemapValueVariable(valueVariableIndex)}";
+        }
+
+        return new ImplValueRefKey(
+            ParameterIndex,
+            CanonicalPayload,
+            new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
+            variableIdentity,
+            DisplayText);
     }
 }

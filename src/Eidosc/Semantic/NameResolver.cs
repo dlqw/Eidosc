@@ -5,6 +5,7 @@ using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Types;
 using Eidosc.Utils;
 using System.Diagnostics;
 using EidoscDiagnostic = Eidosc.Diagnostic.Diagnostic;
@@ -135,7 +136,8 @@ public sealed partial class NameResolver
     private sealed record ImplTraitReference(
         List<string> Path,
         List<string> TypeArgTexts,
-        List<TypeNode> TypeArgs);
+        List<TypeNode> TypeArgs,
+        List<GenericArgumentNode> GenericArguments);
 
     private sealed record PatternCoverageFacts(
         List<PatternUsefulnessBranchFact> BranchFacts,
@@ -921,11 +923,11 @@ public sealed partial class NameResolver
             return;
         }
 
-        if (typeParam.IsComptime && !IsSupportedComptimeTypeParameter(typeParam.ComptimeTypeAnnotation))
+        if (typeParam.ParameterKind == GenericParameterKind.Value && typeParam.ComptimeTypeAnnotation == null)
         {
             AddError(
-                typeParam.ComptimeTypeAnnotation?.Span ?? span,
-                $"Comptime generic parameter '{name}' currently supports only Type; value-level const generics are not implemented yet.");
+                span,
+                $"Value generic parameter '{name}' requires an explicit comptime value type annotation.");
         }
 
         typeParam.SymbolId = _symbolTable.DeclareTypeParameter(
@@ -933,18 +935,8 @@ public sealed partial class NameResolver
             span,
             typeParam.GetKindText(),
             typeParam.IsComptime,
-            FormatComptimeTypeAnnotation(typeParam.ComptimeTypeAnnotation));
-    }
-
-    private static bool IsSupportedComptimeTypeParameter(TypeNode? typeAnnotation)
-    {
-        return typeAnnotation is TypePath
-        {
-            PackageAlias: null,
-            ModulePath.Count: 0,
-            TypeName: WellKnownStrings.BuiltinTypes.Type,
-            TypeArgs.Count: 0
-        };
+            FormatComptimeTypeAnnotation(typeParam.ComptimeTypeAnnotation),
+            typeParam.ParameterKind);
     }
 
     private static string? FormatComptimeTypeAnnotation(TypeNode? typeAnnotation)

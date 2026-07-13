@@ -34,6 +34,11 @@ public record TypePath : TypeNode
     public List<TypeNode> TypeArgs { get; internal set; } = [];
 
     /// <summary>
+    /// Ordered generic arguments with an explicit type/value/effect domain after name resolution.
+    /// </summary>
+    public List<GenericArgumentNode> GenericArguments { get; internal set; } = [];
+
+    /// <summary>
     /// 设置类型名称
     /// </summary>
     public void SetTypeName(string name) => TypeName = name;
@@ -79,6 +84,13 @@ public record TypePath : TypeNode
             var parts = new List<string>();
             CollectPathParts(ntNode, parts, inTypeArgs: false);
             CollectTypeArguments(ntNode);
+            GenericArguments = TypeArgs
+                .Select(type => (GenericArgumentNode)new UnresolvedGenericArgumentNode
+                {
+                    TypeCandidate = type,
+                    Span = type.Span
+                })
+                .ToList();
 
             // 最后一个部分是类型名，其余是模块路径
             if (parts.Count > 0)
@@ -120,6 +132,7 @@ public record TypePath : TypeNode
         ModulePath = optionType.ModulePath;
         TypeName = optionType.TypeName;
         TypeArgs = optionType.TypeArgs;
+        GenericArguments = optionType.GenericArguments;
         Span = node.Span;
         return true;
     }
@@ -315,6 +328,31 @@ public record TypePath : TypeNode
             element.AppendChild(argsElement);
         }
 
+        if (GenericArguments.Count > 0)
+        {
+            var genericArgsElement = doc.CreateElement("GenericArguments");
+            foreach (var argument in GenericArguments)
+            {
+                genericArgsElement.AppendChild(argument.ToXmlElement(doc));
+            }
+
+            element.AppendChild(genericArgsElement);
+        }
+
         return element;
+    }
+
+    internal void SetGenericArguments(IEnumerable<GenericArgumentNode> arguments)
+    {
+        GenericArguments = [.. arguments];
+        TypeArgs = GenericArguments
+            .Select(static argument => argument switch
+            {
+                UnresolvedGenericArgumentNode { TypeCandidate: { } type } => type,
+                TypeGenericArgumentNode typeArgument => typeArgument.Type,
+                _ => null
+            })
+            .OfType<TypeNode>()
+            .ToList();
     }
 }

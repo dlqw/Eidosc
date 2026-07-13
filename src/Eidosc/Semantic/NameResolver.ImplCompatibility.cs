@@ -78,6 +78,21 @@ public sealed partial class NameResolver
         return NormalizeTypeNode(typeNode, selfType: null, traitTypeArgBindings: null);
     }
 
+    private static string RenderImplAttributeGenericArgText(GenericArgumentNode argument)
+    {
+        return argument switch
+        {
+            TypeGenericArgumentNode typeArgument => RenderImplAttributeTypeArgText(typeArgument.Type),
+            UnresolvedGenericArgumentNode { TypeCandidate: { } typeCandidate } =>
+                RenderImplAttributeTypeArgText(typeCandidate),
+            ValueGenericArgumentNode valueArgument =>
+                NormalizeValueGenericArgument(valueArgument.Expression, traitTypeArgBindings: null),
+            EffectGenericArgumentNode effectArgument =>
+                RenderImplAttributeTypeArgText(effectArgument.EffectRow),
+            _ => string.Empty
+        };
+    }
+
     private static string FormatTraitReferenceDisplay(ImplTraitReference traitRef)
     {
         var path = string.Join(WellKnownStrings.Separators.Path, traitRef.Path);
@@ -146,12 +161,12 @@ public sealed partial class NameResolver
                     TraitName = string.IsNullOrWhiteSpace(traitRef.TraitName)
                         ? ComposeTraitRefDisplayName(traitRef)
                         : traitRef.TraitName,
-                    TraitTypeArgs = traitRef.TypeArgs
-                        .Select(RenderImplAttributeTypeArgText)
-                        .ToList(),
-                    TraitTypeArgKeys = traitRef.TypeArgs
-                        .Select(BuildImplTypeRefKey)
-                        .ToList()
+                    TraitTypeArgs = traitRef.GenericArguments.Count > 0
+                        ? traitRef.GenericArguments.Select(RenderImplAttributeGenericArgText).ToList()
+                        : traitRef.TypeArgs.Select(RenderImplAttributeTypeArgText).ToList(),
+                    TraitTypeArgKeys = traitRef.GenericArguments.Count > 0
+                        ? traitRef.GenericArguments.Select(BuildImplGenericArgumentKey).ToList()
+                        : traitRef.TypeArgs.Select(BuildImplTypeRefKey).ToList()
                 });
             }
         }

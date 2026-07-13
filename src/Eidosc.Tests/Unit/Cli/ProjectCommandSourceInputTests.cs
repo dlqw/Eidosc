@@ -106,7 +106,7 @@ main :: Int -> Int {
                 sourceRoots = ["src"]
 
                 [language]
-                version = "0.4.0-alpha.1"
+                version = "0.5.0-alpha.1"
                 """);
             File.WriteAllText(
                 Path.Combine(tempDir, "src", "Main.eidos"),
@@ -152,7 +152,7 @@ main :: Int -> Int {
                 sourceRoots = ["src"]
 
                 [language]
-                version = "0.4.0-alpha.1"
+                version = "0.5.0-alpha.1"
                 """);
             File.WriteAllText(
                 Path.Combine(tempDir, "src", "Main.eidos"),
@@ -206,7 +206,7 @@ main :: Int -> Int {
                 sourceRoots = ["src"]
 
                 [language]
-                version = "0.4.0-alpha.1"
+                version = "0.5.0-alpha.1"
                 """);
             var mainPath = Path.Combine(tempDir, "src", "Main.eidos");
             File.WriteAllText(mainPath, "Main :: module { main :: Unit -> Int { _ => 0 } }");

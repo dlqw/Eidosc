@@ -13,6 +13,7 @@ public sealed partial class MirGenericSpecializer
             EntryBlockId = function.EntryBlockId,
             ReturnType = function.ReturnType,
             GenericParameterCount = function.GenericParameterCount,
+            GenericParameters = function.GenericParameters.ToList(),
             GenericTypeParameterIds = function.GenericTypeParameterIds.ToList(),
             Span = function.Span,
             SymbolId = function.SymbolId,

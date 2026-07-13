@@ -43,7 +43,18 @@ public static class TypeDescriptorRewriter
         Func<TypeId, TypeId> rewriteTypeId)
     {
         var typeArgs = RewriteTypeIds(tyCon.TypeArgs, rewriteTypeId, out var changed);
-        return changed ? new TypeDescriptor.TyCon(tyCon.Constructor, typeArgs) : tyCon;
+        var valueArgs = new GenericValueArgumentDescriptor[tyCon.ValueArgs.Length];
+        for (var index = 0; index < tyCon.ValueArgs.Length; index++)
+        {
+            var valueArgument = tyCon.ValueArgs[index];
+            var typeId = rewriteTypeId(valueArgument.TypeId);
+            valueArgs[index] = valueArgument with { TypeId = typeId };
+            changed |= typeId != valueArgument.TypeId;
+        }
+
+        return changed
+            ? new TypeDescriptor.TyCon(tyCon.Constructor, typeArgs) { ValueArgs = valueArgs }
+            : tyCon;
     }
 
     private static TypeDescriptor RewriteRef(

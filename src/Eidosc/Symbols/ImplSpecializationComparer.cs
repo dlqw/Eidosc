@@ -78,6 +78,10 @@ public sealed record ImplWildcardShapeNode : ImplTypeShapeNode
 
 public sealed record ImplVariableShapeNode(string Name) : ImplTypeShapeNode;
 
+public sealed record ImplValueVariableShapeNode(string Name, TypeId TypeId) : ImplTypeShapeNode;
+
+public sealed record ImplConcreteValueShapeNode(string CanonicalPayload, TypeId TypeId) : ImplTypeShapeNode;
+
 public sealed record ImplConstructorShapeNode(string Name, IReadOnlyList<ImplTypeShapeNode> Args) : ImplTypeShapeNode
 {
     public SymbolId SymbolId { get; init; } = SymbolId.None;
@@ -104,7 +108,7 @@ public static class ImplSpecializationComparer
     private const char LeftOverlapSide = 'L';
     private const char RightOverlapSide = 'R';
 
-    private readonly record struct OverlapVariableKey(char Side, string Name);
+    private readonly record struct OverlapVariableKey(char Side, bool IsValueDomain, string Name);
 
     private readonly record struct OverlapTerm(char Side, ImplTypeShapeNode Node);
 
@@ -243,12 +247,36 @@ public static class ImplSpecializationComparer
 
         if (left.Node is ImplVariableShapeNode leftVariable)
         {
-            return TryBindOverlapVariable(new OverlapVariableKey(left.Side, leftVariable.Name), right, bindings);
+            return TryBindOverlapVariable(
+                new OverlapVariableKey(left.Side, IsValueDomain: false, leftVariable.Name),
+                right,
+                bindings);
         }
 
         if (right.Node is ImplVariableShapeNode rightVariable)
         {
-            return TryBindOverlapVariable(new OverlapVariableKey(right.Side, rightVariable.Name), left, bindings);
+            return TryBindOverlapVariable(
+                new OverlapVariableKey(right.Side, IsValueDomain: false, rightVariable.Name),
+                left,
+                bindings);
+        }
+
+        if (left.Node is ImplValueVariableShapeNode leftValueVariable)
+        {
+            return ValueTypesCompatible(leftValueVariable.TypeId, GetValueTypeId(right.Node)) &&
+                   TryBindOverlapVariable(
+                       new OverlapVariableKey(left.Side, IsValueDomain: true, leftValueVariable.Name),
+                       right,
+                       bindings);
+        }
+
+        if (right.Node is ImplValueVariableShapeNode rightValueVariable)
+        {
+            return ValueTypesCompatible(rightValueVariable.TypeId, GetValueTypeId(left.Node)) &&
+                   TryBindOverlapVariable(
+                       new OverlapVariableKey(right.Side, IsValueDomain: true, rightValueVariable.Name),
+                       left,
+                       bindings);
         }
 
         return (left.Node, right.Node) switch
@@ -262,6 +290,8 @@ public static class ImplSpecializationComparer
                 MayOverlap(new OverlapTerm(left.Side, leftArrow.ReturnType), new OverlapTerm(right.Side, rightArrow.ReturnType), bindings),
             (ImplEffectfulShapeNode leftEffectful, ImplEffectfulShapeNode rightEffectful) =>
                 EffectfulShapesMayOverlap(left.Side, leftEffectful, right.Side, rightEffectful, bindings),
+            (ImplConcreteValueShapeNode leftValue, ImplConcreteValueShapeNode rightValue) =>
+                ConcreteValuesEquivalent(leftValue, rightValue),
             _ => false
         };
     }
@@ -290,8 +320,8 @@ public static class ImplSpecializationComparer
         OverlapTerm term,
         Dictionary<OverlapVariableKey, OverlapTerm> bindings)
     {
-        while (term.Node is ImplVariableShapeNode variable &&
-               bindings.TryGetValue(new OverlapVariableKey(term.Side, variable.Name), out var bound))
+        while (TryGetOverlapVariableKey(term, out var key) &&
+               bindings.TryGetValue(key, out var bound))
         {
             term = bound;
         }
@@ -310,10 +340,14 @@ public static class ImplSpecializationComparer
         }
 
         value = ResolveOverlapTerm(value, bindings);
-        if (value.Node is ImplVariableShapeNode valueVariable &&
-            key.Equals(new OverlapVariableKey(value.Side, valueVariable.Name)))
+        if (TryGetOverlapVariableKey(value, out var valueKey) && key.Equals(valueKey))
         {
             return true;
+        }
+
+        if (key.IsValueDomain != IsValueShape(value.Node))
+        {
+            return false;
         }
 
         if (bindings.TryGetValue(key, out var existing))
@@ -323,6 +357,22 @@ public static class ImplSpecializationComparer
 
         bindings[key] = value;
         return true;
+    }
+
+    private static bool TryGetOverlapVariableKey(OverlapTerm term, out OverlapVariableKey key)
+    {
+        switch (term.Node)
+        {
+            case ImplVariableShapeNode variable:
+                key = new OverlapVariableKey(term.Side, IsValueDomain: false, variable.Name);
+                return true;
+            case ImplValueVariableShapeNode variable:
+                key = new OverlapVariableKey(term.Side, IsValueDomain: true, variable.Name);
+                return true;
+            default:
+                key = default;
+                return false;
+        }
     }
 
     private static bool ConstructorsMayOverlap(
@@ -446,7 +496,15 @@ public static class ImplSpecializationComparer
 
         if (candidate is ImplVariableShapeNode variable)
         {
-            return TryBindCandidateVariable(variable.Name, requested, bindings);
+            return !IsValueShape(requested) &&
+                   TryBindCandidateVariable(variable.Name, requested, bindings);
+        }
+
+        if (candidate is ImplValueVariableShapeNode valueVariable)
+        {
+            return IsValueShape(requested) &&
+                   ValueTypesCompatible(valueVariable.TypeId, GetValueTypeId(requested)) &&
+                   TryBindCandidateVariable(valueVariable.Name, requested, bindings);
         }
 
         if (requested is ImplWildcardShapeNode)
@@ -465,6 +523,8 @@ public static class ImplSpecializationComparer
                 IsApplicableTo(requestedArrow.ReturnType, candidateArrow.ReturnType, bindings),
             (ImplEffectfulShapeNode requestedEffectful, ImplEffectfulShapeNode candidateEffectful) =>
                 IsEffectfulApplicableTo(requestedEffectful, candidateEffectful, bindings),
+            (ImplConcreteValueShapeNode requestedValue, ImplConcreteValueShapeNode candidateValue) =>
+                ConcreteValuesEquivalent(requestedValue, candidateValue),
             _ => false
         };
     }
@@ -499,6 +559,11 @@ public static class ImplSpecializationComparer
         {
             (ImplVariableShapeNode l, ImplVariableShapeNode r) =>
                 string.Equals(l.Name, r.Name, StringComparison.Ordinal),
+            (ImplValueVariableShapeNode l, ImplValueVariableShapeNode r) =>
+                string.Equals(l.Name, r.Name, StringComparison.Ordinal) &&
+                ValueTypesCompatible(l.TypeId, r.TypeId),
+            (ImplConcreteValueShapeNode l, ImplConcreteValueShapeNode r) =>
+                ConcreteValuesEquivalent(l, r),
             (ImplConstructorShapeNode l, ImplConstructorShapeNode r) =>
                 CompareConstructorNodes(l, r) == ImplSpecializationRelation.Equivalent,
             (ImplTupleShapeNode l, ImplTupleShapeNode r) =>
@@ -586,6 +651,10 @@ public static class ImplSpecializationComparer
                 occurrences.TryGetValue(variable.Name, out var count);
                 occurrences[variable.Name] = count + 1;
                 break;
+            case ImplValueVariableShapeNode variable when !string.IsNullOrWhiteSpace(variable.Name):
+                occurrences.TryGetValue(variable.Name, out var valueCount);
+                occurrences[variable.Name] = valueCount + 1;
+                break;
             case ImplConstructorShapeNode constructor:
                 foreach (var arg in constructor.Args)
                 {
@@ -661,6 +730,13 @@ public static class ImplSpecializationComparer
             return ImplSpecializationRelation.Equivalent;
         }
 
+        if (left is not ImplWildcardShapeNode &&
+            right is not ImplWildcardShapeNode &&
+            IsValueShape(left) != IsValueShape(right))
+        {
+            return ImplSpecializationRelation.Incomparable;
+        }
+
         if (IsOpen(left) && IsOpen(right))
         {
             return ImplSpecializationRelation.Equivalent;
@@ -684,6 +760,10 @@ public static class ImplSpecializationComparer
                 CompareNodes(l.ParamType, r.ParamType),
                 CompareNodes(l.ReturnType, r.ReturnType)),
             (ImplEffectfulShapeNode l, ImplEffectfulShapeNode r) => CompareEffectfulNodes(l, r),
+            (ImplConcreteValueShapeNode l, ImplConcreteValueShapeNode r) =>
+                ConcreteValuesEquivalent(l, r)
+                    ? ImplSpecializationRelation.Equivalent
+                    : ImplSpecializationRelation.Incomparable,
             _ => ImplSpecializationRelation.Incomparable
         };
     }
@@ -864,7 +944,30 @@ public static class ImplSpecializationComparer
 
     private static bool IsOpen(ImplTypeShapeNode node)
     {
-        return node is ImplWildcardShapeNode or ImplVariableShapeNode;
+        return node is ImplWildcardShapeNode or ImplVariableShapeNode or ImplValueVariableShapeNode;
+    }
+
+    private static bool IsValueShape(ImplTypeShapeNode node) =>
+        node is ImplValueVariableShapeNode or ImplConcreteValueShapeNode;
+
+    private static TypeId GetValueTypeId(ImplTypeShapeNode node) => node switch
+    {
+        ImplValueVariableShapeNode value => value.TypeId,
+        ImplConcreteValueShapeNode value => value.TypeId,
+        _ => TypeId.None
+    };
+
+    private static bool ConcreteValuesEquivalent(
+        ImplConcreteValueShapeNode left,
+        ImplConcreteValueShapeNode right)
+    {
+        return ValueTypesCompatible(left.TypeId, right.TypeId) &&
+               string.Equals(left.CanonicalPayload, right.CanonicalPayload, StringComparison.Ordinal);
+    }
+
+    private static bool ValueTypesCompatible(TypeId left, TypeId right)
+    {
+        return !left.IsValid || !right.IsValid || left == right;
     }
 
     private static bool IsVariableLikeCanonicalName(string name)

@@ -59,6 +59,8 @@ public sealed partial class HirBuilder
     private readonly FreeVariableAnalyzer _freeVariableAnalyzer = new();
     private readonly TypeIdRegistry _typeRegistry;
     private readonly CaptureCollector _captureCollector;
+    private IReadOnlyDictionary<SymbolId, int> _activeValueGenericParameterIndices =
+        new Dictionary<SymbolId, int>();
 
     public List<Diagnostic.Diagnostic> Diagnostics { get; } = [];
     public IReadOnlySet<TypeId> CopyLikeTypeIds => _typeRegistry.CopyLikeTypeIds;
@@ -253,9 +255,25 @@ public sealed partial class HirBuilder
 
         // 无函数体的 FuncDef 视为声明（如 @ffi），不转换函数体
         HirNode? bodyNode = null;
-        if (func.Body.Count > 0)
+        var previousValueGenericParameterIndices = _activeValueGenericParameterIndices;
+        _activeValueGenericParameterIndices = func.TypeParams
+            .Select(static (parameter, index) => (parameter, index))
+            .Where(static entry =>
+                entry.parameter.ParameterKind == GenericParameterKind.Value &&
+                entry.parameter.SymbolId.IsValid)
+            .ToDictionary(
+                static entry => entry.parameter.SymbolId,
+                static entry => entry.index);
+        try
         {
-            bodyNode = ConvertFunctionBody(func, parameters, returnType);
+            if (func.Body.Count > 0)
+            {
+                bodyNode = ConvertFunctionBody(func, parameters, returnType);
+            }
+        }
+        finally
+        {
+            _activeValueGenericParameterIndices = previousValueGenericParameterIndices;
         }
 
         return new HirFunc
@@ -788,11 +806,13 @@ public sealed partial class HirBuilder
             }
 
             var isComptime = typeParam.IsComptime;
+            var parameterKind = typeParam.ParameterKind;
             var comptimeTypeAnnotation = FormatComptimeTypeAnnotation(typeParam.ComptimeTypeAnnotation);
             if (typeParam.SymbolId.IsValid &&
                 _symbolTable.GetSymbol(typeParam.SymbolId) is TypeParamSymbol comptimeTypeParamSymbol)
             {
                 isComptime = comptimeTypeParamSymbol.IsComptime;
+                parameterKind = comptimeTypeParamSymbol.ParameterKind;
                 comptimeTypeAnnotation = comptimeTypeParamSymbol.ComptimeTypeAnnotation ?? comptimeTypeAnnotation;
             }
 
@@ -806,6 +826,7 @@ public sealed partial class HirBuilder
                 Name = typeParam.Name,
                 SymbolId = typeParam.SymbolId,
                 TypeId = typeId,
+                ParameterKind = parameterKind,
                 KindAnnotation = kindAnnotation,
                 IsComptime = isComptime,
                 ComptimeTypeAnnotation = comptimeTypeAnnotation,
@@ -1253,6 +1274,16 @@ public sealed partial class HirBuilder
 
     private HirNode ConvertPath(PathExpr path)
     {
+        if (TryConvertConstGenericValueReference(
+                path.SymbolId,
+                path.Name,
+                path.Span,
+                GetTypeId(path),
+                out var constGenericValue))
+        {
+            return constGenericValue;
+        }
+
         if (TryConvertComptimeValueReference(path.SymbolId, path.Span, GetTypeId(path), out var comptimeValue))
         {
             return comptimeValue;
@@ -1277,7 +1308,8 @@ public sealed partial class HirBuilder
             SymbolId = path.SymbolId,
             Span = path.Span,
             TypeId = GetTypeId(path),
-            TypeArgumentIds = ConvertExplicitTypeArguments(path.TypeArgs)
+            TypeArgumentIds = ConvertExplicitTypeArguments(path.TypeArgs),
+            ValueArguments = ConvertValueGenericArguments(path)
         };
     }
 
@@ -1294,6 +1326,16 @@ public sealed partial class HirBuilder
 
     private HirNode ConvertIdentifier(IdentifierExpr id)
     {
+        if (TryConvertConstGenericValueReference(
+                id.SymbolId,
+                id.Name,
+                id.Span,
+                GetTypeId(id),
+                out var constGenericValue))
+        {
+            return constGenericValue;
+        }
+
         if (TryConvertComptimeValueReference(id.SymbolId, id.Span, GetTypeId(id), out var comptimeValue))
         {
             return comptimeValue;
@@ -1315,8 +1357,36 @@ public sealed partial class HirBuilder
             Name = id.Name,
             SymbolId = id.SymbolId,
             Span = id.Span,
-            TypeId = GetTypeId(id)
+            TypeId = GetTypeId(id),
+            ValueArguments = ConvertValueGenericArguments(id)
         };
+    }
+
+    private bool TryConvertConstGenericValueReference(
+        SymbolId symbolId,
+        string name,
+        SourceSpan span,
+        TypeId typeId,
+        out HirNode node)
+    {
+        node = default!;
+        if (!symbolId.IsValid ||
+            !_activeValueGenericParameterIndices.TryGetValue(symbolId, out var parameterIndex) ||
+            _symbolTable.GetSymbol<TypeParamSymbol>(symbolId) is not
+                { ParameterKind: GenericParameterKind.Value })
+        {
+            return false;
+        }
+
+        node = new HirConstGenericValue
+        {
+            Name = name,
+            SymbolId = symbolId,
+            ParameterIndex = parameterIndex,
+            Span = span,
+            TypeId = typeId
+        };
+        return true;
     }
 
     private bool TryConvertComptimeValueReference(
@@ -1923,17 +1993,44 @@ public sealed partial class HirBuilder
 
     private HirNode AttachExplicitTypeArguments(
         HirNode target,
-        IReadOnlyList<Ast.Types.TypeNode> typeArgs)
+        IReadOnlyList<Ast.Types.TypeNode> typeArgs,
+        EidosAstNode? application = null)
     {
-        if (typeArgs.Count == 0)
+        var valueArguments = application == null
+            ? []
+            : ConvertValueGenericArguments(application);
+        if (typeArgs.Count == 0 && valueArguments.Count == 0)
         {
             return target;
         }
 
         var typeArgumentIds = ConvertExplicitTypeArguments(typeArgs);
         return target is HirVar variable
-            ? variable with { TypeArgumentIds = typeArgumentIds }
+            ? variable with
+            {
+                TypeArgumentIds = typeArgumentIds,
+                ValueArguments = valueArguments
+            }
             : target;
+    }
+
+    private List<GenericValueArgumentDescriptor> ConvertValueGenericArguments(EidosAstNode application)
+    {
+        if (_typeInferer == null)
+        {
+            return [];
+        }
+
+        return _typeInferer.GetValueGenericArguments(application)
+            .Select(static argument => new GenericValueArgumentDescriptor(
+                argument.ParameterIndex,
+                argument.CanonicalText,
+                argument.CanonicalHash,
+                argument.DisplayText,
+                argument.TypeId,
+                argument.ReferencedParameterIndex,
+                argument.ValueVariableIndex))
+            .ToList();
     }
 
     private HirMatch ConvertMatch(MatchExpr match)

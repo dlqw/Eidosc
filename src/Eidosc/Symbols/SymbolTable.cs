@@ -1,4 +1,5 @@
 using Eidosc.Diagnostic;
+using Eidosc.Types;
 using Eidosc.Utils;
 
 namespace Eidosc.Symbols;
@@ -677,7 +678,8 @@ public sealed partial class SymbolTable
         SourceSpan span,
         string kindAnnotation = "kind1",
         bool isComptime = false,
-        string? comptimeTypeAnnotation = null)
+        string? comptimeTypeAnnotation = null,
+        GenericParameterKind parameterKind = GenericParameterKind.Type)
     {
         var currentScope = GetRequiredCurrentScope();
         var symbol = new TypeParamSymbol
@@ -685,12 +687,20 @@ public sealed partial class SymbolTable
             Name = name,
             Span = span,
             KindAnnotation = string.IsNullOrWhiteSpace(kindAnnotation) ? "kind1" : kindAnnotation,
+            ParameterKind = parameterKind,
             IsComptime = isComptime,
             ComptimeTypeAnnotation = string.IsNullOrWhiteSpace(comptimeTypeAnnotation) ? null : comptimeTypeAnnotation
         };
 
         var id = RegisterSymbol(symbol);
-        currentScope.BindType(name, id);
+        if (parameterKind == GenericParameterKind.Value)
+        {
+            currentScope.BindValue(name, id);
+        }
+        else
+        {
+            currentScope.BindType(name, id);
+        }
         return id;
     }
 

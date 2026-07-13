@@ -33,8 +33,44 @@ public static class TypeCanonicalKeyBuilder
                 : con.Symbol.IsValid
                     ? $"symbol:{con.Symbol.Value}"
                     : $"name:{con.Name}";
-        return con.Args.Count == 0
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        {
+            return head;
+        }
+
+        var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var typeArgumentIndex = 0;
+        var arguments = new List<string>(argumentCount);
+        for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
+        {
+            if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                arguments.Add(BuildValueArgumentKey(valueArgument));
+            }
+            else if (typeArgumentIndex < con.Args.Count)
+            {
+                arguments.Add(Build(con.Args[typeArgumentIndex++], tyConTypeIdResolver));
+            }
+        }
+
+        return arguments.Count == 0
             ? head
-            : $"{head}[{string.Join(",", con.Args.Select(arg => Build(arg, tyConTypeIdResolver)))}]";
+            : $"{head}[{string.Join(",", arguments)}]";
+    }
+
+    private static string BuildValueArgumentKey(GenericValueArgument argument)
+    {
+        if (argument.ValueVariableIndex >= 0)
+        {
+            return $"value-var:{argument.ValueVariableIndex}:{argument.TypeId.Value}";
+        }
+
+        if (argument.ReferencedParameterIndex >= 0)
+        {
+            return $"value-param:{argument.ReferencedParameterIndex}:{argument.CanonicalHash}:{argument.TypeId.Value}";
+        }
+
+        return $"value:{argument.CanonicalText}";
     }
 }

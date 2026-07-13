@@ -13,7 +13,7 @@ public sealed record ModuleMirStateArtifactPayload(
     ModuleMirStatePayload MirState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v2";
+    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v7";
 
     public static ModuleMirStateArtifactPayload Create(
         string moduleKey,
@@ -197,7 +197,7 @@ public sealed record ModuleMirStatePayload(
     IReadOnlyList<MirFunctionFingerprint> FunctionFingerprints,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-payload-v2";
+    public const string CurrentSchemaVersion = "module-mir-state-payload-v7";
 
     public bool IsRestorable => Module != null &&
                                 UnsupportedNodeCount == 0 &&
@@ -409,7 +409,14 @@ public sealed record MirStateFunctionPayload(
             MirStateFunctionIdPayload.Create(function.FunctionId),
             function.IsEntry,
             function.TraitInvokeHelper.ToString(),
-            function.TraitInvokeHelperTraitId.Value);
+            function.TraitInvokeHelperTraitId.Value)
+        {
+            GenericParameters = function.GenericParameters
+                .Select(MirStateGenericParameterPayload.Create)
+                .ToArray()
+        };
+
+    public IReadOnlyList<MirStateGenericParameterPayload> GenericParameters { get; init; } = [];
 
     public MirFunc Restore() =>
         new()
@@ -421,6 +428,7 @@ public sealed record MirStateFunctionPayload(
             EntryBlockId = new BlockId { Value = EntryBlockId },
             ReturnType = new TypeId(ReturnType),
             GenericParameterCount = GenericParameterCount,
+            GenericParameters = GenericParameters.Select(static parameter => parameter.Restore()).ToList(),
             GenericTypeParameterIds = GenericTypeParameterIds.Select(static id => new TypeId(id)).ToList(),
             IsRuntimeWordAbi = IsRuntimeWordAbi,
             IsExternal = IsExternal,
@@ -434,6 +442,32 @@ public sealed record MirStateFunctionPayload(
             IsEntry = IsEntry,
             TraitInvokeHelper = Enum.Parse<TraitInvokeHelperKind>(TraitInvokeHelper),
             TraitInvokeHelperTraitId = new SymbolId(TraitInvokeHelperTraitId)
+        };
+}
+
+public sealed record MirStateGenericParameterPayload(
+    int ParameterIndex,
+    int SymbolId,
+    string Name,
+    string ParameterKind,
+    int TypeId)
+{
+    public static MirStateGenericParameterPayload Create(MirGenericParameter parameter) =>
+        new(
+            parameter.ParameterIndex,
+            parameter.SymbolId.Value,
+            parameter.Name,
+            parameter.ParameterKind.ToString(),
+            parameter.TypeId.Value);
+
+    public MirGenericParameter Restore() =>
+        new()
+        {
+            ParameterIndex = ParameterIndex,
+            SymbolId = new SymbolId(SymbolId),
+            Name = Name,
+            ParameterKind = Enum.Parse<GenericParameterKind>(ParameterKind),
+            TypeId = new TypeId(TypeId)
         };
 }
 
@@ -693,6 +727,7 @@ public sealed record MirStateOperandPayload(
     MirStateFunctionIdPayload? FunctionId = null,
     int SignatureTypeId = 0,
     IReadOnlyList<int>? TypeArgumentIds = null,
+    IReadOnlyList<GenericValueArgumentDescriptorPayload>? ValueArguments = null,
     int TraitOwnerId = 0,
     string? TraitSelfPosition = null,
     IReadOnlyList<int>? TraitSelfParameterIndices = null,
@@ -722,6 +757,15 @@ public sealed record MirStateOperandPayload(
                 span,
                 constant.TypeId.Value,
                 ConstantValue: MirStateConstantValuePayload.Create(constant.Value, context)),
+            MirConstGenericValue constGeneric => new MirStateOperandPayload(
+                nameof(MirConstGenericValue),
+                span,
+                constGeneric.TypeId.Value,
+                SymbolId: constGeneric.SymbolId.Value,
+                Name: constGeneric.Name)
+            {
+                ParameterIndex = constGeneric.ParameterIndex
+            },
             MirFunctionRef functionRef => new MirStateOperandPayload(
                 nameof(MirFunctionRef),
                 span,
@@ -732,6 +776,9 @@ public sealed record MirStateOperandPayload(
                 FunctionId: MirStateFunctionIdPayload.Create(functionRef.FunctionId),
                 SignatureTypeId: functionRef.SignatureTypeId.Value,
                 TypeArgumentIds: functionRef.TypeArgumentIds.Select(static id => id.Value).ToArray(),
+                ValueArguments: functionRef.ValueArguments
+                    .Select(GenericValueArgumentDescriptorPayload.Create)
+                    .ToArray(),
                 TraitOwnerId: functionRef.TraitOwnerId.Value,
                 TraitSelfPosition: functionRef.TraitSelfPosition.ToString(),
                 TraitSelfParameterIndices: functionRef.TraitSelfParameterIndices.ToArray(),
@@ -761,11 +808,14 @@ public sealed record MirStateOperandPayload(
         {
             nameof(MirPoison) => new MirPoison { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Reason = Reason ?? "" },
             nameof(MirConstant) => new MirConstant { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Value = RestoreConstantValue(ConstantValue) },
-            nameof(MirFunctionRef) => new MirFunctionRef { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", SymbolKind = Enum.Parse<SymbolKind>(SymbolKind ?? ""), FunctionId = FunctionId?.Restore() ?? new FunctionId(), SignatureTypeId = new TypeId(SignatureTypeId), TypeArgumentIds = (TypeArgumentIds ?? []).Select(static id => new TypeId(id)).ToArray(), TraitOwnerId = new SymbolId(TraitOwnerId), TraitSelfPosition = Enum.Parse<SelfPosition>(TraitSelfPosition ?? ""), TraitSelfParameterIndices = (TraitSelfParameterIndices ?? []).ToArray(), TraitSelfInResult = TraitSelfInResult, TraitMethodRole = Enum.Parse<TraitMethodRole>(TraitMethodRole ?? "") },
+            nameof(MirConstGenericValue) => new MirConstGenericValue { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", ParameterIndex = ParameterIndex },
+            nameof(MirFunctionRef) => new MirFunctionRef { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", SymbolKind = Enum.Parse<SymbolKind>(SymbolKind ?? ""), FunctionId = FunctionId?.Restore() ?? new FunctionId(), SignatureTypeId = new TypeId(SignatureTypeId), TypeArgumentIds = (TypeArgumentIds ?? []).Select(static id => new TypeId(id)).ToArray(), ValueArguments = (ValueArguments ?? []).Select(static argument => argument.Restore()).ToArray(), TraitOwnerId = new SymbolId(TraitOwnerId), TraitSelfPosition = Enum.Parse<SelfPosition>(TraitSelfPosition ?? ""), TraitSelfParameterIndices = (TraitSelfParameterIndices ?? []).ToArray(), TraitSelfInResult = TraitSelfInResult, TraitMethodRole = Enum.Parse<TraitMethodRole>(TraitMethodRole ?? "") },
             nameof(MirPlace) => new MirPlace { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Kind = Enum.Parse<PlaceKind>(PlaceKind ?? ""), Local = new LocalId { Value = Local }, Base = Base?.Restore() as MirPlace, FieldName = FieldName, Index = Index?.Restore(), IndexAccessKind = Enum.Parse<MirIndexAccessKind>(IndexAccessKind ?? "") },
             nameof(MirTemp) => new MirTemp { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Id = new TempId { Value = TempId } },
             _ => throw new InvalidOperationException($"Unsupported MIR operand payload '{Kind}'.")
         };
+
+    public int ParameterIndex { get; init; } = -1;
 
     private static MirStateOperandPayload UnsupportedOperand(MirOperand operand, MirStatePayloadCreateContext context)
     {
@@ -1059,6 +1109,14 @@ public sealed record MirStateImplTypeShapePayload(
         {
             ImplWildcardShapeNode => new MirStateImplTypeShapePayload(nameof(ImplWildcardShapeNode)),
             ImplVariableShapeNode variable => new MirStateImplTypeShapePayload(nameof(ImplVariableShapeNode), Name: variable.Name),
+            ImplValueVariableShapeNode variable => new MirStateImplTypeShapePayload(
+                nameof(ImplValueVariableShapeNode),
+                Name: variable.Name,
+                TypeId: variable.TypeId.Value),
+            ImplConcreteValueShapeNode value => new MirStateImplTypeShapePayload(
+                nameof(ImplConcreteValueShapeNode),
+                Name: value.CanonicalPayload,
+                TypeId: value.TypeId.Value),
             ImplConstructorShapeNode constructor => new MirStateImplTypeShapePayload(
                 nameof(ImplConstructorShapeNode),
                 Name: constructor.Name,
@@ -1085,6 +1143,8 @@ public sealed record MirStateImplTypeShapePayload(
         {
             nameof(ImplWildcardShapeNode) => ImplWildcardShapeNode.Instance,
             nameof(ImplVariableShapeNode) => new ImplVariableShapeNode(Name ?? ""),
+            nameof(ImplValueVariableShapeNode) => new ImplValueVariableShapeNode(Name ?? "", new TypeId(TypeId)),
+            nameof(ImplConcreteValueShapeNode) => new ImplConcreteValueShapeNode(Name ?? "", new TypeId(TypeId)),
             nameof(ImplConstructorShapeNode) => new ImplConstructorShapeNode(Name ?? "", (Children ?? []).Select(static child => child.Restore()).ToArray()) { SymbolId = new SymbolId(SymbolId), TypeId = new TypeId(TypeId) },
             nameof(ImplTupleShapeNode) => new ImplTupleShapeNode((Children ?? []).Select(static child => child.Restore()).ToArray()),
             nameof(ImplArrowShapeNode) => new ImplArrowShapeNode(RestoreRequired(ParamType), RestoreRequired(ReturnType)),
@@ -1270,7 +1330,7 @@ public sealed class MirStatePayloadCreateContext
 
     public void ObserveOperand(MirOperand operand)
     {
-        if (operand is not (MirPoison or MirConstant or MirFunctionRef or MirPlace or MirTemp))
+        if (operand is not (MirPoison or MirConstant or MirConstGenericValue or MirFunctionRef or MirPlace or MirTemp))
         {
             AddUnsupported(operand);
         }

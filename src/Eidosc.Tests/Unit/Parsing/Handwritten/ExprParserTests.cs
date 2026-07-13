@@ -746,6 +746,25 @@ public sealed class ExprParserTests
         Assert.Empty(ctx.Diagnostics);
     }
 
+    [Fact]
+    public void Parse_name_first_generic_application_preserves_const_expression_candidate()
+    {
+        var ctx = MakeNameFirstCtx(
+            Ident("specialize"), "[",
+            TypeId("N"), "+", Num("1"), ",",
+            TypeId("Int"), "]");
+        var parser = new ExprParser(ctx);
+
+        var result = parser.ParseExpr();
+
+        var application = Assert.IsType<IndexExpr>(result);
+        Assert.Equal(2, application.GenericArguments.Count);
+        Assert.IsType<BinaryExpr>(Assert.IsType<UnresolvedGenericArgumentNode>(application.GenericArguments[0]).ValueCandidate);
+        Assert.Equal("Int", Assert.IsType<TypePath>(Assert.IsType<UnresolvedGenericArgumentNode>(application.GenericArguments[1]).TypeCandidate).TypeName);
+        Assert.Single(application.TypeArgs);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
     #region Helpers
 
     private static ParserContext MakeCtx(params object[] tokenSpecs)

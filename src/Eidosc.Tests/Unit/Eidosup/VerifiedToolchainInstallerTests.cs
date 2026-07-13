@@ -287,7 +287,7 @@ public sealed class VerifiedToolchainInstallerTests
             "preview",
             platform.Rid,
             new ToolchainProductIdentity("0.4.0-alpha.2", new string('a', 40)),
-            new ToolchainLanguageIdentity("0.4.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.5.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", ["eidosc-core", std.Id]),
                 new ToolchainProfileDefinition("default", ["eidosc-core", std.Id, runtime.Id]),

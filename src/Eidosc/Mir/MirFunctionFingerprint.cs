@@ -51,6 +51,16 @@ public static class MirFunctionFingerprintBuilder
             writer.Add(typeParameterId.Value);
         }
 
+        writer.Add(function.GenericParameters.Count);
+        foreach (var parameter in function.GenericParameters)
+        {
+            writer.Add(parameter.ParameterIndex);
+            writer.Add(parameter.SymbolId.Value);
+            writer.Add(parameter.Name);
+            writer.Add((int)parameter.ParameterKind);
+            writer.Add(parameter.TypeId.Value);
+        }
+
         var parameterCount = 0;
         writer.Add(function.Locals.Count);
         foreach (var local in function.Locals)
@@ -210,6 +220,11 @@ public static class MirFunctionFingerprintBuilder
             case MirConstant constant:
                 AddConstant(writer, constant.Value);
                 break;
+            case MirConstGenericValue constGeneric:
+                writer.Add(constGeneric.SymbolId.Value);
+                writer.Add(constGeneric.Name);
+                writer.Add(constGeneric.ParameterIndex);
+                break;
             case MirFunctionRef functionRef:
                 writer.Add(MirFunctionIdentity.GetStableKey(functionRef));
                 writer.Add(functionRef.Name);
@@ -219,6 +234,18 @@ public static class MirFunctionFingerprintBuilder
                 foreach (var typeArgumentId in functionRef.TypeArgumentIds)
                 {
                     writer.Add(typeArgumentId.Value);
+                }
+
+                writer.Add(functionRef.ValueArguments.Count);
+                foreach (var argument in functionRef.ValueArguments)
+                {
+                    writer.Add(argument.ParameterIndex);
+                    writer.Add(argument.CanonicalText);
+                    writer.Add(argument.CanonicalHash);
+                    writer.Add(argument.DisplayText);
+                    writer.Add(argument.TypeId.Value);
+                    writer.Add(argument.ReferencedParameterIndex);
+                    writer.Add(argument.ValueVariableIndex);
                 }
 
                 writer.Add(functionRef.TraitOwnerId.Value);

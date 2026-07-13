@@ -202,6 +202,11 @@ public sealed partial class TypeInferer
         var constraintStart = _constraintGenerator.Constraints.Count;
         foreach (var typeParam in func.TypeParams)
         {
+            if (typeParam.ParameterKind == GenericParameterKind.Value)
+            {
+                continue;
+            }
+
             var typeVar = _substitution.FreshTypeVariable();
             typeVarEnv[typeParam.Name] = typeVar;
             if (typeVar is TyVar typeVariable &&
@@ -210,22 +215,14 @@ public sealed partial class TypeInferer
                 kindEnvByTypeVar[typeVariable.Index] = typeParamKind;
             }
         }
-        if (func.SymbolId.IsValid && func.TypeParams.Count > 0)
-        {
-            var functionTypeParameters = new List<Type>(func.TypeParams.Count);
-            foreach (var typeParam in func.TypeParams)
-            {
-                functionTypeParameters.Add(typeVarEnv[typeParam.Name]);
-            }
-
-            _functionTypeParametersBySymbol[func.SymbolId] = functionTypeParameters;
-        }
-
         _typeParamEnvStack.Push(typeVarEnv);
         _typeParamKindStack.Push(kindEnvByName);
         _typeParamVarKindStack.Push(kindEnvByTypeVar);
         try
         {
+            var valueGenericParameterTypes = ResolveValueGenericParameterTypes(func.TypeParams, typeVarEnv);
+            RegisterFunctionGenericParameterTypes(func, typeVarEnv, valueGenericParameterTypes);
+
             foreach (var typeParam in func.TypeParams)
             {
                 if (!typeVarEnv.TryGetValue(typeParam.Name, out var typeVar))
@@ -288,6 +285,10 @@ public sealed partial class TypeInferer
             {
                 // 临时添加 Mono 类型用于递归
                 var bodyEnv = _env.ExtendMono(func.SymbolId, funcType);
+                foreach (var (symbolId, valueType) in valueGenericParameterTypes)
+                {
+                    bodyEnv = bodyEnv.ExtendMono(symbolId, valueType);
+                }
                 var consumeWholeParameterList =
                     funcType is TyFun bodyFuncType &&
                     CollectParamTypes(bodyFuncType).Count > 1;
@@ -377,6 +378,101 @@ public sealed partial class TypeInferer
             _typeParamKindStack.Pop();
             _typeParamEnvStack.Pop();
         }
+    }
+
+    private Dictionary<SymbolId, Type> ResolveValueGenericParameterTypes(
+        IReadOnlyList<Ast.Types.TypeParam> typeParams,
+        Dictionary<string, Type> typeVarEnv)
+    {
+        var result = new Dictionary<SymbolId, Type>();
+        for (var parameterIndex = 0; parameterIndex < typeParams.Count; parameterIndex++)
+        {
+            var typeParam = typeParams[parameterIndex];
+            if (typeParam.ParameterKind != GenericParameterKind.Value ||
+                typeParam.ComptimeTypeAnnotation == null ||
+                !typeParam.SymbolId.IsValid)
+            {
+                continue;
+            }
+
+            var valueType = ConvertType(
+                typeParam.ComptimeTypeAnnotation,
+                typeVarEnv,
+                allowTypeConstructorReference: false);
+            result[typeParam.SymbolId] = valueType;
+            _valueGenericParameterTypesBySymbol[typeParam.SymbolId] = valueType;
+            _valueGenericParameterOrdinalsBySymbol[typeParam.SymbolId] = parameterIndex;
+            if (!_valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var valueArguments))
+            {
+                valueArguments = [];
+                _valueGenericArgumentsByTypeEnv[typeVarEnv] = valueArguments;
+            }
+
+            valueArguments[typeParam.SymbolId] = _substitution.FreshValueVariable(
+                CreateValueGenericArgumentTemplate(typeParam.Name, valueType, parameterIndex));
+
+            if (_symbolTable.GetSymbol<TypeParamSymbol>(typeParam.SymbolId) is { } symbol)
+            {
+                var valueTypeId = ResolveSymbolMetadataTypeId(valueType);
+                _symbolTable.UpdateSymbol(symbol with
+                {
+                    IsTypeResolved = valueTypeId.IsValid,
+                    TypeId = valueTypeId
+                });
+            }
+        }
+
+        return result;
+    }
+
+    private GenericValueArgument CreateValueGenericArgumentTemplate(
+        string parameterName,
+        Type valueType,
+        int parameterIndex)
+    {
+        var canonicalText = $"value-parameter:{parameterIndex}:{Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(parameterName)).ToLowerInvariant()}";
+        var canonicalHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonicalText)))
+            .ToLowerInvariant();
+        return new GenericValueArgument(
+            parameterIndex,
+            canonicalText,
+            canonicalHash,
+            parameterName,
+            ResolveSymbolMetadataTypeId(valueType),
+            parameterIndex);
+    }
+
+    private void RegisterFunctionGenericParameterTypes(
+        FuncDef func,
+        IReadOnlyDictionary<string, Type> typeVarEnv,
+        IReadOnlyDictionary<SymbolId, Type> valueGenericParameterTypes)
+    {
+        if (!func.SymbolId.IsValid || func.TypeParams.Count == 0)
+        {
+            return;
+        }
+
+        var parameterTypes = new List<Type>(func.TypeParams.Count);
+        foreach (var typeParam in func.TypeParams)
+        {
+            if (typeParam.ParameterKind == GenericParameterKind.Value &&
+                valueGenericParameterTypes.TryGetValue(typeParam.SymbolId, out var valueType))
+            {
+                parameterTypes.Add(valueType);
+                continue;
+            }
+
+            if (typeVarEnv.TryGetValue(typeParam.Name, out var typeVariable))
+            {
+                parameterTypes.Add(typeVariable);
+                continue;
+            }
+
+            parameterTypes.Add(CreateErrorRecoveryType());
+        }
+
+        _functionTypeParametersBySymbol[func.SymbolId] = parameterTypes;
     }
 
     private bool ShouldUseSignatureOnlyForFunction(FuncDef func)

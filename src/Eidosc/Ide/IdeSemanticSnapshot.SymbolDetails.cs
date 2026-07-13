@@ -470,6 +470,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 Kind = symbol.Kind,
                 Detail = symbol.Detail,
                 Documentation = symbol.Documentation,
+                GenericParameterText = symbol.GenericParameterText,
                 TypeText = symbol.TypeText,
                 TypeConfidence = symbol.TypeConfidence,
                 DefinitionFingerprint = symbol.DefinitionFingerprint,
@@ -512,6 +513,7 @@ public static partial class IdeSemanticSnapshotBuilder
                         ? DiagnosticMessages.IdeQualifiedPathDetail
                         : DiagnosticMessages.IdeQualifiedSymbolDetail(symbol.Detail),
                     Documentation = symbol.Documentation,
+                    GenericParameterText = symbol.GenericParameterText,
                     TypeText = symbol.TypeText,
                     TypeConfidence = symbol.TypeConfidence,
                     DefinitionFingerprint = symbol.DefinitionFingerprint,
@@ -876,12 +878,88 @@ public static partial class IdeSemanticSnapshotBuilder
             TraitSymbol => WellKnownStrings.Keywords.Trait,
             EffectSymbol => WellKnownStrings.Keywords.Effect,
             AdtSymbol => WellKnownStrings.Keywords.Type,
+            TypeParamSymbol { ParameterKind: GenericParameterKind.Value } valueParameter =>
+                string.IsNullOrWhiteSpace(valueParameter.ComptimeTypeAnnotation)
+                    ? "comptime value parameter"
+                    : $"comptime value parameter: {valueParameter.ComptimeTypeAnnotation}",
+            TypeParamSymbol { ParameterKind: GenericParameterKind.EffectRow } => "effect-row parameter",
+            TypeParamSymbol { IsComptime: true } => "comptime type parameter",
             TypeParamSymbol => DiagnosticMessages.IdeSymbolDetailTypeParameter,
             ModuleSymbol => WellKnownStrings.Keywords.Module,
             FieldSymbol => DiagnosticMessages.IdeSymbolDetailField,
             ImplSymbol => DiagnosticMessages.IdeSymbolDetailTraitImpl,
             _ => symbol.Kind.ToString()
         };
+    }
+
+    private static string? BuildGenericParameterText(SymbolTable symbolTable, Symbol symbol)
+    {
+        var parameterIds = symbol switch
+        {
+            FuncSymbol function => function.TypeParams,
+            AdtSymbol adt => adt.TypeParams,
+            TraitSymbol trait => trait.TypeParams,
+            CtorSymbol constructor => constructor.TypeParams,
+            _ => []
+        };
+        if (parameterIds.Count == 0)
+        {
+            return null;
+        }
+
+        var parameters = parameterIds
+            .Select(symbolTable.GetSymbol<TypeParamSymbol>)
+            .Where(static parameter => parameter != null)
+            .Select(parameter => FormatGenericParameter(symbolTable, parameter!))
+            .ToList();
+        return parameters.Count == 0
+            ? null
+            : $"[{string.Join(", ", parameters)}]";
+    }
+
+    private static string FormatGenericParameter(SymbolTable symbolTable, TypeParamSymbol parameter)
+    {
+        if (parameter.ParameterKind == GenericParameterKind.Value)
+        {
+            var valueType = string.IsNullOrWhiteSpace(parameter.ComptimeTypeAnnotation)
+                ? "<value>"
+                : parameter.ComptimeTypeAnnotation;
+            return $"comptime {parameter.Name}: {valueType}";
+        }
+
+        if (parameter.ParameterKind == GenericParameterKind.EffectRow)
+        {
+            return $"{parameter.Name}: {WellKnownStrings.Keywords.Effects}";
+        }
+
+        if (parameter.IsComptime)
+        {
+            var annotation = string.IsNullOrWhiteSpace(parameter.ComptimeTypeAnnotation)
+                ? WellKnownStrings.BuiltinTypes.Type
+                : parameter.ComptimeTypeAnnotation;
+            return $"comptime {parameter.Name}: {annotation}";
+        }
+
+        var constraints = parameter.TraitConstraints
+            .Select(symbolTable.GetSymbol)
+            .Where(static trait => trait != null && !string.IsNullOrWhiteSpace(trait.Name))
+            .Select(static trait => trait!.Name)
+            .ToList();
+        var hasExplicitKind = !string.IsNullOrWhiteSpace(parameter.KindAnnotation) &&
+                              !string.Equals(parameter.KindAnnotation, "kind1", StringComparison.Ordinal);
+        if (hasExplicitKind && constraints.Count > 0)
+        {
+            return $"{parameter.Name}: {parameter.KindAnnotation}: {string.Join(" + ", constraints)}";
+        }
+
+        if (hasExplicitKind)
+        {
+            return $"{parameter.Name}: {parameter.KindAnnotation}";
+        }
+
+        return constraints.Count > 0
+            ? $"{parameter.Name}: {string.Join(" + ", constraints)}"
+            : parameter.Name;
     }
 
     private static string BuildSymbolDocumentation(

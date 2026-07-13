@@ -554,7 +554,20 @@ Main :: module {
                 [1] = new TypeDescriptor.Builtin(1),
                 [2] = new TypeDescriptor.Function([new TypeId(10), new TypeId(11)], new TypeId(12), "IO"),
                 [3] = new TypeDescriptor.Tuple([new TypeId(13), new TypeId(14)]),
-                [4] = new TypeDescriptor.TyCon(new TypeConstructorKey(TypeConstructorKeyKind.Symbol, 15), [new TypeId(16)]),
+                [4] = new TypeDescriptor.TyCon(new TypeConstructorKey(TypeConstructorKeyKind.Symbol, 15), [new TypeId(16)])
+                {
+                    ValueArgs =
+                    [
+                        new GenericValueArgumentDescriptor(
+                            0,
+                            "typed:496e74:int:8",
+                            "hash-8",
+                            "8",
+                            new TypeId(BaseTypes.IntId),
+                            ReferencedParameterIndex: 0,
+                            ValueVariableIndex: 9)
+                    ]
+                },
                 [5] = new TypeDescriptor.Ref(new TypeId(17)),
                 [6] = new TypeDescriptor.MutRef(new TypeId(18)),
                 [7] = new TypeDescriptor.Shared(new TypeId(19)),
@@ -702,7 +715,26 @@ Main :: module {
                     },
                     ReturnType = intType,
                     GenericParameterCount = 2,
-                    GenericTypeParameterIds = [new TypeId(501), new TypeId(502)],
+                    GenericParameters =
+                    [
+                        new MirGenericParameter
+                        {
+                            ParameterIndex = 0,
+                            SymbolId = new SymbolId(501),
+                            Name = "T",
+                            ParameterKind = GenericParameterKind.Type,
+                            TypeId = new TypeId(501)
+                        },
+                        new MirGenericParameter
+                        {
+                            ParameterIndex = 1,
+                            SymbolId = new SymbolId(502),
+                            Name = "N",
+                            ParameterKind = GenericParameterKind.Value,
+                            TypeId = intType
+                        }
+                    ],
+                    GenericTypeParameterIds = [new TypeId(501)],
                     IsRuntimeWordAbi = true,
                     IsEntry = true,
                     IsExternal = true,
@@ -739,6 +771,19 @@ Main :: module {
                                 new MirAssign { Target = local, Source = ConstInt(42, intType), Span = Span(31) },
                                 new MirAssign { Target = local, Source = ConstChar('x'), Span = Span(31) },
                                 new MirAssign { Target = local, Source = ConstUnit(unitType), Span = Span(31) },
+                                new MirAssign
+                                {
+                                    Target = local,
+                                    Source = new MirConstGenericValue
+                                    {
+                                        SymbolId = new SymbolId(502),
+                                        Name = "N",
+                                        ParameterIndex = 1,
+                                        TypeId = intType,
+                                        Span = Span(31)
+                                    },
+                                    Span = Span(31)
+                                },
                                 new MirCall { Target = field, Function = functionRef, Arguments = [ConstString("arg"), temp, deref], IsTailCall = true, Span = Span(32) },
                                 new MirBinOp { Target = temp, Operator = BinaryOp.Add, Left = ConstInt(1, intType), Right = ConstInt(2, intType), Span = Span(38) },
                                 new MirUnaryOp { Target = temp, Operator = UnaryOp.Neg, Operand = ConstInt(3, intType), Span = Span(39) },

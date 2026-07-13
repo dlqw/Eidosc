@@ -1,4 +1,5 @@
 using Eidosc.Utils;
+using Eidosc.Types;
 
 namespace Eidosc.Hir;
 
@@ -79,7 +80,24 @@ public sealed record HirVar : HirNode
     /// </summary>
     public List<TypeId> TypeArgumentIds { get; init; } = [];
 
+    public List<GenericValueArgumentDescriptor> ValueArguments { get; init; } = [];
+
     public override string ToString() => $"Var({Name})";
+}
+
+/// <summary>
+/// A value-domain generic parameter referenced from a function body.
+/// It remains symbolic until MIR generic specialization binds the call-site value.
+/// </summary>
+public sealed record HirConstGenericValue : HirNode
+{
+    public HirConstGenericValue() : base(HirKind.Expr) { }
+
+    public string Name { get; init; } = "";
+
+    public int ParameterIndex { get; init; } = -1;
+
+    public override string ToString() => $"ConstGeneric({Name}@{ParameterIndex})";
 }
 
 #endregion

@@ -121,6 +121,7 @@ public sealed class IdeSymbolEntry
     public string Kind { get; init; } = "";
     public string Detail { get; init; } = "";
     public string Documentation { get; init; } = "";
+    public string? GenericParameterText { get; init; }
     public string? TypeText { get; init; }
     public string? TypeConfidence { get; init; }
     public string? DefinitionFingerprint { get; init; }
@@ -170,6 +171,7 @@ public sealed class IdeCompletionEntry
     public string Kind { get; init; } = "";
     public string Detail { get; init; } = "";
     public string Documentation { get; init; } = "";
+    public string? GenericParameterText { get; init; }
     public string? TypeText { get; init; }
     public string? TypeConfidence { get; init; }
     public string? DefinitionFingerprint { get; init; }
@@ -1097,6 +1099,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 Kind = MapSymbolKind(symbol.Kind),
                 Detail = BuildSymbolDetail(symbol),
                 Documentation = BuildSymbolDocumentation(symbol, isBuiltin, metadata),
+                GenericParameterText = BuildGenericParameterText(symbolTable, symbol),
                 TypeText = symbol is CtorSymbol { SignatureText.Length: > 0 } ctorSymbol
                     ? ctorSymbol.SignatureText
                     : metadata?.TypeText,
@@ -1108,7 +1111,9 @@ public static partial class IdeSemanticSnapshotBuilder
                     ? DefinitionFingerprintScope
                     : null,
                 BindingMode = metadata?.BindingMode,
-                VisibilitySpan = TryConvertIdeSpan(metadata?.VisibilitySpan),
+                VisibilitySpan = symbol.IsModuleLevel
+                    ? null
+                    : TryConvertIdeSpan(metadata?.VisibilitySpan),
                 IsBuiltin = isBuiltin,
                 ExternalLibrary = symbol is FuncSymbol { IsExternal: true, ExternalLibrary: not null } func
                     ? func.ExternalLibrary
@@ -1552,7 +1557,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 _ => null
             };
 
-            metadata[node.SymbolId.Value] = new IdeSymbolMetadata
+            var nextMetadata = new IdeSymbolMetadata
             {
                 Type = !isRecovered &&
                        node.InferredType is IdeType metadataType &&
@@ -1567,7 +1572,44 @@ public static partial class IdeSemanticSnapshotBuilder
                     : bindingMode,
                 VisibilitySpan = visibilitySpan
             };
+
+            if (!metadata.TryGetValue(node.SymbolId.Value, out var existingMetadata))
+            {
+                metadata[node.SymbolId.Value] = nextMetadata;
+                return;
+            }
+
+            metadata[node.SymbolId.Value] = new IdeSymbolMetadata
+            {
+                Type = existingMetadata.Type ?? nextMetadata.Type,
+                TypeText = existingMetadata.TypeText ?? nextMetadata.TypeText,
+                TypeConfidence = existingMetadata.TypeConfidence ?? nextMetadata.TypeConfidence,
+                BindingMode = existingMetadata.BindingMode ?? nextMetadata.BindingMode,
+                VisibilitySpan = SelectBroaderVisibility(existingMetadata.VisibilitySpan, nextMetadata.VisibilitySpan)
+            };
         }
+    }
+
+    private static SourceSpan? SelectBroaderVisibility(SourceSpan? left, SourceSpan? right)
+    {
+        if (left == null || right == null)
+        {
+            return null;
+        }
+
+        var leftValue = left.Value;
+        var rightValue = right.Value;
+        if (leftValue.Position <= rightValue.Position && leftValue.EndPosition >= rightValue.EndPosition)
+        {
+            return leftValue;
+        }
+
+        if (rightValue.Position <= leftValue.Position && rightValue.EndPosition >= leftValue.EndPosition)
+        {
+            return rightValue;
+        }
+
+        return leftValue;
     }
 
     private static List<IdeRecoveredNodeEntry> CollectRecoveredNodes(EidosAstNode root)
@@ -1679,6 +1721,7 @@ public static partial class IdeSemanticSnapshotBuilder
             };
 
             return typeParams
+                .Where(static typeParam => typeParam.ParameterKind == GenericParameterKind.Type)
                 .Select(static typeParam => typeParam.Name)
                 .Where(static name => !string.IsNullOrWhiteSpace(name))
                 .Distinct(StringComparer.Ordinal)
@@ -1813,12 +1856,33 @@ public static partial class IdeSemanticSnapshotBuilder
                 ? context.GetName(con.ConstructorVarIndex.Value)
                 : "<type>";
 
-        if (con.Args.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
         {
             return constructorName;
         }
 
-        var args = string.Join(", ", con.Args.Select(arg => FormatTypeForIde(arg, context)));
+        var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var typeArgumentIndex = 0;
+        var arguments = new List<string>(argumentCount);
+        for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
+        {
+            if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                arguments.Add(valueArgument.DisplayText);
+            }
+            else if (typeArgumentIndex < con.Args.Count)
+            {
+                arguments.Add(FormatTypeForIde(con.Args[typeArgumentIndex++], context));
+            }
+        }
+
+        while (typeArgumentIndex < con.Args.Count)
+        {
+            arguments.Add(FormatTypeForIde(con.Args[typeArgumentIndex++], context));
+        }
+
+        var args = string.Join(", ", arguments);
         return $"{constructorName}<{args}>";
     }
 

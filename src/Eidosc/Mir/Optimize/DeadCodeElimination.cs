@@ -147,6 +147,7 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             EntryBlockId = func.EntryBlockId,
             ReturnType = func.ReturnType,
             GenericParameterCount = func.GenericParameterCount,
+            GenericParameters = func.GenericParameters.ToList(),
             GenericTypeParameterIds = func.GenericTypeParameterIds.ToList(),
             IsRuntimeWordAbi = func.IsRuntimeWordAbi,
             IsEntry = func.IsEntry,

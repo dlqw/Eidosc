@@ -24,7 +24,7 @@ public sealed partial class HirBuilder
         if (indexExpr.IsTypeApplication)
         {
             var target = ConvertExprOrFallback(indexExpr.Object, "type application target", indexExpr.Span);
-            return AttachExplicitTypeArguments(target, indexExpr.TypeArgs);
+            return AttachExplicitTypeArguments(target, indexExpr.TypeArgs, indexExpr);
         }
 
         // 反糖化后的 IndexExpr：TypeArgs 已清空，Index 为 null，直接透传 Object

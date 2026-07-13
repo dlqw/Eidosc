@@ -334,12 +334,41 @@ public sealed partial class MirGenericSpecializer
             {
                 TypeId = substitutionService.SubstituteTypeId(functionRef.TypeId, bindings, resolvingTypeIds),
                 SignatureTypeId = substitutionService.SubstituteTypeId(functionRef.SignatureTypeId, bindings, resolvingTypeIds),
-                TypeArgumentIds = substitutionService.SubstituteTypeIds(functionRef.TypeArgumentIds, bindings, resolvingTypeIds, out _)
+                TypeArgumentIds = substitutionService.SubstituteTypeIds(functionRef.TypeArgumentIds, bindings, resolvingTypeIds, out _),
+                ValueArguments = SubstituteGenericValueArguments(
+                    functionRef.ValueArguments,
+                    bindings,
+                    substitutionService,
+                    resolvingTypeIds)
             },
             MirConstant constant => constant with { TypeId = substitutionService.SubstituteTypeId(constant.TypeId, bindings, resolvingTypeIds) },
             MirTemp temp => temp with { TypeId = substitutionService.SubstituteTypeId(temp.TypeId, bindings, resolvingTypeIds) },
             _ => CloneOperand(operand)
         };
+    }
+
+    private static IReadOnlyList<GenericValueArgumentDescriptor> SubstituteGenericValueArguments(
+        IReadOnlyList<GenericValueArgumentDescriptor> valueArguments,
+        SpecializationBindings bindings,
+        SpecializationTypeSubstitutionService substitutionService,
+        HashSet<int> resolvingTypeIds)
+    {
+        if (valueArguments.Count == 0)
+        {
+            return valueArguments;
+        }
+
+        var changed = false;
+        var substituted = new GenericValueArgumentDescriptor[valueArguments.Count];
+        for (var index = 0; index < valueArguments.Count; index++)
+        {
+            var argument = valueArguments[index];
+            var typeId = substitutionService.SubstituteTypeId(argument.TypeId, bindings, resolvingTypeIds);
+            substituted[index] = argument with { TypeId = typeId };
+            changed |= typeId != argument.TypeId;
+        }
+
+        return changed ? substituted : valueArguments;
     }
 
     private MirPlace ClonePlaceWithTypeSubstitution(MirPlace place, SpecializationBindings bindings)

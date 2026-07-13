@@ -118,7 +118,7 @@ import Core as C
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Eidos 0.4.0-alpha.1", StringComparison.Ordinal));
+            diagnostic.Message.Contains("Eidos 0.5.0-alpha.1", StringComparison.Ordinal));
     }
 
     [Fact]

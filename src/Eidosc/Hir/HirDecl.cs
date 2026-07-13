@@ -1,5 +1,6 @@
 using Eidosc.Symbols;
 using Eidosc.Semantic;
+using Eidosc.Types;
 using Eidosc.Utils;
 
 namespace Eidosc.Hir;
@@ -175,6 +176,11 @@ public sealed record HirTypeParam
     /// Gets the interned type variable ID that represents this type parameter.
     /// </summary>
     public TypeId TypeId { get; init; } = TypeId.None;
+
+    /// <summary>
+    /// Semantic domain ranged over by this generic parameter.
+    /// </summary>
+    public GenericParameterKind ParameterKind { get; init; } = GenericParameterKind.Type;
 
     /// <summary>
     /// Kind 注解（已归一化后的文本）

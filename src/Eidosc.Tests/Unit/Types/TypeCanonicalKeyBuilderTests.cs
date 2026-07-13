@@ -50,4 +50,33 @@ public sealed class TypeCanonicalKeyBuilderTests
             $"fun(ref(type:{BaseTypes.IntId}),tuple(type:{BaseTypes.BoolId},mref(type:{BaseTypes.StringId})))->type:{BaseTypes.UnitId}",
             key);
     }
+
+    [Fact]
+    public void Build_DistinguishesFreshValueVariablesFromDeclarationParameters()
+    {
+        var template = new TyCon
+        {
+            Name = "Buffer",
+            ValueArgs =
+            [
+                new GenericValueArgument(
+                    0,
+                    "value-parameter:0:4e",
+                    "parameter-n",
+                    "N",
+                    new TypeId(BaseTypes.IntId),
+                    ReferencedParameterIndex: 0)
+            ]
+        };
+        var instance = template with
+        {
+            ValueArgs = [template.ValueArgs[0] with { ValueVariableIndex = 7 }]
+        };
+
+        var templateKey = TypeCanonicalKeyBuilder.Build(template, static _ => TypeId.None);
+        var instanceKey = TypeCanonicalKeyBuilder.Build(instance, static _ => TypeId.None);
+
+        Assert.Equal($"name:Buffer[value-param:0:parameter-n:{BaseTypes.IntId}]", templateKey);
+        Assert.Equal($"name:Buffer[value-var:7:{BaseTypes.IntId}]", instanceKey);
+    }
 }

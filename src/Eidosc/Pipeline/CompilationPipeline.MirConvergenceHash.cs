@@ -410,6 +410,13 @@ public sealed partial class CompilationPipeline
                 h.Add(constant.TypeId.Value);
                 HashConstantValue(ref h, constant.Value);
                 break;
+            case MirConstGenericValue constGeneric:
+                h.Add(6);
+                h.Add(constGeneric.TypeId.Value);
+                h.Add(constGeneric.SymbolId.Value);
+                h.Add(constGeneric.Name);
+                h.Add(constGeneric.ParameterIndex);
+                break;
             case MirFunctionRef functionRef:
                 h.Add(3);
                 h.Add(functionRef.TypeId.Value);
@@ -419,6 +426,17 @@ public sealed partial class CompilationPipeline
                 HashFunctionId(ref h, functionRef.FunctionId);
                 h.Add(functionRef.SignatureTypeId.Value);
                 h.AddTypeIds(functionRef.TypeArgumentIds);
+                h.Add(functionRef.ValueArguments.Count);
+                foreach (var argument in functionRef.ValueArguments)
+                {
+                    h.Add(argument.ParameterIndex);
+                    h.Add(argument.CanonicalText);
+                    h.Add(argument.CanonicalHash);
+                    h.Add(argument.DisplayText);
+                    h.Add(argument.TypeId.Value);
+                    h.Add(argument.ReferencedParameterIndex);
+                    h.Add(argument.ValueVariableIndex);
+                }
                 h.Add(functionRef.TraitOwnerId.Value);
                 h.Add(functionRef.TraitSelfPosition);
                 h.AddInts(functionRef.TraitSelfParameterIndices);
@@ -662,6 +680,16 @@ public sealed partial class CompilationPipeline
             return;
         }
 
+        if (key.ValueArgument is { } valueArgument)
+        {
+            h.Add("value");
+            h.Add(valueArgument.ParameterIndex);
+            h.Add(valueArgument.CanonicalPayload);
+            h.Add(valueArgument.TypeId.Value);
+            h.Add(valueArgument.VariableIdentity);
+            return;
+        }
+
         if (key.TypeId.IsValid)
         {
             h.Add("type");
@@ -703,6 +731,16 @@ public sealed partial class CompilationPipeline
             case ImplVariableShapeNode variable:
                 h.Add(2);
                 h.Add(variable.Name);
+                break;
+            case ImplValueVariableShapeNode variable:
+                h.Add(7);
+                h.Add(variable.Name);
+                h.Add(variable.TypeId.Value);
+                break;
+            case ImplConcreteValueShapeNode value:
+                h.Add(8);
+                h.Add(value.CanonicalPayload);
+                h.Add(value.TypeId.Value);
                 break;
             case ImplConstructorShapeNode constructor:
                 h.Add(3);

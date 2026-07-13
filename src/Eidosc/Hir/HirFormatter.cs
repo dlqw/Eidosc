@@ -98,6 +98,11 @@ public static class HirFormatter
     private static string FormatHirTypeParam(HirTypeParam typeParam)
     {
         var details = new List<string>();
+        if (typeParam.ParameterKind != Eidosc.Types.GenericParameterKind.Type)
+        {
+            details.Add($"domain={typeParam.ParameterKind}");
+        }
+
         if (typeParam.IsComptime)
         {
             var annotation = string.IsNullOrWhiteSpace(typeParam.ComptimeTypeAnnotation)
@@ -167,6 +172,10 @@ public static class HirFormatter
 
             case HirVar var:
                 sb.AppendLine($"{prefix}Var({var.Name})");
+                break;
+
+            case HirConstGenericValue constGeneric:
+                sb.AppendLine($"{prefix}ConstGeneric({constGeneric.Name}@{constGeneric.ParameterIndex})");
                 break;
 
             case HirBinOp binOp:

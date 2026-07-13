@@ -64,7 +64,10 @@ internal sealed class MirConstructorLayoutSpecializer(
             }
 
             var clonedLayouts = new List<ConstructorTypeLayout>(baseMatch.Layouts.Count);
-            var specializedTypeName = BuildSpecializedTypeName(tyCon.ConstructorDescriptor, tyCon.TypeArgs);
+            var specializedTypeName = BuildSpecializedTypeName(
+                ResolveConstructorDisplayName(tyCon.Constructor),
+                tyCon.TypeArgs,
+                tyCon.ValueArgs);
 
             foreach (var layout in baseMatch.Layouts)
             {
@@ -156,6 +159,21 @@ internal sealed class MirConstructorLayoutSpecializer(
         if (tryGetTypeDescriptor(typeId, out var existingDescriptor) &&
             existingDescriptor is TypeDescriptor.TyCon existingTyCon)
         {
+            if (typeConstructorInfoByTypeId.TryGetValue(typeId.Value, out var existingTypeConstructor) &&
+                existingTypeConstructor.TypeParameterIds.Count > existingTyCon.TypeArgs.Length)
+            {
+                descriptor = new TypeDescriptor.TyCon(
+                    existingTyCon.Constructor,
+                    existingTypeConstructor.TypeParameterIds
+                        .Where(static typeParameterId => typeParameterId.IsValid)
+                        .Select(static typeParameterId => new TypeId(typeParameterId.Value))
+                        .ToArray())
+                {
+                    ValueArgs = existingTyCon.ValueArgs
+                };
+                return true;
+            }
+
             descriptor = existingTyCon;
             return true;
         }
@@ -231,6 +249,23 @@ internal sealed class MirConstructorLayoutSpecializer(
         return false;
     }
 
+    private string ResolveConstructorDisplayName(TypeConstructorKey constructor)
+    {
+        if (constructorKeyMatcher.TryGetIdentity(constructor, out var identity))
+        {
+            foreach (var typeConstructor in typeConstructorInfoByTypeId.Values)
+            {
+                if ((identity.SymbolId.IsValid && typeConstructor.SymbolId == identity.SymbolId) ||
+                    (identity.TypeId.IsValid && typeConstructor.TypeId == identity.TypeId))
+                {
+                    return typeConstructor.Name;
+                }
+            }
+        }
+
+        return constructor.ToDescriptorString();
+    }
+
     private bool CanUseAsGenericLayoutBase(TypeDescriptor.TyCon tyCon)
     {
         return tyCon.TypeArgs.Length == 0 ||
@@ -244,14 +279,22 @@ internal sealed class MirConstructorLayoutSpecializer(
                 isMirGenericTypeParameter(typeId));
     }
 
-    private static string BuildSpecializedTypeName(string constructorDescriptor, IReadOnlyList<TypeId> typeArgs)
+    private static string BuildSpecializedTypeName(
+        string constructorDescriptor,
+        IReadOnlyList<TypeId> typeArgs,
+        IReadOnlyList<GenericValueArgumentDescriptor> valueArgs)
     {
-        if (typeArgs.Count == 0)
+        if (typeArgs.Count == 0 && valueArgs.Count == 0)
         {
             return constructorDescriptor;
         }
 
-        var argTokens = string.Join("_", typeArgs.Select(t => t.ToString()));
+        var argTokens = string.Join(
+            "_",
+            typeArgs.Select(static type => $"t{type.Value}")
+                .Concat(valueArgs.Select(static value => value.ValueVariableIndex >= 0
+                    ? $"vv{value.ValueVariableIndex}"
+                    : $"v{value.CanonicalHash[..Math.Min(12, value.CanonicalHash.Length)]}")));
         return $"{constructorDescriptor}_{argTokens}";
     }
 

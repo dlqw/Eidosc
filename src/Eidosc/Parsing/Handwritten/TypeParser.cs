@@ -224,33 +224,131 @@ public sealed class TypeParser(ParserContext ctx)
             TokenKind.IsTypeIdentifier,
             DiagnosticMessages.ParserExpectedTypeIdentifierAfterQualifiedSeparator);
 
-        var typeArgs = TryParseTypeArgs();
+        var genericArguments = TryParseGenericArguments();
 
         var path = new TypePath();
         path.SetSpan(ctx.SpanFrom(startToken));
         path.SetPackageAlias(parsedPath.PackageAlias);
         path.SetTypeName(parsedPath.Name);
         path.ModulePath = parsedPath.ModulePath;
-        if (typeArgs != null)
+        if (genericArguments != null)
         {
-            path.TypeArgs = typeArgs;
+            path.SetGenericArguments(genericArguments);
         }
         return path;
     }
 
     public List<TypeNode>? TryParseTypeArgs()
     {
-        if (!ctx.Match("[")) return null;
+        var arguments = TryParseGenericArguments();
+        if (arguments == null || arguments.Any(static argument => argument is not UnresolvedGenericArgumentNode { TypeCandidate: not null }))
+        {
+            return null;
+        }
 
-        var args = new List<TypeNode>();
+        return arguments
+            .Cast<UnresolvedGenericArgumentNode>()
+            .Select(static argument => argument.TypeCandidate!)
+            .ToList();
+    }
+
+    public List<GenericArgumentNode>? TryParseGenericArguments()
+    {
+        if (!ctx.Match("["))
+        {
+            return null;
+        }
+
+        var arguments = new List<GenericArgumentNode>();
         if (!ctx.Check("]"))
         {
-            args.Add(ParseType());
+            arguments.Add(ParseUnresolvedGenericArgument());
             while (ctx.Match(","))
-                args.Add(ParseType());
+            {
+                arguments.Add(ParseUnresolvedGenericArgument());
+            }
         }
+
         ctx.Expect("]");
-        return args.Count > 0 ? args : null;
+        return arguments.Count > 0 ? arguments : null;
+    }
+
+    private GenericArgumentNode ParseUnresolvedGenericArgument()
+    {
+        var startToken = ctx.Current;
+        if (IsClearlyValueGenericArgument())
+        {
+            var expression = new ExprParser(ctx).ParseExpr();
+            return new UnresolvedGenericArgumentNode
+            {
+                ValueCandidate = expression,
+                Span = ctx.SpanFrom(startToken)
+            };
+        }
+
+        var type = ParseType();
+        return new UnresolvedGenericArgumentNode
+        {
+            TypeCandidate = type,
+            Span = type.Span
+        };
+    }
+
+    private bool IsClearlyValueGenericArgument()
+    {
+        var token = ctx.Current;
+        if (TokenKind.IsAnyLiteral(token) || TokenKind.IsIdentifier(token) ||
+            ctx.Check("-") || ctx.Check("!") || ctx.Check("[") || ctx.Check("{") || ctx.Check("ref") || ctx.Check("mref"))
+        {
+            return true;
+        }
+
+        if (!TokenKind.IsTypeIdentifier(token) && !ctx.Check("("))
+        {
+            return true;
+        }
+
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        var braceDepth = 0;
+        for (var offset = 0; ; offset++)
+        {
+            var current = ctx.Peek(offset);
+            if (current is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetText(current);
+            if (offset > 0 && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && text is "," or "]")
+            {
+                return false;
+            }
+
+            switch (text)
+            {
+                case "(":
+                    parenDepth++;
+                    break;
+                case ")" when parenDepth > 0:
+                    parenDepth--;
+                    break;
+                case "[":
+                    bracketDepth++;
+                    break;
+                case "]" when bracketDepth > 0:
+                    bracketDepth--;
+                    break;
+                case "{":
+                    braceDepth++;
+                    break;
+                case "}" when braceDepth > 0:
+                    braceDepth--;
+                    break;
+                case "+" or "-" or "*" or "/" or "%" or "==" or "!=" or "<" or ">" or "<=" or ">=" or "&&" or "||" or "??" or "|>" or ">>=" or "++" or "<>" or "+:" or ":+":
+                    return true;
+            }
+        }
     }
 
     private sealed record ParsedEffectPath(List<string> Path, SourceSpan Span);
@@ -581,7 +679,7 @@ public sealed class TypeParser(ParserContext ctx)
             }
         }
 
-        var typeArgs = TryParseTypeArgs();
+        var genericArguments = TryParseGenericArguments();
 
         var traitRef = new TraitRef();
         traitRef.SetSpan(ctx.SpanFrom(startToken));
@@ -591,8 +689,8 @@ public sealed class TypeParser(ParserContext ctx)
             if (parts.Count > 1)
                 traitRef.ModulePath = parts.Take(parts.Count - 1).ToList();
         }
-        if (typeArgs != null)
-            traitRef.TypeArgs = typeArgs;
+        if (genericArguments != null)
+            traitRef.SetGenericArguments(genericArguments);
         return traitRef;
     }
 

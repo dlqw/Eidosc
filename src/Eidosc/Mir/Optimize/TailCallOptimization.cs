@@ -118,6 +118,7 @@ public sealed class TailCallOptimization : IMirOptimizationPass
             EntryBlockId = entryBlockId,
             ReturnType = func.ReturnType,
             GenericParameterCount = func.GenericParameterCount,
+            GenericParameters = func.GenericParameters.ToList(),
             GenericTypeParameterIds = func.GenericTypeParameterIds.ToList(),
             IsRuntimeWordAbi = func.IsRuntimeWordAbi,
             IsEntry = func.IsEntry,

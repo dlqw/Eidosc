@@ -16,12 +16,19 @@ public sealed class Substitution
 
     private sealed record ConstructorBinding(string Name, SymbolId Symbol, List<ConstructorArgSlot> Slots);
     private sealed record ConstructorBindingMatch(List<int> PlaceholderPositions, int Score);
+    private readonly record struct ValueInstantiationKey(
+        int ReferencedParameterIndex,
+        int ValueVariableIndex,
+        string CanonicalHash,
+        TypeId TypeId);
 
     private readonly Dictionary<int, Type> _mapping = new();
+    private readonly Dictionary<int, GenericValueArgument> _valueMapping = new();
     private readonly Dictionary<int, ConstructorBinding> _constructorMapping = new();
     private readonly Dictionary<int, int> _constructorAliases = new();
     private readonly EffectUnifier _effectUnifier = new();
     private int _nextVarIndex;
+    private int _nextValueVarIndex;
 
     /// <summary>
     /// Thread-local cached HashSet for cycle detection in Apply/ApplyCon.
@@ -57,10 +64,17 @@ public sealed class Substitution
     /// </summary>
     public int Count => _mapping.Count;
 
+    public int ValueCount => _valueMapping.Count;
+
     /// <summary>
     /// 下一个新鲜类型变量索引（调试用）
     /// </summary>
     public int NextFreshVarIndex => _nextVarIndex;
+
+    /// <summary>
+    /// 下一个新鲜值变量索引（调试用）
+    /// </summary>
+    public int NextFreshValueVarIndex => _nextValueVarIndex;
 
     /// <summary>
     /// 创建新的类型变量
@@ -68,6 +82,18 @@ public sealed class Substitution
     public TyVar FreshTypeVariable()
     {
         return new TyVar { Index = _nextVarIndex++ };
+    }
+
+    private int FreshValueVariableIndex() => _nextValueVarIndex++;
+
+    public GenericValueArgument FreshValueVariable(GenericValueArgument template) =>
+        template with { ValueVariableIndex = FreshValueVariableIndex() };
+
+    public void UnifyValueArguments(GenericValueArgument left, GenericValueArgument right)
+    {
+        var syntheticLeft = new TyCon { Name = "<value-argument>", ValueArgs = [left] };
+        var syntheticRight = new TyCon { Name = "<value-argument>", ValueArgs = [right] };
+        UnifyValueArgument(left, right, syntheticLeft, syntheticRight);
     }
 
     /// <summary>
@@ -115,7 +141,10 @@ public sealed class Substitution
         return resolved ?? original;
     }
 
-    private List<Type> InstantiateTypeList(List<Type> original, Dictionary<int, Type> varMap)
+    private List<Type> InstantiateTypeList(
+        List<Type> original,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         if (original.Count == 0)
         {
@@ -126,7 +155,7 @@ public sealed class Substitution
         for (var i = 0; i < original.Count; i++)
         {
             var current = original[i];
-            var next = InstantiateType(current, varMap);
+            var next = InstantiateType(current, varMap, valueVarMap);
             if (instantiated == null &&
                 !ReferenceEquals(next, current) &&
                 next != current)
@@ -142,6 +171,119 @@ public sealed class Substitution
         }
 
         return instantiated ?? original;
+    }
+
+    private List<GenericValueArgument> ApplyValueArgumentList(List<GenericValueArgument> original)
+    {
+        if (original.Count == 0)
+        {
+            return original;
+        }
+
+        List<GenericValueArgument>? resolved = null;
+        for (var index = 0; index < original.Count; index++)
+        {
+            var current = original[index];
+            var applied = ApplyValueArgument(current, []);
+            if (resolved == null && applied != current)
+            {
+                resolved = new List<GenericValueArgument>(original.Count);
+                for (var previousIndex = 0; previousIndex < index; previousIndex++)
+                {
+                    resolved.Add(original[previousIndex]);
+                }
+            }
+
+            resolved?.Add(applied);
+        }
+
+        return resolved ?? original;
+    }
+
+    private GenericValueArgument ApplyValueArgument(
+        GenericValueArgument argument,
+        HashSet<int> activeValueVariables)
+    {
+        if (!argument.IsInferenceVariable)
+        {
+            return argument;
+        }
+
+        if (!activeValueVariables.Add(argument.ValueVariableIndex))
+        {
+            throw new TypeInferenceException(
+                $"Recursive value substitution detected while resolving 'v{argument.ValueVariableIndex}'");
+        }
+
+        try
+        {
+            if (!_valueMapping.TryGetValue(argument.ValueVariableIndex, out var mapped))
+            {
+                return argument;
+            }
+
+            var resolved = ApplyValueArgument(mapped, activeValueVariables);
+            _valueMapping[argument.ValueVariableIndex] = resolved;
+            return resolved.ParameterIndex == argument.ParameterIndex
+                ? resolved
+                : resolved with { ParameterIndex = argument.ParameterIndex };
+        }
+        finally
+        {
+            activeValueVariables.Remove(argument.ValueVariableIndex);
+        }
+    }
+
+    private List<GenericValueArgument> InstantiateValueArgumentList(
+        List<GenericValueArgument> original,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
+    {
+        if (original.Count == 0)
+        {
+            return original;
+        }
+
+        List<GenericValueArgument>? instantiated = null;
+        for (var index = 0; index < original.Count; index++)
+        {
+            var current = original[index];
+            var next = InstantiateValueArgument(current, valueVarMap);
+            if (instantiated == null && next != current)
+            {
+                instantiated = new List<GenericValueArgument>(original.Count);
+                for (var previousIndex = 0; previousIndex < index; previousIndex++)
+                {
+                    instantiated.Add(original[previousIndex]);
+                }
+            }
+
+            instantiated?.Add(next);
+        }
+
+        return instantiated ?? original;
+    }
+
+    private GenericValueArgument InstantiateValueArgument(
+        GenericValueArgument argument,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
+    {
+        if (argument.ReferencedParameterIndex < 0 && !argument.IsInferenceVariable)
+        {
+            return argument;
+        }
+
+        var key = new ValueInstantiationKey(
+            argument.ReferencedParameterIndex,
+            argument.ValueVariableIndex,
+            argument.CanonicalHash,
+            argument.TypeId);
+        if (!valueVarMap.TryGetValue(key, out var freshVariableIndex))
+        {
+            freshVariableIndex = FreshValueVariableIndex();
+            valueVarMap[key] = freshVariableIndex;
+        }
+
+        return argument with { ValueVariableIndex = freshVariableIndex };
     }
 
     /// <summary>
@@ -275,10 +417,12 @@ public sealed class Substitution
         var resolvedArgs = canApplyConstructorBinding
             ? boundArgs!
             : ApplyTypeList(con.Args, activeTypeVariables);
+        var resolvedValueArgs = ApplyValueArgumentList(con.ValueArgs);
 
-        if (con.Args.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
         {
             if (resolvedArgs.Count == 0 &&
+                resolvedValueArgs.Count == 0 &&
                 resolvedName == con.Name &&
                 resolvedSymbol == con.Symbol &&
                 resolvedConstructorVar == con.ConstructorVarIndex)
@@ -291,11 +435,13 @@ public sealed class Substitution
                 Name = resolvedName,
                 Symbol = resolvedSymbol,
                 ConstructorVarIndex = resolvedConstructorVar,
-                Args = resolvedArgs
+                Args = resolvedArgs,
+                ValueArgs = resolvedValueArgs
             };
         }
 
         if (TypesUnchanged(resolvedArgs, con.Args) &&
+            ReferenceEquals(resolvedValueArgs, con.ValueArgs) &&
             resolvedName == con.Name &&
             resolvedSymbol == con.Symbol &&
             resolvedConstructorVar == con.ConstructorVarIndex)
@@ -308,6 +454,7 @@ public sealed class Substitution
             Name = resolvedName,
             Symbol = resolvedSymbol,
             Args = resolvedArgs,
+            ValueArgs = resolvedValueArgs,
             ConstructorVarIndex = resolvedConstructorVar
         };
     }
@@ -670,11 +817,93 @@ public sealed class Substitution
                 right.Args.Count));
         }
 
+        if (left.ValueArgs.Count != right.ValueArgs.Count)
+        {
+            throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypes(left, right));
+        }
+
+        for (var index = 0; index < left.ValueArgs.Count; index++)
+        {
+            UnifyValueArgument(left.ValueArgs[index], right.ValueArgs[index], left, right);
+        }
+
         for (int i = 0; i < left.Args.Count; i++)
         {
             Unify(left.Args[i], right.Args[i]);
         }
     }
+
+    public GenericValueArgument Apply(GenericValueArgument argument) =>
+        ApplyValueArgument(argument, []);
+
+    private void UnifyValueArgument(
+        GenericValueArgument left,
+        GenericValueArgument right,
+        TyCon leftOwner,
+        TyCon rightOwner)
+    {
+        left = ApplyValueArgument(left, []);
+        right = ApplyValueArgument(right, []);
+
+        if (left.ParameterIndex != right.ParameterIndex ||
+            left.TypeId.IsValid && right.TypeId.IsValid && left.TypeId != right.TypeId)
+        {
+            throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypes(leftOwner, rightOwner));
+        }
+
+        if (left.IsInferenceVariable && right.IsInferenceVariable &&
+            left.ValueVariableIndex == right.ValueVariableIndex)
+        {
+            return;
+        }
+
+        if (left.IsInferenceVariable)
+        {
+            BindValueVariable(left, right, leftOwner, rightOwner);
+            return;
+        }
+
+        if (right.IsInferenceVariable)
+        {
+            BindValueVariable(right, left, leftOwner, rightOwner);
+            return;
+        }
+
+        if (!HaveSameConcreteValueIdentity(left, right))
+        {
+            throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypes(leftOwner, rightOwner));
+        }
+    }
+
+    private void BindValueVariable(
+        GenericValueArgument variable,
+        GenericValueArgument value,
+        TyCon leftOwner,
+        TyCon rightOwner)
+    {
+        value = ApplyValueArgument(value, []);
+        if (value.IsInferenceVariable && value.ValueVariableIndex == variable.ValueVariableIndex)
+        {
+            return;
+        }
+
+        if (variable.TypeId.IsValid && value.TypeId.IsValid && variable.TypeId != value.TypeId)
+        {
+            throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypes(leftOwner, rightOwner));
+        }
+
+        _valueMapping[variable.ValueVariableIndex] = value with
+        {
+            ParameterIndex = variable.ParameterIndex
+        };
+    }
+
+    private static bool HaveSameConcreteValueIdentity(
+        GenericValueArgument left,
+        GenericValueArgument right) =>
+        left.ReferencedParameterIndex == right.ReferencedParameterIndex &&
+        string.Equals(left.CanonicalHash, right.CanonicalHash, StringComparison.Ordinal) &&
+        string.Equals(left.CanonicalText, right.CanonicalText, StringComparison.Ordinal);
 
     private void UnifyReflProof(TyCon typeEq, TyReflProof proof)
     {
@@ -739,6 +968,9 @@ public sealed class Substitution
 
     private bool AreTyConsAlreadyEqual(TyCon left, TyCon right)
     {
+        left = (TyCon)ApplyCon(left);
+        right = (TyCon)ApplyCon(right);
+
         if (left.Id.IsValid && right.Id.IsValid && left.Id != right.Id)
         {
             return false;
@@ -761,8 +993,49 @@ public sealed class Substitution
             return false;
         }
 
-        return left.Args.Count == right.Args.Count &&
+        return AreValueArgumentsAlreadyEqual(left.ValueArgs, right.ValueArgs) &&
+               left.Args.Count == right.Args.Count &&
                left.Args.Zip(right.Args, AreTypesAlreadyEqual).All(static equal => equal);
+    }
+
+    private bool AreValueArgumentsAlreadyEqual(
+        IReadOnlyList<GenericValueArgument> left,
+        IReadOnlyList<GenericValueArgument> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var leftArgument = ApplyValueArgument(left[index], []);
+            var rightArgument = ApplyValueArgument(right[index], []);
+            if (leftArgument.ParameterIndex != rightArgument.ParameterIndex ||
+                leftArgument.TypeId.IsValid && rightArgument.TypeId.IsValid && leftArgument.TypeId != rightArgument.TypeId)
+            {
+                return false;
+            }
+
+            if (leftArgument.IsInferenceVariable || rightArgument.IsInferenceVariable)
+            {
+                if (!leftArgument.IsInferenceVariable ||
+                    !rightArgument.IsInferenceVariable ||
+                    leftArgument.ValueVariableIndex != rightArgument.ValueVariableIndex)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!HaveSameConcreteValueIdentity(leftArgument, rightArgument))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private bool TryUnifyConstructorHeads(TyCon left, TyCon right)
@@ -1176,16 +1449,8 @@ public sealed class Substitution
                 explicitTypeArgs.Count));
         }
 
-        if (quantifiedVars.Count == 0)
-        {
-            return new InstantiatedTypeScheme
-            {
-                Type = Apply(scheme.Type),
-                Constraints = ApplyConstraints(scheme.Constraints)
-            };
-        }
-
         var varMap = new Dictionary<int, Type>(quantifiedVars.Count);
+        var valueVarMap = new Dictionary<ValueInstantiationKey, int>();
         for (var i = 0; i < quantifiedVars.Count; i++)
         {
             varMap[quantifiedVars[i]] = Apply(explicitTypeArgs[i]);
@@ -1193,8 +1458,8 @@ public sealed class Substitution
 
         return new InstantiatedTypeScheme
         {
-            Type = InstantiateType(scheme.Type, varMap),
-            Constraints = InstantiateConstraints(scheme.Constraints, varMap)
+            Type = InstantiateType(scheme.Type, varMap, valueVarMap),
+            Constraints = InstantiateConstraints(scheme.Constraints, varMap, valueVarMap)
         };
     }
 
@@ -1203,16 +1468,8 @@ public sealed class Substitution
     /// </summary>
     public InstantiatedTypeScheme InstantiateScheme(TypeScheme scheme)
     {
-        if (scheme.ForAll.Count == 0)
-        {
-            return new InstantiatedTypeScheme
-            {
-                Type = Apply(scheme.Type),
-                Constraints = ApplyConstraints(scheme.Constraints)
-            };
-        }
-
         var varMap = new Dictionary<int, Type>(scheme.ForAll.Count);
+        var valueVarMap = new Dictionary<ValueInstantiationKey, int>();
 
         foreach (var varIndex in scheme.ForAll)
         {
@@ -1221,8 +1478,8 @@ public sealed class Substitution
 
         return new InstantiatedTypeScheme
         {
-            Type = InstantiateType(scheme.Type, varMap),
-            Constraints = InstantiateConstraints(scheme.Constraints, varMap)
+            Type = InstantiateType(scheme.Type, varMap, valueVarMap),
+            Constraints = InstantiateConstraints(scheme.Constraints, varMap, valueVarMap)
         };
     }
 
@@ -1243,24 +1500,30 @@ public sealed class Substitution
         return result;
     }
 
-    private Type InstantiateType(Type type, Dictionary<int, Type> varMap)
+    private Type InstantiateType(
+        Type type,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         type = Apply(type);
 
         return type switch
         {
             TyVar var => varMap.TryGetValue(var.Index, out var newType) ? newType : var,
-            TyCon con => InstantiateCon(con, varMap),
-            TyFun fun => InstantiateFun(fun, varMap),
-            TyTuple tuple => InstantiateTuple(tuple, varMap),
-            TyShared shared => InstantiateShared(shared, varMap),
-            EffectRow abilitySet => InstantiateEffectRow(abilitySet, varMap),
-            EffectTag abilityType => InstantiateEffectTag(abilityType, varMap),
+            TyCon con => InstantiateCon(con, varMap, valueVarMap),
+            TyFun fun => InstantiateFun(fun, varMap, valueVarMap),
+            TyTuple tuple => InstantiateTuple(tuple, varMap, valueVarMap),
+            TyShared shared => InstantiateShared(shared, varMap, valueVarMap),
+            EffectRow abilitySet => InstantiateEffectRow(abilitySet, varMap, valueVarMap),
+            EffectTag abilityType => InstantiateEffectTag(abilityType, varMap, valueVarMap),
             _ => type // TyRef/TyMutRef: Apply() at entry already handles substitution
         };
     }
 
-    private Type InstantiateCon(TyCon con, Dictionary<int, Type> varMap)
+    private Type InstantiateCon(
+        TyCon con,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         var constructorVarIndex = con.ConstructorVarIndex;
         var constructorName = con.Name;
@@ -1280,15 +1543,17 @@ public sealed class Substitution
                     constructorSymbol = replacementCon.Symbol;
                     if (replacementCon.Args.Count > 0)
                     {
-                        capturedPrefixArgs = InstantiateTypeList(replacementCon.Args, varMap);
+                        capturedPrefixArgs = InstantiateTypeList(replacementCon.Args, varMap, valueVarMap);
                     }
                     break;
             }
         }
 
+        var newValueArgs = InstantiateValueArgumentList(con.ValueArgs, valueVarMap);
         if (con.Args.Count == 0)
         {
             if ((capturedPrefixArgs == null || capturedPrefixArgs.Count == 0) &&
+                ReferenceEquals(newValueArgs, con.ValueArgs) &&
                 constructorVarIndex == con.ConstructorVarIndex &&
                 constructorName == con.Name &&
                 constructorSymbol == con.Symbol)
@@ -1301,11 +1566,12 @@ public sealed class Substitution
                 ConstructorVarIndex = constructorVarIndex,
                 Name = constructorName,
                 Symbol = constructorSymbol,
-                Args = capturedPrefixArgs ?? []
+                Args = capturedPrefixArgs ?? [],
+                ValueArgs = newValueArgs
             };
         }
 
-        var newArgs = InstantiateTypeList(con.Args, varMap);
+        var newArgs = InstantiateTypeList(con.Args, varMap, valueVarMap);
         if (capturedPrefixArgs != null && capturedPrefixArgs.Count > 0)
         {
             if (ReferenceEquals(newArgs, con.Args))
@@ -1321,6 +1587,7 @@ public sealed class Substitution
         }
 
         if (ReferenceEquals(newArgs, con.Args) &&
+            ReferenceEquals(newValueArgs, con.ValueArgs) &&
             constructorVarIndex == con.ConstructorVarIndex &&
             constructorName == con.Name &&
             constructorSymbol == con.Symbol)
@@ -1333,15 +1600,19 @@ public sealed class Substitution
             ConstructorVarIndex = constructorVarIndex,
             Name = constructorName,
             Symbol = constructorSymbol,
-            Args = newArgs
+            Args = newArgs,
+            ValueArgs = newValueArgs
         };
     }
 
-    private Type InstantiateFun(TyFun fun, Dictionary<int, Type> varMap)
+    private Type InstantiateFun(
+        TyFun fun,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
-        var newParams = InstantiateTypeList(fun.Params, varMap);
-        var newResult = InstantiateType(fun.Result, varMap);
-        var newAbilities = (EffectRow)InstantiateType(fun.Effects, varMap);
+        var newParams = InstantiateTypeList(fun.Params, varMap, valueVarMap);
+        var newResult = InstantiateType(fun.Result, varMap, valueVarMap);
+        var newAbilities = (EffectRow)InstantiateType(fun.Effects, varMap, valueVarMap);
 
         if (ReferenceEquals(newParams, fun.Params) &&
             newResult == fun.Result &&
@@ -1358,20 +1629,26 @@ public sealed class Substitution
         };
     }
 
-    private Type InstantiateShared(TyShared shared, Dictionary<int, Type> varMap)
+    private Type InstantiateShared(
+        TyShared shared,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
-        var newInner = InstantiateType(shared.Inner, varMap);
+        var newInner = InstantiateType(shared.Inner, varMap, valueVarMap);
         return newInner == shared.Inner
             ? shared
             : shared with { Inner = newInner };
     }
 
-    private Type InstantiateTuple(TyTuple tuple, Dictionary<int, Type> varMap)
+    private Type InstantiateTuple(
+        TyTuple tuple,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         if (tuple.Elements.Count == 0)
             return tuple;
 
-        var newElements = InstantiateTypeList(tuple.Elements, varMap);
+        var newElements = InstantiateTypeList(tuple.Elements, varMap, valueVarMap);
         if (ReferenceEquals(newElements, tuple.Elements))
         {
             return tuple;
@@ -1380,7 +1657,10 @@ public sealed class Substitution
         return tuple with { Elements = newElements };
     }
 
-    private Type InstantiateEffectRow(EffectRow abilitySet, Dictionary<int, Type> varMap)
+    private Type InstantiateEffectRow(
+        EffectRow abilitySet,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         var instantiatedVariables = abilitySet.Variables
             .Select(variable => varMap.TryGetValue(variable.Id, out var mapped) && mapped is TyVar mappedVariable
@@ -1398,7 +1678,7 @@ public sealed class Substitution
         HashSet<EffectTag>? newAbilities = null;
         foreach (var ability in abilitySet.Effects)
         {
-            var instantiated = (EffectTag)InstantiateEffectTag(ability, varMap);
+            var instantiated = (EffectTag)InstantiateEffectTag(ability, varMap, valueVarMap);
             if (newAbilities == null &&
                 !ReferenceEquals(instantiated, ability) &&
                 instantiated != ability)
@@ -1426,14 +1706,17 @@ public sealed class Substitution
         return new EffectRow(newAbilities, instantiatedVariables);
     }
 
-    private Type InstantiateEffectTag(EffectTag abilityType, Dictionary<int, Type> varMap)
+    private Type InstantiateEffectTag(
+        EffectTag abilityType,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         if (abilityType.TypeArgs.Count == 0)
         {
             return abilityType;
         }
 
-        var newTypeArgs = InstantiateTypeList(abilityType.TypeArgs, varMap);
+        var newTypeArgs = InstantiateTypeList(abilityType.TypeArgs, varMap, valueVarMap);
         if (ReferenceEquals(newTypeArgs, abilityType.TypeArgs))
         {
             return abilityType;
@@ -1498,14 +1781,17 @@ public sealed class Substitution
         return result;
     }
 
-    private TypeConstraint InstantiateConstraint(TypeConstraint constraint, Dictionary<int, Type> varMap)
+    private TypeConstraint InstantiateConstraint(
+        TypeConstraint constraint,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         switch (constraint)
         {
             case TraitConstraint traitConstraint:
             {
-                var type = InstantiateType(traitConstraint.Type, varMap);
-                var traitArgs = InstantiateTypeList(traitConstraint.TraitArgs, varMap);
+                var type = InstantiateType(traitConstraint.Type, varMap, valueVarMap);
+                var traitArgs = InstantiateTypeList(traitConstraint.TraitArgs, varMap, valueVarMap);
                 return type == traitConstraint.Type && ReferenceEquals(traitArgs, traitConstraint.TraitArgs)
                     ? constraint
                     : traitConstraint with
@@ -1516,8 +1802,8 @@ public sealed class Substitution
             }
             case EqualityConstraint equalityConstraint:
             {
-                var left = InstantiateType(equalityConstraint.Left, varMap);
-                var right = InstantiateType(equalityConstraint.Right, varMap);
+                var left = InstantiateType(equalityConstraint.Left, varMap, valueVarMap);
+                var right = InstantiateType(equalityConstraint.Right, varMap, valueVarMap);
                 return left == equalityConstraint.Left && right == equalityConstraint.Right
                     ? constraint
                     : equalityConstraint with
@@ -1528,7 +1814,7 @@ public sealed class Substitution
             }
             case KindConstraint kindConstraint:
             {
-                var type = InstantiateType(kindConstraint.Type, varMap);
+                var type = InstantiateType(kindConstraint.Type, varMap, valueVarMap);
                 return type == kindConstraint.Type
                     ? constraint
                     : kindConstraint with { Type = type };
@@ -1540,7 +1826,8 @@ public sealed class Substitution
 
     private List<TypeConstraint> InstantiateConstraints(
         List<TypeConstraint> constraints,
-        Dictionary<int, Type> varMap)
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
     {
         if (constraints.Count == 0)
         {
@@ -1550,7 +1837,7 @@ public sealed class Substitution
         var result = new List<TypeConstraint>(constraints.Count);
         foreach (var constraint in constraints)
         {
-            result.Add(InstantiateConstraint(constraint, varMap));
+            result.Add(InstantiateConstraint(constraint, varMap, valueVarMap));
         }
 
         return result;
@@ -1565,6 +1852,10 @@ public sealed class Substitution
         foreach (var (k, v) in _mapping)
         {
             clone._mapping[k] = v;
+        }
+        foreach (var (k, v) in _valueMapping)
+        {
+            clone._valueMapping[k] = v;
         }
         foreach (var (k, v) in _constructorMapping)
         {
@@ -1582,6 +1873,7 @@ public sealed class Substitution
         clone.ErrorReporter = ErrorReporter;
         clone.AllowRigidExistentialRefinement = AllowRigidExistentialRefinement;
         clone._nextVarIndex = _nextVarIndex;
+        clone._nextValueVarIndex = _nextValueVarIndex;
         return clone;
     }
 
@@ -1591,6 +1883,13 @@ public sealed class Substitution
         foreach (var (k, v) in source._mapping)
         {
             _mapping[k] = v;
+        }
+
+
+        _valueMapping.Clear();
+        foreach (var (k, v) in source._valueMapping)
+        {
+            _valueMapping[k] = v;
         }
 
         _constructorMapping.Clear();
@@ -1615,6 +1914,7 @@ public sealed class Substitution
         AllowRigidExistentialRefinement = source.AllowRigidExistentialRefinement;
 
         _nextVarIndex = source._nextVarIndex;
+        _nextValueVarIndex = source._nextValueVarIndex;
     }
 
     public void RestoreFrom(Substitution source)
@@ -1624,7 +1924,9 @@ public sealed class Substitution
 
     public void RestoreFromSnapshot(
         IEnumerable<SubstitutionBinding> bindings,
-        int nextFreshVarIndex)
+        int nextFreshVarIndex,
+        IEnumerable<ValueSubstitutionBinding>? valueBindings = null,
+        int nextFreshValueVarIndex = 0)
     {
         _mapping.Clear();
         foreach (var binding in bindings.OrderBy(static binding => binding.TypeVarIndex))
@@ -1634,8 +1936,19 @@ public sealed class Substitution
 
         _constructorMapping.Clear();
         _constructorAliases.Clear();
+        _valueMapping.Clear();
+        if (valueBindings != null)
+        {
+            foreach (var binding in valueBindings.OrderBy(static binding => binding.ValueVarIndex))
+            {
+                _valueMapping[binding.ValueVarIndex] = binding.RawValue;
+            }
+        }
         DeferredTraitConstraints.Clear();
         _nextVarIndex = Math.Max(nextFreshVarIndex, _mapping.Count == 0 ? 0 : _mapping.Keys.Max() + 1);
+        _nextValueVarIndex = Math.Max(
+            nextFreshValueVarIndex,
+            _valueMapping.Count == 0 ? 0 : _valueMapping.Keys.Max() + 1);
     }
 
     /// <summary>
@@ -1655,6 +1968,20 @@ public sealed class Substitution
                 ResolvedType = resolvedType,
                 Chain = BuildBindingChain(index)
             });
+        }
+
+        return result;
+    }
+
+    public List<ValueSubstitutionBinding> GetValueBindingsSnapshot()
+    {
+        var result = new List<ValueSubstitutionBinding>(_valueMapping.Count);
+        foreach (var (index, rawValue) in _valueMapping.OrderBy(static entry => entry.Key))
+        {
+            result.Add(new ValueSubstitutionBinding(
+                index,
+                rawValue,
+                ApplyValueArgument(rawValue, [])));
         }
 
         return result;
@@ -1706,6 +2033,11 @@ public sealed record SubstitutionBinding
     public required Type ResolvedType { get; init; }
     public required string Chain { get; init; }
 }
+
+public sealed record ValueSubstitutionBinding(
+    int ValueVarIndex,
+    GenericValueArgument RawValue,
+    GenericValueArgument ResolvedValue);
 
 public sealed record InstantiatedTypeScheme
 {

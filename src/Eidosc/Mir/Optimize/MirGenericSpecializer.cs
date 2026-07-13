@@ -88,7 +88,10 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
 
     internal sealed record TemplateInfo(string Key, MirFunc TemplateSource, MirFunc OriginalWorkingFunction);
 
-    private sealed record SpecializationSignature(TypeId ReturnType, List<TypeId> ParameterTypes)
+    private sealed record SpecializationSignature(
+        TypeId ReturnType,
+        List<TypeId> ParameterTypes,
+        IReadOnlyList<GenericValueArgumentDescriptor>? GenericValueArguments = null)
     {
         private SpecializationSignatureKey? _key;
 
@@ -107,7 +110,13 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
                 parameterTypeValues[i] = ParameterTypes[i].Value;
             }
 
-            var key = new SpecializationSignatureKey(ReturnType.Value, parameterTypeValues);
+            var valueArgumentKeys = GenericValueArguments == null || GenericValueArguments.Count == 0
+                ? []
+                : GenericValueArguments
+                    .Select(static argument =>
+                        $"{argument.ParameterIndex}:{argument.TypeId.Value}:{argument.CanonicalHash}:{argument.CanonicalText}")
+                    .ToArray();
+            var key = new SpecializationSignatureKey(ReturnType.Value, parameterTypeValues, valueArgumentKeys);
             _key = key;
             return key;
         }
@@ -918,6 +927,11 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             rewritten.TypeArgumentIds.Any(CanParticipateAsOpenInferenceType))
         {
             rewritten = rewritten with { TypeArgumentIds = [] };
+        }
+
+        if (targetFunction.GenericParameterCount == 0 && rewritten.ValueArguments.Count > 0)
+        {
+            rewritten = rewritten with { ValueArguments = [] };
         }
 
         return targetFunction.FunctionId.IsValid
@@ -1866,6 +1880,17 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
 
         var typeBindings = CollectTypeBindings(template, signature);
         specialization = CreateSpecializedFunction(template.TemplateSource, signature, typeBindings);
+        if (ContainsUnresolvedConstGenericValues(specialization))
+        {
+            RecordRejectedSpecialization(
+                template,
+                signature,
+                SpecializationFailureReason.UnresolvedValueArgument);
+            _stats.SpecializationRejections++;
+            specialization = default!;
+            return false;
+        }
+
         if (ContainsOpenLocalTypes(specialization))
         {
             var reason = ContainsOpenConstructorBinding(specialization)
