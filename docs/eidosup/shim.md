@@ -63,13 +63,15 @@ environment variables.
 
 ## Release gate
 
-Native Windows x64 and Linux x64 clean-install jobs invoke the installed shim
-for external Std inspection, tutorial HIR compilation, component/profile
-changes, offline docs, and x64-to-ARM64 LLVM IR/object generation. They also
-compare an intentional compiler failure through direct and shim paths, and
-measure nine post-warmup startup samples. The median incremental shim overhead
-must not exceed 200 ms.
-Eidosup release artifacts use ReadyToRun compilation so the full verification
-path remains within that baseline. All six published RID artifacts use the same
-multi-call source path and receive binary/version smoke validation before
-publication.
+All six native clean-install jobs invoke the installed shim for external Std
+inspection, native tutorial compilation, component/profile changes, offline
+docs, and opposite-architecture LLVM IR/object generation. They also compare an
+intentional compiler failure through direct and shim paths and measure nine
+post-warmup startup samples.
+
+The incremental median gate uses native-runner upper bounds that account for
+the full activation-time manifest verification and the runner's process-start
+cost: 200 ms for Linux x64/ARM64 and macOS ARM64, 300 ms for Windows x64/ARM64,
+and 600 ms for macOS x64. Every job prints its direct, shim, overhead, and
+baseline medians. Eidosup release artifacts use ReadyToRun compilation, and all
+six RID artifacts use the same multi-call source path before publication.

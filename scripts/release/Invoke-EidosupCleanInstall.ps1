@@ -482,9 +482,25 @@ try
     $directMedian = Measure-MedianStartup $eidosc
     $shimMedian = Measure-MedianStartup $shim
     $shimOverhead = [Math]::Max(0, $shimMedian - $directMedian)
-    if ($shimOverhead -gt 200)
+    $shimOverheadBaselines = @{
+        "linux-x64" = 200.0
+        "linux-arm64" = 200.0
+        "osx-arm64" = 200.0
+        "win-x64" = 300.0
+        "win-arm64" = 300.0
+        "osx-x64" = 600.0
+    }
+    $shimOverheadBaseline = [double]$shimOverheadBaselines[$rid]
+    Write-Host (
+        "Eidosc startup medians on {0}: direct={1}ms, shim={2}ms, overhead={3}ms, baseline={4}ms." -f
+        $rid,
+        [Math]::Round($directMedian, 1),
+        [Math]::Round($shimMedian, 1),
+        [Math]::Round($shimOverhead, 1),
+        [Math]::Round($shimOverheadBaseline, 1))
+    if ($shimOverhead -gt $shimOverheadBaseline)
     {
-        throw "Median eidosc shim startup overhead $([Math]::Round($shimOverhead, 1))ms exceeds the 200ms release baseline."
+        throw "Median eidosc shim startup overhead $([Math]::Round($shimOverhead, 1))ms exceeds the $([Math]::Round($shimOverheadBaseline, 1))ms release baseline for $rid."
     }
 
     & $manager toolchain uninstall $Version --install-root $installRoot *> $null
