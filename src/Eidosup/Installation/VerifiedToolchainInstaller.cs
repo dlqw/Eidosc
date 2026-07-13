@@ -15,8 +15,8 @@ public enum InstallDisposition
 
 public sealed record VerifiedInstallRequest(
     EidosReleaseInfo Release,
-    EidosReleaseAsset BundleAsset,
-    EidosReleaseAsset ChecksumAsset,
+    LoadedToolchainDistribution Distribution,
+    ToolchainComponentPlan Plan,
     PlatformContext Platform,
     ToolInstallLayout Layout,
     string Source,
@@ -26,8 +26,8 @@ public sealed record VerifiedInstallResult(
     InstallDisposition Disposition,
     string ToolchainId,
     string ToolchainDirectory,
-    string AssetSha256,
-    long AssetSize,
+    string DistributionManifestSha256,
+    long ArtifactBytes,
     bool CacheHit,
     bool Resumed);
 
@@ -98,32 +98,18 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             cancellationToken);
         await RecoverAsync(request.Layout, cancellationToken);
 
-        var checksumText = await _downloadManager.DownloadChecksumManifestAsync(
-            request.ChecksumAsset,
-            cancellationToken);
-        var expectedSha256 = ChecksumManifest.Parse(checksumText)
-            .GetRequiredChecksum(request.BundleAsset.Name);
-        if (request.BundleAsset.Sha256 != null &&
-            !string.Equals(request.BundleAsset.Sha256, expectedSha256, StringComparison.Ordinal))
-        {
-            throw new EidosupException(
-                EidosupErrorCode.InvalidReleaseMetadata,
-                EidosupExitCodes.InvalidRelease,
-                $"Signed metadata and SHA256SUMS disagree for '{request.BundleAsset.Name}'.",
-                "Reject the release and repair the signed index or checksum manifest; do not bypass either identity.");
-        }
+        ValidateRequest(request);
         var identity = ToolchainIdentity.Create(
             request.Release.NormalizedVersion,
             request.Platform.Rid,
             request.Source,
             request.Release.TagName,
-            request.BundleAsset.Name,
-            expectedSha256,
-            request.BundleAsset.Size ?? throw new EidosupException(
-                EidosupErrorCode.InvalidReleaseMetadata,
-                EidosupExitCodes.InvalidRelease,
-                $"Release asset '{request.BundleAsset.Name}' does not declare its size.",
-                "Publish release metadata with a positive asset size before installing it."));
+            request.Distribution.ManifestAsset.Name,
+            request.Distribution.ManifestSha256,
+            request.Plan.ComponentIds,
+            request.Plan.Profile,
+            request.Plan.ExplicitComponents,
+            request.Plan.ExplicitTargets);
         var toolchainDirectory = request.Layout.GetToolchainDirectory(identity.Id);
 
         var existingManifest = await InstallManifest.TryReadAsync(
@@ -137,7 +123,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             File.Exists(installedExecutable) &&
             await existingManifest.VerifyAsync(
                 toolchainDirectory,
-                expectedSha256,
+                request.Distribution.ManifestSha256,
                 cancellationToken,
                 request.Platform.Rid,
                 request.Release.NormalizedVersion))
@@ -146,8 +132,8 @@ public sealed class VerifiedToolchainInstaller : IDisposable
                 InstallDisposition.AlreadyInstalled,
                 identity.Id,
                 toolchainDirectory,
-                expectedSha256,
-                existingManifest.AssetSize,
+                request.Distribution.ManifestSha256,
+                existingManifest.Artifacts.Sum(static artifact => artifact.Size),
                 CacheHit: false,
                 Resumed: false);
         }
@@ -158,12 +144,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
         }
 
         var hadPreviousTarget = Directory.Exists(toolchainDirectory);
-        var download = await _downloadManager.DownloadArtifactAsync(
-            request.BundleAsset,
-            request.Layout.CacheDirectory,
-            expectedSha256,
-            cancellationToken,
-            progress);
+        var downloads = await DownloadArtifactsAsync(request, progress, cancellationToken);
         var transactionId = Guid.NewGuid().ToString("N");
         var stageDirectory = Path.Combine(request.Layout.StagingDirectory, $"install-{transactionId}");
         var backupDirectory = Path.Combine(request.Layout.BackupDirectory, $"install-{transactionId}");
@@ -175,7 +156,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             toolchainDirectory,
             stageDirectory,
             backupDirectory,
-            expectedSha256,
+            request.Distribution.ManifestSha256,
             request.Platform.Rid,
             request.Release.NormalizedVersion,
             identity.Id,
@@ -185,31 +166,52 @@ public sealed class VerifiedToolchainInstaller : IDisposable
         try
         {
             Directory.CreateDirectory(stageDirectory);
-            var extraction = await _extractor.ExtractAsync(download.Path, stageDirectory, cancellationToken);
+            var installedFiles = await MaterializeComponentsAsync(
+                request,
+                downloads,
+                stageDirectory,
+                cancellationToken);
             var executablePath = Path.Combine(stageDirectory, request.Platform.ExecutableName);
             if (!File.Exists(executablePath))
             {
                 throw new EidosupException(
                     EidosupErrorCode.InstallFailure,
                     EidosupExitCodes.InstallFailure,
-                    $"Verified bundle '{request.BundleAsset.Name}' does not contain '{request.Platform.ExecutableName}'.",
-                    "Publish a bundle with the expected host executable at the archive root.");
+                    $"Selected component composition does not contain '{request.Platform.ExecutableName}'.",
+                    "Publish eidosc-core with the expected host executable and include it in every profile.");
             }
 
             EnsureExecutablePermission(executablePath);
+            var components = request.Plan.Components.Select(component => new InstalledComponent(
+                component.Id,
+                component.Name,
+                component.Version,
+                component.Required,
+                component.Target,
+                component.Files.Select(static file => file.Path).ToArray())).ToArray();
+            var artifacts = request.Plan.Components.Select(static component => component.Artifact)
+                .DistinctBy(static artifact => artifact.Name, StringComparer.Ordinal)
+                .Select(static artifact => new InstalledArtifact(artifact.Name, artifact.Sha256, artifact.Size))
+                .ToArray();
             var manifest = new InstallManifest(
                 InstallManifest.CurrentSchema,
                 identity.Id,
-                identity.ManifestSha256,
+                identity.IdentitySha256,
+                identity.CompositionSha256,
+                request.Distribution.ManifestAsset.Name,
+                request.Distribution.ManifestSha256,
                 request.Release.TagName,
                 request.Release.NormalizedVersion,
                 request.Platform.Rid,
                 request.Source,
-                request.BundleAsset.Name,
-                expectedSha256,
-                download.Size,
+                request.Plan.Profile.ToString().ToLowerInvariant(),
+                request.Plan.ExplicitComponents,
+                request.Plan.ExplicitTargets,
+                components,
+                request.Plan.Targets.Select(static target => target.Name).ToArray(),
+                artifacts,
                 _clock(),
-                extraction.Files);
+                installedFiles);
             await manifest.WriteAsync(stageDirectory, cancellationToken);
             journal = journal with { State = InstallJournalState.Staged };
             await WriteJournalAsync(journalPath, journal, cancellationToken);
@@ -236,10 +238,10 @@ public sealed class VerifiedToolchainInstaller : IDisposable
                 replaced ? InstallDisposition.Replaced : InstallDisposition.Installed,
                 identity.Id,
                 toolchainDirectory,
-                expectedSha256,
-                download.Size,
-                download.CacheHit,
-                download.Resumed);
+                request.Distribution.ManifestSha256,
+                downloads.Sum(static download => download.Result.Size),
+                downloads.All(static download => download.Result.CacheHit),
+                downloads.Any(static download => download.Result.Resumed));
         }
         catch (Exception exception)
         {
@@ -251,7 +253,7 @@ public sealed class VerifiedToolchainInstaller : IDisposable
                 if (committedManifest != null &&
                     await committedManifest.VerifyAsync(
                         toolchainDirectory,
-                        expectedSha256,
+                        request.Distribution.ManifestSha256,
                         CancellationToken.None,
                         request.Platform.Rid,
                         request.Release.NormalizedVersion))
@@ -282,6 +284,179 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             throw;
         }
     }
+
+    private async Task<IReadOnlyList<DownloadedArtifact>> DownloadArtifactsAsync(
+        VerifiedInstallRequest request,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var releaseAssets = request.Release.Assets.ToDictionary(static asset => asset.Name, StringComparer.Ordinal);
+        var artifacts = request.Plan.Components.Select(static component => component.Artifact)
+            .DistinctBy(static artifact => artifact.Name, StringComparer.Ordinal)
+            .ToArray();
+        var downloads = new List<DownloadedArtifact>(artifacts.Length);
+        foreach (var artifact in artifacts)
+        {
+            var releaseAsset = releaseAssets[artifact.Name];
+            var result = await _downloadManager.DownloadArtifactAsync(
+                releaseAsset,
+                request.Layout.CacheDirectory,
+                artifact.Sha256,
+                cancellationToken,
+                progress);
+            downloads.Add(new DownloadedArtifact(artifact, result));
+        }
+
+        return downloads;
+    }
+
+    private async Task<IReadOnlyList<InstalledFile>> MaterializeComponentsAsync(
+        VerifiedInstallRequest request,
+        IReadOnlyList<DownloadedArtifact> downloads,
+        string stageDirectory,
+        CancellationToken cancellationToken)
+    {
+        var installed = new List<InstalledFile>();
+        var pathComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        for (var index = 0; index < downloads.Count; index++)
+        {
+            var download = downloads[index];
+            var extractionDirectory = Path.Combine(stageDirectory, $".artifact-{index}");
+            Directory.CreateDirectory(extractionDirectory);
+            var extraction = await _extractor.ExtractAsync(
+                download.Result.Path,
+                extractionDirectory,
+                cancellationToken);
+            var extracted = extraction.Files.ToDictionary(static file => file.Path, pathComparer);
+            foreach (var component in request.Plan.Components.Where(component =>
+                         string.Equals(component.Artifact.Name, download.Artifact.Name, StringComparison.Ordinal)))
+            {
+                foreach (var file in component.Files)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!extracted.TryGetValue(file.Path, out var extractedFile) ||
+                        extractedFile.Size != file.Size ||
+                        !string.Equals(extractedFile.Sha256, file.Sha256, StringComparison.Ordinal))
+                    {
+                        throw new EidosupException(
+                            EidosupErrorCode.IntegrityFailure,
+                            EidosupExitCodes.IntegrityFailure,
+                            $"Component '{component.Id}' file '{file.Path}' does not match its signed manifest.",
+                            "Reject the release and regenerate its component file ownership metadata from the exact artifact.");
+                    }
+
+                    var sourcePath = Path.GetFullPath(Path.Combine(
+                        extractionDirectory,
+                        file.Path.Replace('/', Path.DirectorySeparatorChar)));
+                    var destinationPath = Path.GetFullPath(Path.Combine(
+                        stageDirectory,
+                        file.Path.Replace('/', Path.DirectorySeparatorChar)));
+                    if (!ToolInstallLayout.IsWithin(extractionDirectory, sourcePath) ||
+                        !ToolInstallLayout.IsWithin(stageDirectory, destinationPath))
+                    {
+                        throw new EidosupException(
+                            EidosupErrorCode.UnsafeArchive,
+                            EidosupExitCodes.UnsafeArchive,
+                            $"Component file '{file.Path}' escapes a managed staging directory.");
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                    File.Copy(sourcePath, destinationPath, overwrite: false);
+                    SetInstalledFileMode(destinationPath, file.Executable);
+                    installed.Add(new InstalledFile(file.Path, file.Size, file.Sha256, file.Executable));
+                }
+            }
+
+            Directory.Delete(extractionDirectory, recursive: true);
+        }
+
+        return installed;
+    }
+
+    private static void ValidateRequest(VerifiedInstallRequest request)
+    {
+        var manifest = request.Distribution.Manifest;
+        manifest.Validate(request.Release.NormalizedVersion, request.Platform.Rid);
+        if (!string.Equals(manifest.Eidosc.Version, request.Release.NormalizedVersion, StringComparison.Ordinal) ||
+            !string.Equals(manifest.Host, request.Platform.Rid, StringComparison.Ordinal) ||
+            request.Plan.Components is not { Count: > 0 } ||
+            request.Plan.ComponentIds.Distinct(StringComparer.Ordinal).Count() != request.Plan.ComponentIds.Count)
+        {
+            throw InvalidRelease("The component install plan does not match the selected release or host.");
+        }
+
+        var selected = request.Plan.ComponentIds.ToHashSet(StringComparer.Ordinal);
+        var profile = manifest.GetProfile(request.Plan.Profile).Components;
+        var required = manifest.Components.Where(static component => component.Required)
+            .Select(static component => component.Id);
+        if (profile.Concat(required).Any(component => !selected.Contains(component)))
+        {
+            throw InvalidRelease("The component install plan omits a profile or required component.");
+        }
+
+        foreach (var component in request.Plan.Components)
+        {
+            if (!Equals(component, manifest.GetComponent(component.Id)) ||
+                component.Dependencies.Any(dependency => !selected.Contains(dependency)) ||
+                component.Conflicts.Any(selected.Contains))
+            {
+                throw InvalidRelease($"Component install plan for '{component.Id}' violates signed metadata.");
+            }
+        }
+
+        var targetNames = request.Plan.Targets.Select(static target => target.Name).ToHashSet(StringComparer.Ordinal);
+        if (request.Plan.Targets.Any(target =>
+                !Equals(target, manifest.GetTarget(target.Name)) ||
+                !selected.Contains(target.Component)) ||
+            manifest.Targets.Any(target => selected.Contains(target.Component) && !targetNames.Contains(target.Name)))
+        {
+            throw InvalidRelease("The target install plan does not match selected runtime components.");
+        }
+
+        var releaseAssets = new Dictionary<string, EidosReleaseAsset>(StringComparer.Ordinal);
+        if (request.Release.Assets.Any(asset => asset == null || !releaseAssets.TryAdd(asset.Name, asset)))
+        {
+            throw InvalidRelease("Release metadata contains null or duplicate assets.");
+        }
+
+        foreach (var artifact in request.Plan.Components.Select(static component => component.Artifact)
+                     .DistinctBy(static artifact => artifact.Name, StringComparer.Ordinal))
+        {
+            if (!releaseAssets.TryGetValue(artifact.Name, out var releaseAsset) ||
+                releaseAsset.Size != artifact.Size ||
+                releaseAsset.Sha256 != null && !string.Equals(releaseAsset.Sha256, artifact.Sha256, StringComparison.Ordinal))
+            {
+                throw InvalidRelease($"Component artifact '{artifact.Name}' is not bound to the selected release.");
+            }
+        }
+    }
+
+    private static void SetInstalledFileMode(string destinationPath, bool executable)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            var mode = UnixFileMode.UserRead |
+                       UnixFileMode.UserWrite |
+                       UnixFileMode.GroupRead |
+                       UnixFileMode.OtherRead;
+            if (executable)
+            {
+                mode |= UnixFileMode.UserExecute |
+                        UnixFileMode.GroupExecute |
+                        UnixFileMode.OtherExecute;
+            }
+
+            File.SetUnixFileMode(destinationPath, mode);
+        }
+    }
+
+    private static EidosupException InvalidRelease(string message) => new(
+        EidosupErrorCode.InvalidReleaseMetadata,
+        EidosupExitCodes.InvalidRelease,
+        message,
+        "Re-resolve the component plan from the exact signed distribution manifest before installing.");
 
     public async Task RecoverAsync(ToolInstallLayout layout, CancellationToken cancellationToken)
     {
@@ -498,6 +673,10 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             UnixFileMode.OtherRead |
             UnixFileMode.OtherExecute);
     }
+
+    private sealed record DownloadedArtifact(
+        ToolchainComponentArtifact Artifact,
+        DownloadResult Result);
 
     private enum InstallJournalState
     {

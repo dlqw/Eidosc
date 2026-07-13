@@ -8,19 +8,38 @@ public sealed class ProxyProcessRunnerTests
     public void CreateStartInfo_ForwardsArgumentsAndSetsSelectedToolchainEnvironment()
     {
         var resolved = CreateResolved("compiler");
+        Directory.CreateDirectory(resolved.RuntimePath);
+        try
+        {
+            var startInfo = ProxyProcessRunner.CreateStartInfo(
+                resolved,
+                ["build", "path with spaces/source.eidos", "--phase", "hir"]);
 
-        var startInfo = ProxyProcessRunner.CreateStartInfo(
-            resolved,
-            ["build", "path with spaces/source.eidos", "--phase", "hir"]);
+            Assert.Equal(resolved.CommandPath, startInfo.FileName);
+            Assert.Equal(["build", "path with spaces/source.eidos", "--phase", "hir"], startInfo.ArgumentList);
+            Assert.Equal(resolved.RootDirectory, startInfo.Environment["EIDOS_HOME"]);
+            Assert.Equal(resolved.ToolchainDirectory, startInfo.Environment["EIDOSC_HOME"]);
+            Assert.Equal(resolved.RuntimePath, startInfo.Environment["EIDOS_RUNTIME_PATH"]);
+            Assert.Equal(resolved.StdlibPath, startInfo.Environment["EIDOS_STDLIB_PATH"]);
+            Assert.Equal(Path.Combine(resolved.ToolchainDirectory, "targets"), startInfo.Environment["EIDOS_TARGETS_PATH"]);
+            Assert.False(startInfo.RedirectStandardInput);
+            Assert.False(startInfo.RedirectStandardOutput);
+            Assert.False(startInfo.RedirectStandardError);
+        }
+        finally
+        {
+            Directory.Delete(resolved.RootDirectory, recursive: true);
+        }
+    }
 
-        Assert.Equal(resolved.CommandPath, startInfo.FileName);
-        Assert.Equal(["build", "path with spaces/source.eidos", "--phase", "hir"], startInfo.ArgumentList);
-        Assert.Equal(resolved.RootDirectory, startInfo.Environment["EIDOS_HOME"]);
-        Assert.Equal(resolved.ToolchainDirectory, startInfo.Environment["EIDOSC_HOME"]);
-        Assert.Equal(resolved.RuntimePath, startInfo.Environment["EIDOS_RUNTIME_PATH"]);
-        Assert.False(startInfo.RedirectStandardInput);
-        Assert.False(startInfo.RedirectStandardOutput);
-        Assert.False(startInfo.RedirectStandardError);
+    [Fact]
+    public void CreateStartInfo_RemovesRuntimeOverrideWhenRuntimeIsNotInstalled()
+    {
+        var resolved = CreateResolved("compiler");
+
+        var startInfo = ProxyProcessRunner.CreateStartInfo(resolved, []);
+
+        Assert.False(startInfo.Environment.ContainsKey("EIDOS_RUNTIME_PATH"));
     }
 
     [Fact]
@@ -53,6 +72,7 @@ public sealed class ProxyProcessRunnerTests
             toolchain,
             commandPath,
             Path.Combine(toolchain, "runtime"),
+            Path.Combine(toolchain, "stdlib"),
             root);
     }
 }

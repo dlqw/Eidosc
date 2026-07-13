@@ -7,6 +7,7 @@ using Eidosup.Configuration;
 using Eidosup.Distribution;
 using Eidosup.Installation;
 using Eidosup.SelfManagement;
+using Eidosup.Toolchains;
 
 namespace Eidosup.Commands;
 
@@ -19,7 +20,8 @@ internal static class LifecycleCommands
             CreateSetDefaultHostCommand(),
             CreateSetAutoSelfUpdateCommand(),
             CreateSetAutoInstallCommand(),
-            CreateSetSourceCommand()
+            CreateSetSourceCommand(),
+            CreateSetProfileCommand()
         };
     }
 
@@ -118,6 +120,41 @@ internal static class LifecycleCommands
         {
             var mode = ParseEnum<AutoInstallMode>(context.ParseResult.GetValueForArgument(value));
             await UpdateSettingsAsync(context, root, dryRun, settings => settings with { AutoInstall = mode });
+        });
+        return command;
+    }
+
+    private static Command CreateSetProfileCommand()
+    {
+        var command = new Command("profile", "Create and activate an immutable variant using minimal, default, or complete profile metadata.");
+        var value = new Argument<string>("profile");
+        var toolchain = new Option<string?>("--toolchain", "Use an installed selector instead of the global default.");
+        var root = CreateInstallRootOption();
+        var downloadRoot = new Option<string?>("--download-root", "Override the verified artifact cache directory.");
+        var dryRun = CreateDryRunOption();
+        command.AddArgument(value);
+        command.AddOption(toolchain);
+        command.AddOption(root);
+        command.AddOption(downloadRoot);
+        command.AddOption(dryRun);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var profile = ToolchainComponentSolver.ParseProfile(context.ParseResult.GetValueForArgument(value));
+            var selector = context.ParseResult.GetValueForOption(toolchain);
+            var dryRunValue = context.ParseResult.GetValueForOption(dryRun);
+            var result = await new ToolchainManager().SetProfileAsync(
+                new ToolchainManagementOptions(
+                    InstallRoot: context.ParseResult.GetValueForOption(root),
+                    DownloadRoot: context.ParseResult.GetValueForOption(downloadRoot)),
+                selector == null ? null : ToolchainSpec.Parse(selector),
+                profile,
+                dryRunValue,
+                progress: null,
+                context.GetCancellationToken());
+            ToolchainCommands.WriteCompositionResult(
+                result,
+                context.ParseResult.GetValueForOption(GlobalOptions.Json),
+                "set-profile");
         });
         return command;
     }
@@ -450,7 +487,7 @@ internal static class LifecycleCommands
 
 internal static class ShellCompletionGenerator
 {
-    private const string Commands = "setup doctor toolchain default update check show run which rollback override set source self cache completions";
+    private const string Commands = "setup doctor toolchain component target default update check show run which doc rollback override set source self cache completions";
 
     public static string Generate(string shell) => shell switch
     {

@@ -23,23 +23,27 @@ and `SHA256SUMS` are installable.
 
 Eidosc releases are assembled as short-lived CI artifacts before publication.
 The candidate must contain all six Windows, Linux, and macOS x64/arm64 bundles,
-the .NET tool package, deterministic `SHA256SUMS`, and `eidosc-release.json`.
-CI validates every digest and ZIP path, then performs native Windows x64 and
-Linux x64 clean installations with the candidate Eidosup binary. Each installed
-compiler must pass `eidosc info`, compile the tutorial smoke source, and pass
-management-command smoke checks for list, which, explicit run, check, convergent
-update, default clearing/restoration, active-uninstall refusal, and transactional
-uninstall. arm64 and macOS assets receive checksum and archive-structure
-verification when native runners are unavailable. The GitHub tag and prerelease
-are created only after all candidate gates succeed; Eidosup continues to reject
-draft releases during normal release selection.
+the .NET tool package, deterministic `SHA256SUMS`, `eidosc-release.json`, and six
+host component manifests. CI validates every digest and ZIP path, then performs
+native clean installations on Windows, Linux, and macOS x64/arm64 runners with
+the matching candidate Eidosup binary. Each installed compiler must pass
+`eidosc info`, external Std inspection, native executable generation, opposite-
+architecture LLVM object generation, and management-command smoke checks for
+components, profiles, targets, docs, list, which, explicit run, check,
+convergent update, default clearing/restoration, active-uninstall refusal, and
+transactional uninstall. The GitHub tag and prerelease are created only after
+all candidate gates succeed. A second six-RID job then removes GitHub tokens and
+repeats installation from the public release, so CI-only access cannot satisfy
+the gate. Eidosup continues to reject draft releases during normal selection.
 
 ## Verified and atomic installation
 
-Eidosup requires the selected release to publish `SHA256SUMS`. It downloads the
-checksum file with a bounded size, then verifies the host bundle's declared
-size and SHA-256 digest before the bundle can enter the content-addressed cache.
-Interrupted bundle downloads use HTTP range requests when the release host
+Eidosup requires the selected release to publish `SHA256SUMS` and a
+host-specific `eidos-toolchain-v<version>-<rid>.json`. It verifies the
+manifest digest against signed release metadata and checksums, validates
+component ownership/dependencies/profiles/targets, and then verifies every
+selected artifact's size and SHA-256 before it can enter the content-addressed
+cache. Interrupted downloads use HTTP range requests when the release host
 supports them. Transient transfers have a finite retry limit.
 
 Verified bundles are cached below `downloads/sha256/<prefix>/<digest>`. A cache
@@ -64,23 +68,26 @@ download, cache, lock, staging, or journal directory.
 
 Each verified install uses an immutable internal ID containing the resolved
 Eidosc version, host RID, and a full SHA-256 identity digest. The digest covers
-the release tag, source, asset name, asset digest, and declared asset size. A
-typical directory has this shape:
+the release tag, source, distribution-manifest name/digest, profile, selected
+component IDs, explicit components, and explicit targets. A typical directory
+has this shape:
 
 ```text
-toolchains/eidosc-0.4.0-alpha.2-win-x64-<sha256>/
+toolchains/eidosc-0.4.0-alpha.3-win-x64-<sha256>/
 ```
 
-The schema 2 `.eidosup-install.json` records that identity and remains inside
+The schema 3 `.eidosup-install.json` records that identity, component
+ownership, artifacts, profile, and targets, and remains inside
 the immutable directory. Eidosup will not register a directory unless the ID,
-manifest identity, host, version, complete file list, sizes, and file digests
-all verify.
+manifest identity, host, version, complete file list, executable modes, sizes,
+and file digests all verify.
 
-The private state file is `state/toolchains.json`, currently schema 1. It
-defines installed toolchains, movable selectors, the global default, activation
-history, whether the default was explicitly configured or cleared, transaction
-records, and unmanaged-directory diagnostics. State writes use a separate state
-lock, write-through temporary file, atomic replacement, and
+The private state file is `state/toolchains.json`, currently schema 3. It
+defines installed variants and composition metadata, movable selectors, the
+global default, activation history, custom links, directory overrides,
+transaction records, and unmanaged-directory diagnostics. Schema 1 and 2 state
+is migrated through verified install manifests. State writes use a separate
+state lock, write-through temporary file, atomic replacement, and
 `toolchains.json.bak`. Repeated initialization is idempotent. If the primary
 state is malformed, Eidosup reconciles a supported backup with verified
 immutable install manifests. An unknown or future schema is never overwritten;
@@ -129,7 +136,7 @@ change when the default selector moves.
 
 The release clean-install gate compares direct and shim exit codes and measures
 the median incremental shim startup cost after warmup. The current release
-baseline is at most 200 ms on native Windows x64 and Linux x64 runners. See
+baseline is at most 200 ms on all six native release runners. See
 [Shim architecture and forwarding contract](shim.md) for the detailed contract.
 
 ## LLVM dependency providers
@@ -167,9 +174,9 @@ failures; legacy layout detection remains a warning with manual cleanup steps.
 Exact versions accept one of these equivalent forms:
 
 ```text
-0.4.0-alpha.2
-v0.4.0-alpha.2
-eidosc-v0.4.0-alpha.2
+0.4.0-alpha.3
+v0.4.0-alpha.3
+eidosc-v0.4.0-alpha.3
 ```
 
 The version after the optional prefix must be valid SemVer 2.0.0. Unsafe path,
@@ -186,7 +193,7 @@ The default is `preview` while Eidos publishes prerelease toolchains.
 
 ```powershell
 eidosup setup --channel preview --dry-run --skip-clang --skip-env
-eidosup setup --version 0.4.0-alpha.2
+eidosup setup --version 0.4.0-alpha.3
 ```
 
 ## Errors and diagnostics

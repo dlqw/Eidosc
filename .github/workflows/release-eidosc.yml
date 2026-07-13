@@ -79,6 +79,39 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $rid." }
           Move-Item (Join-Path $publishDir $publishedBinaryName) (Join-Path $publishDir $binaryName)
           Copy-Item eng/compatibility.json (Join-Path $publishDir 'compatibility.json')
+          $bindgenDir = Join-Path $publishDir 'tools/eidos-bindgen'
+          dotnet publish src/Eidosc.Bindgen/Eidosc.Bindgen.csproj `
+            -c Release `
+            -r $rid `
+            -p:SelfContained=true `
+            -p:PublishSingleFile=true `
+            -p:DebugType=None `
+            -o $bindgenDir
+          if ($LASTEXITCODE -ne 0) { throw "Eidosc.Bindgen publish failed for $rid." }
+          $publishedBindgen = if ($rid.StartsWith('win-')) { 'Eidosc.Bindgen.exe' } else { 'Eidosc.Bindgen' }
+          $bindgen = if ($rid.StartsWith('win-')) { 'eidos-bindgen.exe' } else { 'eidos-bindgen' }
+          Move-Item (Join-Path $bindgenDir $publishedBindgen) (Join-Path $bindgenDir $bindgen)
+          $docsDir = Join-Path $publishDir 'docs'
+          Copy-Item docs $docsDir -Recurse
+          $topicIndex = [ordered]@{
+            schema = 1
+            eidoscVersion = $version
+            topics = [ordered]@{
+              index = 'index.md'
+              eidosup = 'eidosup/toolchain-management.md'
+              components = 'eidosup/components-profiles-targets.md'
+              project = 'eidosup/project-selection.md'
+              sources = 'eidosup/distribution-sources.md'
+              compiler = 'architecture/compiler-overview.md'
+            }
+          }
+          $topicIndex | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $docsDir 'index.json') -Encoding utf8NoBOM
+          $targetRids = @('linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64', 'win-arm64', 'win-x64')
+          foreach ($targetRid in $targetRids | Where-Object { $_ -cne $rid }) {
+            $targetRuntime = Join-Path $publishDir "targets/$targetRid/runtime"
+            New-Item -ItemType Directory -Path $targetRuntime -Force | Out-Null
+            Copy-Item src/Eidosc/Runtime/* $targetRuntime -Recurse -Exclude tests
+          }
           $bundle = Join-Path $PWD "artifacts/eidosc-v$version-$rid.zip"
           Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $bundle
       - uses: actions/upload-artifact@v4
@@ -116,7 +149,11 @@ jobs:
       matrix:
         include:
           - { rid: win-x64, runner: windows-latest, binary: Eidosup.exe, output: eidosup-candidate.exe }
+          - { rid: win-arm64, runner: windows-11-arm, binary: Eidosup.exe, output: eidosup-candidate.exe }
           - { rid: linux-x64, runner: ubuntu-latest, binary: Eidosup, output: eidosup-candidate }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm, binary: Eidosup, output: eidosup-candidate }
+          - { rid: osx-x64, runner: macos-15-intel, binary: Eidosup, output: eidosup-candidate }
+          - { rid: osx-arm64, runner: macos-15, binary: Eidosup, output: eidosup-candidate }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -162,6 +199,10 @@ jobs:
           EIDOSUP_METADATA_ED25519_PRIVATE_KEY: ${{ secrets.EIDOSUP_METADATA_ED25519_PRIVATE_KEY }}
           EIDOSUP_METADATA_NEXT_ED25519_KEYS: ${{ vars.EIDOSUP_METADATA_NEXT_ED25519_KEYS }}
         run: |
+          ./scripts/release/New-ToolchainManifests.ps1 `
+            -Version "${{ needs.verify-release.outputs.version }}" `
+            -CommitSha "$env:GITHUB_SHA" `
+            -AssetDirectory artifacts/candidate
           ./scripts/release/New-ReleaseArtifacts.ps1 `
             -Product eidosc `
             -Version "${{ needs.verify-release.outputs.version }}" `
@@ -209,7 +250,11 @@ jobs:
       matrix:
         include:
           - { rid: win-x64, runner: windows-latest, binary: eidosup-candidate.exe }
+          - { rid: win-arm64, runner: windows-11-arm, binary: eidosup-candidate.exe }
           - { rid: linux-x64, runner: ubuntu-latest, binary: eidosup-candidate }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm, binary: eidosup-candidate }
+          - { rid: osx-x64, runner: macos-15-intel, binary: eidosup-candidate }
+          - { rid: osx-arm64, runner: macos-15, binary: eidosup-candidate }
     steps:
       - uses: actions/checkout@v4
       - name: Checkout pinned tutorial smoke fixture
@@ -236,7 +281,7 @@ jobs:
             -CommitSha "$env:GITHUB_SHA" `
             -CandidateDirectory artifacts/candidate `
             -EidosupPath "artifacts/eidosup/${{ matrix.binary }}" `
-            -TutorialExample "artifacts/tutorial/examples/01_literals_bindings.eidos"
+            -TutorialExample "artifacts/tutorial/examples/29_precompiled_stdlib.eidos"
 
   create-release:
     name: publish-verified-release
@@ -274,3 +319,45 @@ jobs:
             -AssetDirectory artifacts/final `
             -NotesFile "changelogs/${{ needs.verify-release.outputs.version }}.md" `
             -Repository "$env:GITHUB_REPOSITORY"
+
+  published-install:
+    name: published-install (${{ matrix.rid }})
+    needs:
+      - verify-release
+      - publish-eidosup-candidate
+      - create-release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, runner: windows-latest, binary: eidosup-candidate.exe }
+          - { rid: win-arm64, runner: windows-11-arm, binary: eidosup-candidate.exe }
+          - { rid: linux-x64, runner: ubuntu-latest, binary: eidosup-candidate }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm, binary: eidosup-candidate }
+          - { rid: osx-x64, runner: macos-15-intel, binary: eidosup-candidate }
+          - { rid: osx-arm64, runner: macos-15, binary: eidosup-candidate }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned tutorial native fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dlqw/eidos-tutorial
+          ref: 6d1374f2123ee90f7d04341728d666fe925f6669
+          path: artifacts/tutorial
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: eidosup-candidate-${{ matrix.rid }}
+          path: artifacts/eidosup
+      - name: Verify anonymous installation from the published release
+        shell: pwsh
+        run: |
+          $candidate = "artifacts/eidosup/${{ matrix.binary }}"
+          if ($env:RUNNER_OS -ne 'Windows') { chmod +x $candidate }
+          Remove-Item Env:GITHUB_TOKEN, Env:GH_TOKEN -ErrorAction SilentlyContinue
+          ./scripts/release/Invoke-EidosupPublishedInstall.ps1 `
+            -Version "${{ needs.verify-release.outputs.version }}" `
+            -EidosupPath $candidate `
+            -TutorialExample artifacts/tutorial/examples/29_precompiled_stdlib.eidos `
+            -ExpectedRid "${{ matrix.rid }}"

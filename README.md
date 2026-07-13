@@ -16,7 +16,9 @@ tooling interfaces may still change between prereleases.
 
 See [Compiler architecture](docs/architecture/compiler-overview.md) for a
 source-level overview. See [Eidosup bootstrap guide](docs/eidosup/bootstrap.md)
-for installer channels, release sources, diagnostics, and exit behavior.
+for installer channels, release sources, diagnostics, and exit behavior, and
+[components, profiles, and targets](docs/eidosup/components-profiles-targets.md)
+for immutable toolchain composition and cross-compilation setup.
 
 ## Requirements
 

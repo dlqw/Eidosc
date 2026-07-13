@@ -904,7 +904,7 @@ public sealed partial class QueryDrivenPipeline
             return false;
         }
 
-        return filePath.Replace('\\', '/').Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private bool TryGetInputFilePath(out string inputFilePath)

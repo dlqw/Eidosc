@@ -19,8 +19,11 @@
     </ItemGroup>
 
     <ItemGroup>
-      <EmbeddedResource Include="Stdlib\Precompiled\**\*.eidos" />
-      <EmbeddedResource Include="Stdlib\Precompiled\eidos.toml" />
+      <Content Include="Stdlib\Precompiled\**\*">
+        <Link>stdlib\%(RecursiveDir)%(Filename)%(Extension)</Link>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
     </ItemGroup>
 
 </Project>

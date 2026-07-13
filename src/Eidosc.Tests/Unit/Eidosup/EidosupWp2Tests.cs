@@ -61,11 +61,11 @@ public sealed class EidosupWp2Tests
 
         var migrated = await store.InitializeAsync(fixture.Layout, CancellationToken.None);
 
-        Assert.Equal(2, migrated.Schema);
+        Assert.Equal(3, migrated.Schema);
         Assert.Single(migrated.Toolchains);
         Assert.Empty(migrated.CustomToolchains);
         Assert.Empty(migrated.Overrides);
-        Assert.Contains("\"schema\": 2", await File.ReadAllTextAsync(path), StringComparison.Ordinal);
+        Assert.Contains("\"schema\": 3", await File.ReadAllTextAsync(path), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,8 +102,7 @@ public sealed class EidosupWp2Tests
     [Theory]
     [InlineData("channel = \"preview\"\n[toolchain]\nchannel = \"preview\"\n", "inside [toolchain]")]
     [InlineData("[other]\nchannel = \"preview\"\n", "Unknown or empty TOML section")]
-    [InlineData("[toolchain]\nchannel = \"preview\"\nprofile = \"minimal\"\n", "WP3")]
-    public async Task ProjectToolchainFile_RejectsUnknownStructureAndUnavailableProfiles(
+    public async Task ProjectToolchainFile_RejectsUnknownStructure(
         string content,
         string expectedMessage)
     {
@@ -116,6 +115,22 @@ public sealed class EidosupWp2Tests
 
         Assert.Equal(EidosupErrorCode.InvalidArgument, exception.Code);
         Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProjectToolchainFile_AcceptsWp3ProfileComponentsAndTargets()
+    {
+        using var temporary = new TemporaryDirectory();
+        var path = Path.Combine(temporary.Path, ProjectToolchainConfigurationReader.FileName);
+        await File.WriteAllTextAsync(
+            path,
+            "[toolchain]\nchannel = \"preview\"\nprofile = \"minimal\"\ncomponents = [\"eidos-docs\"]\ntargets = [\"linux-arm64\"]\n");
+
+        var configuration = await ProjectToolchainConfigurationReader.ReadAsync(path, CancellationToken.None);
+
+        Assert.Equal("minimal", configuration.Profile);
+        Assert.Equal(["eidos-docs"], configuration.Components);
+        Assert.Equal(["linux-arm64"], configuration.Targets);
     }
 
     [Fact]
@@ -158,6 +173,7 @@ public sealed class EidosupWp2Tests
         using var fixture = new EidosupToolchainTestFixture();
         var customRoot = Path.Combine(fixture.Root, "compiler-build");
         Directory.CreateDirectory(Path.Combine(customRoot, "runtime"));
+        Directory.CreateDirectory(Path.Combine(customRoot, "stdlib"));
         await File.WriteAllTextAsync(Path.Combine(customRoot, PlatformContext.Detect().ExecutableName), "binary");
         var manager = new ToolchainManager(clock: static () => EidosupToolchainTestFixture.FixedTime);
 
@@ -184,6 +200,7 @@ public sealed class EidosupWp2Tests
         using var fixture = new EidosupToolchainTestFixture();
         var customRoot = Path.Combine(fixture.Root, "compiler-build");
         Directory.CreateDirectory(Path.Combine(customRoot, "runtime"));
+        Directory.CreateDirectory(Path.Combine(customRoot, "stdlib"));
         await File.WriteAllTextAsync(Path.Combine(customRoot, PlatformContext.Detect().ExecutableName), "binary");
         await File.WriteAllTextAsync(
             Path.Combine(customRoot, ToolchainCompatibilityVerifier.CompatibilityFileName),
@@ -542,6 +559,7 @@ public sealed class EidosupWp2Tests
         await store.RegisterInstallAsync(fixture.Layout, managed.Directory, ReleaseChannel.Preview, CancellationToken.None);
         var external = Path.Combine(fixture.Root, "external-build");
         Directory.CreateDirectory(Path.Combine(external, "runtime"));
+        Directory.CreateDirectory(Path.Combine(external, "stdlib"));
         await File.WriteAllTextAsync(Path.Combine(external, PlatformContext.Detect().ExecutableName), "binary");
         await store.LinkCustomAsync(
             fixture.Layout,
@@ -649,6 +667,9 @@ public sealed class EidosupWp2Tests
         Assert.Equal(first, second);
         Assert.Contains(marker, first, StringComparison.Ordinal);
         Assert.Contains("toolchain", first, StringComparison.Ordinal);
+        Assert.Contains("component", first, StringComparison.Ordinal);
+        Assert.Contains("target", first, StringComparison.Ordinal);
+        Assert.Contains("doc", first, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -517,7 +517,7 @@ public sealed partial class NameResolver
             return false;
         }
 
-        return filePath.Replace('\\', '/').Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private static PatternWitness CreateListCoverageWitness(ListCoverageCase listCase, bool preferCharLiteralHints)

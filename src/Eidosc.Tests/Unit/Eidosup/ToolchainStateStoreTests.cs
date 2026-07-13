@@ -117,7 +117,8 @@ public sealed class ToolchainStateStoreTests
         Assert.Equal(toolchain.Manifest.ToolchainId, installed.Id);
         Assert.Equal(recovered.Schema, reread.Schema);
         Assert.Equal(recovered.Revision, reread.Revision);
-        Assert.Equal(recovered.Toolchains, reread.Toolchains);
+        Assert.Equal(recovered.Toolchains.Select(static toolchain => toolchain.Id), reread.Toolchains.Select(static toolchain => toolchain.Id));
+        Assert.Equal(recovered.Toolchains[0].Components.Select(static component => component.Id), reread.Toolchains[0].Components.Select(static component => component.Id));
         Assert.Equal(recovered.Selectors, reread.Selectors);
         Assert.Empty(recovered.UnmanagedDirectories);
         Assert.True(File.Exists(Path.Combine(layout.StateDirectory, ToolchainStateStore.CorruptFileName)));
@@ -171,7 +172,7 @@ public sealed class ToolchainStateStoreTests
         Assert.Equal(first.Revision, second.Revision);
         var installed = Assert.Single(second.Toolchains);
         Assert.Equal(toolchain.Manifest.ToolchainId, installed.Id);
-        Assert.Equal(toolchain.Manifest.ManifestSha256, installed.ManifestSha256);
+        Assert.Equal(toolchain.Manifest.IdentitySha256, installed.IdentitySha256);
         Assert.Collection(
             second.Selectors,
             selector =>
@@ -279,9 +280,9 @@ public sealed class ToolchainStateStoreTests
             platform.Rid,
             "test/source",
             $"eidosc-v{version}",
-            $"eidosc-v{version}-{platform.Rid}.zip",
+            $"eidos-toolchain-v{version}-{platform.Rid}.json",
             assetHash,
-            123);
+            ["eidosc-core", $"eidos-runtime@{platform.Rid}"]);
         var directory = layout.GetToolchainDirectory(identity.Id);
         Directory.CreateDirectory(Path.Combine(directory, "runtime"));
         var executablePath = Path.Combine(directory, platform.ExecutableName);
@@ -291,14 +292,23 @@ public sealed class ToolchainStateStoreTests
         var manifest = new InstallManifest(
             InstallManifest.CurrentSchema,
             identity.Id,
-            identity.ManifestSha256,
+            identity.IdentitySha256,
+            identity.CompositionSha256,
+            $"eidos-toolchain-v{version}-{platform.Rid}.json",
+            assetHash,
             $"eidosc-v{version}",
             version,
             platform.Rid,
             "test/source",
-            $"eidosc-v{version}-{platform.Rid}.zip",
-            assetHash,
-            123,
+            "default",
+            [],
+            [],
+            [
+                new InstalledComponent("eidosc-core", "eidosc-core", version, true, null, [platform.ExecutableName]),
+                new InstalledComponent($"eidos-runtime@{platform.Rid}", "eidos-runtime", "0.1.0-alpha.1", false, platform.Rid, ["runtime/runtime.h"])
+            ],
+            [platform.Rid],
+            [new InstalledArtifact($"eidosc-v{version}-{platform.Rid}.zip", assetHash, 123)],
             FixedTime,
             [
                 new InstalledFile(platform.ExecutableName, 6, await HashAsync(executablePath)),

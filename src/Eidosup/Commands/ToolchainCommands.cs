@@ -31,6 +31,154 @@ internal static class ToolchainCommands
         return command;
     }
 
+    public static Command CreateComponentCommand() => new(
+        "component",
+        "List, add, or remove components in immutable Eidos toolchain variants.")
+    {
+        CreateComponentListCommand(),
+        CreateComponentMutationCommand(add: true),
+        CreateComponentMutationCommand(add: false)
+    };
+
+    public static Command CreateTargetCommand() => new(
+        "target",
+        "List, add, or remove target runtime components and inspect linker readiness.")
+    {
+        CreateTargetListCommand(),
+        CreateTargetMutationCommand(add: true),
+        CreateTargetMutationCommand(add: false)
+    };
+
+    private static Command CreateComponentListCommand()
+    {
+        var command = new Command("list", "List available and installed components for a managed toolchain.");
+        var toolchain = CreateToolchainOption();
+        var installRoot = CreateInstallRootOption();
+        var installedOnly = new Option<bool>("--installed", "Show only installed components.");
+        command.AddOption(toolchain);
+        command.AddOption(installRoot);
+        command.AddOption(installedOnly);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var snapshot = await new ToolchainManager().InspectCompositionAsync(
+                CreateOptions(context, installRoot),
+                ParseOptionalSpec(context.ParseResult.GetValueForOption(toolchain)),
+                context.GetCancellationToken());
+            var components = context.ParseResult.GetValueForOption(installedOnly)
+                ? snapshot.Components.Where(static component => component.Installed).ToArray()
+                : snapshot.Components;
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { snapshot.Selector, snapshot.ToolchainId, snapshot.Profile, Components = components });
+                return;
+            }
+
+            foreach (var component in components)
+            {
+                var status = component.Installed
+                    ? component.Explicit ? "installed, explicit" : "installed"
+                    : "available";
+                Console.WriteLine($"{component.Id} ({component.Version}) [{status}]");
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateComponentMutationCommand(bool add)
+    {
+        var name = add ? "add" : "remove";
+        var command = new Command(name, $"{(add ? "Add" : "Remove")} one or more managed toolchain components.");
+        var values = new Argument<string[]>("component") { Arity = ArgumentArity.OneOrMore };
+        var toolchain = CreateToolchainOption();
+        var installRoot = CreateInstallRootOption();
+        var downloadRoot = CreateDownloadRootOption();
+        var dryRun = CreateDryRunOption();
+        command.AddArgument(values);
+        command.AddOption(toolchain);
+        command.AddOption(installRoot);
+        command.AddOption(downloadRoot);
+        command.AddOption(dryRun);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var manager = new ToolchainManager();
+            var options = CreateOptions(context, installRoot, downloadRoot);
+            var spec = ParseOptionalSpec(context.ParseResult.GetValueForOption(toolchain));
+            var requested = context.ParseResult.GetValueForArgument(values);
+            var dryRunValue = context.ParseResult.GetValueForOption(dryRun);
+            var result = add
+                ? await manager.AddCompositionAsync(
+                    options, spec, requested, [], dryRunValue, CreateProgressReporter(context), context.GetCancellationToken())
+                : await manager.RemoveCompositionAsync(
+                    options, spec, requested, [], dryRunValue, CreateProgressReporter(context), context.GetCancellationToken());
+            WriteCompositionResult(result, context.ParseResult.GetValueForOption(GlobalOptions.Json), name);
+        });
+        return command;
+    }
+
+    private static Command CreateTargetListCommand()
+    {
+        var command = new Command("list", "List published targets and separate compiler, runtime, and linker readiness.");
+        var toolchain = CreateToolchainOption();
+        var installRoot = CreateInstallRootOption();
+        var installedOnly = new Option<bool>("--installed", "Show only targets whose runtime component is installed.");
+        command.AddOption(toolchain);
+        command.AddOption(installRoot);
+        command.AddOption(installedOnly);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var snapshot = await new ToolchainManager().InspectCompositionAsync(
+                CreateOptions(context, installRoot),
+                ParseOptionalSpec(context.ParseResult.GetValueForOption(toolchain)),
+                context.GetCancellationToken());
+            var targets = context.ParseResult.GetValueForOption(installedOnly)
+                ? snapshot.Targets.Where(static target => target.RuntimeInstalled).ToArray()
+                : snapshot.Targets;
+            if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
+            {
+                WriteJson(new { snapshot.Selector, snapshot.ToolchainId, Targets = targets });
+                return;
+            }
+
+            foreach (var target in targets)
+            {
+                Console.WriteLine(
+                    $"{target.Name} ({target.Triple}): compiler=ready, runtime={(target.RuntimeInstalled ? "installed" : "missing")}, linker={FormatLinkerReadiness(target.LinkerReadiness)}");
+            }
+        });
+        return command;
+    }
+
+    private static Command CreateTargetMutationCommand(bool add)
+    {
+        var name = add ? "add" : "remove";
+        var command = new Command(name, $"{(add ? "Add" : "Remove")} one or more target runtime components.");
+        var values = new Argument<string[]>("target") { Arity = ArgumentArity.OneOrMore };
+        var toolchain = CreateToolchainOption();
+        var installRoot = CreateInstallRootOption();
+        var downloadRoot = CreateDownloadRootOption();
+        var dryRun = CreateDryRunOption();
+        command.AddArgument(values);
+        command.AddOption(toolchain);
+        command.AddOption(installRoot);
+        command.AddOption(downloadRoot);
+        command.AddOption(dryRun);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var manager = new ToolchainManager();
+            var options = CreateOptions(context, installRoot, downloadRoot);
+            var spec = ParseOptionalSpec(context.ParseResult.GetValueForOption(toolchain));
+            var requested = context.ParseResult.GetValueForArgument(values);
+            var dryRunValue = context.ParseResult.GetValueForOption(dryRun);
+            var result = add
+                ? await manager.AddCompositionAsync(
+                    options, spec, [], requested, dryRunValue, CreateProgressReporter(context), context.GetCancellationToken())
+                : await manager.RemoveCompositionAsync(
+                    options, spec, [], requested, dryRunValue, CreateProgressReporter(context), context.GetCancellationToken());
+            WriteCompositionResult(result, context.ParseResult.GetValueForOption(GlobalOptions.Json), name);
+        });
+        return command;
+    }
+
     public static Command CreateOverrideCommand()
     {
         var command = new Command("override", "Manage directory-specific toolchain selectors.")
@@ -605,16 +753,31 @@ internal static class ToolchainCommands
 
     private static Command CreateShowProfileCommand()
     {
-        var command = new Command("profile", "Show the fixed bootstrap profile used before component profiles are introduced.");
-        command.SetHandler((InvocationContext context) =>
+        var command = new Command("profile", "Show the active profile and explicit component/target selections.");
+        var toolchain = CreateToolchainOption();
+        var installRoot = CreateInstallRootOption();
+        command.AddOption(toolchain);
+        command.AddOption(installRoot);
+        command.SetHandler(async (InvocationContext context) =>
         {
+            var snapshot = await new ToolchainManager().InspectCompositionAsync(
+                CreateOptions(context, installRoot),
+                ParseOptionalSpec(context.ParseResult.GetValueForOption(toolchain)),
+                context.GetCancellationToken());
             if (context.ParseResult.GetValueForOption(GlobalOptions.Json))
             {
-                WriteJson(new { profile = "default", configurable = false });
+                WriteJson(new
+                {
+                    snapshot.Selector,
+                    snapshot.ToolchainId,
+                    profile = snapshot.Profile,
+                    components = snapshot.Components.Where(static component => component.Installed),
+                    targets = snapshot.Targets.Where(static target => target.RuntimeInstalled)
+                });
             }
             else
             {
-                Console.WriteLine("default");
+                Console.WriteLine(snapshot.Profile.ToString().ToLowerInvariant());
             }
         });
         return command;
@@ -653,7 +816,7 @@ internal static class ToolchainCommands
         {
             if (result.DryRun)
             {
-                Console.WriteLine($"[dry-run] Would install '{result.Spec.Canonical}' from '{result.Release.TagName}' using '{result.BundleAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Would install '{result.Spec.Canonical}' from '{result.Release.TagName}' using profile '{result.Plan.Profile.ToString().ToLowerInvariant()}' and manifest '{result.ManifestAsset.Name}'.");
                 continue;
             }
 
@@ -747,10 +910,13 @@ internal static class ToolchainCommands
     {
         if (json)
         {
+            var activeProfile = state.Default == null
+                ? null
+                : state.Toolchains.SingleOrDefault(toolchain => toolchain.Id == state.Default.ToolchainId)?.Profile;
             WriteJson(new
             {
                 home = layout.RootDirectory,
-                profile = "default",
+                profile = activeProfile,
                 state.Default,
                 installed = state.Toolchains.Count,
                 custom = state.CustomToolchains.Count,
@@ -764,7 +930,10 @@ internal static class ToolchainCommands
         }
 
         Console.WriteLine($"home: {layout.RootDirectory}");
-        Console.WriteLine("profile: default");
+        var profile = state.Default == null
+            ? "none"
+            : state.Toolchains.SingleOrDefault(toolchain => toolchain.Id == state.Default.ToolchainId)?.Profile ?? "custom";
+        Console.WriteLine($"profile: {profile}");
         Console.WriteLine(state.Default == null
             ? "default: none"
             : $"default: {state.Default.Selector} ({state.Default.ToolchainId})");
@@ -790,6 +959,63 @@ internal static class ToolchainCommands
         values.Select(ToolchainSpec.Parse)
             .DistinctBy(static spec => spec.Canonical, StringComparer.Ordinal)
             .ToArray();
+
+    private static ToolchainSpec? ParseOptionalSpec(string? value) =>
+        value == null ? null : ToolchainSpec.Parse(value);
+
+    private static Option<string?> CreateToolchainOption() =>
+        new("--toolchain", "Use an installed selector instead of the global default.");
+
+    internal static void WriteCompositionResult(
+        ToolchainCompositionOutcome result,
+        bool json,
+        string action)
+    {
+        if (json)
+        {
+            WriteJson(new
+            {
+                action,
+                result.Selector,
+                result.CurrentToolchainId,
+                result.Plan.Profile,
+                components = result.Plan.ComponentIds,
+                targets = result.Plan.Targets.Select(static target => target.Name),
+                result.AddedComponents,
+                result.RemovedComponents,
+                result.Install,
+                result.DryRun
+            });
+            return;
+        }
+
+        var prefix = result.DryRun ? "[dry-run] Would create" : "Created";
+        Console.WriteLine(
+            $"{prefix} profile '{result.Plan.Profile.ToString().ToLowerInvariant()}' variant with {result.Plan.Components.Count} components for '{result.Selector}'.");
+        if (result.AddedComponents.Count != 0)
+        {
+            Console.WriteLine($"added: {string.Join(", ", result.AddedComponents)}");
+        }
+
+        if (result.RemovedComponents.Count != 0)
+        {
+            Console.WriteLine($"removed: {string.Join(", ", result.RemovedComponents)}");
+        }
+
+        if (!result.DryRun)
+        {
+            Console.WriteLine($"toolchain: {result.Install!.ToolchainId}");
+        }
+    }
+
+    private static string FormatLinkerReadiness(TargetLinkerReadiness readiness) => readiness switch
+    {
+        TargetLinkerReadiness.Ready => "ready",
+        TargetLinkerReadiness.NotInstalled => "not-installed",
+        TargetLinkerReadiness.CommandMissing => "command-missing",
+        TargetLinkerReadiness.ExternalSdkRequired => "external-sdk-required",
+        _ => "unknown"
+    };
 
     private static ToolchainManagementOptions CreateOptions(
         InvocationContext context,

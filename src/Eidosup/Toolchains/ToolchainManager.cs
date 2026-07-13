@@ -16,8 +16,9 @@ public sealed record ToolchainManagementOptions(
 public sealed record ToolchainInstallOutcome(
     ToolchainSpec Spec,
     EidosReleaseInfo Release,
-    EidosReleaseAsset BundleAsset,
+    EidosReleaseAsset ManifestAsset,
     EidosReleaseAsset ChecksumAsset,
+    ToolchainComponentPlan Plan,
     ToolInstallLayout Layout,
     VerifiedInstallResult? Install,
     ToolchainState? State,
@@ -49,6 +50,49 @@ public sealed record ToolchainRollbackOutcome(
     string ToToolchainId,
     ToolchainState State,
     bool DryRun);
+
+public sealed record ToolchainCompositionOutcome(
+    string Selector,
+    string CurrentToolchainId,
+    ToolchainComponentPlan Plan,
+    IReadOnlyList<string> AddedComponents,
+    IReadOnlyList<string> RemovedComponents,
+    VerifiedInstallResult? Install,
+    ToolchainState? State,
+    bool DryRun);
+
+public enum TargetLinkerReadiness
+{
+    Ready,
+    NotInstalled,
+    CommandMissing,
+    ExternalSdkRequired
+}
+
+public sealed record ToolchainComponentStatus(
+    string Id,
+    string Name,
+    string Version,
+    bool Required,
+    string? Target,
+    bool Installed,
+    bool Explicit);
+
+public sealed record ToolchainTargetStatus(
+    string Name,
+    string Triple,
+    ToolchainTargetSupport Support,
+    bool CompilerReady,
+    bool RuntimeInstalled,
+    string LinkerCommand,
+    TargetLinkerReadiness LinkerReadiness);
+
+public sealed record ToolchainCompositionSnapshot(
+    string Selector,
+    string ToolchainId,
+    ToolchainProfile Profile,
+    IReadOnlyList<ToolchainComponentStatus> Components,
+    IReadOnlyList<ToolchainTargetStatus> Targets);
 
 public enum ToolchainUninstallCheckpoint
 {
@@ -85,6 +129,7 @@ public sealed class ToolchainManager
     private readonly DistributionSourceCatalogStore _sourceCatalogStore;
     private readonly ToolchainStateStore _stateStore;
     private readonly Func<VerifiedToolchainInstaller> _installerFactory;
+    private readonly Func<IToolchainManifestLoader> _manifestLoaderFactory;
     private readonly ToolchainResolver _resolver;
     private readonly IProxyProcessRunner _processRunner;
     private readonly IToolchainUninstallFaultInjector _uninstallFaultInjector;
@@ -98,6 +143,7 @@ public sealed class ToolchainManager
         DistributionSourceCatalogStore? sourceCatalogStore = null,
         ToolchainStateStore? stateStore = null,
         Func<VerifiedToolchainInstaller>? installerFactory = null,
+        Func<IToolchainManifestLoader>? manifestLoaderFactory = null,
         ToolchainResolver? resolver = null,
         IProxyProcessRunner? processRunner = null,
         IToolchainUninstallFaultInjector? uninstallFaultInjector = null,
@@ -110,6 +156,7 @@ public sealed class ToolchainManager
         _sourceCatalogStore = sourceCatalogStore ?? new DistributionSourceCatalogStore();
         _stateStore = stateStore ?? new ToolchainStateStore();
         _installerFactory = installerFactory ?? (() => new VerifiedToolchainInstaller());
+        _manifestLoaderFactory = manifestLoaderFactory ?? (() => new ToolchainManifestLoader());
         _resolver = resolver ?? new ToolchainResolver();
         _processRunner = processRunner ?? new ProxyProcessRunner();
         _uninstallFaultInjector = uninstallFaultInjector ?? new NoToolchainUninstallFaultInjector();
@@ -123,10 +170,28 @@ public sealed class ToolchainManager
         bool force,
         bool dryRun,
         IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken) =>
+        await InstallAsync(
+            options,
+            spec,
+            ToolchainInstallSelection.Default,
+            force,
+            dryRun,
+            progress,
+            cancellationToken);
+
+    private async Task<ToolchainInstallOutcome> InstallAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec spec,
+        ToolchainInstallSelection selection,
+        bool force,
+        bool dryRun,
+        IProgress<DownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(selection);
         if (spec.Kind == ToolchainSpecKind.Custom)
         {
             throw new EidosupException(
@@ -145,8 +210,20 @@ public sealed class ToolchainManager
             spec.Version,
             spec.Channel ?? ReleaseChannel.Preview,
             cancellationToken);
-        var bundleAsset = _assetLocator.ResolveEidoscBundleAsset(release, platform);
+        var manifestAsset = _assetLocator.ResolveToolchainManifestAsset(release, platform);
         var checksumAsset = _assetLocator.ResolveChecksumAsset(release);
+        using var manifestLoader = _manifestLoaderFactory();
+        var distribution = await manifestLoader.LoadAsync(
+            release,
+            manifestAsset,
+            checksumAsset,
+            platform,
+            layout,
+            progress,
+            cancellationToken);
+        var plan = ToolchainComponentSolver.ResolveInitial(
+            distribution.Manifest,
+            selection);
         if (spec.Kind == ToolchainSpecKind.ExactVersion)
         {
             var existingState = await ReadExistingStateAsync(layout, cancellationToken);
@@ -158,7 +235,11 @@ public sealed class ToolchainManager
                     string.Equals(candidate.Id, existingSelector.ToolchainId, StringComparison.Ordinal));
             if (existingToolchain != null &&
                 (!string.Equals(existingToolchain.Source, ReleaseSourceIdentity(release, source), StringComparison.Ordinal) ||
-                 !string.Equals(existingToolchain.ReleaseTag, release.TagName, StringComparison.Ordinal)))
+                 !string.Equals(existingToolchain.ReleaseTag, release.TagName, StringComparison.Ordinal) ||
+                 !string.Equals(
+                     existingToolchain.DistributionManifestSha256,
+                     distribution.ManifestSha256,
+                     StringComparison.Ordinal)))
             {
                 throw new EidosupException(
                     EidosupErrorCode.InstallConflict,
@@ -173,8 +254,9 @@ public sealed class ToolchainManager
             return new ToolchainInstallOutcome(
                 spec,
                 release,
-                bundleAsset,
+                manifestAsset,
                 checksumAsset,
+                plan,
                 layout,
                 Install: null,
                 State: null,
@@ -191,8 +273,8 @@ public sealed class ToolchainManager
         var install = await installer.InstallAsync(
             new VerifiedInstallRequest(
                 release,
-                bundleAsset,
-                checksumAsset,
+                distribution,
+                plan,
                 platform,
                 layout,
                 ReleaseSourceIdentity(release, source),
@@ -227,13 +309,128 @@ public sealed class ToolchainManager
         return new ToolchainInstallOutcome(
             spec,
             release,
-            bundleAsset,
+            manifestAsset,
             checksumAsset,
+            plan,
             layout,
             install,
             state,
             DryRun: false);
     }
+
+    public async Task<ToolchainCompositionSnapshot> InspectCompositionAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec? spec,
+        CancellationToken cancellationToken)
+    {
+        var context = await LoadCompositionContextAsync(options, spec, progress: null, cancellationToken);
+        var installedIds = context.Installed.Components.Select(static component => component.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var explicitIds = context.Installed.ExplicitComponents.ToHashSet(StringComparer.Ordinal);
+        var components = context.Distribution.Manifest.Components.Select(component => new ToolchainComponentStatus(
+            component.Id,
+            component.Name,
+            component.Version,
+            component.Required,
+            component.Target,
+            installedIds.Contains(component.Id),
+            explicitIds.Contains(component.Id))).ToArray();
+        var targets = context.Distribution.Manifest.Targets.Select(target =>
+        {
+            var installed = installedIds.Contains(target.Component);
+            var command = CommandProbe.TryFind(target.Linker.Command);
+            var readiness = !installed
+                ? TargetLinkerReadiness.NotInstalled
+                : command == null
+                    ? TargetLinkerReadiness.CommandMissing
+                    : target.Linker.ExternalSdkRequired
+                        ? TargetLinkerReadiness.ExternalSdkRequired
+                        : TargetLinkerReadiness.Ready;
+            return new ToolchainTargetStatus(
+                target.Name,
+                target.Triple,
+                target.Support,
+                CompilerReady: true,
+                RuntimeInstalled: installed,
+                target.Linker.Command,
+                readiness);
+        }).ToArray();
+        return new ToolchainCompositionSnapshot(
+            context.Selector.Selector,
+            context.Installed.Id,
+            ToolchainComponentSolver.ParseProfile(context.Installed.Profile),
+            components,
+            targets);
+    }
+
+    public Task<ToolchainCompositionOutcome> AddCompositionAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec? spec,
+        IReadOnlyList<string> components,
+        IReadOnlyList<string> targets,
+        bool dryRun,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken) => ChangeCompositionAsync(
+        options,
+        spec,
+        CompositionChange.Add,
+        profile: null,
+        components,
+        targets,
+        dryRun,
+        progress,
+        cancellationToken);
+
+    public Task<ToolchainCompositionOutcome> RemoveCompositionAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec? spec,
+        IReadOnlyList<string> components,
+        IReadOnlyList<string> targets,
+        bool dryRun,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken) => ChangeCompositionAsync(
+        options,
+        spec,
+        CompositionChange.Remove,
+        profile: null,
+        components,
+        targets,
+        dryRun,
+        progress,
+        cancellationToken);
+
+    public Task<ToolchainCompositionOutcome> SetProfileAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec? spec,
+        ToolchainProfile profile,
+        bool dryRun,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken) => ChangeCompositionAsync(
+        options,
+        spec,
+        CompositionChange.SetProfile,
+        profile,
+        [],
+        [],
+        dryRun,
+        progress,
+        cancellationToken);
+
+    public Task<ToolchainCompositionOutcome> SyncProjectConfigurationAsync(
+        ToolchainManagementOptions options,
+        ProjectToolchainConfiguration configuration,
+        bool dryRun,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken) => ChangeCompositionAsync(
+        options,
+        configuration.Toolchain,
+        CompositionChange.Sync,
+        ToolchainComponentSolver.ParseProfile(configuration.Profile),
+        configuration.Components,
+        configuration.Targets,
+        dryRun,
+        progress,
+        cancellationToken);
 
     public async Task<IReadOnlyList<ToolchainInstallOutcome>> UpdateAsync(
         ToolchainManagementOptions options,
@@ -249,9 +446,24 @@ public sealed class ToolchainManager
         var results = new List<ToolchainInstallOutcome>(specs.Count);
         foreach (var spec in specs)
         {
+            var layout = CreateLayout(options);
+            var state = await ReadExistingStateAsync(layout, cancellationToken);
+            var selector = state.Selectors.SingleOrDefault(candidate =>
+                string.Equals(candidate.Selector, spec.Canonical, StringComparison.Ordinal));
+            var installed = selector == null
+                ? null
+                : state.Toolchains.SingleOrDefault(candidate =>
+                    string.Equals(candidate.Id, selector.ToolchainId, StringComparison.Ordinal));
+            var selection = installed == null
+                ? ToolchainInstallSelection.Default
+                : new ToolchainInstallSelection(
+                    ToolchainComponentSolver.ParseProfile(installed.Profile),
+                    installed.ExplicitComponents,
+                    installed.ExplicitTargets);
             results.Add(await InstallAsync(
                 options,
                 spec,
+                selection,
                 force: false,
                 dryRun,
                 progress,
@@ -625,6 +837,224 @@ public sealed class ToolchainManager
         return await ToolchainStateStore.ReadVerifiedAsync(layout, cancellationToken);
     }
 
+    private async Task<ToolchainCompositionOutcome> ChangeCompositionAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec? spec,
+        CompositionChange change,
+        ToolchainProfile? profile,
+        IReadOnlyList<string> components,
+        IReadOnlyList<string> targets,
+        bool dryRun,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var context = await LoadCompositionContextAsync(options, spec, progress, cancellationToken);
+        var installedIds = context.Installed.Components.Select(static component => component.Id).ToArray();
+        var currentProfile = ToolchainComponentSolver.ParseProfile(context.Installed.Profile);
+        var plan = change switch
+        {
+            CompositionChange.Add => ToolchainComponentSolver.Add(
+                context.Distribution.Manifest,
+                currentProfile,
+                installedIds,
+                context.Installed.ExplicitComponents,
+                context.Installed.ExplicitTargets,
+                components,
+                targets),
+            CompositionChange.Remove => ToolchainComponentSolver.Remove(
+                context.Distribution.Manifest,
+                currentProfile,
+                installedIds,
+                context.Installed.ExplicitComponents,
+                context.Installed.ExplicitTargets,
+                components,
+                targets),
+            CompositionChange.SetProfile => ToolchainComponentSolver.SetProfile(
+                context.Distribution.Manifest,
+                profile ?? throw new ArgumentNullException(nameof(profile)),
+                context.Installed.ExplicitComponents,
+                context.Installed.ExplicitTargets),
+            CompositionChange.Sync => SynchronizeProjectRequirements(
+                context.Distribution.Manifest,
+                currentProfile,
+                context.Installed.ExplicitComponents,
+                context.Installed.ExplicitTargets,
+                profile ?? throw new ArgumentNullException(nameof(profile)),
+                components,
+                targets),
+            _ => throw new ArgumentOutOfRangeException(nameof(change))
+        };
+        var added = plan.ComponentIds.Except(installedIds, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        var removed = installedIds.Except(plan.ComponentIds, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        if (dryRun)
+        {
+            return new ToolchainCompositionOutcome(
+                context.Selector.Selector,
+                context.Installed.Id,
+                plan,
+                added,
+                removed,
+                Install: null,
+                State: null,
+                DryRun: true);
+        }
+
+        using var installer = _installerFactory();
+        var install = await installer.InstallAsync(
+            new VerifiedInstallRequest(
+                context.Release,
+                context.Distribution,
+                plan,
+                context.Platform,
+                context.Layout,
+                context.Installed.Source,
+                Force: false),
+            progress,
+            cancellationToken);
+        ToolchainState state;
+        try
+        {
+            var requestedSpec = ToolchainSpec.Parse(context.Selector.Selector);
+            state = await _stateStore.RegisterInstallAsync(
+                context.Layout,
+                install.ToolchainDirectory,
+                context.Selector.Kind == ToolchainSelectorKind.Channel ? requestedSpec.Channel : null,
+                context.Selector.Selector,
+                cancellationToken);
+        }
+        catch
+        {
+            var current = await ToolchainStateStore.ReadAsync(context.Layout, CancellationToken.None);
+            if (!current.Toolchains.Any(toolchain => string.Equals(toolchain.Id, install.ToolchainId, StringComparison.Ordinal)))
+            {
+                DeleteDirectoryIfExists(install.ToolchainDirectory, context.Layout.ToolchainsDirectory);
+            }
+
+            throw;
+        }
+
+        return new ToolchainCompositionOutcome(
+            context.Selector.Selector,
+            context.Installed.Id,
+            plan,
+            added,
+            removed,
+            install,
+            state,
+            DryRun: false);
+    }
+
+    private async Task<CompositionContext> LoadCompositionContextAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec? spec,
+        IProgress<DownloadProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var layout = CreateLayout(options);
+        var state = await ReadExistingStateAsync(layout, cancellationToken);
+        var selector = spec == null
+            ? state.Default == null
+                ? throw new EidosupException(
+                    EidosupErrorCode.NoActiveToolchain,
+                    EidosupExitCodes.NoActiveToolchain,
+                    "No default toolchain is available for a component operation.",
+                    "Pass --toolchain <selector> or configure a global default.")
+                : state.Selectors.Single(candidate =>
+                    string.Equals(candidate.Selector, state.Default.Selector, StringComparison.Ordinal) &&
+                    string.Equals(candidate.ToolchainId, state.Default.ToolchainId, StringComparison.Ordinal))
+            : EnsureInstalledSelector(state, spec.Canonical);
+        if (selector.Kind == ToolchainSelectorKind.Custom)
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InstallConflict,
+                EidosupExitCodes.InstallConflict,
+                $"Custom toolchain selector '{selector.Selector}' has no managed component manifest.",
+                "Use the external build's own dependency process or select a managed Eidos toolchain.");
+        }
+
+        var installed = state.Toolchains.Single(toolchain =>
+            string.Equals(toolchain.Id, selector.ToolchainId, StringComparison.Ordinal));
+        var platform = PlatformContext.FromRid(installed.Rid);
+        DistributionSourceDescriptor source;
+        try
+        {
+            source = DistributionSourceDescriptor.Parse(installed.Source);
+        }
+        catch (FormatException exception)
+        {
+            throw new EidosupException(
+                EidosupErrorCode.StateCorrupt,
+                EidosupExitCodes.StateCorrupt,
+                $"Installed toolchain '{installed.Id}' has invalid source identity '{installed.Source}'.",
+                "Reinstall the toolchain from a configured source before changing components.",
+                exception);
+        }
+
+        using var releaseSource = CreateReleaseSource([source], layout);
+        var release = await releaseSource.ResolveReleaseAsync(
+            installed.Version,
+            ReleaseChannel.Preview,
+            cancellationToken);
+        if (!string.Equals(release.TagName, installed.ReleaseTag, StringComparison.Ordinal))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InstallConflict,
+                EidosupExitCodes.InstallConflict,
+                $"Release identity for '{selector.Selector}' changed from '{installed.ReleaseTag}' to '{release.TagName}'.",
+                "Publish a new Eidosc version instead of rebinding an existing release identity.");
+        }
+
+        var manifestAsset = _assetLocator.ResolveToolchainManifestAsset(release, platform);
+        var checksumAsset = _assetLocator.ResolveChecksumAsset(release);
+        using var loader = _manifestLoaderFactory();
+        var distribution = await loader.LoadAsync(
+            release,
+            manifestAsset,
+            checksumAsset,
+            platform,
+            layout,
+            progress,
+            cancellationToken);
+        if (!string.Equals(
+                distribution.ManifestSha256,
+                installed.DistributionManifestSha256,
+                StringComparison.Ordinal))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InstallConflict,
+                EidosupExitCodes.InstallConflict,
+                $"Distribution manifest identity changed for immutable toolchain '{installed.Id}'.",
+                "Restore the original signed manifest or publish a new Eidosc version.");
+        }
+
+        return new CompositionContext(layout, state, selector, installed, platform, release, distribution);
+    }
+
+    private static ToolchainComponentPlan SynchronizeProjectRequirements(
+        ToolchainDistributionManifest manifest,
+        ToolchainProfile currentProfile,
+        IReadOnlyCollection<string> installedExplicitComponents,
+        IReadOnlyCollection<string> installedExplicitTargets,
+        ToolchainProfile requestedProfile,
+        IReadOnlyList<string> requestedComponents,
+        IReadOnlyList<string> requestedTargets)
+    {
+        var currentProfileComponents = manifest.GetProfile(currentProfile).Components.ToHashSet(StringComparer.Ordinal);
+        var requestedProfileComponents = manifest.GetProfile(requestedProfile).Components;
+        var effectiveProfile = requestedProfileComponents.All(currentProfileComponents.Contains)
+            ? currentProfile
+            : requestedProfile;
+        return ToolchainComponentSolver.Add(
+            manifest,
+            effectiveProfile,
+            [],
+            installedExplicitComponents,
+            installedExplicitTargets,
+            requestedComponents,
+            requestedTargets);
+    }
+
     private async Task CommitUninstallAsync(
         ToolInstallLayout layout,
         IReadOnlyList<string> toolchainIds,
@@ -852,11 +1282,29 @@ public sealed class ToolchainManager
         foreach (var spec in specs)
         {
             var selector = EnsureInstalledSelector(state, spec.Canonical);
-            ids.Add(selector.ToolchainId);
+            var selected = state.Toolchains.Single(toolchain =>
+                string.Equals(toolchain.Id, selector.ToolchainId, StringComparison.Ordinal));
+            foreach (var variant in state.Toolchains.Where(candidate => SameDistributionIdentity(selected, candidate)))
+            {
+                ids.Add(variant.Id);
+            }
         }
 
         return ids.OrderBy(static id => id, StringComparer.Ordinal).ToArray();
     }
+
+    private static bool SameDistributionIdentity(
+        InstalledToolchainState left,
+        InstalledToolchainState right) =>
+        string.Equals(left.Version, right.Version, StringComparison.Ordinal) &&
+        string.Equals(left.Rid, right.Rid, StringComparison.Ordinal) &&
+        string.Equals(left.Source, right.Source, StringComparison.Ordinal) &&
+        string.Equals(left.ReleaseTag, right.ReleaseTag, StringComparison.Ordinal) &&
+        string.Equals(left.DistributionManifestName, right.DistributionManifestName, StringComparison.Ordinal) &&
+        string.Equals(
+            left.DistributionManifestSha256,
+            right.DistributionManifestSha256,
+            StringComparison.Ordinal);
 
     private static void EnsureDefaultIsNotRemoved(
         ToolchainState state,
@@ -916,12 +1364,18 @@ public sealed class ToolchainManager
     {
         var installedIds = state.Toolchains.Select(static toolchain => toolchain.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var current = state.Toolchains.Single(toolchain =>
+            string.Equals(toolchain.Id, currentToolchainId, StringComparison.Ordinal));
         return state.ActivationHistory
             .Reverse()
             .FirstOrDefault(activation =>
                 string.Equals(activation.Selector, selector, StringComparison.Ordinal) &&
                 !string.Equals(activation.ToolchainId, currentToolchainId, StringComparison.Ordinal) &&
-                installedIds.Contains(activation.ToolchainId))
+                installedIds.Contains(activation.ToolchainId) &&
+                !SameDistributionIdentity(
+                    current,
+                    state.Toolchains.Single(toolchain =>
+                        string.Equals(toolchain.Id, activation.ToolchainId, StringComparison.Ordinal))))
             ?? throw new EidosupException(
                 EidosupErrorCode.ToolchainUnavailable,
                 EidosupExitCodes.ToolchainUnavailable,
@@ -1025,4 +1479,21 @@ public sealed class ToolchainManager
         string ToolchainId,
         string TargetDirectory,
         string BackupDirectory);
+
+    private enum CompositionChange
+    {
+        Add,
+        Remove,
+        SetProfile,
+        Sync
+    }
+
+    private sealed record CompositionContext(
+        ToolInstallLayout Layout,
+        ToolchainState State,
+        ToolchainSelectorState Selector,
+        InstalledToolchainState Installed,
+        PlatformContext Platform,
+        EidosReleaseInfo Release,
+        LoadedToolchainDistribution Distribution);
 }

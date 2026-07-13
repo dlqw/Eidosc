@@ -211,8 +211,7 @@ public sealed partial class TypeInferer
     private static bool IsPrecompiledSymbol(FuncSymbol symbol)
     {
         var filePath = symbol.Span.FilePath;
-        return !string.IsNullOrWhiteSpace(filePath) &&
-               filePath.Replace('\\', '/').Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private bool InferNamedArgumentValues(IEnumerable<NamedArg> namedArgs)

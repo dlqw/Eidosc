@@ -10,4 +10,5 @@ namespace Eidosup.Serialization;
 [JsonSerializable(typeof(InstallManifest))]
 [JsonSerializable(typeof(ToolchainState))]
 [JsonSerializable(typeof(ToolchainStateV1))]
+[JsonSerializable(typeof(ToolchainStateV2))]
 internal sealed partial class EidosupJsonContext : JsonSerializerContext;

@@ -76,7 +76,16 @@ public sealed class ProxyProcessRunner : IProxyProcessRunner
 
         startInfo.Environment["EIDOS_HOME"] = toolchain.RootDirectory;
         startInfo.Environment["EIDOSC_HOME"] = toolchain.ToolchainDirectory;
-        startInfo.Environment["EIDOS_RUNTIME_PATH"] = toolchain.RuntimePath;
+        if (Directory.Exists(toolchain.RuntimePath))
+        {
+            startInfo.Environment["EIDOS_RUNTIME_PATH"] = toolchain.RuntimePath;
+        }
+        else
+        {
+            startInfo.Environment.Remove("EIDOS_RUNTIME_PATH");
+        }
+        startInfo.Environment["EIDOS_STDLIB_PATH"] = toolchain.StdlibPath;
+        startInfo.Environment["EIDOS_TARGETS_PATH"] = Path.Combine(toolchain.ToolchainDirectory, "targets");
         return startInfo;
     }
 }

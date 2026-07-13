@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eidos.dev/schemas/eidosup/composition-change-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "action",
+    "selector",
+    "currentToolchainId",
+    "profile",
+    "components",
+    "targets",
+    "addedComponents",
+    "removedComponents",
+    "install",
+    "dryRun"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "action": { "enum": ["add", "remove", "set-profile"] },
+    "selector": { "type": "string", "minLength": 1 },
+    "currentToolchainId": { "type": "string", "minLength": 1 },
+    "profile": { "enum": ["minimal", "default", "complete"] },
+    "components": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "targets": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "addedComponents": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "removedComponents": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "install": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "disposition",
+            "toolchainId",
+            "toolchainDirectory",
+            "distributionManifestSha256",
+            "artifactBytes",
+            "cacheHit",
+            "resumed"
+          ],
+          "properties": {
+            "disposition": { "enum": ["installed", "replaced", "alreadyInstalled"] },
+            "toolchainId": { "type": "string", "minLength": 1 },
+            "toolchainDirectory": { "type": "string", "minLength": 1 },
+            "distributionManifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "artifactBytes": { "type": "integer", "minimum": 0 },
+            "cacheHit": { "type": "boolean" },
+            "resumed": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "dryRun": { "type": "boolean" }
+  }
+}

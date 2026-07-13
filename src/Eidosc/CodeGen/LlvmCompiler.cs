@@ -1664,10 +1664,25 @@ public sealed partial class LlvmCompiler
         return Path.Combine(baseDir, "runtime");
     }
 
-    private string? GetConfiguredRuntimePath() =>
-        !string.IsNullOrWhiteSpace(_runtimePath)
-            ? _runtimePath
-            : Environment.GetEnvironmentVariable(WellKnownStrings.EnvVars.RuntimePath);
+    private string? GetConfiguredRuntimePath()
+    {
+        if (!string.IsNullOrWhiteSpace(_runtimePath))
+        {
+            return _runtimePath;
+        }
+
+        var targetsRoot = Environment.GetEnvironmentVariable(WellKnownStrings.EnvVars.TargetsPath);
+        if (!string.IsNullOrWhiteSpace(targetsRoot))
+        {
+            var targetRuntime = Path.Combine(targetsRoot, _targetInfo.RuntimeIdentifier, "runtime");
+            if (Directory.Exists(targetRuntime))
+            {
+                return targetRuntime;
+            }
+        }
+
+        return Environment.GetEnvironmentVariable(WellKnownStrings.EnvVars.RuntimePath);
+    }
 
     private static IEnumerable<string> GetRuntimeDirectoryCandidates(string root)
     {
@@ -1763,7 +1778,9 @@ public sealed partial class LlvmCompiler
         return string.Join(
             '|',
             kind,
+            _targetInfo.RuntimeIdentifier,
             _runtimePath ?? Environment.GetEnvironmentVariable(WellKnownStrings.EnvVars.RuntimePath) ?? "",
+            Environment.GetEnvironmentVariable(WellKnownStrings.EnvVars.TargetsPath) ?? "",
             AppDomain.CurrentDomain.BaseDirectory ?? "",
             Directory.GetCurrentDirectory());
     }

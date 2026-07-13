@@ -392,9 +392,7 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var useSignatureOnly = func.Span.FilePath
-            .Replace('\\', '/')
-            .Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        var useSignatureOnly = Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(func.Span.FilePath);
         if (useSignatureOnly)
         {
             IncrementProfilingCounter("Types.precompiledImportSignatureOnly.functions");

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Eidosup.Configuration;
 using Eidosup.Diagnostics;
 using Eidosup.Distribution;
 using Eidosup.Installation;
@@ -106,12 +107,94 @@ public sealed class ToolchainResolverTests
         Assert.Equal(EidosupErrorCode.StateCorrupt, exception.Code);
     }
 
+    [Fact]
+    public async Task ResolveAsync_TreatsLargerInstalledProfileAsSatisfyingProjectRequirement()
+    {
+        using var temporary = new TemporaryDirectory();
+        var layout = CreateLayout(temporary.Path);
+        var fixture = await CreateVerifiedToolchainAsync(layout, ToolchainProfile.Complete);
+        await new ToolchainStateStore(static () => FixedTime).RegisterInstallAsync(
+            layout,
+            fixture.Directory,
+            ReleaseChannel.Preview,
+            CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(temporary.Path, ProjectToolchainConfigurationReader.FileName),
+            "[toolchain]\nchannel = \"preview\"\nprofile = \"default\"\ncomponents = []\ntargets = []\n");
+
+        var resolved = await new ToolchainResolver().ResolveAsync(
+            layout,
+            "eidosc",
+            selector: null,
+            CancellationToken.None,
+            temporary.Path);
+
+        Assert.Equal(ToolchainSelectionSource.ProjectFile, resolved.SelectionSource);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ReportsProjectConfigurationWhenCompositionIsMissing()
+    {
+        using var temporary = new TemporaryDirectory();
+        var layout = CreateLayout(temporary.Path);
+        var fixture = await CreateVerifiedToolchainAsync(layout);
+        await new ToolchainStateStore(static () => FixedTime).RegisterInstallAsync(
+            layout,
+            fixture.Directory,
+            ReleaseChannel.Preview,
+            CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(temporary.Path, ProjectToolchainConfigurationReader.FileName),
+            "[toolchain]\nchannel = \"preview\"\nprofile = \"default\"\ncomponents = [\"eidos-docs\"]\ntargets = []\n");
+
+        var exception = await Assert.ThrowsAsync<EidosupException>(() =>
+            new ToolchainResolver().ResolveAsync(
+                layout,
+                "eidosc",
+                selector: null,
+                CancellationToken.None,
+                temporary.Path));
+
+        Assert.IsType<ProjectToolchainConfiguration>(exception.Data["projectConfiguration"]);
+        Assert.Equal("preview", exception.Data["selector"]);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ReportsProjectConfigurationWhenSelectorIsNotInstalled()
+    {
+        using var temporary = new TemporaryDirectory();
+        var layout = CreateLayout(temporary.Path);
+        var fixture = await CreateVerifiedToolchainAsync(layout);
+        await new ToolchainStateStore(static () => FixedTime).RegisterInstallAsync(
+            layout,
+            fixture.Directory,
+            ReleaseChannel.Preview,
+            CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(temporary.Path, ProjectToolchainConfigurationReader.FileName),
+            "[toolchain]\nchannel = \"0.4.0-alpha.9\"\nprofile = \"complete\"\ncomponents = [\"eidos-docs\"]\ntargets = []\n");
+
+        var exception = await Assert.ThrowsAsync<EidosupException>(() =>
+            new ToolchainResolver().ResolveAsync(
+                layout,
+                "eidosc",
+                selector: null,
+                CancellationToken.None,
+                temporary.Path));
+
+        var configuration = Assert.IsType<ProjectToolchainConfiguration>(exception.Data["projectConfiguration"]);
+        Assert.Equal("complete", configuration.Profile);
+        Assert.Equal("0.4.0-alpha.9", exception.Data["selector"]);
+    }
+
     private static ToolInstallLayout CreateLayout(string root) => ToolInstallLayout.Create(
         PlatformContext.Detect(),
         Path.Combine(root, "install"),
         Path.Combine(root, "downloads"));
 
-    private static async Task<VerifiedToolchainFixture> CreateVerifiedToolchainAsync(ToolInstallLayout layout)
+    private static async Task<VerifiedToolchainFixture> CreateVerifiedToolchainAsync(
+        ToolInstallLayout layout,
+        ToolchainProfile profile = ToolchainProfile.Default)
     {
         var platform = PlatformContext.Detect();
         var identity = ToolchainIdentity.Create(
@@ -119,29 +202,44 @@ public sealed class ToolchainResolverTests
             platform.Rid,
             "test/source",
             "eidosc-v0.4.0-alpha.2",
-            $"eidosc-v0.4.0-alpha.2-{platform.Rid}.zip",
+            $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json",
             AssetHash,
-            123);
+            ["eidosc-core", "eidos-std", $"eidos-runtime@{platform.Rid}"],
+            profile);
         var directory = layout.GetToolchainDirectory(identity.Id);
         Directory.CreateDirectory(Path.Combine(directory, "runtime"));
+        Directory.CreateDirectory(Path.Combine(directory, "stdlib", "Std"));
         var executablePath = Path.Combine(directory, platform.ExecutableName);
         var runtimePath = Path.Combine(directory, "runtime", "runtime.h");
+        var stdlibPath = Path.Combine(directory, "stdlib", "Std", "Core.eidos");
         await File.WriteAllTextAsync(executablePath, "binary");
         await File.WriteAllTextAsync(runtimePath, "header");
+        await File.WriteAllTextAsync(stdlibPath, "module Std::Core");
         var manifest = new InstallManifest(
             InstallManifest.CurrentSchema,
             identity.Id,
-            identity.ManifestSha256,
+            identity.IdentitySha256,
+            identity.CompositionSha256,
+            $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json",
+            AssetHash,
             "eidosc-v0.4.0-alpha.2",
             "0.4.0-alpha.2",
             platform.Rid,
             "test/source",
-            $"eidosc-v0.4.0-alpha.2-{platform.Rid}.zip",
-            AssetHash,
-            123,
+            profile.ToString().ToLowerInvariant(),
+            [],
+            [],
+            [
+                new InstalledComponent("eidosc-core", "eidosc-core", "0.4.0-alpha.2", true, null, [platform.ExecutableName]),
+                new InstalledComponent("eidos-std", "eidos-std", "0.1.0-alpha.1", true, null, ["stdlib/Std/Core.eidos"]),
+                new InstalledComponent($"eidos-runtime@{platform.Rid}", "eidos-runtime", "0.1.0-alpha.1", false, platform.Rid, ["runtime/runtime.h"])
+            ],
+            [platform.Rid],
+            [new InstalledArtifact($"eidosc-v0.4.0-alpha.2-{platform.Rid}.zip", AssetHash, 123)],
             FixedTime,
             [
                 new InstalledFile(platform.ExecutableName, 6, await HashAsync(executablePath)),
+                new InstalledFile("stdlib/Std/Core.eidos", 16, await HashAsync(stdlibPath)),
                 new InstalledFile("runtime/runtime.h", 6, await HashAsync(runtimePath))
             ]);
         await manifest.WriteAsync(directory, CancellationToken.None);

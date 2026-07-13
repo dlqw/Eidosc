@@ -86,7 +86,7 @@ public sealed class ToolchainStateStore
                            "Reinstall the toolchain from a verified release before registering it.");
         if (!await manifest.VerifyAsync(
                 toolchainDirectory,
-                manifest.AssetSha256,
+                manifest.DistributionManifestSha256,
                 cancellationToken,
                 manifest.Rid,
                 manifest.Version))
@@ -367,12 +367,15 @@ public sealed class ToolchainStateStore
 
         var installedIds = state.Toolchains.Select(static toolchain => toolchain.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var currentToolchain = state.Toolchains.Single(toolchain =>
+            string.Equals(toolchain.Id, current.ToolchainId, StringComparison.Ordinal));
         var previous = state.ActivationHistory
             .Reverse()
             .FirstOrDefault(activation =>
                 string.Equals(activation.Selector, selector, StringComparison.Ordinal) &&
                 !string.Equals(activation.ToolchainId, current.ToolchainId, StringComparison.Ordinal) &&
-                installedIds.Contains(activation.ToolchainId));
+                installedIds.Contains(activation.ToolchainId) &&
+                !CanSwitchComposition(state.Toolchains, currentToolchain.Id, activation.ToolchainId));
         if (previous == null)
         {
             throw ToolchainUnavailable(
@@ -429,7 +432,7 @@ public sealed class ToolchainStateStore
     {
         var state = await ReadAsync(layout, cancellationToken);
         var scan = await ScanToolchainsAsync(layout, cancellationToken);
-        if (!state.Toolchains.SequenceEqual(scan.Toolchains) ||
+        if (!InstalledToolchainsEqual(state.Toolchains, scan.Toolchains) ||
             !state.UnmanagedDirectories.SequenceEqual(scan.UnmanagedDirectories))
         {
             throw StateCorrupt(
@@ -539,7 +542,8 @@ public sealed class ToolchainStateStore
                 if (selectors.TryGetValue(selector.Selector, out var existingSelector) &&
                     existingSelector.Kind == ToolchainSelectorKind.ExactVersion &&
                     selector.Kind == ToolchainSelectorKind.ExactVersion &&
-                    !string.Equals(existingSelector.ToolchainId, selector.ToolchainId, StringComparison.Ordinal))
+                    !string.Equals(existingSelector.ToolchainId, selector.ToolchainId, StringComparison.Ordinal) &&
+                    !CanSwitchComposition(scan.Toolchains, existingSelector.ToolchainId, selector.ToolchainId))
                 {
                     throw new EidosupException(
                         EidosupErrorCode.InstallConflict,
@@ -650,6 +654,25 @@ public sealed class ToolchainStateStore
                 .ToArray());
     }
 
+    private static bool CanSwitchComposition(
+        IReadOnlyList<InstalledToolchainState> toolchains,
+        string currentId,
+        string replacementId)
+    {
+        var current = toolchains.SingleOrDefault(toolchain => string.Equals(toolchain.Id, currentId, StringComparison.Ordinal));
+        var replacement = toolchains.SingleOrDefault(toolchain => string.Equals(toolchain.Id, replacementId, StringComparison.Ordinal));
+        return current != null && replacement != null &&
+               string.Equals(current.Version, replacement.Version, StringComparison.Ordinal) &&
+               string.Equals(current.Rid, replacement.Rid, StringComparison.Ordinal) &&
+               string.Equals(current.Source, replacement.Source, StringComparison.Ordinal) &&
+               string.Equals(current.ReleaseTag, replacement.ReleaseTag, StringComparison.Ordinal) &&
+               string.Equals(current.DistributionManifestName, replacement.DistributionManifestName, StringComparison.Ordinal) &&
+               string.Equals(
+                   current.DistributionManifestSha256,
+                   replacement.DistributionManifestSha256,
+                   StringComparison.Ordinal);
+    }
+
     private static void AddActivation(
         List<ToolchainActivationState> history,
         string selector,
@@ -750,7 +773,7 @@ public sealed class ToolchainStateStore
             if (manifest == null ||
                 !await manifest.VerifyAsync(
                     directory,
-                    manifest.AssetSha256,
+                    manifest.DistributionManifestSha256,
                     cancellationToken,
                     manifest.Rid,
                     manifest.Version))
@@ -773,13 +796,19 @@ public sealed class ToolchainStateStore
                 manifest.ToolchainId,
                 manifest.Version,
                 manifest.Rid,
-                manifest.ManifestSha256,
+                manifest.IdentitySha256,
+                manifest.CompositionSha256,
                 installManifestSha256,
+                manifest.DistributionManifestName,
+                manifest.DistributionManifestSha256,
                 manifest.ReleaseTag,
                 manifest.Source,
-                manifest.AssetName,
-                manifest.AssetSha256,
-                manifest.AssetSize,
+                manifest.Profile,
+                manifest.ExplicitComponents,
+                manifest.ExplicitTargets,
+                manifest.Components,
+                manifest.Targets,
+                manifest.Artifacts,
                 manifest.InstalledAt));
         }
 
@@ -837,14 +866,17 @@ public sealed class ToolchainStateStore
                 return new StateLoadResult(StateLoadStatus.Corrupt, null, null);
             }
 
-            if (schema is not (1 or ToolchainState.CurrentSchema))
+            if (schema is not (1 or 2 or ToolchainState.CurrentSchema))
             {
                 return new StateLoadResult(StateLoadStatus.Unsupported, null, schema);
             }
 
-            var state = schema == ToolchainState.CurrentSchema
-                ? document.RootElement.Deserialize<ToolchainState>(JsonOptions)
-                : MigrateV1(document.RootElement.Deserialize<ToolchainStateV1>(JsonOptions));
+            var state = schema switch
+            {
+                ToolchainState.CurrentSchema => document.RootElement.Deserialize<ToolchainState>(JsonOptions),
+                2 => MigrateV2(document.RootElement.Deserialize<ToolchainStateV2>(JsonOptions)),
+                _ => MigrateV1(document.RootElement.Deserialize<ToolchainStateV1>(JsonOptions))
+            };
             return state != null && Validate(state)
                 ? new StateLoadResult(StateLoadStatus.Valid, state, schema)
                 : new StateLoadResult(StateLoadStatus.Corrupt, null, schema);
@@ -880,15 +912,42 @@ public sealed class ToolchainStateStore
                 version == null ||
                 !string.Equals(version.ToString(), toolchain.Version, StringComparison.Ordinal) ||
                 !PlatformContext.IsSupportedRid(toolchain.Rid) ||
-                !ToolchainIdentity.IsCanonicalSha256(toolchain.ManifestSha256) ||
+                !ToolchainIdentity.IsCanonicalSha256(toolchain.IdentitySha256) ||
+                !ToolchainIdentity.IsCanonicalSha256(toolchain.CompositionSha256) ||
                 !ToolchainIdentity.IsCanonicalSha256(toolchain.InstallManifestSha256) ||
-                !ToolchainIdentity.IsCanonicalSha256(toolchain.AssetSha256) ||
-                toolchain.AssetSize <= 0 ||
+                !ToolchainIdentity.IsCanonicalSha256(toolchain.DistributionManifestSha256) ||
                 toolchain.InstalledAt == default ||
                 string.IsNullOrWhiteSpace(toolchain.ReleaseTag) ||
                 string.IsNullOrWhiteSpace(toolchain.Source) ||
-                string.IsNullOrWhiteSpace(toolchain.AssetName) ||
+                Path.GetFileName(toolchain.DistributionManifestName) != toolchain.DistributionManifestName ||
+                !Enum.TryParse<ToolchainProfile>(toolchain.Profile, ignoreCase: true, out var profile) ||
+                !Enum.IsDefined(profile) ||
+                toolchain.ExplicitComponents == null ||
+                toolchain.ExplicitTargets == null ||
+                toolchain.Components is not { Count: > 0 } ||
+                toolchain.Targets == null ||
+                toolchain.Artifacts is not { Count: > 0 } ||
                 !toolchainIds.Add(toolchain.Id))
+            {
+                return false;
+            }
+
+            if (toolchain.Components.Any(static component =>
+                    component == null ||
+                    string.IsNullOrWhiteSpace(component.Id) ||
+                    component.Files is not { Count: > 0 }) ||
+                toolchain.Components.Select(static component => component.Id).Distinct(StringComparer.Ordinal).Count() !=
+                toolchain.Components.Count ||
+                toolchain.ExplicitComponents.Distinct(StringComparer.Ordinal).Count() != toolchain.ExplicitComponents.Count ||
+                toolchain.ExplicitTargets.Distinct(StringComparer.Ordinal).Count() != toolchain.ExplicitTargets.Count ||
+                toolchain.Targets.Distinct(StringComparer.Ordinal).Count() != toolchain.Targets.Count ||
+                toolchain.Artifacts.Any(static artifact =>
+                    artifact == null ||
+                    Path.GetFileName(artifact.Name) != artifact.Name ||
+                    artifact.Size <= 0 ||
+                    !ToolchainIdentity.IsCanonicalSha256(artifact.Sha256)) ||
+                toolchain.Artifacts.Select(static artifact => artifact.Name).Distinct(StringComparer.Ordinal).Count() !=
+                toolchain.Artifacts.Count)
             {
                 return false;
             }
@@ -992,7 +1051,7 @@ public sealed class ToolchainStateStore
         value.All(static character => !char.IsControl(character));
 
     private static bool StateContentEquals(ToolchainState left, ToolchainState right) =>
-        left.Toolchains.SequenceEqual(right.Toolchains) &&
+        InstalledToolchainsEqual(left.Toolchains, right.Toolchains) &&
         left.Selectors.SequenceEqual(right.Selectors) &&
         Equals(left.Default, right.Default) &&
         left.DefaultConfigured == right.DefaultConfigured &&
@@ -1002,21 +1061,87 @@ public sealed class ToolchainStateStore
         left.CustomToolchains.SequenceEqual(right.CustomToolchains) &&
         left.Overrides.SequenceEqual(right.Overrides);
 
+    private static bool InstalledToolchainsEqual(
+        IReadOnlyList<InstalledToolchainState> left,
+        IReadOnlyList<InstalledToolchainState> right) =>
+        left.Count == right.Count && left.Zip(right).All(pair => InstalledToolchainEquals(pair.First, pair.Second));
+
+    private static bool InstalledToolchainEquals(
+        InstalledToolchainState left,
+        InstalledToolchainState right) =>
+        string.Equals(left.Id, right.Id, StringComparison.Ordinal) &&
+        string.Equals(left.Version, right.Version, StringComparison.Ordinal) &&
+        string.Equals(left.Rid, right.Rid, StringComparison.Ordinal) &&
+        string.Equals(left.IdentitySha256, right.IdentitySha256, StringComparison.Ordinal) &&
+        string.Equals(left.CompositionSha256, right.CompositionSha256, StringComparison.Ordinal) &&
+        string.Equals(left.InstallManifestSha256, right.InstallManifestSha256, StringComparison.Ordinal) &&
+        string.Equals(left.DistributionManifestName, right.DistributionManifestName, StringComparison.Ordinal) &&
+        string.Equals(left.DistributionManifestSha256, right.DistributionManifestSha256, StringComparison.Ordinal) &&
+        string.Equals(left.ReleaseTag, right.ReleaseTag, StringComparison.Ordinal) &&
+        string.Equals(left.Source, right.Source, StringComparison.Ordinal) &&
+        string.Equals(left.Profile, right.Profile, StringComparison.Ordinal) &&
+        left.ExplicitComponents.SequenceEqual(right.ExplicitComponents, StringComparer.Ordinal) &&
+        left.ExplicitTargets.SequenceEqual(right.ExplicitTargets, StringComparer.Ordinal) &&
+        ComponentsEqual(left.Components, right.Components) &&
+        left.Targets.SequenceEqual(right.Targets, StringComparer.Ordinal) &&
+        left.Artifacts.SequenceEqual(right.Artifacts) &&
+        left.InstalledAt == right.InstalledAt;
+
+    private static bool ComponentsEqual(
+        IReadOnlyList<InstalledComponent> left,
+        IReadOnlyList<InstalledComponent> right) =>
+        left.Count == right.Count && left.Zip(right).All(pair =>
+            string.Equals(pair.First.Id, pair.Second.Id, StringComparison.Ordinal) &&
+            string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal) &&
+            string.Equals(pair.First.Version, pair.Second.Version, StringComparison.Ordinal) &&
+            pair.First.Required == pair.Second.Required &&
+            string.Equals(pair.First.Target, pair.Second.Target, StringComparison.Ordinal) &&
+            pair.First.Files.SequenceEqual(pair.Second.Files, StringComparer.Ordinal));
+
     private static ToolchainState? MigrateV1(ToolchainStateV1? state) => state == null
         ? null
         : new ToolchainState(
             ToolchainState.CurrentSchema,
             state.Revision,
             state.UpdatedAt,
-            state.Toolchains,
-            state.Selectors,
-            state.Default,
-            state.DefaultConfigured,
-            state.ActivationHistory,
-            state.Transactions,
+            [],
+            [],
+            null,
+            DefaultConfigured: false,
+            [],
+            [],
             state.UnmanagedDirectories,
             [],
             []);
+
+    private static ToolchainState? MigrateV2(ToolchainStateV2? state)
+    {
+        if (state == null)
+        {
+            return null;
+        }
+
+        var customIds = state.CustomToolchains.Select(static custom => custom.ToolchainId)
+            .ToHashSet(StringComparer.Ordinal);
+        var selectors = state.Selectors.Where(selector =>
+            selector.Kind == ToolchainSelectorKind.Custom && customIds.Contains(selector.ToolchainId)).ToArray();
+        var defaultState = state.Default != null && customIds.Contains(state.Default.ToolchainId)
+            ? state.Default
+            : null;
+        return new ToolchainState(
+            ToolchainState.CurrentSchema,
+            state.Revision,
+            state.UpdatedAt,
+            [],
+            selectors,
+            defaultState,
+            state.DefaultConfigured && defaultState != null,
+            state.ActivationHistory.Where(activation => customIds.Contains(activation.ToolchainId)).ToArray(),
+            [],
+            state.UnmanagedDirectories,
+            state.CustomToolchains,
+            state.Overrides);
+    }
 
     private static string CanonicalizeOverrideDirectory(string directory) =>
         Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

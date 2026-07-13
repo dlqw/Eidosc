@@ -32,23 +32,18 @@ proxy without changing user projects or selector data.
 
 ## Selection
 
-WP1 proxy resolution has two defined sources:
-
-1. an explicit selector supplied by an internal caller;
-2. the global default stored in `state/toolchains.json`.
-
-The command-line shim uses the global default. `eidosup run` and `which
---toolchain` use the explicit source. Environment, directory override, and
-project-file selection remain reserved for the project-selection phase and do
-not silently affect this release.
+Proxy resolution uses explicit `+toolchain`/`--toolchain` selection,
+`EIDOSUP_TOOLCHAIN`, the nearest project file or directory override, and then
+the global default. The precedence and project composition rules are documented
+in [Project toolchain selection](project-selection.md).
 
 Resolution rejects a missing default, missing selector, host RID mismatch,
 unknown command, unsupported state schema, changed install manifest, modified
-payload file, link/reparse point, or incomplete compiler/runtime layout. The
-compiler-owned `cache/grammar.bin` is the only generated file excluded from the
-payload file set; any other added file still invalidates the installation. Only
-the selected immutable payload is reverified, so additional installed versions
-do not add proxy startup work.
+payload file or executable mode, link/reparse point, missing Std, or unsatisfied
+project components/targets. The compiler-owned `cache/grammar.bin` is the only
+generated file excluded from the payload file set; any other added file still
+invalidates the installation. Only the selected immutable payload is
+reverified, so additional installed versions do not add proxy startup work.
 
 ## Process forwarding
 
@@ -62,15 +57,18 @@ disabled. It preserves:
 - the compiler's exact exit code.
 
 The child process receives the resolved values of `EIDOS_HOME`, `EIDOSC_HOME`,
-and `EIDOS_RUNTIME_PATH`. These values are not persisted as version-bound user
+`EIDOS_STDLIB_PATH`, `EIDOS_TARGETS_PATH`, and, when installed,
+`EIDOS_RUNTIME_PATH`. These values are not persisted as version-bound user
 environment variables.
 
 ## Release gate
 
 Native Windows x64 and Linux x64 clean-install jobs invoke the installed shim
-for `eidosc info` and tutorial HIR compilation. They also compare an intentional
-compiler failure through direct and shim paths, and measure nine post-warmup
-startup samples. The median incremental shim overhead must not exceed 200 ms.
+for external Std inspection, tutorial HIR compilation, component/profile
+changes, offline docs, and x64-to-ARM64 LLVM IR/object generation. They also
+compare an intentional compiler failure through direct and shim paths, and
+measure nine post-warmup startup samples. The median incremental shim overhead
+must not exceed 200 ms.
 Eidosup release artifacts use ReadyToRun compilation so the full verification
 path remains within that baseline. All six published RID artifacts use the same
 multi-call source path and receive binary/version smoke validation before

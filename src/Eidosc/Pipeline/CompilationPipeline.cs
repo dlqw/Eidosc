@@ -1515,8 +1515,7 @@ public sealed partial class CompilationPipeline
             return false;
         }
 
-        var normalized = filePath.Replace('\\', '/');
-        return normalized.Contains("/Stdlib/Precompiled/Std/", StringComparison.Ordinal);
+        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private static string BuildPackageInstanceKey(string? packageAlias, ImportModuleCandidate importCandidate)

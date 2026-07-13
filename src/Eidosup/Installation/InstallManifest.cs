@@ -1,7 +1,7 @@
-using System.Text.Json;
 using System.Security.Cryptography;
-using Eidosup.Serialization;
+using System.Text.Json;
 using Eidosup.Diagnostics;
+using Eidosup.Serialization;
 using Eidosup.Toolchains;
 
 namespace Eidosup.Installation;
@@ -9,18 +9,24 @@ namespace Eidosup.Installation;
 public sealed record InstallManifest(
     int Schema,
     string ToolchainId,
-    string ManifestSha256,
+    string IdentitySha256,
+    string CompositionSha256,
+    string DistributionManifestName,
+    string DistributionManifestSha256,
     string ReleaseTag,
     string Version,
     string Rid,
     string Source,
-    string AssetName,
-    string AssetSha256,
-    long AssetSize,
+    string Profile,
+    IReadOnlyList<string> ExplicitComponents,
+    IReadOnlyList<string> ExplicitTargets,
+    IReadOnlyList<InstalledComponent> Components,
+    IReadOnlyList<string> Targets,
+    IReadOnlyList<InstalledArtifact> Artifacts,
     DateTimeOffset InstalledAt,
     IReadOnlyList<InstalledFile> Files)
 {
-    public const int CurrentSchema = 2;
+    public const int CurrentSchema = 3;
     public const string FileName = ".eidosup-install.json";
 
     private const string CompilerGrammarCachePath = "cache/grammar.bin";
@@ -80,17 +86,21 @@ public sealed record InstallManifest(
 
     public async Task<bool> VerifyAsync(
         string directory,
-        string expectedSha256,
+        string expectedDistributionManifestSha256,
         CancellationToken cancellationToken,
         string? expectedRid = null,
         string? expectedVersion = null)
     {
         if (Schema != CurrentSchema ||
             !HasValidIdentity(directory) ||
-            !string.Equals(AssetSha256, expectedSha256, StringComparison.Ordinal) ||
+            !string.Equals(
+                DistributionManifestSha256,
+                expectedDistributionManifestSha256,
+                StringComparison.Ordinal) ||
             expectedRid != null && !string.Equals(Rid, expectedRid, StringComparison.Ordinal) ||
             expectedVersion != null && !string.Equals(Version, expectedVersion, StringComparison.Ordinal) ||
-            Files is not { Count: > 0 })
+            Files is not { Count: > 0 } ||
+            !HasValidOwnership())
         {
             return false;
         }
@@ -111,8 +121,9 @@ public sealed record InstallManifest(
             cancellationToken.ThrowIfCancellationRequested();
             if (file is null ||
                 file.Size < 0 ||
-                !ChecksumManifest.IsSha256(file.Sha256) ||
+                !ToolchainIdentity.IsCanonicalSha256(file.Sha256) ||
                 !TryNormalizeRelativePath(file.Path, out var relativePath) ||
+                !string.Equals(relativePath, file.Path, StringComparison.Ordinal) ||
                 !expectedFiles.Add(relativePath))
             {
                 return false;
@@ -134,15 +145,26 @@ public sealed record InstallManifest(
                 return false;
             }
 
-            using var stream = new FileStream(
+            if (!OperatingSystem.IsWindows())
+            {
+                var mode = File.GetUnixFileMode(path);
+                var executable = (mode & (UnixFileMode.UserExecute |
+                                          UnixFileMode.GroupExecute |
+                                          UnixFileMode.OtherExecute)) != 0;
+                if (executable != file.Executable)
+                {
+                    return false;
+                }
+            }
+
+            await using var stream = new FileStream(
                 path,
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
                 bufferSize: 1024 * 1024,
-                FileOptions.SequentialScan);
-            var digest = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-            cancellationToken.ThrowIfCancellationRequested();
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var digest = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken)).ToLowerInvariant();
             if (!string.Equals(digest, file.Sha256, StringComparison.Ordinal))
             {
                 return false;
@@ -162,13 +184,17 @@ public sealed record InstallManifest(
                 Rid,
                 Source,
                 ReleaseTag,
-                AssetName,
-                AssetSha256,
-                AssetSize);
+                DistributionManifestName,
+                DistributionManifestSha256,
+                Components.Select(static component => component.Id),
+                ToolchainComponentSolver.ParseProfile(Profile),
+                ExplicitComponents,
+                ExplicitTargets);
             var directoryName = Path.GetFileName(
                 Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             return string.Equals(identity.Id, ToolchainId, StringComparison.Ordinal) &&
-                   string.Equals(identity.ManifestSha256, ManifestSha256, StringComparison.Ordinal) &&
+                   string.Equals(identity.IdentitySha256, IdentitySha256, StringComparison.Ordinal) &&
+                   string.Equals(identity.CompositionSha256, CompositionSha256, StringComparison.Ordinal) &&
                    string.Equals(directoryName, ToolchainId, StringComparison.Ordinal);
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or IOException or NotSupportedException)
@@ -177,7 +203,7 @@ public sealed record InstallManifest(
         }
     }
 
-    private static bool TryNormalizeRelativePath(string? path, out string normalized)
+    public static bool TryNormalizeRelativePath(string? path, out string normalized)
     {
         normalized = string.Empty;
         if (string.IsNullOrWhiteSpace(path) ||
@@ -201,6 +227,69 @@ public sealed record InstallManifest(
 
         normalized = string.Join('/', segments);
         return !string.Equals(normalized, FileName, StringComparison.Ordinal);
+    }
+
+    private bool HasValidOwnership()
+    {
+        if (Components is not { Count: > 0 } ||
+            Targets == null ||
+            ExplicitComponents == null ||
+            ExplicitTargets == null ||
+            Artifacts is not { Count: > 0 } ||
+            !Enum.TryParse<ToolchainProfile>(Profile, ignoreCase: true, out var profile) ||
+            !Enum.IsDefined(profile) ||
+            Components.Select(static component => component.Id).Distinct(StringComparer.Ordinal).Count() != Components.Count ||
+            ExplicitComponents.Distinct(StringComparer.Ordinal).Count() != ExplicitComponents.Count ||
+            ExplicitTargets.Distinct(StringComparer.Ordinal).Count() != ExplicitTargets.Count ||
+            Targets.Distinct(StringComparer.Ordinal).Count() != Targets.Count ||
+            Artifacts.Select(static artifact => artifact.Name).Distinct(StringComparer.Ordinal).Count() != Artifacts.Count)
+        {
+            return false;
+        }
+
+        var ownedPaths = new HashSet<string>(OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal);
+        foreach (var component in Components)
+        {
+            if (component == null ||
+                string.IsNullOrWhiteSpace(component.Id) ||
+                string.IsNullOrWhiteSpace(component.Name) ||
+                string.IsNullOrWhiteSpace(component.Version) ||
+                component.Files is not { Count: > 0 })
+            {
+                return false;
+            }
+
+            foreach (var path in component.Files)
+            {
+                if (!TryNormalizeRelativePath(path, out var normalized) ||
+                    !string.Equals(normalized, path, StringComparison.Ordinal) ||
+                    !ownedPaths.Add(normalized))
+                {
+                    return false;
+                }
+            }
+        }
+
+        if (!ownedPaths.SetEquals(Files.Select(static file => file.Path)))
+        {
+            return false;
+        }
+
+        var componentIds = Components.Select(static component => component.Id).ToHashSet(StringComparer.Ordinal);
+        if (ExplicitComponents.Any(component => !componentIds.Contains(component)) ||
+            ExplicitTargets.Any(target => !Targets.Contains(target, StringComparer.Ordinal)))
+        {
+            return false;
+        }
+
+        return Artifacts.All(static artifact =>
+                   artifact != null &&
+                   Path.GetFileName(artifact.Name) == artifact.Name &&
+                   artifact.Size > 0 &&
+                   ToolchainIdentity.IsCanonicalSha256(artifact.Sha256)) &&
+               Targets.All(target => Components.Any(component => string.Equals(component.Target, target, StringComparison.Ordinal)));
     }
 
     private static bool TryCollectInstalledFiles(
@@ -232,12 +321,8 @@ public sealed record InstallManifest(
 
                 var relativePath = Path.GetRelativePath(root, file)
                     .Replace(Path.DirectorySeparatorChar, '/');
-                if (string.Equals(relativePath, FileName, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (string.Equals(relativePath, CompilerGrammarCachePath, StringComparison.Ordinal))
+                if (string.Equals(relativePath, FileName, StringComparison.Ordinal) ||
+                    string.Equals(relativePath, CompilerGrammarCachePath, StringComparison.Ordinal))
                 {
                     continue;
                 }
@@ -257,5 +342,15 @@ public sealed record InstallManifest(
         EidosupErrorCode.InstallConflict,
         EidosupExitCodes.InstallConflict,
         $"Install target '{targetDirectory}' already contains a different or unverifiable toolchain.",
-        "Choose another version, remove the unmanaged directory, or use --force to replace it transactionally.");
+        "Choose another composition, remove the unmanaged directory, or use --force to replace it transactionally.");
 }
+
+public sealed record InstalledComponent(
+    string Id,
+    string Name,
+    string Version,
+    bool Required,
+    string? Target,
+    IReadOnlyList<string> Files);
+
+public sealed record InstalledArtifact(string Name, string Sha256, long Size);

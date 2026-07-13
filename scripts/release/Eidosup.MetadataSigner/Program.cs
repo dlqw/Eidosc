@@ -104,9 +104,10 @@ var assets = Directory.EnumerateFiles(assetDirectory)
         Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file.FullName))).ToLowerInvariant()))
     .ToArray();
 if (!assets.Any(static asset => asset.Name == "SHA256SUMS") ||
-    assets.Count(static asset => asset.Name.StartsWith("eidosc-v", StringComparison.Ordinal) && asset.Name.EndsWith(".zip", StringComparison.Ordinal)) != 6)
+    assets.Count(static asset => asset.Name.StartsWith("eidosc-v", StringComparison.Ordinal) && asset.Name.EndsWith(".zip", StringComparison.Ordinal)) != 6 ||
+    assets.Count(static asset => asset.Name.StartsWith("eidos-toolchain-v", StringComparison.Ordinal) && asset.Name.EndsWith(".json", StringComparison.Ordinal)) != 6)
 {
-    throw new InvalidOperationException("The signed index requires SHA256SUMS and six Eidosc host bundles.");
+    throw new InvalidOperationException("The signed index requires SHA256SUMS, six Eidosc host bundles, and six host component manifests.");
 }
 
 var payload = new SignedReleaseIndex(

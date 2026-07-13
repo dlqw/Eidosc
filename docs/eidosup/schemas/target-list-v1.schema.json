@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eidos.dev/schemas/eidosup/target-list-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "selector", "toolchainId", "targets"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "selector": { "type": "string", "minLength": 1 },
+    "toolchainId": { "type": "string", "minLength": 1 },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "triple",
+          "support",
+          "compilerReady",
+          "runtimeInstalled",
+          "linkerCommand",
+          "linkerReadiness"
+        ],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "triple": { "type": "string", "minLength": 1 },
+          "support": { "enum": ["host", "crossCompile"] },
+          "compilerReady": { "type": "boolean" },
+          "runtimeInstalled": { "type": "boolean" },
+          "linkerCommand": { "type": "string", "minLength": 1 },
+          "linkerReadiness": {
+            "enum": ["ready", "notInstalled", "commandMissing", "externalSdkRequired"]
+          }
+        }
+      }
+    }
+  }
+}

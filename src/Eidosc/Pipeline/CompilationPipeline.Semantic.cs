@@ -87,8 +87,7 @@ public sealed partial class CompilationPipeline
             return false;
         }
 
-        var normalized = filePath.Replace('\\', '/');
-        return normalized.Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private bool RunTypeInfererAndFfi()

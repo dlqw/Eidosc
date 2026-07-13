@@ -31,13 +31,13 @@ public sealed class VerifiedToolchainInstallerTests
         Assert.True(File.Exists(Path.Combine(fixture.ToolchainDirectory, fixture.Platform.ExecutableName)));
         var manifest = await InstallManifest.TryReadAsync(fixture.ToolchainDirectory, CancellationToken.None);
         Assert.NotNull(manifest);
-        Assert.Equal(fixture.BundleSha256, manifest.AssetSha256);
+        Assert.Equal(fixture.ManifestSha256, manifest.DistributionManifestSha256);
         Assert.Equal(fixture.Platform.Rid, manifest.Rid);
-        Assert.Equal(2, manifest.Files.Count);
+        Assert.Equal(3, manifest.Files.Count);
         Assert.Empty(Directory.EnumerateFiles(fixture.Layout.TransactionDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.StagingDirectory));
         Assert.Empty(Directory.EnumerateDirectories(fixture.Layout.BackupDirectory));
-        Assert.Equal(3, fixture.Handler.RequestCount);
+        Assert.Equal(1, fixture.Handler.RequestCount);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class VerifiedToolchainInstallerTests
             targetDirectory = fixture.ToolchainDirectory,
             stageDirectory = stage,
             backupDirectory = backup,
-            expectedSha256 = fixture.BundleSha256,
+            expectedSha256 = fixture.ManifestSha256,
             rid = fixture.Platform.Rid,
             version = "0.4.0-alpha.2",
             toolchainId = fixture.ToolchainId
@@ -246,18 +246,66 @@ public sealed class VerifiedToolchainInstallerTests
         var platform = PlatformContext.Detect();
         var bundle = CreateBundle(platform.ExecutableName);
         var bundleSha256 = Convert.ToHexString(SHA256.HashData(bundle)).ToLowerInvariant();
+        var manifestSha256 = new string('d', 64);
         var bundleName = $"eidosc-v0.4.0-alpha.2-{platform.Rid}.zip";
-        var checksum = Encoding.UTF8.GetBytes($"{bundleSha256}  {bundleName}\n");
-        var handler = new AssetHandler(bundle, checksum);
+        var handler = new AssetHandler(bundle);
+        var manifestName = $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json";
+        var artifact = new ToolchainComponentArtifact(bundleName, bundle.Length, bundleSha256);
+        var core = new ToolchainComponentDefinition(
+            "eidosc-core",
+            "eidosc-core",
+            "0.4.0-alpha.2",
+            Required: true,
+            Target: null,
+            Dependencies: [],
+            Conflicts: [],
+            artifact,
+            [new ToolchainComponentFile(platform.ExecutableName, 6, HashText("binary"), Executable: true)]);
+        var runtime = new ToolchainComponentDefinition(
+            $"eidos-runtime@{platform.Rid}",
+            "eidos-runtime",
+            "0.1.0-alpha.1",
+            Required: false,
+            Target: platform.Rid,
+            Dependencies: ["eidosc-core"],
+            Conflicts: [],
+            artifact,
+            [new ToolchainComponentFile("runtime/runtime.h", 6, HashText("header"))]);
+        var std = new ToolchainComponentDefinition(
+            "eidos-std",
+            "eidos-std",
+            "0.1.0-alpha.1",
+            Required: true,
+            Target: null,
+            Dependencies: [core.Id],
+            Conflicts: [],
+            artifact,
+            [new ToolchainComponentFile("stdlib/Std/Core.eidos", 16, HashText("module Std::Core"))]);
+        var manifest = new ToolchainDistributionManifest(
+            ToolchainDistributionManifest.CurrentSchema,
+            $"eidosc-0.4.0-alpha.2-{platform.Rid}",
+            "preview",
+            platform.Rid,
+            new ToolchainProductIdentity("0.4.0-alpha.2", new string('a', 40)),
+            new ToolchainLanguageIdentity("0.4.0-alpha.1"),
+            [
+                new ToolchainProfileDefinition("minimal", ["eidosc-core", std.Id]),
+                new ToolchainProfileDefinition("default", ["eidosc-core", std.Id, runtime.Id]),
+                new ToolchainProfileDefinition("complete", ["eidosc-core", std.Id, runtime.Id])
+            ],
+            [core, std, runtime],
+            [new ToolchainTargetDefinition(platform.Rid, "test-triple", runtime.Id, ToolchainTargetSupport.Host, new ToolchainLinkerRequirement("clang", false))],
+            new ToolchainRequirementSet(new ToolchainLlvmRequirement(">=20.1.0 <22.0.0")),
+            DateTimeOffset.Parse("2026-07-12T00:00:00Z"));
         var release = new EidosReleaseInfo(
             "eidosc-v0.4.0-alpha.2",
             "Eidosc 0.4.0-alpha.2",
             Draft: false,
             PreRelease: true,
             DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
-            []);
-        var bundleAsset = new EidosReleaseAsset(bundleName, "https://example.invalid/bundle", bundle.Length);
-        var checksumAsset = new EidosReleaseAsset("SHA256SUMS", "https://example.invalid/checksums", checksum.Length);
+            [new EidosReleaseAsset(bundleName, "https://example.invalid/bundle", bundle.Length, bundleSha256)]);
+        var bundleAsset = release.Assets[0];
+        var manifestAsset = new EidosReleaseAsset(manifestName, "https://example.invalid/manifest", 100, manifestSha256);
         var layout = ToolInstallLayout.Create(
             platform,
             Path.Combine(root, "install"),
@@ -267,19 +315,25 @@ public sealed class VerifiedToolchainInstallerTests
             platform.Rid,
             "test/source",
             release.TagName,
-            bundleName,
-            bundleSha256,
-            bundle.Length);
+            manifestName,
+            manifestSha256,
+            [core.Id, std.Id, runtime.Id]);
         var toolchainDirectory = layout.GetToolchainDirectory(identity.Id);
         var request = new VerifiedInstallRequest(
             release,
-            bundleAsset,
-            checksumAsset,
+            new LoadedToolchainDistribution(
+                manifest,
+                manifestAsset,
+                manifestSha256,
+                ChecksumManifest.Parse($"{bundleSha256}  {bundleName}"),
+                CacheHit: false,
+                Resumed: false),
+            new ToolchainComponentPlan(ToolchainProfile.Default, [core, std, runtime], manifest.Targets, [], []),
             platform,
             layout,
             "test/source",
             force);
-        return new InstallFixture(platform, layout, toolchainDirectory, identity.Id, request, bundleSha256, handler);
+        return new InstallFixture(platform, layout, toolchainDirectory, identity.Id, request, bundleSha256, manifestSha256, handler);
     }
 
     private static byte[] CreateBundle(string executableName)
@@ -288,6 +342,7 @@ public sealed class VerifiedToolchainInstallerTests
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, executableName, "binary");
+            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std::Core");
             WriteEntry(archive, "runtime/runtime.h", "header");
         }
 
@@ -310,7 +365,7 @@ public sealed class VerifiedToolchainInstallerTests
             targetDirectory = fixture.ToolchainDirectory,
             stageDirectory = stage,
             backupDirectory = backup,
-            expectedSha256 = fixture.BundleSha256,
+            expectedSha256 = fixture.ManifestSha256,
             rid = fixture.Platform.Rid,
             version = "0.4.0-alpha.2",
             toolchainId = fixture.ToolchainId,
@@ -324,6 +379,9 @@ public sealed class VerifiedToolchainInstallerTests
         writer.Write(content);
     }
 
+    private static string HashText(string content) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
+
     private sealed record InstallFixture(
         PlatformContext Platform,
         ToolInstallLayout Layout,
@@ -331,21 +389,19 @@ public sealed class VerifiedToolchainInstallerTests
         string ToolchainId,
         VerifiedInstallRequest Request,
         string BundleSha256,
+        string ManifestSha256,
         AssetHandler Handler);
 
-    private sealed class AssetHandler(byte[] bundle, byte[] checksum) : HttpMessageHandler
+    private sealed class AssetHandler(byte[] bundle) : HttpMessageHandler
     {
         public int RequestCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
-            var payload = request.RequestUri!.AbsolutePath.EndsWith("checksums", StringComparison.Ordinal)
-                ? checksum
-                : bundle;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new ByteArrayContent(payload)
+                Content = new ByteArrayContent(bundle)
             });
         }
     }

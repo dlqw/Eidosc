@@ -79,7 +79,7 @@ public sealed record ProjectModuleExecutionPlan(
             return true;
         }
 
-        return sourcePath.Replace('\\', '/').Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(sourcePath);
     }
 }
 

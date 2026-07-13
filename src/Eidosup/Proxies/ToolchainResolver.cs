@@ -70,6 +70,7 @@ public sealed class ToolchainResolver
                 verified.RootDirectory,
                 verified.CommandPath,
                 verified.RuntimePath,
+                Path.Combine(verified.RootDirectory, "stdlib"),
                 layout.RootDirectory,
                 selection.SourcePath,
                 IsCustom: true,
@@ -119,7 +120,7 @@ public sealed class ToolchainResolver
             !MatchesState(manifest, installed) ||
             !await manifest.VerifyAsync(
                 toolchainDirectory,
-                installed.AssetSha256,
+                installed.DistributionManifestSha256,
                 cancellationToken,
                 installed.Rid,
                 installed.Version))
@@ -129,12 +130,14 @@ public sealed class ToolchainResolver
 
         var commandPath = Path.Combine(toolchainDirectory, platform.ExecutableName);
         var runtimePath = Path.Combine(toolchainDirectory, "runtime");
+        var stdlibPath = Path.Combine(toolchainDirectory, "stdlib");
         if (!File.Exists(commandPath) ||
             (File.GetAttributes(commandPath) & FileAttributes.ReparsePoint) != 0 ||
-            !Directory.Exists(runtimePath) ||
-            (File.GetAttributes(runtimePath) & FileAttributes.ReparsePoint) != 0)
+            Directory.Exists(runtimePath) && (File.GetAttributes(runtimePath) & FileAttributes.ReparsePoint) != 0 ||
+            !Directory.Exists(stdlibPath) ||
+            (File.GetAttributes(stdlibPath) & FileAttributes.ReparsePoint) != 0)
         {
-            throw Corrupt($"Toolchain '{installed.Id}' does not contain the required eidosc/runtime layout.");
+            throw Corrupt($"Toolchain '{installed.Id}' does not contain the required eidosc/stdlib layout.");
         }
 
         var managedCompatibility = await ToolchainCompatibilityVerifier.VerifyAsync(
@@ -142,6 +145,7 @@ public sealed class ToolchainResolver
             toolchainDirectory,
             cancellationToken,
             installed.Version);
+        EnsureProjectComposition(selection, manifest);
         return new ResolvedToolchain(
             selected.Selector,
             selection.Source,
@@ -149,23 +153,72 @@ public sealed class ToolchainResolver
             toolchainDirectory,
             commandPath,
             runtimePath,
+            stdlibPath,
             layout.RootDirectory,
             selection.SourcePath,
             IsCustom: false,
             managedCompatibility);
     }
 
+    private static void EnsureProjectComposition(ToolchainSelection selection, InstallManifest manifest)
+    {
+        var configuration = selection.ProjectConfiguration;
+        if (configuration == null)
+        {
+            return;
+        }
+
+        var installedProfile = ToolchainComponentSolver.ParseProfile(manifest.Profile);
+        var requestedProfile = ToolchainComponentSolver.ParseProfile(configuration.Profile);
+        var profileMatches = installedProfile >= requestedProfile;
+        var missingComponents = configuration.Components.Where(requested =>
+            !manifest.Components.Any(component =>
+                string.Equals(component.Id, requested, StringComparison.Ordinal) ||
+                component.Target == null && string.Equals(component.Name, requested, StringComparison.Ordinal))).ToArray();
+        var missingTargets = configuration.Targets.Except(manifest.Targets, StringComparer.Ordinal).ToArray();
+        if (profileMatches && missingComponents.Length == 0 && missingTargets.Length == 0)
+        {
+            return;
+        }
+
+        var exception = new EidosupException(
+            EidosupErrorCode.ToolchainUnavailable,
+            EidosupExitCodes.ToolchainUnavailable,
+            $"Toolchain '{selection.Selector.Selector}' does not satisfy component requirements in '{configuration.FilePath}'.",
+            "Run eidosup through an enabled auto-install policy or synchronize the selected profile, components, and targets explicitly.");
+        exception.Data["selector"] = selection.Selector.Selector;
+        exception.Data["projectConfiguration"] = configuration;
+        throw exception;
+    }
+
     private static bool MatchesState(InstallManifest manifest, InstalledToolchainState installed) =>
         string.Equals(manifest.ToolchainId, installed.Id, StringComparison.Ordinal) &&
-        string.Equals(manifest.ManifestSha256, installed.ManifestSha256, StringComparison.Ordinal) &&
+        string.Equals(manifest.IdentitySha256, installed.IdentitySha256, StringComparison.Ordinal) &&
+        string.Equals(manifest.CompositionSha256, installed.CompositionSha256, StringComparison.Ordinal) &&
+        string.Equals(manifest.DistributionManifestName, installed.DistributionManifestName, StringComparison.Ordinal) &&
+        string.Equals(manifest.DistributionManifestSha256, installed.DistributionManifestSha256, StringComparison.Ordinal) &&
         string.Equals(manifest.ReleaseTag, installed.ReleaseTag, StringComparison.Ordinal) &&
         string.Equals(manifest.Version, installed.Version, StringComparison.Ordinal) &&
         string.Equals(manifest.Rid, installed.Rid, StringComparison.Ordinal) &&
         string.Equals(manifest.Source, installed.Source, StringComparison.Ordinal) &&
-        string.Equals(manifest.AssetName, installed.AssetName, StringComparison.Ordinal) &&
-        string.Equals(manifest.AssetSha256, installed.AssetSha256, StringComparison.Ordinal) &&
-        manifest.AssetSize == installed.AssetSize &&
+        string.Equals(manifest.Profile, installed.Profile, StringComparison.Ordinal) &&
+        manifest.ExplicitComponents.SequenceEqual(installed.ExplicitComponents, StringComparer.Ordinal) &&
+        manifest.ExplicitTargets.SequenceEqual(installed.ExplicitTargets, StringComparer.Ordinal) &&
+        ComponentsEqual(manifest.Components, installed.Components) &&
+        manifest.Targets.SequenceEqual(installed.Targets) &&
+        manifest.Artifacts.SequenceEqual(installed.Artifacts) &&
         manifest.InstalledAt == installed.InstalledAt;
+
+    private static bool ComponentsEqual(
+        IReadOnlyList<InstalledComponent> left,
+        IReadOnlyList<InstalledComponent> right) =>
+        left.Count == right.Count && left.Zip(right).All(pair =>
+            string.Equals(pair.First.Id, pair.Second.Id, StringComparison.Ordinal) &&
+            string.Equals(pair.First.Name, pair.Second.Name, StringComparison.Ordinal) &&
+            string.Equals(pair.First.Version, pair.Second.Version, StringComparison.Ordinal) &&
+            pair.First.Required == pair.Second.Required &&
+            string.Equals(pair.First.Target, pair.Second.Target, StringComparison.Ordinal) &&
+            pair.First.Files.SequenceEqual(pair.Second.Files, StringComparer.Ordinal));
 
     private static EidosupException Corrupt(string message) => new(
         EidosupErrorCode.StateCorrupt,
