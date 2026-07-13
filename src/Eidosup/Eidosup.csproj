@@ -9,9 +9,11 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Eidosup</RootNamespace>
     <AssemblyName>Eidosup</AssemblyName>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NSec.Cryptography" Version="26.4.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
   </ItemGroup>
 

@@ -103,6 +103,15 @@ public sealed class VerifiedToolchainInstaller : IDisposable
             cancellationToken);
         var expectedSha256 = ChecksumManifest.Parse(checksumText)
             .GetRequiredChecksum(request.BundleAsset.Name);
+        if (request.BundleAsset.Sha256 != null &&
+            !string.Equals(request.BundleAsset.Sha256, expectedSha256, StringComparison.Ordinal))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InvalidReleaseMetadata,
+                EidosupExitCodes.InvalidRelease,
+                $"Signed metadata and SHA256SUMS disagree for '{request.BundleAsset.Name}'.",
+                "Reject the release and repair the signed index or checksum manifest; do not bypass either identity.");
+        }
         var identity = ToolchainIdentity.Create(
             request.Release.NormalizedVersion,
             request.Platform.Rid,

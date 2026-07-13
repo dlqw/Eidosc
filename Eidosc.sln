@@ -12,6 +12,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Eidosup", "src\Eidosup\Eido
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Eidosc.Benchmarks", "src\Eidosc.Benchmarks\Eidosc.Benchmarks.csproj", "{BC18FCC6-154E-4DBD-9FAF-2A9291157D71}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{C4AD9936-F0DF-1090-6077-3D4A6324E662}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "release", "release", "{C3616223-18D6-E7FC-A2E4-2C53919CE0F9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Eidosup.MetadataSigner", "scripts\release\Eidosup.MetadataSigner\Eidosup.MetadataSigner.csproj", "{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -82,6 +88,18 @@ Global
 		{BC18FCC6-154E-4DBD-9FAF-2A9291157D71}.Release|x64.Build.0 = Release|Any CPU
 		{BC18FCC6-154E-4DBD-9FAF-2A9291157D71}.Release|x86.ActiveCfg = Release|Any CPU
 		{BC18FCC6-154E-4DBD-9FAF-2A9291157D71}.Release|x86.Build.0 = Release|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Debug|x64.Build.0 = Debug|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Debug|x86.Build.0 = Debug|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Release|x64.ActiveCfg = Release|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Release|x64.Build.0 = Release|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Release|x86.ActiveCfg = Release|Any CPU
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -89,5 +107,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{8D669B4D-C345-4F16-B3B5-5317BD22349F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{BC18FCC6-154E-4DBD-9FAF-2A9291157D71} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{C3616223-18D6-E7FC-A2E4-2C53919CE0F9} = {C4AD9936-F0DF-1090-6077-3D4A6324E662}
+		{FFD50797-0808-4F4E-9B77-A9CDB723BE0B} = {C3616223-18D6-E7FC-A2E4-2C53919CE0F9}
 	EndGlobalSection
 EndGlobal

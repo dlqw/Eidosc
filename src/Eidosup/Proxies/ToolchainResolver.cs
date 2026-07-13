@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Eidosup.Configuration;
 using Eidosup.Diagnostics;
 using Eidosup.Installation;
 using Eidosup.Toolchains;
@@ -7,11 +8,19 @@ namespace Eidosup.Proxies;
 
 public sealed class ToolchainResolver
 {
+    private readonly ToolchainSelectionResolver _selectionResolver;
+
+    public ToolchainResolver(ToolchainSelectionResolver? selectionResolver = null)
+    {
+        _selectionResolver = selectionResolver ?? new ToolchainSelectionResolver();
+    }
+
     public async Task<ResolvedToolchain> ResolveAsync(
         ToolInstallLayout layout,
         string commandName,
         string? selector,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? workingDirectory = null)
     {
         ArgumentNullException.ThrowIfNull(layout);
         if (!string.Equals(commandName, "eidosc", StringComparison.Ordinal))
@@ -23,35 +32,48 @@ public sealed class ToolchainResolver
         }
 
         var state = await ToolchainStateStore.ReadAsync(layout, cancellationToken);
-        ToolchainSelectorState selected;
-        ToolchainSelectionSource source;
-        if (selector == null)
+        var currentDirectory = workingDirectory ?? Environment.CurrentDirectory;
+        var selection = await _selectionResolver.SelectAsync(
+            state,
+            selector,
+            currentDirectory,
+            cancellationToken);
+        var selected = selection.Selector;
+        if (selected.Kind == ToolchainSelectorKind.Custom)
         {
-            if (state.Default == null)
+            var custom = state.CustomToolchains.SingleOrDefault(candidate =>
+                             string.Equals(candidate.ToolchainId, selected.ToolchainId, StringComparison.Ordinal))
+                         ?? throw Corrupt($"Custom selector '{selected.Selector}' refers to a missing link.");
+            CustomToolchainState verified;
+            try
+            {
+                verified = CustomToolchain.ValidateAndCreate(custom.Name, custom.RootDirectory, custom.LinkedAt);
+            }
+            catch (EidosupException exception)
             {
                 throw new EidosupException(
-                    EidosupErrorCode.NoActiveToolchain,
-                    EidosupExitCodes.NoActiveToolchain,
-                    "No default Eidos toolchain is configured.",
-                    "Run eidosup setup to install and activate a verified toolchain.");
+                    exception.Code,
+                    exception.ExitCode,
+                    $"Custom toolchain '{custom.Name}' is no longer usable: {exception.Message}",
+                    $"Repair the external path or run 'eidosup toolchain unlink {custom.Name}'.",
+                    exception);
             }
 
-            selected = state.Selectors.SingleOrDefault(candidate =>
-                           string.Equals(candidate.Selector, state.Default.Selector, StringComparison.Ordinal) &&
-                           string.Equals(candidate.ToolchainId, state.Default.ToolchainId, StringComparison.Ordinal))
-                       ?? throw Corrupt("The default toolchain does not match a registered selector.");
-            source = ToolchainSelectionSource.Default;
-        }
-        else
-        {
-            selected = state.Selectors.SingleOrDefault(candidate =>
-                           string.Equals(candidate.Selector, selector, StringComparison.Ordinal))
-                       ?? throw new EidosupException(
-                           EidosupErrorCode.ToolchainUnavailable,
-                           EidosupExitCodes.ToolchainUnavailable,
-                           $"Toolchain selector '{selector}' is not installed.",
-                           "Install the requested selector before trying to run it.");
-            source = ToolchainSelectionSource.Explicit;
+            var compatibility = await ToolchainCompatibilityVerifier.VerifyAsync(
+                currentDirectory,
+                verified.RootDirectory,
+                cancellationToken);
+            return new ResolvedToolchain(
+                selected.Selector,
+                selection.Source,
+                custom.ToolchainId,
+                verified.RootDirectory,
+                verified.CommandPath,
+                verified.RuntimePath,
+                layout.RootDirectory,
+                selection.SourcePath,
+                IsCustom: true,
+                compatibility);
         }
 
         var installed = state.Toolchains.SingleOrDefault(candidate =>
@@ -115,14 +137,22 @@ public sealed class ToolchainResolver
             throw Corrupt($"Toolchain '{installed.Id}' does not contain the required eidosc/runtime layout.");
         }
 
+        var managedCompatibility = await ToolchainCompatibilityVerifier.VerifyAsync(
+            currentDirectory,
+            toolchainDirectory,
+            cancellationToken,
+            installed.Version);
         return new ResolvedToolchain(
             selected.Selector,
-            source,
+            selection.Source,
             installed.Id,
             toolchainDirectory,
             commandPath,
             runtimePath,
-            layout.RootDirectory);
+            layout.RootDirectory,
+            selection.SourcePath,
+            IsCustom: false,
+            managedCompatibility);
     }
 
     private static bool MatchesState(InstallManifest manifest, InstalledToolchainState installed) =>

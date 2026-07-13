@@ -100,6 +100,22 @@ public sealed class SafeZipExtractorTests
         Assert.Equal(EidosupErrorCode.UnsafeArchive, exception.Code);
     }
 
+    [Fact]
+    public async Task ExtractAsync_RejectsExcessivePathLength()
+    {
+        using var temporary = new TemporaryDirectory();
+        var archivePath = Path.Combine(temporary.Path, "long-path.zip");
+        CreateArchive(archivePath, ($"{new string('a', 256)}/file", "content"));
+
+        var exception = await Assert.ThrowsAsync<EidosupException>(() =>
+            new SafeZipExtractor().ExtractAsync(
+                archivePath,
+                Path.Combine(temporary.Path, "stage"),
+                CancellationToken.None));
+
+        Assert.Equal(EidosupErrorCode.UnsafeArchive, exception.Code);
+    }
+
     private static void CreateArchive(string path, params (string Name, string Content)[] entries)
     {
         using var stream = File.Create(path);

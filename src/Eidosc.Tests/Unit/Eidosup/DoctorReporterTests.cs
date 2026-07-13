@@ -35,6 +35,7 @@ public sealed class DoctorReporterTests
 
         Assert.Equal(EidosupExitCodes.Success, exitCode);
         using var document = JsonDocument.Parse(writer.ToString());
+        Assert.Equal(1, document.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.True(document.RootElement.GetProperty("healthy").GetBoolean());
         Assert.Contains(
             document.RootElement.GetProperty("checks").EnumerateArray(),
@@ -165,6 +166,43 @@ public sealed class DoctorReporterTests
         Assert.Equal(DoctorSeverity.Info, check.Severity);
         Assert.Contains("explicitly cleared", check.Summary, StringComparison.Ordinal);
         Assert.True(report.Healthy);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ReportsMissingLinkedCustomToolchainAsError()
+    {
+        var environment = new FakeDoctorEnvironment();
+        var platform = environment.DetectPlatform();
+        var installRoot = Path.Combine(Path.GetTempPath(), "eidos-doctor-custom-missing");
+        var stableBin = Path.Combine(installRoot, "bin");
+        var toolchainsDirectory = Path.Combine(installRoot, "toolchains");
+        var shimPath = Path.Combine(stableBin, platform.ExecutableName);
+        var managerName = platform.IsWindows ? "eidosup.exe" : "eidosup";
+        var customRoot = Path.Combine(installRoot, "external-custom");
+        var custom = new CustomToolchainState(
+            "local",
+            "custom:local",
+            "custom-local",
+            customRoot,
+            Path.Combine(customRoot, platform.ExecutableName),
+            Path.Combine(customRoot, "runtime"),
+            DateTimeOffset.Parse("2026-07-12T00:00:00Z"));
+        environment.Commands[platform.ExecutableName] = shimPath;
+        environment.ExistingDirectories.Add(installRoot);
+        environment.ExistingDirectories.Add(toolchainsDirectory);
+        environment.ExistingFiles.Add(shimPath);
+        environment.ExistingFiles.Add(Path.Combine(stableBin, managerName));
+        environment.ExistingFiles.Add(Path.Combine(stableBin, ShimInstaller.ManifestFileName));
+        var state = ToolchainState.Empty(custom.LinkedAt) with { CustomToolchains = [custom] };
+        var reporter = CreateReporter(environment, DependencyHealth.Compatible, state);
+
+        var report = await reporter.EvaluateAsync(installRoot);
+
+        var check = Assert.Single(report.Checks, item => item.Id == "toolchains.custom");
+        Assert.Equal(DoctorCheckStatus.Fail, check.Status);
+        Assert.Equal(DoctorSeverity.Error, check.Severity);
+        Assert.Contains("custom:local", check.Detail, StringComparison.Ordinal);
+        Assert.False(report.Healthy);
     }
 
     [Fact]

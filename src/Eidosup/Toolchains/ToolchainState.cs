@@ -10,9 +10,11 @@ public sealed record ToolchainState(
     bool DefaultConfigured,
     IReadOnlyList<ToolchainActivationState> ActivationHistory,
     IReadOnlyList<ToolchainTransactionState> Transactions,
-    IReadOnlyList<UnmanagedToolchainState> UnmanagedDirectories)
+    IReadOnlyList<UnmanagedToolchainState> UnmanagedDirectories,
+    IReadOnlyList<CustomToolchainState> CustomToolchains,
+    IReadOnlyList<ToolchainOverrideState> Overrides)
 {
-    public const int CurrentSchema = 1;
+    public const int CurrentSchema = 2;
 
     public static ToolchainState Empty(DateTimeOffset updatedAt) => new(
         CurrentSchema,
@@ -24,8 +26,24 @@ public sealed record ToolchainState(
         DefaultConfigured: false,
         [],
         [],
+        [],
+        [],
         []);
 }
+
+public sealed record CustomToolchainState(
+    string Name,
+    string Selector,
+    string ToolchainId,
+    string RootDirectory,
+    string CommandPath,
+    string RuntimePath,
+    DateTimeOffset LinkedAt);
+
+public sealed record ToolchainOverrideState(
+    string Directory,
+    string Selector,
+    DateTimeOffset SetAt);
 
 public sealed record InstalledToolchainState(
     string Id,
@@ -79,7 +97,9 @@ public enum ToolchainTransactionKind
     Update,
     Uninstall,
     DefaultChange,
-    Rollback
+    Rollback,
+    CustomLink,
+    OverrideChange
 }
 
 public enum ToolchainTransactionStatus
@@ -111,3 +131,15 @@ public sealed record UnmanagedToolchainState(
     string DirectoryName,
     UnmanagedToolchainReason Reason,
     string Guidance);
+
+internal sealed record ToolchainStateV1(
+    int Schema,
+    long Revision,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<InstalledToolchainState> Toolchains,
+    IReadOnlyList<ToolchainSelectorState> Selectors,
+    ToolchainDefaultState? Default,
+    bool DefaultConfigured,
+    IReadOnlyList<ToolchainActivationState> ActivationHistory,
+    IReadOnlyList<ToolchainTransactionState> Transactions,
+    IReadOnlyList<UnmanagedToolchainState> UnmanagedDirectories);

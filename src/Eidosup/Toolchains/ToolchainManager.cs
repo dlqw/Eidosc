@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Eidosup.Configuration;
 using Eidosup.Diagnostics;
 using Eidosup.Distribution;
 using Eidosup.Installation;
@@ -8,7 +9,7 @@ using Eidosup.Proxies;
 namespace Eidosup.Toolchains;
 
 public sealed record ToolchainManagementOptions(
-    string Repository = "dlqw/Eidosc",
+    string? Repository = null,
     string? InstallRoot = null,
     string? DownloadRoot = null);
 
@@ -79,7 +80,9 @@ public sealed class ToolchainManager
     };
 
     private readonly ReleaseAssetLocator _assetLocator;
-    private readonly Func<string, IEidosReleaseSource> _releaseSourceFactory;
+    private readonly Func<string, IEidosReleaseSource>? _releaseSourceFactory;
+    private readonly EidosupSettingsStore _settingsStore;
+    private readonly DistributionSourceCatalogStore _sourceCatalogStore;
     private readonly ToolchainStateStore _stateStore;
     private readonly Func<VerifiedToolchainInstaller> _installerFactory;
     private readonly ToolchainResolver _resolver;
@@ -91,6 +94,8 @@ public sealed class ToolchainManager
     public ToolchainManager(
         ReleaseAssetLocator? assetLocator = null,
         Func<string, IEidosReleaseSource>? releaseSourceFactory = null,
+        EidosupSettingsStore? settingsStore = null,
+        DistributionSourceCatalogStore? sourceCatalogStore = null,
         ToolchainStateStore? stateStore = null,
         Func<VerifiedToolchainInstaller>? installerFactory = null,
         ToolchainResolver? resolver = null,
@@ -100,7 +105,9 @@ public sealed class ToolchainManager
         TimeSpan? lockTimeout = null)
     {
         _assetLocator = assetLocator ?? new ReleaseAssetLocator();
-        _releaseSourceFactory = releaseSourceFactory ?? (repository => new GitHubReleaseClient(repository));
+        _releaseSourceFactory = releaseSourceFactory;
+        _settingsStore = settingsStore ?? new EidosupSettingsStore();
+        _sourceCatalogStore = sourceCatalogStore ?? new DistributionSourceCatalogStore();
         _stateStore = stateStore ?? new ToolchainStateStore();
         _installerFactory = installerFactory ?? (() => new VerifiedToolchainInstaller());
         _resolver = resolver ?? new ToolchainResolver();
@@ -120,9 +127,20 @@ public sealed class ToolchainManager
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(spec);
-        var platform = PlatformContext.Detect();
-        var layout = ToolInstallLayout.Create(platform, options.InstallRoot, options.DownloadRoot);
-        using var releaseSource = _releaseSourceFactory(options.Repository);
+        if (spec.Kind == ToolchainSpecKind.Custom)
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InvalidArgument,
+                EidosupExitCodes.InvalidArgument,
+                $"Custom selector '{spec.Canonical}' cannot be downloaded.",
+                "Use 'eidosup toolchain link <name> <path>' for a local compiler build.");
+        }
+        var hostPlatform = PlatformContext.Detect();
+        var layout = ToolInstallLayout.Create(hostPlatform, options.InstallRoot, options.DownloadRoot);
+        var settings = await _settingsStore.ReadAsync(layout, cancellationToken);
+        var platform = PlatformContext.FromRid(spec.HostRid ?? settings.DefaultHost);
+        var source = await ResolveSourceAsync(options, layout, cancellationToken);
+        using var releaseSource = CreateReleaseSource(source, layout);
         var release = await releaseSource.ResolveReleaseAsync(
             spec.Version,
             spec.Channel ?? ReleaseChannel.Preview,
@@ -139,7 +157,7 @@ public sealed class ToolchainManager
                 : existingState.Toolchains.Single(candidate =>
                     string.Equals(candidate.Id, existingSelector.ToolchainId, StringComparison.Ordinal));
             if (existingToolchain != null &&
-                (!string.Equals(existingToolchain.Source, options.Repository, StringComparison.Ordinal) ||
+                (!string.Equals(existingToolchain.Source, ReleaseSourceIdentity(release, source), StringComparison.Ordinal) ||
                  !string.Equals(existingToolchain.ReleaseTag, release.TagName, StringComparison.Ordinal)))
             {
                 throw new EidosupException(
@@ -177,7 +195,7 @@ public sealed class ToolchainManager
                 checksumAsset,
                 platform,
                 layout,
-                options.Repository,
+                ReleaseSourceIdentity(release, source),
                 force),
             progress,
             cancellationToken);
@@ -188,6 +206,7 @@ public sealed class ToolchainManager
                 layout,
                 install.ToolchainDirectory,
                 spec.Channel,
+                spec.Canonical,
                 cancellationToken);
         }
         catch (EidosupException exception) when (exception.Code == EidosupErrorCode.InstallConflict)
@@ -259,7 +278,8 @@ public sealed class ToolchainManager
                 .ToArray()
             : requestedSpecs;
         var results = new List<ToolchainCheckOutcome>(specs.Count);
-        using var releaseSource = _releaseSourceFactory(options.Repository);
+        var source = await ResolveSourceAsync(options, layout, cancellationToken);
+        using var releaseSource = CreateReleaseSource(source, layout);
         foreach (var spec in specs)
         {
             var release = await releaseSource.ResolveReleaseAsync(
@@ -273,7 +293,7 @@ public sealed class ToolchainManager
                 : state.Toolchains.SingleOrDefault(candidate =>
                     string.Equals(candidate.Id, selector.ToolchainId, StringComparison.Ordinal));
             var sourceMatches = installed != null &&
-                                string.Equals(installed.Source, options.Repository, StringComparison.Ordinal);
+                                string.Equals(installed.Source, ReleaseSourceIdentity(release, source), StringComparison.Ordinal);
             var status = installed == null
                 ? ToolchainCheckStatus.Missing
                 : spec.Kind == ToolchainSpecKind.ExactVersion && !sourceMatches
@@ -381,6 +401,15 @@ public sealed class ToolchainManager
             throw new ArgumentException("At least one toolchain specification is required.", nameof(specs));
         }
 
+        if (specs.Any(static spec => spec.Kind == ToolchainSpecKind.Custom))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InvalidArgument,
+                EidosupExitCodes.InvalidArgument,
+                "Custom toolchains are external read-only links and cannot be uninstalled.",
+                "Use 'eidosup toolchain unlink <name>'; Eidosup never deletes the external build directory.");
+        }
+
         var layout = CreateLayout(options);
         var initial = await ReadExistingStateAsync(layout, cancellationToken);
         var initialIds = ResolveUninstallIds(initial, specs);
@@ -413,12 +442,152 @@ public sealed class ToolchainManager
         ToolchainManagementOptions options,
         string commandName,
         ToolchainSpec? spec,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? workingDirectory = null) =>
         _resolver.ResolveAsync(
             CreateLayout(options),
             NormalizeCommandName(commandName),
             spec?.Canonical,
-            cancellationToken);
+            cancellationToken,
+            workingDirectory);
+
+    public async Task<CustomToolchainState> LinkCustomAsync(
+        ToolchainManagementOptions options,
+        string name,
+        string path,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        var layout = CreateLayout(options);
+        var custom = CustomToolchain.ValidateAndCreate(name, path, _clock());
+        if (dryRun)
+        {
+            var state = await ReadExistingStateAsync(layout, cancellationToken);
+            var existing = state.CustomToolchains.SingleOrDefault(candidate =>
+                string.Equals(candidate.Name, custom.Name, StringComparison.Ordinal));
+            if (existing != null && !ToolInstallLayout.PathEquals(existing.RootDirectory, custom.RootDirectory))
+            {
+                throw new EidosupException(
+                    EidosupErrorCode.InstallConflict,
+                    EidosupExitCodes.InstallConflict,
+                    $"Custom toolchain '{custom.Name}' is already linked to '{existing.RootDirectory}'.",
+                    "Unlink the existing custom toolchain before reusing its name.");
+            }
+        }
+        else
+        {
+            await using var operationLock = await InstallOperationLock.AcquireAsync(
+                layout.LockDirectory,
+                _lockTimeout,
+                cancellationToken,
+                operationName: "management");
+            await RecoverUninstallTransactionsAsync(layout, cancellationToken);
+            await _stateStore.LinkCustomAsync(layout, custom, cancellationToken);
+        }
+
+        return custom;
+    }
+
+    public async Task<ToolchainState> UnlinkCustomAsync(
+        ToolchainManagementOptions options,
+        string name,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        var layout = CreateLayout(options);
+        var state = await ReadExistingStateAsync(layout, cancellationToken);
+        _ = state.CustomToolchains.SingleOrDefault(candidate => string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            ?? throw new EidosupException(
+                EidosupErrorCode.ToolchainUnavailable,
+                EidosupExitCodes.ToolchainUnavailable,
+                $"Custom toolchain '{name}' is not linked.");
+        var custom = state.CustomToolchains.Single(candidate => string.Equals(candidate.Name, name, StringComparison.Ordinal));
+        if (state.Default != null && string.Equals(state.Default.ToolchainId, custom.ToolchainId, StringComparison.Ordinal))
+        {
+            throw new EidosupException(
+                EidosupErrorCode.InstallConflict,
+                EidosupExitCodes.InstallConflict,
+                $"Custom toolchain '{name}' is active as the global default.",
+                "Set another default or run 'eidosup default none' before unlinking it.");
+        }
+        if (dryRun)
+        {
+            return state;
+        }
+
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "management");
+        await RecoverUninstallTransactionsAsync(layout, cancellationToken);
+        return await _stateStore.UnlinkCustomAsync(layout, name, cancellationToken);
+    }
+
+    public async Task<ToolchainState> SetOverrideAsync(
+        ToolchainManagementOptions options,
+        ToolchainSpec spec,
+        string directory,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        var layout = CreateLayout(options);
+        var state = await ReadExistingStateAsync(layout, cancellationToken);
+        EnsureInstalledSelector(state, spec.Canonical);
+        var fullPath = Path.GetFullPath(directory);
+        if (!Directory.Exists(fullPath))
+        {
+            throw new DirectoryNotFoundException($"Override directory '{fullPath}' does not exist.");
+        }
+
+        if (dryRun)
+        {
+            return state;
+        }
+
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "management");
+        return await _stateStore.SetOverrideAsync(layout, fullPath, spec.Canonical, cancellationToken);
+    }
+
+    public async Task<ToolchainState> RemoveOverridesAsync(
+        ToolchainManagementOptions options,
+        string? directory,
+        bool nonexistentOnly,
+        bool dryRun,
+        CancellationToken cancellationToken)
+    {
+        var layout = CreateLayout(options);
+        var state = await ReadExistingStateAsync(layout, cancellationToken);
+        if (dryRun)
+        {
+            if (!nonexistentOnly)
+            {
+                var canonicalDirectory = Path.GetFullPath(directory ?? Environment.CurrentDirectory)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (!state.Overrides.Any(candidate => ToolInstallLayout.PathEquals(candidate.Directory, canonicalDirectory)))
+                {
+                    throw new EidosupException(
+                        EidosupErrorCode.ToolchainUnavailable,
+                        EidosupExitCodes.ToolchainUnavailable,
+                        $"No directory override exists for '{canonicalDirectory}'.",
+                        "Use 'eidosup override list' to inspect configured overrides.");
+                }
+            }
+
+            return state;
+        }
+
+        await using var operationLock = await InstallOperationLock.AcquireAsync(
+            layout.LockDirectory,
+            _lockTimeout,
+            cancellationToken,
+            operationName: "management");
+        return await _stateStore.RemoveOverridesAsync(layout, directory, nonexistentOnly, cancellationToken);
+    }
 
     public async Task<int> RunAsync(
         ToolchainManagementOptions options,
@@ -762,6 +931,34 @@ public sealed class ToolchainManager
 
     private static ToolInstallLayout CreateLayout(ToolchainManagementOptions options) =>
         ToolInstallLayout.Create(PlatformContext.Detect(), options.InstallRoot, options.DownloadRoot);
+
+    private async Task<IReadOnlyList<DistributionSourceDescriptor>> ResolveSourceAsync(
+        ToolchainManagementOptions options,
+        ToolInstallLayout layout,
+        CancellationToken cancellationToken)
+    {
+        var configured = options.Repository;
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            configured = (await _settingsStore.ReadAsync(layout, cancellationToken)).Source;
+        }
+
+        return await _sourceCatalogStore.ResolveAsync(layout, configured, cancellationToken);
+    }
+
+    private IEidosReleaseSource CreateReleaseSource(
+        IReadOnlyList<DistributionSourceDescriptor> sources,
+        ToolInstallLayout layout) =>
+        _releaseSourceFactory != null
+            ? _releaseSourceFactory(sources.Count == 1 && sources[0].Kind == DistributionSourceKind.GitHub
+                ? sources[0].Value
+                : sources[0].Canonical)
+            : ConfiguredReleaseSourceFactory.Create(sources, layout.StateDirectory);
+
+    private static string ReleaseSourceIdentity(
+        EidosReleaseInfo release,
+        IReadOnlyList<DistributionSourceDescriptor> sources) =>
+        release.SourceIdentity ?? (sources[0].Kind == DistributionSourceKind.GitHub ? sources[0].Value : sources[0].Canonical);
 
     private static string NormalizeCommandName(string commandName)
     {

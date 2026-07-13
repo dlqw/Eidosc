@@ -14,6 +14,8 @@ public sealed class SafeZipExtractor
     private const long MaximumTotalBytes = 4L * 1024 * 1024 * 1024;
     private const long MaximumFileBytes = 2L * 1024 * 1024 * 1024;
     private const double MaximumCompressionRatio = 1_000;
+    private const int MaximumRelativePathCharacters = 1_024;
+    private const int MaximumPathSegmentCharacters = 255;
 
     public async Task<ArchiveExtractionResult> ExtractAsync(
         string archivePath,
@@ -188,6 +190,11 @@ public sealed class SafeZipExtractor
         }
 
         var normalized = entryPath.Replace('\\', '/');
+        if (normalized.Length > MaximumRelativePathCharacters)
+        {
+            throw Unsafe($"Archive entry '{entryPath}' exceeds the path-length limit.");
+        }
+
         if (normalized.StartsWith('/') || normalized.Contains(':'))
         {
             throw Unsafe($"Archive entry '{entryPath}' uses an absolute path.");
@@ -196,6 +203,7 @@ public sealed class SafeZipExtractor
         var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0 || segments.Any(static segment =>
                 segment is "." or ".." ||
+                segment.Length > MaximumPathSegmentCharacters ||
                 segment.Any(char.IsControl) ||
                 OperatingSystem.IsWindows() && IsUnsafeWindowsSegment(segment)))
         {

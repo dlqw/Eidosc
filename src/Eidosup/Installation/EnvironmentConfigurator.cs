@@ -13,6 +13,43 @@ public sealed class EnvironmentConfigurator
         ApplyUnix(plan, dryRun);
     }
 
+    public void Remove(string eidosHome, string binDirectory, bool dryRun)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            RemoveWindows(eidosHome, binDirectory, dryRun);
+            return;
+        }
+
+        if (dryRun)
+        {
+            return;
+        }
+
+        foreach (var profilePath in ProfileScriptWriter.GetDefaultUnixProfiles())
+        {
+            if (!File.Exists(profilePath))
+            {
+                continue;
+            }
+
+            var existing = File.ReadAllText(profilePath);
+            var updated = ProfileScriptWriter.RemoveBlock(existing);
+            if (!string.Equals(existing, updated, StringComparison.Ordinal))
+            {
+                File.WriteAllText(profilePath, updated);
+            }
+        }
+
+        if (PathEquals(Environment.GetEnvironmentVariable("EIDOS_HOME"), eidosHome))
+        {
+            Environment.SetEnvironmentVariable("EIDOS_HOME", null, EnvironmentVariableTarget.Process);
+        }
+
+        RemoveProcessPath(binDirectory, ':');
+        ClearLegacyVariables(EnvironmentVariableTarget.Process);
+    }
+
     private static void ApplyWindows(EnvironmentPlan plan, bool dryRun)
     {
         if (dryRun)
@@ -113,5 +150,61 @@ public sealed class EnvironmentConfigurator
     {
         Environment.SetEnvironmentVariable("EIDOSC_HOME", null, target);
         Environment.SetEnvironmentVariable("EIDOS_RUNTIME_PATH", null, target);
+    }
+
+    private static void RemoveWindows(string eidosHome, string binDirectory, bool dryRun)
+    {
+        if (dryRun)
+        {
+            return;
+        }
+
+        if (PathEquals(Environment.GetEnvironmentVariable("EIDOS_HOME"), eidosHome))
+        {
+            Environment.SetEnvironmentVariable("EIDOS_HOME", null, EnvironmentVariableTarget.Process);
+        }
+
+        RemoveProcessPath(binDirectory, ';');
+        ClearLegacyVariables(EnvironmentVariableTarget.Process);
+        if (PathEquals(Environment.GetEnvironmentVariable("EIDOS_HOME", EnvironmentVariableTarget.User), eidosHome))
+        {
+            Environment.SetEnvironmentVariable("EIDOS_HOME", null, EnvironmentVariableTarget.User);
+        }
+
+        var userPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User);
+        Environment.SetEnvironmentVariable(
+            "PATH",
+            RemovePathEntry(userPath, binDirectory, ';'),
+            EnvironmentVariableTarget.User);
+        ClearLegacyVariables(EnvironmentVariableTarget.User);
+    }
+
+    private static void RemoveProcessPath(string binDirectory, char separator) =>
+        Environment.SetEnvironmentVariable(
+            "PATH",
+            RemovePathEntry(Environment.GetEnvironmentVariable("PATH"), binDirectory, separator),
+            EnvironmentVariableTarget.Process);
+
+    public static string RemovePathEntry(string? path, string entry, char separator) =>
+        string.Join(
+            separator,
+            (path ?? string.Empty).Split(separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(candidate => !PathEquals(candidate, entry)));
+
+    private static bool PathEquals(string? left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left))
+        {
+            return false;
+        }
+
+        try
+        {
+            return ToolInstallLayout.PathEquals(left, right);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return false;
+        }
     }
 }

@@ -52,8 +52,33 @@ public static class ProfileScriptWriter
             return newBlock;
         }
 
-        var separator = existingContent.EndsWith(Environment.NewLine, StringComparison.Ordinal) ? string.Empty : Environment.NewLine;
+        var separator = existingContent.EndsWith('\n') || existingContent.EndsWith('\r')
+            ? string.Empty
+            : Environment.NewLine;
         return existingContent + separator + newBlock;
+    }
+
+    public static string RemoveBlock(string existingContent)
+    {
+        var beginIndex = existingContent.IndexOf(BeginMarker, StringComparison.Ordinal);
+        if (beginIndex < 0)
+        {
+            return existingContent;
+        }
+
+        var endIndex = existingContent.IndexOf(EndMarker, beginIndex, StringComparison.Ordinal);
+        if (endIndex < 0)
+        {
+            throw new InvalidDataException("The Eidosup shell profile block is missing its end marker.");
+        }
+
+        var end = endIndex + EndMarker.Length;
+        while (end < existingContent.Length && existingContent[end] is '\r' or '\n')
+        {
+            end++;
+        }
+
+        return existingContent.Remove(beginIndex, end - beginIndex);
     }
 
     public static IReadOnlyList<string> GetDefaultUnixProfiles()

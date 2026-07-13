@@ -48,5 +48,20 @@ public sealed record PlatformContext(
         throw new PlatformNotSupportedException($"Unsupported operating system: {RuntimeInformation.OSDescription}.");
     }
 
+    public static PlatformContext FromRid(string rid)
+    {
+        if (!IsSupportedRid(rid))
+        {
+            throw new PlatformNotSupportedException($"Unsupported Eidos host RID: {rid}.");
+        }
+
+        return new PlatformContext(
+            rid,
+            rid.StartsWith("win-", StringComparison.Ordinal) ? "eidosc.exe" : "eidosc",
+            rid.StartsWith("win-", StringComparison.Ordinal),
+            rid.StartsWith("linux-", StringComparison.Ordinal),
+            rid.StartsWith("osx-", StringComparison.Ordinal));
+    }
+
     public string GetPathVariableSeparator() => IsWindows ? ";" : ":";
 }

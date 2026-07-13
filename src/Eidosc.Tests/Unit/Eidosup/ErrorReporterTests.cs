@@ -40,6 +40,7 @@ public sealed class ErrorReporterTests
 
         using var document = JsonDocument.Parse(writer.ToString());
         var root = document.RootElement;
+        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("authenticationRequired", root.GetProperty("code").GetString());
         Assert.Equal(EidosupExitCodes.AuthenticationRequired, root.GetProperty("exitCode").GetInt32());
         Assert.Equal("Set a token.", root.GetProperty("hint").GetString());
@@ -64,5 +65,19 @@ public sealed class ErrorReporterTests
         {
             Environment.SetEnvironmentVariable("GITHUB_TOKEN", previous);
         }
+    }
+
+    [Fact]
+    public void Write_ColorAlwaysUsesAnsiAndJsonNeverDoes()
+    {
+        var exception = new FormatException("invalid value");
+        using var human = new StringWriter();
+        using var jsonWriter = new StringWriter();
+
+        ErrorReporter.Write(exception, verbose: false, json: false, human, colorMode: "always");
+        ErrorReporter.Write(exception, verbose: false, json: true, jsonWriter, colorMode: "always");
+
+        Assert.Contains("\u001b[31;1m", human.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("\u001b", jsonWriter.ToString(), StringComparison.Ordinal);
     }
 }

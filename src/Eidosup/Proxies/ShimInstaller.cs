@@ -76,6 +76,7 @@ public sealed class ShimInstaller : IShimInstaller
         Directory.CreateDirectory(layout.BinDirectory);
         var existingManifest = await ReadManifestAsync(manifestPath, cancellationToken);
         ValidateOwnedTargets(existingManifest, managerPath, shimPath, manifestPath);
+        await ValidateOwnedContentAsync(existingManifest, managerPath, shimPath, cancellationToken);
 
         var managerChanged = !ToolInstallLayout.PathEquals(_sourceExecutable, managerPath) &&
                              !await FilesEqualAsync(_sourceExecutable, managerPath, cancellationToken);
@@ -309,6 +310,27 @@ public sealed class ShimInstaller : IShimInstaller
         catch (JsonException exception)
         {
             throw Conflict("The stable shim ownership manifest is malformed.", exception);
+        }
+    }
+
+    private static async Task ValidateOwnedContentAsync(
+        ShimInstallManifest? manifest,
+        string managerPath,
+        string shimPath,
+        CancellationToken cancellationToken)
+    {
+        if (manifest == null)
+        {
+            return;
+        }
+
+        foreach (var path in new[] { managerPath, shimPath })
+        {
+            if (!File.Exists(path) ||
+                !string.Equals(await HashAsync(path, cancellationToken), manifest.Sha256, StringComparison.Ordinal))
+            {
+                throw Conflict($"Managed shim path '{path}' no longer matches its ownership manifest.");
+            }
         }
     }
 
