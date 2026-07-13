@@ -932,10 +932,21 @@ Main :: module {
             payload.ComptimeValues.Bindings,
             binding => binding.Value.Kind == ComptimeValuePayload.SequenceKindName &&
                        binding.Value.SequenceKind == "List" &&
-                       binding.Value.Elements is { Count: 3 });
+                       binding.Value.StaticType != null &&
+                       binding.Value.Elements is { Count: 3 } elements &&
+                       elements.All(static element => element.StaticType != null));
         Assert.True(payload.ComptimeValues.TryRestoreComptimeValues(out var restoredComptimeValues));
-        Assert.Contains(restoredComptimeValues.Values, value => value.Value is long and 42);
-        Assert.Contains(restoredComptimeValues.Values, value => value.Value is ComptimeSequence { Kind: ComptimeSequenceKind.List, Elements.Length: 3 });
+        Assert.Contains(
+            restoredComptimeValues.Values,
+            value => value is ComptimeIntegerValue { Value: 42, StaticType: not null });
+        Assert.Contains(
+            restoredComptimeValues.Values,
+            value => value is ComptimeSequenceValue
+            {
+                Kind: ComptimeSequenceKind.List,
+                StaticType: not null,
+                Elements.Count: 3
+            } sequence && sequence.Elements.All(static element => element.StaticType != null));
         Assert.Equal(TypeConstraintsPayload.CurrentSchemaVersion, payload.Constraints.SchemaVersion);
         Assert.True(payload.Constraints.HasValidHash());
         Assert.Contains(
@@ -970,7 +981,9 @@ Main :: module {
             fullComptimeValues,
             fullConstraints);
         Assert.Equal(fullComptimeValues.Count, restoredInferer.ComptimeValues.Count);
-        Assert.Contains(restoredInferer.ComptimeValues.Values, value => value.Value is long and 42);
+        Assert.Contains(
+            restoredInferer.ComptimeValues.Values,
+            value => value is ComptimeIntegerValue { Value: 42, StaticType: not null });
         Assert.Equal(fullConstraints.Count, restoredInferer.ConstraintGenerator.Constraints.Count);
         var copyConstraint = Assert.Single(
             restoredInferer.ConstraintGenerator.Constraints.Constraints.OfType<TraitConstraint>(),

@@ -3,6 +3,7 @@ using Eidosc.Mir;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Symbols;
+using Eidosc.Types;
 
 namespace Eidosc.Tests.Unit.Semantic;
 
@@ -275,6 +276,199 @@ public sealed class ComptimeBindingTests
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
         var mirModule = Assert.IsType<MirModule>(result.MirModule);
         AssertMirContainsIntConstant(mirModule, 42);
+    }
+
+    [Fact]
+    public void Types_RecursiveComptimeFunction_EvaluatesToScalar()
+    {
+        var result = RunNameFirst(
+            """
+            factorial :: comptime Int -> Int {
+                0 => 1,
+                value => value * factorial(value - 1)
+            }
+            FactorialFive :: comptime factorial(5);
+            main :: Unit -> Int { _ => FactorialFive }
+            """,
+            CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            result.TypeInferer!.ComptimeValues.Values,
+            value => value is ComptimeIntegerValue { Value: 120 });
+    }
+
+    [Fact]
+    public void Types_ComptimeFunctionPureBlock_EvaluatesLocalBindings()
+    {
+        var result = RunNameFirst(
+            """
+            compute :: comptime Int -> Int {
+                value => {
+                    doubled := value * 2;
+                    offset := 2;
+                    doubled + offset
+                }
+            }
+            Answer :: comptime compute(20);
+            main :: Unit -> Int { _ => Answer }
+            """,
+            CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            result.TypeInferer!.ComptimeValues.Values,
+            value => value is ComptimeIntegerValue { Value: 42 });
+    }
+
+    [Fact]
+    public void Types_ComptimeAdtConstructorAndPattern_EvaluatesSelectedPayload()
+    {
+        var result = RunNameFirst(
+            """
+            MaybeInt :: type { Some(Int), None }
+            unwrap :: comptime MaybeInt -> Int {
+                Some(value) => value,
+                None() => 0
+            }
+            Answer :: comptime unwrap(Some(42));
+            main :: Unit -> Int { _ => Answer }
+            """,
+            CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            result.TypeInferer!.ComptimeValues.Values,
+            value => value is ComptimeIntegerValue { Value: 42 });
+    }
+
+    [Fact]
+    public void Types_ComptimeNamedAdtConstructorAndPattern_EvaluatesFields()
+    {
+        var result = RunNameFirst(
+            """
+            Point :: type { x: Int, y: Int }
+            sumPoint :: comptime Point -> Int {
+                Point { x: x, y: y } => x + y
+            }
+            Answer :: comptime sumPoint(Point { x: 20, y: 22 });
+            main :: Unit -> Int { _ => Answer }
+            """,
+            CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            result.TypeInferer!.ComptimeValues.Values,
+            value => value is ComptimeIntegerValue { Value: 42 });
+    }
+
+    [Fact]
+    public void Hir_ComptimeTupleReference_ReifiesTypedAggregate()
+    {
+        var result = RunNameFirst(
+            """
+            Pair :: comptime (20, 22);
+            main :: Unit -> (Int, Int) { _ => Pair }
+            """,
+            CompilationPhase.Hir);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<HirModule>(result.HirModule);
+        var main = Assert.Single(module.Declarations.OfType<HirFunc>(), function => function.Name == "main");
+        var tuple = Assert.IsType<HirTuple>(main.Body);
+
+        Assert.True(tuple.TypeId.IsValid);
+        Assert.Collection(
+            tuple.Elements,
+            element => Assert.Equal(new TypeId(BaseTypes.IntId), Assert.IsType<HirLiteral>(element).TypeId),
+            element => Assert.Equal(new TypeId(BaseTypes.IntId), Assert.IsType<HirLiteral>(element).TypeId));
+    }
+
+    [Fact]
+    public void Hir_ComptimeListReference_ReifiesTypedElements()
+    {
+        var result = RunNameFirst(
+            """
+            Values :: comptime [20, 22];
+            main :: Unit -> Seq[Int] { _ => Values }
+            """,
+            CompilationPhase.Hir);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<HirModule>(result.HirModule);
+        var main = Assert.Single(module.Declarations.OfType<HirFunc>(), function => function.Name == "main");
+        var list = Assert.IsType<HirList>(main.Body);
+
+        Assert.True(list.TypeId.IsValid);
+        Assert.All(
+            list.Elements,
+            element => Assert.Equal(new TypeId(BaseTypes.IntId), Assert.IsType<HirLiteral>(element).TypeId));
+    }
+
+    [Fact]
+    public void Hir_ComptimeNestedGenericAdtReference_ReifiesEveryConcreteType()
+    {
+        var result = RunNameFirst(
+            """
+            Box[T] :: type { Box(T) }
+            Nested :: comptime Box(Box(42));
+            main :: Unit -> Box[Box[Int]] { _ => Nested }
+            """,
+            CompilationPhase.Hir);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<HirModule>(result.HirModule);
+        var main = Assert.Single(module.Declarations.OfType<HirFunc>(), function => function.Name == "main");
+        var outer = Assert.IsType<HirCall>(main.Body);
+        var inner = Assert.IsType<HirCall>(Assert.Single(outer.Arguments));
+        var scalar = Assert.IsType<HirLiteral>(Assert.Single(inner.Arguments));
+
+        Assert.Equal(CallConvention.Constructor, outer.Convention);
+        Assert.Equal(CallConvention.Constructor, inner.Convention);
+        Assert.True(outer.TypeId.IsValid);
+        Assert.True(inner.TypeId.IsValid);
+        Assert.NotEqual(outer.TypeId, inner.TypeId);
+        Assert.Equal(new TypeId(BaseTypes.IntId), scalar.TypeId);
+    }
+
+    [Fact]
+    public void Mir_ComptimeNestedGenericAdtReference_LowersWithoutRuntimeBindingGetter()
+    {
+        var result = RunNameFirst(
+            """
+            Box[T] :: type { Box(T) }
+            Nested :: comptime Box(Box(42));
+            main :: Unit -> Box[Box[Int]] { _ => Nested }
+            """,
+            CompilationPhase.Mir);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+
+        Assert.DoesNotContain(module.Functions, function => function.Name.Contains("__module_val__", StringComparison.Ordinal));
+        Assert.Contains("Box", MirFormatter.FormatMir(module), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Hir_ComptimeNamedAdtReference_UsesDeclarationFieldOrder()
+    {
+        var result = RunNameFirst(
+            """
+            Point :: type { x: Int, y: Int }
+            Value :: comptime Point { y: 22, x: 20 };
+            main :: Unit -> Point { _ => Value }
+            """,
+            CompilationPhase.Hir);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<HirModule>(result.HirModule);
+        var main = Assert.Single(module.Declarations.OfType<HirFunc>(), function => function.Name == "main");
+        var call = Assert.IsType<HirCall>(main.Body);
+
+        Assert.Collection(
+            call.Arguments,
+            argument => Assert.Equal(20L, Assert.IsType<HirLiteral>(argument).Value),
+            argument => Assert.Equal(22L, Assert.IsType<HirLiteral>(argument).Value));
     }
 
     [Fact]

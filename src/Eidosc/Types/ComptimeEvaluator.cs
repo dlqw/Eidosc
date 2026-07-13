@@ -6,19 +6,10 @@ using Eidosc.Utils;
 
 namespace Eidosc.Types;
 
-internal sealed record ComptimeValue(object? Value);
-
-internal enum ComptimeSequenceKind
-{
-    Tuple,
-    List
-}
-
-internal sealed record ComptimeSequence(ComptimeSequenceKind Kind, object?[] Elements);
-
 internal sealed record ComptimeEvaluationContext(
     IReadOnlyDictionary<SymbolId, ComptimeValue> Values,
     IReadOnlyDictionary<SymbolId, FuncDef> Functions,
+    Func<Type, Type>? ResolveType = null,
     int CallDepth = 0);
 
 internal static class ComptimeEvaluator
@@ -31,7 +22,7 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        return TryEvaluate(node, values, new Dictionary<SymbolId, FuncDef>(), out value, out reason);
+        return TryEvaluate(node, values, new Dictionary<SymbolId, FuncDef>(), resolveType: null, out value, out reason);
     }
 
     public static bool TryEvaluate(
@@ -41,7 +32,18 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        return TryEvaluate(node, new ComptimeEvaluationContext(values, functions), out value, out reason);
+        return TryEvaluate(node, values, functions, resolveType: null, out value, out reason);
+    }
+
+    public static bool TryEvaluate(
+        EidosAstNode? node,
+        IReadOnlyDictionary<SymbolId, ComptimeValue> values,
+        IReadOnlyDictionary<SymbolId, FuncDef> functions,
+        Func<Type, Type>? resolveType,
+        out ComptimeValue value,
+        out string reason)
+    {
+        return TryEvaluate(node, new ComptimeEvaluationContext(values, functions, resolveType), out value, out reason);
     }
 
     private static bool TryEvaluate(
@@ -50,7 +52,29 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        if (!TryEvaluateCore(node, context, out value, out reason))
+        {
+            return false;
+        }
+
+        if (node?.InferredType is Type inferredType)
+        {
+            value = value with
+            {
+                StaticType = context.ResolveType?.Invoke(inferredType) ?? inferredType
+            };
+        }
+
+        return true;
+    }
+
+    private static bool TryEvaluateCore(
+        EidosAstNode? node,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        value = ComptimeUnitValue.Instance;
         reason = "";
 
         switch (node)
@@ -60,8 +84,13 @@ internal static class ComptimeEvaluator
                 return false;
 
             case LiteralExpr { IsRecoveredError: false } literal:
-                value = new ComptimeValue(literal.Value);
-                return true;
+                if (ComptimeValue.TryFromLiteral(literal.Value, out value))
+                {
+                    return true;
+                }
+
+                reason = $"literal value of type '{literal.Value?.GetType().Name ?? "Unit"}' is not supported by the comptime evaluator";
+                return false;
 
             case IdentifierExpr identifier:
                 return TryEvaluateSymbolReference(identifier.SymbolId, identifier.Name, context.Values, out value, out reason);
@@ -93,6 +122,9 @@ internal static class ComptimeEvaluator
             case CallExpr call:
                 return TryEvaluateCall(call, context, out value, out reason);
 
+            case CtorExpr constructor:
+                return TryEvaluateConstructor(constructor, context, out value, out reason);
+
             default:
                 reason = $"{node.GetType().Name} is not supported by the phase-1 comptime evaluator";
                 return false;
@@ -108,7 +140,7 @@ internal static class ComptimeEvaluator
     {
         if (!symbolId.IsValid)
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = $"identifier '{displayName}' was not resolved";
             return false;
         }
@@ -120,7 +152,7 @@ internal static class ComptimeEvaluator
             return true;
         }
 
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = $"identifier '{displayName}' is not a previously evaluated comptime binding";
         return false;
     }
@@ -133,13 +165,13 @@ internal static class ComptimeEvaluator
     {
         if (!TryEvaluate(ifExpr.Condition, context, out var condition, out reason))
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             return false;
         }
 
-        if (condition.Value is not bool conditionValue)
+        if (condition is not ComptimeBoolValue { Value: var conditionValue })
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = "if condition must evaluate to a comptime bool";
             return false;
         }
@@ -147,7 +179,7 @@ internal static class ComptimeEvaluator
         var selectedBranch = conditionValue ? ifExpr.ThenBranch : ifExpr.ElseBranch;
         if (selectedBranch == null)
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = conditionValue
                 ? "if expression is missing a then branch"
                 : "if expression is missing an else branch";
@@ -165,22 +197,22 @@ internal static class ComptimeEvaluator
     {
         if (match.MatchedExpression == null)
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = "match expression is missing a matched expression";
             return false;
         }
 
         if (!TryEvaluate(match.MatchedExpression, context, out var matchedValue, out reason))
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             return false;
         }
 
         foreach (var branch in match.Branches)
         {
-            if (!TryPatternMatches(branch.Pattern, matchedValue.Value, out var matches, out var bindings, out reason))
+            if (!TryPatternMatches(branch.Pattern, matchedValue, out var matches, out var bindings, out reason))
             {
-                value = new ComptimeValue(null);
+                value = ComptimeUnitValue.Instance;
                 return false;
             }
 
@@ -196,7 +228,7 @@ internal static class ComptimeEvaluator
             if (branch.Guard != null &&
                 !TryEvaluateGuard(branch.Guard, branchContext, out guardMatches, out guardedContext, out reason))
             {
-                value = new ComptimeValue(null);
+                value = ComptimeUnitValue.Instance;
                 return false;
             }
 
@@ -208,7 +240,7 @@ internal static class ComptimeEvaluator
 
             if (branch.Expression == null)
             {
-                value = new ComptimeValue(null);
+                value = ComptimeUnitValue.Instance;
                 reason = "matching comptime branch is missing a result expression";
                 return false;
             }
@@ -216,7 +248,7 @@ internal static class ComptimeEvaluator
             return TryEvaluate(branch.Expression, branchContext, out value, out reason);
         }
 
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "comptime match expression has no matching branch";
         return false;
     }
@@ -271,7 +303,7 @@ internal static class ComptimeEvaluator
                     return false;
                 }
 
-                if (!TryPatternMatches(patternGuard.Pattern, sourceValue.Value, out matches, out var guardBindings, out reason))
+                if (!TryPatternMatches(patternGuard.Pattern, sourceValue, out matches, out var guardBindings, out reason))
                 {
                     return false;
                 }
@@ -290,7 +322,7 @@ internal static class ComptimeEvaluator
                     return false;
                 }
 
-                if (guardValue.Value is not bool boolValue)
+                if (guardValue is not ComptimeBoolValue { Value: var boolValue })
                 {
                     matches = false;
                     reason = "match guard must evaluate to a comptime bool";
@@ -304,7 +336,7 @@ internal static class ComptimeEvaluator
 
     private static bool TryPatternMatches(
         Pattern? pattern,
-        object? value,
+        ComptimeValue value,
         out bool matches,
         out IReadOnlyDictionary<SymbolId, ComptimeValue> bindings,
         out string reason)
@@ -320,7 +352,14 @@ internal static class ComptimeEvaluator
                 return true;
 
             case LiteralPattern literal:
-                matches = ValuesEqual(value, literal.Value);
+                if (!ComptimeValue.TryFromLiteral(literal.Value, out var literalValue))
+                {
+                    matches = false;
+                    reason = $"literal pattern value of type '{literal.Value?.GetType().Name ?? "Unit"}' is not supported by the comptime evaluator";
+                    return false;
+                }
+
+                matches = ValuesEqual(value, literalValue);
                 return true;
 
             case VarPattern varPattern:
@@ -340,7 +379,7 @@ internal static class ComptimeEvaluator
 
                 bindings = new Dictionary<SymbolId, ComptimeValue>
                 {
-                    [varPattern.SymbolId] = new ComptimeValue(value)
+                    [varPattern.SymbolId] = value
                 };
                 matches = true;
                 return true;
@@ -369,8 +408,10 @@ internal static class ComptimeEvaluator
                 if (!TryGetInteger(value, out var intValue) ||
                     rangePattern.Start?.Value == null ||
                     rangePattern.End?.Value == null ||
-                    !TryGetInteger(rangePattern.Start.Value, out var start) ||
-                    !TryGetInteger(rangePattern.End.Value, out var end))
+                    !ComptimeValue.TryFromLiteral(rangePattern.Start.Value, out var startValue) ||
+                    !ComptimeValue.TryFromLiteral(rangePattern.End.Value, out var endValue) ||
+                    !TryGetInteger(startValue, out var start) ||
+                    !TryGetInteger(endValue, out var end))
                 {
                     matches = false;
                     reason = "only integer range patterns are supported by the phase-1 comptime evaluator";
@@ -404,6 +445,14 @@ internal static class ComptimeEvaluator
                     out bindings,
                     out reason);
 
+            case CtorPattern constructorPattern:
+                return TryConstructorPatternMatches(
+                    constructorPattern,
+                    value,
+                    out matches,
+                    out bindings,
+                    out reason);
+
             default:
                 matches = false;
                 reason = $"{normalizedPattern.GetType().Name} is not supported by the phase-1 comptime match evaluator";
@@ -416,7 +465,7 @@ internal static class ComptimeEvaluator
         bool hasRestMarker,
         Pattern? restPattern,
         IReadOnlyList<Pattern> suffixPatterns,
-        object? value,
+        ComptimeValue value,
         string sequenceKind,
         out bool matches,
         out IReadOnlyDictionary<SymbolId, ComptimeValue> bindings,
@@ -425,7 +474,7 @@ internal static class ComptimeEvaluator
         var sequenceBindings = new Dictionary<SymbolId, ComptimeValue>();
         bindings = sequenceBindings;
 
-        if (value is not ComptimeSequence sequence ||
+        if (value is not ComptimeSequenceValue sequence ||
             !IsExpectedSequenceKind(sequence.Kind, sequenceKind))
         {
             matches = false;
@@ -435,14 +484,14 @@ internal static class ComptimeEvaluator
 
         var elements = sequence.Elements;
         var minimumLength = elementPatterns.Count + suffixPatterns.Count;
-        if (!hasRestMarker && elements.Length != minimumLength)
+        if (!hasRestMarker && elements.Count != minimumLength)
         {
             matches = false;
             reason = "";
             return true;
         }
 
-        if (hasRestMarker && elements.Length < minimumLength)
+        if (hasRestMarker && elements.Count < minimumLength)
         {
             matches = false;
             reason = "";
@@ -471,7 +520,7 @@ internal static class ComptimeEvaluator
 
         for (var i = 0; i < suffixPatterns.Count; i++)
         {
-            var sourceIndex = elements.Length - suffixPatterns.Count + i;
+            var sourceIndex = elements.Count - suffixPatterns.Count + i;
             if (!TryPatternMatches(
                     suffixPatterns[i],
                     elements[sourceIndex],
@@ -498,7 +547,10 @@ internal static class ComptimeEvaluator
         if (hasRestMarker && !TryBindRestPattern(
                 restPattern,
                 sequence.Kind,
-                elements[elementPatterns.Count..(elements.Length - suffixPatterns.Count)],
+                elements
+                    .Skip(elementPatterns.Count)
+                    .Take(elements.Count - minimumLength)
+                    .ToArray(),
                 sequenceBindings,
                 out reason))
         {
@@ -511,10 +563,124 @@ internal static class ComptimeEvaluator
         return true;
     }
 
+    private static bool TryConstructorPatternMatches(
+        CtorPattern pattern,
+        ComptimeValue value,
+        out bool matches,
+        out IReadOnlyDictionary<SymbolId, ComptimeValue> bindings,
+        out string reason)
+    {
+        var constructorBindings = new Dictionary<SymbolId, ComptimeValue>();
+        bindings = constructorBindings;
+        reason = "";
+
+        if (value is not ComptimeAdtValue adtValue ||
+            !adtValue.HasSameConstructor(pattern.SymbolId, BuildConstructorDisplayName(pattern)))
+        {
+            matches = false;
+            return true;
+        }
+
+        if (pattern.PositionalPatterns.Count != adtValue.PositionalValues.Count)
+        {
+            matches = false;
+            return true;
+        }
+
+        for (var i = 0; i < pattern.PositionalPatterns.Count; i++)
+        {
+            if (!TryPatternMatches(
+                    pattern.PositionalPatterns[i],
+                    adtValue.PositionalValues[i],
+                    out var elementMatches,
+                    out var elementBindings,
+                    out reason))
+            {
+                matches = false;
+                return false;
+            }
+
+            if (!elementMatches)
+            {
+                matches = false;
+                return true;
+            }
+
+            MergePatternBindings(constructorBindings, elementBindings);
+        }
+
+        if (!pattern.HasRecordRest &&
+            pattern.NamedPatterns.Count > 0 &&
+            pattern.NamedPatterns.Count != adtValue.NamedValues.Count)
+        {
+            matches = false;
+            return true;
+        }
+
+        var namedValues = adtValue.NamedValues.ToDictionary(
+            static field => field.Name,
+            static field => field.Value,
+            StringComparer.Ordinal);
+        foreach (var fieldPattern in pattern.NamedPatterns)
+        {
+            if (!namedValues.TryGetValue(fieldPattern.FieldName, out var fieldValue) ||
+                fieldPattern.Pattern == null)
+            {
+                matches = false;
+                return true;
+            }
+
+            if (!TryPatternMatches(
+                    fieldPattern.Pattern,
+                    fieldValue,
+                    out var fieldMatches,
+                    out var fieldBindings,
+                    out reason))
+            {
+                matches = false;
+                return false;
+            }
+
+            if (!fieldMatches)
+            {
+                matches = false;
+                return true;
+            }
+
+            MergePatternBindings(constructorBindings, fieldBindings);
+        }
+
+        matches = true;
+        return true;
+    }
+
+    private static void MergePatternBindings(
+        Dictionary<SymbolId, ComptimeValue> target,
+        IReadOnlyDictionary<SymbolId, ComptimeValue> source)
+    {
+        foreach (var binding in source)
+        {
+            target[binding.Key] = binding.Value;
+        }
+    }
+
+    private static string BuildConstructorDisplayName(CtorPattern pattern)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(pattern.PackageAlias))
+        {
+            parts.Add(pattern.PackageAlias);
+        }
+
+        parts.AddRange(pattern.ModulePath);
+        parts.Add(pattern.ConstructorName);
+        return string.Join("::", parts);
+    }
+
     private static bool TryBindRestPattern(
         Pattern? restPattern,
         ComptimeSequenceKind sequenceKind,
-        object?[] restElements,
+        IReadOnlyList<ComptimeValue> restElements,
         Dictionary<SymbolId, ComptimeValue> bindings,
         out string reason)
     {
@@ -530,7 +696,7 @@ internal static class ComptimeEvaluator
                 return true;
 
             case VarPattern { BindingMode: PatternBindingMode.ByValue, SymbolId.IsValid: true } varPattern:
-                bindings[varPattern.SymbolId] = new ComptimeValue(new ComptimeSequence(sequenceKind, restElements));
+                bindings[varPattern.SymbolId] = new ComptimeSequenceValue(sequenceKind, restElements);
                 return true;
 
             case VarPattern { BindingMode: not PatternBindingMode.ByValue }:
@@ -604,19 +770,155 @@ internal static class ComptimeEvaluator
     {
         if (block.ResultExpression == null)
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = "comptime block must have a result expression";
             return false;
         }
 
-        if (block.Statements.Any(statement => !ReferenceEquals(statement, block.ResultExpression)))
+        var blockContext = context;
+        foreach (var statement in block.Statements)
         {
-            value = new ComptimeValue(null);
-            reason = "comptime block statements are not supported by the phase-1 comptime evaluator";
-            return false;
+            if (ReferenceEquals(statement, block.ResultExpression))
+            {
+                continue;
+            }
+
+            if (statement is LetDecl binding)
+            {
+                if (binding.IsMutable)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    reason = "mutable local bindings are not supported by the comptime evaluator";
+                    return false;
+                }
+
+                if (binding.Value == null || binding.Pattern == null)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    reason = "comptime local binding must have a pattern and initializer";
+                    return false;
+                }
+
+                if (!TryEvaluate(binding.Value, blockContext, out var bindingValue, out reason))
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                if (!TryPatternMatches(
+                        binding.Pattern,
+                        bindingValue,
+                        out var matches,
+                        out var bindings,
+                        out reason))
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                if (!matches)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    reason = "comptime local binding pattern did not match its initializer";
+                    return false;
+                }
+
+                blockContext = blockContext with
+                {
+                    Values = MergeValues(blockContext.Values, bindings)
+                };
+                continue;
+            }
+
+            if (!TryEvaluate(statement, blockContext, out _, out reason))
+            {
+                value = ComptimeUnitValue.Instance;
+                return false;
+            }
         }
 
-        return TryEvaluate(block.ResultExpression, context, out value, out reason);
+        return TryEvaluate(block.ResultExpression, blockContext, out value, out reason);
+    }
+
+    private static bool TryEvaluateConstructor(
+        CtorExpr constructor,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        value = ComptimeUnitValue.Instance;
+        reason = "";
+
+        var positionalValues = new List<ComptimeValue>(constructor.PositionalArgs.Count);
+        foreach (var argument in constructor.PositionalArgs)
+        {
+            if (!TryEvaluate(argument, context, out var argumentValue, out reason))
+            {
+                return false;
+            }
+
+            positionalValues.Add(argumentValue);
+        }
+
+        var namedValues = new List<ComptimeNamedValue>();
+        if (constructor.UpdateBase != null)
+        {
+            if (!TryEvaluate(constructor.UpdateBase, context, out var baseValue, out reason))
+            {
+                return false;
+            }
+
+            if (baseValue is not ComptimeAdtValue baseAdt ||
+                !baseAdt.HasSameConstructor(constructor.SymbolId, BuildConstructorDisplayName(constructor)))
+            {
+                reason = "comptime constructor update base must have the same constructor";
+                return false;
+            }
+
+            positionalValues.AddRange(baseAdt.PositionalValues);
+            namedValues.AddRange(baseAdt.NamedValues);
+        }
+
+        foreach (var field in constructor.NamedArgs)
+        {
+            if (field.Value == null)
+            {
+                reason = $"comptime constructor field '{field.FieldName}' is missing a value";
+                return false;
+            }
+
+            if (!TryEvaluate(field.Value, context, out var fieldValue, out reason))
+            {
+                return false;
+            }
+
+            var existingIndex = namedValues.FindIndex(existing =>
+                string.Equals(existing.Name, field.FieldName, StringComparison.Ordinal));
+            var namedValue = new ComptimeNamedValue(field.FieldName, fieldValue);
+            if (existingIndex >= 0)
+            {
+                namedValues[existingIndex] = namedValue;
+            }
+            else
+            {
+                namedValues.Add(namedValue);
+            }
+        }
+
+        value = new ComptimeAdtValue(
+            constructor.SymbolId,
+            BuildConstructorDisplayName(constructor),
+            positionalValues,
+            namedValues);
+        return true;
+    }
+
+    private static string BuildConstructorDisplayName(CtorExpr constructor)
+    {
+        var parts = constructor.ConstructorPath?.ToQualifiedPathParts() ?? [];
+        return parts.Count > 0
+            ? string.Join("::", parts)
+            : constructor.ConstructorName;
     }
 
     private static bool TryEvaluateCall(
@@ -625,7 +927,7 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         if (call.NamedArgs.Count > 0)
         {
             reason = "named arguments are not supported by the phase-1 comptime call evaluator";
@@ -686,7 +988,7 @@ internal static class ComptimeEvaluator
     {
         if (TryEvaluateFunctionBranchesWithFirstArgument(
                 function,
-                argValues.Count == 0 ? [new ComptimeValue("()")] : argValues,
+                argValues.Count == 0 ? [ComptimeUnitValue.Instance] : argValues,
                 context with { CallDepth = context.CallDepth + 1 },
                 out value,
                 out reason))
@@ -700,9 +1002,9 @@ internal static class ComptimeEvaluator
             return false;
         }
 
-        var tupleArg = new ComptimeValue(new ComptimeSequence(
+        var tupleArg = new ComptimeSequenceValue(
             ComptimeSequenceKind.Tuple,
-            argValues.Select(static arg => arg.Value).ToArray()));
+            argValues.ToArray());
         return TryEvaluateFunctionBranchesWithFirstArgument(
             function,
             [tupleArg],
@@ -718,12 +1020,12 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "";
         var effectiveArg = argValues[0];
         foreach (var branch in function.Body)
         {
-            if (!TryPatternMatches(branch.Pattern, effectiveArg.Value, out var matches, out var bindings, out reason))
+            if (!TryPatternMatches(branch.Pattern, effectiveArg, out var matches, out var bindings, out reason))
             {
                 return false;
             }
@@ -782,7 +1084,7 @@ internal static class ComptimeEvaluator
 
         if (expression is not LambdaExpr lambda)
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = $"{expression.GetType().Name} cannot accept remaining comptime call arguments";
             return false;
         }
@@ -797,7 +1099,7 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "";
         if (lambda.Parameters.Count == 0)
         {
@@ -814,7 +1116,7 @@ internal static class ComptimeEvaluator
         var lambdaValues = context.Values;
         for (var i = 0; i < lambda.Parameters.Count; i++)
         {
-            if (!TryPatternMatches(lambda.Parameters[i], argValues[i].Value, out var matches, out var bindings, out reason))
+            if (!TryPatternMatches(lambda.Parameters[i], argValues[i], out var matches, out var bindings, out reason))
             {
                 return false;
             }
@@ -872,19 +1174,19 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        var elements = new List<object?>(tuple.Elements.Count);
+        var elements = new List<ComptimeValue>(tuple.Elements.Count);
         foreach (var element in tuple.Elements)
         {
             if (!TryEvaluate(element, context, out var elementValue, out reason))
             {
-                value = new ComptimeValue(null);
+                value = ComptimeUnitValue.Instance;
                 return false;
             }
 
-            elements.Add(elementValue.Value);
+            elements.Add(elementValue);
         }
 
-        value = new ComptimeValue(new ComptimeSequence(ComptimeSequenceKind.Tuple, elements.ToArray()));
+        value = new ComptimeSequenceValue(ComptimeSequenceKind.Tuple, elements);
         reason = "";
         return true;
     }
@@ -897,24 +1199,24 @@ internal static class ComptimeEvaluator
     {
         if (list.HasRest)
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             reason = "list spread is not supported by the phase-1 comptime evaluator";
             return false;
         }
 
-        var elements = new List<object?>(list.Elements.Count);
+        var elements = new List<ComptimeValue>(list.Elements.Count);
         foreach (var element in list.Elements)
         {
             if (!TryEvaluate(element, context, out var elementValue, out reason))
             {
-                value = new ComptimeValue(null);
+                value = ComptimeUnitValue.Instance;
                 return false;
             }
 
-            elements.Add(elementValue.Value);
+            elements.Add(elementValue);
         }
 
-        value = new ComptimeValue(new ComptimeSequence(ComptimeSequenceKind.List, elements.ToArray()));
+        value = new ComptimeSequenceValue(ComptimeSequenceKind.List, elements);
         reason = "";
         return true;
     }
@@ -927,26 +1229,26 @@ internal static class ComptimeEvaluator
     {
         if (!TryEvaluate(unary.Operand, context, out var operand, out reason))
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             return false;
         }
 
         switch (unary.Operator)
         {
-            case UnaryOp.Negate when TryGetInteger(operand.Value, out var intValue):
-                value = new ComptimeValue(-intValue);
+            case UnaryOp.Negate when TryGetInteger(operand, out var intValue):
+                value = new ComptimeIntegerValue(-intValue);
                 return Succeed(out reason);
 
-            case UnaryOp.Negate when TryGetFloat(operand.Value, out var floatValue):
-                value = new ComptimeValue(-floatValue);
+            case UnaryOp.Negate when TryGetFloat(operand, out var floatValue):
+                value = new ComptimeFloatValue(-floatValue);
                 return Succeed(out reason);
 
-            case UnaryOp.Not when operand.Value is bool boolValue:
-                value = new ComptimeValue(!boolValue);
+            case UnaryOp.Not when operand is ComptimeBoolValue { Value: var boolValue }:
+                value = new ComptimeBoolValue(!boolValue);
                 return Succeed(out reason);
 
             default:
-                value = new ComptimeValue(null);
+                value = ComptimeUnitValue.Instance;
                 reason = $"unary operator '{unary.Operator.ToSymbol()}' is not supported for comptime operand";
                 return false;
         }
@@ -961,43 +1263,51 @@ internal static class ComptimeEvaluator
         if (!TryEvaluate(binary.Left, context, out var left, out reason) ||
             !TryEvaluate(binary.Right, context, out var right, out reason))
         {
-            value = new ComptimeValue(null);
+            value = ComptimeUnitValue.Instance;
             return false;
         }
 
-        if (TryGetInteger(left.Value, out _) && TryGetInteger(right.Value, out _))
+        if (TryGetInteger(left, out _) && TryGetInteger(right, out _))
         {
-            return TryEvaluateIntegerBinary(binary.Operator, left.Value, right.Value, out value, out reason);
+            return TryEvaluateIntegerBinary(binary.Operator, left, right, out value, out reason);
         }
 
-        if (TryGetFloat(left.Value, out _) && TryGetFloat(right.Value, out _))
+        if (TryGetFloat(left, out _) && TryGetFloat(right, out _))
         {
-            return TryEvaluateFloatBinary(binary.Operator, left.Value, right.Value, out value, out reason);
+            return TryEvaluateFloatBinary(binary.Operator, left, right, out value, out reason);
         }
 
-        if (left.Value is bool && right.Value is bool)
+        if (left is ComptimeBoolValue && right is ComptimeBoolValue)
         {
-            return TryEvaluateBoolBinary(binary.Operator, left.Value, right.Value, out value, out reason);
+            return TryEvaluateBoolBinary(binary.Operator, left, right, out value, out reason);
         }
 
-        if (left.Value is string && right.Value is string)
+        if (left is ComptimeStringValue && right is ComptimeStringValue)
         {
-            return TryEvaluateStringBinary(binary.Operator, left.Value, right.Value, out value, out reason);
+            return TryEvaluateStringBinary(binary.Operator, left, right, out value, out reason);
         }
 
-        value = new ComptimeValue(null);
+        if (binary.Operator is BinaryOp.Equal or BinaryOp.NotEqual)
+        {
+            var equals = ValuesEqual(left, right);
+            value = new ComptimeBoolValue(binary.Operator == BinaryOp.Equal ? equals : !equals);
+            reason = "";
+            return true;
+        }
+
+        value = ComptimeUnitValue.Instance;
         reason = $"binary operator '{binary.Operator.ToSymbol()}' is not supported for comptime operands";
         return false;
     }
 
     private static bool TryEvaluateIntegerBinary(
         BinaryOp op,
-        object? left,
-        object? right,
+        ComptimeValue left,
+        ComptimeValue right,
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "";
         if (!TryGetInteger(left, out var a) || !TryGetInteger(right, out var b))
         {
@@ -1007,13 +1317,13 @@ internal static class ComptimeEvaluator
         switch (op)
         {
             case BinaryOp.Add:
-                value = new ComptimeValue(a + b);
+                value = new ComptimeIntegerValue(a + b);
                 return true;
             case BinaryOp.Subtract:
-                value = new ComptimeValue(a - b);
+                value = new ComptimeIntegerValue(a - b);
                 return true;
             case BinaryOp.Multiply:
-                value = new ComptimeValue(a * b);
+                value = new ComptimeIntegerValue(a * b);
                 return true;
             case BinaryOp.Divide:
                 if (b == 0)
@@ -1022,7 +1332,7 @@ internal static class ComptimeEvaluator
                     return false;
                 }
 
-                value = new ComptimeValue(a / b);
+                value = new ComptimeIntegerValue(a / b);
                 return true;
             case BinaryOp.Modulo:
                 if (b == 0)
@@ -1031,25 +1341,25 @@ internal static class ComptimeEvaluator
                     return false;
                 }
 
-                value = new ComptimeValue(a % b);
+                value = new ComptimeIntegerValue(a % b);
                 return true;
             case BinaryOp.Less:
-                value = new ComptimeValue(a < b);
+                value = new ComptimeBoolValue(a < b);
                 return true;
             case BinaryOp.Greater:
-                value = new ComptimeValue(a > b);
+                value = new ComptimeBoolValue(a > b);
                 return true;
             case BinaryOp.LessEqual:
-                value = new ComptimeValue(a <= b);
+                value = new ComptimeBoolValue(a <= b);
                 return true;
             case BinaryOp.GreaterEqual:
-                value = new ComptimeValue(a >= b);
+                value = new ComptimeBoolValue(a >= b);
                 return true;
             case BinaryOp.Equal:
-                value = new ComptimeValue(a == b);
+                value = new ComptimeBoolValue(a == b);
                 return true;
             case BinaryOp.NotEqual:
-                value = new ComptimeValue(a != b);
+                value = new ComptimeBoolValue(a != b);
                 return true;
             default:
                 reason = $"binary operator '{op.ToSymbol()}' is not supported for comptime integer operands";
@@ -1059,12 +1369,12 @@ internal static class ComptimeEvaluator
 
     private static bool TryEvaluateFloatBinary(
         BinaryOp op,
-        object? left,
-        object? right,
+        ComptimeValue left,
+        ComptimeValue right,
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "";
         if (!TryGetFloat(left, out var a) || !TryGetFloat(right, out var b))
         {
@@ -1074,13 +1384,13 @@ internal static class ComptimeEvaluator
         switch (op)
         {
             case BinaryOp.Add:
-                value = new ComptimeValue(a + b);
+                value = new ComptimeFloatValue(a + b);
                 return true;
             case BinaryOp.Subtract:
-                value = new ComptimeValue(a - b);
+                value = new ComptimeFloatValue(a - b);
                 return true;
             case BinaryOp.Multiply:
-                value = new ComptimeValue(a * b);
+                value = new ComptimeFloatValue(a * b);
                 return true;
             case BinaryOp.Divide:
                 if (b == 0)
@@ -1089,25 +1399,25 @@ internal static class ComptimeEvaluator
                     return false;
                 }
 
-                value = new ComptimeValue(a / b);
+                value = new ComptimeFloatValue(a / b);
                 return true;
             case BinaryOp.Less:
-                value = new ComptimeValue(a < b);
+                value = new ComptimeBoolValue(a < b);
                 return true;
             case BinaryOp.Greater:
-                value = new ComptimeValue(a > b);
+                value = new ComptimeBoolValue(a > b);
                 return true;
             case BinaryOp.LessEqual:
-                value = new ComptimeValue(a <= b);
+                value = new ComptimeBoolValue(a <= b);
                 return true;
             case BinaryOp.GreaterEqual:
-                value = new ComptimeValue(a >= b);
+                value = new ComptimeBoolValue(a >= b);
                 return true;
             case BinaryOp.Equal:
-                value = new ComptimeValue(a.Equals(b));
+                value = new ComptimeBoolValue(a.Equals(b));
                 return true;
             case BinaryOp.NotEqual:
-                value = new ComptimeValue(!a.Equals(b));
+                value = new ComptimeBoolValue(!a.Equals(b));
                 return true;
             default:
                 reason = $"binary operator '{op.ToSymbol()}' is not supported for comptime float operands";
@@ -1117,14 +1427,15 @@ internal static class ComptimeEvaluator
 
     private static bool TryEvaluateBoolBinary(
         BinaryOp op,
-        object? left,
-        object? right,
+        ComptimeValue left,
+        ComptimeValue right,
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "";
-        if (left is not bool a || right is not bool b)
+        if (left is not ComptimeBoolValue { Value: var a } ||
+            right is not ComptimeBoolValue { Value: var b })
         {
             return false;
         }
@@ -1132,16 +1443,16 @@ internal static class ComptimeEvaluator
         switch (op)
         {
             case BinaryOp.And:
-                value = new ComptimeValue(a && b);
+                value = new ComptimeBoolValue(a && b);
                 return true;
             case BinaryOp.Or:
-                value = new ComptimeValue(a || b);
+                value = new ComptimeBoolValue(a || b);
                 return true;
             case BinaryOp.Equal:
-                value = new ComptimeValue(a == b);
+                value = new ComptimeBoolValue(a == b);
                 return true;
             case BinaryOp.NotEqual:
-                value = new ComptimeValue(a != b);
+                value = new ComptimeBoolValue(a != b);
                 return true;
             default:
                 reason = $"binary operator '{op.ToSymbol()}' is not supported for comptime bool operands";
@@ -1151,14 +1462,15 @@ internal static class ComptimeEvaluator
 
     private static bool TryEvaluateStringBinary(
         BinaryOp op,
-        object? left,
-        object? right,
+        ComptimeValue left,
+        ComptimeValue right,
         out ComptimeValue value,
         out string reason)
     {
-        value = new ComptimeValue(null);
+        value = ComptimeUnitValue.Instance;
         reason = "";
-        if (left is not string a || right is not string b)
+        if (left is not ComptimeStringValue { Value: var a } ||
+            right is not ComptimeStringValue { Value: var b })
         {
             return false;
         }
@@ -1167,13 +1479,13 @@ internal static class ComptimeEvaluator
         {
             case BinaryOp.Concat:
             case BinaryOp.Add:
-                value = new ComptimeValue(a + b);
+                value = new ComptimeStringValue(a + b);
                 return true;
             case BinaryOp.Equal:
-                value = new ComptimeValue(string.Equals(a, b, StringComparison.Ordinal));
+                value = new ComptimeBoolValue(string.Equals(a, b, StringComparison.Ordinal));
                 return true;
             case BinaryOp.NotEqual:
-                value = new ComptimeValue(!string.Equals(a, b, StringComparison.Ordinal));
+                value = new ComptimeBoolValue(!string.Equals(a, b, StringComparison.Ordinal));
                 return true;
             default:
                 reason = $"binary operator '{op.ToSymbol()}' is not supported for comptime string operands";
@@ -1181,42 +1493,28 @@ internal static class ComptimeEvaluator
         }
     }
 
-    private static bool TryGetInteger(object? value, out long result)
+    private static bool TryGetInteger(ComptimeValue value, out long result)
     {
-        switch (value)
+        if (value is ComptimeIntegerValue integer)
         {
-            case byte v:
-                result = v;
-                return true;
-            case short v:
-                result = v;
-                return true;
-            case int v:
-                result = v;
-                return true;
-            case long v:
-                result = v;
-                return true;
-            default:
-                result = 0;
-                return false;
+            result = integer.Value;
+            return true;
         }
+
+        result = 0;
+        return false;
     }
 
-    private static bool TryGetFloat(object? value, out double result)
+    private static bool TryGetFloat(ComptimeValue value, out double result)
     {
-        switch (value)
+        if (value is ComptimeFloatValue floating)
         {
-            case float v:
-                result = v;
-                return true;
-            case double v:
-                result = v;
-                return true;
-            default:
-                result = 0;
-                return false;
+            result = floating.Value;
+            return true;
         }
+
+        result = 0;
+        return false;
     }
 
     private static bool Succeed(out string reason)
@@ -1225,7 +1523,7 @@ internal static class ComptimeEvaluator
         return true;
     }
 
-    private static bool ValuesEqual(object? left, object? right)
+    private static bool ValuesEqual(ComptimeValue left, ComptimeValue right)
     {
         if (TryGetInteger(left, out var leftInt) && TryGetInteger(right, out var rightInt))
         {
@@ -1237,6 +1535,6 @@ internal static class ComptimeEvaluator
             return leftFloat.Equals(rightFloat);
         }
 
-        return Equals(left, right);
+        return left.StructuralEquals(right);
     }
 }

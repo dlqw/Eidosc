@@ -166,6 +166,30 @@ public sealed partial class TypeInferer
 
     internal IReadOnlyDictionary<SymbolId, ComptimeValue> ComptimeValues => _comptimeValues;
 
+    internal bool TryGetConstructorNamedFieldOrder(
+        SymbolId constructorId,
+        out IReadOnlyList<string> fieldNames)
+    {
+        fieldNames = [];
+        if (!_ctorTypeBindings.TryGetValue(constructorId, out var binding) ||
+            !_adtDefinitionsBySymbol.TryGetValue(binding.AdtId, out var adt))
+        {
+            return false;
+        }
+
+        var constructor = adt.Constructors.FirstOrDefault(candidate => candidate.SymbolId == constructorId);
+        if (constructor == null)
+        {
+            return false;
+        }
+
+        fieldNames = constructor.NamedArgs
+            .Where(static field => !string.IsNullOrWhiteSpace(field.Name))
+            .Select(static field => field.Name)
+            .ToArray();
+        return true;
+    }
+
     public bool TypeAnalysisIncomplete { get; private set; }
 
     public string? TypeAnalysisIncompleteReason { get; private set; }
