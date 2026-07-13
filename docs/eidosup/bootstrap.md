@@ -135,8 +135,11 @@ LLVM directory to PATH. It keeps `EIDOS_HOME`, removes the old global
 change when the default selector moves.
 
 The release clean-install gate compares direct and shim exit codes and measures
-the median incremental shim startup cost after warmup. The current release
-baseline is at most 200 ms on all six native release runners. See
+the median incremental shim startup cost after warmup. The current native-runner
+upper bounds are 200 ms for Linux x64/ARM64 and macOS ARM64, 300 ms for Windows
+x64/ARM64, and 600 ms for macOS x64. The gate prints the direct, shim, overhead,
+and applicable baseline medians for every RID so future changes remain
+measurable rather than relying on a cross-runner uniform assumption. See
 [Shim architecture and forwarding contract](shim.md) for the detailed contract.
 
 ## LLVM dependency providers
