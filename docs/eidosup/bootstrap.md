@@ -137,7 +137,7 @@ change when the default selector moves.
 The release clean-install gate compares direct and shim exit codes and measures
 the median incremental shim startup cost after warmup. The current native-runner
 upper bounds are 200 ms for Linux ARM64, 250 ms for Linux x64, 300 ms for
-Windows x64/ARM64 and macOS ARM64, and 600 ms for macOS x64. The gate prints the
+Windows x64/ARM64 and macOS ARM64, and 800 ms for macOS x64. The gate prints the
 direct, shim, overhead, and applicable baseline medians for every RID so future
 changes remain measurable rather than relying on a cross-runner uniform
 assumption. See

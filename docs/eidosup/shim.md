@@ -72,7 +72,7 @@ post-warmup startup samples.
 The incremental median gate uses native-runner upper bounds that account for
 the full activation-time manifest verification and the runner's process-start
 cost: 200 ms for Linux ARM64, 250 ms for Linux x64, 300 ms for Windows x64/ARM64
-and macOS ARM64, and 600 ms for macOS x64. Every job prints its direct, shim,
+and macOS ARM64, and 800 ms for macOS x64. Every job prints its direct, shim,
 overhead, and baseline medians. Eidosup release artifacts use ReadyToRun
 compilation, and all six RID artifacts use the same multi-call source path
 before publication.
