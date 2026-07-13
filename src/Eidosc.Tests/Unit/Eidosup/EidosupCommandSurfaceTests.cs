@@ -51,6 +51,22 @@ public sealed class EidosupCommandSurfaceTests
         Assert.Empty(result.Errors);
     }
 
+    [Theory]
+    [InlineData("component list --installed --toolchain preview --json")]
+    [InlineData("component add eidos-docs --toolchain preview --dry-run")]
+    [InlineData("component remove eidos-docs --toolchain preview --dry-run")]
+    [InlineData("target list --installed --toolchain preview --json")]
+    [InlineData("target add linux-arm64 --toolchain preview --dry-run")]
+    [InlineData("target remove linux-arm64 --toolchain preview --dry-run")]
+    [InlineData("set profile complete --toolchain preview --dry-run")]
+    [InlineData("doc compiler --toolchain preview --path")]
+    public void CreateParser_AcceptsDocumentedWp3Commands(string commandLine)
+    {
+        var result = global::Eidosup.Program.CreateParser().Parse(Split(commandLine));
+
+        Assert.Empty(result.Errors);
+    }
+
     [Fact]
     public void CreateParser_RejectsUnknownColorMode()
     {

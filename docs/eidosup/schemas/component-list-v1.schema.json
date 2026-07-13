@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eidos.dev/schemas/eidosup/component-list-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "selector", "toolchainId", "profile", "components"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "selector": { "type": "string", "minLength": 1 },
+    "toolchainId": { "type": "string", "minLength": 1 },
+    "profile": { "enum": ["minimal", "default", "complete"] },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "version", "required", "target", "installed", "explicit"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "version": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean" },
+          "target": { "type": ["string", "null"] },
+          "installed": { "type": "boolean" },
+          "explicit": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

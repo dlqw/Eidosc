@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <EidoscVersionPrefix>0.4.0</EidoscVersionPrefix>
-    <EidoscVersionSuffix>alpha.2</EidoscVersionSuffix>
+    <EidoscVersionSuffix>alpha.3</EidoscVersionSuffix>
     <EidoscVersion>$(EidoscVersionPrefix)</EidoscVersion>
     <EidoscVersion Condition="'$(EidoscVersionSuffix)' != ''">$(EidoscVersionPrefix)-$(EidoscVersionSuffix)</EidoscVersion>
     <Version>$(EidoscVersion)</Version>

@@ -14,6 +14,12 @@ public sealed class ReleaseAssetLocator
         return $"eidosc-v{normalizedVersion}-{platform.Rid}.zip";
     }
 
+    public string GetToolchainManifestAssetName(string version, PlatformContext platform)
+    {
+        var normalizedVersion = NormalizeVersion(version);
+        return $"eidos-toolchain-v{normalizedVersion}-{platform.Rid}.json";
+    }
+
     public EidosReleaseAsset ResolveEidoscBundleAsset(EidosReleaseInfo release, PlatformContext platform)
     {
         var expected = GetEidoscBundleAssetName(release.NormalizedVersion, platform);
@@ -23,6 +29,17 @@ public sealed class ReleaseAssetLocator
                 EidosupExitCodes.MissingAsset,
                 $"Release '{release.TagName}' does not contain asset '{expected}'.",
                 "Select a release that publishes an Eidosc bundle for the detected host RID.");
+    }
+
+    public EidosReleaseAsset ResolveToolchainManifestAsset(EidosReleaseInfo release, PlatformContext platform)
+    {
+        var expected = GetToolchainManifestAssetName(release.NormalizedVersion, platform);
+        return release.Assets.FirstOrDefault(asset => string.Equals(asset.Name, expected, StringComparison.Ordinal))
+            ?? throw new EidosupException(
+                EidosupErrorCode.MissingReleaseAsset,
+                EidosupExitCodes.MissingAsset,
+                $"Release '{release.TagName}' does not contain asset '{expected}'.",
+                "Select a release that publishes a signed component manifest for the detected host RID.");
     }
 
     public EidosReleaseAsset ResolveChecksumAsset(EidosReleaseInfo release) =>

@@ -1,3 +1,5 @@
+using Eidosup.Installation;
+
 namespace Eidosup.Toolchains;
 
 public sealed record ToolchainState(
@@ -14,7 +16,7 @@ public sealed record ToolchainState(
     IReadOnlyList<CustomToolchainState> CustomToolchains,
     IReadOnlyList<ToolchainOverrideState> Overrides)
 {
-    public const int CurrentSchema = 2;
+    public const int CurrentSchema = 3;
 
     public static ToolchainState Empty(DateTimeOffset updatedAt) => new(
         CurrentSchema,
@@ -49,13 +51,19 @@ public sealed record InstalledToolchainState(
     string Id,
     string Version,
     string Rid,
-    string ManifestSha256,
+    string IdentitySha256,
+    string CompositionSha256,
     string InstallManifestSha256,
+    string DistributionManifestName,
+    string DistributionManifestSha256,
     string ReleaseTag,
     string Source,
-    string AssetName,
-    string AssetSha256,
-    long AssetSize,
+    string Profile,
+    IReadOnlyList<string> ExplicitComponents,
+    IReadOnlyList<string> ExplicitTargets,
+    IReadOnlyList<InstalledComponent> Components,
+    IReadOnlyList<string> Targets,
+    IReadOnlyList<InstalledArtifact> Artifacts,
     DateTimeOffset InstalledAt);
 
 public enum ToolchainSelectorKind
@@ -136,10 +144,37 @@ internal sealed record ToolchainStateV1(
     int Schema,
     long Revision,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<InstalledToolchainState> Toolchains,
+    IReadOnlyList<LegacyInstalledToolchainState> Toolchains,
     IReadOnlyList<ToolchainSelectorState> Selectors,
     ToolchainDefaultState? Default,
     bool DefaultConfigured,
     IReadOnlyList<ToolchainActivationState> ActivationHistory,
     IReadOnlyList<ToolchainTransactionState> Transactions,
     IReadOnlyList<UnmanagedToolchainState> UnmanagedDirectories);
+
+internal sealed record ToolchainStateV2(
+    int Schema,
+    long Revision,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<LegacyInstalledToolchainState> Toolchains,
+    IReadOnlyList<ToolchainSelectorState> Selectors,
+    ToolchainDefaultState? Default,
+    bool DefaultConfigured,
+    IReadOnlyList<ToolchainActivationState> ActivationHistory,
+    IReadOnlyList<ToolchainTransactionState> Transactions,
+    IReadOnlyList<UnmanagedToolchainState> UnmanagedDirectories,
+    IReadOnlyList<CustomToolchainState> CustomToolchains,
+    IReadOnlyList<ToolchainOverrideState> Overrides);
+
+internal sealed record LegacyInstalledToolchainState(
+    string Id,
+    string Version,
+    string Rid,
+    string ManifestSha256,
+    string InstallManifestSha256,
+    string ReleaseTag,
+    string Source,
+    string AssetName,
+    string AssetSha256,
+    long AssetSize,
+    DateTimeOffset InstalledAt);

@@ -39,7 +39,9 @@ if ($metadata.schemaVersion -ne 1 -or
 $rids = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "win-arm64", "win-x64")
 $expectedNames = if ($Product -eq "eidosc")
 {
-    @($rids | ForEach-Object { "eidosc-v$Version-$_.zip" }) + @("Eidosc.Cli.$Version.nupkg")
+    @($rids | ForEach-Object { "eidosc-v$Version-$_.zip" }) +
+    @($rids | ForEach-Object { "eidos-toolchain-v$Version-$_.json" }) +
+    @("Eidosc.Cli.$Version.nupkg")
 }
 else
 {
@@ -198,6 +200,86 @@ if ($Product -eq "eidosc")
             if (@($archive.Entries | Where-Object { $_.FullName -ceq $executable }).Count -ne 1)
             {
                 throw "Archive '$name' does not contain exactly one root '$executable' executable."
+            }
+
+            $toolchainManifestName = "eidos-toolchain-v$Version-$rid.json"
+            $toolchainManifest = Get-Content -Raw -LiteralPath (Join-Path $assetRoot $toolchainManifestName) | ConvertFrom-Json
+            if ($toolchainManifest.schema -ne 1 -or
+                $toolchainManifest.toolchain -cne "eidosc-$Version-$rid" -or
+                $toolchainManifest.host -cne $rid -or
+                $toolchainManifest.eidosc.version -cne $Version -or
+                $toolchainManifest.eidosc.commit -cne $CommitSha.ToLowerInvariant())
+            {
+                throw "Toolchain manifest '$toolchainManifestName' has invalid identity."
+            }
+
+            $components = @($toolchainManifest.components)
+            $componentIds = @($components.id)
+            $expectedComponentIds = @("eidosc-core", "eidos-std", "eidos-docs", "eidos-bindgen") + @($rids | ForEach-Object { "eidos-runtime@$_" })
+            if ($components.Count -ne $expectedComponentIds.Count -or
+                @($expectedComponentIds | Where-Object { $_ -cnotin $componentIds }).Count -ne 0)
+            {
+                throw "Toolchain manifest '$toolchainManifestName' has an incomplete component set."
+            }
+            $hostExecutablePath = if ($rid.StartsWith("win-", [StringComparison]::Ordinal)) { "eidosc.exe" } else { "eidosc" }
+            $bindgenExecutablePath = if ($rid.StartsWith("win-", [StringComparison]::Ordinal)) {
+                "tools/eidos-bindgen/eidos-bindgen.exe"
+            } else {
+                "tools/eidos-bindgen/eidos-bindgen"
+            }
+
+            $ownedPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach ($component in $components)
+            {
+                if ($component.artifact.name -cne $name -or
+                    $component.artifact.size -ne (Get-Item -LiteralPath $path).Length -or
+                    $component.artifact.sha256 -cne $checksums[$name])
+                {
+                    throw "Component '$($component.id)' is not bound to '$name'."
+                }
+
+                foreach ($ownedFile in @($component.files))
+                {
+                    $expectedExecutable = $ownedFile.path -ceq $hostExecutablePath -or $ownedFile.path -ceq $bindgenExecutablePath
+                    if ([bool]$ownedFile.executable -ne $expectedExecutable)
+                    {
+                        throw "Owned file '$($ownedFile.path)' has incorrect executable metadata."
+                    }
+                    if (-not $ownedPaths.Add([string]$ownedFile.path))
+                    {
+                        throw "Toolchain manifest '$toolchainManifestName' has duplicate ownership for '$($ownedFile.path)'."
+                    }
+                    $entry = @($archive.Entries | Where-Object { $_.FullName -ceq $ownedFile.path })
+                    if ($entry.Count -ne 1 -or $entry[0].Length -ne $ownedFile.size)
+                    {
+                        throw "Owned file '$($ownedFile.path)' is missing or has the wrong size in '$name'."
+                    }
+                    $entryStream = $entry[0].Open()
+                    try
+                    {
+                        $sha = [Security.Cryptography.SHA256]::Create()
+                        try { $entryDigest = [Convert]::ToHexString($sha.ComputeHash($entryStream)).ToLowerInvariant() }
+                        finally { $sha.Dispose() }
+                    }
+                    finally
+                    {
+                        $entryStream.Dispose()
+                    }
+                    if ($entryDigest -cne $ownedFile.sha256)
+                    {
+                        throw "Owned file '$($ownedFile.path)' hash does not match '$toolchainManifestName'."
+                    }
+                }
+            }
+            if (-not $ownedPaths.SetEquals($filePaths))
+            {
+                throw "Toolchain manifest '$toolchainManifestName' does not own the exact archive file set."
+            }
+
+            $profileNames = @($toolchainManifest.profiles.name | Sort-Object)
+            if (($profileNames -join ',') -cne 'complete,default,minimal' -or @($toolchainManifest.targets).Count -ne $rids.Count)
+            {
+                throw "Toolchain manifest '$toolchainManifestName' has invalid profiles or targets."
             }
         }
         finally

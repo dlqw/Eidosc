@@ -283,6 +283,7 @@ public static class WellKnownStrings
     public static class EnvVars
     {
         public const string RuntimePath = "EIDOS_RUNTIME_PATH";
+        public const string TargetsPath = "EIDOS_TARGETS_PATH";
         public const string ExtraLdFlags = "EIDOS_RUNTIME_EXTRA_LDFLAGS";
         public const string ExtraCFlags = "EIDOS_RUNTIME_EXTRA_CFLAGS";
     }

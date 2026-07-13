@@ -319,7 +319,7 @@ internal sealed class NameLookupService
             return false;
         }
 
-        return filePath.Replace('\\', '/').Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private string BuildAmbiguousValueImportDiagnostic(

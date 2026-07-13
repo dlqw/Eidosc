@@ -8,7 +8,8 @@ namespace Eidosup.Configuration;
 public sealed record ToolchainSelection(
     ToolchainSelectorState Selector,
     ToolchainSelectionSource Source,
-    string? SourcePath);
+    string? SourcePath,
+    ProjectToolchainConfiguration? ProjectConfiguration = null);
 
 public sealed class ToolchainSelectionResolver
 {
@@ -49,7 +50,8 @@ public sealed class ToolchainSelectionResolver
                     state,
                     configuration.Toolchain.Canonical,
                     ToolchainSelectionSource.ProjectFile,
-                    configuration.FilePath);
+                    configuration.FilePath,
+                    configuration);
             }
 
             var overrideState = state.Overrides.SingleOrDefault(candidate =>
@@ -84,7 +86,8 @@ public sealed class ToolchainSelectionResolver
         ToolchainState state,
         string selector,
         ToolchainSelectionSource source,
-        string? sourcePath)
+        string? sourcePath,
+        ProjectToolchainConfiguration? projectConfiguration = null)
     {
         var selected = state.Selectors.SingleOrDefault(candidate =>
             string.Equals(candidate.Selector, selector, StringComparison.Ordinal));
@@ -96,10 +99,14 @@ public sealed class ToolchainSelectionResolver
                 $"Toolchain selector '{selector}' selected by {Describe(source, sourcePath)} is not installed or linked.",
                 $"Run 'eidosup toolchain install {selector}' or change the selecting configuration.");
             exception.Data["selector"] = selector;
+            if (projectConfiguration != null)
+            {
+                exception.Data["projectConfiguration"] = projectConfiguration;
+            }
             throw exception;
         }
 
-        return new ToolchainSelection(selected, source, sourcePath);
+        return new ToolchainSelection(selected, source, sourcePath, projectConfiguration);
     }
 
     private static IEnumerable<string> EnumerateAncestors(string workingDirectory)
@@ -125,7 +132,7 @@ public sealed class ToolchainSelectionResolver
         EidosupErrorCode.InvalidArgument,
         EidosupExitCodes.InvalidArgument,
         $"EIDOSUP_TOOLCHAIN value '{value}' contains leading or trailing whitespace.",
-        "Set EIDOSUP_TOOLCHAIN to a canonical selector such as preview, 0.4.0-alpha.2, or custom:local.");
+        "Set EIDOSUP_TOOLCHAIN to a canonical selector such as preview, 0.4.0-alpha.3, or custom:local.");
 
     private static EidosupException Corrupt(string message) => new(
         EidosupErrorCode.StateCorrupt,

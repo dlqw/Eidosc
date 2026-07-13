@@ -225,7 +225,7 @@ try
     }
 
     $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-    if ($state.schema -ne 1)
+    if ($state.schema -ne 3)
     {
         throw "Installed toolchain state uses unexpected schema '$($state.schema)'."
     }
@@ -239,6 +239,7 @@ try
     }
 
     $toolchainId = [string]$matches[0].id
+    $initialToolchainId = $toolchainId
     if ($toolchainId -notmatch '^eidosc-[0-9A-Za-z.+-]+-(?:win|linux|osx)-(?:x64|arm64)-[0-9a-f]{64}$')
     {
         throw "Registered toolchain ID '$toolchainId' is invalid."
@@ -284,6 +285,117 @@ try
     & $manager run $Version --install-root $installRoot -- eidosc --version *> $null
     if ($LASTEXITCODE -ne 0) { throw "Eidosup run failed for the exact-version toolchain." }
 
+    $initialManifestPath = Join-Path $installRoot "toolchains/$initialToolchainId/.eidosup-install.json"
+    $initialManifestSha256 = (Get-FileHash -LiteralPath $initialManifestPath -Algorithm SHA256).Hash
+    $components = (& $manager component list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    $expectedInitialComponents = @("eidosc-core", "eidos-std", "eidos-runtime@$rid")
+    if ($LASTEXITCODE -ne 0 -or $components.schemaVersion -ne 1 -or
+        [string]$components.profile -cne "default" -or
+        @($components.components).Count -ne $expectedInitialComponents.Count -or
+        @($expectedInitialComponents | Where-Object { $_ -cnotin @($components.components.id) }).Count -ne 0)
+    {
+        throw "The default profile did not install the expected core, Std, and host runtime components."
+    }
+
+    $stdlibOutput = (& $shim info --stdlib | Out-String)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($stdlibOutput))
+    {
+        throw "Installed eidosc did not load and report the external Std component."
+    }
+
+    $docsChange = (& $manager component add eidos-docs --toolchain $Version --install-root $installRoot --download-root $downloadRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $docsChange.schemaVersion -ne 1 -or
+        [string]$docsChange.action -cne "add" -or
+        "eidos-docs" -cnotin @($docsChange.addedComponents) -or
+        [string]$docsChange.install.disposition -cnotin @("installed", "replaced", "alreadyInstalled"))
+    {
+        throw "Eidosup failed to add the local documentation component with the composition-change-v1 contract."
+    }
+    $docsPath = (& $manager doc index --toolchain $Version --install-root $installRoot --path | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $docsPath -PathType Leaf))
+    {
+        throw "Eidosup doc did not resolve a version-matched offline document."
+    }
+    $docsResult = (& $manager doc index --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $docsResult.schemaVersion -ne 1 -or
+        [string]$docsResult.topic -cne "index" -or
+        [string]$docsResult.eidoscVersion -cne $Version -or
+        -not [IO.Path]::GetFullPath([string]$docsResult.path).Equals(
+            [IO.Path]::GetFullPath($docsPath),
+            [StringComparison]::OrdinalIgnoreCase))
+    {
+        throw "Eidosup doc JSON did not match the doc-v1 contract."
+    }
+
+    $profileChange = (& $manager set profile complete --toolchain $Version --install-root $installRoot --download-root $downloadRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $profileChange.schemaVersion -ne 1 -or
+        [string]$profileChange.action -cne "set-profile" -or
+        [string]$profileChange.profile -cne "complete")
+    {
+        throw "Eidosup failed to activate the complete profile with the composition-change-v1 contract."
+    }
+    $complete = (& $manager component list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or
+        "eidos-docs" -cnotin @($complete.components.id) -or
+        "eidos-bindgen" -cnotin @($complete.components.id))
+    {
+        throw "The complete profile did not materialize docs and bindgen components."
+    }
+
+    $crossArchitecture = if ($architecture -ceq "x64") { "arm64" } else { "x64" }
+    $crossRid = "$platform-$crossArchitecture"
+    $crossTriple = switch ($crossRid)
+    {
+        "win-x64" { "x86_64-pc-windows-msvc" }
+        "win-arm64" { "aarch64-pc-windows-msvc" }
+        "linux-x64" { "x86_64-pc-linux-gnu" }
+        "linux-arm64" { "aarch64-unknown-linux-gnu" }
+        "osx-x64" { "x86_64-apple-macosx10.15" }
+        "osx-arm64" { "arm64-apple-macosx11" }
+        default { throw "The clean-install cross smoke has no triple for '$crossRid'." }
+    }
+    $targetChange = (& $manager target add $crossRid --toolchain $Version --install-root $installRoot --download-root $downloadRoot --json | Out-String) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $targetChange.schemaVersion -ne 1 -or
+        [string]$targetChange.action -cne "add" -or
+        $crossRid -cnotin @($targetChange.targets))
+    {
+        throw "Eidosup failed to add cross target '$crossRid' with the composition-change-v1 contract."
+    }
+    $targets = (& $manager target list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    $hostTarget = @($targets.targets | Where-Object { [string]$_.name -ceq $rid })
+    $crossTarget = @($targets.targets | Where-Object { [string]$_.name -ceq $crossRid })
+    $validLinkerReadiness = @("ready", "notInstalled", "commandMissing", "externalSdkRequired")
+    if ($LASTEXITCODE -ne 0 -or $targets.schemaVersion -ne 1 -or
+        $rid -cnotin @($targets.targets.name) -or
+        $crossRid -cnotin @($targets.targets.name) -or
+        $hostTarget.Count -ne 1 -or [string]$hostTarget[0].support -cne "host" -or
+        $hostTarget[0].compilerReady -cne $true -or
+        $crossTarget.Count -ne 1 -or [string]$crossTarget[0].support -cne "crossCompile" -or
+        $crossTarget[0].compilerReady -cne $true -or
+        [string]$crossTarget[0].linkerReadiness -cnotin $validLinkerReadiness)
+    {
+        throw "Target list did not report both host and cross runtime components."
+    }
+
+    $crossIr = Join-Path $temporaryRoot "cross-$crossRid.ll"
+    $crossObjectExtension = if ($platform -eq "win") { ".obj" } else { ".o" }
+    $crossObject = Join-Path $temporaryRoot "cross-$crossRid$crossObjectExtension"
+    & $shim build $example -t LlvmIr -o $crossIr --target-triple $crossTriple --no-color --no-cache
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $crossIr -PathType Leaf))
+    {
+        throw "Installed eidosc failed to generate LLVM IR for '$crossTriple'."
+    }
+    & clang -target $crossTriple -c $crossIr -o $crossObject
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $crossObject -PathType Leaf))
+    {
+        throw "LLVM failed to compile Eidosc cross-target IR to an object for '$crossTriple'."
+    }
+
+    if ((Get-FileHash -LiteralPath $initialManifestPath -Algorithm SHA256).Hash -cne $initialManifestSha256)
+    {
+        throw "Creating component variants mutated the original immutable toolchain."
+    }
+
     $check = (& $manager check $Version --repo $Repository --install-root $installRoot --json | Out-String) | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or [string]$check.toolchains[0].status -cne "current")
     {
@@ -295,6 +407,30 @@ try
         --install-root $installRoot `
         --download-root $downloadRoot *> $null
     if ($LASTEXITCODE -ne 0) { throw "Eidosup exact-version update convergence failed." }
+    $afterUpdate = (& $manager component list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    $afterUpdateTargets = (& $manager target list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if ("eidos-docs" -cnotin @($afterUpdate.components.id) -or
+        "eidos-bindgen" -cnotin @($afterUpdate.components.id) -or
+        $crossRid -cnotin @($afterUpdateTargets.targets.name))
+    {
+        throw "Eidosup update did not preserve profile, explicit components, and explicit targets."
+    }
+
+    & $manager set profile minimal --toolchain $Version --install-root $installRoot --download-root $downloadRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to switch to the minimal profile." }
+    & $manager component remove eidos-docs --toolchain $Version --install-root $installRoot --download-root $downloadRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to remove an explicit docs component." }
+    & $manager target remove $crossRid --toolchain $Version --install-root $installRoot --download-root $downloadRoot *> $null
+    if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to remove an explicit cross target." }
+    $minimal = (& $manager component list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    $minimalTargets = (& $manager target list --installed --toolchain $Version --install-root $installRoot --json | Out-String) | ConvertFrom-Json
+    if (@($minimal.components).Count -ne 2 -or
+        "eidosc-core" -cnotin @($minimal.components.id) -or
+        "eidos-std" -cnotin @($minimal.components.id) -or
+        @($minimalTargets.targets).Count -ne 0)
+    {
+        throw "Minimal profile cleanup did not leave exactly core and Std."
+    }
 
     & $manager default none --install-root $installRoot *> $null
     if ($LASTEXITCODE -ne 0) { throw "Eidosup failed to clear the global default." }
@@ -310,8 +446,13 @@ try
     & $shim info
     if ($LASTEXITCODE -ne 0) { throw "Installed eidosc shim info command failed." }
 
-    & $shim build $example --phase hir --no-color --no-cache
-    if ($LASTEXITCODE -ne 0) { throw "Installed eidosc shim failed to compile the tutorial smoke example." }
+    $nativeName = if ($platform -ceq "win") { "native-smoke.exe" } else { "native-smoke" }
+    $nativeOutput = Join-Path $temporaryRoot $nativeName
+    & $shim build $example -o $nativeOutput --no-color --no-cache
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $nativeOutput -PathType Leaf))
+    {
+        throw "Installed eidosc shim failed to produce a native tutorial smoke executable."
+    }
 
     $missingInput = Join-Path $temporaryRoot "missing-input.eidos"
     & $eidosc build $missingInput --phase hir --no-color --no-cache *> $null

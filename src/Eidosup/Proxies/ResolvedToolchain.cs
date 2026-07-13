@@ -18,6 +18,7 @@ public sealed record ResolvedToolchain(
     string ToolchainDirectory,
     string CommandPath,
     string RuntimePath,
+    string StdlibPath,
     string RootDirectory,
     string? SelectionSourcePath = null,
     bool IsCustom = false,

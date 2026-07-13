@@ -57,10 +57,10 @@ public sealed class DoctorReporterTests
         var platform = environment.DetectPlatform();
         var alpha10 = ToolchainIdentity.Create(
             "0.4.0-alpha.10", platform.Rid, "test/source", "eidosc-v0.4.0-alpha.10",
-            "bundle-alpha10.zip", new string('a', 64), 100).Id;
+            $"eidos-toolchain-v0.4.0-alpha.10-{platform.Rid}.json", new string('a', 64), ["eidosc-core"]).Id;
         var alpha2 = ToolchainIdentity.Create(
             "0.4.0-alpha.2", platform.Rid, "test/source", "eidosc-v0.4.0-alpha.2",
-            "bundle-alpha2.zip", new string('b', 64), 100).Id;
+            $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json", new string('b', 64), ["eidosc-core"]).Id;
         environment.ExistingDirectories.Add(installRoot);
         environment.ExistingDirectories.Add(toolchainsDirectory);
         environment.ExistingFiles.Add(shimPath);
@@ -143,9 +143,9 @@ public sealed class DoctorReporterTests
             platform.Rid,
             "test/source",
             "eidosc-v0.4.0-alpha.2",
-            "bundle.zip",
+            $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json",
             new string('a', 64),
-            100).Id;
+            ["eidosc-core"]).Id;
         environment.Commands[executableName] = shimPath;
         environment.ExistingDirectories.Add(installRoot);
         environment.ExistingDirectories.Add(toolchainsDirectory);
@@ -243,11 +243,17 @@ public sealed class DoctorReporterTests
             PlatformContext.Detect().Rid,
             new string('a', 64),
             new string('b', 64),
+            new string('c', 64),
+            "eidos-toolchain.json",
+            new string('d', 64),
             "test-release",
             "test/source",
-            "bundle.zip",
-            new string('c', 64),
-            100,
+            "minimal",
+            [],
+            [],
+            [new InstalledComponent("eidosc-core", "eidosc-core", "0.4.0-alpha.2", true, null, [PlatformContext.Detect().ExecutableName])],
+            [],
+            [new InstalledArtifact("bundle.zip", new string('e', 64), 100)],
             installedAt)).ToArray();
         if (toolchains.Length == 0)
         {

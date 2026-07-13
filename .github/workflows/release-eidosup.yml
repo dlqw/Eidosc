@@ -7,6 +7,10 @@ on:
         description: Exact Eidosup SemVer from eng/Eidosup.Version.props
         required: true
         type: string
+      eidosc_version:
+        description: Published Eidosc version used by the clean-install gate
+        required: true
+        type: string
 
 jobs:
   verify-release:
@@ -47,11 +51,11 @@ jobs:
       matrix:
         include:
           - { rid: win-x64, runner: windows-latest, extension: ".exe" }
-          - { rid: win-arm64, runner: windows-latest, extension: ".exe" }
+          - { rid: win-arm64, runner: windows-11-arm, extension: ".exe" }
           - { rid: linux-x64, runner: ubuntu-latest, extension: "" }
-          - { rid: linux-arm64, runner: ubuntu-latest, extension: "" }
-          - { rid: osx-x64, runner: macos-latest, extension: "" }
-          - { rid: osx-arm64, runner: macos-latest, extension: "" }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm, extension: "" }
+          - { rid: osx-x64, runner: macos-15-intel, extension: "" }
+          - { rid: osx-arm64, runner: macos-15, extension: "" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -71,8 +75,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $rid." }
           $binary = if ($rid.StartsWith("win-")) { "Eidosup.exe" } else { "Eidosup" }
           Copy-Item "artifacts/publish/$binary" "artifacts/eidosup-v${{ needs.verify-release.outputs.version }}-$rid${{ matrix.extension }}"
-      - name: Smoke test native x64 candidate
-        if: matrix.rid == 'win-x64' || matrix.rid == 'linux-x64'
+      - name: Smoke test native candidate
         shell: pwsh
         run: |
           $path = "artifacts/eidosup-v${{ needs.verify-release.outputs.version }}-${{ matrix.rid }}${{ matrix.extension }}"
@@ -118,11 +121,67 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  clean-install:
+    name: clean-install (${{ matrix.rid }})
+    needs:
+      - verify-release
+      - publish
+      - assemble-candidate
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, runner: windows-latest, extension: ".exe" }
+          - { rid: win-arm64, runner: windows-11-arm, extension: ".exe" }
+          - { rid: linux-x64, runner: ubuntu-latest, extension: "" }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm, extension: "" }
+          - { rid: osx-x64, runner: macos-15-intel, extension: "" }
+          - { rid: osx-arm64, runner: macos-15, extension: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned tutorial smoke fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dlqw/eidos-tutorial
+          ref: 6d1374f2123ee90f7d04341728d666fe925f6669
+          path: artifacts/tutorial
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: eidosup-${{ matrix.rid }}
+          path: artifacts/eidosup
+      - name: Download published Eidosc release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path artifacts/eidosc -Force | Out-Null
+          gh release download "eidosc-v${{ inputs.eidosc_version }}" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --dir artifacts/eidosc
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download the published Eidosc release." }
+      - name: Verify Eidosup candidate clean installation
+        shell: pwsh
+        run: |
+          $metadata = Get-Content -Raw artifacts/eidosc/eidosc-release.json | ConvertFrom-Json
+          $candidate = "artifacts/eidosup/eidosup-v${{ needs.verify-release.outputs.version }}-${{ matrix.rid }}${{ matrix.extension }}"
+          if ($env:RUNNER_OS -ne 'Windows') { chmod +x $candidate }
+          ./scripts/release/Invoke-EidosupCleanInstall.ps1 `
+            -Version "${{ inputs.eidosc_version }}" `
+            -CommitSha ([string]$metadata.commit) `
+            -CandidateDirectory artifacts/eidosc `
+            -EidosupPath $candidate `
+            -TutorialExample artifacts/tutorial/examples/29_precompiled_stdlib.eidos
+
   release:
     name: publish-verified-release
     needs:
       - verify-release
       - assemble-candidate
+      - clean-install
     runs-on: ubuntu-latest
     permissions: { contents: write }
     steps:
@@ -143,3 +202,56 @@ jobs:
             -AssetDirectory artifacts/final `
             -NotesFile "changelogs/eidosup/${{ needs.verify-release.outputs.version }}.md" `
             -Repository "$env:GITHUB_REPOSITORY"
+
+  published-install:
+    name: published-install (${{ matrix.rid }})
+    needs:
+      - verify-release
+      - release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: win-x64, runner: windows-latest, extension: ".exe" }
+          - { rid: win-arm64, runner: windows-11-arm, extension: ".exe" }
+          - { rid: linux-x64, runner: ubuntu-latest, extension: "" }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm, extension: "" }
+          - { rid: osx-x64, runner: macos-15-intel, extension: "" }
+          - { rid: osx-arm64, runner: macos-15, extension: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned tutorial native fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dlqw/eidos-tutorial
+          ref: 6d1374f2123ee90f7d04341728d666fe925f6669
+          path: artifacts/tutorial
+          persist-credentials: false
+      - name: Download Eidosup anonymously and install published Eidosc
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify-release.outputs.version }}"
+          $asset = "eidosup-v$version-${{ matrix.rid }}${{ matrix.extension }}"
+          $candidate = Join-Path artifacts/eidosup $asset
+          New-Item -ItemType Directory -Path (Split-Path -Parent $candidate) -Force | Out-Null
+          $uri = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/eidosup-v$version/$asset"
+          $downloaded = $false
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $candidate
+              $downloaded = $true
+              break
+            } catch {
+              if ($attempt -eq 6) { throw }
+              Start-Sleep -Seconds (10 * $attempt)
+            }
+          }
+          if (-not $downloaded) { throw "Published Eidosup asset was not downloaded." }
+          if ($env:RUNNER_OS -ne 'Windows') { chmod +x $candidate }
+          Remove-Item Env:GITHUB_TOKEN, Env:GH_TOKEN -ErrorAction SilentlyContinue
+          ./scripts/release/Invoke-EidosupPublishedInstall.ps1 `
+            -Version "${{ inputs.eidosc_version }}" `
+            -EidosupPath $candidate `
+            -TutorialExample artifacts/tutorial/examples/29_precompiled_stdlib.eidos `
+            -ExpectedRid "${{ matrix.rid }}"

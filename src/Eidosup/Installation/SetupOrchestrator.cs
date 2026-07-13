@@ -17,6 +17,7 @@ public sealed class SetupOrchestrator
         LlvmDependencyCoordinator? dependencyCoordinator = null,
         ToolchainStateStore? stateStore = null,
         Func<VerifiedToolchainInstaller>? installerFactory = null,
+        Func<IToolchainManifestLoader>? manifestLoaderFactory = null,
         IShimInstaller? shimInstaller = null,
         ToolchainResolver? toolchainResolver = null)
     {
@@ -27,6 +28,7 @@ public sealed class SetupOrchestrator
             releaseSourceFactory: releaseSourceFactory,
             stateStore: stateStore,
             installerFactory: installerFactory,
+            manifestLoaderFactory: manifestLoaderFactory,
             resolver: _toolchainResolver);
     }
 
@@ -64,7 +66,8 @@ public sealed class SetupOrchestrator
                 toolchainDirectory = layout.GetToolchainDirectory(
                     $"eidosc-{release.NormalizedVersion}-{platform.Rid}-[manifest-sha256]");
                 Console.WriteLine($"[dry-run] Would download and verify '{outcome.ChecksumAsset.Name}'.");
-                Console.WriteLine($"[dry-run] Would install verified asset '{outcome.BundleAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Would verify component manifest '{outcome.ManifestAsset.Name}'.");
+                Console.WriteLine($"[dry-run] Would install profile '{outcome.Plan.Profile.ToString().ToLowerInvariant()}' with {outcome.Plan.Components.Count} components.");
                 Console.WriteLine($"[dry-run] Content cache: {layout.CacheDirectory}");
                 Console.WriteLine($"[dry-run] Immutable install target: {toolchainDirectory}");
                 Console.WriteLine($"[dry-run] Would initialize and reconcile '{Path.Combine(layout.StateDirectory, ToolchainStateStore.FileName)}'.");
@@ -80,7 +83,7 @@ public sealed class SetupOrchestrator
                 });
                 toolchainDirectory = result.ToolchainDirectory;
                 Console.WriteLine($"Toolchain state: {Path.Combine(layout.StateDirectory, ToolchainStateStore.FileName)}");
-                Console.WriteLine($"Asset SHA-256: {result.AssetSha256}");
+                Console.WriteLine($"Distribution manifest SHA-256: {result.DistributionManifestSha256}");
                 if (result.Disposition != InstallDisposition.AlreadyInstalled)
                 {
                     Console.WriteLine(result.CacheHit

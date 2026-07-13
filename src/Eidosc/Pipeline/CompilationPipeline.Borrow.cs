@@ -968,8 +968,7 @@ public sealed partial class CompilationPipeline
     private static bool IsTrustedPrecompiledBorrowFunction(MirFunc function)
     {
         var filePath = function.Span.FilePath;
-        return !string.IsNullOrWhiteSpace(filePath) &&
-               filePath.Replace('\\', '/').Contains("/Stdlib/Precompiled/", StringComparison.Ordinal);
+        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(filePath);
     }
 
     private static void VisitBorrowFunctionRefs(MirFunc function, Action<MirFunctionRef> visitor)

@@ -50,19 +50,8 @@ public static partial class ProjectToolchainConfigurationReader
         {
             throw Invalid(fullPath, "[toolchain].profile must be minimal, default, or complete");
         }
-        if (profile != "default")
-        {
-            throw Invalid(fullPath, "non-default profiles require the Eidosup WP3 component artifact contract");
-        }
-
         var components = ReadStringArray(values, "components", fullPath);
         var targets = ReadStringArray(values, "targets", fullPath);
-        if (components.Count != 0 || targets.Count != 0)
-        {
-            throw Invalid(
-                fullPath,
-                "components and targets require the component artifact contract and cannot be requested before Eidosup WP3");
-        }
 
         return new ProjectToolchainConfiguration(
             fullPath,
@@ -82,9 +71,13 @@ public static partial class ProjectToolchainConfigurationReader
             return [];
         }
 
-        if (value is not IReadOnlyList<string> items || items.Any(static item => string.IsNullOrWhiteSpace(item)))
+        if (value is not IReadOnlyList<string> items ||
+            items.Any(static item =>
+                string.IsNullOrWhiteSpace(item) ||
+                !string.Equals(item, item.Trim(), StringComparison.Ordinal)) ||
+            items.Distinct(StringComparer.Ordinal).Count() != items.Count)
         {
-            throw Invalid(path, $"[toolchain].{key} must be an array of non-empty quoted strings");
+            throw Invalid(path, $"[toolchain].{key} must be an array of unique non-empty quoted strings without surrounding whitespace");
         }
 
         return items;

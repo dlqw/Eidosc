@@ -75,6 +75,17 @@ public sealed class TargetInfo
         _ => ".so"
     };
 
+    public string RuntimeIdentifier => (Os, Arch) switch
+    {
+        (TargetOs.Windows, TargetArch.X86_64) => "win-x64",
+        (TargetOs.Windows, TargetArch.Arm64) => "win-arm64",
+        (TargetOs.Linux, TargetArch.X86_64) => "linux-x64",
+        (TargetOs.MacOS, TargetArch.X86_64) => "osx-x64",
+        (TargetOs.Linux, TargetArch.Arm64) => "linux-arm64",
+        (TargetOs.MacOS, TargetArch.Arm64) => "osx-arm64",
+        _ => throw new NotSupportedException($"Target '{Triple}' has no published Eidos runtime identifier.")
+    };
+
     #region 预定义目标
 
     /// <summary>
@@ -137,6 +148,18 @@ public sealed class TargetInfo
         ObjectFormat = TargetObjectFormat.Elf
     };
 
+    public static TargetInfo Arm64Windows { get; } = new()
+    {
+        Triple = "aarch64-pc-windows-msvc",
+        Cpu = "generic",
+        Features = "+neon",
+        PointerWidth = 64,
+        Os = TargetOs.Windows,
+        Arch = TargetArch.Arm64,
+        DataLayout = "e-m:w-p270:32:32-p271:32:32-p272:64:64-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
+        ObjectFormat = TargetObjectFormat.Coff
+    };
+
     /// <summary>
     /// ARM64 macOS (Apple Silicon) 目标
     /// </summary>
@@ -162,7 +185,7 @@ public sealed class TargetInfo
             if (OperatingSystem.IsWindows())
             {
                 return Environment.Is64BitOperatingSystem
-                    ? X86_64Windows
+                    ? (System.Runtime.Intrinsics.Arm.ArmBase.IsSupported ? Arm64Windows : X86_64Windows)
                     : throw new NotSupportedException(DiagnosticMessages.ThirtyTwoBitWindowsUnsupported);
             }
             else if (OperatingSystem.IsMacOS())
@@ -269,6 +292,11 @@ public sealed class TargetInfo
             "arm64-linux",
             "aarch64-linux",
             "aarch64-unknown-linux-gnu",
+            "arm64-windows",
+            "aarch64-windows",
+            "windows-arm64",
+            "win-arm64",
+            "aarch64-pc-windows-msvc",
             "arm64-macos",
             "aarch64-macos",
             "arm64-apple-macosx11"
@@ -281,6 +309,7 @@ public sealed class TargetInfo
         yield return X86_64Windows;
         yield return X86_64MacOS;
         yield return Arm64Linux;
+        yield return Arm64Windows;
         yield return Arm64MacOS;
     }
 
@@ -292,6 +321,7 @@ public sealed class TargetInfo
             "x86_64-windows" or "x64-windows" or "windows-x64" => X86_64Windows,
             "x86_64-macos" or "x64-macos" or "macos-x64" => X86_64MacOS,
             "arm64-linux" or "aarch64-linux" => Arm64Linux,
+            "arm64-windows" or "aarch64-windows" or "windows-arm64" or "win-arm64" => Arm64Windows,
             "arm64-macos" or "aarch64-macos" => Arm64MacOS,
             _ => null!
         };

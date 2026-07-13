@@ -45,7 +45,9 @@ $assetRoot = (Resolve-Path -LiteralPath $AssetDirectory).Path
 $rids = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "win-arm64", "win-x64")
 $expectedNames = if ($Product -eq "eidosc")
 {
-    @($rids | ForEach-Object { "eidosc-v$Version-$_.zip" }) + @("Eidosc.Cli.$Version.nupkg")
+    @($rids | ForEach-Object { "eidosc-v$Version-$_.zip" }) +
+    @($rids | ForEach-Object { "eidos-toolchain-v$Version-$_.json" }) +
+    @("Eidosc.Cli.$Version.nupkg")
 }
 else
 {
@@ -79,7 +81,7 @@ if ($unexpected -or $unexpectedDirectories)
 $assetRecords = @($payload | Sort-Object Name | ForEach-Object {
     $file = $_
     $rid = $rids | Where-Object { $file.Name.Contains("-$_", [StringComparison]::Ordinal) } | Select-Object -First 1
-    $kind = if ($file.Extension -eq ".nupkg") { "dotnet-tool" } elseif ($Product -eq "eidosc") { "toolchain-bundle" } else { "bootstrap-binary" }
+    $kind = if ($file.Extension -eq ".nupkg") { "dotnet-tool" } elseif ($file.Name.StartsWith("eidos-toolchain-v", [StringComparison]::Ordinal)) { "toolchain-manifest" } elseif ($Product -eq "eidosc") { "toolchain-bundle" } else { "bootstrap-binary" }
     [ordered]@{
         name = $file.Name
         kind = $kind

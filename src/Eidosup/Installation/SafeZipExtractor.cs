@@ -4,7 +4,11 @@ using Eidosup.Diagnostics;
 
 namespace Eidosup.Installation;
 
-public sealed record InstalledFile(string Path, long Size, string Sha256);
+public sealed record InstalledFile(
+    string Path,
+    long Size,
+    string Sha256,
+    bool Executable = false);
 
 public sealed record ArchiveExtractionResult(IReadOnlyList<InstalledFile> Files, long TotalBytes);
 

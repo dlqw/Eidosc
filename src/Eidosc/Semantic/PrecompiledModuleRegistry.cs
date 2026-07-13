@@ -12,13 +12,15 @@ namespace Eidosc.Semantic;
 
 public static class PrecompiledModuleRegistry
 {
-    private const string ResourcePrefix = "Eidosc.Stdlib.Precompiled.";
     private const string ResourceExtension = ".eidos";
     private const string InternalAttributeName = "internal";
     private const string StdPackageAlias = "Std";
 
     private static readonly Lazy<SemanticVersion> CachedStdlibVersion =
         new(LoadStdlibVersion, isThreadSafe: true);
+
+    private static readonly Lazy<string> StdlibRoot =
+        new(ResolveStdlibRoot, isThreadSafe: true);
 
     public static SemanticVersion StdlibVersion => CachedStdlibVersion.Value;
 
@@ -72,6 +74,73 @@ public static class PrecompiledModuleRegistry
     }
 
     public static string GetStdlibImageFingerprint() => StdlibImageFingerprint.Value;
+
+    public static string GetStdlibRoot() => StdlibRoot.Value;
+
+    public static bool IsStdlibSourcePath(string? path)
+    {
+        return TryGetStdlibRelativePath(path, out _);
+    }
+
+    public static bool TryGetModulePathFromSourcePath(string? path, out string modulePath)
+    {
+        modulePath = string.Empty;
+        if (!TryGetStdlibRelativePath(path, out var relative))
+        {
+            return false;
+        }
+
+        if (!relative.EndsWith(ResourceExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        modulePath = NormalizeModulePath(relative[..^ResourceExtension.Length]);
+        return modulePath.Length != 0;
+    }
+
+    private static bool TryGetStdlibRelativePath(string? path, out string relative)
+    {
+        relative = string.Empty;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var normalized = path.Replace('\\', '/');
+        const string sourceTreeMarker = "/Stdlib/Precompiled/";
+        var markerIndex = normalized.IndexOf(
+            sourceTreeMarker,
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        if (markerIndex >= 0)
+        {
+            relative = normalized[(markerIndex + sourceTreeMarker.Length)..];
+            return relative.Length != 0;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var root = Path.GetFullPath(StdlibRoot.Value)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var rootPrefix = root + Path.DirectorySeparatorChar;
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (!fullPath.StartsWith(rootPrefix, comparison))
+            {
+                return false;
+            }
+
+            relative = Path.GetRelativePath(root, fullPath)
+                .Replace(Path.DirectorySeparatorChar, '/');
+            return relative.Length != 0;
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 
     public static bool TryGetSourceFilePath(IReadOnlyList<string> modulePath, out string filePath)
     {
@@ -255,25 +324,26 @@ public static class PrecompiledModuleRegistry
     private static IReadOnlyDictionary<string, string> LoadModuleSources()
     {
         var moduleSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var assembly = typeof(PrecompiledModuleRegistry).Assembly;
-        foreach (var resourceName in assembly.GetManifestResourceNames()
-                     .Where(name => name.StartsWith(ResourcePrefix, StringComparison.Ordinal) &&
-                                    name.EndsWith(ResourceExtension, StringComparison.OrdinalIgnoreCase)))
+        var root = StdlibRoot.Value;
+        foreach (var path in Directory.EnumerateFiles(root, $"*{ResourceExtension}", SearchOption.AllDirectories)
+                     .Order(StringComparer.Ordinal))
         {
-            var modulePath = GetModulePathFromResourceName(resourceName);
-            if (string.IsNullOrEmpty(modulePath))
+            var relativePath = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+            if (string.Equals(relativePath, "eidos.toml", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            using var stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream == null)
+            var modulePath = NormalizeModulePath(relativePath[..^ResourceExtension.Length]);
+            if (string.IsNullOrEmpty(modulePath) || !moduleSources.TryAdd(modulePath, File.ReadAllText(path)))
             {
-                continue;
+                throw new InvalidOperationException($"External Std component contains duplicate module '{modulePath}'.");
             }
+        }
 
-            using var reader = new StreamReader(stream);
-            moduleSources[modulePath] = reader.ReadToEnd();
+        if (moduleSources.Count == 0)
+        {
+            throw new InvalidOperationException($"External Std component '{root}' contains no .eidos modules.");
         }
 
         return moduleSources;
@@ -318,24 +388,15 @@ public static class PrecompiledModuleRegistry
     private static IReadOnlyDictionary<string, string> LoadModuleSourceFiles()
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var root in EnumeratePrecompiledRoots())
+        var root = StdlibRoot.Value;
+        foreach (var modulePath in ModuleSources.Value.Keys)
         {
-            foreach (var modulePath in ModuleSources.Value.Keys)
+            var candidate = Path.Combine(
+                root,
+                modulePath.Replace('/', Path.DirectorySeparatorChar) + ResourceExtension);
+            if (File.Exists(candidate))
             {
-                var candidate = Path.Combine(
-                    root,
-                    modulePath.Replace('/', Path.DirectorySeparatorChar) + ResourceExtension);
-                if (!File.Exists(candidate))
-                {
-                    continue;
-                }
-
                 result[modulePath] = Path.GetFullPath(candidate);
-            }
-
-            if (result.Count == ModuleSources.Value.Count)
-            {
-                break;
             }
         }
 
@@ -350,9 +411,21 @@ public static class PrecompiledModuleRegistry
         return new ParserArtifacts(cacheData.GrammarData, cacheData.ScannerData);
     }
 
-    private static IEnumerable<string> EnumeratePrecompiledRoots()
+    private static string ResolveStdlibRoot()
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var configured = Environment.GetEnvironmentVariable("EIDOS_STDLIB_PATH");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            var configuredRoot = Path.GetFullPath(configured);
+            if (!Directory.Exists(configuredRoot))
+            {
+                throw new DirectoryNotFoundException($"EIDOS_STDLIB_PATH '{configuredRoot}' does not exist.");
+            }
+
+            return configuredRoot;
+        }
+
         foreach (var basePath in EnumerateSearchBasePaths())
         {
             if (string.IsNullOrWhiteSpace(basePath) || !Directory.Exists(basePath))
@@ -367,7 +440,7 @@ public static class PrecompiledModuleRegistry
                 {
                     if (Directory.Exists(candidate) && seen.Add(candidate))
                     {
-                        yield return candidate;
+                        return candidate;
                     }
                 }
 
@@ -380,10 +453,14 @@ public static class PrecompiledModuleRegistry
                 current = parent;
             }
         }
+
+        throw new DirectoryNotFoundException(
+            "No external Eidos Std component was found. Set EIDOS_STDLIB_PATH or install the eidos-std component next to eidosc.");
     }
 
     private static IEnumerable<string> GetPrecompiledRootCandidates(string current)
     {
+        yield return Path.Combine(current, "stdlib");
         yield return Path.Combine(current, "Stdlib", "Precompiled");
         yield return Path.Combine(current, "src", "Eidosc", "Stdlib", "Precompiled");
         yield return Path.Combine(current, "src", "Eidosc", "Eidosc", "Stdlib", "Precompiled");
@@ -393,19 +470,6 @@ public static class PrecompiledModuleRegistry
     {
         yield return AppContext.BaseDirectory;
         yield return Directory.GetCurrentDirectory();
-    }
-
-    private static string GetModulePathFromResourceName(string resourceName)
-    {
-        if (!resourceName.StartsWith(ResourcePrefix, StringComparison.Ordinal) ||
-            !resourceName.EndsWith(ResourceExtension, StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Empty;
-        }
-
-        var relative = resourceName[ResourcePrefix.Length..];
-        relative = relative[..^ResourceExtension.Length];
-        return NormalizeModulePath(relative.Replace('.', '/'));
     }
 
     private static ModuleExportAnalysisResult AnalyzeSource(
@@ -1646,13 +1710,10 @@ public static class PrecompiledModuleRegistry
     {
         try
         {
-            var assembly = typeof(PrecompiledModuleRegistry).Assembly;
-            var resourceName = "Eidosc.Stdlib.Precompiled.eidos.toml";
-            using var stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream == null) return new SemanticVersion(0, 1, 0);
+            var manifestPath = Path.Combine(StdlibRoot.Value, "eidos.toml");
+            if (!File.Exists(manifestPath)) return new SemanticVersion(0, 1, 0);
 
-            using var reader = new StreamReader(stream);
-            var manifest = EidosProjectManifestDocument.Parse(reader.ReadToEnd(), resourceName);
+            var manifest = EidosProjectManifestDocument.Parse(File.ReadAllText(manifestPath), manifestPath);
 
             var versionStr = manifest.Package?.Version;
             if (versionStr != null &&

@@ -26,12 +26,16 @@ public static class CustomToolchain
         var platform = PlatformContext.Detect();
         var command = ResolveCommand(root, platform.ExecutableName);
         var runtime = Path.Combine(root, "runtime");
+        var stdlib = Path.Combine(root, "stdlib");
         if (command == null || !Directory.Exists(runtime) ||
+            !Directory.Exists(stdlib) ||
             (File.GetAttributes(runtime) & FileAttributes.ReparsePoint) != 0 ||
+            (File.GetAttributes(stdlib) & FileAttributes.ReparsePoint) != 0 ||
             HasReparsePointBetween(root, command) ||
-            HasReparsePointBetween(root, runtime))
+            HasReparsePointBetween(root, runtime) ||
+            HasReparsePointBetween(root, stdlib))
         {
-            throw InvalidLayout(name, root, "the required eidosc executable and runtime directory were not found");
+            throw InvalidLayout(name, root, "the required eidosc executable, runtime directory, and external stdlib directory were not found");
         }
 
         return new CustomToolchainState(
@@ -92,5 +96,5 @@ public static class CustomToolchain
         EidosupErrorCode.ToolchainUnavailable,
         EidosupExitCodes.ToolchainUnavailable,
         $"Custom toolchain '{name}' at '{root}' is invalid: {reason}.",
-        "Publish or build a layout containing eidosc[.exe] (at the root or in bin/) and a regular runtime/ directory.");
+        "Publish or build a layout containing eidosc[.exe] (at the root or in bin/) plus regular runtime/ and stdlib/ directories.");
 }

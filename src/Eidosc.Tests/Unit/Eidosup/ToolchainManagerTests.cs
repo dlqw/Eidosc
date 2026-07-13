@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Eidosup.Configuration;
 using Eidosup.Diagnostics;
 using Eidosup.Distribution;
 using Eidosup.Installation;
@@ -186,6 +187,7 @@ public sealed class ToolchainManagerTests
         var manager = new ToolchainManager(
             releaseSourceFactory: _ => new MappingReleaseSource(firstAsset.Release, secondAsset.Release),
             stateStore: new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime),
+            manifestLoaderFactory: () => CreateManifestLoader(firstAsset, secondAsset),
             installerFactory: () => new VerifiedToolchainInstaller(
                 downloadManager,
                 clock: () => EidosupToolchainTestFixture.FixedTime));
@@ -229,6 +231,7 @@ public sealed class ToolchainManagerTests
         var manager = new ToolchainManager(
             releaseSourceFactory: _ => new SingleReleaseSource(currentRelease),
             stateStore: new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime),
+            manifestLoaderFactory: () => CreateManifestLoader(firstAsset, secondAsset),
             installerFactory: () => new VerifiedToolchainInstaller(
                 downloadManager,
                 clock: () => EidosupToolchainTestFixture.FixedTime));
@@ -258,6 +261,220 @@ public sealed class ToolchainManagerTests
             path => Path.GetFileName(path) is not ".staging" and not ".backup");
     }
 
+    [Fact]
+    public async Task CompositionOperations_CreateImmutableVariantsAndPreserveExplicitProjectRequirements()
+    {
+        using var fixture = new EidosupToolchainTestFixture();
+        var platform = PlatformContext.Detect();
+        var asset = CreateReleaseAssetSet("0.4.0-alpha.2", platform);
+        using var handler = new MappingAssetHandler(asset);
+        using var httpClient = new HttpClient(handler);
+        using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
+        var manager = new ToolchainManager(
+            releaseSourceFactory: _ => new SingleReleaseSource(asset.Release),
+            stateStore: new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime),
+            manifestLoaderFactory: () => CreateManifestLoader(asset),
+            installerFactory: () => new VerifiedToolchainInstaller(
+                downloadManager,
+                clock: () => EidosupToolchainTestFixture.FixedTime));
+        var spec = ToolchainSpec.Parse("0.4.0-alpha.2");
+        var initial = await manager.InstallAsync(
+            fixture.Options,
+            spec,
+            force: false,
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        var initialId = initial.Install!.ToolchainId;
+        var initialManifestBytes = await File.ReadAllBytesAsync(
+            Path.Combine(initial.Install.ToolchainDirectory, InstallManifest.FileName));
+
+        var withDocs = await manager.AddCompositionAsync(
+            fixture.Options,
+            spec,
+            ["eidos-docs"],
+            [],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+
+        Assert.NotEqual(initialId, withDocs.Install!.ToolchainId);
+        Assert.True(File.Exists(Path.Combine(withDocs.Install.ToolchainDirectory, "docs", "index.json")));
+        Assert.False(Directory.Exists(Path.Combine(initial.Install.ToolchainDirectory, "docs")));
+        Assert.Equal(
+            initialManifestBytes,
+            await File.ReadAllBytesAsync(Path.Combine(initial.Install.ToolchainDirectory, InstallManifest.FileName)));
+
+        var minimalWithDocs = await manager.SetProfileAsync(
+            fixture.Options,
+            spec,
+            ToolchainProfile.Minimal,
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        Assert.Contains("eidos-docs", minimalWithDocs.Plan.ExplicitComponents);
+        Assert.DoesNotContain($"eidos-runtime@{platform.Rid}", minimalWithDocs.Plan.ComponentIds);
+
+        var complete = await manager.SetProfileAsync(
+            fixture.Options,
+            spec,
+            ToolchainProfile.Complete,
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        Assert.Contains("eidos-bindgen", complete.Plan.ComponentIds);
+        await Assert.ThrowsAsync<EidosupException>(() => manager.RemoveCompositionAsync(
+            fixture.Options,
+            spec,
+            ["eidos-docs"],
+            [],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None));
+
+        await manager.SetProfileAsync(
+            fixture.Options,
+            spec,
+            ToolchainProfile.Minimal,
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        var withoutDocs = await manager.RemoveCompositionAsync(
+            fixture.Options,
+            spec,
+            ["eidos-docs"],
+            [],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        Assert.DoesNotContain("eidos-docs", withoutDocs.Plan.ComponentIds);
+
+        var withTarget = await manager.AddCompositionAsync(
+            fixture.Options,
+            spec,
+            [],
+            [platform.Rid],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        Assert.Contains(platform.Rid, withTarget.Plan.ExplicitTargets);
+        var withoutTarget = await manager.RemoveCompositionAsync(
+            fixture.Options,
+            spec,
+            [],
+            [platform.Rid],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        Assert.DoesNotContain($"eidos-runtime@{platform.Rid}", withoutTarget.Plan.ComponentIds);
+
+        await manager.AddCompositionAsync(
+            fixture.Options,
+            spec,
+            ["eidos-bindgen"],
+            [],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        var synchronized = await manager.SyncProjectConfigurationAsync(
+            fixture.Options,
+            new ProjectToolchainConfiguration(
+                Path.Combine(fixture.Root, ProjectToolchainConfigurationReader.FileName),
+                spec,
+                "default",
+                ["eidos-docs"],
+                []),
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        var updated = Assert.Single(await manager.UpdateAsync(
+            fixture.Options,
+            [spec],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None));
+        var state = await ToolchainStateStore.ReadVerifiedAsync(fixture.Layout, CancellationToken.None);
+        var selector = Assert.Single(state.Selectors, candidate => candidate.Selector == spec.Canonical);
+
+        Assert.Equal(ToolchainProfile.Default, synchronized.Plan.Profile);
+        Assert.Contains("eidos-bindgen", synchronized.Plan.ExplicitComponents);
+        Assert.Contains("eidos-docs", synchronized.Plan.ExplicitComponents);
+        Assert.Equal(synchronized.Install!.ToolchainId, selector.ToolchainId);
+        Assert.Equal(synchronized.Install.ToolchainId, updated.Install!.ToolchainId);
+        Assert.Contains("eidos-bindgen", updated.Plan.ExplicitComponents);
+        Assert.Contains("eidos-docs", updated.Plan.ExplicitComponents);
+        Assert.Contains(state.Toolchains, toolchain => toolchain.Id == initialId);
+        Assert.True(Directory.Exists(initial.Install.ToolchainDirectory));
+
+        await manager.SetDefaultAsync(
+            fixture.Options,
+            spec: null,
+            dryRun: false,
+            CancellationToken.None);
+        var uninstall = await manager.UninstallAsync(
+            fixture.Options,
+            [spec],
+            dryRun: false,
+            CancellationToken.None);
+        var empty = await ToolchainStateStore.ReadVerifiedAsync(fixture.Layout, CancellationToken.None);
+        Assert.Equal(state.Toolchains.Count, uninstall.ToolchainIds.Count);
+        Assert.Empty(empty.Toolchains);
+    }
+
+    [Fact]
+    public async Task RollbackAsync_SkipsCompositionVariantsAndReturnsToPreviousRelease()
+    {
+        using var fixture = new EidosupToolchainTestFixture();
+        var platform = PlatformContext.Detect();
+        var first = CreateReleaseAssetSet("0.4.0-alpha.2", platform);
+        var second = CreateReleaseAssetSet("0.4.0-alpha.3", platform);
+        using var handler = new MappingAssetHandler(first, second);
+        using var httpClient = new HttpClient(handler);
+        using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
+        var currentRelease = first.Release;
+        var manager = new ToolchainManager(
+            releaseSourceFactory: _ => new SingleReleaseSource(currentRelease),
+            stateStore: new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime),
+            manifestLoaderFactory: () => CreateManifestLoader(first, second),
+            installerFactory: () => new VerifiedToolchainInstaller(
+                downloadManager,
+                clock: () => EidosupToolchainTestFixture.FixedTime));
+        var preview = ToolchainSpec.Parse("preview");
+        var initial = await manager.InstallAsync(
+            fixture.Options,
+            preview,
+            force: false,
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+        currentRelease = second.Release;
+        var updated = Assert.Single(await manager.UpdateAsync(
+            fixture.Options,
+            [preview],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None));
+        var composition = await manager.AddCompositionAsync(
+            fixture.Options,
+            preview,
+            ["eidos-docs"],
+            [],
+            dryRun: false,
+            progress: null,
+            CancellationToken.None);
+
+        var rollback = await manager.RollbackAsync(
+            fixture.Options,
+            preview,
+            dryRun: false,
+            CancellationToken.None);
+
+        Assert.NotEqual(updated.Install!.ToolchainId, composition.Install!.ToolchainId);
+        Assert.Equal(composition.Install.ToolchainId, rollback.FromToolchainId);
+        Assert.Equal(initial.Install!.ToolchainId, rollback.ToToolchainId);
+        Assert.Equal(initial.Install.ToolchainId, rollback.State.Default?.ToolchainId);
+    }
+
     private static ReleaseAssetSet CreateReleaseAssetSet(
         string version,
         PlatformContext platform,
@@ -265,10 +482,12 @@ public sealed class ToolchainManagerTests
         string executableContent = "binary")
     {
         key ??= version;
-        var bundle = CreateBundle(platform.ExecutableName, executableContent);
+        var bundle = CreateBundle(platform.ExecutableName, version, executableContent);
         var bundleSha256 = Convert.ToHexString(SHA256.HashData(bundle)).ToLowerInvariant();
         var bundleName = new ReleaseAssetLocator().GetEidoscBundleAssetName(version, platform);
         var checksum = Encoding.UTF8.GetBytes($"{bundleSha256}  {bundleName}\n");
+        var manifestName = new ReleaseAssetLocator().GetToolchainManifestAssetName(version, platform);
+        var manifestSha256 = key == version ? new string('d', 64) : bundleSha256;
         var release = new EidosReleaseInfo(
             $"eidosc-v{version}",
             $"Eidosc {version}",
@@ -277,15 +496,17 @@ public sealed class ToolchainManagerTests
             EidosupToolchainTestFixture.FixedTime,
             [
                 new EidosReleaseAsset(bundleName, $"https://example.invalid/{key}/{bundleName}", bundle.Length),
+                new EidosReleaseAsset(manifestName, $"https://example.invalid/{key}/{manifestName}", 100, manifestSha256),
                 new EidosReleaseAsset(ReleaseAssetLocator.ChecksumAssetName, $"https://example.invalid/{key}/SHA256SUMS", checksum.Length)
             ]);
-        return new ReleaseAssetSet(key, release, bundle, checksum);
+        return new ReleaseAssetSet(key, release, bundle, checksum, bundleSha256, executableContent);
     }
 
     private static EidosReleaseInfo CreateRelease(string version, long bundleSize)
     {
         var platform = PlatformContext.Detect();
         var name = new ReleaseAssetLocator().GetEidoscBundleAssetName(version, platform);
+        var manifestName = new ReleaseAssetLocator().GetToolchainManifestAssetName(version, platform);
         return new EidosReleaseInfo(
             $"eidosc-v{version}",
             $"Eidosc {version}",
@@ -294,17 +515,39 @@ public sealed class ToolchainManagerTests
             EidosupToolchainTestFixture.FixedTime,
             [
                 new EidosReleaseAsset(name, $"https://example.invalid/{name}", bundleSize),
+                new EidosReleaseAsset(manifestName, $"https://example.invalid/{manifestName}", 100, new string('d', 64)),
                 new EidosReleaseAsset(ReleaseAssetLocator.ChecksumAssetName, $"https://example.invalid/{version}/SHA256SUMS", 100)
             ]);
     }
 
-    private static byte[] CreateBundle(string executableName, string executableContent = "binary")
+    private static IToolchainManifestLoader CreateManifestLoader(params ReleaseAssetSet[] assets) =>
+        new StubToolchainManifestLoader((release, manifestAsset, platform) =>
+        {
+            var asset = assets.Single(candidate => ReferenceEquals(candidate.Release, release));
+            return EidosupDistributionTestFixture.Create(
+                release,
+                manifestAsset,
+                platform,
+                asset.BundleSha256,
+                asset.ExecutableContent);
+        });
+
+    private static byte[] CreateBundle(string executableName, string version, string executableContent = "binary")
     {
         using var stream = new MemoryStream();
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, executableName, executableContent);
+            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std::Core");
             WriteEntry(archive, "runtime/runtime.h", "header");
+            WriteEntry(archive, "docs/index.json", $"{{\"schema\":1,\"eidoscVersion\":\"{version}\",\"topics\":{{\"index\":\"index.md\"}}}}");
+            WriteEntry(archive, "docs/index.md", "# docs");
+            WriteEntry(
+                archive,
+                OperatingSystem.IsWindows()
+                    ? "tools/eidos-bindgen/eidos-bindgen.exe"
+                    : "tools/eidos-bindgen/eidos-bindgen",
+                "bindgen");
         }
 
         return stream.ToArray();
@@ -402,5 +645,7 @@ public sealed class ToolchainManagerTests
         string Key,
         EidosReleaseInfo Release,
         byte[] Bundle,
-        byte[] Checksum);
+        byte[] Checksum,
+        string BundleSha256,
+        string ExecutableContent);
 }

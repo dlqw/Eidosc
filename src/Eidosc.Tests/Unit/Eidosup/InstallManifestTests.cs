@@ -66,20 +66,27 @@ public sealed class InstallManifestTests
             platform.Rid,
             "test/source",
             "eidosc-v0.4.0-alpha.2",
-            "bundle.zip",
+            $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json",
             AssetHash,
-            123);
+            ["eidosc-core"],
+            ToolchainProfile.Minimal);
         return new InstallManifest(
             InstallManifest.CurrentSchema,
             identity.Id,
-            identity.ManifestSha256,
+            identity.IdentitySha256,
+            identity.CompositionSha256,
+            $"eidos-toolchain-v0.4.0-alpha.2-{platform.Rid}.json",
+            AssetHash,
             "eidosc-v0.4.0-alpha.2",
             "0.4.0-alpha.2",
             platform.Rid,
             "test/source",
-            "bundle.zip",
-            AssetHash,
-            123,
+            "minimal",
+            [],
+            [],
+            [new InstalledComponent("eidosc-core", "eidosc-core", "0.4.0-alpha.2", true, null, files.Select(static file => file.Path).ToArray())],
+            [],
+            [new InstalledArtifact("bundle.zip", AssetHash, 123)],
             DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
             files);
     }

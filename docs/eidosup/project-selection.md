@@ -1,8 +1,7 @@
 # Project toolchain selection
 
-Eidosup 0.3 defines project selection independently from the Eidos language
-version in `eidos.toml`. Compiler selection never rewrites project language
-semantics.
+Eidosup defines project selection independently from the Eidos language version
+in `eidos.toml`. Compiler selection never rewrites project language semantics.
 
 ## Precedence
 
@@ -23,20 +22,20 @@ install command; Eidosup does not silently choose another installed version.
 
 ```toml
 [toolchain]
-channel = "0.4.0-alpha.2"
+channel = "0.4.0-alpha.3"
 profile = "default"
 components = []
 targets = []
 ```
 
 `channel` accepts `stable`, `preview`, an exact Eidosc SemVer, an explicit host
-form such as `0.4.0-alpha.2@linux-arm64`, or `custom:<name>`. Unqualified
+form such as `0.4.0-alpha.3@linux-arm64`, or `custom:<name>`. Unqualified
 downloadable selectors use the validated `set default-host <rid>` setting. The
 file uses strict UTF-8 TOML scalar and string-array parsing. Assignments outside
-`[toolchain]`, unknown sections or keys, duplicate sections or keys,
-non-default profiles, and non-empty component or target requests fail. The
-`profile` field must remain `"default"` until profiles, components, and targets
-become active under the WP3 artifact contract.
+`[toolchain]`, unknown sections or keys, duplicate sections or keys, unknown
+profiles, duplicate array items, and empty or whitespace-padded requirements
+fail. Profiles accept `minimal`, `default`, or `complete`. Component and
+target names are resolved against the selected signed toolchain manifest.
 
 When the project has `eidos.toml [language].version` and the selected toolchain
 contains `compatibility.json`, Eidosup verifies `language.supported` before
@@ -73,3 +72,9 @@ eidosup set auto-install disable
 not mutate non-interactive CI. `enable` may install a missing downloadable
 selector through the configured verified source. Custom links are never
 downloaded automatically.
+
+When the selector exists but does not satisfy the project composition,
+auto-install adds missing profile components, explicit components, and target
+runtimes as a new immutable variant. A larger installed profile satisfies a
+smaller project profile. Existing explicit additions are preserved; opening a
+project never removes another component or target.

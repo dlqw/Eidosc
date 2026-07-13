@@ -18,7 +18,9 @@ public sealed class SetupOrchestratorTests
         var installRoot = Path.Combine(root, "install");
         var downloadRoot = Path.Combine(root, "downloads");
         var platform = PlatformContext.Detect();
-        var bundleName = new ReleaseAssetLocator().GetEidoscBundleAssetName("0.4.0-alpha.2", platform);
+        var locator = new ReleaseAssetLocator();
+        var bundleName = locator.GetEidoscBundleAssetName("0.4.0-alpha.2", platform);
+        var manifestName = locator.GetToolchainManifestAssetName("0.4.0-alpha.2", platform);
         var release = new EidosReleaseInfo(
             "eidosc-v0.4.0-alpha.2",
             "Eidosc 0.4.0-alpha.2",
@@ -27,11 +29,14 @@ public sealed class SetupOrchestratorTests
             DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
             [
                 new EidosReleaseAsset(bundleName, "https://example.invalid/bundle.zip", 100),
+                new EidosReleaseAsset(manifestName, "https://example.invalid/manifest.json", 100, new string('d', 64)),
                 new EidosReleaseAsset(ReleaseAssetLocator.ChecksumAssetName, "https://example.invalid/SHA256SUMS", 100)
             ]);
         var shimInstaller = new StubShimInstaller();
         var orchestrator = new SetupOrchestrator(
             _ => new StubReleaseSource(release),
+            manifestLoaderFactory: () => new StubToolchainManifestLoader((resolved, manifest, detected) =>
+                EidosupDistributionTestFixture.Create(resolved, manifest, detected, new string('a', 64))),
             shimInstaller: shimInstaller);
 
         var exitCode = await orchestrator.RunAsync(
@@ -62,7 +67,9 @@ public sealed class SetupOrchestratorTests
             var platform = PlatformContext.Detect();
             var bundle = CreateBundle(platform.ExecutableName);
             var bundleSha256 = Convert.ToHexString(SHA256.HashData(bundle)).ToLowerInvariant();
-            var bundleName = new ReleaseAssetLocator().GetEidoscBundleAssetName("0.4.0-alpha.2", platform);
+            var locator = new ReleaseAssetLocator();
+            var bundleName = locator.GetEidoscBundleAssetName("0.4.0-alpha.2", platform);
+            var manifestName = locator.GetToolchainManifestAssetName("0.4.0-alpha.2", platform);
             var checksum = Encoding.UTF8.GetBytes($"{bundleSha256}  {bundleName}\n");
             var release = new EidosReleaseInfo(
                 "eidosc-v0.4.0-alpha.2",
@@ -72,6 +79,7 @@ public sealed class SetupOrchestratorTests
                 DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
                 [
                     new EidosReleaseAsset(bundleName, "https://example.invalid/bundle.zip", bundle.Length),
+                    new EidosReleaseAsset(manifestName, "https://example.invalid/manifest.json", 100, new string('d', 64)),
                     new EidosReleaseAsset(ReleaseAssetLocator.ChecksumAssetName, "https://example.invalid/SHA256SUMS", checksum.Length)
                 ]);
             using var handler = new AssetHandler(bundle, checksum);
@@ -82,6 +90,8 @@ public sealed class SetupOrchestratorTests
             var orchestrator = new SetupOrchestrator(
                 _ => new StubReleaseSource(release),
                 stateStore: stateStore,
+                manifestLoaderFactory: () => new StubToolchainManifestLoader((resolved, manifest, detected) =>
+                    EidosupDistributionTestFixture.Create(resolved, manifest, detected, bundleSha256)),
                 installerFactory: () => new VerifiedToolchainInstaller(downloadManager, clock: () => clock),
                 shimInstaller: new StubShimInstaller());
 
@@ -138,6 +148,7 @@ public sealed class SetupOrchestratorTests
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, executableName, "binary");
+            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std::Core");
             WriteEntry(archive, "runtime/runtime.h", "header");
         }
 

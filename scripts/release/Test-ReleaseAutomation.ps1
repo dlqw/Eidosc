@@ -6,9 +6,58 @@ Set-StrictMode -Version Latest
 
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("eidos-release-test-" + [Guid]::NewGuid().ToString("N"))
-$version = "0.4.0-alpha.2"
-$commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+[xml]$eidoscVersionProps = Get-Content -Raw -LiteralPath "eng/Eidosc.Version.props"
+$eidoscVersionPrefix = [string]$eidoscVersionProps.Project.PropertyGroup.EidoscVersionPrefix
+$eidoscVersionSuffix = [string]$eidoscVersionProps.Project.PropertyGroup.EidoscVersionSuffix
+$eidoscVersion = if ($eidoscVersionSuffix) { "$eidoscVersionPrefix-$eidoscVersionSuffix" } else { $eidoscVersionPrefix }
+[xml]$eidosupVersionProps = Get-Content -Raw -LiteralPath "eng/Eidosup.Version.props"
+$eidosupVersionPrefix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionPrefix
+$eidosupVersionSuffix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionSuffix
+$eidosupVersion = if ($eidosupVersionSuffix) { "$eidosupVersionPrefix-$eidosupVersionSuffix" } else { $eidosupVersionPrefix }
+$commit = (& git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$')
+{
+    throw "Release automation self-test requires a Git commit."
+}
 $rids = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "win-arm64", "win-x64")
+$nativeRunnerLabels = @("windows-latest", "windows-11-arm", "ubuntu-latest", "ubuntu-24.04-arm", "macos-15-intel", "macos-15")
+
+foreach ($workflowPath in @(".github/workflows/release-eidosc.yml", ".github/workflows/release-eidosup.yml"))
+{
+    $workflow = Get-Content -Raw -LiteralPath $workflowPath
+    if (-not $workflow.Contains("published-install:", [StringComparison]::Ordinal) -or
+        -not $workflow.Contains("29_precompiled_stdlib.eidos", [StringComparison]::Ordinal) -or
+        @($nativeRunnerLabels | Where-Object { -not $workflow.Contains($_, [StringComparison]::Ordinal) }).Count -ne 0)
+    {
+        throw "Release workflow '$workflowPath' does not contain the six-RID candidate and post-publication install gates."
+    }
+}
+
+foreach ($scriptPath in @(
+    "scripts/release/Invoke-EidosupCleanInstall.ps1",
+    "scripts/release/Invoke-EidosupPublishedInstall.ps1"))
+{
+    $tokens = $null
+    $parseErrors = $null
+    [void][Management.Automation.Language.Parser]::ParseFile(
+        (Resolve-Path -LiteralPath $scriptPath).Path,
+        [ref]$tokens,
+        [ref]$parseErrors)
+    if ($parseErrors.Count -ne 0)
+    {
+        throw "Release verification script '$scriptPath' has PowerShell parse errors: $($parseErrors -join '; ')"
+    }
+}
+
+function Add-ZipText(
+    [IO.Compression.ZipArchive]$Archive,
+    [string]$Name,
+    [string]$Content)
+{
+    $entry = $Archive.CreateEntry($Name, [IO.Compression.CompressionLevel]::NoCompression)
+    $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
+    try { $writer.Write($Content) } finally { $writer.Dispose() }
+}
 
 try
 {
@@ -19,14 +68,28 @@ try
 
     foreach ($rid in $rids)
     {
-        $archivePath = Join-Path $eidoscRoot "eidosc-v$version-$rid.zip"
+        $archivePath = Join-Path $eidoscRoot "eidosc-v$eidoscVersion-$rid.zip"
         $archive = [IO.Compression.ZipFile]::Open($archivePath, [IO.Compression.ZipArchiveMode]::Create)
         try
         {
             $binaryName = if ($rid.StartsWith("win-", [StringComparison]::Ordinal)) { "eidosc.exe" } else { "eidosc" }
-            $entry = $archive.CreateEntry($binaryName, [IO.Compression.CompressionLevel]::NoCompression)
-            $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
-            try { $writer.Write("fixture-$rid") } finally { $writer.Dispose() }
+            $bindgenName = if ($rid.StartsWith("win-", [StringComparison]::Ordinal)) {
+                "tools/eidos-bindgen/eidos-bindgen.exe"
+            } else {
+                "tools/eidos-bindgen/eidos-bindgen"
+            }
+            Add-ZipText $archive $binaryName "fixture-$rid"
+            Add-ZipText $archive "compatibility.json" (Get-Content -Raw -LiteralPath "eng/compatibility.json")
+            Add-ZipText $archive "stdlib/eidos.toml" "[package]`nname = `"EidosStd`"`nversion = `"0.1.0-alpha.1`"`n"
+            Add-ZipText $archive "stdlib/Std/Core.eidos" "module Std::Core"
+            Add-ZipText $archive "runtime/eidos_runtime.h" "host runtime"
+            Add-ZipText $archive "docs/index.md" "# docs"
+            Add-ZipText $archive "docs/index.json" "{`"schema`":1,`"eidoscVersion`":`"$eidoscVersion`",`"topics`":{`"index`":`"index.md`"}}"
+            Add-ZipText $archive $bindgenName "bindgen"
+            foreach ($targetRid in $rids | Where-Object { $_ -cne $rid })
+            {
+                Add-ZipText $archive "targets/$targetRid/runtime/eidos_runtime.h" "runtime-$targetRid"
+            }
         }
         finally
         {
@@ -35,12 +98,12 @@ try
 
         $extension = if ($rid.StartsWith("win-", [StringComparison]::Ordinal)) { ".exe" } else { "" }
         [IO.File]::WriteAllText(
-            (Join-Path $eidosupRoot "eidosup-v$version-$rid$extension"),
+            (Join-Path $eidosupRoot "eidosup-v$eidosupVersion-$rid$extension"),
             "fixture-$rid",
             [Text.UTF8Encoding]::new($false))
     }
 
-    $packagePath = Join-Path $eidoscRoot "Eidosc.Cli.$version.nupkg"
+    $packagePath = Join-Path $eidoscRoot "Eidosc.Cli.$eidoscVersion.nupkg"
     $package = [IO.Compression.ZipFile]::Open($packagePath, [IO.Compression.ZipArchiveMode]::Create)
     try
     {
@@ -53,16 +116,17 @@ try
         $package.Dispose()
     }
 
-    & (Join-Path $scriptRoot "New-ReleaseArtifacts.ps1") -Product eidosc -Version $version -CommitSha $commit -AssetDirectory $eidoscRoot
-    & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") -Product eidosc -Version $version -CommitSha $commit -AssetDirectory $eidoscRoot
-    & (Join-Path $scriptRoot "New-ReleaseArtifacts.ps1") -Product eidosup -Version $version -CommitSha $commit -AssetDirectory $eidosupRoot
-    & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") -Product eidosup -Version $version -CommitSha $commit -AssetDirectory $eidosupRoot
+    & (Join-Path $scriptRoot "New-ToolchainManifests.ps1") -Version $eidoscVersion -CommitSha $commit -AssetDirectory $eidoscRoot
+    & (Join-Path $scriptRoot "New-ReleaseArtifacts.ps1") -Product eidosc -Version $eidoscVersion -CommitSha $commit -AssetDirectory $eidoscRoot
+    & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") -Product eidosc -Version $eidoscVersion -CommitSha $commit -AssetDirectory $eidoscRoot
+    & (Join-Path $scriptRoot "New-ReleaseArtifacts.ps1") -Product eidosup -Version $eidosupVersion -CommitSha $commit -AssetDirectory $eidosupRoot
+    & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") -Product eidosup -Version $eidosupVersion -CommitSha $commit -AssetDirectory $eidosupRoot
 
-    Add-Content -LiteralPath (Join-Path $eidosupRoot "eidosup-v$version-linux-x64") -Value "tampered"
+    Add-Content -LiteralPath (Join-Path $eidosupRoot "eidosup-v$eidosupVersion-linux-x64") -Value "tampered"
     $rejectedTamper = $false
     try
     {
-        & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") -Product eidosup -Version $version -CommitSha $commit -AssetDirectory $eidosupRoot
+        & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") -Product eidosup -Version $eidosupVersion -CommitSha $commit -AssetDirectory $eidosupRoot
     }
     catch
     {

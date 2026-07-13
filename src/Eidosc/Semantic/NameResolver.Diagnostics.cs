@@ -612,12 +612,9 @@ public sealed partial class NameResolver
             return modulePath;
         }
 
-        var normalized = modulePath.Replace('\\', '/');
-        const string precompiledMarker = "/Stdlib/Precompiled/";
-        var markerIndex = normalized.IndexOf(precompiledMarker, StringComparison.Ordinal);
-        return markerIndex >= 0
-            ? normalized[(markerIndex + precompiledMarker.Length)..]
-            : normalized;
+        return PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(modulePath, out var resolved)
+            ? resolved
+            : modulePath.Replace('\\', '/');
     }
 
     private static bool IsImportableMemberSymbol(Symbol symbol)
