@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Eidosc.Ast.Types;
+using Eidosc.Utils;
 
 namespace Eidosc.Types;
 
@@ -69,7 +71,7 @@ internal abstract record ComptimeValue
         }
     }
 
-    protected static string EncodeText(string value) =>
+    internal static string EncodeText(string value) =>
         Convert.ToHexString(Encoding.UTF8.GetBytes(value)).ToLowerInvariant();
 }
 
@@ -182,5 +184,73 @@ internal sealed record ComptimeAdtValue(
         }
 
         return string.Equals(ConstructorName, constructorName, StringComparison.Ordinal);
+    }
+}
+
+internal sealed record MetaTypeRef(
+    string Kind,
+    string Name,
+    string StableIdentity,
+    SymbolId SymbolId,
+    TypeId TypeId,
+    IReadOnlyList<MetaTypeRef> Arguments,
+    TypeNode? InternalSyntax = null,
+    IReadOnlyList<MetaGenericArgumentRef>? GenericArguments = null)
+{
+    public string CanonicalText =>
+        $"{Kind}:{ComptimeValue.EncodeText(Name)}:{ComptimeValue.EncodeText(StableIdentity)}" +
+        $"[{string.Join(";", Arguments.Select(static argument => argument.CanonicalText))}]" +
+        $"<[{string.Join(";", (GenericArguments ?? []).Select(static argument => argument.CanonicalText))}]>";
+}
+
+internal sealed record MetaGenericArgumentRef(
+    string Domain,
+    string Display,
+    string StableIdentity,
+    SymbolId SymbolId,
+    MetaTypeRef? Type)
+{
+    public string CanonicalText =>
+        $"{Domain}:{ComptimeValue.EncodeText(Display)}:{ComptimeValue.EncodeText(StableIdentity)}:" +
+        (Type == null ? "none" : Type.CanonicalText);
+}
+
+internal sealed record ComptimeTypeValue(MetaTypeRef TypeRef) : ComptimeValue
+{
+    protected override string UntypedCanonicalText => $"meta-type:{TypeRef.CanonicalText}";
+}
+
+internal sealed record ComptimeDeclValue(
+    SymbolId SymbolId,
+    string StableIdentity,
+    string Name,
+    string DeclarationKind,
+    SourceSpan Span) : ComptimeValue
+{
+    protected override string UntypedCanonicalText =>
+        $"meta-decl:{EncodeText(StableIdentity)}:{EncodeText(Name)}:{EncodeText(DeclarationKind)}";
+}
+
+internal sealed record ComptimeMetaObjectValue(
+    string SchemaKind,
+    IReadOnlyList<ComptimeNamedValue> Properties) : ComptimeValue
+{
+    protected override string UntypedCanonicalText =>
+        $"meta-object:{WellKnownStrings.Meta.SchemaVersion}:{EncodeText(SchemaKind)}" +
+        $"[{string.Join(";", Properties.Select(static property => property.CanonicalText))}]";
+
+    public bool TryGet(string name, out ComptimeValue value)
+    {
+        foreach (var property in Properties)
+        {
+            if (string.Equals(property.Name, name, StringComparison.Ordinal))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = ComptimeUnitValue.Instance;
+        return false;
     }
 }

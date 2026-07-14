@@ -16,4 +16,22 @@ public static class WellKnownTypeIds
     public const int CfnId = 9;
     public const int TypeEqId = 10;
     public const int NeverId = 11;
+    public const int TypeId = 12;
+    public const int MetaTypeInfoId = 13;
+    public const int MetaDeclId = 14;
+    public const int MetaDeclInfoId = 15;
+    public const int MetaSpanId = 16;
+    public const int MetaDeriveInputId = 17;
+    public const int MetaExpansionId = 18;
+    public const int MetaDeclarationId = 19;
+    public const int MetaParameterId = 20;
+    public const int MetaBindingId = 21;
+    public const int MetaExprId = 22;
+    public const int MetaPatternId = 23;
+    public const int MetaBranchId = 24;
+    public const int MetaFieldInfoId = 25;
+    public const int MetaConstructorInfoId = 26;
+    public const int MetaNamedExprId = 27;
+    public const int MetaFieldPatternId = 28;
+    public const int MetaLayoutInfoId = 29;
 }

@@ -15,6 +15,11 @@ public sealed partial class TypeInferer
 {
     private Type CreateFunctionType(FuncSymbol funcSymbol)
     {
+        if (MetaSchemaRegistry.IsMetaIntrinsic(funcSymbol, out _))
+        {
+            return MetaSchemaRegistry.CreateFunctionType(funcSymbol, _substitution, _symbolTable);
+        }
+
         return CreateFunctionType(funcSymbol, _substitution);
     }
 
@@ -127,6 +132,7 @@ public sealed partial class TypeInferer
                 Id = new TypeId(BaseTypes.RawPtrId)
             },
             BaseTypes.CfnId => BaseTypes.Cfn,
+            BaseTypes.TypeValueId => BaseTypes.TypeValue,
             BaseTypes.NeverId => BaseTypes.Never,
             _ => new TyCon { Name = $"T{typeId.Value}", Id = typeId }
         };

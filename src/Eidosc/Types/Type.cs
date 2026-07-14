@@ -386,6 +386,8 @@ public static class BaseTypes
     /// </summary>
     public const int NeverId = 11;
 
+    public const int TypeValueId = 12;
+
     /// <summary>
     /// 整数类型
     /// </summary>
@@ -436,6 +438,8 @@ public static class BaseTypes
     /// </summary>
     public static TyCon Never { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Never, Id = new TypeId(NeverId) };
 
+    public static TyCon TypeValue { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Type, Id = new TypeId(TypeValueId) };
+
     /// <summary>
     /// 根据名称获取内置类型的 TypeId
     /// </summary>
@@ -454,6 +458,7 @@ public static class BaseTypes
         WellKnownStrings.BuiltinTypes.Cfn => new TypeId(CfnId),
         WellKnownStrings.BuiltinTypes.TypeEq => new TypeId(TypeEqId),
         WellKnownStrings.BuiltinTypes.Never => new TypeId(NeverId),
+        WellKnownStrings.BuiltinTypes.Type => new TypeId(TypeValueId),
         _ => TypeId.None
     };
 
@@ -462,7 +467,12 @@ public static class BaseTypes
     /// </summary>
     /// <param name="id">TypeId</param>
     /// <returns>是否是内置类型</returns>
-    public static bool IsBuiltIn(TypeId id) => id.Value is >= 1 and <= 11;
+    public static bool IsBuiltIn(TypeId id) => id.Value is >= 1 and <= TypeValueId;
+
+    public static bool IsCompilerMeta(TypeId id) =>
+        id.Value is >= WellKnownTypeIds.MetaTypeInfoId and <= WellKnownTypeIds.MetaLayoutInfoId;
+
+    public static bool IsReservedCompilerType(TypeId id) => IsBuiltIn(id) || IsCompilerMeta(id);
 
     public static bool IsNever(Type type)
     {

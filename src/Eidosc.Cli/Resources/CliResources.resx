@@ -1764,4 +1764,25 @@ Graph Formats:
   <data name="ArtifactMessage" xml:space="preserve">
     <value>{0}: {1}</value>
   </data>
+  <data name="MetaCommandDescription" xml:space="preserve">
+    <value>检查编译器元编程结果。</value>
+  </data>
+  <data name="MetaExpandCommandDescription" xml:space="preserve">
+    <value>输出用户 derive 生成的结构化声明。</value>
+  </data>
+  <data name="MetaExpandFormatOptionDescription" xml:space="preserve">
+    <value>输出格式：readable 或 json。</value>
+  </data>
+  <data name="MetaEmitGeneratedOptionDescription" xml:space="preserve">
+    <value>将 generated virtual document 写入指定目录。</value>
+  </data>
+  <data name="MetaTraceComptimeOptionDescription" xml:space="preserve">
+    <value>将 comptime 调用、反射查询和缓存 trace 写入标准错误。</value>
+  </data>
+  <data name="MetaComptimeBudgetOptionDescription" xml:space="preserve">
+    <value>覆盖每次顶层 comptime 求值的 fuel 预算。</value>
+  </data>
+  <data name="MetaInvalidComptimeBudget" xml:space="preserve">
+    <value>--comptime-budget 必须是正整数。</value>
+  </data>
 </root>

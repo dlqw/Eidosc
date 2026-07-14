@@ -591,7 +591,14 @@ public static class SymbolTableStateBuilder
         {
             Id = RemapSyntheticSymbolId(payload.Id, symbolIdMap),
             TypeId = RemapSyntheticTypeId(payload.TypeId, typeIdMap),
-            Facts = NormalizeSymbolFacts(payload.Facts, symbolIdMap, typeIdMap)
+            Facts = NormalizeSymbolFacts(payload.Facts, symbolIdMap, typeIdMap),
+            GeneratedOrigin = payload.GeneratedOrigin == null
+                ? null
+                : payload.GeneratedOrigin with
+                {
+                    GeneratorSymbolId = RemapSyntheticSymbolId(payload.GeneratedOrigin.GeneratorSymbolId, symbolIdMap),
+                    TargetSymbolId = RemapSyntheticSymbolId(payload.GeneratedOrigin.TargetSymbolId, symbolIdMap)
+                }
         };
 
     private static ScopePayload NormalizeScopePayload(
@@ -1480,9 +1487,34 @@ public static class SymbolTableStateBuilder
             return false;
         }
 
+        if (payload.GeneratedOrigin != null)
+        {
+            symbol = symbol with
+            {
+                GeneratedOrigin = RestoreGeneratedOrigin(payload.GeneratedOrigin, symbolRemap)
+            };
+        }
+
         failure = "";
         return true;
     }
+
+    private static GeneratedDeclarationOrigin RestoreGeneratedOrigin(
+        GeneratedDeclarationOriginPayload origin,
+        IReadOnlyDictionary<int, SymbolId> symbolRemap) => new()
+    {
+        StableIdentity = origin.StableIdentity,
+        GeneratorIdentity = origin.GeneratorIdentity,
+        TargetIdentity = origin.TargetIdentity,
+        GeneratorSymbolId = RemapSymbolId(origin.GeneratorSymbolId, symbolRemap),
+        TargetSymbolId = RemapSymbolId(origin.TargetSymbolId, symbolRemap),
+        AttributeOccurrenceIndex = origin.AttributeOccurrenceIndex,
+        ExpansionOutputIndex = origin.ExpansionOutputIndex,
+        CanonicalArgumentsHash = origin.CanonicalArgumentsHash,
+        MetaSchemaVersion = origin.MetaSchemaVersion,
+        AttributeSpan = CreateSourceSpan(origin.AttributeSpan),
+        VirtualDocumentPath = origin.VirtualDocumentPath
+    };
 
     private static ModuleSymbol CreateModuleSymbol(
         SymbolPayload payload,

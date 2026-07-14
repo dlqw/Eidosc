@@ -15,6 +15,7 @@ public sealed class CompilationResult
     public bool Success { get; init; }
     public CompilationPhase CompletedPhase { get; init; }
     public IReadOnlyList<Diagnostic.Diagnostic> Diagnostics { get; init; } = [];
+    public IReadOnlyList<ComptimeTraceEntry> ComptimeTrace { get; init; } = [];
     public string InputFile { get; init; } = "";
     public IReadOnlyList<string> ImportSearchRoots { get; init; } = [];
     public bool NoImplicitPrelude { get; init; }

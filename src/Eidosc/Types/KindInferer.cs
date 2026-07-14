@@ -108,7 +108,7 @@ public sealed class KindInferer
     {
         return name switch
         {
-            WellKnownStrings.BuiltinTypes.Int or WellKnownStrings.BuiltinTypes.Float or WellKnownStrings.BuiltinTypes.String or WellKnownStrings.BuiltinTypes.Bool or WellKnownStrings.BuiltinTypes.Char or WellKnownStrings.BuiltinTypes.Never or "()" => true,
+            WellKnownStrings.BuiltinTypes.Int or WellKnownStrings.BuiltinTypes.Float or WellKnownStrings.BuiltinTypes.String or WellKnownStrings.BuiltinTypes.Bool or WellKnownStrings.BuiltinTypes.Char or WellKnownStrings.BuiltinTypes.Never or WellKnownStrings.BuiltinTypes.Type or "()" => true,
             _ => false
         };
     }

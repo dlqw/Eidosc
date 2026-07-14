@@ -67,6 +67,7 @@ public sealed partial class SymbolTable
             WellKnownTypeIds.StringId => WellKnownStrings.BuiltinTypes.String,
             WellKnownTypeIds.CharId => WellKnownStrings.BuiltinTypes.Char,
             WellKnownTypeIds.UnitId => WellKnownStrings.BuiltinTypes.Unit,
+            WellKnownTypeIds.TypeId => WellKnownStrings.BuiltinTypes.Type,
             WellKnownTypeIds.ErasedCallableId => "ErasedCallable",
             WellKnownTypeIds.NeverId => WellKnownStrings.BuiltinTypes.Never,
             _ => ResolveNamedTypeName(typeId)

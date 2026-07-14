@@ -48,5 +48,32 @@ public abstract record Symbol
     /// </summary>
     public TypeId TypeId { get; init; } = TypeId.None;
 
+    public GeneratedDeclarationOrigin? GeneratedOrigin { get; init; }
+
     public override string ToString() => $"{Kind}:{Name}${Id.Value}";
+}
+
+public sealed record GeneratedDeclarationOrigin
+{
+    public required string StableIdentity { get; init; }
+
+    public required string GeneratorIdentity { get; init; }
+
+    public required string TargetIdentity { get; init; }
+
+    public SymbolId GeneratorSymbolId { get; init; } = SymbolId.None;
+
+    public SymbolId TargetSymbolId { get; init; } = SymbolId.None;
+
+    public int AttributeOccurrenceIndex { get; init; }
+
+    public int ExpansionOutputIndex { get; init; }
+
+    public string CanonicalArgumentsHash { get; init; } = string.Empty;
+
+    public int MetaSchemaVersion { get; init; }
+
+    public SourceSpan AttributeSpan { get; init; }
+
+    public string VirtualDocumentPath { get; init; } = string.Empty;
 }

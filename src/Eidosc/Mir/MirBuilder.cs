@@ -379,6 +379,11 @@ public sealed partial class MirBuilder
         {
             if (decl is HirFunc func)
             {
+                if (func.IsComptime)
+                {
+                    continue;
+                }
+
                 if (func.IsExternal || func.IntrinsicName != null && func.Body == null)
                 {
                     mirModule.Functions.Add(CreateDeclarationPlaceholder(func));

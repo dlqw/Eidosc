@@ -50,6 +50,33 @@ public static class WellKnownStrings
         public const string TypeEq = "TypeEq";
     }
 
+    public static class Meta
+    {
+        public const string Module = "Meta";
+        public const int SchemaVersion = 1;
+
+        public static class Types
+        {
+            public const string TypeInfo = "TypeInfo";
+            public const string Decl = "Decl";
+            public const string DeclInfo = "DeclInfo";
+            public const string Span = "Span";
+            public const string DeriveInput = "DeriveInput";
+            public const string Expansion = "Expansion";
+            public const string Declaration = "Declaration";
+            public const string Parameter = "Parameter";
+            public const string Binding = "Binding";
+            public const string Expr = "Expr";
+            public const string Pattern = "Pattern";
+            public const string Branch = "Branch";
+            public const string FieldInfo = "FieldInfo";
+            public const string ConstructorInfo = "ConstructorInfo";
+            public const string NamedExpr = "NamedExpr";
+            public const string FieldPattern = "FieldPattern";
+            public const string LayoutInfo = "LayoutInfo";
+        }
+    }
+
     /// <summary>
     /// Built-in ability names that are always available without user declaration.
     /// </summary>

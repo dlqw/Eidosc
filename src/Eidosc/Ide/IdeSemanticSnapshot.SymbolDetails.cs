@@ -173,6 +173,17 @@ public static partial class IdeSemanticSnapshotBuilder
 
             if (node.SymbolId.IsValid && IdeSpan.TryFrom(node.Span, out var span))
             {
+                if (IsDefinitionNode(node) &&
+                    symbolTable?.GetSymbol(node.SymbolId)?.GeneratedOrigin is { } generatedOrigin)
+                {
+                    AddOccurrence(
+                        node.SymbolId.Value,
+                        "definition",
+                        node.GetType().Name,
+                        CreateGeneratedVirtualSpan(generatedOrigin.VirtualDocumentPath));
+                    return;
+                }
+
                 var role = IsDefinitionNode(node) || MatchesDefinitionSpan(node.SymbolId.Value, span)
                     ? "definition"
                     : "reference";
@@ -479,6 +490,8 @@ public static partial class IdeSemanticSnapshotBuilder
                 Span = symbol.Span,
                 VisibilitySpan = symbol.VisibilitySpan,
                 IsBuiltin = symbol.IsBuiltin,
+                IsGenerated = symbol.IsGenerated,
+                GeneratedOrigin = symbol.GeneratedOrigin,
                 SortText = symbol.IsBuiltin ? $"0_{symbol.Name}" : $"1_{symbol.Name}"
             });
 
@@ -522,6 +535,8 @@ public static partial class IdeSemanticSnapshotBuilder
                     Span = symbol.Span,
                     VisibilitySpan = symbol.VisibilitySpan,
                     IsBuiltin = symbol.IsBuiltin,
+                    IsGenerated = symbol.IsGenerated,
+                    GeneratedOrigin = symbol.GeneratedOrigin,
                     SortText = symbol.IsBuiltin ? $"0q_{qualifiedLabel}" : $"1q_{qualifiedLabel}"
                 });
             }

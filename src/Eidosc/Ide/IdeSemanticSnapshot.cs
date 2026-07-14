@@ -36,6 +36,7 @@ public sealed class IdeSemanticSnapshot
     public List<IdeOverloadGroupEntry> OverloadGroups { get; init; } = [];
     public List<IdeOccurrenceEntry> Occurrences { get; init; } = [];
     public List<IdeCompletionEntry> Completions { get; init; } = [];
+    public List<IdeGeneratedDocumentEntry> GeneratedDocuments { get; init; } = [];
     public List<IdeBorrowCapabilityEntry> BorrowCapabilities { get; init; } = [];
     public List<IdeRecoveredNodeEntry> RecoveredNodes { get; init; } = [];
 }
@@ -129,8 +130,35 @@ public sealed class IdeSymbolEntry
     public string? BindingMode { get; init; }
     public IdeSpan? VisibilitySpan { get; init; }
     public bool IsBuiltin { get; init; }
+    public bool IsGenerated { get; init; }
+    public IdeGeneratedOriginEntry? GeneratedOrigin { get; init; }
     public string? ExternalLibrary { get; init; }
     public IdeSpan? Span { get; init; }
+}
+
+public sealed class IdeGeneratedOriginEntry
+{
+    public string StableIdentity { get; init; } = "";
+    public string GeneratorIdentity { get; init; } = "";
+    public string TargetIdentity { get; init; } = "";
+    public int GeneratorSymbolId { get; init; }
+    public int TargetSymbolId { get; init; }
+    public int AttributeOccurrenceIndex { get; init; }
+    public int ExpansionOutputIndex { get; init; }
+    public string CanonicalArgumentsHash { get; init; } = "";
+    public int MetaSchemaVersion { get; init; }
+    public IdeSpan? AttributeSpan { get; init; }
+    public string VirtualDocumentPath { get; init; } = "";
+}
+
+public sealed class IdeGeneratedDocumentEntry
+{
+    public string Uri { get; init; } = "";
+    public string LanguageId { get; init; } = "eidos";
+    public string StableIdentity { get; init; } = "";
+    public string GeneratorIdentity { get; init; } = "";
+    public string TargetIdentity { get; init; } = "";
+    public string Content { get; init; } = "";
 }
 
 public sealed class IdeOverloadGroupEntry
@@ -180,6 +208,8 @@ public sealed class IdeCompletionEntry
     public IdeSpan? Span { get; init; }
     public IdeSpan? VisibilitySpan { get; init; }
     public bool IsBuiltin { get; init; }
+    public bool IsGenerated { get; init; }
+    public IdeGeneratedOriginEntry? GeneratedOrigin { get; init; }
     public string SortText { get; init; } = "";
 }
 
@@ -366,6 +396,11 @@ public static partial class IdeSemanticSnapshotBuilder
             symbols,
             allowsTypeSensitiveRewrites);
         var completions = BuildCompletions(result.SymbolTable, symbols, overloadGroups);
+        var generatedDocuments = symbols
+            .Where(static symbol => symbol.IsGenerated && symbol.GeneratedOrigin != null)
+            .OrderBy(static symbol => symbol.GeneratedOrigin!.StableIdentity, StringComparer.Ordinal)
+            .Select(GeneratedDocumentRenderer.Create)
+            .ToList();
         var borrowCapabilities = BuildBorrowCapabilities(result.BorrowCheckResult);
 
         var snapshotConfidence = DetermineSnapshotConfidence(result);
@@ -376,7 +411,8 @@ public static partial class IdeSemanticSnapshotBuilder
             occurrences,
             outline,
             recoveredNodes,
-            completions);
+            completions,
+            generatedDocuments);
 
         return new IdeSemanticSnapshot
         {
@@ -396,6 +432,7 @@ public static partial class IdeSemanticSnapshotBuilder
             OverloadGroups = overloadGroups,
             Occurrences = occurrences,
             Completions = completions,
+            GeneratedDocuments = generatedDocuments,
             BorrowCapabilities = borrowCapabilities,
             RecoveredNodes = recoveredNodes
         };
@@ -408,7 +445,8 @@ public static partial class IdeSemanticSnapshotBuilder
         IReadOnlyList<IdeOccurrenceEntry> occurrences,
         IReadOnlyList<IdeOutlineEntry> outline,
         IReadOnlyList<IdeRecoveredNodeEntry> recoveredNodes,
-        IReadOnlyList<IdeCompletionEntry> completions)
+        IReadOnlyList<IdeCompletionEntry> completions,
+        IReadOnlyList<IdeGeneratedDocumentEntry> generatedDocuments)
     {
         var hasDiagnostics = result.Diagnostics.Count > 0;
         var hasLexicalTokens = result.Tokens?.Count > 0;
@@ -450,6 +488,11 @@ public static partial class IdeSemanticSnapshotBuilder
         if (symbols.Count > 0)
         {
             guaranteedFields.Add(nameof(IdeSemanticSnapshot.Symbols));
+        }
+
+        if (generatedDocuments.Count > 0)
+        {
+            guaranteedFields.Add(nameof(IdeSemanticSnapshot.GeneratedDocuments));
         }
 
         if (hasTermOccurrences)
@@ -1084,7 +1127,11 @@ public static partial class IdeSemanticSnapshotBuilder
             var isBuiltin = symbol.Kind == SymbolKind.Adt && IsBuiltinTypeName(symbol.Name);
             symbolMetadata.TryGetValue(symbol.Id.Value, out var metadata);
             IdeSpan? span = null;
-            if (IdeSpan.TryFrom(symbol.Span, out var symbolSpan))
+            if (symbol.GeneratedOrigin is { } generatedOrigin)
+            {
+                span = CreateGeneratedVirtualSpan(generatedOrigin.VirtualDocumentPath);
+            }
+            else if (IdeSpan.TryFrom(symbol.Span, out var symbolSpan))
             {
                 span = symbolSpan;
             }
@@ -1115,6 +1162,8 @@ public static partial class IdeSemanticSnapshotBuilder
                     ? null
                     : TryConvertIdeSpan(metadata?.VisibilitySpan),
                 IsBuiltin = isBuiltin,
+                IsGenerated = symbol.GeneratedOrigin != null,
+                GeneratedOrigin = CreateGeneratedOriginEntry(symbol.GeneratedOrigin),
                 ExternalLibrary = symbol is FuncSymbol { IsExternal: true, ExternalLibrary: not null } func
                     ? func.ExternalLibrary
                     : null,
@@ -1135,6 +1184,40 @@ public static partial class IdeSemanticSnapshotBuilder
 
         return symbols;
     }
+
+    private static IdeGeneratedOriginEntry? CreateGeneratedOriginEntry(GeneratedDeclarationOrigin? origin)
+    {
+        if (origin == null)
+        {
+            return null;
+        }
+
+        return new IdeGeneratedOriginEntry
+        {
+            StableIdentity = origin.StableIdentity,
+            GeneratorIdentity = origin.GeneratorIdentity,
+            TargetIdentity = origin.TargetIdentity,
+            GeneratorSymbolId = origin.GeneratorSymbolId.Value,
+            TargetSymbolId = origin.TargetSymbolId.Value,
+            AttributeOccurrenceIndex = origin.AttributeOccurrenceIndex,
+            ExpansionOutputIndex = origin.ExpansionOutputIndex,
+            CanonicalArgumentsHash = origin.CanonicalArgumentsHash,
+            MetaSchemaVersion = origin.MetaSchemaVersion,
+            AttributeSpan = IdeSpan.TryFrom(origin.AttributeSpan, out var attributeSpan) ? attributeSpan : null,
+            VirtualDocumentPath = origin.VirtualDocumentPath
+        };
+    }
+
+    private static IdeSpan CreateGeneratedVirtualSpan(string virtualDocumentPath) => new()
+    {
+        StartLine = 0,
+        StartCharacter = 0,
+        EndLine = 0,
+        EndCharacter = 1,
+        Start = 0,
+        Length = 1,
+        FilePath = virtualDocumentPath
+    };
 
     private static List<IdeOverloadGroupEntry> BuildOverloadGroups(
         SymbolTable? symbolTable,

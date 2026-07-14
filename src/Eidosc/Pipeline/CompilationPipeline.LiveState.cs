@@ -14,11 +14,27 @@ public sealed partial class CompilationPipeline
         if (!CompilationLiveStateCache.TryGet(key, out var snapshot))
         {
             SetProfilingCounter($"Build.liveState.{phase}.misses", 1);
+            _comptimeExecution.Trace.Record(
+                "pipeline.cache",
+                "cache",
+                $"live-state:{phase}",
+                "miss",
+                key.FlagsHash,
+                _ast.Span,
+                0);
             return false;
         }
 
         ApplyLiveStateSnapshot(snapshot);
         SetProfilingCounter($"Build.liveState.{phase}.hits", 1);
+        _comptimeExecution.Trace.Record(
+            "pipeline.cache",
+            "cache",
+            $"live-state:{phase}",
+            "hit",
+            key.FlagsHash,
+            _ast.Span,
+            0);
         return true;
     }
 
@@ -34,6 +50,14 @@ public sealed partial class CompilationPipeline
             CreateLiveStateCacheKey(phase),
             CreateLiveStateSnapshot());
         SetProfilingCounter($"Build.liveState.{phase}.stores", 1);
+        _comptimeExecution.Trace.Record(
+            "pipeline.cache",
+            "cache",
+            $"live-state:{phase}",
+            "store",
+            GetLiveStateFlagsHash(),
+            _ast.Span,
+            0);
     }
 
     private bool CanUseLiveStateCache()
@@ -88,6 +112,9 @@ public sealed partial class CompilationPipeline
             $"entry:{_options.EntryFunctionName ?? ""}",
             $"stop:{_options.StopAtPhase?.ToString() ?? ""}",
             $"mir-opt:{_options.EnableMirOptimizations}",
+            $"comptime-fuel:{_options.ComptimeFuelBudget}",
+            $"comptime-bytes:{_options.ComptimeAllocatedValueBytesBudget}",
+            $"comptime-diagnostics:{_options.ComptimeDiagnosticBudget}",
             $"no-prelude:{_options.NoImplicitPrelude}",
             $"imports:{string.Join('|', _options.ImportSearchRoots.Select(SourcePathNormalizer.NormalizeForCacheKey))}",
             $"packages:{string.Join('|', _options.PackageImportRoots.OrderBy(static pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={string.Join(',', pair.Value.Select(SourcePathNormalizer.NormalizeForCacheKey))}"))}"

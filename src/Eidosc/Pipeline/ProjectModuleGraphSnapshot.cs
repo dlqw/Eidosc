@@ -717,6 +717,16 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
     {
         yield return $"moduleLevel:{symbol.IsModuleLevel}";
         yield return $"typeResolved:{symbol.IsTypeResolved}";
+        if (symbol.GeneratedOrigin is { } origin)
+        {
+            yield return $"generated:{origin.StableIdentity}";
+            yield return $"generatedBy:{origin.GeneratorIdentity}";
+            yield return $"generatedTarget:{origin.TargetIdentity}";
+            yield return $"generatedOccurrence:{origin.AttributeOccurrenceIndex}";
+            yield return $"generatedOutput:{origin.ExpansionOutputIndex}";
+            yield return $"generatedArguments:{origin.CanonicalArgumentsHash}";
+            yield return $"generatedMetaSchema:{origin.MetaSchemaVersion}";
+        }
 
         switch (symbol)
         {

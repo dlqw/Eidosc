@@ -23,7 +23,7 @@ public sealed partial class TypeInferer
         if (letDecl.Value != null)
         {
             var savedAllowComptimeFunctionReferences = _allowComptimeFunctionReferences;
-            _allowComptimeFunctionReferences = letDecl.IsComptime;
+            _allowComptimeFunctionReferences = savedAllowComptimeFunctionReferences || letDecl.IsComptime;
             try
             {
                 valueType = letDecl.TypeAnnotation != null
@@ -56,11 +56,18 @@ public sealed partial class TypeInferer
                     _comptimeValues,
                     _functionDefinitionsBySymbol,
                     _substitution.Apply,
+                    CreateMetaComptimeContext($"comptime binding at {letDecl.Span}"),
                     out var comptimeValue,
                     out var reason);
                 if (!evaluated)
                 {
-                    AddError(letDecl.Value.Span, DiagnosticMessages.ComptimeBindingRhsMustBeEvaluable(reason));
+                    var code = reason.Contains("not complete in the reflection phase", StringComparison.Ordinal)
+                        ? "E4016"
+                        : TypeErrorCode;
+                    AddError(
+                        letDecl.Value.Span,
+                        DiagnosticMessages.ComptimeBindingRhsMustBeEvaluable(reason),
+                        code);
                 }
                 else if (letDecl.SymbolId.IsValid)
                 {

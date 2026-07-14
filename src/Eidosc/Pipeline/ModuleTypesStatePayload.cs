@@ -335,7 +335,7 @@ public sealed record ComptimeValuesPayload(
     int UnsupportedValues,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "comptime-values-payload-v3";
+    public const string CurrentSchemaVersion = "comptime-values-payload-v4";
 
     public static ComptimeValuesPayload Create(
         TypeInferer? typeInferer,
@@ -415,12 +415,18 @@ public sealed record ComptimeValuePayload(
     int? ConstructorSymbolId = null,
     string? ConstructorName = null,
     IReadOnlyList<ComptimeNamedValuePayload>? NamedValues = null,
-    TypeShapePayload? StaticType = null)
+    TypeShapePayload? StaticType = null,
+    MetaTypeRefPayload? MetaType = null,
+    MetaDeclValuePayload? MetaDeclaration = null,
+    string? MetaSchemaKind = null)
 {
     public const string NullKind = "Null";
     public const string ScalarKindName = "Scalar";
     public const string SequenceKindName = "Sequence";
     public const string AdtKindName = "Adt";
+    public const string MetaTypeKindName = "MetaType";
+    public const string MetaDeclarationKindName = "MetaDeclaration";
+    public const string MetaObjectKindName = "MetaObject";
 
     internal static bool TryCreate(ComptimeValue value, out ComptimeValuePayload payload)
     {
@@ -493,6 +499,34 @@ public sealed record ComptimeValuePayload(
                     ConstructorSymbolId: adt.ConstructorId.Value,
                     ConstructorName: adt.ConstructorName,
                     NamedValues: namedValues));
+                return true;
+            case ComptimeTypeValue typeValue:
+                payload = AttachStaticType(typeValue, new ComptimeValuePayload(
+                    MetaTypeKindName,
+                    MetaType: MetaTypeRefPayload.Create(typeValue.TypeRef)));
+                return true;
+            case ComptimeDeclValue declaration:
+                payload = AttachStaticType(declaration, new ComptimeValuePayload(
+                    MetaDeclarationKindName,
+                    MetaDeclaration: MetaDeclValuePayload.Create(declaration)));
+                return true;
+            case ComptimeMetaObjectValue metaObject:
+                var properties = new List<ComptimeNamedValuePayload>(metaObject.Properties.Count);
+                foreach (var property in metaObject.Properties)
+                {
+                    if (!TryCreate(property.Value, out var propertyPayload))
+                    {
+                        payload = new ComptimeValuePayload("Unsupported");
+                        return false;
+                    }
+
+                    properties.Add(new ComptimeNamedValuePayload(property.Name, propertyPayload));
+                }
+
+                payload = AttachStaticType(metaObject, new ComptimeValuePayload(
+                    MetaObjectKindName,
+                    NamedValues: properties,
+                    MetaSchemaKind: metaObject.SchemaKind));
                 return true;
             default:
                 payload = new ComptimeValuePayload("Unsupported");
@@ -596,6 +630,48 @@ public sealed record ComptimeValuePayload(
                     namedValues);
                 return true;
 
+            case MetaTypeKindName:
+                if (MetaType == null || !MetaType.TryRestore(remapper, out var typeRef))
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                value = new ComptimeTypeValue(typeRef);
+                return true;
+
+            case MetaDeclarationKindName:
+                if (MetaDeclaration == null)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                value = MetaDeclaration.Restore(remapper);
+                return true;
+
+            case MetaObjectKindName:
+                if (string.IsNullOrWhiteSpace(MetaSchemaKind) || NamedValues == null)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                var metaProperties = new ComptimeNamedValue[NamedValues.Count];
+                for (var i = 0; i < NamedValues.Count; i++)
+                {
+                    if (!NamedValues[i].Value.TryRestoreValue(remapper, out var propertyValue))
+                    {
+                        value = ComptimeUnitValue.Instance;
+                        return false;
+                    }
+
+                    metaProperties[i] = new ComptimeNamedValue(NamedValues[i].Name, propertyValue);
+                }
+
+                value = new ComptimeMetaObjectValue(MetaSchemaKind, metaProperties);
+                return true;
+
             default:
                 value = ComptimeUnitValue.Instance;
                 return false;
@@ -651,6 +727,119 @@ public sealed record ComptimeValuePayload(
 public sealed record ComptimeNamedValuePayload(
     string Name,
     ComptimeValuePayload Value);
+
+public sealed record MetaTypeRefPayload(
+    string Kind,
+    string Name,
+    string StableIdentity,
+    int SymbolId,
+    int TypeId,
+    IReadOnlyList<MetaTypeRefPayload> Arguments,
+    IReadOnlyList<MetaGenericArgumentRefPayload>? GenericArguments = null)
+{
+    internal static MetaTypeRefPayload Create(MetaTypeRef type) => new(
+        type.Kind,
+        type.Name,
+        type.StableIdentity,
+        type.SymbolId.Value,
+        type.TypeId.Value,
+        type.Arguments.Select(Create).ToArray(),
+        type.GenericArguments?.Select(MetaGenericArgumentRefPayload.Create).ToArray());
+
+    internal bool TryRestore(LiveStateIdRemapper? remapper, out MetaTypeRef type)
+    {
+        var arguments = new MetaTypeRef[Arguments.Count];
+        for (var i = 0; i < Arguments.Count; i++)
+        {
+            if (!Arguments[i].TryRestore(remapper, out arguments[i]))
+            {
+                type = null!;
+                return false;
+            }
+        }
+
+        MetaGenericArgumentRef[]? genericArguments = null;
+        if (GenericArguments != null)
+        {
+            genericArguments = new MetaGenericArgumentRef[GenericArguments.Count];
+            for (var i = 0; i < GenericArguments.Count; i++)
+            {
+                if (!GenericArguments[i].TryRestore(remapper, out genericArguments[i]))
+                {
+                    type = null!;
+                    return false;
+                }
+            }
+        }
+
+        type = new MetaTypeRef(
+            Kind,
+            Name,
+            StableIdentity,
+            new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
+            new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
+            arguments,
+            GenericArguments: genericArguments);
+        return true;
+    }
+}
+
+public sealed record MetaGenericArgumentRefPayload(
+    string Domain,
+    string Display,
+    string StableIdentity,
+    int SymbolId,
+    MetaTypeRefPayload? Type)
+{
+    internal static MetaGenericArgumentRefPayload Create(MetaGenericArgumentRef argument) => new(
+        argument.Domain,
+        argument.Display,
+        argument.StableIdentity,
+        argument.SymbolId.Value,
+        argument.Type == null ? null : MetaTypeRefPayload.Create(argument.Type));
+
+    internal bool TryRestore(LiveStateIdRemapper? remapper, out MetaGenericArgumentRef argument)
+    {
+        MetaTypeRef? type = null;
+        if (Type != null && !Type.TryRestore(remapper, out type))
+        {
+            argument = null!;
+            return false;
+        }
+
+        argument = new MetaGenericArgumentRef(
+            Domain,
+            Display,
+            StableIdentity,
+            new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
+            type);
+        return true;
+    }
+}
+
+public sealed record MetaDeclValuePayload(
+    int SymbolId,
+    string StableIdentity,
+    string Name,
+    string DeclarationKind,
+    SourceSpanPayload Span)
+{
+    internal static MetaDeclValuePayload Create(ComptimeDeclValue declaration) => new(
+        declaration.SymbolId.Value,
+        declaration.StableIdentity,
+        declaration.Name,
+        declaration.DeclarationKind,
+        SourceSpanPayload.Create(declaration.Span));
+
+    internal ComptimeDeclValue Restore(LiveStateIdRemapper? remapper) => new(
+        new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
+        StableIdentity,
+        Name,
+        DeclarationKind,
+        new SourceSpan(
+            new SourceLocation(Span.Position, Span.Line, Span.Column, Span.FilePath),
+            Span.Length));
+}
 
 public sealed record TypeConstraintsPayload(
     string SchemaVersion,

@@ -2,6 +2,7 @@ using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
+using Eidosc.Symbols;
 using Eidosc.Utils;
 
 namespace Eidosc.Types;
@@ -10,7 +11,63 @@ internal sealed record ComptimeEvaluationContext(
     IReadOnlyDictionary<SymbolId, ComptimeValue> Values,
     IReadOnlyDictionary<SymbolId, FuncDef> Functions,
     Func<Type, Type>? ResolveType = null,
-    int CallDepth = 0);
+    int CallDepth = 0,
+    MetaComptimeContext? Meta = null,
+    ComptimeResourceBudget? Budget = null)
+{
+    public ComptimeResourceBudget Resources { get; } = Budget ?? Meta?.Resources ?? new ComptimeResourceBudget();
+}
+
+internal sealed class ComptimeResourceBudget(
+    long fuel = ComptimeResourceBudget.DefaultFuel,
+    long allocatedBytes = ComptimeResourceBudget.DefaultAllocatedBytes,
+    int diagnosticCount = ComptimeResourceBudget.DefaultDiagnosticCount)
+{
+    public const long DefaultFuel = 100_000;
+    public const long DefaultAllocatedBytes = 64 * 1024 * 1024;
+    public const int DefaultDiagnosticCount = 128;
+
+    private long _remainingFuel = Math.Max(1, fuel);
+    private long _remainingAllocatedBytes = Math.Max(1, allocatedBytes);
+    private int _remainingDiagnosticCount = Math.Max(1, diagnosticCount);
+
+    public bool TryConsumeInstruction(out string reason)
+    {
+        if (_remainingFuel-- > 0)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = "comptime executed-instruction fuel budget exceeded";
+        return false;
+    }
+
+    public bool TryReserveValue(ComptimeValue value, out string reason)
+    {
+        _remainingAllocatedBytes -= System.Text.Encoding.UTF8.GetByteCount(value.CanonicalText);
+        if (_remainingAllocatedBytes >= 0)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = "comptime allocated-value byte budget exceeded";
+        return false;
+    }
+
+    public bool TryConsumeDiagnostic(out string reason)
+    {
+        if (_remainingDiagnosticCount-- > 0)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = "comptime diagnostic count budget exceeded";
+        return false;
+    }
+}
 
 internal static class ComptimeEvaluator
 {
@@ -46,6 +103,41 @@ internal static class ComptimeEvaluator
         return TryEvaluate(node, new ComptimeEvaluationContext(values, functions, resolveType), out value, out reason);
     }
 
+    internal static bool TryEvaluate(
+        EidosAstNode? node,
+        IReadOnlyDictionary<SymbolId, ComptimeValue> values,
+        IReadOnlyDictionary<SymbolId, FuncDef> functions,
+        Func<Type, Type>? resolveType,
+        MetaComptimeContext? meta,
+        out ComptimeValue value,
+        out string reason)
+    {
+        return TryEvaluate(node, new ComptimeEvaluationContext(values, functions, resolveType, Meta: meta), out value, out reason);
+    }
+
+    internal static bool TryInvoke(
+        FuncDef function,
+        IReadOnlyList<ComptimeValue> arguments,
+        IReadOnlyDictionary<SymbolId, ComptimeValue> values,
+        IReadOnlyDictionary<SymbolId, FuncDef> functions,
+        MetaComptimeContext? meta,
+        out ComptimeValue value,
+        out string reason)
+    {
+        return TryEvaluateFunctionBranches(
+            function,
+            arguments,
+            new ComptimeEvaluationContext(values, functions, Meta: meta),
+            out value,
+            out reason);
+    }
+
+    internal static bool TryEvaluateNode(
+        EidosAstNode? node,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason) => TryEvaluate(node, context, out value, out reason);
+
     private static bool TryEvaluate(
         EidosAstNode? node,
         ComptimeEvaluationContext context,
@@ -65,6 +157,12 @@ internal static class ComptimeEvaluator
             };
         }
 
+        if (!context.Resources.TryReserveValue(value, out reason))
+        {
+            value = ComptimeUnitValue.Instance;
+            return false;
+        }
+
         return true;
     }
 
@@ -76,6 +174,11 @@ internal static class ComptimeEvaluator
     {
         value = ComptimeUnitValue.Instance;
         reason = "";
+
+        if (!context.Resources.TryConsumeInstruction(out reason))
+        {
+            return false;
+        }
 
         switch (node)
         {
@@ -93,10 +196,10 @@ internal static class ComptimeEvaluator
                 return false;
 
             case IdentifierExpr identifier:
-                return TryEvaluateSymbolReference(identifier.SymbolId, identifier.Name, context.Values, out value, out reason);
+                return TryEvaluateSymbolReference(identifier.SymbolId, identifier.Name, context, out value, out reason);
 
             case PathExpr path:
-                return TryEvaluateSymbolReference(path.SymbolId, string.Join("::", path.Path), context.Values, out value, out reason);
+                return TryEvaluateSymbolReference(path.SymbolId, string.Join("::", path.Path), context, out value, out reason);
 
             case TupleExpr tuple:
                 return TryEvaluateTuple(tuple, context, out value, out reason);
@@ -125,16 +228,53 @@ internal static class ComptimeEvaluator
             case CtorExpr constructor:
                 return TryEvaluateConstructor(constructor, context, out value, out reason);
 
+            case MethodCallExpr { ResolvedAsFieldAccess: true } fieldAccess:
+                return TryEvaluateFieldAccess(fieldAccess, context, out value, out reason);
+
             default:
                 reason = $"{node.GetType().Name} is not supported by the phase-1 comptime evaluator";
                 return false;
         }
     }
 
+    private static bool TryEvaluateFieldAccess(
+        MethodCallExpr fieldAccess,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        if (!TryEvaluate(fieldAccess.Receiver, context, out var receiver, out reason))
+        {
+            value = ComptimeUnitValue.Instance;
+            return false;
+        }
+
+        if (receiver is not ComptimeAdtValue adt)
+        {
+            value = ComptimeUnitValue.Instance;
+            reason = $"field access '{fieldAccess.MethodName}' requires a comptime ADT value";
+            return false;
+        }
+
+        foreach (var namedValue in adt.NamedValues)
+        {
+            if (string.Equals(namedValue.Name, fieldAccess.MethodName, StringComparison.Ordinal))
+            {
+                value = namedValue.Value;
+                reason = string.Empty;
+                return true;
+            }
+        }
+
+        value = ComptimeUnitValue.Instance;
+        reason = $"comptime ADT value '{adt.ConstructorName}' has no field '{fieldAccess.MethodName}'";
+        return false;
+    }
+
     private static bool TryEvaluateSymbolReference(
         SymbolId symbolId,
         string displayName,
-        IReadOnlyDictionary<SymbolId, ComptimeValue> values,
+        ComptimeEvaluationContext context,
         out ComptimeValue value,
         out string reason)
     {
@@ -145,10 +285,19 @@ internal static class ComptimeEvaluator
             return false;
         }
 
-        if (values.TryGetValue(symbolId, out var storedValue))
+        if (context.Values.TryGetValue(symbolId, out var storedValue))
         {
             value = storedValue;
             reason = "";
+            return true;
+        }
+
+        var typeSymbol = context.Meta?.SymbolTable.GetSymbol(symbolId);
+        if (typeSymbol is AdtSymbol or TraitSymbol or
+            TypeParamSymbol { ParameterKind: GenericParameterKind.Type })
+        {
+            value = MetaComptimeIntrinsics.CreateTypeValue(typeSymbol, context.Meta!.SymbolTable);
+            reason = string.Empty;
             return true;
         }
 
@@ -946,6 +1095,12 @@ internal static class ComptimeEvaluator
             return false;
         }
 
+        if (context.Meta?.SymbolTable.GetSymbol<FuncSymbol>(calleeSymbolId) is { } intrinsicSymbol &&
+            MetaSchemaRegistry.IsMetaIntrinsic(intrinsicSymbol, out var intrinsicName))
+        {
+            return MetaComptimeIntrinsics.TryEvaluate(intrinsicName, call, context, out value, out reason);
+        }
+
         if (!context.Functions.TryGetValue(calleeSymbolId, out var function) ||
             !function.IsComptime)
         {
@@ -986,6 +1141,17 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
+        var trace = context.Meta?.Trace;
+        var tracePhase = context.Meta?.TracePhase ?? "comptime";
+        trace?.Record(
+            tracePhase,
+            "call",
+            function.Name,
+            "begin",
+            $"arguments={argValues.Count}",
+            function.Span,
+            context.CallDepth + 1);
+
         if (TryEvaluateFunctionBranchesWithFirstArgument(
                 function,
                 argValues.Count == 0 ? [ComptimeUnitValue.Instance] : argValues,
@@ -993,24 +1159,49 @@ internal static class ComptimeEvaluator
                 out value,
                 out reason))
         {
+            trace?.Record(
+                tracePhase,
+                "call",
+                function.Name,
+                "success",
+                value.CanonicalText,
+                function.Span,
+                context.CallDepth + 1);
             return true;
         }
 
         if (argValues.Count <= 1 ||
             !reason.Contains("no matching branch", StringComparison.Ordinal))
         {
+            trace?.Record(
+                tracePhase,
+                "call",
+                function.Name,
+                "failure",
+                reason,
+                function.Span,
+                context.CallDepth + 1);
             return false;
         }
 
         var tupleArg = new ComptimeSequenceValue(
             ComptimeSequenceKind.Tuple,
             argValues.ToArray());
-        return TryEvaluateFunctionBranchesWithFirstArgument(
+        var tupleResult = TryEvaluateFunctionBranchesWithFirstArgument(
             function,
             [tupleArg],
             context with { CallDepth = context.CallDepth + 1 },
             out value,
             out reason);
+        trace?.Record(
+            tracePhase,
+            "call",
+            function.Name,
+            tupleResult ? "success" : "failure",
+            tupleResult ? value.CanonicalText : reason,
+            function.Span,
+            context.CallDepth + 1);
+        return tupleResult;
     }
 
     private static bool TryEvaluateFunctionBranchesWithFirstArgument(

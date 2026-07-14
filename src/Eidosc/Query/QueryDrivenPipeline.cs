@@ -33,6 +33,7 @@ public sealed partial class QueryDrivenPipeline
     private readonly Dictionary<CompilationPhase, long> _phaseAllocations = new();
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
     private readonly IDictionary<string, (string Stamp, string SourceText)> _importSourceCache;
+    private readonly ComptimeExecutionOptions _comptimeExecution;
 
     private GrammarData? _grammarData;
     private ScannerData? _scannerData;
@@ -71,6 +72,7 @@ public sealed partial class QueryDrivenPipeline
         _sourcePath = sourcePath;
         _sourceText = sourceText;
         _options = options;
+        _comptimeExecution = ComptimeExecutionOptions.Create(options);
         _cancellationToken = cancellationToken;
         _importSourceCache = importSourceCache ?? new Dictionary<string, (string Stamp, string SourceText)>(StringComparer.OrdinalIgnoreCase);
 
@@ -223,6 +225,7 @@ public sealed partial class QueryDrivenPipeline
         var symbolTable = new SymbolTable();
         var nameResolver = new NameResolver(symbolTable, _sourceText, _options.ImportSearchRoots)
         {
+            ComptimeExecution = _comptimeExecution,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly()
         };
         nameResolver.Resolve(parse.Ast);
@@ -252,6 +255,7 @@ public sealed partial class QueryDrivenPipeline
 
         var typeInferer = new TypeInferer(nameRes.SymbolTable)
         {
+            ComptimeExecution = _comptimeExecution,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly()
         };
         typeInferer.Infer(parse.Ast);
@@ -1531,6 +1535,7 @@ public sealed partial class QueryDrivenPipeline
             Success = success,
             CompletedPhase = completedPhase,
             Diagnostics = _diagnostics,
+            ComptimeTrace = _comptimeExecution.Trace.Snapshot(),
             InputFile = _sourcePath,
             ImportSearchRoots = _options.ImportSearchRoots,
             NoImplicitPrelude = _options.NoImplicitPrelude,

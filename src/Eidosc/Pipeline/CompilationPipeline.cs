@@ -35,6 +35,7 @@ public sealed partial class CompilationPipeline
     private readonly ConcurrentDictionary<string, string> _moduleSourceTextCache = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _moduleLanguageVersionCache = new(StringComparer.Ordinal);
     private readonly CompilationProfiler _profiler;
+    private readonly ComptimeExecutionOptions _comptimeExecution;
     private readonly string _sourceCode;
     private readonly ModuleDependencyGraph _moduleDependencyGraph = new();
     private ProjectModuleGraphSnapshot? _moduleGraphSnapshot;
@@ -122,6 +123,7 @@ public sealed partial class CompilationPipeline
         _options = options;
         ResolveInputLanguageVersion(options);
         _profiler = new CompilationProfiler(options.EnableDetailedProfiling);
+        _comptimeExecution = ComptimeExecutionOptions.Create(options);
 
         if (!string.IsNullOrEmpty(options.DebugOutputPath))
         {
@@ -238,6 +240,7 @@ public sealed partial class CompilationPipeline
             Success = success,
             CompletedPhase = completedPhase,
             Diagnostics = _diagnostics,
+            ComptimeTrace = _comptimeExecution.Trace.Snapshot(),
             InputFile = _options.InputFile,
             ImportSearchRoots = _options.ImportSearchRoots,
             NoImplicitPrelude = _options.NoImplicitPrelude,
@@ -1340,6 +1343,9 @@ public sealed partial class CompilationPipeline
             $"stop={_options.StopAtPhase?.ToString() ?? ""}",
             $"noImplicitPrelude={_options.NoImplicitPrelude}",
             $"mirOpt={_options.EnableMirOptimizations}",
+            $"comptimeFuel={_options.ComptimeFuelBudget}",
+            $"comptimeBytes={_options.ComptimeAllocatedValueBytesBudget}",
+            $"comptimeDiagnostics={_options.ComptimeDiagnosticBudget}",
             $"triple={_options.LlvmTargetTriple ?? ""}",
             $"nativeLinkMode={_options.NativeLinkMode}",
             $"stdlib={PrecompiledModuleRegistry.GetStdlibImageFingerprint()}"
