@@ -79,6 +79,7 @@ public sealed partial class TypeInferer
     private readonly Dictionary<AssociatedConstProjectionCacheKey, AssociatedConstProjectionSnapshotEntry> _associatedConstProjectionSnapshotEntries = [];
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
     internal ComptimeExecutionOptions ComptimeExecution { get; init; } = ComptimeExecutionOptions.Disabled;
+    internal BuildComptimeContext? BuildComptimeContext { get; init; }
     private readonly Dictionary<string, TypesStepAccumulator> _typesStepAccumulators = new(StringComparer.Ordinal);
     private bool _allowComptimeFunctionReferences;
     private string? _rootInputFilePath;

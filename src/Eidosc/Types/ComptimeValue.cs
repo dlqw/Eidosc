@@ -236,8 +236,11 @@ internal sealed record ComptimeMetaObjectValue(
     IReadOnlyList<ComptimeNamedValue> Properties) : ComptimeValue
 {
     protected override string UntypedCanonicalText =>
-        $"meta-object:{WellKnownStrings.Meta.SchemaVersion}:{EncodeText(SchemaKind)}" +
-        $"[{string.Join(";", Properties.Select(static property => property.CanonicalText))}]";
+        SchemaKind.StartsWith("build.", StringComparison.Ordinal)
+            ? $"build-object:{WellKnownStrings.Build.SchemaVersion}:{EncodeText(SchemaKind)}" +
+              $"[{string.Join(";", Properties.Select(static property => property.CanonicalText))}]"
+            : $"meta-object:{WellKnownStrings.Meta.SchemaVersion}:{EncodeText(SchemaKind)}" +
+              $"[{string.Join(";", Properties.Select(static property => property.CanonicalText))}]";
 
     public bool TryGet(string name, out ComptimeValue value)
     {

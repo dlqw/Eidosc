@@ -20,6 +20,11 @@ public sealed partial class TypeInferer
             return MetaSchemaRegistry.CreateFunctionType(funcSymbol, _substitution, _symbolTable);
         }
 
+        if (BuildSchemaRegistry.IsBuildIntrinsic(funcSymbol, out _))
+        {
+            return BuildSchemaRegistry.CreateFunctionType(funcSymbol, _substitution, _symbolTable);
+        }
+
         return CreateFunctionType(funcSymbol, _substitution);
     }
 

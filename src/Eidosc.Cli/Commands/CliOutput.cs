@@ -121,6 +121,31 @@ internal static class CliOutput
         }
     }
 
+    public static void RenderDiagnostics(
+        IReadOnlyList<Diagnostic.Diagnostic> diagnostics,
+        string sourceText,
+        string? filePath,
+        bool useColors,
+        TextWriter? output = null)
+    {
+        if (diagnostics.Count == 0)
+        {
+            return;
+        }
+
+        output ??= Console.Error;
+        var source = new SourceStream(sourceText, 4);
+        var options = new DiagnosticRenderOptions
+        {
+            UseColors = useColors,
+            FilePath = string.IsNullOrWhiteSpace(filePath) ? null : filePath
+        };
+        foreach (var diagnostic in diagnostics)
+        {
+            DiagnosticRenderer.Render(diagnostic, source, output, options);
+        }
+    }
+
     private static string FormatDuration(TimeSpan elapsed)
     {
         return elapsed.TotalSeconds >= 1

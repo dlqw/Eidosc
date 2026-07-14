@@ -34,4 +34,12 @@ public static class WellKnownTypeIds
     public const int MetaNamedExprId = 27;
     public const int MetaFieldPatternId = 28;
     public const int MetaLayoutInfoId = 29;
+    public const int BuildContextId = 30;
+    public const int BuildFsId = 31;
+    public const int BuildEnvId = 32;
+    public const int BuildProcessId = 33;
+    public const int BuildEmitId = 34;
+    public const int BuildGraphId = 35;
+    public const int BuildStepId = 36;
+    public const int BuildArtifactId = 37;
 }

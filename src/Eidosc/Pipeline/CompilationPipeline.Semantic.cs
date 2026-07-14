@@ -16,12 +16,14 @@ public sealed partial class CompilationPipeline
             _typeInferer = new TypeInferer(_symbolTable!)
             {
                 ComptimeExecution = _comptimeExecution,
+                BuildComptimeContext = _options.BuildComptimeContext,
                 UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly(),
                 PreviousTypeDirectedCallableResolutionSnapshot = _options.PreviousTypeDirectedCallableResolutionSnapshot,
                 PreviousAssociatedTypeProjectionSnapshot = _options.PreviousAssociatedTypeProjectionSnapshot,
                 PreviousAssociatedConstProjectionSnapshot = _options.PreviousAssociatedConstProjectionSnapshot,
                 PreviousTraitCheckSnapshot = _options.PreviousTraitCheckSnapshot
             };
+            _options.BuildComptimeContext?.AttachSymbolTable(_symbolTable!);
             BuiltinTraits.RegisterBuiltinTraits(_symbolTable!);
             CaptureTypesEntrySymbolState();
         }
@@ -210,8 +212,10 @@ public sealed partial class CompilationPipeline
         _typeInferer = new TypeInferer(_symbolTable)
         {
             ComptimeExecution = _comptimeExecution,
+            BuildComptimeContext = _options.BuildComptimeContext,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly()
         };
+        _options.BuildComptimeContext?.AttachSymbolTable(_symbolTable);
         BuiltinTraits.RegisterBuiltinTraits(_symbolTable);
         CaptureTypesEntrySymbolState();
         var currentIdentities = _typesEntrySymbolIdentities!;

@@ -94,6 +94,63 @@ public sealed class BuildCommandTests
     }
 
     [Fact]
+    public void CreateFullBuildArtifactFlags_IncludeBuildHostAndGraphFingerprints()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_build_host_flags_{Guid.NewGuid():N}");
+        try
+        {
+            var (_, resolution, compileOptions) = CreateResolvedProject(tempDir);
+            var firstOptions = new CompilationOptions
+            {
+                InputFile = compileOptions.InputFile,
+                LanguageVersion = compileOptions.LanguageVersion,
+                Target = compileOptions.Target,
+                StopAtPhase = compileOptions.StopAtPhase,
+                EnableMirOptimizations = compileOptions.EnableMirOptimizations,
+                BuildHostFingerprint = "host-a",
+                BuildGraphFingerprint = "graph-a"
+            };
+            var secondOptions = new CompilationOptions
+            {
+                InputFile = compileOptions.InputFile,
+                LanguageVersion = compileOptions.LanguageVersion,
+                Target = compileOptions.Target,
+                StopAtPhase = compileOptions.StopAtPhase,
+                EnableMirOptimizations = compileOptions.EnableMirOptimizations,
+                BuildHostFingerprint = "host-b",
+                BuildGraphFingerprint = "graph-a"
+            };
+            var first = BuildCommand.CreateFullBuildArtifactFlags(
+                resolution,
+                firstOptions,
+                CreateBuildOptions(CompileTarget.LlvmIr),
+                optimizationLevel: 2,
+                targetInfo: null,
+                outputPath: Path.Combine(tempDir, "main.ll"),
+                includeOutputPath: false).ToArray();
+            var second = BuildCommand.CreateFullBuildArtifactFlags(
+                resolution,
+                secondOptions,
+                CreateBuildOptions(CompileTarget.LlvmIr),
+                optimizationLevel: 2,
+                targetInfo: null,
+                outputPath: Path.Combine(tempDir, "main.ll"),
+                includeOutputPath: false).ToArray();
+
+            Assert.Contains("buildHost=host-a", first);
+            Assert.Contains("buildGraph=graph-a", first);
+            Assert.NotEqual(first, second);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void CreateFullBuildArtifactFlags_ChangesForNativeCodegenMode()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_build_codegen_mode_{Guid.NewGuid():N}");

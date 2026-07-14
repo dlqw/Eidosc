@@ -57,6 +57,7 @@ public sealed partial class TypeInferer
                     _functionDefinitionsBySymbol,
                     _substitution.Apply,
                     CreateMetaComptimeContext($"comptime binding at {letDecl.Span}"),
+                    BuildComptimeContext,
                     out var comptimeValue,
                     out var reason);
                 if (!evaluated)

@@ -13,9 +13,11 @@ internal sealed record ComptimeEvaluationContext(
     Func<Type, Type>? ResolveType = null,
     int CallDepth = 0,
     MetaComptimeContext? Meta = null,
+    BuildComptimeContext? Build = null,
     ComptimeResourceBudget? Budget = null)
 {
-    public ComptimeResourceBudget Resources { get; } = Budget ?? Meta?.Resources ?? new ComptimeResourceBudget();
+    public ComptimeResourceBudget Resources { get; } =
+        Budget ?? Meta?.Resources ?? Build?.Resources ?? new ComptimeResourceBudget();
 }
 
 internal sealed class ComptimeResourceBudget(
@@ -113,6 +115,23 @@ internal static class ComptimeEvaluator
         out string reason)
     {
         return TryEvaluate(node, new ComptimeEvaluationContext(values, functions, resolveType, Meta: meta), out value, out reason);
+    }
+
+    internal static bool TryEvaluate(
+        EidosAstNode? node,
+        IReadOnlyDictionary<SymbolId, ComptimeValue> values,
+        IReadOnlyDictionary<SymbolId, FuncDef> functions,
+        Func<Type, Type>? resolveType,
+        MetaComptimeContext? meta,
+        BuildComptimeContext? build,
+        out ComptimeValue value,
+        out string reason)
+    {
+        return TryEvaluate(
+            node,
+            new ComptimeEvaluationContext(values, functions, resolveType, Meta: meta, Build: build),
+            out value,
+            out reason);
     }
 
     internal static bool TryInvoke(
@@ -1099,6 +1118,13 @@ internal static class ComptimeEvaluator
             MetaSchemaRegistry.IsMetaIntrinsic(intrinsicSymbol, out var intrinsicName))
         {
             return MetaComptimeIntrinsics.TryEvaluate(intrinsicName, call, context, out value, out reason);
+        }
+
+        var intrinsicSymbolTable = context.Build?.SymbolTable ?? context.Meta?.SymbolTable;
+        if (intrinsicSymbolTable?.GetSymbol<FuncSymbol>(calleeSymbolId) is { } buildIntrinsicSymbol &&
+            BuildSchemaRegistry.IsBuildIntrinsic(buildIntrinsicSymbol, out var buildIntrinsicName))
+        {
+            return BuildComptimeIntrinsics.TryEvaluate(buildIntrinsicName, call, context, out value, out reason);
         }
 
         if (!context.Functions.TryGetValue(calleeSymbolId, out var function) ||
