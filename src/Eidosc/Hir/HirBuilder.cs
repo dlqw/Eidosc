@@ -59,6 +59,8 @@ public sealed partial class HirBuilder
     private readonly FreeVariableAnalyzer _freeVariableAnalyzer = new();
     private readonly TypeIdRegistry _typeRegistry;
     private readonly CaptureCollector _captureCollector;
+    private IReadOnlyDictionary<SymbolId, int> _activeValueGenericParameterIndices =
+        new Dictionary<SymbolId, int>();
 
     public List<Diagnostic.Diagnostic> Diagnostics { get; } = [];
     public IReadOnlySet<TypeId> CopyLikeTypeIds => _typeRegistry.CopyLikeTypeIds;
@@ -253,9 +255,25 @@ public sealed partial class HirBuilder
 
         // 无函数体的 FuncDef 视为声明（如 @ffi），不转换函数体
         HirNode? bodyNode = null;
-        if (func.Body.Count > 0)
+        var previousValueGenericParameterIndices = _activeValueGenericParameterIndices;
+        _activeValueGenericParameterIndices = func.TypeParams
+            .Select(static (parameter, index) => (parameter, index))
+            .Where(static entry =>
+                entry.parameter.ParameterKind == GenericParameterKind.Value &&
+                entry.parameter.SymbolId.IsValid)
+            .ToDictionary(
+                static entry => entry.parameter.SymbolId,
+                static entry => entry.index);
+        try
         {
-            bodyNode = ConvertFunctionBody(func, parameters, returnType);
+            if (func.Body.Count > 0)
+            {
+                bodyNode = ConvertFunctionBody(func, parameters, returnType);
+            }
+        }
+        finally
+        {
+            _activeValueGenericParameterIndices = previousValueGenericParameterIndices;
         }
 
         return new HirFunc
@@ -788,11 +806,13 @@ public sealed partial class HirBuilder
             }
 
             var isComptime = typeParam.IsComptime;
+            var parameterKind = typeParam.ParameterKind;
             var comptimeTypeAnnotation = FormatComptimeTypeAnnotation(typeParam.ComptimeTypeAnnotation);
             if (typeParam.SymbolId.IsValid &&
                 _symbolTable.GetSymbol(typeParam.SymbolId) is TypeParamSymbol comptimeTypeParamSymbol)
             {
                 isComptime = comptimeTypeParamSymbol.IsComptime;
+                parameterKind = comptimeTypeParamSymbol.ParameterKind;
                 comptimeTypeAnnotation = comptimeTypeParamSymbol.ComptimeTypeAnnotation ?? comptimeTypeAnnotation;
             }
 
@@ -806,6 +826,7 @@ public sealed partial class HirBuilder
                 Name = typeParam.Name,
                 SymbolId = typeParam.SymbolId,
                 TypeId = typeId,
+                ParameterKind = parameterKind,
                 KindAnnotation = kindAnnotation,
                 IsComptime = isComptime,
                 ComptimeTypeAnnotation = comptimeTypeAnnotation,
@@ -1253,9 +1274,19 @@ public sealed partial class HirBuilder
 
     private HirNode ConvertPath(PathExpr path)
     {
-        if (TryConvertComptimeValueReference(path.SymbolId, path.Span, GetTypeId(path), out var comptimeLiteral))
+        if (TryConvertConstGenericValueReference(
+                path.SymbolId,
+                path.Name,
+                path.Span,
+                GetTypeId(path),
+                out var constGenericValue))
         {
-            return comptimeLiteral;
+            return constGenericValue;
+        }
+
+        if (TryConvertComptimeValueReference(path.SymbolId, path.Span, GetTypeId(path), out var comptimeValue))
+        {
+            return comptimeValue;
         }
 
         if (path.ModulePath.Count == 0 &&
@@ -1277,7 +1308,8 @@ public sealed partial class HirBuilder
             SymbolId = path.SymbolId,
             Span = path.Span,
             TypeId = GetTypeId(path),
-            TypeArgumentIds = ConvertExplicitTypeArguments(path.TypeArgs)
+            TypeArgumentIds = ConvertExplicitTypeArguments(path.TypeArgs),
+            ValueArguments = ConvertValueGenericArguments(path)
         };
     }
 
@@ -1294,9 +1326,19 @@ public sealed partial class HirBuilder
 
     private HirNode ConvertIdentifier(IdentifierExpr id)
     {
-        if (TryConvertComptimeValueReference(id.SymbolId, id.Span, GetTypeId(id), out var comptimeLiteral))
+        if (TryConvertConstGenericValueReference(
+                id.SymbolId,
+                id.Name,
+                id.Span,
+                GetTypeId(id),
+                out var constGenericValue))
         {
-            return comptimeLiteral;
+            return constGenericValue;
+        }
+
+        if (TryConvertComptimeValueReference(id.SymbolId, id.Span, GetTypeId(id), out var comptimeValue))
+        {
+            return comptimeValue;
         }
 
         if (id.Name == WellKnownStrings.Keywords.ReflConstructor)
@@ -1315,17 +1357,45 @@ public sealed partial class HirBuilder
             Name = id.Name,
             SymbolId = id.SymbolId,
             Span = id.Span,
-            TypeId = GetTypeId(id)
+            TypeId = GetTypeId(id),
+            ValueArguments = ConvertValueGenericArguments(id)
         };
+    }
+
+    private bool TryConvertConstGenericValueReference(
+        SymbolId symbolId,
+        string name,
+        SourceSpan span,
+        TypeId typeId,
+        out HirNode node)
+    {
+        node = default!;
+        if (!symbolId.IsValid ||
+            !_activeValueGenericParameterIndices.TryGetValue(symbolId, out var parameterIndex) ||
+            _symbolTable.GetSymbol<TypeParamSymbol>(symbolId) is not
+                { ParameterKind: GenericParameterKind.Value })
+        {
+            return false;
+        }
+
+        node = new HirConstGenericValue
+        {
+            Name = name,
+            SymbolId = symbolId,
+            ParameterIndex = parameterIndex,
+            Span = span,
+            TypeId = typeId
+        };
+        return true;
     }
 
     private bool TryConvertComptimeValueReference(
         SymbolId symbolId,
         SourceSpan span,
         TypeId typeId,
-        out HirLiteral literal)
+        out HirNode node)
     {
-        literal = default!;
+        node = default!;
         if (_typeInferer == null ||
             !symbolId.IsValid ||
             !_typeInferer.ComptimeValues.TryGetValue(symbolId, out var value))
@@ -1333,31 +1403,279 @@ public sealed partial class HirBuilder
             return false;
         }
 
-        LiteralKind? literalKind = value.Value switch
+        if (TryReifyComptimeValue(value, typeId, span, out node, out var reason))
         {
-            byte or short or int or long => LiteralKind.Int,
-            float or double => LiteralKind.Float,
-            string => LiteralKind.String,
-            char => LiteralKind.Char,
-            bool => LiteralKind.Bool,
-            null => LiteralKind.Unit,
-            _ => null
-        };
+            return true;
+        }
 
-        if (literalKind == null)
+        node = ReportAndCreateError(
+            $"Comptime value for symbol '{symbolId}' could not be reified into typed HIR: {reason}",
+            span,
+            "E5120",
+            fallbackKind: "expression",
+            reason: "comptime-value-reification-failed",
+            context: "comptime value reference",
+            astNodeKind: nameof(IdentifierExpr));
+        return true;
+    }
+
+    private bool TryReifyComptimeValue(
+        ComptimeValue value,
+        TypeId fallbackTypeId,
+        SourceSpan span,
+        out HirNode node,
+        out string reason)
+    {
+        var typeId = ResolveComptimeValueTypeId(value, fallbackTypeId);
+        if (!typeId.IsValid)
         {
+            node = default!;
+            reason = $"value '{value.CanonicalHash}' has no concrete language type";
             return false;
         }
 
-        literal = new HirLiteral
+        switch (value)
         {
-            LiteralKind = literalKind.Value,
-            Value = value.Value ?? "()",
+            case ComptimeUnitValue:
+                node = CreateComptimeLiteral(LiteralKind.Unit, "()", typeId, span);
+                reason = "";
+                return true;
+            case ComptimeBoolValue scalar:
+                node = CreateComptimeLiteral(LiteralKind.Bool, scalar.Value, typeId, span);
+                reason = "";
+                return true;
+            case ComptimeIntegerValue scalar:
+                node = CreateComptimeLiteral(LiteralKind.Int, scalar.Value, typeId, span);
+                reason = "";
+                return true;
+            case ComptimeFloatValue scalar:
+                node = CreateComptimeLiteral(LiteralKind.Float, scalar.Value, typeId, span);
+                reason = "";
+                return true;
+            case ComptimeStringValue scalar:
+                node = CreateComptimeLiteral(LiteralKind.String, scalar.Value, typeId, span);
+                reason = "";
+                return true;
+            case ComptimeCharValue scalar:
+                node = CreateComptimeLiteral(LiteralKind.Char, scalar.Value, typeId, span);
+                reason = "";
+                return true;
+            case ComptimeSequenceValue { Kind: ComptimeSequenceKind.Tuple } tuple:
+                return TryReifyComptimeTuple(tuple, typeId, span, out node, out reason);
+            case ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } list:
+                return TryReifyComptimeList(list, typeId, span, out node, out reason);
+            case ComptimeAdtValue adt:
+                return TryReifyComptimeAdt(adt, typeId, span, out node, out reason);
+            default:
+                node = default!;
+                reason = $"value kind '{value.GetType().Name}' is not supported";
+                return false;
+        }
+    }
+
+    private bool TryReifyComptimeTuple(
+        ComptimeSequenceValue tuple,
+        TypeId typeId,
+        SourceSpan span,
+        out HirNode node,
+        out string reason)
+    {
+        var hirTuple = new HirTuple { Span = span, TypeId = typeId };
+        for (var i = 0; i < tuple.Elements.Count; i++)
+        {
+            if (!TryReifyComptimeValue(tuple.Elements[i], TypeId.None, span, out var element, out reason))
+            {
+                node = default!;
+                reason = $"tuple element {i} could not be reified: {reason}";
+                return false;
+            }
+
+            hirTuple.Elements.Add(element);
+        }
+
+        node = hirTuple;
+        reason = "";
+        return true;
+    }
+
+    private bool TryReifyComptimeList(
+        ComptimeSequenceValue list,
+        TypeId typeId,
+        SourceSpan span,
+        out HirNode node,
+        out string reason)
+    {
+        var hirList = new HirList { Span = span, TypeId = typeId };
+        for (var i = 0; i < list.Elements.Count; i++)
+        {
+            if (!TryReifyComptimeValue(list.Elements[i], TypeId.None, span, out var element, out reason))
+            {
+                node = default!;
+                reason = $"list element {i} could not be reified: {reason}";
+                return false;
+            }
+
+            hirList.Elements.Add(element);
+        }
+
+        node = hirList;
+        reason = "";
+        return true;
+    }
+
+    private bool TryReifyComptimeAdt(
+        ComptimeAdtValue adt,
+        TypeId typeId,
+        SourceSpan span,
+        out HirNode node,
+        out string reason)
+    {
+        if (!adt.ConstructorId.IsValid ||
+            _symbolTable.GetSymbol<CtorSymbol>(adt.ConstructorId) is not { } constructor)
+        {
+            node = default!;
+            reason = $"constructor '{adt.ConstructorName}' is not present in the current symbol table";
+            return false;
+        }
+
+        var hirCall = new HirCall
+        {
+            Function = new HirVar
+            {
+                Name = adt.ConstructorName,
+                SymbolId = adt.ConstructorId,
+                Span = span
+            },
+            Convention = CallConvention.Constructor,
             Span = span,
             TypeId = typeId
         };
+
+        for (var i = 0; i < adt.PositionalValues.Count; i++)
+        {
+            if (!TryReifyComptimeValue(adt.PositionalValues[i], TypeId.None, span, out var argument, out reason))
+            {
+                node = default!;
+                reason = $"constructor '{adt.ConstructorName}' positional field {i} could not be reified: {reason}";
+                return false;
+            }
+
+            hirCall.Arguments.Add(argument);
+        }
+
+        if (!TryAppendReifiedNamedComptimeFields(adt, constructor, span, hirCall, out reason))
+        {
+            node = default!;
+            return false;
+        }
+
+        node = hirCall;
+        reason = "";
         return true;
     }
+
+    private bool TryAppendReifiedNamedComptimeFields(
+        ComptimeAdtValue adt,
+        CtorSymbol constructor,
+        SourceSpan span,
+        HirCall hirCall,
+        out string reason)
+    {
+        if (adt.NamedValues.Count == 0)
+        {
+            reason = "";
+            return true;
+        }
+
+        var valuesByName = adt.NamedValues.ToDictionary(
+            static field => field.Name,
+            static field => field.Value,
+            StringComparer.Ordinal);
+        if (valuesByName.Count != adt.NamedValues.Count)
+        {
+            reason = $"constructor '{adt.ConstructorName}' contains duplicate named fields";
+            return false;
+        }
+
+        var declaredFieldNames = GetConstructorNamedFieldOrder(constructor);
+        if (declaredFieldNames.Count != valuesByName.Count)
+        {
+            reason = $"constructor '{adt.ConstructorName}' named field count does not match its declaration";
+            return false;
+        }
+
+        foreach (var fieldName in declaredFieldNames)
+        {
+            if (!valuesByName.TryGetValue(fieldName, out var value))
+            {
+                reason = $"constructor '{adt.ConstructorName}' is missing declared field '{fieldName}'";
+                return false;
+            }
+
+            if (!TryReifyComptimeValue(value, TypeId.None, span, out var argument, out reason))
+            {
+                reason = $"constructor '{adt.ConstructorName}' field '{fieldName}' could not be reified: {reason}";
+                return false;
+            }
+
+            hirCall.Arguments.Add(argument);
+        }
+
+        reason = "";
+        return true;
+    }
+
+    private IReadOnlyList<string> GetConstructorNamedFieldOrder(CtorSymbol constructor)
+    {
+        if (constructor.NamedFields.Count > 0)
+        {
+            var fieldNames = new List<string>(constructor.NamedFields.Count);
+            foreach (var fieldSymbolId in constructor.NamedFields)
+            {
+                if (_symbolTable.GetSymbol<FieldSymbol>(fieldSymbolId) is { Name: { Length: > 0 } fieldName })
+                {
+                    fieldNames.Add(fieldName);
+                }
+            }
+
+            if (fieldNames.Count == constructor.NamedFields.Count)
+            {
+                return fieldNames;
+            }
+        }
+
+        return _typeInferer != null &&
+               _typeInferer.TryGetConstructorNamedFieldOrder(constructor.Id, out var inferredFieldNames)
+            ? inferredFieldNames
+            : [];
+    }
+
+    private TypeId ResolveComptimeValueTypeId(ComptimeValue value, TypeId fallbackTypeId)
+    {
+        if (value.StaticType != null)
+        {
+            var staticTypeId = GetTypeTypeId(value.StaticType);
+            if (staticTypeId.IsValid)
+            {
+                return staticTypeId;
+            }
+        }
+
+        return fallbackTypeId;
+    }
+
+    private static HirLiteral CreateComptimeLiteral(
+        LiteralKind literalKind,
+        object value,
+        TypeId typeId,
+        SourceSpan span) =>
+        new()
+        {
+            LiteralKind = literalKind,
+            Value = value,
+            Span = span,
+            TypeId = typeId
+        };
 
     private HirLiteral ConvertLiteral(LiteralExpr lit)
     {
@@ -1675,17 +1993,44 @@ public sealed partial class HirBuilder
 
     private HirNode AttachExplicitTypeArguments(
         HirNode target,
-        IReadOnlyList<Ast.Types.TypeNode> typeArgs)
+        IReadOnlyList<Ast.Types.TypeNode> typeArgs,
+        EidosAstNode? application = null)
     {
-        if (typeArgs.Count == 0)
+        var valueArguments = application == null
+            ? []
+            : ConvertValueGenericArguments(application);
+        if (typeArgs.Count == 0 && valueArguments.Count == 0)
         {
             return target;
         }
 
         var typeArgumentIds = ConvertExplicitTypeArguments(typeArgs);
         return target is HirVar variable
-            ? variable with { TypeArgumentIds = typeArgumentIds }
+            ? variable with
+            {
+                TypeArgumentIds = typeArgumentIds,
+                ValueArguments = valueArguments
+            }
             : target;
+    }
+
+    private List<GenericValueArgumentDescriptor> ConvertValueGenericArguments(EidosAstNode application)
+    {
+        if (_typeInferer == null)
+        {
+            return [];
+        }
+
+        return _typeInferer.GetValueGenericArguments(application)
+            .Select(static argument => new GenericValueArgumentDescriptor(
+                argument.ParameterIndex,
+                argument.CanonicalText,
+                argument.CanonicalHash,
+                argument.DisplayText,
+                argument.TypeId,
+                argument.ReferencedParameterIndex,
+                argument.ValueVariableIndex))
+            .ToList();
     }
 
     private HirMatch ConvertMatch(MatchExpr match)

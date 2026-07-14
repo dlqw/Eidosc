@@ -81,7 +81,7 @@ internal static class EidosupDistributionTestFixture
             "preview",
             platform.Rid,
             new ToolchainProductIdentity(release.NormalizedVersion, new string('a', 40)),
-            new ToolchainLanguageIdentity("0.4.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.5.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", [core.Id, std.Id]),
                 new ToolchainProfileDefinition("default", [core.Id, std.Id, runtime.Id]),

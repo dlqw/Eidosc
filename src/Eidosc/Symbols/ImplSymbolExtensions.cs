@@ -4,7 +4,7 @@ public static class ImplSymbolExtensions
 {
     public static bool HasStructuredIdentity(this ImplTypeRefKey key)
     {
-        return key.SymbolId.IsValid || key.TypeId.IsValid;
+        return key.SymbolId.IsValid || key.TypeId.IsValid || key.ValueArgument != null;
     }
 
     public static IReadOnlyList<ImplTypeRefKey> GetMatchingTraitTypeArgKeys(this ImplSymbol impl)

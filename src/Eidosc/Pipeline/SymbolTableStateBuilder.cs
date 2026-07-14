@@ -1,6 +1,7 @@
 namespace Eidosc.Pipeline;
 
 using Eidosc.Symbols;
+using Eidosc.Types;
 using Eidosc.Utils;
 
 public sealed record SymbolTableStateBuildResult(
@@ -1698,10 +1699,16 @@ public static class SymbolTableStateBuilder
             IsPublic = payload.IsPublic,
             TypeId = typeId,
             KindAnnotation = GetFact(payload, "kindAnnotation", "kind1"),
+            ParameterKind = ParseGenericParameterKind(GetFact(payload, "parameterKind")),
             IsComptime = ParseBool(GetFact(payload, "isComptime")),
             ComptimeTypeAnnotation = EmptyToNull(GetFact(payload, "comptimeTypeAnnotation")),
             TraitConstraints = RemapSymbolIds(GetFact(payload, "traitConstraints"), symbolRemap).ToList()
         };
+
+    private static GenericParameterKind ParseGenericParameterKind(string? value) =>
+        Enum.TryParse<GenericParameterKind>(value, ignoreCase: false, out var parsed)
+            ? parsed
+            : GenericParameterKind.Type;
 
     private static ImplSymbol CreateImplSymbol(
         SymbolPayload payload,

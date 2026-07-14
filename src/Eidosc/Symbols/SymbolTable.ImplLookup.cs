@@ -770,11 +770,22 @@ public sealed partial class SymbolTable
 
             var isApplicable = requestedHead == null
                 ? ImplSpecializationComparer.IsApplicableTo(
-                    requestedImplementingShape,
-                    ParseImplImplementingShape(candidate))
+                      requestedImplementingShape,
+                      ParseImplImplementingShape(candidate)) ||
+                  ImplSpecializationComparer.IsApplicableTo(
+                      requestedImplementingShape,
+                      ImplSpecializationComparer.ParseCanonicalShape(candidate.CanonicalImplementingType))
                 : ImplSpecializationComparer.IsApplicableTo(
-                    requestedHead,
-                    BuildImplHeadShape(candidate));
+                      requestedHead,
+                      BuildImplHeadShape(candidate)) ||
+                  ImplSpecializationComparer.IsApplicableTo(
+                      requestedHead,
+                      new ImplHeadShape(
+                          candidate.Trait,
+                          GetCandidateTraitTypeArgsForMatching(candidate)
+                              .Select(ImplSpecializationComparer.ParseCanonicalShape)
+                              .ToList(),
+                          ImplSpecializationComparer.ParseCanonicalShape(candidate.CanonicalImplementingType)));
             if (isApplicable)
             {
                 applicable.Add(candidate);

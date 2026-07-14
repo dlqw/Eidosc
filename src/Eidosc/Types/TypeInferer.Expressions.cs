@@ -209,6 +209,18 @@ public sealed partial class TypeInferer
         var scheme = _env.Lookup(ident.SymbolId);
         if (scheme != null)
         {
+            if (HasValueGenericParameters(ident.SymbolId))
+            {
+                return ApplyImplicitFunctionEffects(
+                    ident.SymbolId,
+                    InstantiateSchemeWithGenericArgumentsAndConstraints(
+                        scheme,
+                        [],
+                        ident.SymbolId,
+                        ident,
+                        ident.Span));
+            }
+
             return ApplyImplicitFunctionEffects(
                 ident.SymbolId,
                 InstantiateSchemeWithConstraints(scheme, ident.Span));
@@ -253,6 +265,22 @@ public sealed partial class TypeInferer
                 }
 
                 AddError(ident.Span, DiagnosticMessages.CannotInferVariableTypeUnavailable(ident.Name));
+                return CreateErrorRecoveryType();
+            }
+
+            if (symbol is TypeParamSymbol { ParameterKind: GenericParameterKind.Value } valueParameter)
+            {
+                if (_valueGenericParameterTypesBySymbol.TryGetValue(ident.SymbolId, out var registeredValueType))
+                {
+                    return registeredValueType;
+                }
+
+                if (TryCreateTypeFromSymbolMetadataTypeId(valueParameter.TypeId, out var valueParameterType))
+                {
+                    return valueParameterType;
+                }
+
+                AddError(ident.Span, $"Cannot resolve the declared value type of generic parameter '{ident.Name}'.");
                 return CreateErrorRecoveryType();
             }
 
@@ -309,6 +337,18 @@ public sealed partial class TypeInferer
         var scheme = _env.Lookup(path.SymbolId);
         if (scheme != null)
         {
+            if (path.GenericArguments.Count > 0 || HasValueGenericParameters(path.SymbolId))
+            {
+                return ApplyImplicitFunctionEffects(
+                    path.SymbolId,
+                    InstantiateSchemeWithGenericArgumentsAndConstraints(
+                        scheme,
+                        path.GenericArguments,
+                        path.SymbolId,
+                        path,
+                        path.Span));
+            }
+
             if (path.TypeArgs.Count > 0)
             {
                 return ApplyImplicitFunctionEffects(
@@ -373,6 +413,27 @@ public sealed partial class TypeInferer
             }
 
             AddError(path.Span, DiagnosticMessages.CannotInferVariablePathTypeUnavailable(FormatPath(path.Path)));
+            return CreateErrorRecoveryType();
+        }
+        else if (symbol is TypeParamSymbol { ParameterKind: GenericParameterKind.Value } valueParameter)
+        {
+            if (path.TypeArgs.Count > 0)
+            {
+                AddError(path.Span, DiagnosticMessages.PathDoesNotAcceptExplicitTypeArguments(FormatPath(path.Path)));
+                return CreateErrorRecoveryType();
+            }
+
+            if (_valueGenericParameterTypesBySymbol.TryGetValue(path.SymbolId, out var registeredValueType))
+            {
+                return registeredValueType;
+            }
+
+            if (TryCreateTypeFromSymbolMetadataTypeId(valueParameter.TypeId, out var valueParameterType))
+            {
+                return valueParameterType;
+            }
+
+            AddError(path.Span, $"Cannot resolve the declared value type of generic parameter '{FormatPath(path.Path)}'.");
             return CreateErrorRecoveryType();
         }
 
@@ -1500,6 +1561,7 @@ public sealed partial class TypeInferer
         }
 
         ResolveAccumulatedCallEffects(call);
+        ValidateResolvedValueGenericArguments(call.Function, call.Span);
         return _substitution.Apply(currentType);
     }
 

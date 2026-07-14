@@ -63,14 +63,19 @@ public sealed class LiveStateIdRemapper
     private readonly IReadOnlyDictionary<int, int> _symbols;
     private readonly IReadOnlyDictionary<int, int> _types;
     private readonly int _typeVariableOffset;
+    private readonly int _valueVariableOffset;
 
-    public LiveStateIdRemapper(LiveStateRemapPlan plan, int typeVariableOffset = 0)
+    public LiveStateIdRemapper(
+        LiveStateRemapPlan plan,
+        int typeVariableOffset = 0,
+        int valueVariableOffset = 0)
     {
         ArgumentNullException.ThrowIfNull(plan);
         _symbols = plan.Symbols
             .GroupBy(static entry => entry.From)
             .ToDictionary(static group => group.Key, static group => group.First().To);
         _typeVariableOffset = Math.Max(0, typeVariableOffset);
+        _valueVariableOffset = Math.Max(0, valueVariableOffset);
         _types = plan.Types
             .GroupBy(static entry => entry.From)
             .ToDictionary(static group => group.Key, static group => group.First().To);
@@ -93,6 +98,12 @@ public sealed class LiveStateIdRemapper
 
     public int RemapNextTypeVariable(int value) =>
         value <= 0 ? _typeVariableOffset : checked(value + _typeVariableOffset);
+
+    public int RemapValueVariable(int value) =>
+        value < 0 ? value : checked(value + _valueVariableOffset);
+
+    public int RemapNextValueVariable(int value) =>
+        value <= 0 ? _valueVariableOffset : checked(value + _valueVariableOffset);
 }
 
 public static class LiveStateStableIdentityBuilder

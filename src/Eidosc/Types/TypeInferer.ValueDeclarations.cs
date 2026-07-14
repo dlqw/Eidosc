@@ -55,6 +55,7 @@ public sealed partial class TypeInferer
                     letDecl.Value,
                     _comptimeValues,
                     _functionDefinitionsBySymbol,
+                    _substitution.Apply,
                     out var comptimeValue,
                     out var reason);
                 if (!evaluated)

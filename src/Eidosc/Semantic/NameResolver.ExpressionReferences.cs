@@ -211,9 +211,20 @@ public sealed partial class NameResolver
                     ResolveExpressionReferences(index.Object);
                 }
 
+                TryReinterpretSingleValueGenericApplication(index);
+
                 if (index.Index != null)
                 {
                     ResolveExpressionReferences(index.Index);
+                }
+
+                if (index.GenericArguments.Count > 0)
+                {
+                    index.SetGenericArguments(ResolveGenericArguments(
+                        GetGenericApplicationTargetSymbol(index),
+                        index.GenericArguments,
+                        index.Span));
+                    break;
                 }
 
                 foreach (var typeArg in index.TypeArgs)
@@ -689,6 +700,14 @@ public sealed partial class NameResolver
             {
                 AddError(ctor.Span, DiagnosticMessages.UndefinedConstructor(ctor.ConstructorName));
             }
+        }
+
+        if (ctor.ConstructorPath is { GenericArguments.Count: > 0 } constructorPath)
+        {
+            constructorPath.SetGenericArguments(ResolveGenericArguments(
+                ctor.SymbolId,
+                constructorPath.GenericArguments,
+                constructorPath.Span));
         }
 
         foreach (var arg in ctor.PositionalArgs)

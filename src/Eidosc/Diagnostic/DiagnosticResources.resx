@@ -1603,7 +1603,7 @@
     <value>module import alias must start with an uppercase letter</value>
   </data>
   <data name="ParserImportAliasUseNameFirstForm" xml:space="preserve">
-    <value>in Eidos 0.4.0-alpha.1, module alias imports must use the binding form 'Alias :: import Module.Path;' instead of 'import Module.Path as Alias;'</value>
+    <value>in Eidos 0.5.0-alpha.1, module alias imports must use the binding form 'Alias :: import Module.Path;' instead of 'import Module.Path as Alias;'</value>
   </data>
   <data name="ParserImportBindingExpectsModulePath" xml:space="preserve">
     <value>name-first import binding expects a module path; selective and wildcard imports are not valid in 'Alias :: import ...;' form</value>

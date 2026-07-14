@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Eidosc.Types;
 
 namespace Eidosc.Symbols;
 
@@ -9,12 +10,24 @@ public readonly record struct ImplTypeRefKey(
     SymbolId SymbolId,
     TypeId TypeId,
     string Text,
-    ImmutableArray<ImplTypeRefKey> TypeArguments) : IEquatable<ImplTypeRefKey>
+    ImmutableArray<ImplTypeRefKey> TypeArguments,
+    ImplValueRefKey? ValueArgument = null) : IEquatable<ImplTypeRefKey>
 {
     public static readonly ImplTypeRefKey Empty = new(SymbolId.None, TypeId.None, "", []);
 
     public static ImplTypeRefKey FromText(string? text) =>
         new(SymbolId.None, TypeId.None, NormalizeText(text), []);
+
+    public static ImplTypeRefKey FromValueArgument(GenericValueArgument argument) =>
+        new(
+            SymbolId.None,
+            TypeId.None,
+            "",
+            [],
+            ImplValueRefKey.FromGenericValueArgument(argument));
+
+    public static ImplTypeRefKey FromValueArgument(ImplValueRefKey argument) =>
+        new(SymbolId.None, TypeId.None, "", [], argument);
 
     public static ImplTypeRefKey FromCanonicalText(string? text)
     {
@@ -47,13 +60,21 @@ public readonly record struct ImplTypeRefKey(
         (!SymbolId.IsValid &&
         !TypeId.IsValid &&
         string.IsNullOrWhiteSpace(Text) &&
-        TypeArguments.IsDefaultOrEmpty);
+        TypeArguments.IsDefaultOrEmpty &&
+        ValueArgument == null);
 
     public bool Equals(ImplTypeRefKey other)
     {
         if (IsEmpty || other.IsEmpty)
         {
             return IsEmpty && other.IsEmpty;
+        }
+
+        if (ValueArgument != null || other.ValueArgument != null)
+        {
+            return ValueArgument is { } valueArgument &&
+                   other.ValueArgument is { } otherValueArgument &&
+                   valueArgument.Equals(otherValueArgument);
         }
 
         if (TypeId.IsValid && other.TypeId.IsValid)
@@ -89,6 +110,11 @@ public readonly record struct ImplTypeRefKey(
             return 0;
         }
 
+        if (ValueArgument is { } valueArgument)
+        {
+            return valueArgument.GetHashCode();
+        }
+
         var hash = new HashCode();
         if (TypeId.IsValid)
         {
@@ -118,6 +144,11 @@ public readonly record struct ImplTypeRefKey(
             return string.Empty;
         }
 
+        if (ValueArgument is { } valueArgument)
+        {
+            return valueArgument.ToString();
+        }
+
         var head = TypeId.IsValid
             ? TypeId.ToString()
             : SymbolId.IsValid
@@ -132,7 +163,8 @@ public readonly record struct ImplTypeRefKey(
         SymbolId.Value == default &&
         TypeId.Value == default &&
         Text == null &&
-        TypeArguments.IsDefault;
+        TypeArguments.IsDefault &&
+        ValueArgument == null;
 
     private static bool TypeArgumentsEqual(
         ImmutableArray<ImplTypeRefKey> left,
@@ -215,5 +247,77 @@ public readonly record struct ImplTypeRefKey(
         {
             result.Add(part);
         }
+    }
+}
+
+/// <summary>
+/// Structured identity of a value-domain argument embedded in an impl lookup key.
+/// </summary>
+public readonly record struct ImplValueRefKey(
+    int ParameterIndex,
+    string CanonicalPayload,
+    TypeId TypeId,
+    string VariableIdentity = "",
+    string DisplayText = "") : IEquatable<ImplValueRefKey>
+{
+    public bool IsConcrete => string.IsNullOrWhiteSpace(VariableIdentity);
+
+    public static ImplValueRefKey FromGenericValueArgument(GenericValueArgument argument)
+    {
+        var variableIdentity = argument.ValueVariableIndex >= 0
+            ? $"var:{argument.ValueVariableIndex}"
+            : argument.ReferencedParameterIndex >= 0
+                ? $"param:{argument.ReferencedParameterIndex}"
+                : "";
+        return new ImplValueRefKey(
+            argument.ParameterIndex,
+            NormalizeCanonicalPayload(argument.CanonicalText),
+            argument.TypeId,
+            variableIdentity,
+            argument.DisplayText);
+    }
+
+    public bool Equals(ImplValueRefKey other)
+    {
+        if (ParameterIndex != other.ParameterIndex ||
+            TypeId != other.TypeId ||
+            IsConcrete != other.IsConcrete)
+        {
+            return false;
+        }
+
+        return IsConcrete
+            ? string.Equals(CanonicalPayload, other.CanonicalPayload, StringComparison.Ordinal)
+            : string.Equals(VariableIdentity, other.VariableIdentity, StringComparison.Ordinal);
+    }
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(ParameterIndex);
+        hash.Add(TypeId);
+        hash.Add(IsConcrete);
+        hash.Add(IsConcrete ? CanonicalPayload : VariableIdentity, StringComparer.Ordinal);
+        return hash.ToHashCode();
+    }
+
+    public override string ToString()
+    {
+        var identity = IsConcrete ? CanonicalPayload : VariableIdentity;
+        return $"value:{ParameterIndex}:{TypeId.Value}:{identity}";
+    }
+
+    public static string NormalizeCanonicalPayload(string? canonicalText)
+    {
+        var normalized = canonicalText?.Trim() ?? "";
+        if (!normalized.StartsWith("typed:", StringComparison.Ordinal))
+        {
+            return normalized;
+        }
+
+        var typeSeparator = normalized.IndexOf(':', "typed:".Length);
+        return typeSeparator >= 0 && typeSeparator + 1 < normalized.Length
+            ? normalized[(typeSeparator + 1)..]
+            : normalized;
     }
 }

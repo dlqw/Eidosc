@@ -588,7 +588,10 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        boundSignature = new SpecializationSignature(returnType, parameterTypes);
+        boundSignature = new SpecializationSignature(
+            returnType,
+            parameterTypes,
+            signature.GenericValueArguments);
         return IsMonomorphicSignature(boundSignature);
     }
 
@@ -747,7 +750,11 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        if (!TryResolveFunctionValueSignature(template.TemplateSource, resolvedFunctionTypeId, out var signature))
+        if (!TryResolveFunctionValueSignature(
+                functionRef,
+                template.TemplateSource,
+                resolvedFunctionTypeId,
+                out var signature))
         {
             return false;
         }
@@ -868,7 +875,7 @@ public sealed partial class MirGenericSpecializer
         return operand switch
         {
             MirFunctionRef functionRef =>
-                $"fn:{MirFunctionIdentity.GetStableKey(functionRef)}:{functionRef.SymbolKind}:{functionRef.TypeId.Value}:{functionRef.SignatureTypeId.Value}:{BuildTypeArgumentKey(functionRef.TypeArgumentIds)}:{functionRef.Name}",
+                $"fn:{MirFunctionIdentity.GetStableKey(functionRef)}:{functionRef.SymbolKind}:{functionRef.TypeId.Value}:{functionRef.SignatureTypeId.Value}:{BuildTypeArgumentKey(functionRef.TypeArgumentIds)}:{BuildValueArgumentKey(functionRef.ValueArguments)}:{functionRef.Name}",
             MirPlace place => BuildPlaceKey(place),
             MirConstant constant =>
                 $"const:{constant.TypeId.Value}:{BuildConstantValueKey(constant.Value)}",
@@ -882,6 +889,15 @@ public sealed partial class MirGenericSpecializer
         return typeArgumentIds.Count == 0
             ? "[]"
             : $"[{string.Join(",", typeArgumentIds.Select(static typeId => typeId.Value.ToString()))}]";
+    }
+
+    private static string BuildValueArgumentKey(
+        IReadOnlyList<GenericValueArgumentDescriptor> valueArguments)
+    {
+        return valueArguments.Count == 0
+            ? "[]"
+            : $"[{string.Join(",", valueArguments.Select(static argument =>
+                $"{argument.ParameterIndex}:{argument.TypeId.Value}:{argument.CanonicalHash}:{argument.CanonicalText}:{argument.ReferencedParameterIndex}:{argument.ValueVariableIndex}"))}]";
     }
 
     private static string BuildPlaceKey(MirPlace place)

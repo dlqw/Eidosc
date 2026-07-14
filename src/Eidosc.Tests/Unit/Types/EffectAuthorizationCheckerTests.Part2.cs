@@ -362,7 +362,7 @@ main :: Unit -> Int
             manifestSchema = 3
             sourceRoots = ["."]
             [language]
-            version = "0.4.0-alpha.1"
+            version = "0.5.0-alpha.1"
             """);
     }
 

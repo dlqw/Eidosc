@@ -291,6 +291,7 @@ public sealed partial class MirGenericSpecializer
                left.SignatureTypeId.Equals(right.SignatureTypeId) &&
                Equals(left.FunctionId, right.FunctionId) &&
                TypeArgumentsEqual(left.TypeArgumentIds, right.TypeArgumentIds) &&
+               left.ValueArguments.SequenceEqual(right.ValueArguments) &&
                left.TraitOwnerId.Equals(right.TraitOwnerId) &&
                left.TraitSelfPosition == right.TraitSelfPosition &&
                IntArgumentsEqual(left.TraitSelfParameterIndices, right.TraitSelfParameterIndices) &&

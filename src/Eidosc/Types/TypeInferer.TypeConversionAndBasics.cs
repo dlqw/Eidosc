@@ -1019,7 +1019,7 @@ public sealed partial class TypeInferer
         }
 
         var binding = bindings[0];
-        var typeVarEnv = CreateCtorTypeVarEnv(binding, baseCon.Args);
+        var typeVarEnv = CreateCtorTypeVarEnv(binding, baseCon.Args, baseCon.ValueArgs);
         var ctor = CreateDesugaredRecordUpdateCtor(update, binding);
         var recordUpdateBaseIsValid = ApplyRecordUpdateBase(ctor, binding, typeVarEnv);
 
@@ -1119,13 +1119,30 @@ public sealed partial class TypeInferer
         return ok;
     }
 
-    private Dictionary<string, Type> CreateCtorTypeVarEnv(CtorTypeBinding binding, IReadOnlyList<Type> typeArgs)
+    private Dictionary<string, Type> CreateCtorTypeVarEnv(
+        CtorTypeBinding binding,
+        IReadOnlyList<Type> typeArgs,
+        IReadOnlyList<GenericValueArgument>? valueArgs = null)
     {
         var env = CreateCtorTypeVarEnv(binding);
         var count = Math.Min(binding.AdtTypeParamNames.Count, typeArgs.Count);
         for (var i = 0; i < count; i++)
         {
             env[binding.AdtTypeParamNames[i]] = typeArgs[i];
+        }
+
+        if (valueArgs != null && _valueGenericArgumentsByTypeEnv.TryGetValue(env, out var scopedValueArguments))
+        {
+            var valueArgumentsByParameterIndex = valueArgs.ToDictionary(static argument => argument.ParameterIndex);
+            for (var parameterIndex = 0; parameterIndex < binding.AdtGenericParameters.Count; parameterIndex++)
+            {
+                var parameter = binding.AdtGenericParameters[parameterIndex];
+                if (parameter.ParameterKind == GenericParameterKind.Value &&
+                    valueArgumentsByParameterIndex.TryGetValue(parameterIndex, out var valueArgument))
+                {
+                    scopedValueArguments[parameter.SymbolId] = valueArgument;
+                }
+            }
         }
 
         return env;
@@ -1362,17 +1379,36 @@ public sealed partial class TypeInferer
             return null;
         }
 
-        var typeArgs = new List<Type>(adtSymbol.TypeParams.Count);
+        var typeArgs = new List<Type>();
+        var valueArgs = new List<GenericValueArgument>();
         for (var i = 0; i < adtSymbol.TypeParams.Count; i++)
         {
-            typeArgs.Add(_substitution.FreshTypeVariable());
+            if (_symbolTable.GetSymbol<TypeParamSymbol>(adtSymbol.TypeParams[i]) is not { } parameter)
+            {
+                continue;
+            }
+
+            switch (parameter.ParameterKind)
+            {
+                case GenericParameterKind.Type:
+                    typeArgs.Add(_substitution.FreshTypeVariable());
+                    break;
+                case GenericParameterKind.Value:
+                    valueArgs.Add(_substitution.FreshValueVariable(
+                        CreateValueGenericArgumentTemplate(
+                            parameter.Name,
+                            new TyCon { Id = parameter.TypeId },
+                            i)));
+                    break;
+            }
         }
 
         return new TyCon
         {
             Name = adtSymbol.Name,
             Symbol = adtSymbol.Id,
-            Args = typeArgs
+            Args = typeArgs,
+            ValueArgs = valueArgs
         };
     }
 
@@ -1430,7 +1466,35 @@ public sealed partial class TypeInferer
             }
         }
 
+        PopulateValueGenericArgumentEnv(typeVarEnv, binding.AdtGenericParameters);
+        PopulateValueGenericArgumentEnv(typeVarEnv, binding.CtorGenericParameters);
+
         return typeVarEnv;
+    }
+
+    private void PopulateValueGenericArgumentEnv(
+        Dictionary<string, Type> typeVarEnv,
+        IReadOnlyList<Ast.Types.TypeParam> genericParameters)
+    {
+        foreach (var parameter in genericParameters)
+        {
+            if (parameter.ParameterKind != GenericParameterKind.Value ||
+                !parameter.SymbolId.IsValid ||
+                !_valueGenericParameterTypesBySymbol.TryGetValue(parameter.SymbolId, out var valueType) ||
+                !_valueGenericParameterOrdinalsBySymbol.TryGetValue(parameter.SymbolId, out var parameterIndex))
+            {
+                continue;
+            }
+
+            if (!_valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var valueArguments))
+            {
+                valueArguments = [];
+                _valueGenericArgumentsByTypeEnv[typeVarEnv] = valueArguments;
+            }
+
+            valueArguments[parameter.SymbolId] = _substitution.FreshValueVariable(
+                CreateValueGenericArgumentTemplate(parameter.Name, valueType, parameterIndex));
+        }
     }
 
     private static HashSet<string> GetCtorLocalTypeParamNamesMentionedInReturnType(CtorTypeBinding binding)
@@ -1501,46 +1565,164 @@ public sealed partial class TypeInferer
 
     private void ApplyExplicitCtorTypeArgs(CtorExpr ctor, CtorTypeBinding binding, Dictionary<string, Type> typeVarEnv)
     {
-        var explicitTypeArgs = ctor.ConstructorPath?.TypeArgs;
-        if (explicitTypeArgs == null || explicitTypeArgs.Count == 0)
+        var explicitArguments = ctor.ConstructorPath?.GenericArguments;
+        if (explicitArguments == null || explicitArguments.Count == 0)
         {
             return;
         }
 
-        var targetTypeParamNames = binding.CtorTypeParamNames.Count > 0
-            ? binding.CtorTypeParamNames
-            : binding.AdtTypeParamNames;
+        var targetParameters = binding.CtorGenericParameters.Count > 0
+            ? binding.CtorGenericParameters
+            : binding.AdtGenericParameters;
 
-        if (targetTypeParamNames.Count == 0)
+        if (targetParameters.Count == 0)
         {
             AddError(ctor.Span, DiagnosticMessages.ConstructorDoesNotAcceptTypeArguments(ctor.ConstructorName));
             return;
         }
 
-        if (explicitTypeArgs.Count != targetTypeParamNames.Count)
+        if (explicitArguments.Count != targetParameters.Count)
         {
             AddError(
                 ctor.Span,
                 DiagnosticMessages.ConstructorExpectsTypeArguments(
                     ctor.ConstructorName,
-                    targetTypeParamNames.Count,
-                    explicitTypeArgs.Count));
+                    targetParameters.Count,
+                    explicitArguments.Count));
         }
 
-        var matchCount = Math.Min(explicitTypeArgs.Count, targetTypeParamNames.Count);
+        var matchCount = Math.Min(explicitArguments.Count, targetParameters.Count);
         for (var i = 0; i < matchCount; i++)
         {
-            var typeParamName = targetTypeParamNames[i];
-            var explicitType = ConvertTypeInCurrentTypeParamContext(explicitTypeArgs[i]);
-            if (typeVarEnv.TryGetValue(typeParamName, out var inferredType))
+            var parameter = targetParameters[i];
+            switch (parameter.ParameterKind, explicitArguments[i])
             {
-                _substitution.Unify(inferredType, explicitType);
-            }
-            else
-            {
-                typeVarEnv[typeParamName] = explicitType;
+                case (GenericParameterKind.Type, TypeGenericArgumentNode typeArgument):
+                {
+                    var explicitType = ConvertTypeInCurrentTypeParamContext(typeArgument.Type);
+                    if (typeVarEnv.TryGetValue(parameter.Name, out var inferredType))
+                    {
+                        _substitution.Unify(inferredType, explicitType);
+                    }
+                    else
+                    {
+                        typeVarEnv[parameter.Name] = explicitType;
+                    }
+                    break;
+                }
+                case (GenericParameterKind.Value, ValueGenericArgumentNode valueArgument):
+                    ApplyExplicitCtorValueArgument(valueArgument, parameter, i, typeVarEnv, ctor.Span);
+                    break;
+                default:
+                    AddError(
+                        explicitArguments[i].Span,
+                        $"Generic argument {i + 1} for constructor '{ctor.ConstructorName}' does not match parameter domain '{parameter.ParameterKind}'.");
+                    break;
             }
         }
+    }
+
+    private void ApplyExplicitCtorValueArgument(
+        ValueGenericArgumentNode valueArgument,
+        Ast.Types.TypeParam parameter,
+        int parameterIndex,
+        Dictionary<string, Type> ctorTypeVarEnv,
+        SourceSpan span)
+    {
+        if (!_valueGenericParameterTypesBySymbol.TryGetValue(parameter.SymbolId, out var declaredType))
+        {
+            AddError(span, $"Cannot resolve value parameter type for '{parameter.Name}'.");
+            return;
+        }
+        var sourceTypeVarEnv = _typeParamEnvStack.TryPeek(out var currentTypeVarEnv)
+            ? currentTypeVarEnv
+            : ctorTypeVarEnv;
+        if (!TryResolveExplicitValueArgument(
+                valueArgument,
+                parameterIndex,
+                declaredType,
+                sourceTypeVarEnv,
+                out var explicitArgument))
+        {
+            return;
+        }
+
+        if (!_valueGenericArgumentsByTypeEnv.TryGetValue(ctorTypeVarEnv, out var scopedValueArguments) ||
+            !scopedValueArguments.TryGetValue(parameter.SymbolId, out var inferredArgument))
+        {
+            AddError(span, $"Cannot bind value parameter '{parameter.Name}' for constructor specialization.");
+            return;
+        }
+
+        try
+        {
+            _substitution.UnifyValueArguments(
+                inferredArgument with { ParameterIndex = parameterIndex },
+                explicitArgument);
+        }
+        catch (TypeInferenceException ex)
+        {
+            AddError(valueArgument.Span, ex.Message);
+        }
+    }
+
+    private bool TryResolveExplicitValueArgument(
+        ValueGenericArgumentNode valueArgument,
+        int parameterIndex,
+        Type declaredType,
+        Dictionary<string, Type> sourceTypeVarEnv,
+        out GenericValueArgument explicitArgument)
+    {
+        var expressionType = InferExpression(valueArgument.Expression);
+        try
+        {
+            _substitution.Unify(expressionType, declaredType);
+        }
+        catch (TypeInferenceException ex)
+        {
+            AddError(valueArgument.Span, ex.Message);
+            explicitArgument = null!;
+            return false;
+        }
+
+        if (ComptimeEvaluator.TryEvaluate(
+                valueArgument.Expression,
+                _comptimeValues,
+                _functionDefinitionsBySymbol,
+                _substitution.Apply,
+                out var value,
+                out var reason))
+        {
+            if (value is ComptimeFloatValue)
+            {
+                AddError(valueArgument.Span, "Floating-point values cannot be used as specialization keys.");
+                explicitArgument = null!;
+                return false;
+            }
+
+            explicitArgument = new GenericValueArgument(
+                parameterIndex,
+                value.CanonicalText,
+                value.CanonicalHash,
+                FormatComptimeGenericArgument(value),
+                ResolveSymbolMetadataTypeId(_substitution.Apply(declaredType)));
+            return true;
+        }
+
+        if (TryCreateSymbolicValueGenericArgument(
+                valueArgument.Expression,
+                parameterIndex,
+                _substitution.Apply(declaredType),
+                sourceTypeVarEnv,
+                out explicitArgument))
+        {
+            return true;
+        }
+
+        AddError(
+            valueArgument.Span,
+            $"Value generic argument {parameterIndex + 1} is not compile-time evaluable: {reason}");
+        return false;
     }
 
     private Type ConvertTypeInCurrentTypeParamContext(TypeNode typeNode)
@@ -1602,7 +1784,8 @@ public sealed partial class TypeInferer
         var result = new Dictionary<string, Kind>(StringComparer.Ordinal);
         foreach (var typeParam in typeParams)
         {
-            if (string.IsNullOrWhiteSpace(typeParam.Name))
+            if (typeParam.ParameterKind != GenericParameterKind.Type ||
+                string.IsNullOrWhiteSpace(typeParam.Name))
             {
                 continue;
             }
@@ -1787,174 +1970,4 @@ public sealed partial class TypeInferer
         return new TypeConstructorKindResolver(_symbolTable, _typeConstructorKindsBySymbol);
     }
 
-    private Type InstantiateSchemeWithConstraints(TypeScheme scheme, SourceSpan usageSpan)
-    {
-        var instantiated = _substitution.InstantiateScheme(scheme);
-        if (instantiated.Constraints.Count > 0)
-        {
-            _constraintGenerator.Constraints.AddRange(instantiated.Constraints.Select(constraint => WithConstraintSpan(constraint, usageSpan)));
-        }
-
-        return instantiated.Type;
-    }
-
-    private Type InstantiateSchemeWithExplicitTypeArgsAndConstraints(
-        TypeScheme scheme,
-        IReadOnlyList<TypeNode> explicitTypeArgNodes,
-        SourceSpan usageSpan)
-    {
-        var explicitTypeArgs = explicitTypeArgNodes
-            .Select(ConvertTypeInCurrentTypeParamContext)
-            .ToList();
-
-        return InstantiateSchemeWithExplicitTypeArgsAndConstraints(scheme, explicitTypeArgs, usageSpan);
-    }
-
-    private Type InstantiateSchemeWithExplicitTypeArgsAndConstraints(
-        TypeScheme scheme,
-        IReadOnlyList<Type> explicitTypeArgs,
-        SourceSpan usageSpan)
-    {
-        InstantiatedTypeScheme instantiated;
-        try
-        {
-            instantiated = _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
-        }
-        catch (TypeInferenceException ex)
-        {
-            AddError(usageSpan, ex.Message);
-            instantiated = _substitution.InstantiateScheme(scheme);
-        }
-
-        if (instantiated.Constraints.Count > 0)
-        {
-            _constraintGenerator.Constraints.AddRange(
-                instantiated.Constraints.Select(constraint => WithConstraintSpan(constraint, usageSpan)));
-        }
-
-        return instantiated.Type;
-    }
-
-    private static TypeConstraint WithConstraintSpan(TypeConstraint constraint, SourceSpan span)
-    {
-        return constraint switch
-        {
-            TraitConstraint traitConstraint => traitConstraint with { Span = span },
-            EqualityConstraint equalityConstraint => equalityConstraint with { Span = span },
-            KindConstraint kindConstraint => kindConstraint with { Span = span },
-            _ => constraint
-        };
-    }
-
-    private void ApplyAdtTypeParamConstraints(
-        SymbolId adtSymbolId,
-        IReadOnlyDictionary<string, Type> typeVarEnv,
-        SourceSpan usageSpan)
-    {
-        if (!_adtTypeParamConstraintBindings.TryGetValue(adtSymbolId, out var adtBinding))
-        {
-            return;
-        }
-
-        ApplyTypeParamConstraintBinding(
-            new TypeParamConstraintBinding(
-                adtBinding.AdtId,
-                adtBinding.TypeParamNames,
-                adtBinding.TraitRequirementsByIndex),
-            CreateTypeParamKindMapForOwner(adtSymbolId, adtBinding.TypeParamNames),
-            typeVarEnv,
-            usageSpan);
-    }
-
-    private void ApplyConstructorTypeParamConstraints(
-        CtorTypeBinding binding,
-        IReadOnlyDictionary<string, Type> typeVarEnv,
-        SourceSpan usageSpan)
-    {
-        if (!_ctorTypeParamConstraintBindings.TryGetValue(binding.CtorId, out var constraintBinding))
-        {
-            return;
-        }
-
-        ApplyTypeParamConstraintBinding(
-            constraintBinding,
-            CreateTypeParamKindMapForCtorBinding(
-                binding.AdtId,
-                binding.AdtTypeParamNames,
-                binding.CtorId,
-                binding.CtorTypeParamNames),
-            typeVarEnv,
-            usageSpan);
-    }
-
-    private void ApplyTypeParamConstraintBinding(
-        TypeParamConstraintBinding binding,
-        IReadOnlyDictionary<string, Kind> kindEnvByName,
-        IReadOnlyDictionary<string, Type> typeVarEnv,
-        SourceSpan usageSpan)
-    {
-        var matchCount = Math.Min(binding.TypeParamNames.Count, binding.TraitRequirementsByIndex.Count);
-        var mutableTypeVarEnv = typeVarEnv as Dictionary<string, Type> ?? typeVarEnv.ToDictionary(pair => pair.Key, pair => pair.Value);
-        for (var i = 0; i < matchCount; i++)
-        {
-            var typeParamName = binding.TypeParamNames[i];
-            if (!typeVarEnv.TryGetValue(typeParamName, out var typeArg))
-            {
-                continue;
-            }
-
-            foreach (var requirement in binding.TraitRequirementsByIndex[i])
-            {
-                var traitArgs = requirement.TraitArgNodes
-                    .Select(typeNode => ConvertTypeWithAdditionalKindContext(
-                        typeNode,
-                        mutableTypeVarEnv,
-                        kindEnvByName,
-                        allowTypeConstructorReference: true))
-                    .ToList();
-                _constraintGenerator.Constraints.AddTrait(
-                    typeArg,
-                    requirement.TraitId,
-                    requirement.TraitName,
-                    usageSpan,
-                    traitArgs);
-            }
-        }
-    }
-
-    private void UnifyCtorArgumentTypes(
-        CtorTypeBinding binding,
-        Dictionary<string, Type> typeVarEnv,
-        IReadOnlyList<Type> positionalArgTypes,
-        IReadOnlyDictionary<string, Type> namedArgTypes)
-    {
-        var kindEnvByName = CreateTypeParamKindMapForCtorBinding(
-            binding.AdtId,
-            binding.AdtTypeParamNames,
-            binding.CtorId,
-            binding.CtorTypeParamNames);
-        var positionalCount = Math.Min(positionalArgTypes.Count, binding.PositionalArgTypes.Count);
-        for (var i = 0; i < positionalCount; i++)
-        {
-            var expectedType = ConvertTypeWithAdditionalKindContext(
-                binding.PositionalArgTypes[i],
-                typeVarEnv,
-                kindEnvByName);
-            UnifyExpectedType(expectedType, positionalArgTypes[i]);
-        }
-
-        foreach (var (fieldName, actualType) in namedArgTypes)
-        {
-            if (!binding.NamedArgTypes.TryGetValue(fieldName, out var fieldType))
-            {
-                continue;
-            }
-
-            var expectedFieldType = ConvertTypeWithAdditionalKindContext(
-                fieldType,
-                typeVarEnv,
-                kindEnvByName);
-            UnifyExpectedType(expectedFieldType, actualType);
-        }
-    }
 }

@@ -718,11 +718,11 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         path.SetIsTypePath(parsedPath.Name.Length > 0 && char.IsUpper(parsedPath.Name[0]));
 
         // Optional type args: Path[Int, String]
-        if (ctx.Check("[") && IsTypeArgLookahead())
+        if (ctx.Check("[") && (path.IsTypePath || IsTypeArgLookahead()))
         {
-            var typeArgs = typeParser.TryParseTypeArgs();
-            if (typeArgs != null)
-                path.SetTypeArgs(typeArgs);
+            var genericArguments = typeParser.TryParseGenericArguments();
+            if (genericArguments != null)
+                path.SetGenericArguments(genericArguments);
         }
 
         return path;
@@ -737,6 +737,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         constructorPath.SetPackageAlias(path.PackageAlias);
         constructorPath.ModulePath = [..path.ModulePath];
         constructorPath.TypeArgs = [..path.TypeArgs];
+        constructorPath.GenericArguments = [..path.GenericArguments];
         constructorPath.SetSpan(path.Span);
         ctor.SetConstructorPath(constructorPath);
 
@@ -1490,20 +1491,20 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     private EidosAstNode ParseTypeArgAccess(EidosAstNode left)
     {
         var startToken = ctx.Current;
-        var typeArgs = typeParser.TryParseTypeArgs();
-        if (typeArgs == null)
+        var genericArguments = typeParser.TryParseGenericArguments();
+        if (genericArguments == null)
             return left;
 
         if (left is PathExpr pathExpr)
         {
-            pathExpr.SetTypeArgs(typeArgs);
+            pathExpr.SetGenericArguments(genericArguments);
             return pathExpr;
         }
 
         var typeApplication = new IndexExpr();
         typeApplication.SetSpan(ctx.SpanFrom(startToken));
         typeApplication.SetObject(left);
-        typeApplication.SetTypeArgs(typeArgs);
+        typeApplication.SetGenericArguments(genericArguments);
         return typeApplication;
     }
 
@@ -1877,7 +1878,47 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return false;
         var next = ctx.Peek(1);
         return IsTypeArgStartToken(next) ||
-               (ctx.CheckPeek(1, "(") && IsParenthesizedTypeArgLookahead(1));
+               (ctx.CheckPeek(1, "(") && IsParenthesizedTypeArgLookahead(1)) ||
+               HasTopLevelGenericArgumentSeparator();
+    }
+
+    private bool HasTopLevelGenericArgumentSeparator()
+    {
+        var bracketDepth = 0;
+        var nestedDepth = 0;
+        for (var offset = 0; offset < 64; offset++)
+        {
+            var token = ctx.Peek(offset);
+            if (token is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetText(token);
+            switch (text)
+            {
+                case "[":
+                    bracketDepth++;
+                    break;
+                case "]":
+                    bracketDepth--;
+                    if (bracketDepth <= 0)
+                    {
+                        return false;
+                    }
+                    break;
+                case "(" or "{":
+                    nestedDepth++;
+                    break;
+                case ")" or "}" when nestedDepth > 0:
+                    nestedDepth--;
+                    break;
+                case "," when bracketDepth == 1 && nestedDepth == 0:
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private bool IsParenthesizedTypeArgLookahead(int openParenOffset)

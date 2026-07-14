@@ -471,11 +471,12 @@ public sealed partial class MirBuilder
                 var methods = traitMethods.TryGetValue(trait.Id, out var traitMethodsForTrait)
                     ? traitMethodsForTrait
                     : [];
+                var typeParameterIds = GetTypeDomainParameterIds(trait.TypeParams);
                 return new MirTraitInfo
                 {
                     TraitId = trait.Id,
-                    TypeParameterCount = trait.TypeParams.Count,
-                    TypeParameterIds = trait.TypeParams.ToList(),
+                    TypeParameterCount = typeParameterIds.Count,
+                    TypeParameterIds = typeParameterIds,
                     SelfPosition = trait.SelfPosition,
                     ParentTraits = trait.ParentTraits.ToList(),
                     HasMethodDispatchMetadata = methods.Any(HasTraitMethodDispatchMetadata),
@@ -525,7 +526,7 @@ public sealed partial class MirBuilder
                 AliasTarget = aliasTargetBySymbolId.TryGetValue(alias.Id, out var targetTypeId)
                     ? targetTypeId
                     : alias.AliasTarget!.Value,
-                TypeParameterIds = alias.TypeParams.ToList()
+                TypeParameterIds = GetTypeDomainParameterIds(alias.TypeParams)
             })
             .ToList();
 
@@ -557,15 +558,15 @@ public sealed partial class MirBuilder
             .Where(static symbol => symbol.Id.IsValid &&
                                     symbol.TypeId.IsValid &&
                                     !string.IsNullOrWhiteSpace(symbol.Name))
-            .Select(static symbol => new MirTypeConstructorInfo
+            .Select(symbol => new MirTypeConstructorInfo
             {
                 SymbolId = symbol.Id,
                 Name = symbol.Name,
                 TypeId = symbol.TypeId,
                 TypeParameterIds = symbol switch
                 {
-                    AdtSymbol adt => adt.TypeParams.ToList(),
-                    TraitSymbol trait => trait.TypeParams.ToList(),
+                    AdtSymbol adt => GetTypeDomainParameterIds(adt.TypeParams),
+                    TraitSymbol trait => GetTypeDomainParameterIds(trait.TypeParams),
                     EffectSymbol => [],
                     _ => []
                 }
@@ -579,6 +580,11 @@ public sealed partial class MirBuilder
         {
             foreach (var typeParameter in adt.TypeParams)
             {
+                if (typeParameter.ParameterKind != GenericParameterKind.Type)
+                {
+                    continue;
+                }
+
                 var typeParameterTypeId = typeParameter.TypeId.IsValid
                     ? typeParameter.TypeId
                     : typeParameter.SymbolId.IsValid
@@ -592,6 +598,19 @@ public sealed partial class MirBuilder
                 }
             }
         }
+    }
+
+    private List<SymbolId> GetTypeDomainParameterIds(IEnumerable<SymbolId> parameterIds)
+    {
+        if (_symbolTable == null)
+        {
+            return [];
+        }
+
+        return parameterIds
+            .Where(parameterId =>
+                _symbolTable.GetSymbol<TypeParamSymbol>(parameterId)?.ParameterKind == GenericParameterKind.Type)
+            .ToList();
     }
 
     private static bool HasTraitMethodDispatchMetadata(FuncSymbol method)
@@ -632,6 +651,7 @@ public sealed partial class MirBuilder
             TraitInvokeHelper = traitInvokeHelper,
             TraitInvokeHelperTraitId = GetTraitInvokeHelperTraitId(func, traitInvokeHelper),
             GenericParameterCount = func.TypeParams.Count,
+            GenericParameters = GetGenericParameters(func),
             GenericTypeParameterIds = GetGenericTypeParameterIds(func),
             ReturnType = func.ReturnType,
             EntryBlockId = entryBlock.Id,
@@ -733,6 +753,7 @@ public sealed partial class MirBuilder
             TraitInvokeHelperTraitId = GetTraitInvokeHelperTraitId(func, traitInvokeHelper),
             ReturnType = func.ReturnType,
             GenericParameterCount = func.TypeParams.Count,
+            GenericParameters = GetGenericParameters(func),
             GenericTypeParameterIds = GetGenericTypeParameterIds(func),
             EntryBlockId = new BlockId { Value = 0 },
             Locals = paramLocals,
@@ -753,8 +774,23 @@ public sealed partial class MirBuilder
         }
 
         return func.TypeParams
+            .Where(static typeParam => typeParam.ParameterKind == GenericParameterKind.Type)
             .Select(static typeParam => typeParam.TypeId)
             .Where(static typeId => typeId.IsValid)
+            .ToList();
+    }
+
+    private static List<MirGenericParameter> GetGenericParameters(HirFunc func)
+    {
+        return func.TypeParams
+            .Select(static (parameter, index) => new MirGenericParameter
+            {
+                ParameterIndex = index,
+                SymbolId = parameter.SymbolId,
+                Name = parameter.Name,
+                ParameterKind = parameter.ParameterKind,
+                TypeId = parameter.TypeId
+            })
             .ToList();
     }
 
@@ -792,6 +828,7 @@ public sealed partial class MirBuilder
         {
             HirError error => ReportHirErrorExpr(error),
             HirLiteral lit => ConvertLiteral(lit),
+            HirConstGenericValue constGeneric => ConvertConstGenericValue(constGeneric),
             HirVar var => ConvertVar(var),
             HirBinOp binOp => ConvertBinOp(binOp),
             HirUnaryOp unaryOp => ConvertHirUnaryOp(unaryOp),
@@ -811,6 +848,18 @@ public sealed partial class MirBuilder
             HirFieldAccess fieldAccess => ConvertFieldAccess(fieldAccess),
             HirIndexAccess indexAccess => ConvertIndexAccess(indexAccess),
             _ => ReportUnsupportedExpr(node)
+        };
+    }
+
+    private static MirConstGenericValue ConvertConstGenericValue(HirConstGenericValue value)
+    {
+        return new MirConstGenericValue
+        {
+            SymbolId = value.SymbolId,
+            Name = value.Name,
+            ParameterIndex = value.ParameterIndex,
+            Span = value.Span,
+            TypeId = value.TypeId
         };
     }
 
@@ -865,7 +914,8 @@ public sealed partial class MirBuilder
                 Span = var.Span,
                 TypeId = var.TypeId,
                 SignatureTypeId = ResolveFunctionSignatureTypeId(var.SymbolId, funcName, var.TypeId),
-                TypeArgumentIds = [.. var.TypeArgumentIds]
+                TypeArgumentIds = [.. var.TypeArgumentIds],
+                ValueArguments = [.. var.ValueArguments]
             });
         }
 
@@ -886,7 +936,8 @@ public sealed partial class MirBuilder
                 Span = var.Span,
                 TypeId = var.TypeId,
                 SignatureTypeId = ResolveFunctionSignatureTypeId(funcSymbol, resolvedFunctionName, var.TypeId),
-                TypeArgumentIds = [.. var.TypeArgumentIds]
+                TypeArgumentIds = [.. var.TypeArgumentIds],
+                ValueArguments = [.. var.ValueArguments]
             });
         }
 
@@ -1551,7 +1602,7 @@ public sealed partial class MirBuilder
     // curried-application shape so MirGenericSpecializer can specialize them.
     private bool IsGenericFunctionCandidate(HirVar functionVar)
     {
-        if (functionVar.TypeArgumentIds.Count > 0)
+        if (functionVar.TypeArgumentIds.Count > 0 || functionVar.ValueArguments.Count > 0)
         {
             return true;
         }
@@ -1584,6 +1635,7 @@ public sealed partial class MirBuilder
                 FunctionId = BuildConstructorFunctionId(constructorVar.SymbolId, name, constructorResultType),
                 TypeId = constructorResultType,
                 TypeArgumentIds = [.. constructorVar.TypeArgumentIds],
+                ValueArguments = [.. constructorVar.ValueArguments],
                 Span = constructorVar.Span
             };
             return true;
@@ -1623,6 +1675,7 @@ public sealed partial class MirBuilder
             TypeId = functionType,
             SignatureTypeId = ResolveFunctionSignatureTypeId(functionVar.SymbolId, loweredFunctionName, functionType),
             TypeArgumentIds = [.. functionVar.TypeArgumentIds],
+            ValueArguments = [.. functionVar.ValueArguments],
             Span = functionVar.Span
         });
         return true;

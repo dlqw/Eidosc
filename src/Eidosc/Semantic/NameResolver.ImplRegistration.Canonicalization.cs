@@ -1,6 +1,8 @@
 using Eidosc.Symbols;
 using Eidosc.Ast.Declarations;
+using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Types;
+using Eidosc.Types;
 
 namespace Eidosc.Semantic;
 
@@ -8,6 +10,17 @@ public sealed partial class NameResolver
 {
     private List<string> CanonicalizeImplTraitTypeArgs(ImplTraitReference traitRef)
     {
+        if (traitRef.GenericArguments.Count > 0)
+        {
+            return traitRef.GenericArguments
+                .Select((argument, parameterIndex) =>
+                    CanonicalizeImplGenericArgument(
+                        argument,
+                        parameterIndex,
+                        new Dictionary<string, string>(StringComparer.Ordinal)))
+                .ToList();
+        }
+
         if (traitRef.TypeArgs.Count == 0)
         {
             return traitRef.TypeArgTexts
@@ -122,6 +135,7 @@ public sealed partial class NameResolver
     private string CanonicalizeTypePathForImplHead(TypePath typePath, IReadOnlyDictionary<string, string> textBindings)
     {
         if (typePath.ModulePath.Count == 0 &&
+            typePath.GenericArguments.Count == 0 &&
             typePath.TypeArgs.Count == 0 &&
             textBindings.TryGetValue(typePath.TypeName, out var boundText))
         {
@@ -136,12 +150,59 @@ public sealed partial class NameResolver
         var name = typePath.ModulePath.Count > 0
             ? string.Join(WellKnownStrings.Separators.Path, typePath.ModulePath) + WellKnownStrings.Separators.Path + typePath.TypeName
             : typePath.TypeName;
-        if (typePath.TypeArgs.Count == 0)
+        if (typePath.GenericArguments.Count == 0 && typePath.TypeArgs.Count == 0)
         {
             return name;
         }
 
-        return $"{name}[{string.Join(",", typePath.TypeArgs.Select(typeArg => CanonicalizeTypeNodeForImplHead(typeArg, textBindings)))}]";
+        var arguments = typePath.GenericArguments.Count > 0
+            ? typePath.GenericArguments
+                .Select((argument, parameterIndex) =>
+                    CanonicalizeImplGenericArgument(argument, parameterIndex, textBindings))
+            : typePath.TypeArgs.Select(typeArg => CanonicalizeTypeNodeForImplHead(typeArg, textBindings));
+        return $"{name}[{string.Join(",", arguments)}]";
+    }
+
+    private string CanonicalizeImplGenericArgument(
+        GenericArgumentNode argument,
+        int parameterIndex,
+        IReadOnlyDictionary<string, string> textBindings)
+    {
+        return argument switch
+        {
+            TypeGenericArgumentNode typeArgument =>
+                CanonicalizeTypeNodeForImplHead(typeArgument.Type, textBindings),
+            UnresolvedGenericArgumentNode { TypeCandidate: { } typeCandidate } =>
+                CanonicalizeTypeNodeForImplHead(typeCandidate, textBindings),
+            ValueGenericArgumentNode valueArgument =>
+                CanonicalizeImplValueArgument(valueArgument.Expression, parameterIndex),
+            _ => "_"
+        };
+    }
+
+    private string CanonicalizeImplValueArgument(Eidosc.Ast.EidosAstNode expression, int parameterIndex)
+    {
+        var key = BuildImplValueRefKey(expression, parameterIndex);
+        if (key.ValueArgument is not { } valueArgument)
+        {
+            return "_";
+        }
+
+        if (!valueArgument.IsConcrete)
+        {
+            return string.IsNullOrWhiteSpace(valueArgument.DisplayText)
+                ? valueArgument.VariableIdentity
+                : valueArgument.DisplayText;
+        }
+
+        return expression switch
+        {
+            LiteralExpr literal when !string.IsNullOrWhiteSpace(literal.RawText) => literal.RawText,
+            IdentifierExpr identifier => identifier.Name,
+            PathExpr path => string.Join(WellKnownStrings.Separators.Path, path.Path),
+            _ when !string.IsNullOrWhiteSpace(valueArgument.DisplayText) => valueArgument.DisplayText,
+            _ => valueArgument.CanonicalPayload
+        };
     }
 
     private bool TryGetTypeAliasDefinition(IReadOnlyList<string> path, out AdtDef aliasDefinition)
@@ -185,55 +246,106 @@ public sealed partial class NameResolver
         }
 
         var typeArgBindings = new Dictionary<string, TypeNode>(StringComparer.Ordinal);
-        for (var i = 0; i < adtDefinition.TypeParams.Count && i < typePath.TypeArgs.Count; i++)
+        var valueArgBindings = new Dictionary<string, Eidosc.Ast.EidosAstNode>(StringComparer.Ordinal);
+        if (typePath.GenericArguments.Count > 0)
         {
-            var typeParamName = adtDefinition.TypeParams[i].Name;
-            if (!string.IsNullOrWhiteSpace(typeParamName))
+            for (var parameterIndex = 0;
+                 parameterIndex < adtDefinition.TypeParams.Count &&
+                 parameterIndex < typePath.GenericArguments.Count;
+                 parameterIndex++)
             {
-                typeArgBindings[typeParamName] = typePath.TypeArgs[i];
+                var parameter = adtDefinition.TypeParams[parameterIndex];
+                if (string.IsNullOrWhiteSpace(parameter.Name))
+                {
+                    continue;
+                }
+
+                switch (parameter.ParameterKind, typePath.GenericArguments[parameterIndex])
+                {
+                    case (GenericParameterKind.Type, TypeGenericArgumentNode typeArgument):
+                        typeArgBindings[parameter.Name] = typeArgument.Type;
+                        break;
+                    case (GenericParameterKind.Type, UnresolvedGenericArgumentNode { TypeCandidate: { } typeCandidate }):
+                        typeArgBindings[parameter.Name] = typeCandidate;
+                        break;
+                    case (GenericParameterKind.Value, ValueGenericArgumentNode valueArgument):
+                        valueArgBindings[parameter.Name] = valueArgument.Expression;
+                        break;
+                    case (GenericParameterKind.Value, UnresolvedGenericArgumentNode { ValueCandidate: { } valueCandidate }):
+                        valueArgBindings[parameter.Name] = valueCandidate;
+                        break;
+                }
+            }
+        }
+        else
+        {
+            var typeArgumentIndex = 0;
+            foreach (var parameter in adtDefinition.TypeParams)
+            {
+                if (parameter.ParameterKind != GenericParameterKind.Type ||
+                    string.IsNullOrWhiteSpace(parameter.Name) ||
+                    typeArgumentIndex >= typePath.TypeArgs.Count)
+                {
+                    continue;
+                }
+
+                typeArgBindings[parameter.Name] = typePath.TypeArgs[typeArgumentIndex++];
             }
         }
 
-        expanded = SubstituteTypeNode(adtDefinition.AliasTarget, typeArgBindings);
+        expanded = SubstituteTypeNode(adtDefinition.AliasTarget, typeArgBindings, valueArgBindings);
         return true;
     }
 
-    private TypeNode SubstituteTypeNode(TypeNode node, IReadOnlyDictionary<string, TypeNode> bindings)
+    private TypeNode SubstituteTypeNode(
+        TypeNode node,
+        IReadOnlyDictionary<string, TypeNode> typeBindings,
+        IReadOnlyDictionary<string, Eidosc.Ast.EidosAstNode> valueBindings)
     {
         return node switch
         {
-            TypePath typePath => SubstituteTypePath(typePath, bindings),
-            TupleType tuple => SubstituteTupleType(tuple, bindings),
-            ArrowType arrow => SubstituteArrowType(arrow, bindings),
+            TypePath typePath => SubstituteTypePath(typePath, typeBindings, valueBindings),
+            TupleType tuple => SubstituteTupleType(tuple, typeBindings, valueBindings),
+            ArrowType arrow => SubstituteArrowType(arrow, typeBindings, valueBindings),
             EffectfulType effectful => effectful,
             _ => node
         };
     }
 
-    private TypeNode SubstituteTupleType(TupleType tuple, IReadOnlyDictionary<string, TypeNode> bindings)
+    private TypeNode SubstituteTupleType(
+        TupleType tuple,
+        IReadOnlyDictionary<string, TypeNode> typeBindings,
+        IReadOnlyDictionary<string, Eidosc.Ast.EidosAstNode> valueBindings)
     {
         var substituted = new TupleType();
         foreach (var element in tuple.Elements)
         {
-            substituted.Elements.Add(SubstituteTypeNode(element, bindings));
+            substituted.Elements.Add(SubstituteTypeNode(element, typeBindings, valueBindings));
         }
 
         return substituted;
     }
 
-    private TypeNode SubstituteArrowType(ArrowType arrow, IReadOnlyDictionary<string, TypeNode> bindings)
+    private TypeNode SubstituteArrowType(
+        ArrowType arrow,
+        IReadOnlyDictionary<string, TypeNode> typeBindings,
+        IReadOnlyDictionary<string, Eidosc.Ast.EidosAstNode> valueBindings)
     {
         var substituted = new ArrowType();
-        substituted.SetParamType(SubstituteTypeNode(arrow.ParamType, bindings));
-        substituted.SetReturnType(SubstituteTypeNode(arrow.ReturnType, bindings));
+        substituted.SetParamType(SubstituteTypeNode(arrow.ParamType, typeBindings, valueBindings));
+        substituted.SetReturnType(SubstituteTypeNode(arrow.ReturnType, typeBindings, valueBindings));
         return substituted;
     }
 
-    private TypeNode SubstituteTypePath(TypePath typePath, IReadOnlyDictionary<string, TypeNode> bindings)
+    private TypeNode SubstituteTypePath(
+        TypePath typePath,
+        IReadOnlyDictionary<string, TypeNode> typeBindings,
+        IReadOnlyDictionary<string, Eidosc.Ast.EidosAstNode> valueBindings)
     {
         if (typePath.ModulePath.Count == 0 &&
+            typePath.GenericArguments.Count == 0 &&
             typePath.TypeArgs.Count == 0 &&
-            bindings.TryGetValue(typePath.TypeName, out var bound))
+            typeBindings.TryGetValue(typePath.TypeName, out var bound))
         {
             return bound;
         }
@@ -248,11 +360,62 @@ public sealed partial class NameResolver
             substituted.ModulePath.Add(modulePart);
         }
 
-        foreach (var typeArg in typePath.TypeArgs)
+        if (typePath.GenericArguments.Count > 0)
         {
-            substituted.TypeArgs.Add(SubstituteTypeNode(typeArg, bindings));
+            substituted.SetGenericArguments(typePath.GenericArguments.Select(argument => argument switch
+            {
+                TypeGenericArgumentNode typeArgument => new TypeGenericArgumentNode
+                {
+                    Type = SubstituteTypeNode(typeArgument.Type, typeBindings, valueBindings),
+                    Span = typeArgument.Span
+                },
+                ValueGenericArgumentNode valueArgument => new ValueGenericArgumentNode
+                {
+                    Expression = SubstituteValueGenericExpression(valueArgument.Expression, valueBindings),
+                    Span = valueArgument.Span
+                },
+                EffectGenericArgumentNode effectArgument => new EffectGenericArgumentNode
+                {
+                    EffectRow = SubstituteTypeNode(effectArgument.EffectRow, typeBindings, valueBindings),
+                    Span = effectArgument.Span
+                },
+                UnresolvedGenericArgumentNode unresolved => new UnresolvedGenericArgumentNode
+                {
+                    TypeCandidate = unresolved.TypeCandidate == null
+                        ? null
+                        : SubstituteTypeNode(unresolved.TypeCandidate, typeBindings, valueBindings),
+                    ValueCandidate = unresolved.ValueCandidate == null
+                        ? null
+                        : SubstituteValueGenericExpression(unresolved.ValueCandidate, valueBindings),
+                    Span = unresolved.Span
+                },
+                _ => argument
+            }));
+        }
+        else
+        {
+            foreach (var typeArg in typePath.TypeArgs)
+            {
+                substituted.TypeArgs.Add(SubstituteTypeNode(typeArg, typeBindings, valueBindings));
+            }
         }
 
         return substituted;
+    }
+
+    private static Eidosc.Ast.EidosAstNode SubstituteValueGenericExpression(
+        Eidosc.Ast.EidosAstNode expression,
+        IReadOnlyDictionary<string, Eidosc.Ast.EidosAstNode> valueBindings)
+    {
+        var name = expression switch
+        {
+            IdentifierExpr identifier => identifier.Name,
+            PathExpr { ModulePath.Count: 0 } path => path.Name,
+            _ => null
+        };
+
+        return name != null && valueBindings.TryGetValue(name, out var bound)
+            ? bound
+            : expression;
     }
 }

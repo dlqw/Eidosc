@@ -10,6 +10,7 @@ internal enum SpecializationFailureReason
     UnresolvedTypes,
     UnresolvedConstructorBinding,
     TypeInferenceFailed,
+    UnresolvedValueArgument,
     PartialBindingIncomplete,
     NoConcreteDispatchType
 }
@@ -28,6 +29,7 @@ internal sealed record SpecializationFailure(
         SpecializationFailureReason.UnresolvedTypes => "unresolved-types",
         SpecializationFailureReason.UnresolvedConstructorBinding => "unresolved-constructor-binding",
         SpecializationFailureReason.TypeInferenceFailed => "type-inference-failed",
+        SpecializationFailureReason.UnresolvedValueArgument => "unresolved-value-argument",
         SpecializationFailureReason.PartialBindingIncomplete => "partial-binding-incomplete",
         SpecializationFailureReason.NoConcreteDispatchType => "no-concrete-dispatch-type",
         _ => Reason.ToString()
@@ -256,7 +258,10 @@ public sealed partial class MirGenericSpecializer
         var typeArgumentKey = call.Function is MirFunctionRef functionRef
             ? BuildTypeArgumentKey(functionRef.TypeArgumentIds)
             : "[]";
-        return $"inference-failed:{targetType.Value}|{string.Join(",", argumentTypes)}|{typeArgumentKey}";
+        var valueArgumentKey = call.Function is MirFunctionRef valueFunctionRef
+            ? BuildValueArgumentKey(valueFunctionRef.ValueArguments)
+            : "[]";
+        return $"inference-failed:{targetType.Value}|{string.Join(",", argumentTypes)}|{typeArgumentKey}|{valueArgumentKey}";
     }
 
     private string BuildUnresolvedCallSignatureDisplay(
@@ -272,7 +277,10 @@ public sealed partial class MirGenericSpecializer
         var typeArgumentKey = call.Function is MirFunctionRef functionRef
             ? BuildTypeArgumentKey(functionRef.TypeArgumentIds)
             : "[]";
-        return $"return:{targetType.Value} args:[{string.Join(",", argumentTypes)}] typeArgs:{typeArgumentKey}";
+        var valueArgumentKey = call.Function is MirFunctionRef valueFunctionRef
+            ? BuildValueArgumentKey(valueFunctionRef.ValueArguments)
+            : "[]";
+        return $"return:{targetType.Value} args:[{string.Join(",", argumentTypes)}] typeArgs:{typeArgumentKey} valueArgs:{valueArgumentKey}";
     }
 
     private bool SignatureContainsOpenConstructorBinding(SpecializationSignature signature)

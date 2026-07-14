@@ -57,11 +57,33 @@ public sealed partial class TypeInferer
             typeArgs.Add(typeArg);
         }
 
+        var valueArgs = new List<GenericValueArgument>();
+        if (_valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var scopedValueArguments))
+        {
+            for (var parameterIndex = 0; parameterIndex < binding.AdtGenericParameters.Count; parameterIndex++)
+            {
+                var parameter = binding.AdtGenericParameters[parameterIndex];
+                if (parameter.ParameterKind != GenericParameterKind.Value)
+                {
+                    continue;
+                }
+
+                if (!scopedValueArguments.TryGetValue(parameter.SymbolId, out var valueArgument))
+                {
+                    AddError(span, $"Cannot construct type '{adtSymbol.Name}': missing value parameter '{parameter.Name}'.");
+                    return CreateErrorRecoveryType();
+                }
+
+                valueArgs.Add(valueArgument with { ParameterIndex = parameterIndex });
+            }
+        }
+
         return _substitution.Apply(new TyCon
         {
             Name = adtSymbol.Name,
             Symbol = adtSymbol.Id,
-            Args = typeArgs
+            Args = typeArgs,
+            ValueArgs = valueArgs
         });
     }
 
@@ -920,7 +942,7 @@ public sealed partial class TypeInferer
             field.Type != null);
         if (fieldDefinition?.Type != null)
         {
-            var typeVarEnv = CreateAdtTypeVarEnv(adtDefinition, receiverCon.Args);
+            var typeVarEnv = CreateAdtTypeVarEnv(adtDefinition, receiverCon.Args, receiverCon.ValueArgs);
             var kindEnvByName = CreateTypeParamKindMapForOwner(adtDefinition.SymbolId, GetAdtTypeParamNames(adtDefinition));
             fieldType = _substitution.Apply(ConvertTypeWithAdditionalKindContext(fieldDefinition.Type, typeVarEnv, kindEnvByName));
             fieldSymbolId = TryResolveAdtFieldSymbolId(adtDefinition.SymbolId, fieldName);
@@ -934,7 +956,7 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var ctorTypeVarEnv = CreateCtorTypeVarEnv(recordCtorBindings[0], receiverCon.Args);
+        var ctorTypeVarEnv = CreateCtorTypeVarEnv(recordCtorBindings[0], receiverCon.Args, receiverCon.ValueArgs);
         var ctorKindEnvByName = CreateTypeParamKindMapForOwner(adtDefinition.SymbolId, GetAdtTypeParamNames(adtDefinition));
         fieldType = _substitution.Apply(ConvertTypeWithAdditionalKindContext(ctorFieldType, ctorTypeVarEnv, ctorKindEnvByName));
         return true;
@@ -1058,7 +1080,10 @@ public sealed partial class TypeInferer
         return null;
     }
 
-    private Dictionary<string, Type> CreateAdtTypeVarEnv(AdtDef adtDefinition, IReadOnlyList<Type> typeArgs)
+    private Dictionary<string, Type> CreateAdtTypeVarEnv(
+        AdtDef adtDefinition,
+        IReadOnlyList<Type> typeArgs,
+        IReadOnlyList<GenericValueArgument> valueArgs)
     {
         var typeVarEnv = new Dictionary<string, Type>(StringComparer.Ordinal);
         var typeParamNames = GetAdtTypeParamNames(adtDefinition);
@@ -1066,6 +1091,23 @@ public sealed partial class TypeInferer
         for (var i = 0; i < count; i++)
         {
             typeVarEnv[typeParamNames[i]] = typeArgs[i];
+        }
+
+        var scopedValueArguments = new Dictionary<SymbolId, GenericValueArgument>();
+        var valueArgumentsByParameterIndex = valueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        for (var parameterIndex = 0; parameterIndex < adtDefinition.TypeParams.Count; parameterIndex++)
+        {
+            var parameter = adtDefinition.TypeParams[parameterIndex];
+            if (parameter.ParameterKind == GenericParameterKind.Value &&
+                valueArgumentsByParameterIndex.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                scopedValueArguments[parameter.SymbolId] = valueArgument;
+            }
+        }
+
+        if (scopedValueArguments.Count > 0)
+        {
+            _valueGenericArgumentsByTypeEnv[typeVarEnv] = scopedValueArguments;
         }
 
         return typeVarEnv;
@@ -1262,7 +1304,21 @@ public sealed partial class TypeInferer
             return true;
         }
 
-        inferredType = InstantiateSchemeWithExplicitTypeArgsAndConstraints(scheme, index.TypeArgs, index.Span);
+        var targetSymbolId = index.Object switch
+        {
+            IdentifierExpr identifier => identifier.SymbolId,
+            PathExpr path => path.SymbolId,
+            _ => SymbolId.None
+        };
+        inferredType = targetSymbolId.IsValid &&
+                       (index.GenericArguments.Count > 0 || HasValueGenericParameters(targetSymbolId))
+            ? InstantiateSchemeWithGenericArgumentsAndConstraints(
+                scheme,
+                index.GenericArguments,
+                targetSymbolId,
+                index,
+                index.Span)
+            : InstantiateSchemeWithExplicitTypeArgsAndConstraints(scheme, index.TypeArgs, index.Span);
         return true;
     }
 
@@ -1442,6 +1498,7 @@ public sealed partial class TypeInferer
         var kindEnvByTypeVar = new Dictionary<int, Kind>();
 
         RegisterSignatureTypeParams(funcDef.TypeParams, kindEnvByName, typeVarEnv, kindEnvByTypeVar);
+        ResolveValueGenericParameterTypes(funcDef.TypeParams, typeVarEnv);
 
         _typeParamKindStack.Push(kindEnvByName);
         _typeParamVarKindStack.Push(kindEnvByTypeVar);
@@ -1506,6 +1563,8 @@ public sealed partial class TypeInferer
 
         RegisterSignatureTypeParams(outerTypeParams ?? [], kindEnvByName, typeVarEnv, kindEnvByTypeVar);
         RegisterSignatureTypeParams(typeParams, kindEnvByName, typeVarEnv, kindEnvByTypeVar);
+        ResolveValueGenericParameterTypes(outerTypeParams ?? [], typeVarEnv);
+        ResolveValueGenericParameterTypes(typeParams, typeVarEnv);
         if (selfType != null)
         {
             typeVarEnv[WellKnownStrings.Keywords.Self] = selfType;

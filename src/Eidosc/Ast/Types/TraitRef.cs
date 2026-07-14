@@ -29,6 +29,8 @@ public record TraitRef : EidosAstNode
     /// </summary>
     public List<TypeNode> TypeArgs { get; internal set; } = [];
 
+    public List<GenericArgumentNode> GenericArguments { get; internal set; } = [];
+
     /// <summary>
     /// 设置 span
     /// </summary>
@@ -45,12 +47,20 @@ public record TraitRef : EidosAstNode
         ModulePath.Clear();
         TraitName = "";
         TypeArgs.Clear();
+        GenericArguments.Clear();
 
         if (node is NonTerminalCstNode ntNode)
         {
             var parts = new List<string>();
             CollectPathParts(ntNode, parts, inTypeArgs: false);
             CollectTypeArguments(ntNode);
+            GenericArguments = TypeArgs
+                .Select(type => (GenericArgumentNode)new UnresolvedGenericArgumentNode
+                {
+                    TypeCandidate = type,
+                    Span = type.Span
+                })
+                .ToList();
 
             if (parts.Count > 0)
             {
@@ -158,5 +168,19 @@ public record TraitRef : EidosAstNode
         }
 
         return element;
+    }
+
+    internal void SetGenericArguments(IEnumerable<GenericArgumentNode> arguments)
+    {
+        GenericArguments = [.. arguments];
+        TypeArgs = GenericArguments
+            .Select(static argument => argument switch
+            {
+                UnresolvedGenericArgumentNode { TypeCandidate: { } type } => type,
+                TypeGenericArgumentNode typeArgument => typeArgument.Type,
+                _ => null
+            })
+            .OfType<TypeNode>()
+            .ToList();
     }
 }

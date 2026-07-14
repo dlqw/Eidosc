@@ -3,7 +3,7 @@ namespace Eidosc.ProjectSystem;
 public static class EidosLanguageVersions
 {
     public const string Legacy = "legacy";
-    public const string Current = "0.4.0-alpha.1";
+    public const string Current = "0.5.0-alpha.1";
 
     public static string DefaultForNewProjects => Current;
 

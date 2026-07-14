@@ -13,6 +13,16 @@ namespace Eidosc.Ast.Types;
 public record TypeParam : EidosAstNode
 {
     /// <summary>
+    /// Semantic domain ranged over by this generic parameter.
+    /// </summary>
+    public Eidosc.Types.GenericParameterKind ParameterKind =>
+        IsEffectSet
+            ? Eidosc.Types.GenericParameterKind.EffectRow
+            : IsComptime && !IsTypeLevelComptimeParameter(ComptimeTypeAnnotation)
+                ? Eidosc.Types.GenericParameterKind.Value
+                : Eidosc.Types.GenericParameterKind.Type;
+
+    /// <summary>
     /// 参数名称
     /// </summary>
     public string Name { get; internal set; } = "";
@@ -218,10 +228,20 @@ public record TypeParam : EidosAstNode
         return KindAnnotation?.ToKindText() ?? Eidosc.Types.KindParser.ToKindText(Eidosc.Types.Kind.KStar.Instance);
     }
 
+    private static bool IsTypeLevelComptimeParameter(TypeNode? typeAnnotation) =>
+        typeAnnotation is TypePath
+        {
+            PackageAlias: null,
+            ModulePath.Count: 0,
+            TypeName: WellKnownStrings.BuiltinTypes.Type,
+            TypeArgs.Count: 0
+        };
+
     public override XmlElement ToXmlElement(XmlDocument doc)
     {
         var element = CreateElement(doc, "TypeParam");
         element.SetAttribute(WellKnownStrings.XmlAttributes.Name, Name);
+        element.SetAttribute("parameterKind", ParameterKind.ToString());
 
         if (KindAnnotation != null)
         {

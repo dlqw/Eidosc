@@ -117,4 +117,101 @@ public sealed class TypeIdRegistryTests
         Assert.Equal($"sym:{adtId.Value}", descriptor.ConstructorDescriptor);
         Assert.Empty(descriptor.TypeArgs);
     }
+
+    [Fact]
+    public void GetTypeTypeId_ValueGenericArgumentsParticipateInDescriptorIdentity()
+    {
+        var symbolTable = new SymbolTable();
+        var registry = new TypeIdRegistry(symbolTable, null);
+        var vectorId = symbolTable.DeclareAdt("Vector", default);
+        var intType = new TyCon { Name = "Int", Id = new TypeId(BaseTypes.IntId) };
+
+        var vector4 = new TyCon
+        {
+            Name = "Vector",
+            Symbol = vectorId,
+            Args = [intType],
+            ValueArgs = [new GenericValueArgument(0, "typed:496e74:int:4", "hash-4", "4", new TypeId(BaseTypes.IntId))]
+        };
+        var vector5 = vector4 with
+        {
+            ValueArgs = [new GenericValueArgument(0, "typed:496e74:int:5", "hash-5", "5", new TypeId(BaseTypes.IntId))]
+        };
+
+        var vector4TypeId = registry.GetTypeTypeId(vector4);
+        var repeatedVector4TypeId = registry.GetTypeTypeId(vector4);
+        var vector5TypeId = registry.GetTypeTypeId(vector5);
+
+        Assert.Equal(vector4TypeId, repeatedVector4TypeId);
+        Assert.NotEqual(vector4TypeId, vector5TypeId);
+        var descriptor = Assert.IsType<TypeDescriptor.TyCon>(registry.TypeDescriptors[vector4TypeId.Value]);
+        var valueArgument = Assert.Single(descriptor.ValueArgs);
+        Assert.Equal("hash-4", valueArgument.CanonicalHash);
+        Assert.Equal(0, valueArgument.ParameterIndex);
+    }
+
+    [Fact]
+    public void GetTypeTypeId_DifferentValueSpecializations_PublishDistinctConstructorLayouts()
+    {
+        var symbolTable = new SymbolTable();
+        var registry = new TypeIdRegistry(symbolTable, null);
+        var bufferId = symbolTable.DeclareAdt("Buffer", default);
+        var constructorId = symbolTable.DeclareConstructor("Buffer", default, bufferId);
+        symbolTable.AddConstructorToAdt(bufferId, constructorId);
+        var intType = new TyCon { Name = "Int", Id = new TypeId(BaseTypes.IntId) };
+        var buffer4 = new TyCon
+        {
+            Name = "Buffer",
+            Symbol = bufferId,
+            Args = [intType],
+            ValueArgs = [new GenericValueArgument(0, "typed:496e74:int:4", "hash-4", "4", new TypeId(BaseTypes.IntId))]
+        };
+        var buffer5 = buffer4 with
+        {
+            ValueArgs = [new GenericValueArgument(0, "typed:496e74:int:5", "hash-5", "5", new TypeId(BaseTypes.IntId))]
+        };
+
+        var buffer4TypeId = registry.GetTypeTypeId(buffer4);
+        var buffer5TypeId = registry.GetTypeTypeId(buffer5);
+
+        var buffer4Layout = Assert.Single(registry.ConstructorLayouts[buffer4TypeId.Value]);
+        var buffer5Layout = Assert.Single(registry.ConstructorLayouts[buffer5TypeId.Value]);
+        Assert.NotEqual(buffer4Layout.TypeName, buffer5Layout.TypeName);
+        Assert.Contains("vhash-4", buffer4Layout.TypeName, StringComparison.Ordinal);
+        Assert.Contains("vhash-5", buffer5Layout.TypeName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetTypeTypeId_FreshValueVariablesDoNotShareDescriptorIdentity()
+    {
+        var symbolTable = new SymbolTable();
+        var registry = new TypeIdRegistry(symbolTable, null);
+        var bufferId = symbolTable.DeclareAdt("Buffer", default);
+        var openArgument = new GenericValueArgument(
+            0,
+            "value-parameter:0:4e",
+            "parameter-n",
+            "N",
+            new TypeId(BaseTypes.IntId),
+            ReferencedParameterIndex: 0,
+            ValueVariableIndex: 1);
+        var first = new TyCon
+        {
+            Name = "Buffer",
+            Symbol = bufferId,
+            Args = [BaseTypes.Int],
+            ValueArgs = [openArgument]
+        };
+        var second = first with
+        {
+            ValueArgs = [openArgument with { ValueVariableIndex = 2 }]
+        };
+
+        var firstTypeId = registry.GetTypeTypeId(first);
+        var secondTypeId = registry.GetTypeTypeId(second);
+
+        Assert.NotEqual(firstTypeId, secondTypeId);
+        var firstDescriptor = Assert.IsType<TypeDescriptor.TyCon>(registry.TypeDescriptors[firstTypeId.Value]);
+        Assert.Equal(1, Assert.Single(firstDescriptor.ValueArgs).ValueVariableIndex);
+    }
 }

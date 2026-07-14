@@ -760,16 +760,24 @@ public sealed partial class TypeInferer
 
         var name = path.TypeName;
         var args = ConvertTypeArgs(path.TypeArgs, typeVarEnv);
+        var valueArgs = ConvertValueGenericArguments(path, args, typeVarEnv);
+        var genericArityIsValid = ValidateGenericArgumentArity(path, allowTypeConstructorReference);
         var arityIsValid = ValidateTypePathArity(path, args.Count, allowTypeConstructorReference);
         var kindArgumentsAreValid = ValidateTypePathKindArguments(path, args);
-        if (!arityIsValid || !kindArgumentsAreValid)
+        if (!genericArityIsValid || !arityIsValid || !kindArgumentsAreValid || valueArgs == null)
         {
             return CreateErrorRecoveryType();
         }
 
         ApplyTypePathTraitConstraints(path, args);
 
-        if (TryExpandTypeAlias(path, args, typeVarEnv, allowTypeConstructorReference, out var expandedAliasType))
+        if (TryExpandTypeAlias(
+                path,
+                args,
+                valueArgs,
+                typeVarEnv,
+                allowTypeConstructorReference,
+                out var expandedAliasType))
         {
             return expandedAliasType;
         }
@@ -778,13 +786,205 @@ public sealed partial class TypeInferer
         {
             Name = name,
             Symbol = path.SymbolId,
-            Args = args
+            Args = args,
+            ValueArgs = valueArgs
         };
     }
+
+    private List<GenericValueArgument>? ConvertValueGenericArguments(
+        TypePath path,
+        IReadOnlyList<Type> typeArguments,
+        Dictionary<string, Type> outerTypeVarEnv)
+    {
+        if (path.GenericArguments.Count == 0 ||
+            !path.GenericArguments.Any(static argument => argument is ValueGenericArgumentNode))
+        {
+            return [];
+        }
+
+        var parameterDeclarations = GetGenericParameterDeclarations(path.SymbolId);
+        var applicationTypeEnv = new Dictionary<string, Type>(outerTypeVarEnv, StringComparer.Ordinal);
+        var typeArgumentIndex = 0;
+        foreach (var parameter in parameterDeclarations)
+        {
+            if (parameter.ParameterKind == GenericParameterKind.Type &&
+                typeArgumentIndex < typeArguments.Count &&
+                !string.IsNullOrWhiteSpace(parameter.Name))
+            {
+                applicationTypeEnv[parameter.Name] = typeArguments[typeArgumentIndex++];
+            }
+        }
+
+        var result = new List<GenericValueArgument>();
+        for (var parameterIndex = 0; parameterIndex < path.GenericArguments.Count; parameterIndex++)
+        {
+            if (path.GenericArguments[parameterIndex] is not ValueGenericArgumentNode valueArgument)
+            {
+                continue;
+            }
+
+            var expressionType = InferExpression(valueArgument.Expression);
+            Type? declaredType = null;
+            if (parameterIndex < parameterDeclarations.Count &&
+                parameterDeclarations[parameterIndex].ComptimeTypeAnnotation is { } annotation)
+            {
+                declaredType = ConvertType(annotation, applicationTypeEnv, allowTypeConstructorReference: false);
+                try
+                {
+                    _substitution.Unify(expressionType, declaredType);
+                }
+                catch (TypeInferenceException ex)
+                {
+                    AddError(valueArgument.Span, ex.Message);
+                    return null;
+                }
+            }
+
+            if (!ComptimeEvaluator.TryEvaluate(
+                    valueArgument.Expression,
+                    _comptimeValues,
+                    _functionDefinitionsBySymbol,
+                    _substitution.Apply,
+                    out var value,
+                    out var reason))
+            {
+                if (TryCreateSymbolicValueGenericArgument(
+                        valueArgument.Expression,
+                        parameterIndex,
+                        _substitution.Apply(declaredType ?? expressionType),
+                        outerTypeVarEnv,
+                        out var symbolicArgument))
+                {
+                    result.Add(symbolicArgument);
+                    continue;
+                }
+
+                AddError(valueArgument.Span, $"Value generic argument {parameterIndex + 1} is not compile-time evaluable: {reason}");
+                return null;
+            }
+
+            if (value is ComptimeFloatValue)
+            {
+                AddError(valueArgument.Span, "Floating-point values cannot be used as specialization keys.");
+                return null;
+            }
+
+            var resolvedType = _substitution.Apply(declaredType ?? expressionType);
+            var typeId = ResolveSymbolMetadataTypeId(resolvedType);
+            result.Add(new GenericValueArgument(
+                parameterIndex,
+                value.CanonicalText,
+                value.CanonicalHash,
+                FormatComptimeGenericArgument(value),
+                typeId));
+        }
+
+        return result;
+    }
+
+    private bool TryCreateSymbolicValueGenericArgument(
+        Eidosc.Ast.EidosAstNode expression,
+        int applicationParameterIndex,
+        Type valueType,
+        Dictionary<string, Type> typeVarEnv,
+        out GenericValueArgument argument)
+    {
+        var symbolId = expression switch
+        {
+            Eidosc.Ast.Expressions.IdentifierExpr identifier => identifier.SymbolId,
+            Eidosc.Ast.Expressions.PathExpr path => path.SymbolId,
+            _ => SymbolId.None
+        };
+        if (!symbolId.IsValid ||
+            _symbolTable.GetSymbol<TypeParamSymbol>(symbolId) is not
+            {
+                ParameterKind: GenericParameterKind.Value
+            } parameter ||
+            !_valueGenericParameterOrdinalsBySymbol.TryGetValue(symbolId, out var referencedParameterIndex))
+        {
+            argument = null!;
+            return false;
+        }
+
+        if (_valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var valueArguments) &&
+            valueArguments.TryGetValue(symbolId, out var scopedArgument))
+        {
+            argument = scopedArgument with { ParameterIndex = applicationParameterIndex };
+            return true;
+        }
+
+        argument = CreateValueGenericArgumentTemplate(parameter.Name, valueType, referencedParameterIndex) with
+        {
+            ParameterIndex = applicationParameterIndex
+        };
+        return true;
+    }
+
+    private IReadOnlyList<TypeParam> GetGenericParameterDeclarations(SymbolId targetSymbolId)
+    {
+        if (targetSymbolId.IsValid &&
+            _adtDefinitionsBySymbol.TryGetValue(targetSymbolId, out var adt))
+        {
+            return adt.TypeParams;
+        }
+
+        return [];
+    }
+
+    private static string FormatComptimeGenericArgument(ComptimeValue value)
+    {
+        return value switch
+        {
+            ComptimeUnitValue => "()",
+            ComptimeBoolValue scalar => scalar.Value ? "true" : "false",
+            ComptimeIntegerValue scalar => scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ComptimeFloatValue scalar => scalar.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+            ComptimeCharValue scalar => $"'{scalar.Value}'",
+            ComptimeStringValue scalar => $"\"{scalar.Value}\"",
+            _ => value.CanonicalText
+        };
+    }
+
+    private bool ValidateGenericArgumentArity(TypePath path, bool allowTypeConstructorReference)
+    {
+        if (path.GenericArguments.Count == 0 ||
+            !path.GenericArguments.Any(static argument => argument is ValueGenericArgumentNode) ||
+            !path.SymbolId.IsValid)
+        {
+            return true;
+        }
+
+        var parameterIds = GetGenericParameterSymbolIds(path.SymbolId);
+        if (parameterIds.Count == 0 || parameterIds.Count == path.GenericArguments.Count)
+        {
+            return true;
+        }
+
+        if (allowTypeConstructorReference && path.GenericArguments.Count <= parameterIds.Count)
+        {
+            return true;
+        }
+
+        AddError(
+            path.Span,
+            $"Type '{path.TypeName}' expects {parameterIds.Count} generic arguments but received {path.GenericArguments.Count}.");
+        return false;
+    }
+
+    private IReadOnlyList<SymbolId> GetGenericParameterSymbolIds(SymbolId symbolId) =>
+        _symbolTable.GetSymbol(symbolId) switch
+        {
+            AdtSymbol adt => adt.TypeParams,
+            TraitSymbol trait => trait.TypeParams,
+            CtorSymbol constructor => constructor.TypeParams,
+            FuncSymbol function => function.TypeParams,
+            _ => []
+        };
 
     private bool TryExpandTypeAlias(
         TypePath path,
         IReadOnlyList<Type> args,
+        IReadOnlyList<GenericValueArgument> valueArgs,
         Dictionary<string, Type> typeVarEnv,
         bool allowTypeConstructorReference,
         out Type expandedAliasType)
@@ -798,7 +998,7 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var aliasTypeVarEnv = CreateAliasTypeVarEnv(typeVarEnv, adtDefinition, args);
+        var aliasTypeVarEnv = CreateAliasTypeVarEnv(typeVarEnv, adtDefinition, args, valueArgs);
         var aliasKindEnvByName = CreateTypeParamKindMapForOwner(path.SymbolId, GetAdtTypeParamNames(adtDefinition));
         expandedAliasType = ConvertTypeWithAdditionalKindContext(
             adtDefinition.AliasTarget,
@@ -811,20 +1011,43 @@ public sealed partial class TypeInferer
     private Dictionary<string, Type> CreateAliasTypeVarEnv(
         Dictionary<string, Type> typeVarEnv,
         AdtDef adtDefinition,
-        IReadOnlyList<Type> args)
+        IReadOnlyList<Type> args,
+        IReadOnlyList<GenericValueArgument> valueArgs)
     {
         var aliasTypeVarEnv = new Dictionary<string, Type>(typeVarEnv, StringComparer.Ordinal);
-        for (var i = 0; i < adtDefinition.TypeParams.Count; i++)
+        var valueArgumentsByParameterIndex = valueArgs.ToDictionary(
+            static argument => argument.ParameterIndex,
+            static argument => argument);
+        var scopedValueArguments = new Dictionary<SymbolId, GenericValueArgument>();
+        var typeArgumentIndex = 0;
+        for (var parameterIndex = 0; parameterIndex < adtDefinition.TypeParams.Count; parameterIndex++)
         {
-            var typeParamName = adtDefinition.TypeParams[i].Name;
+            var parameter = adtDefinition.TypeParams[parameterIndex];
+            var typeParamName = parameter.Name;
             if (string.IsNullOrWhiteSpace(typeParamName))
             {
                 continue;
             }
 
-            aliasTypeVarEnv[typeParamName] = i < args.Count
-                ? args[i]
+            if (parameter.ParameterKind == GenericParameterKind.Value)
+            {
+                if (parameter.SymbolId.IsValid &&
+                    valueArgumentsByParameterIndex.TryGetValue(parameterIndex, out var valueArgument))
+                {
+                    scopedValueArguments[parameter.SymbolId] = valueArgument;
+                }
+
+                continue;
+            }
+
+            aliasTypeVarEnv[typeParamName] = typeArgumentIndex < args.Count
+                ? args[typeArgumentIndex++]
                 : _substitution.FreshTypeVariable();
+        }
+
+        if (scopedValueArguments.Count > 0)
+        {
+            _valueGenericArgumentsByTypeEnv[aliasTypeVarEnv] = scopedValueArguments;
         }
 
         return aliasTypeVarEnv;
@@ -859,7 +1082,7 @@ public sealed partial class TypeInferer
         {
             null => null,
             TypeParamSymbol => 0,
-            _ => GetTypeConstructorArity(path.SymbolId)
+            _ => GetTypeGenericParameterCount(path.SymbolId)
         };
 
         if (!expectedTypeArgCount.HasValue || expectedTypeArgCount.Value == actualTypeArgCount)
@@ -877,6 +1100,23 @@ public sealed partial class TypeInferer
             path.Span,
             DiagnosticMessages.TypeExpectsTypeArguments(path.TypeName, expectedTypeArgCount.Value, actualTypeArgCount));
         return false;
+    }
+
+    private int GetTypeGenericParameterCount(SymbolId symbolId)
+    {
+        var parameterIds = GetGenericParameterSymbolIds(symbolId);
+        if (parameterIds.Count == 0)
+        {
+            return GetTypeConstructorArity(symbolId);
+        }
+
+        var parameters = parameterIds
+            .Select(_symbolTable.GetSymbol<TypeParamSymbol>)
+            .OfType<TypeParamSymbol>()
+            .ToList();
+        return parameters.Count == 0
+            ? GetTypeConstructorArity(symbolId)
+            : parameters.Count(static parameter => parameter.ParameterKind == GenericParameterKind.Type);
     }
 
     private bool ValidateTypePathKindArguments(TypePath path, IReadOnlyList<Type> typeArgs)

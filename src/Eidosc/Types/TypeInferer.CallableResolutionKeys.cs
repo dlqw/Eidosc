@@ -31,9 +31,32 @@ public sealed partial class TypeInferer
             : string.IsNullOrWhiteSpace(qualifiedName)
                 ? $"name:{constructor.Name}"
                 : $"symbol:{qualifiedName}";
-        return constructor.Args.Count == 0
-            ? head
-            : $"{head}[{JoinCallableResolutionTypeKeys(constructor.Args)}]";
+        if (constructor.Args.Count == 0 && constructor.ValueArgs.Count == 0)
+        {
+            return head;
+        }
+
+        var valueArguments = constructor.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var typeArgumentIndex = 0;
+        var argumentCount = constructor.Args.Count + constructor.ValueArgs.Count;
+        var arguments = new List<string>(argumentCount);
+        for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
+        {
+            if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                arguments.Add(valueArgument.ValueVariableIndex >= 0
+                    ? $"value-var:{valueArgument.ValueVariableIndex}:{valueArgument.TypeId.Value}"
+                    : valueArgument.ReferencedParameterIndex >= 0
+                        ? $"value-param:{valueArgument.ReferencedParameterIndex}:{valueArgument.CanonicalHash}:{valueArgument.TypeId.Value}"
+                        : $"value:{valueArgument.CanonicalText}");
+            }
+            else if (typeArgumentIndex < constructor.Args.Count)
+            {
+                arguments.Add($"type:{CreateCallableResolutionArgumentTypeKey(constructor.Args[typeArgumentIndex++])}");
+            }
+        }
+
+        return $"{head}[{string.Join(",", arguments)}]";
     }
 
     private string CreateCallableResolutionTupleKey(TyTuple tuple) =>
@@ -85,6 +108,7 @@ public sealed partial class TypeInferer
         {
             TyVar => true,
             TyCon constructor => constructor.ConstructorVarIndex.HasValue ||
+                                 constructor.ValueArgs.Any(static argument => !argument.IsConcrete) ||
                                  constructor.Args.Any(ContainsTypeVariable),
             TyFun function => function.Params.Any(ContainsTypeVariable) ||
                               ContainsTypeVariable(function.Result) ||

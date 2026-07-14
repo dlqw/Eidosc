@@ -74,7 +74,8 @@ public sealed record TypesSymbolStatePayload(
             CtorSymbol => HasDifferentFact(current, namerSymbol, "positionalArgs") ||
                           HasDifferentFact(current, namerSymbol, "signatureText"),
             FieldSymbol => HasDifferentFact(current, namerSymbol, "fieldType"),
-            TypeParamSymbol => HasDifferentFact(current, namerSymbol, "kindAnnotation"),
+            TypeParamSymbol => HasDifferentFact(current, namerSymbol, "kindAnnotation") ||
+                               HasDifferentFact(current, namerSymbol, "parameterKind"),
             _ => false
         };
     }

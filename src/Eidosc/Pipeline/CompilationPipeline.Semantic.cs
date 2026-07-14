@@ -217,6 +217,7 @@ public sealed partial class CompilationPipeline
             orderedPayloads.Length);
         var remapFailures = new List<string>();
         var nextTypeVariableOffset = 0;
+        var nextValueVariableOffset = 0;
         foreach (var payload in orderedPayloads)
         {
             var resolution = LiveStateStableIdentityBuilder.PlanRemap(
@@ -231,10 +232,12 @@ public sealed partial class CompilationPipeline
             var plan = LiveStateRemapPlan.FromResolution(resolution);
             restoreContexts.Add((
                 payload,
-                new LiveStateIdRemapper(plan, nextTypeVariableOffset),
-                plan.IsIdentity && nextTypeVariableOffset == 0));
+                new LiveStateIdRemapper(plan, nextTypeVariableOffset, nextValueVariableOffset),
+                plan.IsIdentity && nextTypeVariableOffset == 0 && nextValueVariableOffset == 0));
             nextTypeVariableOffset = checked(
                 nextTypeVariableOffset + Math.Max(1, payload.TypeSubstitution.NextFreshVarIndex));
+            nextValueVariableOffset = checked(
+                nextValueVariableOffset + Math.Max(1, payload.TypeSubstitution.NextFreshValueVarIndex));
         }
 
         if (remapFailures.Count > 0 || restoreContexts.Count != orderedPayloads.Length)
@@ -329,7 +332,9 @@ public sealed partial class CompilationPipeline
         var mergedTypeEnv = new Dictionary<SymbolId, TypeScheme>();
         var mergedSubstitution = new Substitution();
         var mergedSubstitutionBindings = new List<SubstitutionBinding>();
+        var mergedValueSubstitutionBindings = new List<ValueSubstitutionBinding>();
         var mergedNextFreshTypeVariable = 0;
+        var mergedNextFreshValueVariable = 0;
         var mergedFunctionTypeParameters = new Dictionary<SymbolId, IReadOnlyList<Eidosc.Types.Type>>();
         var mergedComptimeValues = new Dictionary<SymbolId, ComptimeValue>();
         var mergedConstraints = new List<TypeConstraint>();
@@ -365,9 +370,13 @@ public sealed partial class CompilationPipeline
             }
 
             mergedSubstitutionBindings.AddRange(substitution.GetBindingsSnapshot());
+            mergedValueSubstitutionBindings.AddRange(substitution.GetValueBindingsSnapshot());
             mergedNextFreshTypeVariable = Math.Max(
                 mergedNextFreshTypeVariable,
                 substitution.NextFreshVarIndex);
+            mergedNextFreshValueVariable = Math.Max(
+                mergedNextFreshValueVariable,
+                substitution.NextFreshValueVarIndex);
             foreach (var binding in functionTypeParameters)
             {
                 mergedFunctionTypeParameters[binding.Key] = binding.Value;
@@ -399,7 +408,9 @@ public sealed partial class CompilationPipeline
 
         mergedSubstitution.RestoreFromSnapshot(
             mergedSubstitutionBindings,
-            mergedNextFreshTypeVariable);
+            mergedNextFreshTypeVariable,
+            mergedValueSubstitutionBindings,
+            mergedNextFreshValueVariable);
 
         _typeInferer.RestoreTypesState(
             mergedTypeEnv,

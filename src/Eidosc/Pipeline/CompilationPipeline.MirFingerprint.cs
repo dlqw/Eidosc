@@ -157,6 +157,16 @@ public sealed partial class CompilationPipeline
         AppendFunctionId(builder, function.FunctionId);
         Append(builder, function.ReturnType.Value);
         Append(builder, function.GenericParameterCount);
+        builder.Append("generic-parameters[");
+        foreach (var parameter in function.GenericParameters)
+        {
+            Append(builder, parameter.ParameterIndex);
+            Append(builder, parameter.SymbolId.Value);
+            Append(builder, parameter.Name);
+            Append(builder, parameter.ParameterKind);
+            Append(builder, parameter.TypeId.Value);
+        }
+        builder.Append(']');
         AppendTypeIds(builder, function.GenericTypeParameterIds);
         Append(builder, function.IsRuntimeWordAbi);
         Append(builder, function.IsEntry);
@@ -325,6 +335,13 @@ public sealed partial class CompilationPipeline
                 Append(builder, constant.TypeId.Value);
                 AppendConstantValue(builder, constant.Value);
                 break;
+            case MirConstGenericValue constGeneric:
+                Append(builder, nameof(MirConstGenericValue));
+                Append(builder, constGeneric.TypeId.Value);
+                Append(builder, constGeneric.SymbolId.Value);
+                Append(builder, constGeneric.Name);
+                Append(builder, constGeneric.ParameterIndex);
+                break;
             case MirFunctionRef functionRef:
                 Append(builder, nameof(MirFunctionRef));
                 Append(builder, functionRef.TypeId.Value);
@@ -336,6 +353,7 @@ public sealed partial class CompilationPipeline
                 AppendFunctionId(builder, functionRef.FunctionId);
                 Append(builder, functionRef.SignatureTypeId.Value);
                 AppendTypeIds(builder, functionRef.TypeArgumentIds);
+                AppendValueArguments(builder, functionRef.ValueArguments);
                 Append(builder, functionRef.TraitOwnerId.Value);
                 Append(builder, functionRef.TraitSelfPosition);
                 AppendInts(builder, functionRef.TraitSelfParameterIndices);
@@ -489,6 +507,24 @@ public sealed partial class CompilationPipeline
         builder.Append(']');
     }
 
+    private static void AppendValueArguments(
+        StringBuilder builder,
+        IEnumerable<GenericValueArgumentDescriptor> arguments)
+    {
+        builder.Append('[');
+        foreach (var argument in arguments)
+        {
+            Append(builder, argument.ParameterIndex);
+            Append(builder, argument.CanonicalText);
+            Append(builder, argument.CanonicalHash);
+            Append(builder, argument.DisplayText);
+            Append(builder, argument.TypeId.Value);
+            Append(builder, argument.ReferencedParameterIndex);
+            Append(builder, argument.ValueVariableIndex);
+        }
+        builder.Append(']');
+    }
+
     private static void AppendSymbolIds(StringBuilder builder, IEnumerable<SymbolId> symbolIds)
     {
         builder.Append('[');
@@ -564,6 +600,16 @@ public sealed partial class CompilationPipeline
             return;
         }
 
+        if (key.ValueArgument is { } valueArgument)
+        {
+            Append(builder, "value");
+            Append(builder, valueArgument.ParameterIndex);
+            Append(builder, valueArgument.CanonicalPayload);
+            Append(builder, valueArgument.TypeId.Value);
+            Append(builder, valueArgument.VariableIdentity);
+            return;
+        }
+
         if (key.TypeId.IsValid)
         {
             Append(builder, "type");
@@ -606,6 +652,16 @@ public sealed partial class CompilationPipeline
             case ImplVariableShapeNode variable:
                 Append(builder, nameof(ImplVariableShapeNode));
                 Append(builder, variable.Name);
+                break;
+            case ImplValueVariableShapeNode variable:
+                Append(builder, nameof(ImplValueVariableShapeNode));
+                Append(builder, variable.Name);
+                Append(builder, variable.TypeId.Value);
+                break;
+            case ImplConcreteValueShapeNode value:
+                Append(builder, nameof(ImplConcreteValueShapeNode));
+                Append(builder, value.CanonicalPayload);
+                Append(builder, value.TypeId.Value);
                 break;
             case ImplConstructorShapeNode constructor:
                 Append(builder, nameof(ImplConstructorShapeNode));

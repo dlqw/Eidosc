@@ -279,6 +279,22 @@ public sealed record MirTypeConstructorInfo
 }
 
 /// <summary>
+/// Source-ordered generic parameter metadata preserved in MIR.
+/// </summary>
+public sealed record MirGenericParameter
+{
+    public int ParameterIndex { get; init; } = -1;
+
+    public SymbolId SymbolId { get; init; } = SymbolId.None;
+
+    public string Name { get; init; } = "";
+
+    public GenericParameterKind ParameterKind { get; init; } = GenericParameterKind.Type;
+
+    public TypeId TypeId { get; init; } = TypeId.None;
+}
+
+/// <summary>
 /// ADT 构造器的类型布局信息，用于 LLVM 结构化类型生成。
 /// </summary>
 public sealed record ConstructorTypeLayout
@@ -372,6 +388,11 @@ public sealed class MirFunc
     /// 泛型类型参数个数。
     /// </summary>
     public int GenericParameterCount { get; init; }
+
+    /// <summary>
+    /// Generic parameters in source declaration order, including their semantic domains.
+    /// </summary>
+    public List<MirGenericParameter> GenericParameters { get; init; } = [];
 
     /// <summary>
     /// Gets generic type parameter IDs in declaration order.

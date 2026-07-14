@@ -41,6 +41,27 @@ public sealed class NameManglerTests
     }
 
     [Fact]
+    public void MangleFunctionName_DifferentValueGenericArguments_ReturnsDifferentNames()
+    {
+        var mangler = new NameMangler();
+        var buffer4 = new TyCon
+        {
+            Name = "Buffer",
+            Args = [BaseTypes.Int],
+            ValueArgs = [new GenericValueArgument(0, "typed:496e74:int:4", "hash-4", "4", new TypeId(BaseTypes.IntId))]
+        };
+        var buffer5 = buffer4 with
+        {
+            ValueArgs = [new GenericValueArgument(0, "typed:496e74:int:5", "hash-5", "5", new TypeId(BaseTypes.IntId))]
+        };
+
+        var fourName = mangler.MangleFunctionName("", "read", [buffer4]);
+        var fiveName = mangler.MangleFunctionName("", "read", [buffer5]);
+
+        Assert.NotEqual(fourName, fiveName);
+    }
+
+    [Fact]
     public void MangleFunctionName_IsDeterministicAcrossInstances()
     {
         var first = new NameMangler().MangleFunctionName("Core", "map", [BaseTypes.Int]);

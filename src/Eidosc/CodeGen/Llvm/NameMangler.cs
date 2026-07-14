@@ -251,9 +251,7 @@ public sealed class NameMangler
         return type switch
         {
             Types.TyVar var => var.Instance != null ? TypeToString(var.Instance) : $"t{var.Index}",
-            Types.TyCon con => con.Args.Count > 0
-                ? $"{con.Name}<{string.Join(",", con.Args.Select(TypeToString))}>"
-                : con.Name,
+            Types.TyCon con => FormatTyCon(con),
             Types.TyFun fun => $"({string.Join(",", fun.Params.Select(TypeToString))})->{TypeToString(fun.Result)}",
             Types.TyTuple tuple => $"({string.Join(",", tuple.Elements.Select(TypeToString))})",
             Types.TyRef => "Ref",
@@ -263,5 +261,33 @@ public sealed class NameMangler
             Types.EffectTag abilityType => abilityType.ToString() ?? "unknown",
             _ => throw new System.Diagnostics.UnreachableException()
         };
+    }
+
+    private static string FormatTyCon(Types.TyCon con)
+    {
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        {
+            return con.Name;
+        }
+
+        var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var typeIndex = 0;
+        var arguments = new List<string>(argumentCount);
+        for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
+        {
+            if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                arguments.Add(valueArgument.ValueVariableIndex >= 0
+                    ? $"vv:{valueArgument.ValueVariableIndex}"
+                    : $"v:{valueArgument.CanonicalHash}");
+            }
+            else if (typeIndex < con.Args.Count)
+            {
+                arguments.Add($"t:{TypeToString(con.Args[typeIndex++])}");
+            }
+        }
+
+        return $"{con.Name}<{string.Join(",", arguments)}>";
     }
 }

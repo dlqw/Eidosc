@@ -41,7 +41,8 @@ public sealed class TypeDescriptorStructuralComparer : IEqualityComparer<TypeDes
                 left.FieldTypes.SequenceEqual(right.FieldTypes),
             TypeDescriptor.TyCon left when y is TypeDescriptor.TyCon right =>
                 left.Constructor == right.Constructor &&
-                left.TypeArgs.SequenceEqual(right.TypeArgs),
+                left.TypeArgs.SequenceEqual(right.TypeArgs) &&
+                left.ValueArgs.SequenceEqual(right.ValueArgs),
             TypeDescriptor.Ref left when y is TypeDescriptor.Ref right =>
                 left.Inner == right.Inner,
             TypeDescriptor.MutRef left when y is TypeDescriptor.MutRef right =>
@@ -75,6 +76,10 @@ public sealed class TypeDescriptorStructuralComparer : IEqualityComparer<TypeDes
             case TypeDescriptor.TyCon tyCon:
                 hash.Add(tyCon.Constructor);
                 AddTypeIds(ref hash, tyCon.TypeArgs);
+                foreach (var valueArgument in tyCon.ValueArgs)
+                {
+                    hash.Add(valueArgument);
+                }
                 break;
             case TypeDescriptor.Ref reference:
                 hash.Add(reference.Inner);

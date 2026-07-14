@@ -677,9 +677,50 @@ public sealed class DeclParserTests
         var func = Assert.IsType<FuncDef>(result);
         Assert.Equal(2, func.TypeParams.Count);
         Assert.All(func.TypeParams, static typeParam => Assert.True(typeParam.IsComptime));
+        Assert.All(func.TypeParams, static typeParam => Assert.Equal(Eidosc.Types.GenericParameterKind.Type, typeParam.ParameterKind));
         Assert.All(func.TypeParams, static typeParam => Assert.IsType<TypePath>(typeParam.ComptimeTypeAnnotation));
         Assert.Equal("Type", Assert.IsType<TypePath>(func.TypeParams[0].ComptimeTypeAnnotation).TypeName);
         Assert.Equal("Type", Assert.IsType<TypePath>(func.TypeParams[1].ComptimeTypeAnnotation).TypeName);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_name_first_value_and_effect_generic_parameter_kinds()
+    {
+        var ctx = MakeNameFirstCtx(Ident("use"), "[",
+            "comptime", TypeId("N"), ":", TypeId("Int"),
+            ",",
+            TypeId("E"), ":", "effects",
+            "]", "::",
+            TypeId("Unit"), "->", TypeId("Unit"),
+            "{", Ident("value"), "=>", "(", ")", "}");
+        var parser = new DeclParser(ctx);
+
+        var result = parser.ParseTopLevel();
+
+        var func = Assert.IsType<FuncDef>(result);
+        Assert.Equal(Eidosc.Types.GenericParameterKind.Value, func.TypeParams[0].ParameterKind);
+        Assert.Equal(Eidosc.Types.GenericParameterKind.EffectRow, func.TypeParams[1].ParameterKind);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_name_first_type_application_preserves_ordered_value_and_type_candidates()
+    {
+        var ctx = MakeNameFirstCtx(
+            Ident("value"), "::",
+            TypeId("Vector"), "[", Num("4"), ",", TypeId("Int"), "]",
+            "=", Num("0"), ";");
+        var parser = new DeclParser(ctx);
+
+        var result = parser.ParseTopLevel();
+
+        var declaration = Assert.IsType<LetDecl>(result);
+        var vector = Assert.IsType<TypePath>(declaration.TypeAnnotation);
+        Assert.Equal(2, vector.GenericArguments.Count);
+        Assert.IsType<LiteralExpr>(Assert.IsType<UnresolvedGenericArgumentNode>(vector.GenericArguments[0]).ValueCandidate);
+        Assert.Equal("Int", Assert.IsType<TypePath>(Assert.IsType<UnresolvedGenericArgumentNode>(vector.GenericArguments[1]).TypeCandidate).TypeName);
+        Assert.Single(vector.TypeArgs);
         Assert.Empty(ctx.Diagnostics);
     }
 

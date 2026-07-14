@@ -44,6 +44,8 @@ public abstract record TypeDescriptor
     /// </summary>
     public sealed record TyCon(TypeConstructorKey Constructor, TypeId[] TypeArgs) : TypeDescriptor
     {
+        public GenericValueArgumentDescriptor[] ValueArgs { get; init; } = [];
+
         public TyCon(string constructorDescriptor, TypeId[] typeArgs)
             : this(TypeConstructorKey.Parse(constructorDescriptor), typeArgs)
         {
@@ -52,7 +54,7 @@ public abstract record TypeDescriptor
         public string ConstructorDescriptor => Constructor.ToDescriptorString();
 
         public override string ToString() =>
-            $"TyCon({ConstructorDescriptor};{string.Join(",", TypeArgs.Select(t => t.ToString()))})";
+            $"TyCon({ConstructorDescriptor};{string.Join(",", TypeArgs.Select(t => t.ToString()))};values={string.Join(",", ValueArgs.Select(static value => value.ToString()))})";
     }
 
     /// <summary>
@@ -88,4 +90,21 @@ public abstract record TypeDescriptor
     {
         public override string ToString() => $"TyVar_{Index}";
     }
+}
+
+public sealed record GenericValueArgumentDescriptor(
+    int ParameterIndex,
+    string CanonicalText,
+    string CanonicalHash,
+    string DisplayText,
+    TypeId TypeId,
+    int ReferencedParameterIndex = -1,
+    int ValueVariableIndex = -1)
+{
+    public bool IsInferenceVariable => ValueVariableIndex >= 0;
+
+    public bool IsConcrete => ReferencedParameterIndex < 0 && !IsInferenceVariable;
+
+    public override string ToString() =>
+        $"{ParameterIndex}:{CanonicalHash}:{TypeId.Value}:ref={ReferencedParameterIndex}:var={ValueVariableIndex}";
 }

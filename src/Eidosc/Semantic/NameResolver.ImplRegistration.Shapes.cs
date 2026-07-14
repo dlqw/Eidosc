@@ -165,13 +165,15 @@ public sealed partial class NameResolver
         var symbolId = ResolveTypePathSymbolIdForImplKey(typePath);
         var symbol = symbolId.IsValid ? _symbolTable.GetSymbol(symbolId) : null;
 
-        if (typePath.TypeArgs.Count == 0 &&
+        if (typePath.GenericArguments.Count == 0 &&
+            typePath.TypeArgs.Count == 0 &&
             symbol is TypeParamSymbol typeParam)
         {
             return new ImplVariableShapeNode(typeParam.Name);
         }
 
         if (typePath.ModulePath.Count == 0 &&
+            typePath.GenericArguments.Count == 0 &&
             typePath.TypeArgs.Count == 0 &&
             !string.IsNullOrWhiteSpace(typePath.TypeName) &&
             ImplTypeShapeFactory.IsVariableLikeName(typePath.TypeName))
@@ -182,7 +184,10 @@ public sealed partial class NameResolver
         var name = typePath.ModulePath.Count > 0
             ? string.Join(WellKnownStrings.Separators.Path, typePath.ModulePath) + WellKnownStrings.Separators.Path + typePath.TypeName
             : typePath.TypeName;
-        return new ImplConstructorShapeNode(name, typePath.TypeArgs.Select(BuildImplTypeShapeNode).ToList())
+        var key = BuildTypePathRefKey(typePath);
+        return new ImplConstructorShapeNode(
+            name,
+            key.TypeArguments.Select(BuildImplTypeShapeNode).ToList())
         {
             SymbolId = symbolId,
             TypeId = symbol?.TypeId ?? TypeId.None

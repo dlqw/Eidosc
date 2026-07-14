@@ -26,6 +26,22 @@ public sealed class LiveStateStableIdentityTests
     }
 
     [Fact]
+    public void LiveStateIdRemapper_OffsetsTypeAndValueVariablesIndependently()
+    {
+        var plan = LiveStateRemapPlan.Identity(symbolTable: null);
+        var remapper = new LiveStateIdRemapper(
+            plan,
+            typeVariableOffset: 10,
+            valueVariableOffset: 20);
+
+        Assert.Equal(13, remapper.RemapTypeVariable(3));
+        Assert.Equal(27, remapper.RemapValueVariable(7));
+        Assert.Equal(15, remapper.RemapNextTypeVariable(5));
+        Assert.Equal(29, remapper.RemapNextValueVariable(9));
+        Assert.Equal(-1, remapper.RemapValueVariable(-1));
+    }
+
+    [Fact]
     public void PlanRemap_UsesStableKeysWhenRawSymbolIdsChange()
     {
         var previous = new[]

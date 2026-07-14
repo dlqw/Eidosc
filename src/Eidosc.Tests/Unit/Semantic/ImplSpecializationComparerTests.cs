@@ -1,6 +1,7 @@
 using Eidosc.Symbols;
 using Eidosc;
 using Eidosc.Semantic;
+using Eidosc.Types;
 using Eidosc.Utils;
 using Xunit;
 
@@ -247,6 +248,43 @@ public class ImplSpecializationComparerTests
         Assert.False(ImplSpecializationComparer.MayOverlap(generic, inconsistentConcrete));
     }
 
+    [Fact]
+    public void CompareNodes_ConcreteValue_IsMoreSpecificThanSymbolicValue()
+    {
+        var relation = ImplSpecializationComparer.CompareNodes(
+            Ctor("Buffer", ConstInt(4)),
+            Ctor("Buffer", ValueVar("N")));
+
+        Assert.Equal(ImplSpecializationRelation.MoreSpecific, relation);
+    }
+
+    [Fact]
+    public void MayOverlap_DifferentConcreteValues_ReturnsFalse()
+    {
+        Assert.False(ImplSpecializationComparer.MayOverlap(
+            Ctor("Buffer", ConstInt(4)),
+            Ctor("Buffer", ConstInt(5))));
+    }
+
+    [Fact]
+    public void IsApplicableTo_SymbolicValueCandidate_MatchesConcreteValue()
+    {
+        Assert.True(ImplSpecializationComparer.IsApplicableTo(
+            Ctor("Buffer", ConstInt(4)),
+            Ctor("Buffer", ValueVar("N"))));
+    }
+
+    [Fact]
+    public void IsApplicableTo_RepeatedSymbolicValue_RequiresSameConcreteValue()
+    {
+        Assert.True(ImplSpecializationComparer.IsApplicableTo(
+            Ctor("Pair", Ctor("Buffer", ConstInt(4)), Ctor("Buffer", ConstInt(4))),
+            Ctor("Pair", Ctor("Buffer", ValueVar("N")), Ctor("Buffer", ValueVar("N")))));
+        Assert.False(ImplSpecializationComparer.IsApplicableTo(
+            Ctor("Pair", Ctor("Buffer", ConstInt(4)), Ctor("Buffer", ConstInt(5))),
+            Ctor("Pair", Ctor("Buffer", ValueVar("N")), Ctor("Buffer", ValueVar("N")))));
+    }
+
     private static ImplConstructorShapeNode Ctor(string name, params ImplTypeShapeNode[] args)
         => new(name, args);
 
@@ -271,4 +309,10 @@ public class ImplSpecializationComparerTests
 
     private static ImplVariableShapeNode Var(string name)
         => new(name);
+
+    private static ImplValueVariableShapeNode ValueVar(string name)
+        => new($"value:{name}", new TypeId(BaseTypes.IntId));
+
+    private static ImplConcreteValueShapeNode ConstInt(int value)
+        => new($"int:{value}", new TypeId(BaseTypes.IntId));
 }

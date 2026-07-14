@@ -1,6 +1,7 @@
 using System.Linq;
 using Eidosc.Hir;
 using Eidosc.Pipeline;
+using Eidosc.Types;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Hir;
@@ -24,8 +25,36 @@ typeId[comptime T: Type] :: T -> T
         var function = Assert.Single(module.Declarations.OfType<HirFunc>(), declaration => declaration.Name == "typeId");
         var typeParam = Assert.Single(function.TypeParams);
         Assert.True(typeParam.IsComptime);
+        Assert.Equal(GenericParameterKind.Type, typeParam.ParameterKind);
         Assert.Equal("Type", typeParam.ComptimeTypeAnnotation);
         Assert.Contains("comptime=Type", HirFormatter.FormatHir(module), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HirBuilder_ValueGenericParam_PreservesDomainAndDeclaredValueType()
+    {
+        const string source = """
+use[comptime N: Int] :: Unit -> Int
+{
+    _ => N
+}
+""";
+
+        var result = RunHir(source, "hir_value_generic_param.eidos");
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
+        var module = Assert.IsType<HirModule>(result.HirModule);
+        var function = Assert.Single(module.Declarations.OfType<HirFunc>(), declaration => declaration.Name == "use");
+        var parameter = Assert.Single(function.TypeParams);
+        Assert.Equal(GenericParameterKind.Value, parameter.ParameterKind);
+        Assert.Equal(BaseTypes.IntId, parameter.TypeId.Value);
+        Assert.Equal("Int", parameter.ComptimeTypeAnnotation);
+        var bodyValue = Assert.IsType<HirConstGenericValue>(function.Body);
+        Assert.Equal(parameter.SymbolId, bodyValue.SymbolId);
+        Assert.Equal(0, bodyValue.ParameterIndex);
+        Assert.Equal(BaseTypes.IntId, bodyValue.TypeId.Value);
+        Assert.Contains("domain=Value", HirFormatter.FormatHir(module), StringComparison.Ordinal);
+        Assert.Contains("ConstGeneric(N@0)", HirFormatter.FormatHir(module), StringComparison.Ordinal);
     }
 
     [Fact]

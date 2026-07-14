@@ -469,10 +469,11 @@ public sealed partial class TypeInferer
 
     private static List<string> GetAdtTypeParamNames(AdtDef adt)
     {
-        var names = new List<string>(adt.TypeParams.Count);
-        for (var i = 0; i < adt.TypeParams.Count; i++)
+        var typeParameters = GetTypeDomainParameters(adt.TypeParams);
+        var names = new List<string>(typeParameters.Count);
+        for (var i = 0; i < typeParameters.Count; i++)
         {
-            var name = adt.TypeParams[i].Name;
+            var name = typeParameters[i].Name;
             names.Add(string.IsNullOrWhiteSpace(name) ? $"__T{i}" : name);
         }
 
@@ -481,10 +482,11 @@ public sealed partial class TypeInferer
 
     private static List<string> GetConstructorTypeParamNames(Constructor ctor)
     {
-        var names = new List<string>(ctor.TypeParams.Count);
-        for (var i = 0; i < ctor.TypeParams.Count; i++)
+        var typeParameters = GetTypeDomainParameters(ctor.TypeParams);
+        var names = new List<string>(typeParameters.Count);
+        for (var i = 0; i < typeParameters.Count; i++)
         {
-            var name = ctor.TypeParams[i].Name;
+            var name = typeParameters[i].Name;
             names.Add(string.IsNullOrWhiteSpace(name) ? $"__C{i}" : name);
         }
 
@@ -505,7 +507,8 @@ public sealed partial class TypeInferer
         var kindUnifier = new KindInferer(
             _symbolTable,
             typeConstructorKindsBySymbol: _typeConstructorKindsBySymbol);
-        var expectedKinds = CreateExpectedKinds(ctor.TypeParams, ctorTypeParamNames, kindUnifier);
+        var typeParameters = GetTypeDomainParameters(ctor.TypeParams);
+        var expectedKinds = CreateExpectedKinds(typeParameters, ctorTypeParamNames, kindUnifier);
         var kindByTypeParamName = CreateTypeParamKindMapForOwner(adt.SymbolId, adtTypeParamNames);
         var ctorKinds = CreateTypeParamKindBindings(ctorTypeParamNames, expectedKinds);
         foreach (var (name, kind) in ctorKinds)
@@ -521,7 +524,7 @@ public sealed partial class TypeInferer
             ownerName: ctor.Name);
 
         FinalizeExpectedKindsInPlace(expectedKinds);
-        UpdateTypeParamSymbolsWithKinds(ctor.TypeParams, expectedKinds);
+        UpdateTypeParamSymbolsWithKinds(typeParameters, expectedKinds);
 
         _typeParamKindBindingsBySymbol[ctor.SymbolId] = new TypeParamKindBinding(
             ctor.SymbolId,
@@ -531,15 +534,21 @@ public sealed partial class TypeInferer
 
     private static List<string> GetTraitTypeParamNames(TraitDef trait)
     {
-        var names = new List<string>(trait.TypeParams.Count);
-        for (var i = 0; i < trait.TypeParams.Count; i++)
+        var typeParameters = GetTypeDomainParameters(trait.TypeParams);
+        var names = new List<string>(typeParameters.Count);
+        for (var i = 0; i < typeParameters.Count; i++)
         {
-            var name = trait.TypeParams[i].Name;
+            var name = typeParameters[i].Name;
             names.Add(string.IsNullOrWhiteSpace(name) ? $"__T{i}" : name);
         }
 
         return names;
     }
+
+    private static List<TypeParam> GetTypeDomainParameters(IReadOnlyList<TypeParam> typeParams) =>
+        typeParams
+            .Where(static parameter => parameter.ParameterKind == GenericParameterKind.Type)
+            .ToList();
 
     private void UpdateTypeParamSymbolsWithKinds(
         IReadOnlyList<TypeParam> typeParams,
@@ -570,13 +579,14 @@ public sealed partial class TypeInferer
 
     private void RegisterAdtTypeParamConstraints(AdtDef adt, IReadOnlyList<string> typeParamNames)
     {
+        var typeParameters = GetTypeDomainParameters(adt.TypeParams);
         var requirementsByIndex = new List<List<AdtTypeParamTraitRequirement>>(typeParamNames.Count);
         for (var i = 0; i < typeParamNames.Count; i++)
         {
             var requirements = new List<AdtTypeParamTraitRequirement>();
-            if (i < adt.TypeParams.Count)
+            if (i < typeParameters.Count)
             {
-                var typeParam = adt.TypeParams[i];
+                var typeParam = typeParameters[i];
                 foreach (var traitRef in typeParam.TraitConstraints)
                 {
                     if (string.IsNullOrWhiteSpace(traitRef.TraitName))
@@ -610,7 +620,7 @@ public sealed partial class TypeInferer
         _ctorTypeParamConstraintBindings[ctor.SymbolId] = new TypeParamConstraintBinding(
             ctor.SymbolId,
             typeParamNames.ToList(),
-            CollectTypeParamTraitRequirements(ctor.TypeParams, typeParamNames));
+            CollectTypeParamTraitRequirements(GetTypeDomainParameters(ctor.TypeParams), typeParamNames));
     }
 
     private List<List<AdtTypeParamTraitRequirement>> CollectTypeParamTraitRequirements(

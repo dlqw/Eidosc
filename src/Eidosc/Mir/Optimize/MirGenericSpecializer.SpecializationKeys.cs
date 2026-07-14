@@ -7,18 +7,27 @@ public sealed partial class MirGenericSpecializer
     private readonly struct SpecializationSignatureKey : IEquatable<SpecializationSignatureKey>
     {
         private readonly int[] _parameterTypeValues;
+        private readonly string[] _valueArgumentKeys;
         private readonly int _hashCode;
 
-        public SpecializationSignatureKey(int returnTypeValue, int[] parameterTypeValues)
+        public SpecializationSignatureKey(
+            int returnTypeValue,
+            int[] parameterTypeValues,
+            string[] valueArgumentKeys)
         {
             ReturnTypeValue = returnTypeValue;
             _parameterTypeValues = parameterTypeValues;
+            _valueArgumentKeys = valueArgumentKeys;
 
             var hash = new HashCode();
             hash.Add(returnTypeValue);
             for (var i = 0; i < parameterTypeValues.Length; i++)
             {
                 hash.Add(parameterTypeValues[i]);
+            }
+            for (var i = 0; i < valueArgumentKeys.Length; i++)
+            {
+                hash.Add(valueArgumentKeys[i], StringComparer.Ordinal);
             }
 
             _hashCode = hash.ToHashCode();
@@ -28,10 +37,13 @@ public sealed partial class MirGenericSpecializer
 
         public ReadOnlySpan<int> ParameterTypeValues => _parameterTypeValues;
 
+        public ReadOnlySpan<string> ValueArgumentKeys => _valueArgumentKeys;
+
         public bool Equals(SpecializationSignatureKey other)
         {
             return ReturnTypeValue == other.ReturnTypeValue &&
-                   ParameterTypeValues.SequenceEqual(other.ParameterTypeValues);
+                   ParameterTypeValues.SequenceEqual(other.ParameterTypeValues) &&
+                   ValueArgumentKeys.SequenceEqual(other.ValueArgumentKeys);
         }
 
         public override bool Equals(object? obj)
@@ -57,6 +69,17 @@ public sealed partial class MirGenericSpecializer
                 }
 
                 builder.Append(_parameterTypeValues[i]);
+            }
+
+            builder.Append('|');
+            for (var i = 0; i < _valueArgumentKeys.Length; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append(_valueArgumentKeys[i]);
             }
 
             return builder.ToString();

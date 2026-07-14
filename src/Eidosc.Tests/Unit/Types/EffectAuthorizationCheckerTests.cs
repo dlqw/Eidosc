@@ -564,7 +564,7 @@ main :: Unit -> Int need Io::Writer
             importRoots = ["shared_modules"]
 
             [language]
-            version = "0.4.0-alpha.1"
+            version = "0.5.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);
@@ -637,7 +637,7 @@ main :: Unit -> Int need Io::Writer
             sourceRoots = ["src"]
 
             [language]
-            version = "0.4.0-alpha.1"
+            version = "0.5.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);

@@ -12,7 +12,7 @@ public sealed record ModuleHirAttachedStatePayload(
     IReadOnlyList<ConstructorLayoutGroupPayload> ConstructorLayouts,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-hir-attached-state-payload-v1";
+    public const string CurrentSchemaVersion = "module-hir-attached-state-payload-v3";
 
     public static ModuleHirAttachedStatePayload Create(
         ParameterEffectMap? parameterEffects,
@@ -196,6 +196,7 @@ public sealed record TypeDescriptorPayload(
     string? ConstructorKind = null,
     int ConstructorId = -1,
     IReadOnlyList<int>? TypeArgs = null,
+    IReadOnlyList<GenericValueArgumentDescriptorPayload>? ValueArgs = null,
     int Inner = -1,
     string? AbilitiesKey = null,
     int ResultType = -1,
@@ -219,7 +220,8 @@ public sealed record TypeDescriptorPayload(
                 nameof(TypeDescriptor.TyCon),
                 ConstructorKind: tyCon.Constructor.Kind.ToString(),
                 ConstructorId: tyCon.Constructor.Id,
-                TypeArgs: tyCon.TypeArgs.Select(static id => id.Value).ToArray()),
+                TypeArgs: tyCon.TypeArgs.Select(static id => id.Value).ToArray(),
+                ValueArgs: tyCon.ValueArgs.Select(GenericValueArgumentDescriptorPayload.Create).ToArray()),
             TypeDescriptor.Ref reference => new TypeDescriptorPayload(
                 nameof(TypeDescriptor.Ref),
                 Inner: reference.Inner.Value),
@@ -261,7 +263,12 @@ public sealed record TypeDescriptorPayload(
 
                 descriptor = new TypeDescriptor.TyCon(
                     new TypeConstructorKey(constructorKind, ConstructorId),
-                    (TypeArgs ?? []).Select(static id => new TypeId(id)).ToArray());
+                    (TypeArgs ?? []).Select(static id => new TypeId(id)).ToArray())
+                {
+                    ValueArgs = (ValueArgs ?? [])
+                        .Select(static value => value.Restore())
+                        .ToArray()
+                };
                 return true;
             case nameof(TypeDescriptor.Ref):
                 descriptor = new TypeDescriptor.Ref(new TypeId(Inner));
@@ -279,6 +286,36 @@ public sealed record TypeDescriptorPayload(
                 return false;
         }
     }
+}
+
+public sealed record GenericValueArgumentDescriptorPayload(
+    int ParameterIndex,
+    string CanonicalText,
+    string CanonicalHash,
+    string DisplayText,
+    int TypeId,
+    int ReferencedParameterIndex,
+    int ValueVariableIndex)
+{
+    public static GenericValueArgumentDescriptorPayload Create(GenericValueArgumentDescriptor value) =>
+        new(
+            value.ParameterIndex,
+            value.CanonicalText,
+            value.CanonicalHash,
+            value.DisplayText,
+            value.TypeId.Value,
+            value.ReferencedParameterIndex,
+            value.ValueVariableIndex);
+
+    public GenericValueArgumentDescriptor Restore() =>
+        new(
+            ParameterIndex,
+            CanonicalText,
+            CanonicalHash,
+            DisplayText,
+            new TypeId(TypeId),
+            ReferencedParameterIndex,
+            ValueVariableIndex);
 }
 
 public sealed record ConstructorLayoutGroupPayload(

@@ -24,6 +24,7 @@ internal sealed class TypeIdRegistry
     private readonly Dictionary<SymbolId, TypeId> _typeParameterTypeIdsBySymbol = [];
     private readonly Dictionary<int, List<ConstructorTypeLayout>> _constructorLayouts = [];
     private readonly HashSet<int> _layoutCollectedAdtSymbols = [];
+    private readonly HashSet<int> _layoutCollectedTypeIds = [];
     private readonly HashSet<TypeId> _copyLikeTypeIds = [];
     private int _nextDynamicTypeId = 1000;
 
@@ -45,6 +46,7 @@ internal sealed class TypeIdRegistry
         _copyLikeTypeIds.Clear();
         _constructorLayouts.Clear();
         _layoutCollectedAdtSymbols.Clear();
+        _layoutCollectedTypeIds.Clear();
         _typeIdCache.Clear();
         _typeIdByDescriptor.Clear();
         _typeDescriptorById.Clear();
@@ -470,18 +472,30 @@ internal sealed class TypeIdRegistry
         if (adtSymbol == null || adtSymbol.Constructors.Count == 0)
             return;
 
-        if (!_layoutCollectedAdtSymbols.Add(adtSymbol.Id.Value))
+        if (!_layoutCollectedTypeIds.Add(adtTypeId.Value))
             return;
+
+        var declaredAdtTypeId = ResolveDeclaredTypeId(adtSymbol.Id);
+        if (declaredAdtTypeId.IsValid &&
+            declaredAdtTypeId != adtTypeId &&
+            _constructorLayouts.ContainsKey(declaredAdtTypeId.Value))
+        {
+            return;
+        }
 
         var typeName = tyCon.Name;
         if (tyCon.Args.Count > 0)
         {
-            var argNames = tyCon.Args.Select(a =>
-            {
-                if (a is TyCon argCon) return argCon.Name;
-                return $"T{a.Id.Value}";
-            });
+            var argNames = tyCon.Args.Select(argument => $"t{GetTypeTypeId(argument).Value}");
             typeName = $"{typeName}_{string.Join("_", argNames)}";
+        }
+
+        if (tyCon.ValueArgs.Count > 0)
+        {
+            typeName = $"{typeName}_{string.Join("_", tyCon.ValueArgs.Select(static argument =>
+                argument.ValueVariableIndex >= 0
+                    ? $"vv{argument.ValueVariableIndex}"
+                    : $"v{argument.CanonicalHash[..Math.Min(12, argument.CanonicalHash.Length)]}"))}";
         }
 
         var layouts = new List<ConstructorTypeLayout>(adtSymbol.Constructors.Count);
@@ -520,7 +534,7 @@ internal sealed class TypeIdRegistry
 
     private static bool NeedsDynamicTyConTypeId(TyCon tyCon)
     {
-        return tyCon.ConstructorVarIndex.HasValue || tyCon.Args.Count > 0;
+        return tyCon.ConstructorVarIndex.HasValue || tyCon.Args.Count > 0 || tyCon.ValueArgs.Count > 0;
     }
 
     private TypeId GetTyConTypeId(TyCon tyCon)
@@ -533,7 +547,20 @@ internal sealed class TypeIdRegistry
                 return TypeId.None;
             }
 
-            var typeId = GetOrCreateDynamicTypeId(new TypeDescriptor.TyCon(constructorKey, typeArgs));
+            var valueArgs = tyCon.ValueArgs
+                .Select(static argument => new GenericValueArgumentDescriptor(
+                    argument.ParameterIndex,
+                    argument.CanonicalText,
+                    argument.CanonicalHash,
+                    argument.DisplayText,
+                    argument.TypeId,
+                    argument.ReferencedParameterIndex,
+                    argument.ValueVariableIndex))
+                .ToArray();
+            var typeId = GetOrCreateDynamicTypeId(new TypeDescriptor.TyCon(constructorKey, typeArgs)
+            {
+                ValueArgs = valueArgs
+            });
             CollectConstructorLayouts(typeId, tyCon);
             return typeId;
         }

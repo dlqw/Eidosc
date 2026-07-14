@@ -125,14 +125,15 @@ public static class ImplLookupCanonicalizer
         Func<Type, Type>? apply)
     {
         var constructorName = ResolveCanonicalTypeName(symbolTable, con);
-        if (con.Args.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
         {
             return constructorName;
         }
 
-        var args = con.Args
-            .Select(arg => ResolveCanonicalImplementingType(symbolTable, arg, apply))
-            .ToList();
+        var args = BuildOrderedGenericArguments(
+            con,
+            typeArgument => ResolveCanonicalImplementingType(symbolTable, typeArgument, apply),
+            static valueArgument => valueArgument.DisplayText);
         return $"{constructorName}[{string.Join(",", args)}]";
     }
 
@@ -158,7 +159,40 @@ public static class ImplLookupCanonicalizer
             symbolId,
             typeId,
             text,
-            con.Args.Select(arg => BuildTypeRefKey(symbolTable, arg, apply)).ToImmutableArray());
+            BuildOrderedGenericArguments(
+                    con,
+                    typeArgument => BuildTypeRefKey(symbolTable, typeArgument, apply),
+                    ImplTypeRefKey.FromValueArgument)
+                .ToImmutableArray());
+    }
+
+    private static List<TResult> BuildOrderedGenericArguments<TResult>(
+        TyCon constructor,
+        Func<Type, TResult> buildTypeArgument,
+        Func<GenericValueArgument, TResult> buildValueArgument)
+    {
+        var valueArguments = constructor.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = constructor.Args.Count + constructor.ValueArgs.Count;
+        var typeArgumentIndex = 0;
+        var arguments = new List<TResult>(argumentCount);
+        for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
+        {
+            if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                arguments.Add(buildValueArgument(valueArgument));
+            }
+            else if (typeArgumentIndex < constructor.Args.Count)
+            {
+                arguments.Add(buildTypeArgument(constructor.Args[typeArgumentIndex++]));
+            }
+        }
+
+        while (typeArgumentIndex < constructor.Args.Count)
+        {
+            arguments.Add(buildTypeArgument(constructor.Args[typeArgumentIndex++]));
+        }
+
+        return arguments;
     }
 
     private static ImplTypeRefKey BuildFunctionRefKey(

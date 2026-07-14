@@ -25,7 +25,7 @@ public sealed record ModuleTypesStatePayload(
     AstTypesStatePayload AstState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-types-state-payload-v11";
+    public const string CurrentSchemaVersion = "module-types-state-payload-v13";
 
     public static ModuleTypesStatePayload Create(
         string moduleKey,
@@ -335,7 +335,7 @@ public sealed record ComptimeValuesPayload(
     int UnsupportedValues,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "comptime-values-payload-v1";
+    public const string CurrentSchemaVersion = "comptime-values-payload-v3";
 
     public static ComptimeValuesPayload Create(
         TypeInferer? typeInferer,
@@ -353,7 +353,7 @@ public sealed record ComptimeValuesPayload(
                      .Where(binding => allowedSymbolIds == null || allowedSymbolIds.Contains(binding.Key.Value))
                      .OrderBy(static binding => binding.Key.Value))
         {
-            if (ComptimeValuePayload.TryCreate(binding.Value.Value, out var value))
+            if (ComptimeValuePayload.TryCreate(binding.Value, out var value))
             {
                 bindings.Add(new ComptimeValueBindingPayload(binding.Key.Value, value));
             }
@@ -389,12 +389,12 @@ public sealed record ComptimeValuesPayload(
         var restored = new Dictionary<SymbolId, ComptimeValue>();
         foreach (var binding in Bindings.OrderBy(static binding => binding.SymbolId))
         {
-            if (!binding.Value.TryRestoreValue(out var value))
+            if (!binding.Value.TryRestoreValue(remapper, out var value))
             {
                 return false;
             }
 
-            restored[new SymbolId(remapper?.RemapSymbol(binding.SymbolId) ?? binding.SymbolId)] = new ComptimeValue(value);
+            restored[new SymbolId(remapper?.RemapSymbol(binding.SymbolId) ?? binding.SymbolId)] = value;
         }
 
         values = restored;
@@ -411,48 +411,41 @@ public sealed record ComptimeValuePayload(
     string? ScalarKind = null,
     string? ScalarValue = null,
     string? SequenceKind = null,
-    IReadOnlyList<ComptimeValuePayload>? Elements = null)
+    IReadOnlyList<ComptimeValuePayload>? Elements = null,
+    int? ConstructorSymbolId = null,
+    string? ConstructorName = null,
+    IReadOnlyList<ComptimeNamedValuePayload>? NamedValues = null,
+    TypeShapePayload? StaticType = null)
 {
     public const string NullKind = "Null";
     public const string ScalarKindName = "Scalar";
     public const string SequenceKindName = "Sequence";
+    public const string AdtKindName = "Adt";
 
-    public static bool TryCreate(object? value, out ComptimeValuePayload payload)
+    internal static bool TryCreate(ComptimeValue value, out ComptimeValuePayload payload)
     {
         switch (value)
         {
-            case null:
-                payload = new ComptimeValuePayload(NullKind);
+            case ComptimeUnitValue:
+                payload = AttachStaticType(value, new ComptimeValuePayload(NullKind));
                 return true;
-            case bool scalar:
-                payload = CreateScalar(nameof(Boolean), scalar ? "true" : "false");
+            case ComptimeBoolValue scalar:
+                payload = CreateScalar(scalar, nameof(Boolean), scalar.Value ? "true" : "false");
                 return true;
-            case byte scalar:
-                payload = CreateScalar(nameof(Byte), scalar.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            case ComptimeIntegerValue scalar:
+                payload = CreateScalar(scalar, nameof(Int64), scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 return true;
-            case short scalar:
-                payload = CreateScalar(nameof(Int16), scalar.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            case ComptimeFloatValue scalar:
+                payload = CreateScalar(scalar, nameof(Double), scalar.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                 return true;
-            case int scalar:
-                payload = CreateScalar(nameof(Int32), scalar.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            case ComptimeStringValue scalar:
+                payload = CreateScalar(scalar, nameof(String), scalar.Value);
                 return true;
-            case long scalar:
-                payload = CreateScalar(nameof(Int64), scalar.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            case ComptimeCharValue scalar:
+                payload = CreateScalar(scalar, nameof(Char), scalar.Value.ToString());
                 return true;
-            case float scalar:
-                payload = CreateScalar(nameof(Single), scalar.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
-                return true;
-            case double scalar:
-                payload = CreateScalar(nameof(Double), scalar.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
-                return true;
-            case string scalar:
-                payload = CreateScalar(nameof(String), scalar);
-                return true;
-            case char scalar:
-                payload = CreateScalar(nameof(Char), scalar.ToString());
-                return true;
-            case ComptimeSequence sequence:
-                var elements = new List<ComptimeValuePayload>(sequence.Elements.Length);
+            case ComptimeSequenceValue sequence:
+                var elements = new List<ComptimeValuePayload>(sequence.Elements.Count);
                 foreach (var element in sequence.Elements)
                 {
                     if (!TryCreate(element, out var elementPayload))
@@ -464,10 +457,42 @@ public sealed record ComptimeValuePayload(
                     elements.Add(elementPayload);
                 }
 
-                payload = new ComptimeValuePayload(
+                payload = AttachStaticType(sequence, new ComptimeValuePayload(
                     SequenceKindName,
                     SequenceKind: sequence.Kind.ToString(),
-                    Elements: elements);
+                    Elements: elements));
+                return true;
+            case ComptimeAdtValue adt:
+                var positionalValues = new List<ComptimeValuePayload>(adt.PositionalValues.Count);
+                foreach (var positionalValue in adt.PositionalValues)
+                {
+                    if (!TryCreate(positionalValue, out var positionalPayload))
+                    {
+                        payload = new ComptimeValuePayload("Unsupported");
+                        return false;
+                    }
+
+                    positionalValues.Add(positionalPayload);
+                }
+
+                var namedValues = new List<ComptimeNamedValuePayload>(adt.NamedValues.Count);
+                foreach (var namedValue in adt.NamedValues)
+                {
+                    if (!TryCreate(namedValue.Value, out var namedPayload))
+                    {
+                        payload = new ComptimeValuePayload("Unsupported");
+                        return false;
+                    }
+
+                    namedValues.Add(new ComptimeNamedValuePayload(namedValue.Name, namedPayload));
+                }
+
+                payload = AttachStaticType(adt, new ComptimeValuePayload(
+                    AdtKindName,
+                    Elements: positionalValues,
+                    ConstructorSymbolId: adt.ConstructorId.Value,
+                    ConstructorName: adt.ConstructorName,
+                    NamedValues: namedValues));
                 return true;
             default:
                 payload = new ComptimeValuePayload("Unsupported");
@@ -475,12 +500,37 @@ public sealed record ComptimeValuePayload(
         }
     }
 
-    internal bool TryRestoreValue(out object? value)
+    internal bool TryRestoreValue(LiveStateIdRemapper? remapper, out ComptimeValue value)
+    {
+        if (!TryRestoreValueCore(remapper, out value))
+        {
+            return false;
+        }
+
+        if (StaticType == null)
+        {
+            return true;
+        }
+
+        var restoredType = remapper == null
+            ? StaticType.TryRestoreType(out var staticType)
+            : StaticType.TryRestoreType(remapper, out staticType);
+        if (!restoredType)
+        {
+            value = ComptimeUnitValue.Instance;
+            return false;
+        }
+
+        value = value with { StaticType = staticType };
+        return true;
+    }
+
+    private bool TryRestoreValueCore(LiveStateIdRemapper? remapper, out ComptimeValue value)
     {
         switch (Kind)
         {
             case NullKind:
-                value = null;
+                value = ComptimeUnitValue.Instance;
                 return true;
 
             case ScalarKindName:
@@ -490,35 +540,84 @@ public sealed record ComptimeValuePayload(
                 if (!Enum.TryParse<ComptimeSequenceKind>(SequenceKind, out var sequenceKind) ||
                     Elements == null)
                 {
-                    value = null;
+                    value = ComptimeUnitValue.Instance;
                     return false;
                 }
 
-                var elements = new object?[Elements.Count];
+                var elements = new ComptimeValue[Elements.Count];
                 for (var i = 0; i < Elements.Count; i++)
                 {
-                    if (!Elements[i].TryRestoreValue(out elements[i]))
+                    if (!Elements[i].TryRestoreValue(remapper, out elements[i]))
                     {
-                        value = null;
+                        value = ComptimeUnitValue.Instance;
                         return false;
                     }
                 }
 
-                value = new ComptimeSequence(sequenceKind, elements);
+                value = new ComptimeSequenceValue(sequenceKind, elements);
+                return true;
+
+            case AdtKindName:
+                if (ConstructorSymbolId == null ||
+                    string.IsNullOrWhiteSpace(ConstructorName) ||
+                    Elements == null ||
+                    NamedValues == null)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                var positionalValues = new ComptimeValue[Elements.Count];
+                for (var i = 0; i < Elements.Count; i++)
+                {
+                    if (!Elements[i].TryRestoreValue(remapper, out positionalValues[i]))
+                    {
+                        value = ComptimeUnitValue.Instance;
+                        return false;
+                    }
+                }
+
+                var namedValues = new ComptimeNamedValue[NamedValues.Count];
+                for (var i = 0; i < NamedValues.Count; i++)
+                {
+                    if (!NamedValues[i].Value.TryRestoreValue(remapper, out var namedValue))
+                    {
+                        value = ComptimeUnitValue.Instance;
+                        return false;
+                    }
+
+                    namedValues[i] = new ComptimeNamedValue(NamedValues[i].Name, namedValue);
+                }
+
+                value = new ComptimeAdtValue(
+                    new SymbolId(remapper?.RemapSymbol(ConstructorSymbolId.Value) ?? ConstructorSymbolId.Value),
+                    ConstructorName,
+                    positionalValues,
+                    namedValues);
                 return true;
 
             default:
-                value = null;
+                value = ComptimeUnitValue.Instance;
                 return false;
         }
     }
 
-    private static ComptimeValuePayload CreateScalar(string scalarKind, string scalarValue) =>
-        new(ScalarKindName, scalarKind, scalarValue);
+    private static ComptimeValuePayload CreateScalar(
+        ComptimeValue value,
+        string scalarKind,
+        string scalarValue) =>
+        AttachStaticType(value, new ComptimeValuePayload(ScalarKindName, scalarKind, scalarValue));
 
-    private bool TryRestoreScalar(out object? value)
+    private static ComptimeValuePayload AttachStaticType(
+        ComptimeValue value,
+        ComptimeValuePayload payload) =>
+        value.StaticType == null
+            ? payload
+            : payload with { StaticType = TypeShapePayload.Create(value.StaticType) };
+
+    private bool TryRestoreScalar(out ComptimeValue value)
     {
-        value = null;
+        value = ComptimeUnitValue.Instance;
         if (ScalarKind == null ||
             ScalarValue == null)
         {
@@ -529,37 +628,29 @@ public sealed record ComptimeValuePayload(
         switch (ScalarKind)
         {
             case nameof(Boolean) when bool.TryParse(ScalarValue, out var scalar):
-                value = scalar;
-                return true;
-            case nameof(Byte) when byte.TryParse(ScalarValue, System.Globalization.NumberStyles.Integer, culture, out var scalar):
-                value = scalar;
-                return true;
-            case nameof(Int16) when short.TryParse(ScalarValue, System.Globalization.NumberStyles.Integer, culture, out var scalar):
-                value = scalar;
-                return true;
-            case nameof(Int32) when int.TryParse(ScalarValue, System.Globalization.NumberStyles.Integer, culture, out var scalar):
-                value = scalar;
+                value = new ComptimeBoolValue(scalar);
                 return true;
             case nameof(Int64) when long.TryParse(ScalarValue, System.Globalization.NumberStyles.Integer, culture, out var scalar):
-                value = scalar;
-                return true;
-            case nameof(Single) when float.TryParse(ScalarValue, System.Globalization.NumberStyles.Float, culture, out var scalar):
-                value = scalar;
+                value = new ComptimeIntegerValue(scalar);
                 return true;
             case nameof(Double) when double.TryParse(ScalarValue, System.Globalization.NumberStyles.Float, culture, out var scalar):
-                value = scalar;
+                value = new ComptimeFloatValue(scalar);
                 return true;
             case nameof(String):
-                value = ScalarValue;
+                value = new ComptimeStringValue(ScalarValue);
                 return true;
             case nameof(Char) when ScalarValue.Length == 1:
-                value = ScalarValue[0];
+                value = new ComptimeCharValue(ScalarValue[0]);
                 return true;
             default:
                 return false;
         }
     }
 }
+
+public sealed record ComptimeNamedValuePayload(
+    string Name,
+    ComptimeValuePayload Value);
 
 public sealed record TypeConstraintsPayload(
     string SchemaVersion,
@@ -925,7 +1016,8 @@ public sealed record ImplTypeRefKeyPayload(
     int SymbolId,
     int TypeId,
     string Text,
-    IReadOnlyList<ImplTypeRefKeyPayload> TypeArguments)
+    IReadOnlyList<ImplTypeRefKeyPayload> TypeArguments,
+    ImplValueRefKeyPayload? ValueArgument = null)
 {
     public static ImplTypeRefKeyPayload Create(ImplTypeRefKey key) =>
         new(
@@ -934,7 +1026,10 @@ public sealed record ImplTypeRefKeyPayload(
             key.Text,
             key.TypeArguments.IsDefaultOrEmpty
                 ? []
-                : key.TypeArguments.Select(Create).ToArray());
+                : key.TypeArguments.Select(Create).ToArray(),
+            key.ValueArgument is { } valueArgument
+                ? ImplValueRefKeyPayload.Create(valueArgument)
+                : null);
 
     public bool TryRestore(out ImplTypeRefKey key)
         => TryRestore(remapper: null, out key);
@@ -957,7 +1052,42 @@ public sealed record ImplTypeRefKeyPayload(
             new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
             new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
             Text,
-            arguments.ToImmutableArray());
+            arguments.ToImmutableArray(),
+            ValueArgument?.Restore(remapper));
         return true;
+    }
+}
+
+public sealed record ImplValueRefKeyPayload(
+    int ParameterIndex,
+    string CanonicalPayload,
+    int TypeId,
+    string VariableIdentity,
+    string DisplayText)
+{
+    public static ImplValueRefKeyPayload Create(ImplValueRefKey value) =>
+        new(
+            value.ParameterIndex,
+            value.CanonicalPayload,
+            value.TypeId.Value,
+            value.VariableIdentity,
+            value.DisplayText);
+
+    internal ImplValueRefKey Restore(LiveStateIdRemapper? remapper)
+    {
+        var variableIdentity = VariableIdentity;
+        if (remapper != null &&
+            variableIdentity.StartsWith("var:", StringComparison.Ordinal) &&
+            int.TryParse(variableIdentity["var:".Length..], out var valueVariableIndex))
+        {
+            variableIdentity = $"var:{remapper.RemapValueVariable(valueVariableIndex)}";
+        }
+
+        return new ImplValueRefKey(
+            ParameterIndex,
+            CanonicalPayload,
+            new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
+            variableIdentity,
+            DisplayText);
     }
 }

@@ -778,6 +778,7 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
                 break;
             case TypeParamSymbol typeParam:
                 yield return $"kind:{typeParam.KindAnnotation}";
+                yield return $"parameterKind:{typeParam.ParameterKind}";
                 yield return $"comptime:{typeParam.IsComptime}";
                 yield return $"comptimeType:{typeParam.ComptimeTypeAnnotation ?? ""}";
                 yield return $"traitConstraints:{FormatSymbols(symbolTable, typeParam.TraitConstraints, canonical)}";
@@ -1009,6 +1010,11 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
         if (!canonical)
         {
             return key.ToString();
+        }
+
+        if (key.ValueArgument is { } valueArgument)
+        {
+            return valueArgument.ToString();
         }
 
         var head = !string.IsNullOrWhiteSpace(key.Text)

@@ -52,6 +52,8 @@ public record PathExpr : Expression
     /// </summary>
     public List<TypeNode> TypeArgs { get; private set; } = [];
 
+    public List<GenericArgumentNode> GenericArguments { get; private set; } = [];
+
     public List<SymbolId> ValueCandidateSymbolIds { get; private set; } = [];
 
     /// <summary>
@@ -61,6 +63,7 @@ public record PathExpr : Expression
     {
         Name = newName;
         TypeArgs.Clear();
+        GenericArguments.Clear();
         ValueCandidateSymbolIds.Clear();
     }
 
@@ -88,6 +91,13 @@ public record PathExpr : Expression
             var parts = new List<string>();
             CollectPathParts(ntNode, parts, inTypeArgs: false);
             CollectTypeArguments(ntNode);
+            GenericArguments = TypeArgs
+                .Select(type => (GenericArgumentNode)new UnresolvedGenericArgumentNode
+                {
+                    TypeCandidate = type,
+                    Span = type.Span
+                })
+                .ToList();
 
             if (parts.Count > 0)
             {
@@ -209,4 +219,17 @@ public record PathExpr : Expression
     internal void SetModulePath(List<string> path) => ModulePath = path;
     internal void SetIsTypePath(bool value) => IsTypePath = value;
     internal void SetTypeArgs(List<TypeNode> args) => TypeArgs = args;
+    internal void SetGenericArguments(IEnumerable<GenericArgumentNode> arguments)
+    {
+        GenericArguments = [.. arguments];
+        TypeArgs = GenericArguments
+            .Select(static argument => argument switch
+            {
+                UnresolvedGenericArgumentNode { TypeCandidate: { } type } => type,
+                TypeGenericArgumentNode typeArgument => typeArgument.Type,
+                _ => null
+            })
+            .OfType<TypeNode>()
+            .ToList();
+    }
 }

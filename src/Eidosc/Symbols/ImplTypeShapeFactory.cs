@@ -12,6 +12,15 @@ public static class ImplTypeShapeFactory
             return ImplWildcardShapeNode.Instance;
         }
 
+        if (key.ValueArgument is { } valueArgument)
+        {
+            return valueArgument.IsConcrete
+                ? new ImplConcreteValueShapeNode(valueArgument.CanonicalPayload, valueArgument.TypeId)
+                : new ImplValueVariableShapeNode(
+                    BuildValueVariableName(valueArgument),
+                    valueArgument.TypeId);
+        }
+
         if (key.SymbolId.IsValid &&
             key.TypeArguments.IsDefaultOrEmpty &&
             typeParameterNameResolver?.Invoke(key.SymbolId) is { Length: > 0 } typeParameterName)
@@ -79,5 +88,13 @@ public static class ImplTypeShapeFactory
         }
 
         return char.IsLower(name[0]);
+    }
+
+    private static string BuildValueVariableName(ImplValueRefKey argument)
+    {
+        var display = string.IsNullOrWhiteSpace(argument.DisplayText)
+            ? argument.VariableIdentity
+            : argument.DisplayText;
+        return $"value:{display}";
     }
 }

@@ -326,7 +326,7 @@ public static class LspSemanticMapper
             {
                 Label = entry.Label,
                 Kind = MapCompletionKind(entry.Kind),
-                Detail = string.IsNullOrEmpty(entry.Detail) ? null : entry.Detail,
+                Detail = BuildCompletionDetail(entry),
                 Documentation = string.IsNullOrEmpty(entry.Documentation) ? null : entry.Documentation,
                 SortText = string.IsNullOrEmpty(entry.SortText) ? entry.Label : entry.SortText,
                 InsertText = entry.Label,
@@ -341,6 +341,24 @@ public static class LspSemanticMapper
         }
 
         return items;
+    }
+
+    private static string? BuildCompletionDetail(IdeCompletionEntry entry)
+    {
+        var genericParameters = entry.GenericParameterText ?? "";
+        if (!string.IsNullOrWhiteSpace(entry.TypeText))
+        {
+            return $"{entry.Label}{genericParameters}: {entry.TypeText}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(genericParameters))
+        {
+            return string.IsNullOrWhiteSpace(entry.Detail)
+                ? $"{entry.Label}{genericParameters}"
+                : $"{entry.Detail} {entry.Label}{genericParameters}";
+        }
+
+        return string.IsNullOrEmpty(entry.Detail) ? null : entry.Detail;
     }
 
     private static bool MatchesCompletionPrefix(string label, string prefix)
@@ -949,15 +967,16 @@ public static class LspSemanticMapper
 
     private static string BuildHoverHeader(IdeSymbolEntry symbol)
     {
+        var name = symbol.Name + (symbol.GenericParameterText ?? "");
         return symbol.Kind switch
         {
-            "function" when HasCleanTypeText(symbol) => $"func {symbol.Name}: {symbol.TypeText}",
-            "function" => $"func {symbol.Name}",
+            "function" when HasCleanTypeText(symbol) => $"func {name}: {symbol.TypeText}",
+            "function" => $"func {name}",
             "variable" when HasCleanTypeText(symbol) => $"{symbol.Name}: {symbol.TypeText}",
             "field" when HasCleanTypeText(symbol) => $"{symbol.Name}: {symbol.TypeText}",
-            "type" => $"type {symbol.Name}",
-            "typeAlias" => $"type {symbol.Name}",
-            "trait" => $"trait {symbol.Name}",
+            "type" => $"type {name}",
+            "typeAlias" => $"type {name}",
+            "trait" => $"trait {name}",
             "effect" => $"effect {symbol.Name}",
             "constructor" when HasCleanTypeText(symbol) => symbol.TypeText!,
             "constructor" => symbol.Name,

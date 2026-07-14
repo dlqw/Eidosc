@@ -1,5 +1,6 @@
 using Eidosc.Symbols;
 using Eidosc.Ast.Declarations;
+using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
 
@@ -296,14 +297,15 @@ public sealed partial class NameResolver
             traitTypeArgBindings != null &&
             traitTypeArgBindings.TryGetValue(typePath.TypeName, out var traitArg))
         {
-            if (typePath.TypeArgs.Count == 0)
+            if (typePath.GenericArguments.Count == 0 && typePath.TypeArgs.Count == 0)
             {
                 return traitArg;
             }
 
-            var appliedArgs = string.Join(
-                ",",
-                typePath.TypeArgs.Select(arg => NormalizeTypeNode(arg, selfType, traitTypeArgBindings)));
+            var appliedArgs = string.Join(",", NormalizeGenericArguments(
+                typePath,
+                selfType,
+                traitTypeArgBindings));
             if (TrySplitNormalizedTypeApplication(traitArg, out var baseName, out var existingArgs))
             {
                 var mergedArgs = string.IsNullOrWhiteSpace(existingArgs)
@@ -318,24 +320,66 @@ public sealed partial class NameResolver
         if (typePath.SymbolId.IsValid)
         {
             var symbolName = typePath.TypeName;
-            if (typePath.TypeArgs.Count == 0)
+            if (typePath.GenericArguments.Count == 0 && typePath.TypeArgs.Count == 0)
             {
                 return symbolName;
             }
 
-            return $"{symbolName}[{string.Join(",", typePath.TypeArgs.Select(arg => NormalizeTypeNode(arg, selfType, traitTypeArgBindings)))}]";
+            return $"{symbolName}[{string.Join(",", NormalizeGenericArguments(typePath, selfType, traitTypeArgBindings))}]";
         }
 
         var name = typePath.ModulePath.Count > 0
             ? string.Join(WellKnownStrings.Separators.Path, typePath.ModulePath) + WellKnownStrings.Separators.Path + typePath.TypeName
             : typePath.TypeName;
 
-        if (typePath.TypeArgs.Count == 0)
+        if (typePath.GenericArguments.Count == 0 && typePath.TypeArgs.Count == 0)
         {
             return name;
         }
 
-        return $"{name}[{string.Join(",", typePath.TypeArgs.Select(arg => NormalizeTypeNode(arg, selfType, traitTypeArgBindings)))}]";
+        return $"{name}[{string.Join(",", NormalizeGenericArguments(typePath, selfType, traitTypeArgBindings))}]";
+    }
+
+    private static IEnumerable<string> NormalizeGenericArguments(
+        TypePath typePath,
+        TypePath? selfType,
+        IReadOnlyDictionary<string, string>? traitTypeArgBindings)
+    {
+        if (typePath.GenericArguments.Count == 0)
+        {
+            return typePath.TypeArgs.Select(argument =>
+                NormalizeTypeNode(argument, selfType, traitTypeArgBindings));
+        }
+
+        return typePath.GenericArguments.Select(argument => argument switch
+        {
+            TypeGenericArgumentNode typeArgument =>
+                NormalizeTypeNode(typeArgument.Type, selfType, traitTypeArgBindings),
+            UnresolvedGenericArgumentNode { TypeCandidate: { } typeCandidate } =>
+                NormalizeTypeNode(typeCandidate, selfType, traitTypeArgBindings),
+            ValueGenericArgumentNode valueArgument =>
+                NormalizeValueGenericArgument(valueArgument.Expression, traitTypeArgBindings),
+            _ => "_"
+        });
+    }
+
+    private static string NormalizeValueGenericArgument(
+        Eidosc.Ast.EidosAstNode expression,
+        IReadOnlyDictionary<string, string>? traitTypeArgBindings)
+    {
+        return expression switch
+        {
+            IdentifierExpr identifier when traitTypeArgBindings != null &&
+                                           traitTypeArgBindings.TryGetValue(identifier.Name, out var identifierBinding) =>
+                identifierBinding,
+            PathExpr { ModulePath.Count: 0 } path when traitTypeArgBindings != null &&
+                                                        traitTypeArgBindings.TryGetValue(path.Name, out var pathBinding) =>
+                pathBinding,
+            LiteralExpr literal when !string.IsNullOrWhiteSpace(literal.RawText) => literal.RawText,
+            IdentifierExpr identifier => identifier.Name,
+            PathExpr path => string.Join(WellKnownStrings.Separators.Path, path.Path),
+            _ => expression.GetType().Name
+        };
     }
 
     private static bool TrySplitNormalizedTypeApplication(

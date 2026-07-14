@@ -83,6 +83,11 @@ public sealed record TyCon : Type
     public List<Type> Args { get; init; } = [];
 
     /// <summary>
+    /// Canonical value arguments keyed by their declaration-order parameter index.
+    /// </summary>
+    public List<GenericValueArgument> ValueArgs { get; init; } = [];
+
+    /// <summary>
     /// 类型名称 (用于显示)
     /// </summary>
     public string Name { get; init; } = "";
@@ -92,7 +97,10 @@ public sealed record TyCon : Type
     /// </summary>
     public int? ConstructorVarIndex { get; init; }
 
-    public override bool IsConcrete => !ConstructorVarIndex.HasValue && Args.All(a => a.IsConcrete);
+    public override bool IsConcrete =>
+        !ConstructorVarIndex.HasValue &&
+        Args.All(static argument => argument.IsConcrete) &&
+        ValueArgs.All(static argument => argument.IsConcrete);
 
     public override IEnumerable<int> FreeTypeVariables()
     {
@@ -115,12 +123,55 @@ public sealed record TyCon : Type
                 ? $"'t{ConstructorVarIndex.Value}"
                 : "<type>";
 
-        if (Args.Count == 0)
+        if (Args.Count == 0 && ValueArgs.Count == 0)
             return constructorName;
 
-        var args = string.Join(", ", Args);
+        var args = FormatGenericArguments();
         return $"{constructorName}<{args}>";
     }
+
+    private string FormatGenericArguments()
+    {
+        var valueByIndex = ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var totalCount = Args.Count + ValueArgs.Count;
+        var typeIndex = 0;
+        var formatted = new List<string>(totalCount);
+        for (var parameterIndex = 0; parameterIndex < totalCount; parameterIndex++)
+        {
+            if (valueByIndex.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                formatted.Add(valueArgument.DisplayText);
+            }
+            else if (typeIndex < Args.Count)
+            {
+                formatted.Add(Args[typeIndex++].ToString());
+            }
+        }
+
+        while (typeIndex < Args.Count)
+        {
+            formatted.Add(Args[typeIndex++].ToString());
+        }
+
+        return string.Join(", ", formatted);
+    }
+}
+
+/// <summary>
+/// Stable identity of a value-level generic argument.
+/// </summary>
+public sealed record GenericValueArgument(
+    int ParameterIndex,
+    string CanonicalText,
+    string CanonicalHash,
+    string DisplayText,
+    TypeId TypeId,
+    int ReferencedParameterIndex = -1,
+    int ValueVariableIndex = -1)
+{
+    public bool IsInferenceVariable => ValueVariableIndex >= 0;
+
+    public bool IsConcrete => ReferencedParameterIndex < 0 && !IsInferenceVariable;
 }
 
 /// <summary>
