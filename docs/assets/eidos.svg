@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Eidos</title>
+  <desc id="desc">A folded geometric E formed from four connected facets.</desc>
+  <defs>
+    <linearGradient id="eidos-top" x1="18" y1="18" x2="112" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#72E0F5"/>
+      <stop offset="1" stop-color="#6574FF"/>
+    </linearGradient>
+    <linearGradient id="eidos-spine" x1="18" y1="18" x2="46" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6574FF"/>
+      <stop offset="1" stop-color="#8C5CFF"/>
+    </linearGradient>
+    <linearGradient id="eidos-middle" x1="46" y1="52" x2="94" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8C5CFF"/>
+      <stop offset="1" stop-color="#34D3BA"/>
+    </linearGradient>
+    <linearGradient id="eidos-bottom" x1="18" y1="110" x2="112" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8C5CFF"/>
+      <stop offset="1" stop-color="#6574FF"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#eidos-spine)" d="M18 18l28 22v48l-28 22z"/>
+  <path fill="url(#eidos-top)" d="M18 18h94L94 40H46z"/>
+  <path fill="url(#eidos-middle)" d="M46 52h48L77 72H46z"/>
+  <path fill="url(#eidos-bottom)" d="M46 88h66l-18 22H18z"/>
+</svg>
