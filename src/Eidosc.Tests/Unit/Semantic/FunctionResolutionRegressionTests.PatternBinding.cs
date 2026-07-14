@@ -95,7 +95,7 @@ classify :: Int -> Int
     {
         const string source = """
 Tok :: type {
-    TokA(Int) | TokB(Int)
+    TokA(Int) , TokB(Int)
 }
 
 classify :: Tok -> Int

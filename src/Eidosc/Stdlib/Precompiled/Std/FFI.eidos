@@ -137,22 +137,22 @@ FFI :: module {
 
     free_if_non_null :: RawPtr -> Unit need FFI
     {
-        ptr => if ptr_is_null(ptr) then { () } else { FFI::free(ptr) }
+        ptr => if ptr_is_null(ptr) then { () } else { FFI.free(ptr) }
     }
 
     alloc_or_null :: Int -> RawPtr need FFI
     {
-        size => if size <= 0 then { ptr_null() } else { FFI::malloc(size) }
+        size => if size <= 0 then { ptr_null() } else { FFI.malloc(size) }
     }
 
     zero_memory :: RawPtr -> Int -> RawPtr need FFI
     {
-        ptr => size => if size <= 0 then { ptr } else { FFI::memset(ptr)(0)(size) }
+        ptr => size => if size <= 0 then { ptr } else { FFI.memset(ptr)(0)(size) }
     }
 
     copy_memory :: RawPtr -> RawPtr -> Int -> RawPtr need FFI
     {
-        dest => src => size => if size <= 0 then { dest } else { FFI::memcpy(dest)(src)(size) }
+        dest => src => size => if size <= 0 then { dest } else { FFI.memcpy(dest)(src)(size) }
     }
 
     box_value[A] :: A -> RawPtr need FFI
@@ -175,9 +175,9 @@ FFI :: module {
     with_malloc[A, E: effects] :: Int -> (RawPtr -> A need E) -> A need FFI, E
     {
         size => body => {
-            ptr := FFI::malloc(size);
+            ptr := FFI.malloc(size);
             result := body(ptr);
-            FFI::free(ptr);
+            FFI.free(ptr);
             result
         }
     }
@@ -185,9 +185,9 @@ FFI :: module {
     with_malloc_zeroed[A, E: effects] :: Int -> (RawPtr -> A need E) -> A need FFI, E
     {
         size => body => {
-            ptr := FFI::calloc(1)(size);
+            ptr := FFI.calloc(1)(size);
             result := body(ptr);
-            FFI::free(ptr);
+            FFI.free(ptr);
             result
         }
     }
@@ -195,9 +195,9 @@ FFI :: module {
     with_calloc[A, E: effects] :: Int -> Int -> (RawPtr -> A need E) -> A need FFI, E
     {
         count => size => body => {
-            ptr := FFI::calloc(count)(size);
+            ptr := FFI.calloc(count)(size);
             result := body(ptr);
-            FFI::free(ptr);
+            FFI.free(ptr);
             result
         }
     }

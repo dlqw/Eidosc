@@ -9,7 +9,7 @@ public sealed class EidosProjectBuildConfigurationTests
     public void ManifestBuildSection_RoundTripsAndLoaderNormalizesCapabilities()
     {
         using var workspace = TestTempWorkspace.Create("eidos_build_manifest");
-        workspace.WriteText("build.eidos", "Context :: comptime Build::context();");
+        workspace.WriteText("build.eidos", "Context :: comptime Build.context();");
         workspace.WriteText("schema/model.json", "{}");
         workspace.WriteText("tools/generator.exe", "tool");
         var manifest = new EidosProjectManifestDocument
@@ -51,7 +51,7 @@ public sealed class EidosProjectBuildConfigurationTests
     public void Loader_RejectsBuildInputThatEscapesProjectRoot()
     {
         using var workspace = TestTempWorkspace.Create("eidos_build_manifest_escape");
-        workspace.WriteText("build.eidos", "Context :: comptime Build::context();");
+        workspace.WriteText("build.eidos", "Context :: comptime Build.context();");
         workspace.WriteText(
             "eidos.toml",
             """
@@ -72,7 +72,7 @@ public sealed class EidosProjectBuildConfigurationTests
     public void Loader_DefaultsBuildOutputRootToBuildDirectory()
     {
         using var workspace = TestTempWorkspace.Create("eidos_build_manifest_default_output");
-        workspace.WriteText("build.eidos", "Context :: comptime Build::context();");
+        workspace.WriteText("build.eidos", "Context :: comptime Build.context();");
         workspace.WriteText(
             "eidos.toml",
             """
@@ -91,7 +91,7 @@ public sealed class EidosProjectBuildConfigurationTests
     public void Loader_RejectsOverlappingBuildInputsAndOutputRoots()
     {
         using var workspace = TestTempWorkspace.Create("eidos_build_manifest_overlap");
-        workspace.WriteText("build.eidos", "Context :: comptime Build::context();");
+        workspace.WriteText("build.eidos", "Context :: comptime Build.context();");
         workspace.WriteText("generated/input.txt", "input");
         workspace.WriteText(
             "eidos.toml",
@@ -114,7 +114,7 @@ public sealed class EidosProjectBuildConfigurationTests
     public void Loader_RejectsEmptyBuildInputEntries()
     {
         using var workspace = TestTempWorkspace.Create("eidos_build_manifest_empty_input");
-        workspace.WriteText("build.eidos", "Context :: comptime Build::context();");
+        workspace.WriteText("build.eidos", "Context :: comptime Build.context();");
         workspace.WriteText(
             "eidos.toml",
             """

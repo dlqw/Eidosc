@@ -135,7 +135,7 @@ lift[A, G] :: A -> G[A] where G: kind2, G: Applicative[G]
     public void Parser_TypeParamTraitConstraint_WithModulePathAndTypeArgs_Parses()
     {
         const string source = """
-use[T: Core::Functor[Seq]] :: T -> T
+use[T: Core.Functor[Seq]] :: T -> T
 {
     x => x
 }

@@ -20,15 +20,15 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std::Shared
+import Std.Shared
 
 main :: Unit -> Int
 {
     _ => {
-        first := Shared::new((40, 2))
-        second := Shared::clone(first)
-        same := Shared::ptr_eq(first)(second)
-        borrowed := Shared::borrow(second)
+        first := Shared.new((40, 2))
+        second := Shared.clone(first)
+        same := Shared.ptr_eq(first)(second)
+        borrowed := Shared.borrow(second)
         match *borrowed {
             (value, extra) =>
                 if same && value == 40 then { 42 } else { 1 }

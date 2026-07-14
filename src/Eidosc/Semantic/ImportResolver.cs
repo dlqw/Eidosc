@@ -112,7 +112,7 @@ public sealed class ImportResolver
     }
 
     /// <summary>
-    /// 解析模块导入 (import A::B)
+    /// 解析模块导入 (import A.B)
     /// </summary>
     private ImportResolutionResult ResolveModuleImport(
         ImportDecl import,
@@ -149,7 +149,7 @@ public sealed class ImportResolver
     }
 
     /// <summary>
-    /// 解析选择性导入 (import A::B::{X, Y})
+    /// 解析选择性导入 (import A.B.{X, Y})
     /// </summary>
     private ImportResolutionResult ResolveSelectiveImport(
         ImportDecl import,
@@ -233,7 +233,7 @@ public sealed class ImportResolver
     }
 
     /// <summary>
-    /// 解析通配符导入 (import A::B::*)
+    /// 解析通配符导入 (import A.B.*)
     /// </summary>
     private ImportResolutionResult ResolveWildcardImport(
         ImportDecl import,

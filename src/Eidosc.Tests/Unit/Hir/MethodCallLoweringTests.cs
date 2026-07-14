@@ -511,7 +511,7 @@ import ProbeMath
 
 use :: Unit -> Int
 {
-    _ => ProbeMath::add(1)(2)
+    _ => ProbeMath.add(1)(2)
 }
 """;
 
@@ -535,7 +535,7 @@ use :: Unit -> Int
             var call = Assert.IsType<HirCall>(use.Body);
             var callee = Assert.IsType<HirVar>(call.Function);
 
-            Assert.Equal("ProbeMath::add", callee.Name);
+            Assert.Equal("ProbeMath.add", callee.Name);
             Assert.Equal(HirCallSurfaceSyntax.Direct, call.SurfaceSyntax);
             Assert.True(call.HasExplicitOwner);
             Assert.Equal("ProbeMath", call.OwnerPath);

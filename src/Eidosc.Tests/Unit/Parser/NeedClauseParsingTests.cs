@@ -36,7 +36,7 @@ helper :: Unit -> Unit need Emitter
     public void Parser_NeedClauseWithEffectList_ParsesMultipleEffectPaths()
     {
         const string source = """
-helper :: Unit -> Unit need Core::Emitter, Core::Io::Logger
+helper :: Unit -> Unit need Core.Emitter, Core.Io.Logger
 {
     _ => 0
 }

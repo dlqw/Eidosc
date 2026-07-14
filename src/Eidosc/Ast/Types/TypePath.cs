@@ -8,8 +8,8 @@ namespace Eidosc.Ast.Types;
 /// <example>
 /// Int
 /// Seq[Int]
-/// std/collection::List
-/// std::collection/Seq::List
+/// std/collection.List
+/// Std.Collection.Seq.List
 /// </example>
 public record TypePath : TypeNode
 {

@@ -228,7 +228,7 @@ public sealed class PatternParserTests
     [Fact]
     public void Parse_ctor_module_path()
     {
-        var ctx = MakeCtx(TypeId("Option"), "::", TypeId("Some"), "(", Ident("v"), ")");
+        var ctx = MakeCtx(TypeId("Option"), ".", TypeId("Some"), "(", Ident("v"), ")");
         var parser = new PatternParser(ctx);
         var result = parser.ParsePattern();
         var ctor = Assert.IsType<CtorPattern>(result);

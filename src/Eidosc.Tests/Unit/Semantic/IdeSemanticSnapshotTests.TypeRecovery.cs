@@ -568,7 +568,7 @@ main :: Int -> Int
     public void Build_IfLetPatternMismatch_DoesNotExposeTrustworthyResultTypeText()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 main :: Unit -> Int
 {
@@ -610,7 +610,7 @@ main :: Unit -> Int
     public void Build_WhileLetPatternMismatch_DoesNotExposeTrustworthyResultTypeText()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 main :: Unit -> Int
 {
@@ -1061,7 +1061,7 @@ main :: Unit -> Int
     public void Build_PatternGuardSourceMismatch_DoesNotExposeTrustworthyResultTypeText()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 main :: Unit -> Int
 {
@@ -1105,7 +1105,7 @@ main :: Unit -> Int
     public void Build_PatternGuardMissingSource_DoesNotExposeFreshBindingTypeText()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 main :: Unit -> Int
 {

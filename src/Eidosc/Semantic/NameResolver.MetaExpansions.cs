@@ -329,7 +329,7 @@ public sealed partial class NameResolver
 
         if (!HasDeriveProtocolSignature(generator))
         {
-            reason = $"derive generator '{generator.Name}' must have signature 'comptime Meta::DeriveInput -> Meta::Expansion'";
+            reason = $"derive generator '{generator.Name}' must have signature 'comptime Meta.DeriveInput -> Meta.Expansion'";
             return false;
         }
 

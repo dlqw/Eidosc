@@ -91,7 +91,7 @@ public sealed class BindingPackageGeneratorTests
         var wrapper = File.ReadAllText(Path.Combine(tempDir, "src", "Window.eidos"));
         Assert.Contains("Window :: module", wrapper, StringComparison.Ordinal);
         Assert.Contains("export init :: Int32 -> Int32 -> Unit", wrapper, StringComparison.Ordinal);
-        Assert.Contains("Raw::demo_init(arg0, arg1)", wrapper, StringComparison.Ordinal);
+        Assert.Contains("Raw.demo_init(arg0, arg1)", wrapper, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,8 +117,8 @@ public sealed class BindingPackageGeneratorTests
         Assert.True(result.Success, string.Join("; ", result.Diagnostics));
         var wrapper = File.ReadAllText(Path.Combine(tempDir, "src", "Window.eidos"));
         Assert.Contains("export should_close :: Unit -> Int32", wrapper, StringComparison.Ordinal);
-        Assert.Contains("_ => Raw::demo_should_close()", wrapper, StringComparison.Ordinal);
-        Assert.DoesNotContain("Raw::demo_should_close(())", wrapper, StringComparison.Ordinal);
+        Assert.Contains("_ => Raw.demo_should_close()", wrapper, StringComparison.Ordinal);
+        Assert.DoesNotContain("Raw.demo_should_close(())", wrapper, StringComparison.Ordinal);
     }
 
     [Fact]

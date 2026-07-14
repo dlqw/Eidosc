@@ -19,7 +19,7 @@ public sealed class BuildCommandBuildHostTests
             manifestSchema = 3
 
             [language]
-            version = "0.5.0-alpha.1"
+            version = "0.6.0-alpha.1"
 
             [package]
             name = "dev.eidos.test.build-host-cli"
@@ -32,9 +32,9 @@ public sealed class BuildCommandBuildHostTests
         workspace.WriteText(
             "build.eidos",
             """
-            Context :: comptime Build::context();
-            Emit :: comptime Build::emit(Context);
-            BuildGraph :: comptime Build::graph(Emit, [], []);
+            Context :: comptime Build.context();
+            Emit :: comptime Build.emit(Context);
+            BuildGraph :: comptime Build.graph(Emit, [], []);
             """);
         workspace.WriteText(
             "src/Main.eidos",

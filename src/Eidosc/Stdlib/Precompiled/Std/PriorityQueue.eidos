@@ -18,59 +18,59 @@ PriorityQueue :: module {
         MinPriorityQueue{heap: BinaryHeap[MinPriorityEntry[V]]}
     }
 
-    CloneMinPriorityEntryV :: instance Trait::Clone {
-        clone[V: Trait::Clone] :: MinPriorityEntry[V] -> MinPriorityEntry[V]
+    CloneMinPriorityEntryV :: instance Trait.Clone {
+        clone[V: Trait.Clone] :: MinPriorityEntry[V] -> MinPriorityEntry[V]
             {
-                MinPriorityEntry(priority, value) => MinPriorityEntry(priority, TraitInvoke::clone_value(value))
+                MinPriorityEntry(priority, value) => MinPriorityEntry(priority, TraitInvoke.clone_value(value))
             }
     }
 
-    OrdMinPriorityEntryV :: instance Trait::Ord {
-        compare[V] :: MinPriorityEntry[V] -> MinPriorityEntry[V] -> Ordering::Ordering
+    OrdMinPriorityEntryV :: instance Trait.Ord {
+        compare[V] :: MinPriorityEntry[V] -> MinPriorityEntry[V] -> Ordering.Ordering
             {
                 MinPriorityEntry(leftPriority, _) => MinPriorityEntry(rightPriority, _) =>
-                    Ordering::compare_int_desc(leftPriority)(rightPriority)
+                    Ordering.compare_int_desc(leftPriority)(rightPriority)
             }
     }
 
     empty[T] :: Unit -> PriorityQueue[T]
     {
-        _ => PriorityQueue{heap: BinaryHeap::empty(())}
+        _ => PriorityQueue{heap: BinaryHeap.empty(())}
     }
 
     singleton[T] :: T -> PriorityQueue[T]
     {
-        value => PriorityQueue{heap: BinaryHeap::singleton(value)}
+        value => PriorityQueue{heap: BinaryHeap.singleton(value)}
     }
 
-    from_seq[T: Trait::Ord] :: Seq[T] -> PriorityQueue[T]
+    from_seq[T: Trait.Ord] :: Seq[T] -> PriorityQueue[T]
     {
-        values => PriorityQueue{heap: BinaryHeap::from_seq(values)}
+        values => PriorityQueue{heap: BinaryHeap.from_seq(values)}
     }
 
     len[T] :: PriorityQueue[T] -> Int
     {
-        PriorityQueue{heap: heap} => BinaryHeap::len(heap)
+        PriorityQueue{heap: heap} => BinaryHeap.len(heap)
     }
 
     is_empty[T] :: PriorityQueue[T] -> Bool
     {
-        queue => PriorityQueue::len(queue) == 0
+        queue => PriorityQueue.len(queue) == 0
     }
 
-    enqueue[T: Trait::Ord] :: PriorityQueue[T] -> T -> PriorityQueue[T]
+    enqueue[T: Trait.Ord] :: PriorityQueue[T] -> T -> PriorityQueue[T]
     {
-        PriorityQueue{heap: heap} => value => PriorityQueue{heap: BinaryHeap::push(heap)(value)}
+        PriorityQueue{heap: heap} => value => PriorityQueue{heap: BinaryHeap.push(heap)(value)}
     }
 
-    peek[T: Trait::Clone] :: PriorityQueue[T] -> Option[T]
+    peek[T: Trait.Clone] :: PriorityQueue[T] -> Option[T]
     {
-        PriorityQueue{heap: heap} => BinaryHeap::peek(heap)
+        PriorityQueue{heap: heap} => BinaryHeap.peek(heap)
     }
 
-    dequeue[T: Trait::Ord + Trait::Clone] :: PriorityQueue[T] -> Option[(T, PriorityQueue[T])]
+    dequeue[T: Trait.Ord + Trait.Clone] :: PriorityQueue[T] -> Option[(T, PriorityQueue[T])]
     {
-        PriorityQueue{heap: heap} => match BinaryHeap::pop(heap) {
+        PriorityQueue{heap: heap} => match BinaryHeap.pop(heap) {
             Some((value, rest)) => Some((value, PriorityQueue{heap: rest})),
             None() => None()
         }
@@ -78,41 +78,41 @@ PriorityQueue :: module {
 
     min_empty[V] :: Unit -> MinPriorityQueue[V]
     {
-        _ => MinPriorityQueue{heap: BinaryHeap::empty(())}
+        _ => MinPriorityQueue{heap: BinaryHeap.empty(())}
     }
 
     min_singleton[V] :: Int -> V -> MinPriorityQueue[V]
     {
-        priority => value => MinPriorityQueue{heap: BinaryHeap::singleton(MinPriorityEntry(priority, value))}
+        priority => value => MinPriorityQueue{heap: BinaryHeap.singleton(MinPriorityEntry(priority, value))}
     }
 
     min_len[V] :: MinPriorityQueue[V] -> Int
     {
-        MinPriorityQueue{heap: heap} => BinaryHeap::len(heap)
+        MinPriorityQueue{heap: heap} => BinaryHeap.len(heap)
     }
 
     min_is_empty[V] :: MinPriorityQueue[V] -> Bool
     {
-        queue => PriorityQueue::min_len(queue) == 0
+        queue => PriorityQueue.min_len(queue) == 0
     }
 
     min_enqueue[V] :: MinPriorityQueue[V] -> Int -> V -> MinPriorityQueue[V]
     {
         MinPriorityQueue{heap: heap} => priority => value =>
-            MinPriorityQueue{heap: BinaryHeap::push(heap)(MinPriorityEntry(priority, value))}
+            MinPriorityQueue{heap: BinaryHeap.push(heap)(MinPriorityEntry(priority, value))}
     }
 
-    min_peek[V: Trait::Clone] :: MinPriorityQueue[V] -> Option[(Int, V)]
+    min_peek[V: Trait.Clone] :: MinPriorityQueue[V] -> Option[(Int, V)]
     {
-        MinPriorityQueue{heap: heap} => match BinaryHeap::peek(heap) {
+        MinPriorityQueue{heap: heap} => match BinaryHeap.peek(heap) {
             Some(MinPriorityEntry(priority, value)) => Some((priority, value)),
             None() => None()
         }
     }
 
-    min_dequeue[V: Trait::Clone] :: MinPriorityQueue[V] -> Option[(Int, V, MinPriorityQueue[V])]
+    min_dequeue[V: Trait.Clone] :: MinPriorityQueue[V] -> Option[(Int, V, MinPriorityQueue[V])]
     {
-        MinPriorityQueue{heap: heap} => match BinaryHeap::pop(heap) {
+        MinPriorityQueue{heap: heap} => match BinaryHeap.pop(heap) {
             Some((MinPriorityEntry(priority, value), rest)) => Some((priority, value, MinPriorityQueue{heap: rest})),
             None() => None()
         }

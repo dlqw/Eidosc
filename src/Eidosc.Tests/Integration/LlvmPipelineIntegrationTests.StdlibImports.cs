@@ -488,7 +488,7 @@ Show :: trait {
 }
 
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 @impl(Show)
@@ -732,7 +732,7 @@ Show :: trait {
 }
 
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 @impl(Show)
@@ -775,7 +775,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -838,7 +838,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -908,7 +908,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -953,7 +953,7 @@ import TraitReexport.Facade
 
 main :: Unit -> Int
 {
-    _ => Facade::BaseApi::render(Facade::BaseApi::make(11))
+    _ => Facade.BaseApi.render(Facade.BaseApi.make(11))
 }
 """;
 

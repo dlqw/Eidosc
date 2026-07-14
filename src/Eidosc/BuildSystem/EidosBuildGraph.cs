@@ -84,7 +84,7 @@ internal static class EidosBuildGraphMaterializer
             !TryGetList(graphValue, "artifacts", out var artifactValues))
         {
             errors.Add(Error(
-                "BuildGraph must be produced by Build::graph(Build::Emit, List[Build::Step], List[Build::Artifact]).",
+                "BuildGraph must be produced by Build.graph(Build.Emit, List[Build.Step], List[Build.Artifact]).",
                 "E5002"));
             diagnostics = errors;
             return false;
@@ -161,7 +161,7 @@ internal static class EidosBuildGraphMaterializer
             !TryGetStringList(command, "outputs", out var outputs) ||
             !TryGetStringList(command, "dependencies", out var dependencies))
         {
-            reason = "Build graph contains a malformed Build::command value.";
+            reason = "Build graph contains a malformed Build.command value.";
             return false;
         }
 

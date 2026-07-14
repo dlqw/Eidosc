@@ -94,34 +94,34 @@ Network :: module {
     @internal
     percent_encode_byte :: Int -> String
     {
-        value => "%" ++ Network::hex_digit(value / 16) ++ Network::hex_digit(value % 16)
+        value => "%" ++ Network.hex_digit(value / 16) ++ Network.hex_digit(value % 16)
     }
 
     @internal
     url_encode_loop :: String -> Int -> String
     {
         src => index =>
-            if index >= Text::len(src) then { "" }
+            if index >= Text.len(src) then { "" }
             else
             {
-                code := Text::char_code_at(src)(index);
-                encoded := if Network::is_unreserved_char_code(code)
+                code := Text.char_code_at(src)(index);
+                encoded := if Network.is_unreserved_char_code(code)
                     then { string_from_char(code) }
-                    else { Network::percent_encode_byte(code) };
-                encoded ++ Network::url_encode_loop(src)(index + 1)
+                    else { Network.percent_encode_byte(code) };
+                encoded ++ Network.url_encode_loop(src)(index + 1)
             }
     }
 
     url_encode_component :: String -> String
     {
-        src => Network::url_encode_loop(src)(0)
+        src => Network.url_encode_loop(src)(0)
     }
 
     add_query_param :: String -> String -> String -> String
     {
         url => key => value => {
-            separator := if Text::contains(url)("?") then { "&" } else { "?" };
-            url ++ separator ++ Network::url_encode_component(key) ++ "=" ++ Network::url_encode_component(value)
+            separator := if Text.contains(url)("?") then { "&" } else { "?" };
+            url ++ separator ++ Network.url_encode_component(key) ++ "=" ++ Network.url_encode_component(value)
         }
     }
 
@@ -130,7 +130,7 @@ Network :: module {
     {
         headers => key => value => {
             line := key ++ ": " ++ value;
-            if Text::len(headers) == 0 then { line } else { headers ++ "\n" ++ line }
+            if Text.len(headers) == 0 then { line } else { headers ++ "\n" ++ line }
         }
     }
 
@@ -153,8 +153,8 @@ Network :: module {
     encode_hex_byte :: Int -> String
     {
         value => {
-            byteValue := Network::normalize_byte(value);
-            Network::hex_digit(byteValue / 16) ++ Network::hex_digit(byteValue % 16)
+            byteValue := Network.normalize_byte(value);
+            Network.hex_digit(byteValue / 16) ++ Network.hex_digit(byteValue % 16)
         }
     }
 
@@ -162,7 +162,7 @@ Network :: module {
     encode_hex_bytes :: Seq[Int] -> String
     {
         [] => "",
-        [head, ..tail] => Network::encode_hex_byte(head) ++ Network::encode_hex_bytes(tail)
+        [head, ..tail] => Network.encode_hex_byte(head) ++ Network.encode_hex_bytes(tail)
     }
 
     @internal
@@ -178,12 +178,12 @@ Network :: module {
     decode_hex_byte_from :: String -> Int -> Option[Int]
     {
         text => index =>
-            if index + 1 >= Text::len(text) then { None() }
+            if index + 1 >= Text.len(text) then { None() }
             else {
-                match Network::hex_digit_value(Text::char_code_at(Text::clone(text))(index))
+                match Network.hex_digit_value(Text.char_code_at(Text.clone(text))(index))
                 {
                     Some(high) => {
-                        match Network::hex_digit_value(Text::char_code_at(Text::clone(text))(index + 1))
+                        match Network.hex_digit_value(Text.char_code_at(Text.clone(text))(index + 1))
                         {
                             Some(low) => Some(high * 16 + low),
                             None() => None()
@@ -198,14 +198,14 @@ Network :: module {
     decode_hex_bytes_from_opt :: String -> Int -> Option[Seq[Int]]
     {
         text => index =>
-            if index >= Text::len(text) then { Some([]) }
+            if index >= Text.len(text) then { Some([]) }
             else {
-                match Network::decode_hex_byte_from(Text::clone(text))(index)
+                match Network.decode_hex_byte_from(Text.clone(text))(index)
                 {
                     Some(value) => {
-                        match Network::decode_hex_bytes_from_opt(text)(index + 2)
+                        match Network.decode_hex_bytes_from_opt(text)(index + 2)
                         {
-                            Some(rest) => Some(Network::append_bytes([value])(rest)),
+                            Some(rest) => Some(Network.append_bytes([value])(rest)),
                             None() => None()
                         }
                     },
@@ -218,7 +218,7 @@ Network :: module {
     binary_error_or_default :: String -> String
     {
         message =>
-            if Text::len(Text::clone(message)) > 0
+            if Text.len(Text.clone(message)) > 0
                 then { message }
                 else { "failed to decode http binary body" }
     }
@@ -416,7 +416,7 @@ Network :: module {
         } => key => value =>
             HttpRequest{
                 method: method,
-                url: Network::add_query_param(url)(key)(value),
+                url: Network.add_query_param(url)(key)(value),
                 content_type: contentType,
                 body: body,
                 headers: headers,
@@ -441,7 +441,7 @@ Network :: module {
                 url: url,
                 content_type: contentType,
                 body: body,
-                headers: Network::add_header_line(headers)(key)(value),
+                headers: Network.add_header_line(headers)(key)(value),
                 connect_timeout_seconds: connectTimeoutSeconds,
                 total_timeout_seconds: totalTimeoutSeconds
             }
@@ -449,27 +449,27 @@ Network :: module {
 
     with_bearer_auth :: HttpRequest -> String -> HttpRequest
     {
-        request => token => Network::with_header(request)("Authorization")("Bearer " ++ token)
+        request => token => Network.with_header(request)("Authorization")("Bearer " ++ token)
     }
 
     with_accept :: HttpRequest -> String -> HttpRequest
     {
-        request => value => Network::with_header(request)("Accept")(value)
+        request => value => Network.with_header(request)("Accept")(value)
     }
 
     with_accept_json :: HttpRequest -> HttpRequest
     {
-        request => Network::with_accept(request)("application/json")
+        request => Network.with_accept(request)("application/json")
     }
 
     with_user_agent :: HttpRequest -> String -> HttpRequest
     {
-        request => value => Network::with_header(request)("User-Agent")(value)
+        request => value => Network.with_header(request)("User-Agent")(value)
     }
 
     with_json_content_type :: HttpRequest -> HttpRequest
     {
-        request => Network::with_content_type(request)("application/json")
+        request => Network.with_content_type(request)("application/json")
     }
 
     with_connect_timeout :: HttpRequest -> Int -> HttpRequest
@@ -602,7 +602,7 @@ Network :: module {
                 connectTimeoutSeconds,
                 totalTimeoutSeconds);
             runtimeError := io_last_error();
-            match Network::decode_hex_bytes_from_opt(bodyHex)(0)
+            match Network.decode_hex_bytes_from_opt(bodyHex)(0)
             {
                 Some(bytes) =>
                     HttpBytesResponse{
@@ -622,7 +622,7 @@ Network :: module {
                         headers: http_last_headers(),
                         effective_url: http_last_effective_url(),
                         content_type: http_last_content_type(),
-                        error: Network::binary_error_or_default(runtimeError)
+                        error: Network.binary_error_or_default(runtimeError)
                     }
             }
         }
@@ -639,7 +639,7 @@ Network :: module {
             connect_timeout_seconds: connectTimeoutSeconds,
             total_timeout_seconds: totalTimeoutSeconds
         } => bodyBytes => {
-            bodyHex := Network::encode_hex_bytes(bodyBytes);
+            bodyHex := Network.encode_hex_bytes(bodyBytes);
             responseBody := http_request_text_with_binary_body_options(
                 method,
                 url,
@@ -671,7 +671,7 @@ Network :: module {
             connect_timeout_seconds: connectTimeoutSeconds,
             total_timeout_seconds: totalTimeoutSeconds
         } => bodyBytes => {
-            requestBodyHex := Network::encode_hex_bytes(bodyBytes);
+            requestBodyHex := Network.encode_hex_bytes(bodyBytes);
             responseBodyHex := http_request_body_hex_with_binary_body_options(
                 method,
                 url,
@@ -681,7 +681,7 @@ Network :: module {
                 connectTimeoutSeconds,
                 totalTimeoutSeconds);
             runtimeError := io_last_error();
-            match Network::decode_hex_bytes_from_opt(responseBodyHex)(0)
+            match Network.decode_hex_bytes_from_opt(responseBodyHex)(0)
             {
                     Some(bytes) =>
                         HttpBytesResponse{
@@ -701,7 +701,7 @@ Network :: module {
                             headers: http_last_headers(),
                             effective_url: http_last_effective_url(),
                             content_type: http_last_content_type(),
-                            error: Network::binary_error_or_default(runtimeError)
+                            error: Network.binary_error_or_default(runtimeError)
                         }
             }
         }
@@ -790,29 +790,29 @@ Network :: module {
     normalize_header_name_from :: String -> Int -> String
     {
         text => index =>
-            if index >= Text::len(text) then { "" }
+            if index >= Text.len(text) then { "" }
             else {
-                Network::normalize_header_char(Text::char_code_at(text)(index)) ++
-                    Network::normalize_header_name_from(text)(index + 1)
+                Network.normalize_header_char(Text.char_code_at(text)(index)) ++
+                    Network.normalize_header_name_from(text)(index + 1)
             }
     }
 
     @internal
     normalize_header_name :: String -> String
     {
-        text => Network::normalize_header_name_from(text)(0)
+        text => Network.normalize_header_name_from(text)(0)
     }
 
     @internal
     drop_header_value_padding :: String -> Int -> String
     {
         text => index =>
-            if index >= Text::len(text) then { "" }
+            if index >= Text.len(text) then { "" }
             else {
-                code := Text::char_code_at(text)(index);
+                code := Text.char_code_at(text)(index);
                 if code == 32 || code == 9
-                    then { Network::drop_header_value_padding(text)(index + 1) }
-                    else { Text::drop(text)(index) }
+                    then { Network.drop_header_value_padding(text)(index + 1) }
+                    else { Text.drop(text)(index) }
             }
     }
 
@@ -820,40 +820,40 @@ Network :: module {
     find_line_end :: String -> Int -> Int
     {
         text => index =>
-            if index >= Text::len(text) then { index }
-            else if Text::char_code_at(text)(index) == 10 then { index }
-            else { Network::find_line_end(text)(index + 1) }
+            if index >= Text.len(text) then { index }
+            else if Text.char_code_at(text)(index) == 10 then { index }
+            else { Network.find_line_end(text)(index + 1) }
     }
 
     @internal
     find_header_value_from :: String -> String -> Int -> Option[String]
     {
         text => prefix => start =>
-            if start >= Text::len(text) then { None() }
+            if start >= Text.len(text) then { None() }
             else {
-                lineEnd := Network::find_line_end(Text::clone(text))(start);
-                line := Text::slice(Text::clone(text))(start)(lineEnd - start);
-                prefixLen := Text::len(Text::clone(prefix));
-                matched := Text::starts_with(
-                    Network::normalize_header_name(Text::clone(line)))(
-                    Network::normalize_header_name(Text::clone(prefix)));
+                lineEnd := Network.find_line_end(Text.clone(text))(start);
+                line := Text.slice(Text.clone(text))(start)(lineEnd - start);
+                prefixLen := Text.len(Text.clone(prefix));
+                matched := Text.starts_with(
+                    Network.normalize_header_name(Text.clone(line)))(
+                    Network.normalize_header_name(Text.clone(prefix)));
                 if matched
-                    then { Some(Network::drop_header_value_padding(line)(prefixLen)) }
-                    else { Network::find_header_value_from(text)(prefix)(lineEnd + 1) }
+                    then { Some(Network.drop_header_value_padding(line)(prefixLen)) }
+                    else { Network.find_header_value_from(text)(prefix)(lineEnd + 1) }
             }
     }
 
     header_value_opt :: HttpResponse -> String -> Option[String]
     {
-        response => name => Network::find_header_value_from(
-            Network::headers(response))(
+        response => name => Network.find_header_value_from(
+            Network.headers(response))(
             name ++ ":")(
             0)
     }
 
     header_value_or_empty :: HttpResponse -> String -> String
     {
-        response => name => match Network::header_value_opt(response)(name)
+        response => name => match Network.header_value_opt(response)(name)
         {
             Some(value) => value,
             None() => ""
@@ -862,15 +862,15 @@ Network :: module {
 
     bytes_header_value_opt :: HttpBytesResponse -> String -> Option[String]
     {
-        response => name => Network::find_header_value_from(
-            Network::bytes_headers(response))(
+        response => name => Network.find_header_value_from(
+            Network.bytes_headers(response))(
             name ++ ":")(
             0)
     }
 
     bytes_header_value_or_empty :: HttpBytesResponse -> String -> String
     {
-        response => name => match Network::bytes_header_value_opt(response)(name)
+        response => name => match Network.bytes_header_value_opt(response)(name)
         {
             Some(value) => value,
             None() => ""
@@ -899,72 +899,72 @@ Network :: module {
 
     is_error_code :: Int -> Bool
     {
-        code => Network::is_client_error_code(code) || Network::is_server_error_code(code)
+        code => Network.is_client_error_code(code) || Network.is_server_error_code(code)
     }
 
     is_success_status :: HttpResponse -> Bool
     {
-        response => Network::is_success_code(Network::status(response))
+        response => Network.is_success_code(Network.status(response))
     }
 
     is_redirect_status :: HttpResponse -> Bool
     {
-        response => Network::is_redirect_code(Network::status(response))
+        response => Network.is_redirect_code(Network.status(response))
     }
 
     is_client_error_status :: HttpResponse -> Bool
     {
-        response => Network::is_client_error_code(Network::status(response))
+        response => Network.is_client_error_code(Network.status(response))
     }
 
     is_server_error_status :: HttpResponse -> Bool
     {
-        response => Network::is_server_error_code(Network::status(response))
+        response => Network.is_server_error_code(Network.status(response))
     }
 
     is_error_status :: HttpResponse -> Bool
     {
-        response => Network::is_error_code(Network::status(response))
+        response => Network.is_error_code(Network.status(response))
     }
 
     bytes_is_success_status :: HttpBytesResponse -> Bool
     {
-        response => Network::is_success_code(Network::bytes_status(response))
+        response => Network.is_success_code(Network.bytes_status(response))
     }
 
     bytes_is_redirect_status :: HttpBytesResponse -> Bool
     {
-        response => Network::is_redirect_code(Network::bytes_status(response))
+        response => Network.is_redirect_code(Network.bytes_status(response))
     }
 
     bytes_is_client_error_status :: HttpBytesResponse -> Bool
     {
-        response => Network::is_client_error_code(Network::bytes_status(response))
+        response => Network.is_client_error_code(Network.bytes_status(response))
     }
 
     bytes_is_server_error_status :: HttpBytesResponse -> Bool
     {
-        response => Network::is_server_error_code(Network::bytes_status(response))
+        response => Network.is_server_error_code(Network.bytes_status(response))
     }
 
     bytes_is_error_status :: HttpBytesResponse -> Bool
     {
-        response => Network::is_error_code(Network::bytes_status(response))
+        response => Network.is_error_code(Network.bytes_status(response))
     }
 
     send_text_result :: HttpRequest -> Result[String, String] need IO
     {
         request => {
-            response := Network::send(request);
-            if Network::ok(response)
-                then { Ok(Network::body(response)) }
-                else { Err(Network::error(response)) }
+            response := Network.send(request);
+            if Network.ok(response)
+                then { Ok(Network.body(response)) }
+                else { Err(Network.error(response)) }
         }
     }
 
     send_text_opt :: HttpRequest -> Option[String] need IO
     {
-        request => match Network::send_text_result(request)
+        request => match Network.send_text_result(request)
         {
             Ok(body) => Some(body),
             Err(error) => None()
@@ -974,16 +974,16 @@ Network :: module {
     send_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[String, String] need IO
     {
         request => bodyBytes => {
-            response := Network::send_with_bytes_body(request)(bodyBytes);
-            if Network::ok(response)
-                then { Ok(Network::body(response)) }
-                else { Err(Network::error(response)) }
+            response := Network.send_with_bytes_body(request)(bodyBytes);
+            if Network.ok(response)
+                then { Ok(Network.body(response)) }
+                else { Err(Network.error(response)) }
         }
     }
 
     send_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[String] need IO
     {
-        request => bodyBytes => match Network::send_with_bytes_body_result(request)(bodyBytes)
+        request => bodyBytes => match Network.send_with_bytes_body_result(request)(bodyBytes)
         {
             Ok(body) => Some(body),
             Err(error) => None()
@@ -993,7 +993,7 @@ Network :: module {
     send_bytes_result :: HttpRequest -> Result[Seq[Int], String] need IO
     {
         request => {
-            response := Network::send_bytes(request);
+            response := Network.send_bytes(request);
             match response
             {
                 HttpBytesResponse{
@@ -1014,7 +1014,7 @@ Network :: module {
 
     send_bytes_opt :: HttpRequest -> Option[Seq[Int]] need IO
     {
-        request => match Network::send_bytes_result(request)
+        request => match Network.send_bytes_result(request)
         {
             Ok(body) => Some(body),
             Err(error) => None()
@@ -1024,7 +1024,7 @@ Network :: module {
     send_bytes_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[Seq[Int], String] need IO
     {
         request => bodyBytes => {
-            response := Network::send_bytes_with_bytes_body(request)(bodyBytes);
+            response := Network.send_bytes_with_bytes_body(request)(bodyBytes);
             match response
             {
                 HttpBytesResponse{
@@ -1045,7 +1045,7 @@ Network :: module {
 
     send_bytes_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[Seq[Int]] need IO
     {
-        request => bodyBytes => match Network::send_bytes_with_bytes_body_result(request)(bodyBytes)
+        request => bodyBytes => match Network.send_bytes_with_bytes_body_result(request)(bodyBytes)
         {
             Ok(body) => Some(body),
             Err(error) => None()
@@ -1054,17 +1054,17 @@ Network :: module {
 
     http_get_response :: String -> HttpResponse need IO
     {
-        url => Network::send(Network::get_request(url))
+        url => Network.send(Network.get_request(url))
     }
 
     http_get_bytes_response :: String -> HttpBytesResponse need IO
     {
-        url => Network::send_bytes(Network::get_request(url))
+        url => Network.send_bytes(Network.get_request(url))
     }
 
     http_get_text_or_empty :: String -> String need IO
     {
-        url => match Network::send_text_result(Network::get_request(url))
+        url => match Network.send_text_result(Network.get_request(url))
         {
             Ok(body) => body,
             Err(error) => ""
@@ -1073,17 +1073,17 @@ Network :: module {
 
     http_get_text_result :: String -> Result[String, String] need IO
     {
-        url => Network::send_text_result(Network::get_request(url))
+        url => Network.send_text_result(Network.get_request(url))
     }
 
     http_get_text_opt :: String -> Option[String] need IO
     {
-        url => Network::send_text_opt(Network::get_request(url))
+        url => Network.send_text_opt(Network.get_request(url))
     }
 
     http_get_bytes_or_empty :: String -> Seq[Int] need IO
     {
-        url => match Network::send_bytes_result(Network::get_request(url))
+        url => match Network.send_bytes_result(Network.get_request(url))
         {
             Ok(body) => body,
             Err(error) => []
@@ -1092,201 +1092,201 @@ Network :: module {
 
     http_get_bytes_result :: String -> Result[Seq[Int], String] need IO
     {
-        url => Network::send_bytes_result(Network::get_request(url))
+        url => Network.send_bytes_result(Network.get_request(url))
     }
 
     http_get_bytes_opt :: String -> Option[Seq[Int]] need IO
     {
-        url => Network::send_bytes_opt(Network::get_request(url))
+        url => Network.send_bytes_opt(Network.get_request(url))
     }
 
     http_post_text_response :: String -> String -> HttpResponse need IO
     {
-        url => body => Network::send(Network::post_text_request(url)(body))
+        url => body => Network.send(Network.post_text_request(url)(body))
     }
 
     http_post_text_result :: String -> String -> Result[String, String] need IO
     {
-        url => body => Network::send_text_result(Network::post_text_request(url)(body))
+        url => body => Network.send_text_result(Network.post_text_request(url)(body))
     }
 
     http_post_text_opt :: String -> String -> Option[String] need IO
     {
-        url => body => Network::send_text_opt(Network::post_text_request(url)(body))
+        url => body => Network.send_text_opt(Network.post_text_request(url)(body))
     }
 
     http_post_json_response :: String -> String -> HttpResponse need IO
     {
-        url => body => Network::send(Network::post_json_request(url)(body))
+        url => body => Network.send(Network.post_json_request(url)(body))
     }
 
     http_post_json_result :: String -> String -> Result[String, String] need IO
     {
-        url => body => Network::send_text_result(Network::post_json_request(url)(body))
+        url => body => Network.send_text_result(Network.post_json_request(url)(body))
     }
 
     http_post_json_opt :: String -> String -> Option[String] need IO
     {
-        url => body => Network::send_text_opt(Network::post_json_request(url)(body))
+        url => body => Network.send_text_opt(Network.post_json_request(url)(body))
     }
 
     http_post_bytes_text_response :: String -> Seq[Int] -> HttpResponse need IO
     {
         url => bodyBytes =>
-            Network::send_with_bytes_body(
-                Network::request("POST")(url)("application/octet-stream")(""))(
+            Network.send_with_bytes_body(
+                Network.request("POST")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_post_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need IO
     {
         url => bodyBytes =>
-            Network::send_with_bytes_body_result(
-                Network::request("POST")(url)("application/octet-stream")(""))(
+            Network.send_with_bytes_body_result(
+                Network.request("POST")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_post_bytes_text_opt :: String -> Seq[Int] -> Option[String] need IO
     {
         url => bodyBytes =>
-            Network::send_with_bytes_body_opt(
-                Network::request("POST")(url)("application/octet-stream")(""))(
+            Network.send_with_bytes_body_opt(
+                Network.request("POST")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_post_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need IO
     {
         url => bodyBytes =>
-            Network::send_bytes_with_bytes_body(
-                Network::request("POST")(url)("application/octet-stream")(""))(
+            Network.send_bytes_with_bytes_body(
+                Network.request("POST")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_post_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need IO
     {
         url => bodyBytes =>
-            Network::send_bytes_with_bytes_body_result(
-                Network::request("POST")(url)("application/octet-stream")(""))(
+            Network.send_bytes_with_bytes_body_result(
+                Network.request("POST")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_post_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need IO
     {
         url => bodyBytes =>
-            Network::send_bytes_with_bytes_body_opt(
-                Network::request("POST")(url)("application/octet-stream")(""))(
+            Network.send_bytes_with_bytes_body_opt(
+                Network.request("POST")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_put_text_response :: String -> String -> HttpResponse need IO
     {
-        url => body => Network::send(Network::put_text_request(url)(body))
+        url => body => Network.send(Network.put_text_request(url)(body))
     }
 
     http_put_text_result :: String -> String -> Result[String, String] need IO
     {
-        url => body => Network::send_text_result(Network::put_text_request(url)(body))
+        url => body => Network.send_text_result(Network.put_text_request(url)(body))
     }
 
     http_put_text_opt :: String -> String -> Option[String] need IO
     {
-        url => body => Network::send_text_opt(Network::put_text_request(url)(body))
+        url => body => Network.send_text_opt(Network.put_text_request(url)(body))
     }
 
     http_put_json_response :: String -> String -> HttpResponse need IO
     {
-        url => body => Network::send(Network::put_json_request(url)(body))
+        url => body => Network.send(Network.put_json_request(url)(body))
     }
 
     http_put_json_result :: String -> String -> Result[String, String] need IO
     {
-        url => body => Network::send_text_result(Network::put_json_request(url)(body))
+        url => body => Network.send_text_result(Network.put_json_request(url)(body))
     }
 
     http_put_json_opt :: String -> String -> Option[String] need IO
     {
-        url => body => Network::send_text_opt(Network::put_json_request(url)(body))
+        url => body => Network.send_text_opt(Network.put_json_request(url)(body))
     }
 
     http_put_bytes_text_response :: String -> Seq[Int] -> HttpResponse need IO
     {
         url => bodyBytes =>
-            Network::send_with_bytes_body(
-                Network::request("PUT")(url)("application/octet-stream")(""))(
+            Network.send_with_bytes_body(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_put_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need IO
     {
         url => bodyBytes =>
-            Network::send_with_bytes_body_result(
-                Network::request("PUT")(url)("application/octet-stream")(""))(
+            Network.send_with_bytes_body_result(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_put_bytes_text_opt :: String -> Seq[Int] -> Option[String] need IO
     {
         url => bodyBytes =>
-            Network::send_with_bytes_body_opt(
-                Network::request("PUT")(url)("application/octet-stream")(""))(
+            Network.send_with_bytes_body_opt(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_put_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need IO
     {
         url => bodyBytes =>
-            Network::send_bytes_with_bytes_body(
-                Network::request("PUT")(url)("application/octet-stream")(""))(
+            Network.send_bytes_with_bytes_body(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_put_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need IO
     {
         url => bodyBytes =>
-            Network::send_bytes_with_bytes_body_result(
-                Network::request("PUT")(url)("application/octet-stream")(""))(
+            Network.send_bytes_with_bytes_body_result(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_put_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need IO
     {
         url => bodyBytes =>
-            Network::send_bytes_with_bytes_body_opt(
-                Network::request("PUT")(url)("application/octet-stream")(""))(
+            Network.send_bytes_with_bytes_body_opt(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
                 bodyBytes)
     }
 
     http_delete_response :: String -> HttpResponse need IO
     {
-        url => Network::send(Network::delete_request(url))
+        url => Network.send(Network.delete_request(url))
     }
 
     http_delete_text_result :: String -> Result[String, String] need IO
     {
-        url => Network::send_text_result(Network::delete_request(url))
+        url => Network.send_text_result(Network.delete_request(url))
     }
 
     http_delete_text_opt :: String -> Option[String] need IO
     {
-        url => Network::send_text_opt(Network::delete_request(url))
+        url => Network.send_text_opt(Network.delete_request(url))
     }
 
     http_get_query_response :: String -> String -> String -> HttpResponse need IO
     {
         url => key => value =>
-            Network::send(
-                Network::with_query_param(Network::get_request(url))(key)(value))
+            Network.send(
+                Network.with_query_param(Network.get_request(url))(key)(value))
     }
 
     http_get_query_text_result :: String -> String -> String -> Result[String, String] need IO
     {
-        url => key => value => Network::send_text_result(
-            Network::with_query_param(Network::get_request(url))(key)(value))
+        url => key => value => Network.send_text_result(
+            Network.with_query_param(Network.get_request(url))(key)(value))
     }
 
     http_get_query_text_opt :: String -> String -> String -> Option[String] need IO
     {
-        url => key => value => Network::send_text_opt(
-            Network::with_query_param(Network::get_request(url))(key)(value))
+        url => key => value => Network.send_text_opt(
+            Network.with_query_param(Network.get_request(url))(key)(value))
     }
 }

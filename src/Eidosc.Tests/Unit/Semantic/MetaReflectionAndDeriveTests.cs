@@ -18,19 +18,19 @@ Marker :: trait {
     marker :: Self -> String
 }
 
-deriveMarker :: comptime Meta::DeriveInput -> Meta::Expansion {
+deriveMarker :: comptime Meta.DeriveInput -> Meta.Expansion {
     input => {
-        target := Meta::target(input);
-        parameter := Meta::parameter("value", target);
-        method := Meta::function(
+        target := Meta.target(input);
+        parameter := Meta.parameter("value", target);
+        method := Meta.function(
             "marker",
             [parameter],
             String,
-            Meta::exprString(Meta::typeName(target))
+            Meta.exprString(Meta.typeName(target))
         );
-        Meta::expansion([
-            Meta::implementation(
-                Meta::decl(Marker),
+        Meta.expansion([
+            Meta.implementation(
+                Meta.decl(Marker),
                 target,
                 [method]
             )
@@ -93,9 +93,9 @@ User :: type {
     User { name: String, age: Int }
 }
 
-Info :: comptime Meta::typeInfo(User);
-HasName :: comptime Meta::hasField(User, "name");
-NameType :: comptime Meta::fieldType(User, "name");
+Info :: comptime Meta.typeInfo(User);
+HasName :: comptime Meta.hasField(User, "name");
+NameType :: comptime Meta.fieldType(User, "name");
 """;
 
         var result = Compile("meta_type_info.eidos", source);
@@ -140,11 +140,11 @@ Holder :: type {
     reference: Ref[Int]
 }
 
-CallbackType :: comptime Meta::fieldType(Holder, "callback");
-ReferenceType :: comptime Meta::fieldType(Holder, "reference");
-FunctionInfo :: comptime Meta::typeInfo(CallbackType);
-ReferenceInfo :: comptime Meta::typeInfo(ReferenceType);
-TraitInfo :: comptime Meta::typeInfo(Marker);
+CallbackType :: comptime Meta.fieldType(Holder, "callback");
+ReferenceType :: comptime Meta.fieldType(Holder, "reference");
+FunctionInfo :: comptime Meta.typeInfo(CallbackType);
+ReferenceInfo :: comptime Meta.typeInfo(ReferenceType);
+TraitInfo :: comptime Meta.typeInfo(Marker);
 """;
 
         var result = Compile("meta_type_categories.eidos", source);
@@ -173,9 +173,9 @@ TraitInfo :: comptime Meta::typeInfo(Marker);
     public void UserDerive_SelfAttachmentCycle_IsDiagnosed()
     {
         const string source = """
-deriveLoop :: comptime Meta::DeriveInput -> Meta::Expansion {
-    input => Meta::expansion([
-        Meta::attribute(Meta::targetDecl(input), "derive", ["deriveLoop"])
+deriveLoop :: comptime Meta.DeriveInput -> Meta.Expansion {
+    input => Meta.expansion([
+        Meta.attribute(Meta.targetDecl(input), "derive", ["deriveLoop"])
     ])
 }
 
@@ -201,12 +201,12 @@ Marker :: trait {
     marker :: Self -> String
 }
 
-deriveMarker :: comptime Meta::DeriveInput -> Meta::Expansion {
+deriveMarker :: comptime Meta.DeriveInput -> Meta.Expansion {
     input => {
-        target := Meta::target(input);
-        parameter := Meta::parameter("value", target);
-        method := Meta::function("marker", [parameter], String, Meta::exprString(Meta::typeName(target)));
-        Meta::expansion([Meta::implementation(Meta::decl(Marker), target, [method])])
+        target := Meta.target(input);
+        parameter := Meta.parameter("value", target);
+        method := Meta.function("marker", [parameter], String, Meta.exprString(Meta.typeName(target)));
+        Meta.expansion([Meta.implementation(Meta.decl(Marker), target, [method])])
     }
 }
 
@@ -261,15 +261,15 @@ X :: comptime readX(Origin);
             "main.eidos",
             ("Tools/Generators.eidos", """
 Tools.Generators :: module {
-    export deriveAnswer :: comptime Meta::DeriveInput -> Meta::Expansion {
-        _ => Meta::expansion([
-            Meta::function("answer", [], Int, Meta::exprInt(42))
+    export deriveAnswer :: comptime Meta.DeriveInput -> Meta.Expansion {
+        _ => Meta.expansion([
+            Meta.function("answer", [], Int, Meta.exprInt(42))
         ])
     }
 }
 """),
             ("main.eidos", """
-import Tools.Generators::{deriveAnswer}
+import Tools.Generators.{deriveAnswer}
 
 @derive(deriveAnswer)
 Subject :: type {
@@ -291,8 +291,8 @@ read :: Unit -> Int {
     public void MetaValuesAndGeneratedOrigin_RoundTripThroughCachePayloads()
     {
         const string source = """
-deriveAnswer :: comptime Meta::DeriveInput -> Meta::Expansion {
-    _ => Meta::expansion([Meta::function("answer", [], Int, Meta::exprInt(42))])
+deriveAnswer :: comptime Meta.DeriveInput -> Meta.Expansion {
+    _ => Meta.expansion([Meta.function("answer", [], Int, Meta.exprInt(42))])
 }
 
 @derive(deriveAnswer)
@@ -300,7 +300,7 @@ Subject :: type {
     value: Int
 }
 
-Info :: comptime Meta::typeInfo(Subject);
+Info :: comptime Meta.typeInfo(Subject);
 """;
 
         var result = Compile("meta_cache_roundtrip.eidos", source);
@@ -328,13 +328,13 @@ Info :: comptime Meta::typeInfo(Subject);
     public void StructuredExpansion_MaterializesAllSupportedDeclarationCategories()
     {
         const string source = """
-deriveArtifacts :: comptime Meta::DeriveInput -> Meta::Expansion {
-    input => Meta::expansion([
-        Meta::comptimeValue("Answer", Int, Meta::exprInt(42)),
-        Meta::test("generated_test", Meta::exprUnit()),
-        Meta::moduleMember(Meta::function("generated_value", [], Int, Meta::exprInt(7))),
-        Meta::attribute(Meta::targetDecl(input), "doc", ["generated"]),
-        Meta::diagnostic("warning", Meta::deriveSpan(input), "generated warning")
+deriveArtifacts :: comptime Meta.DeriveInput -> Meta.Expansion {
+    input => Meta.expansion([
+        Meta.comptimeValue("Answer", Int, Meta.exprInt(42)),
+        Meta.test("generated_test", Meta.exprUnit()),
+        Meta.moduleMember(Meta.function("generated_value", [], Int, Meta.exprInt(7))),
+        Meta.attribute(Meta.targetDecl(input), "doc", ["generated"]),
+        Meta.diagnostic("warning", Meta.deriveSpan(input), "generated warning")
     ])
 }
 
@@ -368,7 +368,7 @@ read :: Unit -> Int {
     public void LayoutReflection_RequiresExplicitTargetAndCompletedLayoutFact()
     {
         const string primitiveSource = """
-IntLayout :: comptime Meta::layoutOf(Int, "x86_64-pc-windows-msvc");
+IntLayout :: comptime Meta.layoutOf(Int, "x86_64-pc-windows-msvc");
 """;
         var primitiveResult = Compile("meta_layout_primitive.eidos", primitiveSource);
         Assert.True(primitiveResult.Success, FormatDiagnostics(primitiveResult));
@@ -382,7 +382,7 @@ IntLayout :: comptime Meta::layoutOf(Int, "x86_64-pc-windows-msvc");
 Payload :: type {
     value: Int
 }
-PayloadLayout :: comptime Meta::layoutOf(Payload, "x86_64-pc-windows-msvc");
+PayloadLayout :: comptime Meta.layoutOf(Payload, "x86_64-pc-windows-msvc");
 """;
         var incompleteResult = Compile("meta_layout_incomplete.eidos", incompleteSource);
         Assert.False(incompleteResult.Success);
@@ -395,11 +395,11 @@ PayloadLayout :: comptime Meta::layoutOf(Payload, "x86_64-pc-windows-msvc");
     public void ComptimeTrace_RecordsCallsQueriesDiagnosticsAndCacheEvents()
     {
         const string source = """
-deriveReport :: comptime Meta::DeriveInput -> Meta::Expansion {
+deriveReport :: comptime Meta.DeriveInput -> Meta.Expansion {
     input => {
-        target := Meta::target(input);
-        Meta::warning(Meta::deriveSpan(input), Meta::typeName(target));
-        Meta::expansion([])
+        target := Meta.target(input);
+        Meta.warning(Meta.deriveSpan(input), Meta.typeName(target));
+        Meta.expansion([])
     }
 }
 
@@ -425,9 +425,9 @@ Subject :: type {
         Assert.Contains(first.ComptimeTrace, static entry =>
             entry.Kind == "call" && entry.Operation == "deriveReport" && entry.Outcome == "success");
         Assert.Contains(first.ComptimeTrace, static entry =>
-            entry.Kind == "query" && entry.Operation == "Meta::typeName" && entry.Outcome == "success");
+            entry.Kind == "query" && entry.Operation == "Meta.typeName" && entry.Outcome == "success");
         Assert.Contains(first.ComptimeTrace, static entry =>
-            entry.Kind == "diagnostic" && entry.Operation == "Meta::warning" && entry.Outcome == "success");
+            entry.Kind == "diagnostic" && entry.Operation == "Meta.warning" && entry.Outcome == "success");
         Assert.Contains(second.ComptimeTrace, static entry =>
             entry.Kind == "cache" && entry.Operation == "live-state:Namer" && entry.Outcome == "hit");
     }
@@ -436,11 +436,11 @@ Subject :: type {
     public void ComptimeBudgets_ProduceDeterministicDiagnostics()
     {
         const string source = """
-deriveBudget :: comptime Meta::DeriveInput -> Meta::Expansion {
+deriveBudget :: comptime Meta.DeriveInput -> Meta.Expansion {
     input => {
-        Meta::warning(Meta::deriveSpan(input), "first");
-        Meta::warning(Meta::deriveSpan(input), "second");
-        Meta::expansion([])
+        Meta.warning(Meta.deriveSpan(input), "first");
+        Meta.warning(Meta.deriveSpan(input), "second");
+        Meta.expansion([])
     }
 }
 
@@ -469,7 +469,7 @@ Subject :: type {
     public void LayoutReflection_RejectsUnsupportedExplicitTarget()
     {
         const string source = """
-Layout :: comptime Meta::layoutOf(Int, "unknown-target");
+Layout :: comptime Meta.layoutOf(Int, "unknown-target");
 """;
 
         var result = Compile("meta_layout_unknown_target.eidos", source);
@@ -496,15 +496,15 @@ Subject :: type {
         Assert.False(invalid.Success);
         Assert.Contains(invalid.Diagnostics, static diagnostic =>
             diagnostic.Code == "E3600" &&
-            diagnostic.Message.Contains("Meta::DeriveInput -> Meta::Expansion", StringComparison.Ordinal));
+            diagnostic.Message.Contains("Meta.DeriveInput -> Meta.Expansion", StringComparison.Ordinal));
 
         const string fixedPointSource = """
-deriveFirst :: comptime Meta::DeriveInput -> Meta::Expansion {
-    _ => Meta::expansion([Meta::function("first", [], Int, Meta::exprInt(1))])
+deriveFirst :: comptime Meta.DeriveInput -> Meta.Expansion {
+    _ => Meta.expansion([Meta.function("first", [], Int, Meta.exprInt(1))])
 }
 
-deriveSecond :: comptime Meta::DeriveInput -> Meta::Expansion {
-    _ => Meta::expansion([Meta::function("second", [], Int, Meta::exprInt(2))])
+deriveSecond :: comptime Meta.DeriveInput -> Meta.Expansion {
+    _ => Meta.expansion([Meta.function("second", [], Int, Meta.exprInt(2))])
 }
 
 @derive(deriveFirst, deriveSecond)
@@ -529,8 +529,8 @@ read :: Unit -> Int {
     public void LspMapper_NavigatesReferencesToGeneratedVirtualDocument()
     {
         const string source = """
-deriveAnswer :: comptime Meta::DeriveInput -> Meta::Expansion {
-    _ => Meta::expansion([Meta::function("answer", [], Int, Meta::exprInt(42))])
+deriveAnswer :: comptime Meta.DeriveInput -> Meta.Expansion {
+    _ => Meta.expansion([Meta.function("answer", [], Int, Meta.exprInt(42))])
 }
 
 @derive(deriveAnswer)
@@ -564,12 +564,12 @@ Marker :: trait {
     marker :: Self -> String
 }
 
-deriveMarker :: comptime Meta::DeriveInput -> Meta::Expansion {
+deriveMarker :: comptime Meta.DeriveInput -> Meta.Expansion {
     input => {
-        target := Meta::target(input);
-        parameter := Meta::parameter("value", target);
-        method := Meta::function("marker", [parameter], String, Meta::exprString(Meta::typeName(target)));
-        Meta::expansion([Meta::implementation(Meta::decl(Marker), target, [method])])
+        target := Meta.target(input);
+        parameter := Meta.parameter("value", target);
+        method := Meta.function("marker", [parameter], String, Meta.exprString(Meta.typeName(target)));
+        Meta.expansion([Meta.implementation(Meta.decl(Marker), target, [method])])
     }
 }
 
@@ -579,8 +579,8 @@ User :: type {
     age: Int
 }
 
-UserInfo :: comptime Meta::typeInfo(User);
-UserKind :: comptime Meta::typeKind(UserInfo);
+UserInfo :: comptime Meta.typeInfo(User);
+UserKind :: comptime Meta.typeKind(UserInfo);
 
 main :: Unit -> String {
     _ => marker(User { name: "Ada", age: 36 })

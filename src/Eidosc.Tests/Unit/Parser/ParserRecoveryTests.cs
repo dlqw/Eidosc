@@ -151,7 +151,7 @@ f :: (Int, Int) -> Int
     public void CompilationPipeline_InvalidCtorRestPattern_ReportsListRestGuidance()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 f :: Option[Int] -> Int
 {

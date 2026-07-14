@@ -8,31 +8,31 @@ public partial class LlvmPipelineIntegrationTests
     public void ListPattern_TupleElementsFromVecFreeze_NativeSmoke_IndexAndMatchStayStable()
     {
         const string source = """
-import Std::SeqBuilder
+import Std.SeqBuilder
 
 make_edges :: Int -> Seq[(Int, Int)]
 {
     from => {
-        mut edges := SeqBuilder::with_capacity[(Int, Int)](4);
+        mut edges := SeqBuilder.with_capacity[(Int, Int)](4);
         mut offset := 1;
         loop {
             if offset > 4 then { break } else {
-                edges := SeqBuilder::push(edges, (from + offset, offset * 10));
+                edges := SeqBuilder.push(edges, (from + offset, offset * 10));
                 offset := offset + 1
             }
         };
-        SeqBuilder::freeze(edges)
+        SeqBuilder.freeze(edges)
     }
 }
 
 build_adjacency :: Unit -> SeqBuilder[Seq[(Int, Int)]]
 {
     _ => {
-        mut adjacency := SeqBuilder::with_capacity[Seq[(Int, Int)]](3);
+        mut adjacency := SeqBuilder.with_capacity[Seq[(Int, Int)]](3);
         mut node := 0;
         loop {
             if node >= 3 then { break } else {
-                adjacency := SeqBuilder::push(adjacency, make_edges(node));
+                adjacency := SeqBuilder.push(adjacency, make_edges(node));
                 node := node + 1
             }
         };
@@ -46,7 +46,7 @@ sum_by_destructure :: Seq[(Int, Int)] -> Int
         mut total := 0;
         mut index := 0;
         loop {
-            if index >= Seq::len(edges) then { break } else {
+            if index >= Seq.len(edges) then { break } else {
                 (to, weight) := edges[index];
                 total := total + to + weight;
                 index := index + 1
@@ -62,7 +62,7 @@ sum_by_match :: Seq[(Int, Int)] -> Int
         mut total := 0;
         mut index := 0;
         loop {
-            if index >= Seq::len(edges) then { break } else {
+            if index >= Seq.len(edges) then { break } else {
                 match edges[index] {
                     (to, weight) => {
                         total := total + to + weight;
@@ -79,8 +79,8 @@ main :: Unit -> Int
 {
     _ => {
         adjacency := build_adjacency({});
-        first := sum_by_destructure(SeqBuilder::get(adjacency, 0));
-        second := sum_by_match(SeqBuilder::get(adjacency, 1));
+        first := sum_by_destructure(SeqBuilder.get(adjacency, 0));
+        second := sum_by_match(SeqBuilder.get(adjacency, 1));
         if first == 110 && second == 114 then { 0 } else { 99 }
     }
 }
@@ -99,15 +99,15 @@ main :: Unit -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) | TkIdent(String) | TkEof
+    TkKeyword(String) , TkIdent(String) , TkEof
 }
 
 classify :: Seq[Tok] -> Int
 {
-    [TkKeyword("int"), TkIdent(name), ..rest] => 10 + Seq::len(rest),
-    [TkKeyword("return"), ..rest] => 20 + Seq::len(rest),
-    [TkIdent(name), ..rest] => 30 + Seq::len(rest),
-    [TkEof(), ..rest] => 40 + Seq::len(rest),
+    [TkKeyword("int"), TkIdent(name), ..rest] => 10 + Seq.len(rest),
+    [TkKeyword("return"), ..rest] => 20 + Seq.len(rest),
+    [TkIdent(name), ..rest] => 30 + Seq.len(rest),
+    [TkEof(), ..rest] => 40 + Seq.len(rest),
     [] => 0
 }
 
@@ -135,7 +135,7 @@ main :: Unit -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) | TkIdent(String) | TkEof
+    TkKeyword(String) , TkIdent(String) , TkEof
 }
 
 reclassify :: Seq[Tok] -> Int
@@ -169,13 +169,13 @@ main :: Unit -> Int
         const string source = """
 score :: Seq[Int] -> Int
 {
-    [head, ..middle, last] => head * 100 + Seq::len(middle) * 10 + last,
+    [head, ..middle, last] => head * 100 + Seq.len(middle) * 10 + last,
     _ => 0
 }
 
 score_init :: Seq[Int] -> Int
 {
-    [..init, last] => Seq::len(init) * 10 + last,
+    [..init, last] => Seq.len(init) * 10 + last,
     _ => 0
 }
 

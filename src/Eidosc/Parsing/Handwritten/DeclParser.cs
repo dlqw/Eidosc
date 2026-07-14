@@ -201,7 +201,7 @@ public sealed class DeclParser(ParserContext ctx)
                 return CreateNameFirstValueBinding(attrs, isExport, startToken, name, typeAnnotation: null, value, isComptime: true);
             }
 
-            ctx.Error("comptime generic static value bindings are not supported in 0.5.0-alpha.1 phase 1.");
+            ctx.Error("comptime generic static value bindings are not supported in 0.6.0-alpha.1 phase 1.");
         }
 
         if ((typeParams is null || typeParams.Count == 0) && CanStartNameFirstValueExpr(ctx.Current))
@@ -1673,19 +1673,13 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         var parsedConstructor = false;
-        string? separator = null;
         while (!ctx.Check("}") && !ctx.IsEof)
         {
             if (parsedConstructor)
             {
-                var nextSeparator = TryParseAdtConstructorSeparator();
-                if (nextSeparator == null)
+                if (!TryParseAdtConstructorSeparator())
                 {
-                    ctx.Error("Expected ',' between ADT constructors");
-                }
-                else
-                {
-                    separator = AcceptAdtConstructorSeparator(separator, nextSeparator);
+                    ctx.Error(DiagnosticMessages.ParserExpectedCommaBetweenAdtConstructors);
                 }
 
                 if (ctx.Check("}"))
@@ -1695,10 +1689,8 @@ public sealed class DeclParser(ParserContext ctx)
             }
             else
             {
-                var leadingSeparator = TryParseAdtConstructorSeparator();
-                if (leadingSeparator != null)
+                if (TryParseAdtConstructorSeparator())
                 {
-                    separator = AcceptAdtConstructorSeparator(separator, leadingSeparator);
                     if (ctx.Check("}"))
                     {
                         break;
@@ -1711,29 +1703,23 @@ public sealed class DeclParser(ParserContext ctx)
         }
     }
 
-    private string? TryParseAdtConstructorSeparator()
+    private bool TryParseAdtConstructorSeparator()
     {
         if (ctx.Match(","))
         {
-            return ",";
+            return true;
         }
 
         if (ctx.Match("|"))
         {
-            return "|";
+            if (ctx.UsesDotNamespaces)
+            {
+                ctx.Error(DiagnosticMessages.ParserAdtPipeSeparatorRemoved, ctx.Peek(-1).Location);
+            }
+            return true;
         }
 
-        return null;
-    }
-
-    private string AcceptAdtConstructorSeparator(string? current, string next)
-    {
-        if (current != null && !string.Equals(current, next, StringComparison.Ordinal))
-        {
-            ctx.Error("ADT constructor lists cannot mix ',' and '|' separators");
-        }
-
-        return current ?? next;
+        return false;
     }
 
     private bool IsFieldLookahead()
@@ -2005,7 +1991,7 @@ public sealed class DeclParser(ParserContext ctx)
         decl.SetPackageAlias(packageAlias);
         decl.SetModulePath(parts);
 
-        if (ctx.Match("::"))
+        if (ctx.Match(ctx.UsesDotNamespaces ? "." : "::"))
         {
             if (ctx.Match("*"))
             {
@@ -2062,7 +2048,7 @@ public sealed class DeclParser(ParserContext ctx)
         decl.SetPackageAlias(packageAlias);
         decl.SetModulePath(parts);
 
-        if (ctx.Match("::"))
+        if (ctx.Match(ctx.UsesDotNamespaces ? "." : "::"))
         {
             if (ctx.Match("*"))
             {
@@ -2094,7 +2080,7 @@ public sealed class DeclParser(ParserContext ctx)
             var alias = ctx.GetText();
             if (decl.Kind == ImportKind.Module)
             {
-                // 0.5.0-alpha.1 name-first mode: module alias imports must use the
+                // 0.6.0-alpha.1 name-first mode: module alias imports must use the
                 // `Alias :: import Module.Path;` binding form, not `import ... as`.
                 ctx.Error(DiagnosticMessages.ParserImportAliasUseNameFirstForm);
             }
@@ -2143,7 +2129,7 @@ public sealed class DeclParser(ParserContext ctx)
 
         // The binding form `Alias :: import Module.Path;` only names a module alias;
         // selective / wildcard tails are not part of this surface.
-        if (ctx.Check("::") || ctx.Match("as"))
+        if (ctx.Check(ctx.UsesDotNamespaces ? "." : "::") || ctx.Match("as"))
         {
             ctx.Error(DiagnosticMessages.ParserImportBindingExpectsModulePath);
         }
@@ -2162,12 +2148,17 @@ public sealed class DeclParser(ParserContext ctx)
     }
 
     /// <summary>
-    /// Parses a 0.5.0-alpha.1 import module path: an optional <c>packageAlias::</c> prefix
+    /// Parses a 0.6.0-alpha.1 import module path: an optional <c>packageAlias::</c> prefix
     /// followed by dot- or slash-separated module path segments. Returns the package
     /// alias (null when absent) and the module path segments.
     /// </summary>
     private (string? PackageAlias, List<string> Parts) ParseNameFirstImportModulePath()
     {
+        if (ctx.UsesDotNamespaces)
+        {
+            return ParseDotNamespaceImportPath();
+        }
+
         var parts = new List<string>();
         string? packageAlias = null;
         var firstToken = ctx.Current;
@@ -2204,6 +2195,49 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         return (packageAlias, parts);
+    }
+
+    private (string? PackageAlias, List<string> Parts) ParseDotNamespaceImportPath()
+    {
+        var parts = new List<string>();
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
+        {
+            ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
+        }
+
+        if (!ctx.IsEof)
+        {
+            parts.Add(ctx.GetText());
+            ctx.Advance();
+        }
+
+        while (true)
+        {
+            if (ctx.Check(".") && TokenKind.IsTypeIdentifier(ctx.Peek(1)))
+            {
+                ctx.Advance();
+                parts.Add(ParseModulePathSegment());
+                continue;
+            }
+
+            if (ctx.Check("::") || ctx.Check("/"))
+            {
+                ctx.Error(DiagnosticMessages.ParserQualifiedDoubleColonRemoved);
+                ctx.Advance();
+                if (!TokenKind.IsTypeIdentifier(ctx.Current))
+                {
+                    ctx.Error(DiagnosticMessages.ParserModulePathSegmentMustStartWithUppercase);
+                    break;
+                }
+
+                parts.Add(ParseModulePathSegment());
+                continue;
+            }
+
+            break;
+        }
+
+        return (null, parts);
     }
 
     private string ParseModulePathSegment()

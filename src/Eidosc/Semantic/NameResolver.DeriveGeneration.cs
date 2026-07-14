@@ -348,7 +348,7 @@ public sealed partial class NameResolver
             var rightPat = MakeCtorPattern(ctor, rightVars, span);
             var tuplePat = MakeTuplePattern([leftPat, rightPat], span);
             var expr = fieldCount == 0
-                ? MakePathCall("Std::Ordering::Equal", [], span)
+                ? MakePathCall("Std.Ordering.Equal", [], span)
                 : BuildOrdChain(leftVars, rightVars, span);
             branches.Add(MakeBranch(tuplePat, expr, span));
         }
@@ -364,10 +364,10 @@ public sealed partial class NameResolver
                 var wildcardPat = new WildcardPattern();
                 SetPrivate(wildcardPat, "Span", span);
                 var tuplePat = MakeTuplePattern([leftPat, wildcardPat], span);
-                branches.Add(MakeBranch(tuplePat, MakePathCall("Std::Ordering::Less", [], span), span));
+                branches.Add(MakeBranch(tuplePat, MakePathCall("Std.Ordering.Less", [], span), span));
             }
 
-            branches.Add(MakeBranch(new WildcardPattern(), MakePathCall("Std::Ordering::Greater", [], span), span));
+            branches.Add(MakeBranch(new WildcardPattern(), MakePathCall("Std.Ordering.Greater", [], span), span));
         }
 
         return branches;
@@ -517,7 +517,7 @@ public sealed partial class NameResolver
                 MakeIdent(leftVars[i].Name, span),
                 MakeIdent(rightVars[i].Name, span), span);
 
-            result = MakePathCall("Std::Ordering::then_with", [result, nextCmp], span);
+            result = MakePathCall("Std.Ordering.then_with", [result, nextCmp], span);
         }
 
         return result;

@@ -212,7 +212,7 @@ public sealed partial class HirBuilder
 
     private HirNode BuildStdlibCall(BinaryExpr bin, string modulePath, string funcName, bool swapArgs)
     {
-        // a <op> b  →  Module::func(first, second)
+        // a <op> b  →  Module.func(first, second)
         // swapArgs=false: first=left, second=right
         // swapArgs=true: first=right, second=left
         var left = ConvertExprOrFallback(bin.Left, "operator left operand", bin.Span);
@@ -311,7 +311,7 @@ public sealed partial class HirBuilder
             return ConvertPipe(bin);
         }
 
-        // `xs :+ last` desugars to `Seq::append(xs)(Seq::singleton(last))`,
+        // `xs :+ last` desugars to `Seq.append(xs)(Seq.singleton(last))`,
         // a two-call shape the single-call StdlibOperatorDesugaring table cannot express.
         if (bin.Operator == Ast.BinaryOp.AppendLast)
         {
@@ -336,7 +336,7 @@ public sealed partial class HirBuilder
     private HirNode BuildAppendLastCall(BinaryExpr bin)
     {
         var listArg = ConvertExprOrFallback(bin.Left, "operator left operand", bin.Span);
-        var singletonFunc = BuildStdlibFunctionVar("Std::Seq", "singleton", bin.Span);
+        var singletonFunc = BuildStdlibFunctionVar("Std.Seq", "singleton", bin.Span);
         var singletonCall = BuildCallableApplication(
             singletonFunc,
             [ConvertExprOrFallback(bin.Right, "operator right operand", bin.Span)],
@@ -344,7 +344,7 @@ public sealed partial class HirBuilder
             bin.Span,
             TypeId.None,
             HirCallSurfaceSyntax.OperatorDesugaring);
-        var appendFunc = BuildStdlibFunctionVar("Std::Seq", "append", bin.Span);
+        var appendFunc = BuildStdlibFunctionVar("Std.Seq", "append", bin.Span);
         return BuildCallableApplication(
             appendFunc,
             [listArg, singletonCall],

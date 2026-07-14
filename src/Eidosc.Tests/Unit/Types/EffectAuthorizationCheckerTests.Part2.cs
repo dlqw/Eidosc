@@ -27,7 +27,7 @@ Cap :: module {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap::Writer
+    helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -37,9 +37,9 @@ Cap :: module {
         const string entrySource = """
 import Cap
 
-main :: Unit -> Unit need Cap::Writer
+main :: Unit -> Unit need Cap.Writer
 {
-    _ => Cap::helper(0)
+    _ => Cap.helper(0)
 }
 """;
 
@@ -82,7 +82,7 @@ Cap :: module {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap::Writer
+    helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -92,9 +92,9 @@ Cap :: module {
         const string entrySource = """
 C :: import Cap;
 
-main :: Unit -> Unit need C::Writer
+main :: Unit -> Unit need C.Writer
 {
-    _ => C::helper(0)
+    _ => C.helper(0)
 }
 """;
 
@@ -134,7 +134,7 @@ Cap :: module {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap::Writer
+    helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -146,7 +146,7 @@ C :: import Cap;
 
 main :: Unit -> Unit need Writer
 {
-    _ => C::helper(0)
+    _ => C.helper(0)
 }
 """;
 
@@ -181,7 +181,7 @@ Cap :: module {
     }
 }
 
-import Cap::*
+import Cap.*
 
 main :: Unit -> Unit need Writer
 {
@@ -206,7 +206,7 @@ main :: Unit -> Unit need Writer
         WriteNameFirstManifest(tempDir);
 
         const string source = """
-import Std::FFI
+import Std.FFI
 
 int_compare :: RawPtr -> RawPtr -> Int need FFI
 {
@@ -257,8 +257,8 @@ main :: Unit -> Int need FFI
         WriteNameFirstManifest(tempDir);
 
         const string source = """
-import Std::FFI
-import Std::Task
+import Std.FFI
+import Std.Task
 
 store_result :: RawPtr -> RawPtr -> Unit need FFI
 {
@@ -269,7 +269,7 @@ main :: Unit -> Unit need FFI
 {
     _ => {
         payload := ptr_null();
-        task := Task::completed_raw[RawPtr](payload);
+        task := Task.completed_raw[RawPtr](payload);
         slot := ptr_null();
         awaited := task.await_raw(store_result(slot));
         ()
@@ -362,7 +362,7 @@ main :: Unit -> Int
             manifestSchema = 3
             sourceRoots = ["."]
             [language]
-            version = "0.5.0-alpha.1"
+            version = "0.6.0-alpha.1"
             """);
     }
 

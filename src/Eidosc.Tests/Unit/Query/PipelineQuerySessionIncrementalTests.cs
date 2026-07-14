@@ -178,11 +178,11 @@ public sealed class PipelineQuerySessionIncrementalTests
         using var workspace = TempWorkspace.Create();
         var session = new PipelineQuerySession();
         const string source = """
-import Std::GameMath
+import Std.GameMath
 
 main :: Unit -> Int
 {
-    _ => GameMath::scale_i(GameMath::east_i, 4).x
+    _ => GameMath.scale_i(GameMath.east_i, 4).x
 }
 """;
         var sourcePath = workspace.WriteFile("std_signature_query.eidos", source);
@@ -219,11 +219,11 @@ main :: Unit -> Int
     {
         using var workspace = TempWorkspace.Create();
         const string source = """
-import Std::GameMath
+import Std.GameMath
 
 main :: Unit -> Int
 {
-    _ => GameMath::scale_i(GameMath::east_i, 4).x
+    _ => GameMath.scale_i(GameMath.east_i, 4).x
 }
 """;
         var sourcePath = workspace.WriteFile("std_signature_full_pipeline.eidos", source);

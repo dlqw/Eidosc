@@ -13,7 +13,7 @@ Shared :: module {
     @intrinsic("shared_clone")
     shared_clone[T] :: Shared[T] -> Shared[T]
 
-    CloneSharedT :: instance Trait::Clone {
+    CloneSharedT :: instance Trait.Clone {
         @intrinsic("shared_clone")
         clone[T] :: Shared[T] -> Shared[T]
     }

@@ -117,7 +117,7 @@ public sealed class ExprParserTests
     [Fact]
     public void Parse_package_qualified_dot_path_expression()
     {
-        // Std::Collections.Seq::map — module path uses dot separator
+        // Std.Collections.Seq.map — module path uses dot separator
         var ctx = MakeCtx(Ident("Std"), "::", Ident("Collections"), ".", Ident("Seq"), "::", Ident("map"));
         var parser = new ExprParser(ctx);
 

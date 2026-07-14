@@ -23,7 +23,7 @@ is_true :: Bool -> Bool
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -81,7 +81,7 @@ is_true :: Bool -> Bool
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -130,7 +130,7 @@ probe :: Bool -> Bool
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -183,7 +183,7 @@ probe :: Bool -> Bool
 }
 
 OptionB :: type {
-    Some(Bool) | None
+    Some(Bool) , None
 }
 
 classify :: OptionB -> Int
@@ -239,7 +239,7 @@ probe :: Bool -> Bool
 }
 
 OptionB :: type {
-    Some(Bool) | None
+    Some(Bool) , None
 }
 
 classify :: OptionB -> Int
@@ -289,7 +289,7 @@ probe :: Bool -> Bool
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int
@@ -345,7 +345,7 @@ probe :: Bool -> Bool
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int
@@ -398,7 +398,7 @@ probe :: Bool -> Bool
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int

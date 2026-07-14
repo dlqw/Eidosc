@@ -18,7 +18,7 @@ Eq :: trait {
 }
 
 Direction :: type {
-    North | South | East | West
+    North , South , East , West
 }
 
 @impl(Eq)
@@ -78,7 +78,7 @@ Eq :: trait {
 }
 
 Direction :: type {
-    North | South | East | West
+    North , South , East , West
 }
 
 @impl(Eq)
@@ -129,11 +129,11 @@ main :: Unit -> Int
     public void SourceEqOperator_WithMultipleAdtImpls_NativeSmoke_UsesDistinctLlvmFunctions()
     {
         const string source = """
-import Std::Seq
-import Std::Trait
+import Std.Seq
+import Std.Trait
 
 Direction :: type {
-    North | East
+    North , East
 }
 
 @impl(Eq)
@@ -158,7 +158,7 @@ eq :: Pos -> Pos -> Bool
 
 contains_pos :: Seq[Pos] -> Pos -> Bool
 {
-    xs => p => Seq::any(xs)(candidate => candidate == p)
+    xs => p => Seq.any(xs)(candidate => candidate == p)
 }
 
 main :: Unit -> Int

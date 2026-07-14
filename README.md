@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="docs/assets/eidos.svg" width="96" height="96" alt="Eidos logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/eidos-lockup-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/eidos-lockup.svg">
+    <img src="docs/assets/eidos-lockup.svg" width="330" alt="Eidos — owl symbol and wordmark">
+  </picture>
 </p>
-
-<h1 align="center">Eidos</h1>
 
 <p align="center">
   <strong>An experimental, statically typed native language with a functional core and typed metaprogramming.</strong>
@@ -15,7 +17,7 @@
 
 <p align="center">
   <a href="https://github.com/dlqw/Eidosc/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dlqw/Eidosc/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <img alt="Status: prerelease" src="https://img.shields.io/badge/status-prerelease-f0a45d">
+  <img alt="Status: prerelease" src="https://img.shields.io/badge/status-prerelease-c9654f">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-7aa2f7"></a>
 </p>
 
@@ -28,7 +30,7 @@ language services.
 > [!IMPORTANT]
 > Eidos is prerelease software. Language and tooling interfaces may change
 > between prereleases, including incompatible changes. The current language
-> baseline is **Eidos 0.5.0-alpha.1**; Eidos, Eidosc, Std, Eidosup, and Bindgen
+> baseline is **Eidos 0.6.0-alpha.1**; Eidos, Eidosc, Std, Eidosup, and Bindgen
 > are versioned independently.
 
 ## Why Eidos?
@@ -55,7 +57,8 @@ Eidos uses name-first declarations and pattern branches:
 ```eidos
 Shape :: type
 {
-    Circle(Int) | Rectangle(Int, Int)
+    Circle(Int),
+    Rectangle(Int, Int)
 }
 
 area_hint :: Shape -> Int

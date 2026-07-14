@@ -7,7 +7,7 @@ Barrier :: type {
 
 /// Result of a non-blocking barrier arrival.
 Arrival :: type {
-    ArrivalPending | ArrivalTripped
+    ArrivalPending , ArrivalTripped
 }
 
 @internal
@@ -25,13 +25,13 @@ wait_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit 
 /// Create a runtime-backed barrier handle with the requested participant count.
 new :: Int -> Barrier need FFI
 {
-    capacity => Barrier{handle: Barrier::new_runtime(capacity)}
+    capacity => Barrier{handle: Barrier.new_runtime(capacity)}
 }
 
 /// Create a barrier that trips on every arrival.
 new_single :: Unit -> Barrier need FFI
 {
-    _ => Barrier::new(1)
+    _ => Barrier.new(1)
 }
 
 /// Arrive at the barrier without suspending the caller.
@@ -39,37 +39,37 @@ new_single :: Unit -> Barrier need FFI
 /// Returns true for the arrival that trips the current barrier generation.
 arrive :: Barrier -> Bool need FFI
 {
-    Barrier{handle: handle} => Barrier::arrive_runtime(handle)
+    Barrier{handle: handle} => Barrier.arrive_runtime(handle)
 }
 
 /// Register a raw continuation to run when this barrier generation trips.
 wait_raw[E: effects] :: Barrier -> (Unit -> Unit need E) -> Unit need FFI, E
 {
-    Barrier{handle: handle} => continuation => Barrier::wait_closure_raw_runtime(handle)(continuation)
+    Barrier{handle: handle} => continuation => Barrier.wait_closure_raw_runtime(handle)(continuation)
 }
 
 /// Register a continuation to run when this barrier generation trips.
 wait[E: effects] :: Barrier -> (Unit -> Unit need E) -> Unit need FFI, E
 {
-    barrier => continuation => Barrier::wait_raw(barrier)(continuation)
+    barrier => continuation => Barrier.wait_raw(barrier)(continuation)
 }
 
 /// Arrive and return true when this caller is waiting for more arrivals.
 arrive_pending :: Barrier -> Bool need FFI
 {
-    barrier => !Barrier::arrive(barrier)
+    barrier => !Barrier.arrive(barrier)
 }
 
 /// Arrive and return true when this caller trips the current generation.
 arrive_tripped :: Barrier -> Bool need FFI
 {
-    barrier => Barrier::arrive(barrier)
+    barrier => Barrier.arrive(barrier)
 }
 
 /// Arrive at the barrier and return an explicit status for this generation.
 arrive_status :: Barrier -> Arrival need FFI
 {
-    barrier => if Barrier::arrive(barrier) then {
+    barrier => if Barrier.arrive(barrier) then {
         ArrivalTripped()
     } else {
         ArrivalPending()
@@ -108,7 +108,7 @@ arrival_value_or_else[A, E1: effects, E2: effects] :: Arrival -> (Unit -> A need
 arrive_value_or[A] :: Barrier -> A -> A -> A need FFI
 {
     barrier => pendingValue => trippedValue =>
-        match Barrier::arrive_status(barrier) {
+        match Barrier.arrive_status(barrier) {
             ArrivalPending() => pendingValue,
             ArrivalTripped() => trippedValue
         }
@@ -118,7 +118,7 @@ arrive_value_or[A] :: Barrier -> A -> A -> A need FFI
 arrive_value_or_else[A, E1: effects, E2: effects] :: Barrier -> (Unit -> A need E1) -> (Unit -> A need E2) -> A need FFI, E1, E2
 {
     barrier => pendingValue => trippedValue =>
-        match Barrier::arrive_status(barrier) {
+        match Barrier.arrive_status(barrier) {
             ArrivalPending() => pendingValue(()),
             ArrivalTripped() => trippedValue(())
         }

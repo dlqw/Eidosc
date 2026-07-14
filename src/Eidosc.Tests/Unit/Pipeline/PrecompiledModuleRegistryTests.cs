@@ -200,7 +200,7 @@ Runtime :: module {
 }
 
 App :: module {
-    import Runtime::*
+    import Runtime.*
 
     run :: String -> Int
     {
@@ -433,7 +433,7 @@ App :: module {
     {
         var exportImportSource = """
             Prelude :: module {
-                export import Text::{starts_with}
+                export import Text.{starts_with}
                 export id[T] :: T -> T { x => x }
             }
             """;
@@ -781,7 +781,7 @@ Test :: module {
 
     Logger :: effect;
 
-    Option[T] :: type { Some(T) | None }
+    Option[T] :: type { Some(T) , None }
     UserId :: type = Int;
 
     map[T, U] :: Option[T] -> (T -> U) -> Option[U]
@@ -847,8 +847,8 @@ Demo.Api :: module {
 
     Hidden :: effect;
 
-    export Maybe[T] :: type { Some(T) | None }
-    HiddenMaybe[T] :: type { HiddenSome(T) | HiddenNone }
+    export Maybe[T] :: type { Some(T) , None }
+    HiddenMaybe[T] :: type { HiddenSome(T) , HiddenNone }
 }
 """;
 
@@ -920,13 +920,13 @@ Core.Io :: module {
 """,
             ["Core/Option"] = """
 Core.Option :: module {
-    export Option[T] :: type { Some(T) | None }
+    export Option[T] :: type { Some(T) , None }
 }
 """,
             ["Demo/Facade"] = """
 Demo.Facade :: module {
-    export import Core.Io::{Writer as W, write}
-    export import Core.Option::{Option as Maybe}
+    export import Core.Io.{Writer as W, write}
+    export import Core.Option.{Option as Maybe}
 }
 """
         };

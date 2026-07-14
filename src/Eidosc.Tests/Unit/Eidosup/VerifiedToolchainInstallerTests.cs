@@ -280,14 +280,14 @@ public sealed class VerifiedToolchainInstallerTests
             Dependencies: [core.Id],
             Conflicts: [],
             artifact,
-            [new ToolchainComponentFile("stdlib/Std/Core.eidos", 16, HashText("module Std::Core"))]);
+            [new ToolchainComponentFile("stdlib/Std/Core.eidos", 15, HashText("module Std.Core"))]);
         var manifest = new ToolchainDistributionManifest(
             ToolchainDistributionManifest.CurrentSchema,
             $"eidosc-0.4.0-alpha.2-{platform.Rid}",
             "preview",
             platform.Rid,
             new ToolchainProductIdentity("0.4.0-alpha.2", new string('a', 40)),
-            new ToolchainLanguageIdentity("0.5.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.6.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", ["eidosc-core", std.Id]),
                 new ToolchainProfileDefinition("default", ["eidosc-core", std.Id, runtime.Id]),
@@ -342,7 +342,7 @@ public sealed class VerifiedToolchainInstallerTests
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, executableName, "binary");
-            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std::Core");
+            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std.Core");
             WriteEntry(archive, "runtime/runtime.h", "header");
         }
 

@@ -287,7 +287,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -333,7 +333,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Either[A, B] :: type {
-    Left(A) | Right(B)
+    Left(A) , Right(B)
 }
 
 @impl(Applicative[Either[String]])
@@ -386,7 +386,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -498,7 +498,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -602,7 +602,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 DeepBoxedResult[E, T] :: type = Result[T, E];
@@ -663,7 +663,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 DeepBoxedResult[E, T] :: type = Result[T, E];
@@ -710,7 +710,7 @@ Show :: trait {
 }
 
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 @impl(Show)

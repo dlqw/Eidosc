@@ -155,7 +155,7 @@ main :: Unit -> Int
     public void Build_SequentialGuardTypeMismatch_DoesNotExposeTrustworthyResultTypeText()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 main :: Unit -> Int
 {
@@ -645,7 +645,7 @@ Shape :: type {
         radius: Int,
         color: Int
     }
-    | Rect {
+    , Rect {
         width: Int,
         height: Int,
         color: Int
@@ -878,7 +878,7 @@ good :: 1;
     {
         const string source = """
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 bad :: Some;
@@ -908,7 +908,7 @@ good :: 1;
     {
         const string source = """
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 bad :: Option;

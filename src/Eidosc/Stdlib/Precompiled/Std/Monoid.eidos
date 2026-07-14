@@ -15,7 +15,7 @@ Monoid :: module {
         _ => LawUnit()
     }
 
-    EqLawUnit :: instance Trait::Eq {
+    EqLawUnit :: instance Trait.Eq {
         eq :: LawUnit -> LawUnit -> Bool
             {
                 _ => _ => true
@@ -39,12 +39,12 @@ Monoid :: module {
 
     is_empty_int :: Int -> Bool
     {
-        value => value == Monoid::empty_int(())
+        value => value == Monoid.empty_int(())
     }
 
     is_empty_string :: String -> Bool
     {
-        value => value == Monoid::empty_string(())
+        value => value == Monoid.empty_string(())
     }
 
     is_empty_seq[T] :: Seq[T] -> Bool
@@ -53,33 +53,33 @@ Monoid :: module {
         _ => false
     }
 
-    is_empty[T: Trait::Eq + Monoid::Monoid] :: T -> Bool
+    is_empty[T: Trait.Eq + Monoid.Monoid] :: T -> Bool
     {
-        value => value == Monoid::empty(())
+        value => value == Monoid.empty(())
     }
 
-    combine[T: Semigroup::Semigroup + Monoid::Monoid] :: Seq[T] -> T
+    combine[T: Semigroup.Semigroup + Monoid.Monoid] :: Seq[T] -> T
     {
-        [] => Monoid::empty(()),
-        [head, ..tail] => Semigroup::append(head)(Monoid::combine(tail))
+        [] => Monoid.empty(()),
+        [head, ..tail] => Semigroup.append(head)(Monoid.combine(tail))
     }
 
     combine_ints :: Seq[Int] -> Int
     {
-        [] => Monoid::empty_int(()),
-        [head, ..tail] => Semigroup::append_int(head)(Monoid::combine_ints(tail))
+        [] => Monoid.empty_int(()),
+        [head, ..tail] => Semigroup.append_int(head)(Monoid.combine_ints(tail))
     }
 
     combine_strings :: Seq[String] -> String
     {
-        [] => Monoid::empty_string(()),
-        [head, ..tail] => Semigroup::append_string(head)(Monoid::combine_strings(tail))
+        [] => Monoid.empty_string(()),
+        [head, ..tail] => Semigroup.append_string(head)(Monoid.combine_strings(tail))
     }
 
     combine_seqs[T] :: Seq[Seq[T]] -> Seq[T]
     {
-        [] => Monoid::empty_seq(()),
-        [head, ..tail] => [x | xs <- [head, Monoid::combine_seqs(tail)], x <- xs]
+        [] => Monoid.empty_seq(()),
+        [head, ..tail] => [x | xs <- [head, Monoid.combine_seqs(tail)], x <- xs]
     }
 
     append :: LawUnit -> LawUnit -> LawUnit
@@ -87,7 +87,7 @@ Monoid :: module {
         _ => _ => LawUnit()
     }
 
-    MonoidDefaults :: instance Monoid::Monoid {
+    MonoidDefaults :: instance Monoid.Monoid {
         empty :: Unit -> LawUnit
             {
                 _ => LawUnit()
@@ -124,24 +124,24 @@ Monoid :: module {
         _ => LawUnit()
     }
 
-    MonoidInt :: instance Monoid::Monoid {
+    MonoidInt :: instance Monoid.Monoid {
         empty :: Unit -> Int
             {
-                _ => Monoid::empty_int(())
+                _ => Monoid.empty_int(())
             }
     }
 
-    MonoidString :: instance Monoid::Monoid {
+    MonoidString :: instance Monoid.Monoid {
         empty :: Unit -> String
             {
-                _ => Monoid::empty_string(())
+                _ => Monoid.empty_string(())
             }
     }
 
-    MonoidSeq[T] :: instance Monoid::Monoid {
+    MonoidSeq[T] :: instance Monoid.Monoid {
         empty[T] :: Unit -> Seq[T]
             {
-                _ => Monoid::empty_seq(())
+                _ => Monoid.empty_seq(())
             }
     }
 

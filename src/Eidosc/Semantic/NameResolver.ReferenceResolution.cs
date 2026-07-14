@@ -340,7 +340,7 @@ public sealed partial class NameResolver
 
         if (letDecl.IsComptime && letDecl.IsMutable)
         {
-            AddError(letDecl.Span, "comptime mutable bindings are not supported in 0.5.0-alpha.1 phase 1.");
+            AddError(letDecl.Span, "comptime mutable bindings are not supported in 0.6.0-alpha.1 phase 1.");
         }
 
         if (letDecl.Pattern == null)

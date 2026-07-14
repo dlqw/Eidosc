@@ -270,7 +270,7 @@ public sealed class ToolchainDistributionManifestTests
             "preview",
             host,
             new ToolchainProductIdentity(version, new string('a', 40)),
-            new ToolchainLanguageIdentity("0.5.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.6.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", ["eidosc-core", "eidos-std"]),
                 new ToolchainProfileDefinition("default", ["eidosc-core", "eidos-std", $"eidos-runtime@{host}"]),

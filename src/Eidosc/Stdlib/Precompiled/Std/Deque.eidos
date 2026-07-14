@@ -25,12 +25,12 @@ Deque :: module {
 
     len[T] :: Deque[T] -> Int
     {
-        Deque{front: f, back: b} => Seq::len(f) + Seq::len(b)
+        Deque{front: f, back: b} => Seq.len(f) + Seq.len(b)
     }
 
     is_empty[T] :: Deque[T] -> Bool
     {
-        deque => Deque::len(deque) == 0
+        deque => Deque.len(deque) == 0
     }
 
     push_front[T] :: Deque[T] -> T -> Deque[T]
@@ -46,20 +46,20 @@ Deque :: module {
     @internal
     normalize_front[T] :: Deque[T] -> Deque[T]
     {
-        Deque{front: [], back: b} => Deque{front: Seq::reverse(b), back: []},
+        Deque{front: [], back: b} => Deque{front: Seq.reverse(b), back: []},
         deque => deque
     }
 
     @internal
     normalize_back[T] :: Deque[T] -> Deque[T]
     {
-        Deque{front: f, back: []} => Deque{front: [], back: Seq::reverse(f)},
+        Deque{front: f, back: []} => Deque{front: [], back: Seq.reverse(f)},
         deque => deque
     }
 
     front[T] :: Deque[T] -> Option[T]
     {
-        deque => match Deque::normalize_front(deque) {
+        deque => match Deque.normalize_front(deque) {
             Deque{front: [value, ..], back: _} => Some(value),
             _ => None()
         }
@@ -67,7 +67,7 @@ Deque :: module {
 
     back[T] :: Deque[T] -> Option[T]
     {
-        deque => match Deque::normalize_back(deque) {
+        deque => match Deque.normalize_back(deque) {
             Deque{front: _, back: [value, ..]} => Some(value),
             _ => None()
         }
@@ -75,7 +75,7 @@ Deque :: module {
 
     pop_front[T] :: Deque[T] -> Option[(T, Deque[T])]
     {
-        deque => match Deque::normalize_front(deque) {
+        deque => match Deque.normalize_front(deque) {
             Deque{front: [value, ..rest], back: b} => Some((value, Deque{front: rest, back: b})),
             _ => None()
         }
@@ -83,7 +83,7 @@ Deque :: module {
 
     pop_back[T] :: Deque[T] -> Option[(T, Deque[T])]
     {
-        deque => match Deque::normalize_back(deque) {
+        deque => match Deque.normalize_back(deque) {
             Deque{front: f, back: [value, ..rest]} => Some((value, Deque{front: f, back: rest})),
             _ => None()
         }
@@ -91,33 +91,33 @@ Deque :: module {
 
     to_seq[T] :: Deque[T] -> Seq[T]
     {
-        Deque{front: f, back: b} => Seq::append(f)(Seq::reverse(b))
+        Deque{front: f, back: b} => Seq.append(f)(Seq.reverse(b))
     }
 
     get_opt[T] :: Deque[T] -> Int -> Option[T]
     {
-        deque => index => Seq::get_opt(Deque::to_seq(deque))(index)
+        deque => index => Seq.get_opt(Deque.to_seq(deque))(index)
     }
 
     get_or[T] :: Deque[T] -> Int -> T -> T
     {
-        deque => index => fallback => Option::unwrap_or(Deque::get_opt(deque)(index))(fallback)
+        deque => index => fallback => Option.unwrap_or(Deque.get_opt(deque)(index))(fallback)
     }
 
-    CloneDequeT :: instance Trait::Clone {
-        clone[T: Trait::Clone] :: Deque[T] -> Deque[T]
+    CloneDequeT :: instance Trait.Clone {
+        clone[T: Trait.Clone] :: Deque[T] -> Deque[T]
             {
                 Deque{front: f, back: b} => Deque{
-                    front: TraitInvoke::clone_value(f),
-                    back: TraitInvoke::clone_value(b)
+                    front: TraitInvoke.clone_value(f),
+                    back: TraitInvoke.clone_value(b)
                 }
             }
     }
 
-    EqDequeT :: instance Trait::Eq {
-        eq[T: Trait::Eq] :: Deque[T] -> Deque[T] -> Bool
+    EqDequeT :: instance Trait.Eq {
+        eq[T: Trait.Eq] :: Deque[T] -> Deque[T] -> Bool
             {
-                left => right => TraitInvoke::eq_value(Deque::to_seq(left))(Deque::to_seq(right))
+                left => right => TraitInvoke.eq_value(Deque.to_seq(left))(Deque.to_seq(right))
             }
     }
 }

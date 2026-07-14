@@ -968,7 +968,7 @@ public sealed partial class SymbolTable
     }
 
     /// <summary>
-    /// 解析路径（如 std::collection::List）
+    /// 解析路径（如 Std.Collection.List）
     /// </summary>
     public SymbolId? ResolvePath(IReadOnlyList<string> path, SymbolId? context = null)
     {

@@ -1561,6 +1561,15 @@ internal static partial class DiagnosticMessages
     public static string ParserExpectedTypeIdentifierAfterQualifiedSeparator =>
         Get(nameof(ParserExpectedTypeIdentifierAfterQualifiedSeparator));
 
+    public static string ParserQualifiedDoubleColonRemoved =>
+        Get(nameof(ParserQualifiedDoubleColonRemoved));
+
+    public static string ParserExpectedCommaBetweenAdtConstructors =>
+        Get(nameof(ParserExpectedCommaBetweenAdtConstructors));
+
+    public static string ParserAdtPipeSeparatorRemoved =>
+        Get(nameof(ParserAdtPipeSeparatorRemoved));
+
     public static string ParserListRestStandaloneNote =>
         Get(nameof(ParserListRestStandaloneNote));
 

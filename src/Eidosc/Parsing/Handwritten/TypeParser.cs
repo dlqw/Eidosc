@@ -505,7 +505,7 @@ public sealed class TypeParser(ParserContext ctx)
                 isComptime = true;
                 comptimeTypeAnnotation = ParseType();
             }
-            // Distinguish: T: kindN (kind) vs T: Trait::Eq (trait constraint)
+            // Distinguish: T: kindN (kind) vs T: Trait.Eq (trait constraint)
             else if (isComptime)
             {
                 comptimeTypeAnnotation = ParseType();

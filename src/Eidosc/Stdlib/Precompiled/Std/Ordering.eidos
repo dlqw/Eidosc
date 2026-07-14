@@ -2,7 +2,7 @@ Ordering :: module {
     import Trait
     import Semigroup
 
-    Ordering :: type { Less | Equal | Greater }
+    Ordering :: type { Less , Equal , Greater }
 
     is_lt :: Ordering -> Bool
     {
@@ -41,7 +41,7 @@ Ordering :: module {
 
     is_ne :: Ordering -> Bool
     {
-        ordering => !Ordering::is_eq(ordering)
+        ordering => !Ordering.is_eq(ordering)
     }
 
     to_int :: Ordering -> Int
@@ -96,22 +96,22 @@ Ordering :: module {
 
     then_compare_int :: Ordering -> Int -> Int -> Ordering
     {
-        ordering => left => right => Ordering::then_with(ordering)(Ordering::compare_int(left)(right))
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_int(left)(right))
     }
 
     then_compare_char :: Ordering -> Char -> Char -> Ordering
     {
-        ordering => left => right => Ordering::then_with(ordering)(Ordering::compare_char(left)(right))
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_char(left)(right))
     }
 
     then_compare_bool :: Ordering -> Bool -> Bool -> Ordering
     {
-        ordering => left => right => Ordering::then_with(ordering)(Ordering::compare_bool(left)(right))
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_bool(left)(right))
     }
 
     then_compare_ordering :: Ordering -> Ordering -> Ordering -> Ordering
     {
-        ordering => left => right => Ordering::then_with(ordering)(Ordering::compare(left)(right))
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare(left)(right))
     }
 
     compare :: Ordering -> Ordering -> Ordering
@@ -149,20 +149,20 @@ Ordering :: module {
 
     compare_int_desc :: Int -> Int -> Ordering
     {
-        left => right => Ordering::reverse(Ordering::compare_int(left)(right))
+        left => right => Ordering.reverse(Ordering.compare_int(left)(right))
     }
 
     compare_char_desc :: Char -> Char -> Ordering
     {
-        left => right => Ordering::reverse(Ordering::compare_char(left)(right))
+        left => right => Ordering.reverse(Ordering.compare_char(left)(right))
     }
 
     compare_bool_desc :: Bool -> Bool -> Ordering
     {
-        left => right => Ordering::reverse(Ordering::compare_bool(left)(right))
+        left => right => Ordering.reverse(Ordering.compare_bool(left)(right))
     }
 
-    EqOrdering :: instance Trait::Eq {
+    EqOrdering :: instance Trait.Eq {
         eq :: Ordering -> Ordering -> Bool
             {
                 (Less(), Less()) => true,
@@ -172,21 +172,21 @@ Ordering :: module {
             }
     }
 
-    EqBool :: instance Trait::Eq {
+    EqBool :: instance Trait.Eq {
         eq :: Bool -> Bool -> Bool
             {
                 left => right => left == right
             }
     }
 
-    OrdOrdering :: instance Trait::Ord {
+    OrdOrdering :: instance Trait.Ord {
         compare :: Ordering -> Ordering -> Ordering
             {
-                left => right => Ordering::compare(left)(right)
+                left => right => Ordering.compare(left)(right)
             }
     }
 
-    OrdBool :: instance Trait::Ord {
+    OrdBool :: instance Trait.Ord {
         compare :: Bool -> Bool -> Ordering
             {
                 false => false => Equal(),
@@ -196,7 +196,7 @@ Ordering :: module {
             }
     }
 
-    ShowOrdering :: instance Trait::Show {
+    ShowOrdering :: instance Trait.Show {
         show :: Ordering -> String
             {
                 Less() => "Less",
@@ -205,7 +205,7 @@ Ordering :: module {
             }
     }
 
-    ShowBool :: instance Trait::Show {
+    ShowBool :: instance Trait.Show {
         show :: Bool -> String
             {
                 true => "true",
@@ -213,14 +213,14 @@ Ordering :: module {
             }
     }
 
-    SemigroupOrdering :: instance Semigroup::Semigroup {
+    SemigroupOrdering :: instance Semigroup.Semigroup {
         append :: Ordering -> Ordering -> Ordering
             {
-                left => right => Ordering::then_with(left)(right)
+                left => right => Ordering.then_with(left)(right)
             }
     }
 
-    CloneOrdering :: instance Trait::Clone {
+    CloneOrdering :: instance Trait.Clone {
         clone :: Ordering -> Ordering
             {
                 Less() => Less(),
@@ -229,7 +229,7 @@ Ordering :: module {
             }
     }
 
-    CloneBool :: instance Trait::Clone {
+    CloneBool :: instance Trait.Clone {
         clone :: Bool -> Bool
             {
                 value => value

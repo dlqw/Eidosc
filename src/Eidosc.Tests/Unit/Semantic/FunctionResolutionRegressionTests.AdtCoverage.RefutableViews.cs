@@ -18,7 +18,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -53,7 +53,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -93,7 +93,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -128,7 +128,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -168,7 +168,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -208,7 +208,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -248,7 +248,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -283,7 +283,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -322,7 +322,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -362,7 +362,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -418,7 +418,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -472,7 +472,7 @@ normalizeChar :: Char -> Char
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int
@@ -520,7 +520,7 @@ normalizeChar :: Char -> Char
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int
@@ -568,7 +568,7 @@ normalizeBool :: Bool -> Bool
 }
 
 BigB :: type {
-    BigB{a: Bool, b: Bool, c: Bool, d: Bool, e: Bool, f: Bool, g: Bool, h: Bool, i: Bool} | None
+    BigB{a: Bool, b: Bool, c: Bool, d: Bool, e: Bool, f: Bool, g: Bool, h: Bool, i: Bool} , None
 }
 
 classify :: BigB -> Int
@@ -633,7 +633,7 @@ normalizeChar :: Char -> Char
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int
@@ -672,7 +672,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -711,7 +711,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int

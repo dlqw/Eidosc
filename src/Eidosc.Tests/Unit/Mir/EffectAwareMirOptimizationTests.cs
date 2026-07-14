@@ -274,7 +274,7 @@ public sealed class EffectAwareMirOptimizationTests
         {
             Name = name,
             SymbolId = symbolId,
-            FunctionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main::{name}" },
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main.{name}" },
             Locals = [parameter],
             EntryBlockId = Block(1),
             ReturnType = IntType,

@@ -31,7 +31,7 @@ public sealed class MirIdentityDefaultsTests
         var first = new FunctionId
         {
             SymbolId = new SymbolId(101),
-            StableIdentityKey = "current@workspace::Lib\0Function\0id\0Lib.eidos\012"
+            StableIdentityKey = "current@workspace.Lib\0Function\0id\0Lib.eidos\012"
         };
         var second = first with { SymbolId = new SymbolId(202) };
 

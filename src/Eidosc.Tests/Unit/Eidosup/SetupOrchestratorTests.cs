@@ -148,7 +148,7 @@ public sealed class SetupOrchestratorTests
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, executableName, "binary");
-            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std::Core");
+            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std.Core");
             WriteEntry(archive, "runtime/runtime.h", "header");
         }
 

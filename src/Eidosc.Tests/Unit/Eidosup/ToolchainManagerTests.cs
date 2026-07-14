@@ -538,7 +538,7 @@ public sealed class ToolchainManagerTests
         using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
             WriteEntry(archive, executableName, executableContent);
-            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std::Core");
+            WriteEntry(archive, "stdlib/Std/Core.eidos", "module Std.Core");
             WriteEntry(archive, "runtime/runtime.h", "header");
             WriteEntry(archive, "docs/index.json", $"{{\"schema\":1,\"eidoscVersion\":\"{version}\",\"topics\":{{\"index\":\"index.md\"}}}}");
             WriteEntry(archive, "docs/index.md", "# docs");

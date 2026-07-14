@@ -1,22 +1,22 @@
 Prelude :: module {
     // ── Core Traits (trait names only, for type constraints) ──
-    export import Trait::{Eq, Ord, Show, Hash, Clone, Copy}
-    export import Functor::{Functor}
-    export import Applicative::{Applicative}
-    export import Monad::{Monad}
-    export import Foldable::{Foldable}
-    export import Traversable::{Traversable}
-    export import Semigroup::{Semigroup}
-    export import Monoid::{Monoid}
-    export import Alternative::{Alternative}
+    export import Trait.{Eq, Ord, Show, Hash, Clone, Copy}
+    export import Functor.{Functor}
+    export import Applicative.{Applicative}
+    export import Monad.{Monad}
+    export import Foldable.{Foldable}
+    export import Traversable.{Traversable}
+    export import Semigroup.{Semigroup}
+    export import Monoid.{Monoid}
+    export import Alternative.{Alternative}
 
     // ── Core Types ──
-    export import Ordering::{Ordering}
-    export import Option::{Option}
-    export import Result::{Result, ResultWith}
+    export import Ordering.{Ordering}
+    export import Option.{Option}
+    export import Result.{Result, ResultWith}
 
     // ── Seq Operations ──
-    export import Seq::{
+    export import Seq.{
         len, head, head_or, tail, tail_or, last, last_or,
         map, filter, flat_map, fold_left, fold_right,
         append, reverse, take, drop, zip, zip_with,
@@ -27,7 +27,7 @@ Prelude :: module {
     }
 
     // ── Ordering Operations ──
-    export import Ordering::{
+    export import Ordering.{
         is_lt, is_eq, is_gt, is_le, is_ge, is_ne,
         to_int, from_int, fold, select_le, select_ge, then_with,
         compare_int, compare_char, compare_bool,
@@ -37,23 +37,23 @@ Prelude :: module {
     }
 
     // ── Option Operations (non-conflicting names) ──
-    export import Option::{
+    export import Option.{
         is_some, is_none, map_or, map_or_else,
         or_else_with, to_seq
     }
 
     // ── Result Operations (non-conflicting names) ──
-    export import Result::{
+    export import Result.{
         is_ok, is_err, map_err, ok, err,
         map_both, contains_err, unwrap_err_or,
         transpose, transpose_option
     }
 
     // ── Predicate Operations ──
-    export import Predicate::{accept, reject, is, is_not}
+    export import Predicate.{accept, reject, is, is_not}
 
     // ── Text Operations ──
-    export import Text::{
+    export import Text.{
         trim, trim_start, trim_end, is_blank,
         char_code_at_opt, char_code_at_or,
         char_at_opt, char_at_or,
@@ -66,7 +66,7 @@ Prelude :: module {
     }
 
     // ── File Operations ──
-    export import File::{
+    export import File.{
         exists,
         read_text, read_text_or_empty, read_text_or, read_text_opt,
         read_text_or_else,

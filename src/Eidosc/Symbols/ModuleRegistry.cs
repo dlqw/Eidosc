@@ -19,7 +19,7 @@ public sealed class ModuleRegistry
 
     /// <summary>
     /// 用户可见模块显示路径 -> 符号 ID。
-    /// 当前 package 使用 "module/path"，依赖 package 使用 "pkg::module/path"。
+    /// Namespace 路径统一使用点号；依赖 package alias 作为首段，例如 "pkg.Module.Path"。
     /// </summary>
     private readonly Dictionary<string, SymbolId> _modulePaths = new();
 

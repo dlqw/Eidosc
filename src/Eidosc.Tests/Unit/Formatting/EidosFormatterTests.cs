@@ -26,16 +26,16 @@ public sealed class EidosFormatterTests
     [Fact]
     public void Format_Pipeline_AddsOperatorSpacing()
     {
-        const string source = "result :: items|>Seq::map({x=>x+1})|>Seq::count;";
+        const string source = "result :: items|>Seq.map({x=>x+1})|>Seq.count;";
 
         var result = EidosFormatter.Format(source, options: NoValidation());
 
         Assert.True(result.Success);
         Assert.Equal(
             """
-            result::items |> Seq::map({
+            result::items |> Seq.map({
                 x => x + 1
-            }) |> Seq::count;
+            }) |> Seq.count;
 
             """.ReplaceLineEndings("\n"),
             result.FormattedText.ReplaceLineEndings("\n"));
@@ -207,17 +207,18 @@ public sealed class EidosFormatterTests
     [Fact]
     public void Format_Imports_PreservesLineBoundaries()
     {
-        const string source = "import Std::Option\nimport Std::Seq\nDirection :: type {North|South}";
+        const string source = "import Std.Option\nimport Std.Seq\nDirection :: type {North,South}";
 
         var result = EidosFormatter.Format(source, options: NoValidation());
 
         Assert.True(result.Success);
         Assert.Equal(
             """
-            import Std::Option
-            import Std::Seq
+            import Std.Option
+            import Std.Seq
             Direction :: type {
-                North | South
+                North,
+                South
             }
 
             """.ReplaceLineEndings("\n"),
@@ -229,7 +230,7 @@ public sealed class EidosFormatterTests
     {
         const string source =
             """
-            Direction :: type { North | South }
+            Direction :: type { North, South }
             same :: Direction -> Direction -> Bool {
             North() => North() => true,
             South() => South() => true,

@@ -450,7 +450,7 @@ public static class EidosBuildHost
         if (bindings.Length != 1)
         {
             var message = bindings.Length == 0
-                ? "Build program must declare exactly one top-level 'BuildGraph :: comptime Build::graph(...)' binding."
+                ? "Build program must declare exactly one top-level 'BuildGraph :: comptime Build.graph(...)' binding."
                 : "Build program declares more than one top-level BuildGraph binding.";
             diagnostic = Error(message, "E5002");
             return false;
@@ -463,7 +463,7 @@ public static class EidosBuildHost
             !compilation.TypeInferer.ComptimeValues.TryGetValue(binding.SymbolId, out var resolvedValue))
         {
             diagnostic = Error(
-                "BuildGraph must be a compile-time binding whose value is a Build::Graph.",
+                "BuildGraph must be a compile-time binding whose value is a Build.Graph.",
                 "E5002");
             return false;
         }

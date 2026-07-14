@@ -657,9 +657,9 @@ public static partial class IdeSemanticSnapshotBuilder
 
         return import.Kind switch
         {
-            ImportKind.Wildcard => $"{modulePath}::*",
+            ImportKind.Wildcard => $"{modulePath}.*",
             ImportKind.Selective when import.SelectiveImports.Count > 0 =>
-                $"{modulePath}::{{{string.Join(", ", import.SelectiveImports.Select(static item => item.Alias is { Length: > 0 } ? $"{item.Name} as {item.Alias}" : item.Name))}}}",
+                $"{modulePath}.{{{string.Join(", ", import.SelectiveImports.Select(static item => item.Alias is { Length: > 0 } ? $"{item.Name} as {item.Alias}" : item.Name))}}}",
             _ => modulePath
         };
     }

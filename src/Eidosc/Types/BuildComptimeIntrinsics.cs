@@ -15,7 +15,7 @@ internal static class BuildComptimeIntrinsics
         build?.Trace?.Record(
             build.TracePhase,
             ClassifyTraceKind(name),
-            $"Build::{name}",
+            $"Build.{name}",
             "begin",
             $"arguments={call.PositionalArgs.Count}",
             call.Span,
@@ -24,7 +24,7 @@ internal static class BuildComptimeIntrinsics
         build?.Trace?.Record(
             build.TracePhase,
             ClassifyTraceKind(name),
-            $"Build::{name}",
+            $"Build.{name}",
             result ? "success" : "failure",
             result ? value.CanonicalText : reason,
             call.Span,
@@ -42,7 +42,7 @@ internal static class BuildComptimeIntrinsics
         value = ComptimeUnitValue.Instance;
         if (context.Build == null)
         {
-            reason = $"Build::{name} requires the capability-constrained Build host; pure comptime cannot access BuildFs, BuildEnv, BuildProcess, or BuildEmit";
+            reason = $"Build.{name} requires the capability-constrained Build host; pure comptime cannot access BuildFs, BuildEnv, BuildProcess, or BuildEmit";
             return false;
         }
 
@@ -96,7 +96,7 @@ internal static class BuildComptimeIntrinsics
     {
         if (arguments.Count != 0)
         {
-            return Fail($"Build::context expects no arguments, got {arguments.Count}", out value, out reason);
+            return Fail($"Build.context expects no arguments, got {arguments.Count}", out value, out reason);
         }
 
         value = Capability("build.context", build.CapabilityIdentity);
@@ -136,7 +136,7 @@ internal static class BuildComptimeIntrinsics
             !TryRequireCapability(arguments, 0, "build.context", build, out reason))
         {
             value = ComptimeUnitValue.Instance;
-            reason = arguments.Count == 1 ? reason : $"Build::{property} expects one Build::Context";
+            reason = arguments.Count == 1 ? reason : $"Build.{property} expects one Build.Context";
             return false;
         }
 
@@ -158,7 +158,7 @@ internal static class BuildComptimeIntrinsics
         {
             value = ComptimeUnitValue.Instance;
             reason = arguments.Count == 2 && arguments[1] is not ComptimeStringValue
-                ? "Build::readText expects (Build::Fs, String)"
+                ? "Build.readText expects (Build.Fs, String)"
                 : reason;
             return false;
         }
@@ -186,7 +186,7 @@ internal static class BuildComptimeIntrinsics
         {
             value = ComptimeUnitValue.Instance;
             reason = arguments.Count == 2 && arguments[1] is not ComptimeStringValue
-                ? "Build::environment expects (Build::Env, String)"
+                ? "Build.environment expects (Build.Env, String)"
                 : reason;
             return false;
         }
@@ -218,14 +218,14 @@ internal static class BuildComptimeIntrinsics
             !IsStringList(arguments[6]))
         {
             reason = arguments.Count == 7
-                ? "Build::command expects (Build::Process, String, String, List[String], List[String], List[String], List[String])"
-                : $"Build::command expects 7 arguments, got {arguments.Count}";
+                ? "Build.command expects (Build.Process, String, String, List[String], List[String], List[String], List[String])"
+                : $"Build.command expects 7 arguments, got {arguments.Count}";
             return false;
         }
 
         if (string.IsNullOrWhiteSpace(name.Value))
         {
-            reason = "Build::command step name cannot be empty";
+            reason = "Build.command step name cannot be empty";
             return false;
         }
 

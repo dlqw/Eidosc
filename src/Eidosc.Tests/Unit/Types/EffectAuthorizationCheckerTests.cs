@@ -291,12 +291,12 @@ Demo.Logger :: module {
         _ => ()
     }
 
-    helper :: Int -> Unit need Logger::Logger
+    helper :: Int -> Unit need Logger.Logger
     {
-        _ => Logger::log("hello")
+        _ => Logger.log("hello")
     }
 
-    main :: Unit -> Unit need Logger::Logger
+    main :: Unit -> Unit need Logger.Logger
     {
         _ => helper(0)
     }
@@ -314,11 +314,11 @@ Demo.Logger :: module {
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Undefined effect 'Logger::Logger'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Undefined effect 'Logger.Logger'", StringComparison.Ordinal));
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Cannot resolve path 'Logger::log'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Cannot resolve path 'Logger.log'", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -347,12 +347,12 @@ Cap.Io :: module {
         const string entrySource = """
 import Cap.Io
 
-run :: String -> Int need Io::Writer
+run :: String -> Int need Io.Writer
 {
-    text => Io::write(text)
+    text => Io.write(text)
 }
 
-main :: Unit -> Int need Io::Writer
+main :: Unit -> Int need Io.Writer
 {
     _ => run("hello")
 }
@@ -372,11 +372,11 @@ main :: Unit -> Int need Io::Writer
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Undefined effect 'Io::Writer'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Undefined effect 'Io.Writer'", StringComparison.Ordinal));
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Cannot resolve path 'Io::write'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Cannot resolve path 'Io.write'", StringComparison.Ordinal));
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E3003");
@@ -416,12 +416,12 @@ Cap.Io :: module {
         const string entrySource = """
 import Cap.Io
 
-run :: String -> Int need Io::Writer
+run :: String -> Int need Io.Writer
 {
-    text => Io::write(text)
+    text => Io.write(text)
 }
 
-main :: Unit -> Int need Io::Writer
+main :: Unit -> Int need Io.Writer
 {
     _ => run("hello")
 }
@@ -441,11 +441,11 @@ main :: Unit -> Int need Io::Writer
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Undefined effect 'Io::Writer'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Undefined effect 'Io.Writer'", StringComparison.Ordinal));
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Cannot resolve path 'Io::write'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Cannot resolve path 'Io.write'", StringComparison.Ordinal));
         }
         finally
         {
@@ -482,12 +482,12 @@ Cap.Io :: module {
         const string entrySource = """
 import Cap.Io
 
-run :: String -> Int need Io::Writer
+run :: String -> Int need Io.Writer
 {
-    text => Io::write(text)
+    text => Io.write(text)
 }
 
-main :: Unit -> Int need Io::Writer
+main :: Unit -> Int need Io.Writer
 {
     _ => run("hello")
 }
@@ -507,11 +507,11 @@ main :: Unit -> Int need Io::Writer
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Undefined effect 'Io::Writer'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Undefined effect 'Io.Writer'", StringComparison.Ordinal));
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Cannot resolve path 'Io::write'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Cannot resolve path 'Io.write'", StringComparison.Ordinal));
         }
         finally
         {
@@ -549,12 +549,12 @@ Cap.Io :: module {
         const string entrySource = """
 import Cap.Io
 
-run :: String -> Int need Io::Writer
+run :: String -> Int need Io.Writer
 {
-    text => Io::write(text)
+    text => Io.write(text)
 }
 
-main :: Unit -> Int need Io::Writer
+main :: Unit -> Int need Io.Writer
 {
     _ => run("hello")
 }
@@ -564,7 +564,7 @@ main :: Unit -> Int need Io::Writer
             importRoots = ["shared_modules"]
 
             [language]
-            version = "0.5.0-alpha.1"
+            version = "0.6.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);
@@ -580,11 +580,11 @@ main :: Unit -> Int need Io::Writer
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Undefined effect 'Io::Writer'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Undefined effect 'Io.Writer'", StringComparison.Ordinal));
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Cannot resolve path 'Io::write'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Cannot resolve path 'Io.write'", StringComparison.Ordinal));
         }
         finally
         {
@@ -622,12 +622,12 @@ Cap.Io :: module {
         const string entrySource = """
 import Cap.Io
 
-run :: String -> Int need Io::Writer
+run :: String -> Int need Io.Writer
 {
-    text => Io::write(text)
+    text => Io.write(text)
 }
 
-main :: Unit -> Int need Io::Writer
+main :: Unit -> Int need Io.Writer
 {
     _ => run("hello")
 }
@@ -637,7 +637,7 @@ main :: Unit -> Int need Io::Writer
             sourceRoots = ["src"]
 
             [language]
-            version = "0.5.0-alpha.1"
+            version = "0.6.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);
@@ -653,11 +653,11 @@ main :: Unit -> Int need Io::Writer
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Undefined effect 'Io::Writer'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Undefined effect 'Io.Writer'", StringComparison.Ordinal));
             Assert.DoesNotContain(
                 result.Diagnostics,
                 diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                              diagnostic.Message.Contains("Cannot resolve path 'Io::write'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Cannot resolve path 'Io.write'", StringComparison.Ordinal));
         }
         finally
         {
@@ -683,7 +683,7 @@ Cap :: module {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap::Writer
+    helper :: Int -> Unit need Cap.Writer
     {
         _ => write("from_cap")
     }
@@ -695,7 +695,7 @@ import Cap
 
 main :: Unit -> Unit
 {
-    _ => Cap::helper(0)
+    _ => Cap.helper(0)
 }
 """;
 
@@ -750,8 +750,8 @@ B :: module {
     }
 }
 
-import A::*
-import B::*
+import A.*
+import B.*
 
 f :: Unit -> Unit need Writer
 {
@@ -816,7 +816,7 @@ Cap :: module {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap::Writer
+    helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -828,7 +828,7 @@ import Cap
 
 main :: Unit -> Unit need Writer
 {
-    _ => Cap::helper(0)
+    _ => Cap.helper(0)
 }
 """;
 

@@ -68,7 +68,7 @@ public sealed class CacheCommandTests
         {
             ModuleKey = "Main",
             SourceHash = "source",
-            LanguageVersion = "0.5.0-alpha.1",
+            LanguageVersion = "0.6.0-alpha.1",
             DependencySignatureHash = "deps",
             TargetTriple = "test",
             FlagsHash = "flags"

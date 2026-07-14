@@ -314,7 +314,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 
@@ -435,7 +435,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 
@@ -556,7 +556,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 
@@ -581,7 +581,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 
@@ -674,7 +674,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value) + Helper::keep(value)
+        value => Lib.id(value) + Helper.keep(value)
     }
 }
 """);
@@ -775,7 +775,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 
@@ -800,7 +800,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 
@@ -864,7 +864,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 

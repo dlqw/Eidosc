@@ -51,7 +51,7 @@ public sealed class BuildCommandSnapshotArtifactTests
                                 new ProjectModuleTypedSemanticDeclaration(
                                     "Function",
                                     "main",
-                                    "Main::Function:main",
+                                    "Main.Function:main",
                                     "",
                                     1,
                                     0,
@@ -375,9 +375,9 @@ public sealed class BuildCommandSnapshotArtifactTests
                             LocalIndexHash: "local-main",
                             DependencyIndexHash: "deps-main",
                             MemberIndexHash: "index-main",
-                            [new ProjectModuleMemberBinding("main", "Value", "Main::Function:main", IsPublic: true)],
+                            [new ProjectModuleMemberBinding("main", "Value", "Main.Function:main", IsPublic: true)],
                             [],
-                            [new ProjectModuleMemberBinding("main", "Value", "Main::Function:main", IsPublic: true)])
+                            [new ProjectModuleMemberBinding("main", "Value", "Main.Function:main", IsPublic: true)])
                     ]),
                 MirFunctionFingerprints = new MirFunctionFingerprintSnapshot(
                     "mir-function-fingerprint-snapshot-v1",
@@ -442,7 +442,7 @@ public sealed class BuildCommandSnapshotArtifactTests
                 BuildCommand.LlvmCodegenUnitPlanSnapshotArtifactKind,
                 out var llvmCodegenUnitPlanManifest));
             Assert.Contains("module-member-index-snapshot-v1", File.ReadAllText(memberIndexManifest!.PayloadPath), StringComparison.Ordinal);
-            Assert.Contains("Main::Function:main", File.ReadAllText(memberIndexManifest.PayloadPath), StringComparison.Ordinal);
+            Assert.Contains("Main.Function:main", File.ReadAllText(memberIndexManifest.PayloadPath), StringComparison.Ordinal);
             Assert.Contains("mir-function-fingerprint-snapshot-v1", File.ReadAllText(mirManifest!.PayloadPath), StringComparison.Ordinal);
             Assert.Contains("llvm-function-fingerprint-snapshot-v1", File.ReadAllText(llvmManifest!.PayloadPath), StringComparison.Ordinal);
             Assert.Contains("llvm-function-fragment-snapshot-v1", File.ReadAllText(llvmFragmentManifest!.PayloadPath), StringComparison.Ordinal);

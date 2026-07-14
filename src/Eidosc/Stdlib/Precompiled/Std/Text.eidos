@@ -2,7 +2,7 @@ Text :: module {
     import Seq
     import Option
     import Trait
-    import Ordering::{Ordering}
+    import Ordering.{Ordering}
     import Ordering
 
     @internal
@@ -75,22 +75,22 @@ Text :: module {
 
     is_ascii_alpha_code :: Int -> Bool
     {
-        code => Text::is_ascii_lower_code(code) || Text::is_ascii_upper_code(code)
+        code => Text.is_ascii_lower_code(code) || Text.is_ascii_upper_code(code)
     }
 
     is_ascii_alnum_code :: Int -> Bool
     {
-        code => Text::is_ascii_alpha_code(code) || Text::is_ascii_digit_code(code)
+        code => Text.is_ascii_alpha_code(code) || Text.is_ascii_digit_code(code)
     }
 
     to_ascii_lower_code :: Int -> Int
     {
-        code => if Text::is_ascii_upper_code(code) then { code + 32 } else { code }
+        code => if Text.is_ascii_upper_code(code) then { code + 32 } else { code }
     }
 
     to_ascii_upper_code :: Int -> Int
     {
-        code => if Text::is_ascii_lower_code(code) then { code - 32 } else { code }
+        code => if Text.is_ascii_lower_code(code) then { code - 32 } else { code }
     }
 
     @internal
@@ -99,9 +99,9 @@ Text :: module {
         s => index => {
             textLen := string_length(s);
             if index >= textLen then { index }
-            else if Text::is_ascii_space_code(Text::char_code_at(s)(index)) then
+            else if Text.is_ascii_space_code(Text.char_code_at(s)(index)) then
             {
-                Text::trim_start_index(s)(index + 1)
+                Text.trim_start_index(s)(index + 1)
             }
             else { index }
         }
@@ -112,9 +112,9 @@ Text :: module {
     {
         s => count => {
             if count <= 0 then { 0 }
-            else if Text::is_ascii_space_code(Text::char_code_at(s)(count - 1)) then
+            else if Text.is_ascii_space_code(Text.char_code_at(s)(count - 1)) then
             {
-                Text::trim_end_count(s)(count - 1)
+                Text.trim_end_count(s)(count - 1)
             }
             else { count }
         }
@@ -124,8 +124,8 @@ Text :: module {
     {
         s => {
             textLen := string_length(s);
-            start := Text::trim_start_index(s)(0);
-            if start <= 0 then { Text::clone(s) }
+            start := Text.trim_start_index(s)(0);
+            if start <= 0 then { Text.clone(s) }
             else if start >= textLen then { "" }
             else { string_slice(s, start, textLen - start) }
         }
@@ -134,43 +134,43 @@ Text :: module {
     trim_end :: String -> String
     {
         s => {
-            count := Text::trim_end_count(s)(string_length(s));
+            count := Text.trim_end_count(s)(string_length(s));
             if count <= 0 then { "" }
-            else if count >= string_length(s) then { Text::clone(s) }
+            else if count >= string_length(s) then { Text.clone(s) }
             else { string_slice(s, 0, count) }
         }
     }
 
     trim :: String -> String
     {
-        s => Text::trim_end(Text::trim_start(s))
+        s => Text.trim_end(Text.trim_start(s))
     }
 
     is_blank :: String -> Bool
     {
-        s => Text::trim(s) == ""
+        s => Text.trim(s) == ""
     }
 
     char_code_at :: String -> Int -> Int { (s, i) => string_char_at(s, i) }
 
     char_code_at_opt :: String -> Int -> Option[Int]
     {
-        s => i => if i >= 0 && i < string_length(s) then { Some(Text::char_code_at(s)(i)) } else { None() }
+        s => i => if i >= 0 && i < string_length(s) then { Some(Text.char_code_at(s)(i)) } else { None() }
     }
 
     char_code_at_or :: String -> Int -> Int -> Int
     {
-        s => i => fallback => Option::unwrap_or(Text::char_code_at_opt(s)(i))(fallback)
+        s => i => fallback => Option.unwrap_or(Text.char_code_at_opt(s)(i))(fallback)
     }
 
     char_at_opt :: String -> Int -> Option[Char]
     {
-        s => i => if i >= 0 && i < string_length(s) then { Some(char_from_code(Text::char_code_at(s)(i))) } else { None() }
+        s => i => if i >= 0 && i < string_length(s) then { Some(char_from_code(Text.char_code_at(s)(i))) } else { None() }
     }
 
     char_at_or :: String -> Int -> Char -> Char
     {
-        s => i => fallback => Option::unwrap_or(Text::char_at_opt(s)(i))(fallback)
+        s => i => fallback => Option.unwrap_or(Text.char_at_opt(s)(i))(fallback)
     }
 
     slice :: String -> Int -> Int -> String { (s, start, count) => string_slice(s, start, count) }
@@ -180,7 +180,7 @@ Text :: module {
         s => count => {
             textLen := string_length(s);
             if count <= 0 then { "" }
-            else if count >= textLen then { Text::clone(s) }
+            else if count >= textLen then { Text.clone(s) }
             else { string_slice(s, 0, count) }
         }
     }
@@ -189,7 +189,7 @@ Text :: module {
     {
         s => count => {
             textLen := string_length(s);
-            if count <= 0 then { Text::clone(s) }
+            if count <= 0 then { Text.clone(s) }
             else if count >= textLen then { "" }
             else { string_slice(s, count, textLen - count) }
         }
@@ -200,7 +200,7 @@ Text :: module {
         s => count => {
             textLen := string_length(s);
             if count <= 0 then { "" }
-            else if count >= textLen then { Text::clone(s) }
+            else if count >= textLen then { Text.clone(s) }
             else { string_slice(s, textLen - count, count) }
         }
     }
@@ -209,7 +209,7 @@ Text :: module {
     {
         s => count => {
             textLen := string_length(s);
-            if count <= 0 then { Text::clone(s) }
+            if count <= 0 then { Text.clone(s) }
             else if count >= textLen then { "" }
             else { string_slice(s, 0, textLen - count) }
         }
@@ -242,13 +242,13 @@ Text :: module {
             textLen := string_length(s);
             if index + needleLen > textLen then { false }
             else if string_equals(string_slice(s, index, needleLen), needle) then { true }
-            else { Text::contains_from(s)(needle)(index + 1) }
+            else { Text.contains_from(s)(needle)(index + 1) }
         }
     }
 
     contains :: String -> String -> Bool
     {
-        s => needle => if string_length(needle) == 0 then { true } else { Text::contains_from(s)(needle)(0) }
+        s => needle => if string_length(needle) == 0 then { true } else { Text.contains_from(s)(needle)(0) }
     }
 
     @internal
@@ -259,18 +259,18 @@ Text :: module {
             textLen := string_length(s);
             if index + needleLen > textLen then { None() }
             else if string_equals(string_slice(s, index, needleLen), needle) then { Some(index) }
-            else { Text::index_of_from_opt(s)(needle)(index + 1) }
+            else { Text.index_of_from_opt(s)(needle)(index + 1) }
         }
     }
 
     index_of_opt :: String -> String -> Option[Int]
     {
-        s => needle => if string_length(needle) == 0 then { Some(0) } else { Text::index_of_from_opt(s)(needle)(0) }
+        s => needle => if string_length(needle) == 0 then { Some(0) } else { Text.index_of_from_opt(s)(needle)(0) }
     }
 
     index_of_or :: String -> String -> Int -> Int
     {
-        s => needle => fallback => Option::unwrap_or(Text::index_of_opt(s)(needle))(fallback)
+        s => needle => fallback => Option.unwrap_or(Text.index_of_opt(s)(needle))(fallback)
     }
 
     @internal
@@ -280,7 +280,7 @@ Text :: module {
             needleLen := string_length(needle);
             if index < 0 then { None() }
             else if string_equals(string_slice(s, index, needleLen), needle) then { Some(index) }
-            else { Text::last_index_of_from_opt(s)(needle)(index - 1) }
+            else { Text.last_index_of_from_opt(s)(needle)(index - 1) }
         }
     }
 
@@ -291,13 +291,13 @@ Text :: module {
             textLen := string_length(s);
             if needleLen == 0 then { Some(textLen) }
             else if needleLen > textLen then { None() }
-            else { Text::last_index_of_from_opt(s)(needle)(textLen - needleLen) }
+            else { Text.last_index_of_from_opt(s)(needle)(textLen - needleLen) }
         }
     }
 
     last_index_of_or :: String -> String -> Int -> Int
     {
-        s => needle => fallback => Option::unwrap_or(Text::last_index_of_opt(s)(needle))(fallback)
+        s => needle => fallback => Option.unwrap_or(Text.last_index_of_opt(s)(needle))(fallback)
     }
 
     @internal
@@ -309,37 +309,37 @@ Text :: module {
             if index + needleLen > textLen then { 0 }
             else if string_equals(string_slice(s, index, needleLen), needle) then
             {
-                1 + Text::count_from(s)(needle)(index + 1)
+                1 + Text.count_from(s)(needle)(index + 1)
             }
-            else { Text::count_from(s)(needle)(index + 1) }
+            else { Text.count_from(s)(needle)(index + 1) }
         }
     }
 
     count :: String -> String -> Int
     {
-        s => needle => if string_length(needle) == 0 then { 0 } else { Text::count_from(s)(needle)(0) }
+        s => needle => if string_length(needle) == 0 then { 0 } else { Text.count_from(s)(needle)(0) }
     }
 
     repeat :: String -> Int -> String
     {
-        s => times => if times <= 0 then { "" } else { s ++ Text::repeat(s)(times - 1) }
+        s => times => if times <= 0 then { "" } else { s ++ Text.repeat(s)(times - 1) }
     }
 
     replace_all :: String -> String -> String -> String
     {
         s => needle => replacement => {
             needleLen := string_length(needle);
-            if needleLen == 0 then { Text::clone(s) }
+            if needleLen == 0 then { Text.clone(s) }
             else {
-                match Text::index_of_opt(s)(needle)
+                match Text.index_of_opt(s)(needle)
                 {
                     Some(index) => {
                         prefix := string_slice(s, 0, index);
                         restStart := index + needleLen;
                         rest := string_slice(s, restStart, string_length(s) - restStart);
-                        prefix ++ replacement ++ Text::replace_all(rest)(needle)(replacement)
+                        prefix ++ replacement ++ Text.replace_all(rest)(needle)(replacement)
                     },
-                    None() => Text::clone(s)
+                    None() => Text.clone(s)
                 }
             }
         }
@@ -351,7 +351,7 @@ Text :: module {
             separatorLen := string_length(separator);
             if separatorLen == 0 then { None() }
             else {
-                match Text::index_of_opt(s)(separator)
+                match Text.index_of_opt(s)(separator)
                 {
                     Some(index) => {
                         rightStart := index + separatorLen;
@@ -365,7 +365,7 @@ Text :: module {
 
     before_or :: String -> String -> String -> String
     {
-        s => separator => fallback => match Text::split_once(s)(separator)
+        s => separator => fallback => match Text.split_once(s)(separator)
         {
             Some((before, _)) => before,
             None() => fallback
@@ -374,7 +374,7 @@ Text :: module {
 
     after_or :: String -> String -> String -> String
     {
-        s => separator => fallback => match Text::split_once(s)(separator)
+        s => separator => fallback => match Text.split_once(s)(separator)
         {
             Some((_, after)) => after,
             None() => fallback
@@ -385,12 +385,12 @@ Text :: module {
     {
         s => separator => {
             separatorLen := string_length(separator);
-            if separatorLen == 0 then { [Text::clone(s)] }
+            if separatorLen == 0 then { [Text.clone(s)] }
             else {
-                match Text::split_once(s)(separator)
+                match Text.split_once(s)(separator)
                 {
-                    Some((before, after)) => [before, ..Text::split(after)(separator)],
-                    None() => [Text::clone(s)]
+                    Some((before, after)) => [before, ..Text.split(after)(separator)],
+                    None() => [Text.clone(s)]
                 }
             }
         }
@@ -401,24 +401,24 @@ Text :: module {
     {
         s => index => mapper => {
             if index >= string_length(s) then { "" }
-            else { string_from_char(mapper(string_char_at(s, index))) ++ Text::map_ascii_codes(s)(index + 1)(mapper) }
+            else { string_from_char(mapper(string_char_at(s, index))) ++ Text.map_ascii_codes(s)(index + 1)(mapper) }
         }
     }
 
     to_lower_ascii :: String -> String
     {
-        s => Text::map_ascii_codes(s)(0)(Text::to_ascii_lower_code)
+        s => Text.map_ascii_codes(s)(0)(Text.to_ascii_lower_code)
     }
 
     to_upper_ascii :: String -> String
     {
-        s => Text::map_ascii_codes(s)(0)(Text::to_ascii_upper_code)
+        s => Text.map_ascii_codes(s)(0)(Text.to_ascii_upper_code)
     }
 
     capitalize_ascii :: String -> String
     {
         s => if string_length(s) == 0 then { "" }
-             else { string_from_char(Text::to_ascii_upper_code(string_char_at(s, 0))) ++ Text::to_lower_ascii(string_slice(s, 1, string_length(s) - 1)) }
+             else { string_from_char(Text.to_ascii_upper_code(string_char_at(s, 0))) ++ Text.to_lower_ascii(string_slice(s, 1, string_length(s) - 1)) }
     }
 
     @internal
@@ -428,8 +428,8 @@ Text :: module {
             if count <= 0 || string_length(fill) == 0 then { "" }
             else {
                 fillLen := string_length(fill);
-                if fillLen >= count then { Text::take(fill)(count) }
-                else { fill ++ Text::repeat_to_length(fill)(count - fillLen) }
+                if fillLen >= count then { Text.take(fill)(count) }
+                else { fill ++ Text.repeat_to_length(fill)(count - fillLen) }
             }
         }
     }
@@ -438,8 +438,8 @@ Text :: module {
     {
         s => width => fill => {
             textLen := string_length(s);
-            if string_length(fill) == 0 || textLen >= width then { Text::clone(s) }
-            else { Text::repeat_to_length(fill)(width - textLen) ++ s }
+            if string_length(fill) == 0 || textLen >= width then { Text.clone(s) }
+            else { Text.repeat_to_length(fill)(width - textLen) ++ s }
         }
     }
 
@@ -447,8 +447,8 @@ Text :: module {
     {
         s => width => fill => {
             textLen := string_length(s);
-            if string_length(fill) == 0 || textLen >= width then { Text::clone(s) }
-            else { s ++ Text::repeat_to_length(fill)(width - textLen) }
+            if string_length(fill) == 0 || textLen >= width then { Text.clone(s) }
+            else { s ++ Text.repeat_to_length(fill)(width - textLen) }
         }
     }
 
@@ -456,15 +456,15 @@ Text :: module {
     {
         [] => _ => "",
         [head] => _ => head,
-        [head, ..tail] => separator => head ++ separator ++ Text::join(tail)(separator)
+        [head, ..tail] => separator => head ++ separator ++ Text.join(tail)(separator)
     }
 
     concat :: Seq[String] -> String
     {
-        parts => Text::join(parts)("")
+        parts => Text.join(parts)("")
     }
 
-    EqString :: instance Trait::Eq {
+    EqString :: instance Trait.Eq {
         eq :: String -> String -> Bool { left => right => string_equals(left, right) }
     }
 
@@ -478,26 +478,26 @@ Text :: module {
             else if index >= leftLen then { Less() }
             else if index >= rightLen then { Greater() }
             else {
-                charOrdering := Ordering::compare_int(string_char_at(left, index))(string_char_at(right, index));
-                if Ordering::is_eq(charOrdering) then { Text::compare_from(left)(right)(index + 1) }
+                charOrdering := Ordering.compare_int(string_char_at(left, index))(string_char_at(right, index));
+                if Ordering.is_eq(charOrdering) then { Text.compare_from(left)(right)(index + 1) }
                 else { charOrdering }
             }
         }
     }
 
-    OrdString :: instance Trait::Ord {
+    OrdString :: instance Trait.Ord {
         compare :: String -> String -> Ordering
             {
-                left => right => Text::compare_from(left)(right)(0)
+                left => right => Text.compare_from(left)(right)(0)
             }
     }
 
-    ShowString :: instance Trait::Show {
-        show :: String -> String { s => Text::clone(s) }
+    ShowString :: instance Trait.Show {
+        show :: String -> String { s => Text.clone(s) }
     }
 
-    CloneString :: instance Trait::Clone {
-        clone :: String -> String { s => Text::clone(s) }
+    CloneString :: instance Trait.Clone {
+        clone :: String -> String { s => Text.clone(s) }
     }
 
     append :: String -> String -> String { left => right => left ++ right }

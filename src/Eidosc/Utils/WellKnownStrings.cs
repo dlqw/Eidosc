@@ -12,7 +12,7 @@ public static class WellKnownStrings
     /// </summary>
     public static class Separators
     {
-        public const string Path = "::";
+        public const string Path = ".";
         public const string ModulePath = "/";
     }
 

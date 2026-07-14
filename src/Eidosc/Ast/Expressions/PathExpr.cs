@@ -7,8 +7,8 @@ namespace Eidosc.Ast.Expressions;
 /// 路径表达式
 /// </summary>
 /// <example>
-/// std/io::print
-/// std::io::print
+/// Std.Io.print
+/// package_alias.Io.print
 /// </example>
 public record PathExpr : Expression
 {

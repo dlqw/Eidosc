@@ -351,7 +351,7 @@ classify :: (Bool, Bool) -> Int
                 "adt_not_non_exhaustive",
                 """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -374,7 +374,7 @@ classify :: OptionI -> Int
                 "adt_and_unsatisfiable",
                 """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -397,7 +397,7 @@ classify :: OptionI -> Int
                 "adt_duplicate_ctor_covered",
                 """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -421,7 +421,7 @@ classify :: OptionI -> Int
                 "adt_or_exhaustive",
                 """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -442,7 +442,7 @@ classify :: OptionI -> Int
                 "adt_guard_binding_proves_ctor_coverage",
                 """
 OptionB :: type {
-    Some(Bool) | None
+    Some(Bool) , None
 }
 
 classify :: OptionB -> Int
@@ -464,7 +464,7 @@ classify :: OptionB -> Int
                 "adt_guard_binding_partial_missing_ctor",
                 """
 OptionB :: type {
-    Some(Bool) | None
+    Some(Bool) , None
 }
 
 classify :: OptionB -> Int
@@ -487,7 +487,7 @@ classify :: OptionB -> Int
                 "adt_guard_binding_unsatisfiable_ctor_case",
                 """
 OptionB :: type {
-    Some(Bool) | None
+    Some(Bool) , None
 }
 
 classify :: OptionB -> Int
@@ -510,7 +510,7 @@ classify :: OptionB -> Int
                 "adt_guard_unknown_predicate_reports_guard_note",
                 """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 pred :: Int -> Bool
@@ -562,7 +562,7 @@ classify :: (Bool, Bool) -> Int
                 "adt_as_and_not_exhaustive",
                 """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int

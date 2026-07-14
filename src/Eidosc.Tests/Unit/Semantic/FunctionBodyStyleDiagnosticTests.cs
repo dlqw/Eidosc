@@ -9,7 +9,7 @@ public sealed class FunctionBodyStyleDiagnosticTests
     public void CompilationPipeline_FunctionBranchMatchingSameParameter_ReportsRedundantMatchWarning()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 unwrap :: Option[Int] -> Int
 {
@@ -56,7 +56,7 @@ same :: Pair -> Pair -> Bool
     public void CompilationPipeline_FunctionBranchMatchingDerivedExpression_DoesNotReportRedundantMatchWarning()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 unwrap :: Option[Int] -> Int
 {
@@ -78,7 +78,7 @@ unwrap :: Option[Int] -> Int
     public void CompilationPipeline_CurriedBranchReturningCall_DoesNotReportRedundantMatchWarning()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 fold_left[A, B] :: Option[A] -> B -> (B -> A -> B) -> B
 {

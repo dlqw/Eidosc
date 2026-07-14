@@ -1372,7 +1372,7 @@ public sealed partial class MirToLlvmConverter
         if (TypeSemantics.IsLikelyAdtConstructorByName(functionName))
             return true;
 
-        // Trait-qualified paths (e.g. "Applicative::pure") — trait resolution
+        // Trait-qualified paths (e.g. "Applicative.pure") — trait resolution
         // may not connect the implementation in all cases, so these are
         // permitted to remain unresolved at the LLVM level.
         if (!string.IsNullOrWhiteSpace(functionName) &&

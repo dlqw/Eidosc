@@ -50,7 +50,7 @@ classify :: Int -> Int
     {
         const string source = """
 PairB :: type {
-    PairB{flag: Bool, right: Int} | None
+    PairB{flag: Bool, right: Int} , None
 }
 
 classify :: PairB -> Int
@@ -174,7 +174,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -220,7 +220,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -338,7 +338,7 @@ normalizeChar :: Char -> Char
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int
@@ -384,7 +384,7 @@ normalizeChar :: Char -> Char
 }
 
 OptionC :: type {
-    Some(Char) | None
+    Some(Char) , None
 }
 
 classify :: OptionC -> Int

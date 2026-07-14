@@ -239,7 +239,7 @@ public sealed partial class MirGenericSpecializerTests
             symbolId: unboxSymbol,
             genericParameterCount: 1,
             genericTypeParameterIds: [typeVariable],
-            functionId: BuildFunctionId(unboxSymbol, "Std__FFI__unbox_value", "Std::FFI::unbox_value"));
+            functionId: BuildFunctionId(unboxSymbol, "Std__FFI__unbox_value", "Std.FFI.unbox_value"));
 
         var someArg = LocalPlace(1, typeVariable);
         var someResult = LocalPlace(2, optionOpenType);
@@ -396,7 +396,7 @@ public sealed partial class MirGenericSpecializerTests
             symbolId: unboxSymbol,
             genericParameterCount: 1,
             genericTypeParameterIds: [typeVariable],
-            functionId: BuildFunctionId(unboxSymbol, "Std__FFI__unbox_value", "Std::FFI::unbox_value"));
+            functionId: BuildFunctionId(unboxSymbol, "Std__FFI__unbox_value", "Std.FFI.unbox_value"));
 
         var updateArg = LocalPlace(1, tupleType);
         var update = BuildFunction(
@@ -560,7 +560,7 @@ public sealed partial class MirGenericSpecializerTests
             symbolId: unboxSymbol,
             genericParameterCount: 1,
             genericTypeParameterIds: [unboxTypeVariable],
-            functionId: BuildFunctionId(unboxSymbol, "Std__FFI__unbox_value", "Std::FFI::unbox_value"));
+            functionId: BuildFunctionId(unboxSymbol, "Std__FFI__unbox_value", "Std.FFI.unbox_value"));
 
         var someArg = LocalPlace(1, wrapperTypeVariable);
         var someResult = LocalPlace(2, optionOpenType);
@@ -871,7 +871,7 @@ public sealed partial class MirGenericSpecializerTests
         var callerSymbol = new SymbolId(1011);
         var intType = new TypeId(BaseTypes.IntId);
         var unitType = new TypeId(BaseTypes.UnitId);
-        var qualifiedName = "Lib::id";
+        var qualifiedName = "Lib.id";
 
         var generic = BuildFunction(
             returnType: TypeId.None,
@@ -949,7 +949,7 @@ public sealed partial class MirGenericSpecializerTests
         var callerSymbol = new SymbolId(1014);
         var intType = new TypeId(BaseTypes.IntId);
         var unitType = new TypeId(BaseTypes.UnitId);
-        var genericFunctionId = BuildFunctionId(genericSymbol, "id", "Lib::id");
+        var genericFunctionId = BuildFunctionId(genericSymbol, "id", "Lib.id");
 
         var generic = BuildFunction(
             returnType: TypeId.None,
@@ -1044,7 +1044,7 @@ public sealed partial class MirGenericSpecializerTests
         var callerSymbol = new SymbolId(1017);
         var intType = new TypeId(BaseTypes.IntId);
         var unitType = new TypeId(BaseTypes.UnitId);
-        var genericFunctionId = BuildFunctionId(genericSymbol, "id", "Lib::id");
+        var genericFunctionId = BuildFunctionId(genericSymbol, "id", "Lib.id");
 
         var generic = BuildFunction(
             returnType: TypeId.None,

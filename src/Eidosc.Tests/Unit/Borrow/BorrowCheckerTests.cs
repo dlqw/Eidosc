@@ -84,21 +84,21 @@ keep :: String -> String
     public void CompilationPipeline_NonCopyConditionalMoveInMonotonicIndexLoop_DoesNotReportMoveErrors()
     {
         const string source = """
-import Std::RuntimeArray
-import Std::Seq
+import Std.RuntimeArray
+import Std.Seq
 
 replace_bucket :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int, Int)]]
 {
     buckets => index => newBucket => {
-        len := Seq::len(buckets)
-        mut built := RuntimeArray::empty[Seq[(Int, Int)]]()
+        len := Seq.len(buckets)
+        mut built := RuntimeArray.empty[Seq[(Int, Int)]]()
         mut i := 0
         loop {
             if i >= len then {
                 break
             } else {
                 value := if i == index then newBucket else buckets[i]
-                built := RuntimeArray::push(built)(value)
+                built := RuntimeArray.push(built)(value)
                 i := i + 1
             }
         }
@@ -120,19 +120,19 @@ replace_bucket :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int
     public void CompilationPipeline_NonCopyConditionalMoveWithoutOneShotGuard_StillReportsMoveError()
     {
         const string source = """
-import Std::RuntimeArray
+import Std.RuntimeArray
 
 invalid_repeat :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int, Int)]]
 {
     buckets => index => newBucket => {
-        mut built := RuntimeArray::empty[Seq[(Int, Int)]]()
+        mut built := RuntimeArray.empty[Seq[(Int, Int)]]()
         mut i := 0
         loop {
             if i >= 2 then {
                 break
             } else {
                 value := if index == 0 then newBucket else buckets[0]
-                built := RuntimeArray::push(built)(value)
+                built := RuntimeArray.push(built)(value)
                 i := i + 1
             }
         }
@@ -152,7 +152,7 @@ invalid_repeat :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int
     public void CompilationPipeline_LoopConsumeAndRebindNonCopyState_DoesNotReportMoveErrors()
     {
         const string source = """
-import Std::Option
+import Std.Option
 
 Box :: type
 {

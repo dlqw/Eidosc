@@ -50,13 +50,13 @@ public sealed class EidosBuildHostTests
         var program = workspace.WriteText(
             "build.eidos",
             $$"""
-            Context :: comptime Build::context();
-            Fs :: comptime Build::fs(Context);
-            Env :: comptime Build::env(Context);
-            FileText :: comptime Build::readText(Fs, "schema/model.txt");
-            EnvText :: comptime Build::environment(Env, "{{variableName}}");
-            Emit :: comptime Build::emit(Context);
-            BuildGraph :: comptime Build::graph(Emit, [], []);
+            Context :: comptime Build.context();
+            Fs :: comptime Build.fs(Context);
+            Env :: comptime Build.env(Context);
+            FileText :: comptime Build.readText(Fs, "schema/model.txt");
+            EnvText :: comptime Build.environment(Env, "{{variableName}}");
+            Emit :: comptime Build.emit(Context);
+            BuildGraph :: comptime Build.graph(Emit, [], []);
             """);
         var configuration = new EidosBuildConfiguration
         {
@@ -98,7 +98,7 @@ public sealed class EidosBuildHostTests
         workspace.WriteText("schema/alpha.txt", "alpha");
         var program = workspace.WriteText(
             "build.eidos",
-            "Context :: comptime Build::context();\nEmit :: comptime Build::emit(Context);\nBuildGraph :: comptime Build::graph(Emit, [], []);\n");
+            "Context :: comptime Build.context();\nEmit :: comptime Build.emit(Context);\nBuildGraph :: comptime Build.graph(Emit, [], []);\n");
         var configuration = new EidosBuildConfiguration
         {
             Program = program,
@@ -129,11 +129,11 @@ public sealed class EidosBuildHostTests
         var program = workspace.WriteText(
             "build.eidos",
             $$"""
-            Context :: comptime Build::context();
-            Env :: comptime Build::env(Context);
-            Value :: comptime Build::environment(Env, "{{variableName}}");
-            Emit :: comptime Build::emit(Context);
-            BuildGraph :: comptime Build::graph(Emit, [], []);
+            Context :: comptime Build.context();
+            Env :: comptime Build.env(Context);
+            Value :: comptime Build.environment(Env, "{{variableName}}");
+            Emit :: comptime Build.emit(Context);
+            BuildGraph :: comptime Build.graph(Emit, [], []);
             """);
 
         Environment.SetEnvironmentVariable(variableName, null);
@@ -170,11 +170,11 @@ public sealed class EidosBuildHostTests
         var program = workspace.WriteText(
             "build.eidos",
             """
-            Context :: comptime Build::context();
-            Process :: comptime Build::process(Context);
-            Emit :: comptime Build::emit(Context);
-            Generate :: comptime Build::command(Process, "generate", "missing", [], [], ["build/out.txt"], []);
-            BuildGraph :: comptime Build::graph(Emit, [Generate], []);
+            Context :: comptime Build.context();
+            Process :: comptime Build.process(Context);
+            Emit :: comptime Build.emit(Context);
+            Generate :: comptime Build.command(Process, "generate", "missing", [], [], ["build/out.txt"], []);
+            BuildGraph :: comptime Build.graph(Emit, [Generate], []);
             """);
         var result = await EidosBuildHost.RunAsync(CreateOptions(
             workspace,
@@ -206,7 +206,7 @@ public sealed class EidosBuildHostTests
 
         var program = workspace.WriteText(
             "build.eidos",
-            "Context :: comptime Build::context();\nEmit :: comptime Build::emit(Context);\nBuildGraph :: comptime Build::graph(Emit, [], []);\n");
+            "Context :: comptime Build.context();\nEmit :: comptime Build.emit(Context);\nBuildGraph :: comptime Build.graph(Emit, [], []);\n");
         var result = await EidosBuildHost.RunAsync(CreateOptions(
             workspace,
             new EidosBuildConfiguration
@@ -234,7 +234,7 @@ public sealed class EidosBuildHostTests
 
         var program = workspace.WriteText(
             "build.eidos",
-            "Context :: comptime Build::context();\nEmit :: comptime Build::emit(Context);\nBuildGraph :: comptime Build::graph(Emit, [], []);\n");
+            "Context :: comptime Build.context();\nEmit :: comptime Build.emit(Context);\nBuildGraph :: comptime Build.graph(Emit, [], []);\n");
         var result = await EidosBuildHost.RunAsync(CreateOptions(
             workspace,
             new EidosBuildConfiguration
@@ -251,7 +251,7 @@ public sealed class EidosBuildHostTests
     [Fact]
     public void PureComptime_BuildCapabilityAccessIsRejected()
     {
-        const string source = "Context :: comptime Build::context();";
+        const string source = "Context :: comptime Build.context();";
         var result = new CompilationPipeline(
             source,
             new CompilationOptions
@@ -281,12 +281,12 @@ public sealed class EidosBuildHostTests
         var program = workspace.WriteText(
             "build.eidos",
             $$"""
-            Context :: comptime Build::context();
-            Process :: comptime Build::process(Context);
-            Emit :: comptime Build::emit(Context);
-            A :: comptime Build::command(Process, "a", "copy", {{argumentList}}, ["tools/input.txt"], ["build/shared.txt"], ["b"]);
-            B :: comptime Build::command(Process, "b", "copy", {{argumentList}}, ["tools/input.txt"], ["build/shared.txt"], ["a"]);
-            BuildGraph :: comptime Build::graph(Emit, [A, B], []);
+            Context :: comptime Build.context();
+            Process :: comptime Build.process(Context);
+            Emit :: comptime Build.emit(Context);
+            A :: comptime Build.command(Process, "a", "copy", {{argumentList}}, ["tools/input.txt"], ["build/shared.txt"], ["b"]);
+            B :: comptime Build.command(Process, "b", "copy", {{argumentList}}, ["tools/input.txt"], ["build/shared.txt"], ["a"]);
+            BuildGraph :: comptime Build.graph(Emit, [A, B], []);
             """);
         var configuration = CreateConfiguration(workspace, program, template, toolPath);
 
@@ -313,12 +313,12 @@ public sealed class EidosBuildHostTests
         var program = workspace.WriteText(
             "build.eidos",
             $$"""
-            Context :: comptime Build::context();
-            Process :: comptime Build::process(Context);
-            Emit :: comptime Build::emit(Context);
-            A :: comptime Build::command(Process, "a", "copy", {{argumentList}}, ["tools/input.txt"], ["build/shared.txt"], []);
-            B :: comptime Build::command(Process, "b", "copy", {{argumentList}}, ["tools/input.txt"], ["BUILD/SHARED.TXT"], []);
-            BuildGraph :: comptime Build::graph(Emit, [A, B], []);
+            Context :: comptime Build.context();
+            Process :: comptime Build.process(Context);
+            Emit :: comptime Build.emit(Context);
+            A :: comptime Build.command(Process, "a", "copy", {{argumentList}}, ["tools/input.txt"], ["build/shared.txt"], []);
+            B :: comptime Build.command(Process, "b", "copy", {{argumentList}}, ["tools/input.txt"], ["BUILD/SHARED.TXT"], []);
+            BuildGraph :: comptime Build.graph(Emit, [A, B], []);
             """);
         var configuration = CreateConfiguration(workspace, program, template, toolPath);
 
@@ -339,12 +339,12 @@ public sealed class EidosBuildHostTests
         var program = workspace.WriteText(
             "build.eidos",
             $$"""
-            Context :: comptime Build::context();
-            Process :: comptime Build::process(Context);
-            Emit :: comptime Build::emit(Context);
-            Generate :: comptime Build::command(Process, "generate", "copy", {{argumentList}}, ["undeclared.txt"], ["build/generated.eidos"], []);
-            Generated :: comptime Build::generatedSource(Emit, "build/generated.eidos", "generate", "other-target");
-            BuildGraph :: comptime Build::graph(Emit, [Generate], [Generated]);
+            Context :: comptime Build.context();
+            Process :: comptime Build.process(Context);
+            Emit :: comptime Build.emit(Context);
+            Generate :: comptime Build.command(Process, "generate", "copy", {{argumentList}}, ["undeclared.txt"], ["build/generated.eidos"], []);
+            Generated :: comptime Build.generatedSource(Emit, "build/generated.eidos", "generate", "other-target");
+            BuildGraph :: comptime Build.graph(Emit, [Generate], [Generated]);
             """);
         var configuration = CreateConfiguration(workspace, program, template, toolPath);
 
@@ -384,12 +384,12 @@ public sealed class EidosBuildHostTests
     {
         var argumentList = FormatEidosList(arguments);
         return $$"""
-            Context :: comptime Build::context();
-            Process :: comptime Build::process(Context);
-            Emit :: comptime Build::emit(Context);
-            Generate :: comptime Build::command(Process, "generate", "copy", {{argumentList}}, ["tools/Generated.eidos"], ["build/generated/Generated.eidos"], []);
-            Generated :: comptime Build::generatedSource(Emit, "build/generated/Generated.eidos", "generate", "{{target}}");
-            BuildGraph :: comptime Build::graph(Emit, [Generate], [Generated]);
+            Context :: comptime Build.context();
+            Process :: comptime Build.process(Context);
+            Emit :: comptime Build.emit(Context);
+            Generate :: comptime Build.command(Process, "generate", "copy", {{argumentList}}, ["tools/Generated.eidos"], ["build/generated/Generated.eidos"], []);
+            Generated :: comptime Build.generatedSource(Emit, "build/generated/Generated.eidos", "generate", "{{target}}");
+            BuildGraph :: comptime Build.graph(Emit, [Generate], [Generated]);
             """;
     }
 

@@ -10,8 +10,8 @@ public partial class TypeInferencePipelineTests
     public void Types_MethodCall_UsesReceiverTypeToSelectImportedCandidate()
     {
         const string source = """
-import Std::Seq
-import Std::Option
+import Std.Seq
+import Std.Option
 
 use_append :: Unit -> Seq[Int]
 {
@@ -57,15 +57,15 @@ use_append :: Unit -> Seq[Int]
     public void Types_MethodCall_SelectsReceiverModuleCandidateAcrossSameNamedImports()
     {
         const string source = """
-import Std::Mutex
-import Std::RwLock
+import Std.Mutex
+import Std.RwLock
 
-select_mutex_status :: Mutex::Status -> Int
+select_mutex_status :: Mutex.Status -> Int
 {
     status => status.status_value_or(10)(20)
 }
 
-select_rwlock_status :: RwLock::Status -> Int
+select_rwlock_status :: RwLock.Status -> Int
 {
     status => status.status_value_or(10)(20)(30)
 }

@@ -20,7 +20,7 @@ public partial class TraitImplResolutionTests
         const string source = """
 Direction :: type
 {
-    North |
+    North ,
     South
 }
 
@@ -66,7 +66,7 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North |
+    North ,
     South
 }
 
@@ -101,7 +101,7 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North |
+    North ,
     South
 }
 
@@ -151,7 +151,7 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North |
+    North ,
     South
 }
 

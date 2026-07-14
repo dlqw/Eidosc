@@ -34,13 +34,13 @@ public partial class LlvmPipelineIntegrationTests
     public void SeqFoldLeft_WithLocalCurriedClosure_NativeSmoke_InvokesClosureOneLayerAtATime()
     {
         const string source = """
-            import Std::Seq
+            import Std.Seq
 
             main :: Unit -> Int
             {
                 _ => {
                     add := acc => value => acc + value;
-                    Seq::fold_left([21, 22, 23])(0)(add)
+                    Seq.fold_left([21, 22, 23])(0)(add)
                 }
             }
             """;
@@ -57,8 +57,8 @@ public partial class LlvmPipelineIntegrationTests
     public void ListFoldLeft_WithNestedClosureCaptureAndStringConcat_NativeSmoke_RendersRow()
     {
         const string source = """
-            import Std::Seq
-            import Std::Text
+            import Std.Seq
+            import Std.Text
 
             cell :: Int -> Int -> String
             {
@@ -69,13 +69,13 @@ public partial class LlvmPipelineIntegrationTests
             {
                 food => xs => {
                     render_cell := x => cell(food)(x);
-                    Seq::fold_left(xs)("")(acc => x => acc ++ render_cell(x))
+                    Seq.fold_left(xs)("")(acc => x => acc ++ render_cell(x))
                 }
             }
 
             main :: Unit -> Int
             {
-                _ => Text::len(row(2)([0, 1, 2, 3]))
+                _ => Text.len(row(2)([0, 1, 2, 3]))
             }
             """;
 

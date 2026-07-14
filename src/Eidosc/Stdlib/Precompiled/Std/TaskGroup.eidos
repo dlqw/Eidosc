@@ -11,7 +11,7 @@ TaskGroup :: type {
 
 /// Snapshot of a task group's observable runtime state.
 Status :: type {
-    TaskGroupIdle | TaskGroupPending(Int) | TaskGroupCancelled(Int)
+    TaskGroupIdle , TaskGroupPending(Int) , TaskGroupCancelled(Int)
 }
 
 @internal
@@ -45,14 +45,14 @@ join_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit 
 /// Create an empty runtime-backed task group.
 new :: Unit -> TaskGroup need FFI
 {
-    _ => TaskGroup{handle: TaskGroup::new_runtime(())}
+    _ => TaskGroup{handle: TaskGroup.new_runtime(())}
 }
 
 /// Request cancellation for a runtime-backed task group.
 cancel :: TaskGroup -> Unit need FFI
 {
     TaskGroup{handle: handle} => {
-        TaskGroup::cancel_runtime(handle);
+        TaskGroup.cancel_runtime(handle);
         ()
     }
 }
@@ -60,122 +60,122 @@ cancel :: TaskGroup -> Unit need FFI
 /// Check whether cancellation has been requested for a runtime-backed task group.
 is_cancelled :: TaskGroup -> Bool need FFI
 {
-    TaskGroup{handle: handle} => TaskGroup::is_cancelled_runtime(handle)
+    TaskGroup{handle: handle} => TaskGroup.is_cancelled_runtime(handle)
 }
 
 /// Return the current number of pending tasks in a runtime-backed task group.
 pending_count :: TaskGroup -> Int need FFI
 {
-    TaskGroup{handle: handle} => TaskGroup::pending_count_runtime(handle)
+    TaskGroup{handle: handle} => TaskGroup.pending_count_runtime(handle)
 }
 
 /// Check whether the group currently has no pending tasks.
 is_empty :: TaskGroup -> Bool need FFI
 {
-    group => TaskGroup::pending_count(group) == 0
+    group => TaskGroup.pending_count(group) == 0
 }
 
 /// Check whether the group currently has at least one pending task.
 has_pending :: TaskGroup -> Bool need FFI
 {
-    group => TaskGroup::pending_count(group) > 0
+    group => TaskGroup.pending_count(group) > 0
 }
 
 /// Check whether the group can still accept work according to its cancellation flag.
 is_accepting :: TaskGroup -> Bool need FFI
 {
-    group => !TaskGroup::is_cancelled(group)
+    group => !TaskGroup.is_cancelled(group)
 }
 
 /// Spawn a raw pointer task only while the group is still accepting new work.
-spawn_raw_if_accepting[E: effects] :: TaskGroup -> (Unit -> RawPtr need E) -> Option[Task::Task[RawPtr]] need FFI, E
+spawn_raw_if_accepting[E: effects] :: TaskGroup -> (Unit -> RawPtr need E) -> Option[Task.Task[RawPtr]] need FFI, E
 {
-    group => thunk => if TaskGroup::is_accepting(group) then {
-        Some(TaskGroup::spawn_raw(group)(thunk))
+    group => thunk => if TaskGroup.is_accepting(group) then {
+        Some(TaskGroup.spawn_raw(group)(thunk))
     } else {
         None()
     }
 }
 
 /// Spawn a boxed value task only while the group is still accepting new work.
-spawn_if_accepting[A, E: effects] :: TaskGroup -> (Unit -> A need E) -> Option[Task::Task[A]] need FFI, E
+spawn_if_accepting[A, E: effects] :: TaskGroup -> (Unit -> A need E) -> Option[Task.Task[A]] need FFI, E
 {
-    group => thunk => if TaskGroup::is_accepting(group) then {
-        Some(TaskGroup::spawn(group)(thunk))
+    group => thunk => if TaskGroup.is_accepting(group) then {
+        Some(TaskGroup.spawn(group)(thunk))
     } else {
         None()
     }
 }
 
 /// Spawn a raw pointer task, or return an already-completed fallback task after cancellation.
-spawn_raw_or_completed[E: effects] :: TaskGroup -> (Unit -> RawPtr need E) -> RawPtr -> Task::Task[RawPtr] need FFI, E
+spawn_raw_or_completed[E: effects] :: TaskGroup -> (Unit -> RawPtr need E) -> RawPtr -> Task.Task[RawPtr] need FFI, E
 {
-    group => thunk => fallback => match TaskGroup::spawn_raw_if_accepting(group)(thunk)
+    group => thunk => fallback => match TaskGroup.spawn_raw_if_accepting(group)(thunk)
     {
         Some(task) => task,
-        None() => Task::completed_raw[RawPtr](fallback)
+        None() => Task.completed_raw[RawPtr](fallback)
     }
 }
 
 /// Spawn a boxed value task, or return an already-completed fallback task after cancellation.
-spawn_or_completed[A, E: effects] :: TaskGroup -> (Unit -> A need E) -> A -> Task::Task[A] need FFI, E
+spawn_or_completed[A, E: effects] :: TaskGroup -> (Unit -> A need E) -> A -> Task.Task[A] need FFI, E
 {
-    group => thunk => fallback => match TaskGroup::spawn_if_accepting[A, E](group)(thunk)
+    group => thunk => fallback => match TaskGroup.spawn_if_accepting[A, E](group)(thunk)
     {
         Some(task) => task,
-        None() => Task::completed_value[A](fallback)
+        None() => Task.completed_value[A](fallback)
     }
 }
 
 /// Spawn a scheduler-backed raw pointer task inside a task group.
-spawn_raw[E: effects] :: TaskGroup -> (Unit -> RawPtr need E) -> Task::Task[RawPtr] need FFI, E
+spawn_raw[E: effects] :: TaskGroup -> (Unit -> RawPtr need E) -> Task.Task[RawPtr] need FFI, E
 {
-    TaskGroup{handle: handle} => thunk => Task::Task{handle: TaskGroup::spawn_closure_raw_runtime(handle)(thunk)}
+    TaskGroup{handle: handle} => thunk => Task.Task{handle: TaskGroup.spawn_closure_raw_runtime(handle)(thunk)}
 }
 
 /// Spawn a scheduler-backed boxed Eidos value task inside a task group.
-spawn[A, E: effects] :: TaskGroup -> (Unit -> A need E) -> Task::Task[A] need FFI, E
+spawn[A, E: effects] :: TaskGroup -> (Unit -> A need E) -> Task.Task[A] need FFI, E
 {
-    TaskGroup{handle: handle} => thunk => Task::Task{handle: TaskGroup::spawn_closure_value_runtime(handle)(_ => FFI::box_value[A](thunk(())))}
+    TaskGroup{handle: handle} => thunk => Task.Task{handle: TaskGroup.spawn_closure_value_runtime(handle)(_ => FFI.box_value[A](thunk(())))}
 }
 
 /// Register a continuation to run after all currently pending group tasks finish.
 join_raw[E: effects] :: TaskGroup -> (Unit -> Unit need E) -> Unit need FFI, E
 {
-    TaskGroup{handle: handle} => continuation => TaskGroup::join_closure_raw_runtime(handle)(continuation)
+    TaskGroup{handle: handle} => continuation => TaskGroup.join_closure_raw_runtime(handle)(continuation)
 }
 
 /// Register a continuation to run after all currently pending group tasks finish.
 join[E: effects] :: TaskGroup -> (Unit -> Unit need E) -> Unit need FFI, E
 {
-    group => continuation => TaskGroup::join_raw(group)(continuation)
+    group => continuation => TaskGroup.join_raw(group)(continuation)
 }
 
 /// Collect completed task values after a group join, using fallback for any still-unavailable task.
-collect_values[A] :: Seq[Task::Task[A]] -> A -> Seq[A] need FFI
+collect_values[A] :: Seq[Task.Task[A]] -> A -> Seq[A] need FFI
 {
-    tasks => fallback => Seq::map(tasks)(task => task.try_await_value_or(fallback))
+    tasks => fallback => Seq.map(tasks)(task => task.try_await_value_or(fallback))
 }
 
 /// Register a continuation that receives values from an explicit task Seq after the group finishes.
-join_values[A, E: effects] :: TaskGroup -> Seq[Task::Task[A]] -> A -> (Seq[A] -> Unit need E) -> Unit need FFI, E
+join_values[A, E: effects] :: TaskGroup -> Seq[Task.Task[A]] -> A -> (Seq[A] -> Unit need E) -> Unit need FFI, E
 {
     group => tasks => fallback => continuation =>
-        TaskGroup::join(group)(_ => continuation(TaskGroup::collect_values[A](tasks)(fallback)))
+        TaskGroup.join(group)(_ => continuation(TaskGroup.collect_values[A](tasks)(fallback)))
 }
 
 /// Check whether the group has either been cancelled or has no pending tasks.
 is_cancelled_or_empty :: TaskGroup -> Bool need FFI
 {
-    group => TaskGroup::is_cancelled(group) || TaskGroup::is_empty(group)
+    group => TaskGroup.is_cancelled(group) || TaskGroup.is_empty(group)
 }
 
 /// Return a single status value containing cancellation and pending-count state.
 status :: TaskGroup -> Status need FFI
 {
     group => {
-        pending := TaskGroup::pending_count(group);
-        if TaskGroup::is_cancelled(group) then {
+        pending := TaskGroup.pending_count(group);
+        if TaskGroup.is_cancelled(group) then {
             TaskGroupCancelled(pending)
         } else if pending > 0 then {
             TaskGroupPending(pending)
@@ -212,7 +212,7 @@ status_is_idle :: Status -> Bool
 /// Return true when a status snapshot has pending tasks.
 status_has_pending :: Status -> Bool
 {
-    status => TaskGroup::status_pending_count(status) > 0
+    status => TaskGroup.status_pending_count(status) > 0
 }
 
 /// Select a value from a task group status snapshot.

@@ -250,7 +250,7 @@ public sealed partial class MirGenericSpecializerTests
                     Target = partialSlot,
                     Function = new MirFunctionRef
                     {
-                        Name = "Seq::count",
+                        Name = "Seq.count",
                         SymbolId = SymbolId.None,
                         TypeId = TypeId.None
                     },

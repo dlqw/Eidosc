@@ -130,7 +130,7 @@ public partial class MirBuilderTests
                     {
                         Function = new HirVar
                         {
-                            Name = "Seq::head",
+                            Name = "Seq.head",
                             SymbolId = headSymbol,
                             TypeId = optionType
                         },
@@ -150,7 +150,7 @@ public partial class MirBuilderTests
         };
 
         var effectMap = new ParameterEffectMap();
-        effectMap.Add("Seq::head", headSymbol.Value, [ParameterEffect.Read]);
+        effectMap.Add("Seq.head", headSymbol.Value, [ParameterEffect.Read]);
 
         var builder = new MirBuilder(null, parameterEffects: effectMap);
         var mirModule = builder.Build(module);
@@ -158,7 +158,7 @@ public partial class MirBuilderTests
         var entry = Assert.Single(callerFunc.BasicBlocks, block => block.IsEntry);
         var call = Assert.Single(entry.Instructions.OfType<MirCall>());
         var funcRef = Assert.IsType<MirFunctionRef>(call.Function);
-        Assert.Equal("Seq::head", funcRef.Name);
+        Assert.Equal("Seq.head", funcRef.Name);
         Assert.Single(call.Arguments);
 
         var sourceLocal = Assert.Single(callerFunc.Locals, local => local.IsParameter && local.Name == "xs").Id;
@@ -205,7 +205,7 @@ public partial class MirBuilderTests
                     {
                         Function = new HirVar
                         {
-                            Name = "Result::ok",
+                            Name = "Result.ok",
                             SymbolId = okSymbol,
                             TypeId = optionType
                         },
@@ -225,7 +225,7 @@ public partial class MirBuilderTests
         };
 
         var effectMap = new ParameterEffectMap();
-        effectMap.Add("Result::ok", okSymbol.Value, [ParameterEffect.Read]);
+        effectMap.Add("Result.ok", okSymbol.Value, [ParameterEffect.Read]);
 
         var builder = new MirBuilder(null, parameterEffects: effectMap);
         var mirModule = builder.Build(module);
@@ -233,7 +233,7 @@ public partial class MirBuilderTests
         var entry = Assert.Single(callerFunc.BasicBlocks, block => block.IsEntry);
         var call = Assert.Single(entry.Instructions.OfType<MirCall>());
         var funcRef = Assert.IsType<MirFunctionRef>(call.Function);
-        Assert.Equal("Result::ok", funcRef.Name);
+        Assert.Equal("Result.ok", funcRef.Name);
         Assert.Single(call.Arguments);
 
         var sourceLocal = Assert.Single(callerFunc.Locals, local => local.IsParameter && local.Name == "res").Id;

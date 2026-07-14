@@ -187,7 +187,7 @@ public partial class MirToLlvmConverterTests
         {
             SymbolId = firstSymbol,
             Name = "dup",
-            QualifiedName = "A::dup"
+            QualifiedName = "A.dup"
         };
 
         var first = BuildFunction(
@@ -218,7 +218,7 @@ public partial class MirToLlvmConverterTests
             {
                 SymbolId = secondSymbol,
                 Name = "dup",
-                QualifiedName = "B::dup"
+                QualifiedName = "B.dup"
             });
 
         var result = LocalPlace(1, intType);
@@ -283,7 +283,7 @@ public partial class MirToLlvmConverterTests
             {
                 Module = "A",
                 Name = "dup",
-                QualifiedName = "A::dup"
+                QualifiedName = "A.dup"
             });
         var second = BuildFunction(
             intType,
@@ -300,7 +300,7 @@ public partial class MirToLlvmConverterTests
             {
                 Module = "B",
                 Name = "dup",
-                QualifiedName = "B::dup"
+                QualifiedName = "B.dup"
             });
 
         var llvmModule = new MirToLlvmConverter().Convert(new MirModule

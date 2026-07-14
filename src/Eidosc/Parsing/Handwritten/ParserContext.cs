@@ -35,7 +35,8 @@ public sealed class ParserContext
 
     public string SourcePath { get; }
     public string LanguageVersion { get; }
-    public bool IsNameFirstSyntax => string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
+    public bool IsNameFirstSyntax => !string.Equals(LanguageVersion, EidosLanguageVersions.Legacy, StringComparison.Ordinal);
+    public bool UsesDotNamespaces => string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
     public IReadOnlyList<Diagnostic.Diagnostic> Diagnostics => _diagnostics;
     public int Position => _position;
     public bool IsEof => _position >= _tokens.Count || Current is EofToken;

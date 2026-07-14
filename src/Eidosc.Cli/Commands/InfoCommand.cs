@@ -31,35 +31,35 @@ public static class InfoCommand
             [FunctionalCategory] = new(
                 CliMessages.InfoStdlibCategoryFunctional,
                 CliMessages.InfoStdlibSummaryFunctional,
-                ["Fn::compose", "Predicate::accept", "Predicate::is", "Option::map", "Option::apply", "Option::traverse", "Seq::traverse", "Result::and_then", "Ordering::show"]),
+                ["Fn.compose", "Predicate.accept", "Predicate.is", "Option.map", "Option.apply", "Option.traverse", "Seq.traverse", "Result.and_then", "Ordering.show"]),
             [MathCategory] = new(
                 CliMessages.InfoStdlibCategoryMath,
                 CliMessages.InfoStdlibSummaryMath,
-                ["Math::abs", "Math::wrap", "FloatMath::smoothstep", "FloatMath::move_toward", "GameMath::ivec2", "GameMath::grid_cell_rect", "GameMath::move_toward"]),
+                ["Math.abs", "Math.wrap", "FloatMath.smoothstep", "FloatMath.move_toward", "GameMath.ivec2", "GameMath.grid_cell_rect", "GameMath.move_toward"]),
             [ContainersCategory] = new(
                 CliMessages.InfoStdlibCategoryContainers,
                 CliMessages.InfoStdlibSummaryContainers,
-                ["Seq::head", "SeqBuilder::filled", "SeqBuilder::push", "HashMap::insert", "HashSet::contains", "Deque::push_back", "Queue::dequeue", "Stack::pop", "BinaryHeap::pop", "PriorityQueue::min_enqueue", "PriorityQueue::dequeue", "TreeMap::keys", "TreeSet::to_seq", "PersistentMap::insert", "PersistentSet::contains"]),
+                ["Seq.head", "SeqBuilder.filled", "SeqBuilder.push", "HashMap.insert", "HashSet.contains", "Deque.push_back", "Queue.dequeue", "Stack.pop", "BinaryHeap.pop", "PriorityQueue.min_enqueue", "PriorityQueue.dequeue", "TreeMap.keys", "TreeSet.to_seq", "PersistentMap.insert", "PersistentSet.contains"]),
             [FileIoCategory] = new(
                 CliMessages.InfoStdlibCategoryFileIo,
                 CliMessages.InfoStdlibSummaryFileIo,
-                ["File::exists", "File::read_text_or_empty", "File::write_text"]),
+                ["File.exists", "File.read_text_or_empty", "File.write_text"]),
             [ConsoleIoCategory] = new(
                 CliMessages.InfoStdlibCategoryConsoleIo,
                 CliMessages.InfoStdlibSummaryConsoleIo,
-                ["Console::write_line", "Console::write_int", "Console::write_text_int_line", "Console::read_line_text"]),
+                ["Console.write_line", "Console.write_int", "Console.write_text_int_line", "Console.read_line_text"]),
             [NetworkCategory] = new(
                 CliMessages.InfoStdlibCategoryNetwork,
                 CliMessages.InfoStdlibSummaryNetwork,
-                ["Network::http_get_text_or_empty", "Network::http_request_text", "Network::http_request_bytes"]),
+                ["Network.http_get_text_or_empty", "Network.http_request_text", "Network.http_request_bytes"]),
             [SerializationCategory] = new(
                 CliMessages.InfoStdlibCategorySerialization,
                 CliMessages.InfoStdlibSummarySerialization,
-                ["Binary::encode_u32_le", "Binary::bytes_to_string", "Json::array", "Json::object"]),
+                ["Binary.encode_u32_le", "Binary.bytes_to_string", "Json.array", "Json.object"]),
             [BasicsCategory] = new(
                 CliMessages.InfoStdlibCategoryBasics,
                 CliMessages.InfoStdlibSummaryBasics,
-                ["Text::from_int", "Text::char_code_at_or", "Text::char_at_or", "Text::index_of_or", "Range::make", "Range::contains", "Shared::clone"]),
+                ["Text.from_int", "Text.char_code_at_or", "Text.char_at_or", "Text.index_of_or", "Range.make", "Range.contains", "Shared.clone"]),
             [OtherCategory] = new(
                 CliMessages.InfoStdlibCategoryOther,
                 CliMessages.InfoStdlibSummaryOther,
@@ -284,7 +284,7 @@ public static class InfoCommand
     {
         const string stdPrefix = "Std/";
         return modulePath.StartsWith(stdPrefix, StringComparison.Ordinal)
-            ? $"Std::{modulePath[stdPrefix.Length..]}"
+            ? $"Std.{modulePath[stdPrefix.Length..]}"
             : modulePath;
     }
 

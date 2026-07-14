@@ -2,12 +2,12 @@ TreeMap :: module {
     import RuntimeArray
     import Seq
     import Option
-    import Ordering::{Ordering}
+    import Ordering.{Ordering}
     import Trait
     import TraitInvoke
 
     TreeMap[K, V] :: type {
-        Empty | Node{key: K, value: V, left: TreeMap[K, V], right: TreeMap[K, V], size: Int, height: Int}
+        Empty , Node{key: K, value: V, left: TreeMap[K, V], right: TreeMap[K, V], size: Int, height: Int}
     }
 
     empty[K, V] :: Unit -> TreeMap[K, V]
@@ -34,7 +34,7 @@ TreeMap :: module {
 
     is_empty[K, V] :: TreeMap[K, V] -> Bool
     {
-        map => TreeMap::len(map) == 0
+        map => TreeMap.len(map) == 0
     }
 
     @internal
@@ -51,8 +51,8 @@ TreeMap :: module {
             value: value,
             left: left,
             right: right,
-            size: 1 + TreeMap::len(left) + TreeMap::len(right),
-            height: 1 + TreeMap::max_int(TreeMap::height(left))(TreeMap::height(right))
+            size: 1 + TreeMap.len(left) + TreeMap.len(right),
+            height: 1 + TreeMap.max_int(TreeMap.height(left))(TreeMap.height(right))
         }
     }
 
@@ -61,7 +61,7 @@ TreeMap :: module {
     {
         Empty() => 0,
         Node{key: _, value: _, left: left, right: right, size: _, height: _} =>
-            TreeMap::height(left) - TreeMap::height(right)
+            TreeMap.height(left) - TreeMap.height(right)
     }
 
     @internal
@@ -74,7 +74,7 @@ TreeMap :: module {
             right: right,
             size: _,
             height: _
-        } => TreeMap::make_node(leftKey)(leftValue)(leftLeft)(TreeMap::make_node(key)(value)(leftRight)(right)),
+        } => TreeMap.make_node(leftKey)(leftValue)(leftLeft)(TreeMap.make_node(key)(value)(leftRight)(right)),
         tree => tree
     }
 
@@ -88,7 +88,7 @@ TreeMap :: module {
             right: Node{key: rightKey, value: rightValue, left: rightLeft, right: rightRight, size: _, height: _},
             size: _,
             height: _
-        } => TreeMap::make_node(rightKey)(rightValue)(TreeMap::make_node(key)(value)(left)(rightLeft))(rightRight),
+        } => TreeMap.make_node(rightKey)(rightValue)(TreeMap.make_node(key)(value)(left)(rightLeft))(rightRight),
         tree => tree
     }
 
@@ -96,108 +96,108 @@ TreeMap :: module {
     balance_node[K, V] :: K -> V -> TreeMap[K, V] -> TreeMap[K, V] -> TreeMap[K, V]
     {
         key => value => left => right => {
-            balance := TreeMap::height(left) - TreeMap::height(right)
+            balance := TreeMap.height(left) - TreeMap.height(right)
             if balance > 1 then {
-                if TreeMap::balance_factor(left) < 0 then {
-                    TreeMap::rotate_right(TreeMap::make_node(key)(value)(TreeMap::rotate_left(left))(right))
+                if TreeMap.balance_factor(left) < 0 then {
+                    TreeMap.rotate_right(TreeMap.make_node(key)(value)(TreeMap.rotate_left(left))(right))
                 } else {
-                    TreeMap::rotate_right(TreeMap::make_node(key)(value)(left)(right))
+                    TreeMap.rotate_right(TreeMap.make_node(key)(value)(left)(right))
                 }
             } else if balance < -1 then {
-                if TreeMap::balance_factor(right) > 0 then {
-                    TreeMap::rotate_left(TreeMap::make_node(key)(value)(left)(TreeMap::rotate_right(right)))
+                if TreeMap.balance_factor(right) > 0 then {
+                    TreeMap.rotate_left(TreeMap.make_node(key)(value)(left)(TreeMap.rotate_right(right)))
                 } else {
-                    TreeMap::rotate_left(TreeMap::make_node(key)(value)(left)(right))
+                    TreeMap.rotate_left(TreeMap.make_node(key)(value)(left)(right))
                 }
             } else {
-                TreeMap::make_node(key)(value)(left)(right)
+                TreeMap.make_node(key)(value)(left)(right)
             }
         }
     }
 
     @internal
-    clone_tree_map[K: Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> TreeMap[K, V]
+    clone_tree_map[K: Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> TreeMap[K, V]
     {
         Empty() => Empty(),
         Node{key: key, value: value, left: left, right: right, size: size, height: height} => Node{
-            key: TraitInvoke::clone_value(key),
-            value: TraitInvoke::clone_value(value),
-            left: TreeMap::clone_tree_map(left),
-            right: TreeMap::clone_tree_map(right),
+            key: TraitInvoke.clone_value(key),
+            value: TraitInvoke.clone_value(value),
+            left: TreeMap.clone_tree_map(left),
+            right: TreeMap.clone_tree_map(right),
             size: size,
             height: height
         }
     }
 
-    clone[K: Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> TreeMap[K, V]
+    clone[K: Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> TreeMap[K, V]
     {
-        map => TreeMap::clone_tree_map(map)
+        map => TreeMap.clone_tree_map(map)
     }
 
-    CloneTreeMapKV :: instance Trait::Clone {
-        clone[K: Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> TreeMap[K, V]
+    CloneTreeMapKV :: instance Trait.Clone {
+        clone[K: Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> TreeMap[K, V]
         {
-            map => TreeMap::clone_tree_map(map)
+            map => TreeMap.clone_tree_map(map)
         }
     }
 
-    insert[K: Trait::Ord + Trait::Clone, V] :: TreeMap[K, V] -> K -> V -> TreeMap[K, V]
+    insert[K: Trait.Ord + Trait.Clone, V] :: TreeMap[K, V] -> K -> V -> TreeMap[K, V]
     {
-        Empty() => key => value => TreeMap::singleton(key)(value),
+        Empty() => key => value => TreeMap.singleton(key)(value),
         Node{key: nodeKey, value: nodeValue, left: left, right: right, size: _, height: _} => key => value => {
-            cmp := TraitInvoke::compare_value(TraitInvoke::clone_value(key))(TraitInvoke::clone_value(nodeKey))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(nodeKey))
             match cmp {
-                Less() => TreeMap::balance_node(nodeKey)(nodeValue)(TreeMap::insert(left)(key)(value))(right),
-                Greater() => TreeMap::balance_node(nodeKey)(nodeValue)(left)(TreeMap::insert(right)(key)(value)),
-                Equal() => TreeMap::make_node(key)(value)(left)(right)
+                Less() => TreeMap.balance_node(nodeKey)(nodeValue)(TreeMap.insert(left)(key)(value))(right),
+                Greater() => TreeMap.balance_node(nodeKey)(nodeValue)(left)(TreeMap.insert(right)(key)(value)),
+                Equal() => TreeMap.make_node(key)(value)(left)(right)
             }
         }
     }
 
-    from_seq[K: Trait::Ord + Trait::Clone, V] :: Seq[(K, V)] -> TreeMap[K, V]
+    from_seq[K: Trait.Ord + Trait.Clone, V] :: Seq[(K, V)] -> TreeMap[K, V]
     {
-        entries => Seq::fold_left(entries)(TreeMap::empty(()))(map => entry =>
-            match entry { (key, value) => TreeMap::insert(map)(key)(value) })
+        entries => Seq.fold_left(entries)(TreeMap.empty(()))(map => entry =>
+            match entry { (key, value) => TreeMap.insert(map)(key)(value) })
     }
 
-    get[K: Trait::Ord + Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> K -> Option[V]
+    get[K: Trait.Ord + Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> K -> Option[V]
     {
         Empty() => _ => None(),
         Node{key: nodeKey, value: nodeValue, left: left, right: right, size: _, height: _} => key => {
-            cmp := TraitInvoke::compare_value(TraitInvoke::clone_value(key))(TraitInvoke::clone_value(nodeKey))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(nodeKey))
             match cmp {
-                Less() => TreeMap::get(left)(key),
-                Greater() => TreeMap::get(right)(key),
-                Equal() => Some(TraitInvoke::clone_value(nodeValue))
+                Less() => TreeMap.get(left)(key),
+                Greater() => TreeMap.get(right)(key),
+                Equal() => Some(TraitInvoke.clone_value(nodeValue))
             }
         }
     }
 
-    get_or[K: Trait::Ord + Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> K -> V -> V
+    get_or[K: Trait.Ord + Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> K -> V -> V
     {
-        map => key => fallback => Option::unwrap_or(TreeMap::get(map)(key))(fallback)
+        map => key => fallback => Option.unwrap_or(TreeMap.get(map)(key))(fallback)
     }
 
-    contains_key[K: Trait::Ord + Trait::Clone, V] :: TreeMap[K, V] -> K -> Bool
+    contains_key[K: Trait.Ord + Trait.Clone, V] :: TreeMap[K, V] -> K -> Bool
     {
         Empty() => _ => false,
         Node{key: nodeKey, value: _, left: left, right: right, size: _, height: _} => key => {
-            cmp := TraitInvoke::compare_value(TraitInvoke::clone_value(key))(TraitInvoke::clone_value(nodeKey))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(nodeKey))
             match cmp {
-                Less() => TreeMap::contains_key(left)(key),
-                Greater() => TreeMap::contains_key(right)(key),
+                Less() => TreeMap.contains_key(left)(key),
+                Greater() => TreeMap.contains_key(right)(key),
                 Equal() => true
             }
         }
     }
 
     @internal
-    min_entry[K: Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> Option[(K, V)]
+    min_entry[K: Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> Option[(K, V)]
     {
         Empty() => None(),
         Node{key: key, value: value, left: Empty(), right: _, size: _, height: _} =>
-            Some((TraitInvoke::clone_value(key), TraitInvoke::clone_value(value))),
-        Node{key: _, value: _, left: left, right: _, size: _, height: _} => TreeMap::min_entry(left)
+            Some((TraitInvoke.clone_value(key), TraitInvoke.clone_value(value))),
+        Node{key: _, value: _, left: left, right: _, size: _, height: _} => TreeMap.min_entry(left)
     }
 
     @internal
@@ -206,29 +206,29 @@ TreeMap :: module {
         Empty() => Empty(),
         Node{key: _, value: _, left: Empty(), right: right, size: _, height: _} => right,
         Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
-            TreeMap::balance_node(key)(value)(TreeMap::remove_min(left))(right)
+            TreeMap.balance_node(key)(value)(TreeMap.remove_min(left))(right)
     }
 
     @internal
-    merge_children[K: Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> TreeMap[K, V] -> TreeMap[K, V]
+    merge_children[K: Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> TreeMap[K, V] -> TreeMap[K, V]
     {
         Empty() => right => right,
         left => Empty() => left,
-        left => right => match TreeMap::min_entry(TraitInvoke::clone_value(right)) {
-            Some((key, value)) => TreeMap::balance_node(key)(value)(left)(TreeMap::remove_min(right)),
+        left => right => match TreeMap.min_entry(TraitInvoke.clone_value(right)) {
+            Some((key, value)) => TreeMap.balance_node(key)(value)(left)(TreeMap.remove_min(right)),
             None() => left
         }
     }
 
-    remove[K: Trait::Ord + Trait::Clone, V: Trait::Clone] :: TreeMap[K, V] -> K -> TreeMap[K, V]
+    remove[K: Trait.Ord + Trait.Clone, V: Trait.Clone] :: TreeMap[K, V] -> K -> TreeMap[K, V]
     {
         Empty() => _ => Empty(),
         Node{key: nodeKey, value: nodeValue, left: left, right: right, size: _, height: _} => key => {
-            cmp := TraitInvoke::compare_value(TraitInvoke::clone_value(key))(TraitInvoke::clone_value(nodeKey))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(nodeKey))
             match cmp {
-                Less() => TreeMap::balance_node(nodeKey)(nodeValue)(TreeMap::remove(left)(key))(right),
-                Greater() => TreeMap::balance_node(nodeKey)(nodeValue)(left)(TreeMap::remove(right)(key)),
-                Equal() => TreeMap::merge_children(left)(right)
+                Less() => TreeMap.balance_node(nodeKey)(nodeValue)(TreeMap.remove(left)(key))(right),
+                Greater() => TreeMap.balance_node(nodeKey)(nodeValue)(left)(TreeMap.remove(right)(key)),
+                Equal() => TreeMap.merge_children(left)(right)
             }
         }
     }
@@ -237,30 +237,30 @@ TreeMap :: module {
     {
         Empty() => [],
         Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
-            Seq::append(TreeMap::to_seq(left))(Seq::append([(key, value)])(TreeMap::to_seq(right)))
+            Seq.append(TreeMap.to_seq(left))(Seq.append([(key, value)])(TreeMap.to_seq(right)))
     }
 
     keys[K, V] :: TreeMap[K, V] -> Seq[K]
     {
         Empty() => [],
         Node{key: key, value: _, left: left, right: right, size: _, height: _} =>
-            Seq::append(TreeMap::keys(left))(Seq::append([key])(TreeMap::keys(right)))
+            Seq.append(TreeMap.keys(left))(Seq.append([key])(TreeMap.keys(right)))
     }
 
     values[K, V] :: TreeMap[K, V] -> Seq[V]
     {
-        map => Seq::map(TreeMap::to_seq(map))(entry => match entry { (_, value) => value })
+        map => Seq.map(TreeMap.to_seq(map))(entry => match entry { (_, value) => value })
     }
 
     fold[K, V, A, E: effects] :: TreeMap[K, V] -> A -> (A -> K -> V -> A need E) -> A need E
     {
-        map => initial => f => Seq::fold_left(TreeMap::to_seq(map))(initial)(acc => entry =>
+        map => initial => f => Seq.fold_left(TreeMap.to_seq(map))(initial)(acc => entry =>
             match entry { (key, value) => f(acc)(key)(value) })
     }
 
-    map_values[K: Trait::Ord + Trait::Clone, V, U, E: effects] :: TreeMap[K, V] -> (V -> U need E) -> TreeMap[K, U] need E
+    map_values[K: Trait.Ord + Trait.Clone, V, U, E: effects] :: TreeMap[K, V] -> (V -> U need E) -> TreeMap[K, U] need E
     {
-        map => f => TreeMap::from_seq(Seq::map(TreeMap::to_seq(map))(entry =>
+        map => f => TreeMap.from_seq(Seq.map(TreeMap.to_seq(map))(entry =>
             match entry { (key, value) => (key, f(value)) }))
     }
 }

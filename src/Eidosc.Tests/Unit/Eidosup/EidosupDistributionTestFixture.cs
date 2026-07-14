@@ -49,7 +49,7 @@ internal static class EidosupDistributionTestFixture
             Dependencies: [core.Id],
             Conflicts: [],
             artifact,
-            [new ToolchainComponentFile("stdlib/Std/Core.eidos", 16, HashText("module Std::Core"))]);
+            [new ToolchainComponentFile("stdlib/Std/Core.eidos", 15, HashText("module Std.Core"))]);
         var docsIndex = $"{{\"schema\":1,\"eidoscVersion\":\"{release.NormalizedVersion}\",\"topics\":{{\"index\":\"index.md\"}}}}";
         var docs = new ToolchainComponentDefinition(
             "eidos-docs",
@@ -81,7 +81,7 @@ internal static class EidosupDistributionTestFixture
             "preview",
             platform.Rid,
             new ToolchainProductIdentity(release.NormalizedVersion, new string('a', 40)),
-            new ToolchainLanguageIdentity("0.5.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.6.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", [core.Id, std.Id]),
                 new ToolchainProfileDefinition("default", [core.Id, std.Id, runtime.Id]),

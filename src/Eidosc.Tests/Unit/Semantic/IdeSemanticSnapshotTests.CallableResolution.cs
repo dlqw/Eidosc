@@ -93,8 +93,8 @@ B :: module {
     }
 }
 
-import A::*
-import B::*
+import A.*
+import B.*
 
 main :: Unit -> Int
 {
@@ -121,14 +121,14 @@ main :: Unit -> Int
         Assert.Equal("pick", diagnostic.Metadata["callable.name"]);
         Assert.Equal("method", diagnostic.Metadata["callable.syntax"]);
         Assert.Contains("Int", diagnostic.Metadata["callable.argumentTypes"], StringComparison.Ordinal);
-        Assert.Contains("A::pick", diagnostic.Metadata["callable.candidates"], StringComparison.Ordinal);
-        Assert.Contains("B::pick", diagnostic.Metadata["callable.candidates"], StringComparison.Ordinal);
+        Assert.Contains("A.pick", diagnostic.Metadata["callable.candidates"], StringComparison.Ordinal);
+        Assert.Contains("B.pick", diagnostic.Metadata["callable.candidates"], StringComparison.Ordinal);
         Assert.Contains("module=A", diagnostic.Metadata["callable.candidateDetails"], StringComparison.Ordinal);
         Assert.Contains("module=B", diagnostic.Metadata["callable.candidateDetails"], StringComparison.Ordinal);
         Assert.Contains(diagnostic.Notes, note => note.Contains("argument types: Int", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("candidate: A::pick :: Int -> Int", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("candidate: B::pick :: Int -> Int", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("qualified paths: A::pick, B::pick", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("candidate: A.pick :: Int -> Int", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("candidate: B.pick :: Int -> Int", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("qualified paths: A.pick, B.pick", StringComparison.Ordinal));
 
         var qualifySuggestions = diagnostic.Suggestions
             .Where(suggestion => suggestion.Kind == "QualifySymbol")
@@ -136,11 +136,11 @@ main :: Unit -> Int
         Assert.Equal(2, qualifySuggestions.Length);
         Assert.Contains(
             qualifySuggestions,
-            suggestion => suggestion.Message.Contains("A::pick", StringComparison.Ordinal) &&
+            suggestion => suggestion.Message.Contains("A.pick", StringComparison.Ordinal) &&
                           suggestion.OriginalSymbolId.HasValue);
         Assert.Contains(
             qualifySuggestions,
-            suggestion => suggestion.Message.Contains("B::pick", StringComparison.Ordinal) &&
+            suggestion => suggestion.Message.Contains("B.pick", StringComparison.Ordinal) &&
                           suggestion.OriginalSymbolId.HasValue);
 
         var typeSuggestion = Assert.Single(

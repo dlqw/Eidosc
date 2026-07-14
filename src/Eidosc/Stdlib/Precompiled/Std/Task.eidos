@@ -13,7 +13,7 @@ Task[A] :: type {
 
 /// Observable state of a runtime-backed task.
 Status :: type {
-    TaskPending | TaskCompleted
+    TaskPending , TaskCompleted
 }
 
 @internal
@@ -55,16 +55,16 @@ await_closure_value_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> 
 /// Create an already-completed runtime-backed task with a non-null raw pointer payload.
 completed_raw[A] :: RawPtr -> Task[A] need FFI
 {
-    value => Task{handle: Task::completed_raw_runtime(value)}
+    value => Task{handle: Task.completed_raw_runtime(value)}
 }
 
 /// Create an already-completed runtime-backed task with a boxed Eidos value.
 completed_value[A] :: A -> Task[A] need FFI
 {
     value => {
-        boxed := FFI::box_value[A](value);
-        task := Task{handle: Task::completed_value_runtime(boxed)};
-        FFI::free_boxed_value(boxed);
+        boxed := FFI.box_value[A](value);
+        task := Task{handle: Task.completed_value_runtime(boxed)};
+        FFI.free_boxed_value(boxed);
         task
     }
 }
@@ -72,13 +72,13 @@ completed_value[A] :: A -> Task[A] need FFI
 /// Spawn a scheduler-backed raw pointer task from an Eidos thunk.
 spawn_raw[E: effects] :: (Unit -> RawPtr need E) -> Task[RawPtr] need FFI, E
 {
-    thunk => Task{handle: Task::spawn_closure_raw_runtime(thunk)}
+    thunk => Task{handle: Task.spawn_closure_raw_runtime(thunk)}
 }
 
 /// Spawn a scheduler-backed task that returns a boxed Eidos value.
 spawn[A, E: effects] :: (Unit -> A need E) -> Task[A] need FFI, E
 {
-    thunk => Task{handle: Task::spawn_closure_value_runtime(_ => FFI::box_value[A](thunk(())))}
+    thunk => Task{handle: Task.spawn_closure_value_runtime(_ => FFI.box_value[A](thunk(())))}
 }
 
 /// Create a completed task only when the payload is non-null.
@@ -87,26 +87,26 @@ completed_raw_opt[A] :: RawPtr -> Option[Task[A]] need FFI
     value => if ptr_is_null(value) then {
         None()
     } else {
-        Some(Task::completed_raw(value))
+        Some(Task.completed_raw(value))
     }
 }
 
 /// Check whether a runtime-backed task has completed.
 is_completed[A] :: Task[A] -> Bool need FFI
 {
-    Task{handle: handle} => Task::is_completed_runtime(handle)
+    Task{handle: handle} => Task.is_completed_runtime(handle)
 }
 
 /// Return true while the task has not completed.
 is_pending[A] :: Task[A] -> Bool need FFI
 {
-    task => !Task::is_completed(task)
+    task => !Task.is_completed(task)
 }
 
 /// Return a task state snapshot.
 status[A] :: Task[A] -> Status need FFI
 {
-    task => if Task::is_completed(task) then { TaskCompleted() } else { TaskPending() }
+    task => if Task.is_completed(task) then { TaskCompleted() } else { TaskPending() }
 }
 
 /// Return true when a task status represents completion.
@@ -119,7 +119,7 @@ status_is_completed :: Status -> Bool
 /// Return true when a task status represents pending work.
 status_is_pending :: Status -> Bool
 {
-    status => !Task::status_is_completed(status)
+    status => !Task.status_is_completed(status)
 }
 
 /// Select a value from a task status snapshot.
@@ -140,7 +140,7 @@ status_value_or_else[A, E1: effects, E2: effects] :: Status -> (Unit -> A need E
 try_await_raw[A] :: Task[A] -> Option[RawPtr] need FFI
 {
     Task{handle: handle} => {
-        value := Task::try_get_raw_runtime(handle);
+        value := Task.try_get_raw_runtime(handle);
         if ptr_is_null(value) then { None() } else { Some(value) }
     }
 }
@@ -149,11 +149,11 @@ try_await_raw[A] :: Task[A] -> Option[RawPtr] need FFI
 try_await_value[A] :: Task[A] -> Option[A] need FFI
 {
     Task{handle: handle} => {
-        boxed := Task::try_get_value_runtime(handle);
+        boxed := Task.try_get_value_runtime(handle);
         if ptr_is_null(boxed) then {
             None()
         } else {
-            Some(FFI::unbox_value[A](boxed))
+            Some(FFI.unbox_value[A](boxed))
         }
     }
 }
@@ -161,38 +161,38 @@ try_await_value[A] :: Task[A] -> Option[A] need FFI
 /// Try to read a completed raw pointer payload, returning the fallback while pending.
 try_await_raw_or[A] :: Task[A] -> RawPtr -> RawPtr need FFI
 {
-    task => fallback => match Task::try_await_raw(task) { Some(value) => value, None() => fallback }
+    task => fallback => match Task.try_await_raw(task) { Some(value) => value, None() => fallback }
 }
 
 /// Try to read a completed raw pointer payload, evaluating the fallback only while pending.
 try_await_raw_or_else[A, E: effects] :: Task[A] -> (Unit -> RawPtr need E) -> RawPtr need FFI, E
 {
-    task => fallback => match Task::try_await_raw(task) { Some(value) => value, None() => fallback(()) }
+    task => fallback => match Task.try_await_raw(task) { Some(value) => value, None() => fallback(()) }
 }
 
 /// Try to read a completed boxed Eidos value, returning the fallback while pending.
 try_await_value_or[A] :: Task[A] -> A -> A need FFI
 {
-    task => fallback => match Task::try_await_value(task) { Some(value) => value, None() => fallback }
+    task => fallback => match Task.try_await_value(task) { Some(value) => value, None() => fallback }
 }
 
 /// Try to read a completed boxed Eidos value, evaluating the fallback only while pending.
 try_await_value_or_else[A, E: effects] :: Task[A] -> (Unit -> A need E) -> A need FFI, E
 {
-    task => fallback => match Task::try_await_value(task) { Some(value) => value, None() => fallback(()) }
+    task => fallback => match Task.try_await_value(task) { Some(value) => value, None() => fallback(()) }
 }
 
 /// Register a raw pointer continuation to run when a scheduler-backed task completes.
 await_raw[E: effects] :: Task[RawPtr] -> (RawPtr -> Unit need E) -> Unit need FFI, E
 {
-    Task{handle: handle} => continuation => Task::await_closure_raw_runtime(handle)(continuation)
+    Task{handle: handle} => continuation => Task.await_closure_raw_runtime(handle)(continuation)
 }
 
 /// Register a continuation to run with the boxed Eidos value when the task completes.
 await_value[A, E: effects] :: Task[A] -> (A -> Unit need E) -> Unit need FFI, E
 {
-    Task{handle: handle} => continuation => Task::await_closure_value_runtime(handle)(boxed => {
-        value := FFI::unbox_value[A](boxed);
+    Task{handle: handle} => continuation => Task.await_closure_value_runtime(handle)(boxed => {
+        value := FFI.unbox_value[A](boxed);
         continuation(value)
     })
 }

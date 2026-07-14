@@ -1,7 +1,7 @@
 Result :: module {
     import Option
     import Trait
-    import Ordering::{Ordering}
+    import Ordering.{Ordering}
     import Ordering
     import TraitInvoke
     import Functor
@@ -10,7 +10,7 @@ Result :: module {
     import Monad
     import Traversable
 
-    Result[T, E] :: type { Ok(T) | Err(E) }
+    Result[T, E] :: type { Ok(T) , Err(E) }
     ResultWith[E, T] :: type = Result[T, E];
 
     @internal
@@ -55,16 +55,16 @@ Result :: module {
         Err(_) => true
     }
 
-    contains[T: Trait::Eq, E] :: Result[T, E] -> T -> Bool
+    contains[T: Trait.Eq, E] :: Result[T, E] -> T -> Bool
     {
-        Ok(value) => expected => TraitInvoke::eq_value(value)(expected),
+        Ok(value) => expected => TraitInvoke.eq_value(value)(expected),
         Err(_) => _ => false
     }
 
-    contains_err[T, E: Trait::Eq] :: Result[T, E] -> E -> Bool
+    contains_err[T, E: Trait.Eq] :: Result[T, E] -> E -> Bool
     {
         Ok(_) => _ => false,
-        Err(error) => expected => TraitInvoke::eq_value(error)(expected)
+        Err(error) => expected => TraitInvoke.eq_value(error)(expected)
     }
 
     map[T, U, E, F: effects] :: Result[T, E] -> (T -> U need F) -> Result[U, E] need F
@@ -151,7 +151,7 @@ Result :: module {
         Err(error) => Some(error)
     }
 
-    FoldableResultWithE[E] :: instance Foldable::Foldable[ResultWith[E]] {
+    FoldableResultWithE[E] :: instance Foldable.Foldable[ResultWith[E]] {
         fold_left[A, B, E, F: effects] :: ResultWith[E, A] -> B -> (B -> A -> B need F) -> B need F
             {
                 Ok(value) => acc => f => f(acc)(value),
@@ -164,55 +164,55 @@ Result :: module {
             }
     }
 
-    TraversableResultWithE[E] :: instance Traversable::Traversable[ResultWith[E]] {
-        traverse[A, B, G: kind2 : Applicative::Applicative[G], E, F: effects] :: ResultWith[E, A] -> (A -> G[B] need F) -> G[ResultWith[E, B]] need F
+    TraversableResultWithE[E] :: instance Traversable.Traversable[ResultWith[E]] {
+        traverse[A, B, G: kind2 : Applicative.Applicative[G], E, F: effects] :: ResultWith[E, A] -> (A -> G[B] need F) -> G[ResultWith[E, B]] need F
             {
-                Ok(value) => f => Traversable::map_applicative(Result::ok_wrap)(f(value)),
-                Err(error) => _ => Traversable::lift_pure(Err(error))
+                Ok(value) => f => Traversable.map_applicative(Result.ok_wrap)(f(value)),
+                Err(error) => _ => Traversable.lift_pure(Err(error))
             }
     }
 
-    sequence[A, G: kind2 : Applicative::Applicative[G], E] :: ResultWith[E, G[A]] -> G[ResultWith[E, A]]
+    sequence[A, G: kind2 : Applicative.Applicative[G], E] :: ResultWith[E, G[A]] -> G[ResultWith[E, A]]
     {
-        result => Traversable::traverse(result)(Traversable::identity_applicative)
+        result => Traversable.traverse(result)(Traversable.identity_applicative)
     }
 
-    EqResultTE :: instance Trait::Eq {
-        eq[T: Trait::Eq, E: Trait::Eq] :: Result[T, E] -> Result[T, E] -> Bool
+    EqResultTE :: instance Trait.Eq {
+        eq[T: Trait.Eq, E: Trait.Eq] :: Result[T, E] -> Result[T, E] -> Bool
             {
-                (Ok(leftValue), Ok(rightValue)) => TraitInvoke::eq_value(leftValue)(rightValue),
+                (Ok(leftValue), Ok(rightValue)) => TraitInvoke.eq_value(leftValue)(rightValue),
                 (Ok(value), Err(error)) => false,
                 (Err(error), Ok(value)) => false,
-                (Err(leftValue), Err(rightValue)) => TraitInvoke::eq_value(leftValue)(rightValue)
+                (Err(leftValue), Err(rightValue)) => TraitInvoke.eq_value(leftValue)(rightValue)
             }
     }
 
-    OrdResultTE :: instance Trait::Ord {
-        compare[T: Trait::Ord, E: Trait::Ord] :: Result[T, E] -> Result[T, E] -> Ordering
+    OrdResultTE :: instance Trait.Ord {
+        compare[T: Trait.Ord, E: Trait.Ord] :: Result[T, E] -> Result[T, E] -> Ordering
             {
-                (Ok(leftValue), Ok(rightValue)) => TraitInvoke::compare_value(leftValue)(rightValue),
+                (Ok(leftValue), Ok(rightValue)) => TraitInvoke.compare_value(leftValue)(rightValue),
                 (Ok(value), Err(error)) => Greater(),
                 (Err(error), Ok(value)) => Less(),
-                (Err(leftValue), Err(rightValue)) => TraitInvoke::compare_value(leftValue)(rightValue)
+                (Err(leftValue), Err(rightValue)) => TraitInvoke.compare_value(leftValue)(rightValue)
             }
     }
 
-    ShowResultTE :: instance Trait::Show {
-        show[T: Trait::Show, E: Trait::Show] :: Result[T, E] -> String
+    ShowResultTE :: instance Trait.Show {
+        show[T: Trait.Show, E: Trait.Show] :: Result[T, E] -> String
             {
-                Ok(value) => "Ok(" ++ TraitInvoke::show_value(value) ++ ")",
-                Err(error) => "Err(" ++ TraitInvoke::show_value(error) ++ ")"
+                Ok(value) => "Ok(" ++ TraitInvoke.show_value(value) ++ ")",
+                Err(error) => "Err(" ++ TraitInvoke.show_value(error) ++ ")"
             }
     }
 
-    FunctorResultWithE[E] :: instance Functor::Functor[ResultWith[E]] {
+    FunctorResultWithE[E] :: instance Functor.Functor[ResultWith[E]] {
         fmap[A, B, E, F: effects] :: ResultWith[E, A] -> (A -> B need F) -> ResultWith[E, B] need F
             {
-                result => f => Result::map(result)(f)
+                result => f => Result.map(result)(f)
             }
     }
 
-    ApplicativeResultWithE[E] :: instance Applicative::Applicative[ResultWith[E]] {
+    ApplicativeResultWithE[E] :: instance Applicative.Applicative[ResultWith[E]] {
         pure[A, E] :: A -> ResultWith[E, A]
             {
                 value => Ok(value)
@@ -225,14 +225,14 @@ Result :: module {
             }
     }
 
-    MonadResultWithE[E] :: instance Monad::Monad[ResultWith[E]] {
+    MonadResultWithE[E] :: instance Monad.Monad[ResultWith[E]] {
         pure[A, E] :: A -> ResultWith[E, A]
             {
                 value => Ok(value)
             }
         bind[A, B, E, F: effects] :: ResultWith[E, A] -> (A -> ResultWith[E, B] need F) -> ResultWith[E, B] need F
             {
-                result => f => Result::and_then(result)(f)
+                result => f => Result.and_then(result)(f)
             }
 
 

@@ -197,10 +197,10 @@ Utils :: module {
                 .Select(static function => function.FunctionId.ModuleIdentityKey)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            Assert.All(mainFunctionModules, module => Assert.Contains("::Main", module, StringComparison.Ordinal));
-            Assert.All(utilsFunctionModules, module => Assert.Contains("::Utils", module, StringComparison.Ordinal));
-            Assert.DoesNotContain(mainModule.Functions, static function => function.FunctionId.ModuleIdentityKey.Contains("::Utils", StringComparison.Ordinal));
-            Assert.DoesNotContain(utilsModule.Functions, static function => function.FunctionId.ModuleIdentityKey.Contains("::Main", StringComparison.Ordinal));
+            Assert.All(mainFunctionModules, module => Assert.Contains(".Main", module, StringComparison.Ordinal));
+            Assert.All(utilsFunctionModules, module => Assert.Contains(".Utils", module, StringComparison.Ordinal));
+            Assert.DoesNotContain(mainModule.Functions, static function => function.FunctionId.ModuleIdentityKey.Contains(".Utils", StringComparison.Ordinal));
+            Assert.DoesNotContain(utilsModule.Functions, static function => function.FunctionId.ModuleIdentityKey.Contains(".Main", StringComparison.Ordinal));
         }
         finally
         {
@@ -255,9 +255,9 @@ Utils :: module {
                         SymbolId = new SymbolId(42),
                         Kind = SymbolKind.Function,
                         Module = "Owner",
-                        ModuleIdentityKey = "pkg::Owner",
+                        ModuleIdentityKey = "pkg.Owner",
                         Name = "value",
-                        QualifiedName = "Owner::value"
+                        QualifiedName = "Owner.value"
                     },
                     ReturnType = new TypeId(BaseTypes.IntId),
                     EntryBlockId = new BlockId { Value = 1 },
@@ -317,9 +317,9 @@ Utils :: module {
                         SymbolId = new SymbolId(42),
                         Kind = SymbolKind.Function,
                         Module = "Main",
-                        ModuleIdentityKey = "pkg::Main",
+                        ModuleIdentityKey = "pkg.Main",
                         Name = "id",
-                        QualifiedName = "Main::id"
+                        QualifiedName = "Main.id"
                     },
                     ReturnType = new TypeId(BaseTypes.IntId),
                     EntryBlockId = new BlockId { Value = 1 },
@@ -515,9 +515,9 @@ Main :: module {
             SymbolId = new SymbolId(101),
             Kind = SymbolKind.Function,
             Module = "Main",
-            ModuleIdentityKey = "pkg:main::Main",
+            ModuleIdentityKey = "pkg:main.Main",
             Name = "callee",
-            QualifiedName = "Main::callee",
+            QualifiedName = "Main.callee",
             MangledName = "eidos_Main__callee"
         };
         var functionRef = new MirFunctionRef
@@ -708,9 +708,9 @@ Main :: module {
                         SymbolId = new SymbolId(100),
                         Kind = SymbolKind.Function,
                         Module = "Main",
-                        ModuleIdentityKey = "pkg:main::Main",
+                        ModuleIdentityKey = "pkg:main.Main",
                         Name = "main",
-                        QualifiedName = "Main::main",
+                        QualifiedName = "Main.main",
                         MangledName = "eidos_Main__main"
                     },
                     ReturnType = intType,
@@ -897,7 +897,7 @@ Main :: module {
         new(
             "Function",
             "value",
-            "Owner::Function:value",
+            "Owner.Function:value",
             "Int",
             symbolId,
             BaseTypes.IntId,
