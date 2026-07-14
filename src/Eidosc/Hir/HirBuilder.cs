@@ -1037,10 +1037,7 @@ public sealed partial class HirBuilder
         return new HirVal
         {
             Name = resolvedName,
-            Initializer = ConvertExprOrFallback(
-                letDecl.Value,
-                "initializer of let pattern binding",
-                letDecl.Span),
+            Initializer = ConvertLetInitializer(letDecl, bindingSymbol),
             Span = letDecl.Span,
             SymbolId = bindingSymbol,
             IsModuleLevel = _symbolTable.GetSymbol(bindingSymbol) is VarSymbol { IsModuleLevel: true },
@@ -1048,6 +1045,23 @@ public sealed partial class HirBuilder
             Pattern = ConvertPattern(letDecl.Pattern),
             TypeId = GetTypeId(letDecl)
         };
+    }
+
+    private HirNode ConvertLetInitializer(LetDecl letDecl, SymbolId bindingSymbol)
+    {
+        if (letDecl.IsComptime &&
+            bindingSymbol.IsValid &&
+            letDecl.Value != null &&
+            _typeInferer?.ComptimeValues.TryGetValue(bindingSymbol, out var value) == true &&
+            TryReifyComptimeValue(value, GetTypeId(letDecl.Value), letDecl.Value.Span, out var reified, out _))
+        {
+            return reified;
+        }
+
+        return ConvertExprOrFallback(
+            letDecl.Value,
+            "initializer of let pattern binding",
+            letDecl.Span);
     }
 
     private HirVarDecl ConvertMutableLet(LetDecl letDecl)

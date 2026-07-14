@@ -452,11 +452,14 @@ public sealed class PipelineQuerySession
         private static string BuildOptionsFingerprint(CompilationOptions options)
         {
             var material = string.Join('\0',
-                "query-options-v1",
+                "query-options-v2",
                 options.LanguageVersion,
                 options.Target.ToString(),
                 options.StopAtPhase?.ToString() ?? "",
                 options.EnableMirOptimizations.ToString(),
+                options.ComptimeFuelBudget.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                options.ComptimeAllocatedValueBytesBudget.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                options.ComptimeDiagnosticBudget.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 options.TreatWarningsAsErrors.ToString(),
                 string.Join(",", options.WarningCodesAsErrors.Order(StringComparer.Ordinal)),
                 string.Join("|", options.ImportSearchRoots.Select(NormalizePathForFingerprint).Order(StringComparer.Ordinal)),

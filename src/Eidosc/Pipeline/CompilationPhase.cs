@@ -120,6 +120,18 @@ public sealed class CompilationOptions
     /// <summary>是否启用详细性能分析（子阶段计时/内存/GC）。</summary>
     public bool EnableDetailedProfiling { get; set; }
 
+    /// <summary>是否记录确定性的编译期调用、反射查询和缓存 trace。</summary>
+    public bool TraceComptime { get; set; }
+
+    /// <summary>每次顶层编译期求值允许消耗的最大 fuel。</summary>
+    public long ComptimeFuelBudget { get; set; } = Types.ComptimeResourceBudget.DefaultFuel;
+
+    /// <summary>每次顶层编译期求值允许保留的最大 canonical value 字节数。</summary>
+    public long ComptimeAllocatedValueBytesBudget { get; set; } = Types.ComptimeResourceBudget.DefaultAllocatedBytes;
+
+    /// <summary>每次顶层编译期求值允许发出的最大诊断数量。</summary>
+    public int ComptimeDiagnosticBudget { get; set; } = Types.ComptimeResourceBudget.DefaultDiagnosticCount;
+
     /// <summary>
     /// 允许在 MIR 指纹完全不变时，用 previous LLVM envelope/fragments 直接恢复 LLVM IR 文本。
     /// 当前仅适用于 LlvmIr 输出；Native object-groups 使用 <see cref="AllowNativeObjectGroupRestore"/>。

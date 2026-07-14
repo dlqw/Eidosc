@@ -1,5 +1,8 @@
 using Eidosc.Symbols;
+using System.Buffers.Binary;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
@@ -19,14 +22,16 @@ public sealed partial class NameResolver
         if (adt.IsTypeAlias)
             return;
 
-        foreach (var attr in adt.Attributes)
+        for (var attributeIndex = 0; attributeIndex < adt.Attributes.Count; attributeIndex++)
         {
+            var attr = adt.Attributes[attributeIndex];
             if (attr.Name != WellKnownStrings.Keywords.Derive)
                 continue;
 
             AddCounter("Namer.collect.deriveAttribute.count");
-            foreach (var traitName in attr.ArgumentTexts)
+            for (var argumentIndex = 0; argumentIndex < attr.ArgumentTexts.Count; argumentIndex++)
             {
+                var traitName = attr.ArgumentTexts[argumentIndex];
                 AddCounter("Namer.collect.deriveArgument.count");
                 if (NormalizeBuiltinDeriveTraitName(traitName) is { } normalizedTrait)
                 {
@@ -39,13 +44,20 @@ public sealed partial class NameResolver
                     continue;
                 }
 
-                if (!TryResolveDeriveTrait(attr, traitName, out var traitId, out var traitDisplayName))
+                if (traitName.Trim() is { Length: > 0 } trimmed && char.IsLower(trimmed[0]))
                 {
-                    AddError(attr.Span, DiagnosticMessages.DeriveUnsupportedTrait(traitName));
+                    _deferredDeriveInvocations.Add(new DeferredDeriveInvocation(
+                        adt,
+                        _currentModule,
+                        attr,
+                        attributeIndex,
+                        argumentIndex,
+                        traitName,
+                        []));
                     continue;
                 }
 
-                AddError(attr.Span, $"@derive({traitDisplayName}) from constructor-associated facts has been removed; declare a named instance bridge instead.");
+                AddError(attr.Span, DiagnosticMessages.DeriveUnsupportedTrait(traitName));
             }
         }
     }
@@ -376,7 +388,7 @@ public sealed partial class NameResolver
             var pat = MakeCtorPattern(ctor, vars, span);
 
             // Mix constructor ordinal with field hashes to distinguish different constructors
-            var ctorHash = MakeIntLiteral(ctor.Name.GetHashCode().ToString(), span);
+            var ctorHash = MakeIntLiteral(StableConstructorHash(ctor.Name).ToString(), span);
             if (fieldCount == 0)
             {
                 branches.Add(MakeBranch(pat, ctorHash, span));
@@ -394,6 +406,12 @@ public sealed partial class NameResolver
         }
 
         return branches;
+    }
+
+    private static long StableConstructorHash(string constructorName)
+    {
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(constructorName));
+        return BinaryPrimitives.ReadInt64LittleEndian(digest);
     }
 
     #endregion
@@ -835,8 +853,16 @@ public sealed partial class NameResolver
     private static TypePath SubstituteSelfTypePath(TypePath path, TypeNode selfType)
     {
         var clone = CloneTypePath(path);
-        clone.TypeArgs.Clear();
-        clone.TypeArgs.AddRange(path.TypeArgs.Select(arg => SubstituteSelfType(arg, selfType)));
+        if (path.GenericArguments.Count > 0)
+        {
+            clone.SetGenericArguments(path.GenericArguments.Select(argument => SubstituteSelfGenericArgument(argument, selfType)));
+        }
+        else
+        {
+            clone.TypeArgs.Clear();
+            clone.TypeArgs.AddRange(path.TypeArgs.Select(arg => SubstituteSelfType(arg, selfType)));
+        }
+
         return clone;
     }
 
@@ -883,8 +909,67 @@ public sealed partial class NameResolver
         clone.SetTypeName(path.TypeName);
         clone.SetPackageAlias(path.PackageAlias);
         clone.SetSpan(path.Span);
+        clone.SymbolId = path.SymbolId;
+        if (path.GenericArguments.Count > 0)
+        {
+            clone.SetGenericArguments(path.GenericArguments.Select(CloneGenericArgument));
+        }
+
         return clone;
     }
+
+    private static GenericArgumentNode CloneGenericArgument(GenericArgumentNode argument) => argument switch
+    {
+        TypeGenericArgumentNode typeArgument => new TypeGenericArgumentNode
+        {
+            Type = CloneTypeNode(typeArgument.Type),
+            Span = typeArgument.Span
+        },
+        ValueGenericArgumentNode valueArgument => new ValueGenericArgumentNode
+        {
+            Expression = CloneExpression(valueArgument.Expression),
+            Span = valueArgument.Span
+        },
+        EffectGenericArgumentNode effectArgument => new EffectGenericArgumentNode
+        {
+            EffectRow = CloneTypeNode(effectArgument.EffectRow),
+            Span = effectArgument.Span
+        },
+        UnresolvedGenericArgumentNode unresolved => new UnresolvedGenericArgumentNode
+        {
+            TypeCandidate = unresolved.TypeCandidate == null ? null : CloneTypeNode(unresolved.TypeCandidate),
+            ValueCandidate = unresolved.ValueCandidate == null ? null : CloneExpression(unresolved.ValueCandidate),
+            Span = unresolved.Span
+        },
+        _ => argument
+    };
+
+    private static GenericArgumentNode SubstituteSelfGenericArgument(GenericArgumentNode argument, TypeNode selfType) =>
+        argument switch
+        {
+            TypeGenericArgumentNode typeArgument => new TypeGenericArgumentNode
+            {
+                Type = SubstituteSelfType(typeArgument.Type, selfType),
+                Span = typeArgument.Span
+            },
+            ValueGenericArgumentNode valueArgument => new ValueGenericArgumentNode
+            {
+                Expression = CloneExpression(valueArgument.Expression),
+                Span = valueArgument.Span
+            },
+            EffectGenericArgumentNode effectArgument => new EffectGenericArgumentNode
+            {
+                EffectRow = SubstituteSelfType(effectArgument.EffectRow, selfType),
+                Span = effectArgument.Span
+            },
+            UnresolvedGenericArgumentNode unresolved => new UnresolvedGenericArgumentNode
+            {
+                TypeCandidate = unresolved.TypeCandidate == null ? null : SubstituteSelfType(unresolved.TypeCandidate, selfType),
+                ValueCandidate = unresolved.ValueCandidate == null ? null : CloneExpression(unresolved.ValueCandidate),
+                Span = unresolved.Span
+            },
+            _ => argument
+        };
 
     private static TupleType CloneTupleType(TupleType tuple)
     {

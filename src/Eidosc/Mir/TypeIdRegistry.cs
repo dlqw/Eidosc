@@ -29,8 +29,7 @@ internal sealed class TypeIdRegistry
     private int _nextDynamicTypeId = 1000;
 
     public IReadOnlySet<TypeId> CopyLikeTypeIds => _copyLikeTypeIds;
-    public IReadOnlyDictionary<TypeId, string> DynamicTypeKeys =>
-        _typeIdCache.ToDictionary(entry => entry.Value, entry => entry.Key);
+    public IReadOnlyDictionary<TypeId, string> DynamicTypeKeys => BuildDynamicTypeKeys();
     public IReadOnlyDictionary<int, List<ConstructorTypeLayout>> ConstructorLayouts => _constructorLayouts;
     public IReadOnlyDictionary<int, TypeDescriptor> TypeDescriptors => _typeDescriptorById;
 
@@ -122,7 +121,7 @@ internal sealed class TypeIdRegistry
 
     private void RegisterNominalTyConDescriptor(TypeId typeId, SymbolId symbolId, string? typeName)
     {
-        if (!typeId.IsValid || BaseTypes.IsBuiltIn(typeId))
+        if (!typeId.IsValid || BaseTypes.IsReservedCompilerType(typeId))
         {
             return;
         }
@@ -134,6 +133,31 @@ internal sealed class TypeIdRegistry
         _typeDescriptorById.TryAdd(typeId.Value, descriptor);
         _typeIdByDescriptor.TryAdd(descriptor, typeId);
         _typeIdCache.TryAdd(descriptor.ToString(), typeId);
+    }
+
+    private IReadOnlyDictionary<TypeId, string> BuildDynamicTypeKeys()
+    {
+        var keys = new Dictionary<TypeId, string>();
+        foreach (var (typeKey, typeId) in _typeIdCache.OrderBy(static entry => entry.Key, StringComparer.Ordinal))
+        {
+            if (BaseTypes.IsReservedCompilerType(typeId))
+            {
+                continue;
+            }
+
+            keys.TryAdd(typeId, typeKey);
+        }
+
+        foreach (var (typeId, descriptor) in _typeDescriptorById.OrderBy(static entry => entry.Key))
+        {
+            var id = new TypeId(typeId);
+            if (!BaseTypes.IsReservedCompilerType(id))
+            {
+                keys[id] = descriptor.ToString();
+            }
+        }
+
+        return keys;
     }
 
     public TypeId ResolveDeclaredTypeId(SymbolId symbolId)

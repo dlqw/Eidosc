@@ -284,6 +284,17 @@ public sealed partial class TypeInferer
                 return CreateErrorRecoveryType();
             }
 
+            if (symbol is AdtSymbol or TraitSymbol or TypeParamSymbol { ParameterKind: GenericParameterKind.Type })
+            {
+                if (!_allowComptimeFunctionReferences)
+                {
+                    AddError(ident.Span, $"Type value '{ident.Name}' cannot escape compile-time evaluation.");
+                    return CreateErrorRecoveryType();
+                }
+
+                return BaseTypes.TypeValue;
+            }
+
             AddNonValueSymbolError(ident.Span, ident.Name, symbol);
             return CreateErrorRecoveryType();
         }
@@ -435,6 +446,16 @@ public sealed partial class TypeInferer
 
             AddError(path.Span, $"Cannot resolve the declared value type of generic parameter '{FormatPath(path.Path)}'.");
             return CreateErrorRecoveryType();
+        }
+        else if (symbol is AdtSymbol or TraitSymbol or TypeParamSymbol { ParameterKind: GenericParameterKind.Type })
+        {
+            if (!_allowComptimeFunctionReferences)
+            {
+                AddError(path.Span, $"Type value '{FormatPath(path.Path)}' cannot escape compile-time evaluation.");
+                return CreateErrorRecoveryType();
+            }
+
+            return BaseTypes.TypeValue;
         }
 
         if (path.TypeArgs.Count > 0)

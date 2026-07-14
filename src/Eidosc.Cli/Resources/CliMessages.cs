@@ -26,6 +26,20 @@ internal static class CliMessages
 
     public static string CliImportRootOptionDescription => Get(nameof(CliImportRootOptionDescription));
 
+    public static string MetaCommandDescription => Get(nameof(MetaCommandDescription));
+
+    public static string MetaExpandCommandDescription => Get(nameof(MetaExpandCommandDescription));
+
+    public static string MetaExpandFormatOptionDescription => Get(nameof(MetaExpandFormatOptionDescription));
+
+    public static string MetaEmitGeneratedOptionDescription => Get(nameof(MetaEmitGeneratedOptionDescription));
+
+    public static string MetaTraceComptimeOptionDescription => Get(nameof(MetaTraceComptimeOptionDescription));
+
+    public static string MetaComptimeBudgetOptionDescription => Get(nameof(MetaComptimeBudgetOptionDescription));
+
+    public static string MetaInvalidComptimeBudget => Get(nameof(MetaInvalidComptimeBudget));
+
     public static string SourceArgumentDescription => Get(nameof(SourceArgumentDescription));
 
     public static string SourceTextOptionDescription => Get(nameof(SourceTextOptionDescription));

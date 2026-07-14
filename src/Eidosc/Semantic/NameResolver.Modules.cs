@@ -158,6 +158,12 @@ public sealed partial class NameResolver
     {
         foreach (var decl in module.Declarations)
         {
+            if (decl.SymbolId.IsValid &&
+                _metaResolvedComptimeSymbols.Contains(decl.SymbolId))
+            {
+                continue;
+            }
+
             ResolveDeclarationReferences(decl);
         }
     }

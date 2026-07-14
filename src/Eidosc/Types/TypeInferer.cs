@@ -50,6 +50,7 @@ public sealed partial class TypeInferer
     private int _loopDepth;
     private readonly Dictionary<SymbolId, CtorTypeBinding> _ctorTypeBindings = [];
     private readonly Dictionary<SymbolId, AdtDef> _adtDefinitionsBySymbol = [];
+    private readonly Dictionary<SymbolId, TraitDef> _traitDefinitionsBySymbol = [];
     private readonly Dictionary<SymbolId, FuncDef> _functionDefinitionsBySymbol = [];
     private readonly Dictionary<SymbolId, TypeNode> _valueTypeAnnotationsBySymbol = [];
     private readonly Dictionary<SymbolId, TypeParamKindBinding> _typeParamKindBindingsBySymbol = [];
@@ -77,6 +78,7 @@ public sealed partial class TypeInferer
     private readonly Dictionary<AssociatedConstProjectionCacheKey, AssociatedConstProjectionSnapshotEntry> _previousAssociatedConstProjectionCache = [];
     private readonly Dictionary<AssociatedConstProjectionCacheKey, AssociatedConstProjectionSnapshotEntry> _associatedConstProjectionSnapshotEntries = [];
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
+    internal ComptimeExecutionOptions ComptimeExecution { get; init; } = ComptimeExecutionOptions.Disabled;
     private readonly Dictionary<string, TypesStepAccumulator> _typesStepAccumulators = new(StringComparer.Ordinal);
     private bool _allowComptimeFunctionReferences;
     private string? _rootInputFilePath;
@@ -438,6 +440,7 @@ public sealed partial class TypeInferer
 
         _ctorTypeBindings.Clear();
         _adtDefinitionsBySymbol.Clear();
+        _traitDefinitionsBySymbol.Clear();
         _functionDefinitionsBySymbol.Clear();
         _valueTypeAnnotationsBySymbol.Clear();
         _typeParamKindBindingsBySymbol.Clear();
@@ -563,6 +566,11 @@ public sealed partial class TypeInferer
                 case EffectDef:
                     break;
                 case TraitDef trait:
+                    if (trait.SymbolId.IsValid)
+                    {
+                        _traitDefinitionsBySymbol[trait.SymbolId] = trait;
+                    }
+
                     RegisterTraitTypeParamKinds(trait);
                     foreach (var method in trait.Methods.Where(method => method.SymbolId.IsValid))
                     {

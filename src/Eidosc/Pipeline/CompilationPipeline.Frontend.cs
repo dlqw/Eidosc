@@ -3,6 +3,7 @@ using Eidosc.Symbols;
 using Eidosc.ProjectSystem;
 using Eidosc.Parsing.Handwritten;
 using Eidosc.Semantic;
+using Eidosc.Utils;
 
 namespace Eidosc.Pipeline;
 
@@ -31,6 +32,7 @@ public sealed partial class CompilationPipeline
             _symbolTable = new SymbolTable();
             _nameResolver = new NameResolver(_symbolTable, _sourceCode, _options.ImportSearchRoots)
             {
+                ComptimeExecution = _comptimeExecution,
                 UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly(),
                 PreviousImplOverlapCheckSnapshot = _options.PreviousImplOverlapCheckSnapshot
             };
@@ -201,6 +203,10 @@ public sealed partial class CompilationPipeline
             previousPayloads,
             semanticByModule);
         SetProfilingCounter("Namer.moduleRestore.mergePayloadModules", mergePayloads.Count);
+        foreach (var group in mergePayloads.GroupBy(static payload => payload.ModuleKey, StringComparer.Ordinal))
+        {
+            SetProfilingCounter($"Namer.moduleRestore.mergePayload.{group.Key}.count", group.LongCount());
+        }
         NamerStateMergeResult merge;
         using (MeasureSubphase(CompilationPhase.Namer, "module_namer_restore_merge"))
         {
@@ -258,6 +264,38 @@ public sealed partial class CompilationPipeline
                     $"Namer.moduleRestore.fallbackAstFailure.{group.Key}",
                     group.LongCount());
             }
+            foreach (var failure in astRestore.Failures
+                         .Where(static failure => failure.StartsWith("AST Namer structure mismatch: ", StringComparison.Ordinal)))
+            {
+                var moduleStart = "AST Namer structure mismatch: ".Length;
+                var moduleEnd = failure.IndexOf(' ', moduleStart);
+                var moduleKey = moduleEnd < 0
+                    ? failure[moduleStart..]
+                    : failure[moduleStart..moduleEnd];
+                SetProfilingCounter(
+                    $"Namer.moduleRestore.fallbackAstFailure.module.{moduleKey}",
+                    1);
+                foreach (var field in new[] { "expected-count=", "actual-count=" })
+                {
+                    var valueStart = failure.IndexOf(field, StringComparison.Ordinal);
+                    if (valueStart < 0)
+                    {
+                        continue;
+                    }
+
+                    valueStart += field.Length;
+                    var valueEnd = failure.IndexOf(' ', valueStart);
+                    var valueText = valueEnd < 0
+                        ? failure[valueStart..]
+                        : failure[valueStart..valueEnd];
+                    if (long.TryParse(valueText, out var value))
+                    {
+                        SetProfilingCounter(
+                            $"Namer.moduleRestore.fallbackAstFailure.module.{moduleKey}.{field.TrimEnd('=')}",
+                            value);
+                    }
+                }
+            }
             return false;
         }
 
@@ -265,6 +303,7 @@ public sealed partial class CompilationPipeline
         _namerRestoreRemapPlan = restored.SourceRemapPlan;
         _nameResolver = new NameResolver(_symbolTable, _sourceCode, _options.ImportSearchRoots)
         {
+            ComptimeExecution = _comptimeExecution,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly(),
             PreviousImplOverlapCheckSnapshot = _options.PreviousImplOverlapCheckSnapshot
         };
@@ -413,6 +452,9 @@ public sealed partial class CompilationPipeline
                 fullModuleRegistryPayload: null);
         }
 
+        SetProfilingCounter(
+            $"Namer.moduleRestore.compiledPayload.{item.ModuleKey}.astNodes",
+            payload.AstState.AstNodeCount);
         compiledPayloads[item.ModuleKey] = payload;
         AddSupplementalCompiledNamerPayloads(compilation, compiledSupplementalPayloads);
         return ValueTask.FromResult(ProjectModuleExecutionItemResult.Completed);
@@ -433,7 +475,11 @@ public sealed partial class CompilationPipeline
             .Select(static payload => payload.ModuleKey)
             .ToHashSet(StringComparer.Ordinal) ?? [];
         foreach (var memberIndex in compilation.ModuleMemberIndexSnapshot.Nodes
-                     .Where(node => !existingModuleKeys.Contains(node.ModuleKey)))
+                     .Where(node => !existingModuleKeys.Contains(node.ModuleKey) &&
+                                    !string.Equals(
+                                        node.ModuleKey,
+                                        WellKnownStrings.Meta.Module,
+                                        StringComparison.Ordinal)))
         {
             supplementalPayloads.TryAdd(
                 memberIndex.ModuleKey,

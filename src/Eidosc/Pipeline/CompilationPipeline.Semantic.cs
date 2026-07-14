@@ -15,6 +15,7 @@ public sealed partial class CompilationPipeline
         {
             _typeInferer = new TypeInferer(_symbolTable!)
             {
+                ComptimeExecution = _comptimeExecution,
                 UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly(),
                 PreviousTypeDirectedCallableResolutionSnapshot = _options.PreviousTypeDirectedCallableResolutionSnapshot,
                 PreviousAssociatedTypeProjectionSnapshot = _options.PreviousAssociatedTypeProjectionSnapshot,
@@ -208,6 +209,7 @@ public sealed partial class CompilationPipeline
             .ToArray();
         _typeInferer = new TypeInferer(_symbolTable)
         {
+            ComptimeExecution = _comptimeExecution,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly()
         };
         BuiltinTraits.RegisterBuiltinTraits(_symbolTable);

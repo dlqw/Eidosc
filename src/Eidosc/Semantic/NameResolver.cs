@@ -39,11 +39,15 @@ public sealed partial class NameResolver
     private readonly Dictionary<SymbolId, ModuleDecl> _moduleDeclarations = new();
     private readonly Dictionary<SymbolId, AdtDef> _adtDefinitions = new();
     private readonly Dictionary<SymbolId, TraitDef> _traitDefinitions = new();
+    private readonly List<DeferredDeriveInvocation> _deferredDeriveInvocations = [];
+    private readonly HashSet<string> _generatedDeclarationIdentities = new(StringComparer.Ordinal);
+    private readonly HashSet<SymbolId> _metaResolvedComptimeSymbols = [];
     private readonly Dictionary<string, InstanceDecl> _instanceDeclarations = new(StringComparer.Ordinal);
     private readonly Dictionary<Scope, Dictionary<string, List<FunctionOverloadDeclaration>>> _functionOverloadDeclarations = new();
     private readonly Dictionary<SymbolId, SymbolId> _traitOwnerModules = new();
     private readonly Dictionary<SymbolId, CtorPatternShape> _ctorPatternShapes = new();
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
+    internal ComptimeExecutionOptions ComptimeExecution { get; init; } = ComptimeExecutionOptions.Disabled;
     private readonly Dictionary<string, ImplOverlapCheckSnapshotEntry> _implOverlapSnapshotEntries = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ImplOverlapCheckSnapshotEntry> _previousImplOverlapSnapshotEntries = new(StringComparer.Ordinal);
     private HashSet<SymbolId>? _traitImplMethodIds;
@@ -54,6 +58,15 @@ public sealed partial class NameResolver
     private SymbolId _currentModule = SymbolId.None;
     private string? _rootInputFilePath;
     private readonly List<EidoscDiagnostic> _diagnostics = [];
+
+    private sealed record DeferredDeriveInvocation(
+        AdtDef Target,
+        SymbolId ModuleId,
+        Ast.Attribute Attribute,
+        int AttributeOccurrenceIndex,
+        int ArgumentIndex,
+        string GeneratorText,
+        IReadOnlyList<string> Ancestors);
 
     public bool UsePrecompiledImportSignatureOnly { get; set; }
 
@@ -249,6 +262,9 @@ public sealed partial class NameResolver
     {
         _rootInputFilePath = module.Span.FilePath;
         _implOverlapSnapshotEntries.Clear();
+        _deferredDeriveInvocations.Clear();
+        _generatedDeclarationIdentities.Clear();
+        _metaResolvedComptimeSymbols.Clear();
         using (MeasurePass("root_module"))
         {
             var moduleName = module.Path.Count > 0 ? module.Path[^1] : WellKnownStrings.SpecialNames.Main;
@@ -292,7 +308,12 @@ public sealed partial class NameResolver
             ProcessImportsRecursive(module, _currentModule);
         }
 
-        // 第四遍：解析所有引用
+        using (MeasurePass("meta_expansion"))
+        {
+            ProcessDeferredDeriveExpansions(module);
+        }
+
+        // 第四遍：解析用户与生成声明的全部引用
         using (MeasurePass("resolve_references"))
         {
             ResolveModuleReferencesRecursive(module, _currentModule);

@@ -245,6 +245,11 @@ public sealed class LspServer : IDisposable
                     await HandlePatternCoverageExplainAsync(id!.Value, message, ct);
                 break;
 
+            case "eidos/generatedDocument":
+                if (isRequest)
+                    await HandleGeneratedDocumentAsync(id!.Value, message, ct);
+                break;
+
             default:
                 if (isRequest)
                     await SendResponseAsync(id!.Value, null, ct);
@@ -464,6 +469,24 @@ public sealed class LspServer : IDisposable
             ? new LspPatternCoverageExplainReport { InputFile = UriToFilePath(uri) }
             : LspSemanticMapper.MapPatternCoverageExplain(snapshot, UriToFilePath(uri), requestedRange);
         await SendResponseAsync(id, report, ct);
+    }
+
+    private async Task HandleGeneratedDocumentAsync(JsonElement id, JsonElement message, CancellationToken ct)
+    {
+        var params_ = message.GetProperty("params");
+        var uri = params_.TryGetProperty("uri", out var uriElement)
+            ? uriElement.GetString() ?? string.Empty
+            : string.Empty;
+        IdeGeneratedDocumentEntry? document;
+        lock (_snapshotLock)
+        {
+            document = _snapshots.Values
+                .OrderBy(static entry => entry.Snapshot.InputFile, StringComparer.Ordinal)
+                .SelectMany(static entry => entry.Snapshot.GeneratedDocuments)
+                .FirstOrDefault(candidate => string.Equals(candidate.Uri, uri, StringComparison.Ordinal));
+        }
+
+        await SendResponseAsync(id, document, ct);
     }
 
 

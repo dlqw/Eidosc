@@ -268,7 +268,11 @@ public static class AstNamerStateRestorer
                     payload.AstStructureHash,
                     StringComparison.Ordinal))
             {
-                failures.Add($"AST Namer structure mismatch: {payload.ModuleKey}");
+                failures.Add(
+                    $"AST Namer structure mismatch: {payload.ModuleKey} " +
+                    $"expected-count={payload.AstNodeCount} actual-count={moduleNodes.Count} " +
+                    $"expected-hash={payload.AstStructureHash} " +
+                    $"actual-hash={AstInferredTypeMapPayload.ComputeStructureHash(moduleNodes)}");
                 continue;
             }
 

@@ -156,7 +156,8 @@ public sealed partial class SymbolTable
             (WellKnownStrings.BuiltinTypes.Unit, new TypeId(WellKnownTypeIds.UnitId)),
             ("ErasedCallable", new TypeId(WellKnownTypeIds.ErasedCallableId)),
             (WellKnownStrings.BuiltinTypes.TypeEq, new TypeId(WellKnownTypeIds.TypeEqId)),
-            (WellKnownStrings.BuiltinTypes.Never, new TypeId(WellKnownTypeIds.NeverId))
+            (WellKnownStrings.BuiltinTypes.Never, new TypeId(WellKnownTypeIds.NeverId)),
+            (WellKnownStrings.BuiltinTypes.Type, new TypeId(WellKnownTypeIds.TypeId))
         };
 
         foreach (var (typeName, typeId) in builtinTypes)
@@ -254,6 +255,8 @@ public sealed partial class SymbolTable
         // 内建能力符号（无需用户声明即可使用）
         RegisterBuiltinEffect(WellKnownStrings.BuiltinAbilities.FFI);
         RegisterBuiltinEffect(WellKnownStrings.BuiltinAbilities.IO);
+
+        MetaSchemaRegistry.Register(this);
     }
 
     private void RegisterBuiltinEffect(string name)

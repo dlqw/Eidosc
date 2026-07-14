@@ -66,6 +66,7 @@ internal class Program
             DocCommand.Create(),
             LspCommand.Create(),
             ReplCommand.Create(),
+            MetaCommand.Create(),
             MigrateCommand.Create(),
             PkgCommand.Create()
         };

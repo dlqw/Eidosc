@@ -55,6 +55,16 @@ public sealed partial class NameResolver
             return;
         }
 
+        var typeResult = _lookupService.Lookup(
+            ident.Name,
+            LookupKind.Type,
+            CreateLookupContext());
+        if (typeResult.IsSuccess)
+        {
+            ident.SymbolId = typeResult.SymbolId;
+            return;
+        }
+
         AddUndefinedIdentifierError(ident.Span, ident.Name);
     }
 

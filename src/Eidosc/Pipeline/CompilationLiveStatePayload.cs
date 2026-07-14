@@ -24,7 +24,7 @@ public sealed record CompilationLiveStatePayload(
     LiveStateRemapPlan RemapPlan,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "compilation-live-state-payload-v2";
+    public const string CurrentSchemaVersion = "compilation-live-state-payload-v3";
 
     public static CompilationLiveStatePayload Create(
         string sourceText,
@@ -193,7 +193,7 @@ public sealed record SymbolTablePayload(
     IReadOnlyDictionary<string, int> GlobalAbilities,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "symbol-table-payload-v1";
+    public const string CurrentSchemaVersion = "symbol-table-payload-v2";
 
     public static SymbolTablePayload Create(SymbolTable? symbolTable)
     {
@@ -252,7 +252,8 @@ public sealed record SymbolPayload(
     bool IsModuleLevel,
     bool IsPublic,
     int TypeId,
-    IReadOnlyDictionary<string, string> Facts)
+    IReadOnlyDictionary<string, string> Facts,
+    GeneratedDeclarationOriginPayload? GeneratedOrigin = null)
 {
     public static SymbolPayload Create(Symbol symbol) =>
         new(
@@ -264,7 +265,10 @@ public sealed record SymbolPayload(
             symbol.IsModuleLevel,
             symbol.IsPublic,
             symbol.TypeId.Value,
-            CreateFacts(symbol));
+            CreateFacts(symbol),
+            symbol.GeneratedOrigin == null
+                ? null
+                : GeneratedDeclarationOriginPayload.Create(symbol.GeneratedOrigin));
 
     private static IReadOnlyDictionary<string, string> CreateFacts(Symbol symbol)
     {
@@ -393,6 +397,33 @@ public sealed record SymbolPayload(
             .ThenBy(static binding => binding.Kind)
             .ThenBy(static binding => binding.SymbolId.Value)
             .Select(static binding => $"{binding.Name}:{binding.Kind}:{binding.SymbolId.Value}"));
+}
+
+public sealed record GeneratedDeclarationOriginPayload(
+    string StableIdentity,
+    string GeneratorIdentity,
+    string TargetIdentity,
+    int GeneratorSymbolId,
+    int TargetSymbolId,
+    int AttributeOccurrenceIndex,
+    int ExpansionOutputIndex,
+    string CanonicalArgumentsHash,
+    int MetaSchemaVersion,
+    SourceSpanPayload AttributeSpan,
+    string VirtualDocumentPath)
+{
+    public static GeneratedDeclarationOriginPayload Create(GeneratedDeclarationOrigin origin) => new(
+        origin.StableIdentity,
+        origin.GeneratorIdentity,
+        origin.TargetIdentity,
+        origin.GeneratorSymbolId.Value,
+        origin.TargetSymbolId.Value,
+        origin.AttributeOccurrenceIndex,
+        origin.ExpansionOutputIndex,
+        origin.CanonicalArgumentsHash,
+        origin.MetaSchemaVersion,
+        SourceSpanPayload.Create(origin.AttributeSpan),
+        origin.VirtualDocumentPath);
 }
 
 public sealed record ScopePayload(
