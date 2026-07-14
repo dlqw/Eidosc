@@ -19,6 +19,7 @@ public sealed class EidosProjectManifestDocument
     public EidosProjectTargetManifestDocument[]? Targets { get; set; }
     public Dictionary<string, EidosProjectDependencyManifestDocument>? Dependencies { get; set; }
     public bool? NoImplicitStdlib { get; set; }
+    public EidosProjectBuildManifestDocument? Build { get; set; }
     public EidosProjectFfiManifestDocument? Ffi { get; set; }
 
     public static EidosProjectManifestDocument Load(string path)
@@ -282,6 +283,7 @@ public sealed class EidosProjectManifestDocument
             WritePackage();
             WriteTargets();
             WriteDependencies();
+            WriteBuild();
             WriteFfi();
 
             var text = _builder.ToString().TrimEnd();
@@ -404,6 +406,30 @@ public sealed class EidosProjectManifestDocument
             }
 
             AppendBlankLine();
+        }
+
+        private void WriteBuild()
+        {
+            var build = manifest.Build;
+            if (build == null)
+            {
+                return;
+            }
+
+            AppendSection("build");
+            AppendOptionalProperty("program", build.Program);
+            AppendOptionalProperty("fileInputs", build.FileInputs);
+            AppendOptionalProperty("environment", build.Environment);
+            AppendOptionalProperty("outputRoots", build.OutputRoots);
+            AppendBlankLine();
+
+            foreach (var tool in build.Tools ?? [])
+            {
+                AppendSection("[build.tools]");
+                AppendOptionalProperty("name", tool.Name);
+                AppendOptionalProperty("path", tool.Path);
+                AppendBlankLine();
+            }
         }
 
         private void WriteFfi()
@@ -650,4 +676,19 @@ public sealed class EidosProjectFfiManifestDocument
     public string[]? NativeSources { get; set; }
     public string[]? LinkerFlags { get; set; }
     public Dictionary<string, string[]>? Platform { get; set; }
+}
+
+public sealed class EidosProjectBuildManifestDocument
+{
+    public string? Program { get; set; }
+    public string[]? FileInputs { get; set; }
+    public string[]? Environment { get; set; }
+    public string[]? OutputRoots { get; set; }
+    public EidosProjectBuildToolManifestDocument[]? Tools { get; set; }
+}
+
+public sealed class EidosProjectBuildToolManifestDocument
+{
+    public string? Name { get; set; }
+    public string? Path { get; set; }
 }

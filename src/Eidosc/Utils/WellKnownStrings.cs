@@ -77,6 +77,24 @@ public static class WellKnownStrings
         }
     }
 
+    public static class Build
+    {
+        public const string Module = "Build";
+        public const int SchemaVersion = 1;
+
+        public static class Types
+        {
+            public const string Context = "Context";
+            public const string Fs = "Fs";
+            public const string Env = "Env";
+            public const string Process = "Process";
+            public const string Emit = "Emit";
+            public const string Graph = "Graph";
+            public const string Step = "Step";
+            public const string Artifact = "Artifact";
+        }
+    }
+
     /// <summary>
     /// Built-in ability names that are always available without user declaration.
     /// </summary>

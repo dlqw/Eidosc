@@ -147,12 +147,11 @@ public sealed class BuildCommandModuleArtifactGateTests
             Directory.CreateDirectory(Path.Combine(tempDir, "src"));
             var projectPath = Path.Combine(tempDir, "eidos.toml");
             await File.WriteAllTextAsync(projectPath, """
+sourceRoots = ["src"]
+
 [package]
 name = "namer-payload-gate"
 version = "0.1.0"
-
-[build]
-sourceRoots = ["src"]
 """);
             var mainPath = Path.Combine(tempDir, "src", "Main.eidos");
             await File.WriteAllTextAsync(mainPath, """

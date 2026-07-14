@@ -186,6 +186,8 @@ public static partial class BuildCommand
         yield return $"lto={options.Lto}";
         yield return $"nativeCpu={options.NativeCpu}";
         yield return $"targetTriple={targetInfo?.Triple ?? compileOptions.LlvmTargetTriple ?? TargetInfo.Default.Triple}";
+        yield return $"buildHost={compileOptions.BuildHostFingerprint ?? ""}";
+        yield return $"buildGraph={compileOptions.BuildGraphFingerprint ?? ""}";
         yield return $"nativeLinkMode={compileOptions.NativeLinkMode}";
         yield return $"codegenMode={ResolveNativeCodegenMode(options.BuildMode, options.CodegenMode)}";
         yield return $"maxObjectGroups={ResolveMaxObjectGroups(options.BuildMode, options.CodegenMode, options.MaxObjectGroups)}";

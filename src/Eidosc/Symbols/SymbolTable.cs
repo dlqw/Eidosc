@@ -257,6 +257,7 @@ public sealed partial class SymbolTable
         RegisterBuiltinEffect(WellKnownStrings.BuiltinAbilities.IO);
 
         MetaSchemaRegistry.Register(this);
+        BuildSchemaRegistry.Register(this);
     }
 
     private void RegisterBuiltinEffect(string name)

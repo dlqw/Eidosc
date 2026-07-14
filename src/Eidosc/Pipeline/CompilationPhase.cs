@@ -55,6 +55,8 @@ public enum CompilationTarget
 /// </summary>
 public sealed class CompilationOptions
 {
+    internal Types.BuildComptimeContext? BuildComptimeContext { get; set; }
+
     /// <summary>输入文件路径</summary>
     public string InputFile { get; set; } = "";
 
@@ -107,6 +109,12 @@ public sealed class CompilationOptions
 
     /// <summary>LLVM 目标三元组 (例如: x86_64-pc-linux-gnu)</summary>
     public string? LlvmTargetTriple { get; set; }
+
+    /// <summary>Capability-constrained Build host input/output fingerprint.</summary>
+    public string? BuildHostFingerprint { get; set; }
+
+    /// <summary>Canonical BuildGraph fingerprint.</summary>
+    public string? BuildGraphFingerprint { get; set; }
 
     /// <summary>本地可执行文件链接模式。</summary>
     public CodeGen.NativeLinkMode NativeLinkMode { get; set; } = CodeGen.NativeLinkMode.NonPieExecutable;

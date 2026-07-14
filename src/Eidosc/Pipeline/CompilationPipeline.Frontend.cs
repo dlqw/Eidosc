@@ -479,6 +479,10 @@ public sealed partial class CompilationPipeline
                                     !string.Equals(
                                         node.ModuleKey,
                                         WellKnownStrings.Meta.Module,
+                                        StringComparison.Ordinal) &&
+                                    !string.Equals(
+                                        node.ModuleKey,
+                                        WellKnownStrings.Build.Module,
                                         StringComparison.Ordinal)))
         {
             supplementalPayloads.TryAdd(

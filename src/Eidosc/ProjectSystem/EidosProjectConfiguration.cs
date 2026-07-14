@@ -30,6 +30,21 @@ public sealed record EidosFfiConfiguration
     public Dictionary<string, string[]>? Platform { get; init; }
 }
 
+public sealed record EidosBuildToolConfiguration
+{
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+}
+
+public sealed record EidosBuildConfiguration
+{
+    public string Program { get; init; } = "";
+    public string[] FileInputs { get; init; } = [];
+    public string[] Environment { get; init; } = [];
+    public string[] OutputRoots { get; init; } = [];
+    public EidosBuildToolConfiguration[] Tools { get; init; } = [];
+}
+
 public sealed record EidosProjectConfiguration
 {
     public int ManifestSchema { get; init; } = 3;
@@ -43,6 +58,7 @@ public sealed record EidosProjectConfiguration
     public EidosProjectDependencyConfiguration[] Dependencies { get; init; } = [];
     public Dictionary<string, DependencySpec>? VersionedDependencies { get; init; }
     public bool NoImplicitStdlib { get; init; }
+    public EidosBuildConfiguration? Build { get; init; }
     public EidosFfiConfiguration? Ffi { get; init; }
 }
 
@@ -223,6 +239,8 @@ public static class EidosProjectConfigurationLoader
                 };
             }
 
+            var buildConfig = ResolveBuildConfiguration(configDocument.Build, baseDirectory);
+
             var targets = ResolveTargets(configDocument.Targets, baseDirectory);
             var defaultTarget = NormalizeOptionalValue(configDocument.DefaultTarget)
                 ?? (targets.Length == 1 ? targets[0].Name : null);
@@ -245,6 +263,7 @@ public static class EidosProjectConfigurationLoader
                     Dependencies = legacyDeps,
                     VersionedDependencies = versionedDeps,
                     NoImplicitStdlib = configDocument.NoImplicitStdlib ?? false,
+                    Build = buildConfig,
                     Ffi = ffiConfig
                 });
         }
@@ -254,6 +273,232 @@ public static class EidosProjectConfigurationLoader
                 PipelineMessages.FailedToLoadProjectConfig(filePath, ex.Message),
                 ex);
         }
+    }
+
+    private static EidosBuildConfiguration? ResolveBuildConfiguration(
+        EidosProjectBuildManifestDocument? build,
+        string projectDirectory)
+    {
+        if (build == null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(build.Program))
+        {
+            throw new InvalidOperationException("[build].program must name an Eidos build program.");
+        }
+
+        var program = ResolveContainedBuildPath(build.Program, projectDirectory, "build program");
+        if (!string.Equals(Path.GetExtension(program), ".eidos", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("[build].program must reference a .eidos file.");
+        }
+
+        var fileInputs = ResolveDistinctContainedBuildPaths(
+            build.FileInputs,
+            projectDirectory,
+            "build file input");
+        var outputRoots = ResolveDistinctContainedBuildPaths(
+            build.OutputRoots is { Length: > 0 } ? build.OutputRoots : ["build"],
+            projectDirectory,
+            "build output root");
+
+        foreach (var outputRoot in outputRoots)
+        {
+            if (PathsEqual(outputRoot, projectDirectory))
+            {
+                throw new InvalidOperationException("A build output root cannot be the project root.");
+            }
+
+            if (PathsOverlap(program, outputRoot))
+            {
+                throw new InvalidOperationException(
+                    "The build program and build output roots must be disjoint.");
+            }
+
+            if (fileInputs.Any(input => PathsOverlap(input, outputRoot)))
+            {
+                throw new InvalidOperationException(
+                    "Build file inputs and build output roots must be disjoint.");
+            }
+        }
+
+        var environment = NormalizeBuildEnvironment(build.Environment);
+        var tools = NormalizeBuildTools(build.Tools, projectDirectory);
+        return new EidosBuildConfiguration
+        {
+            Program = program,
+            FileInputs = fileInputs,
+            Environment = environment,
+            OutputRoots = outputRoots,
+            Tools = tools
+        };
+    }
+
+    private static string[] ResolveDistinctContainedBuildPaths(
+        IReadOnlyList<string>? paths,
+        string projectDirectory,
+        string description)
+    {
+        if (paths == null || paths.Count == 0)
+        {
+            return [];
+        }
+
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var result = new List<string>(paths.Count);
+        var seen = new HashSet<string>(comparer);
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new InvalidOperationException($"A declared {description} cannot be empty.");
+            }
+
+            var resolved = ResolveContainedBuildPath(path, projectDirectory, description);
+            if (!seen.Add(resolved))
+            {
+                throw new InvalidOperationException($"Duplicate {description} '{path}'.");
+            }
+
+            result.Add(resolved);
+        }
+
+        return result.ToArray();
+    }
+
+    private static string ResolveContainedBuildPath(
+        string path,
+        string projectDirectory,
+        string description)
+    {
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(path, projectDirectory);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new InvalidOperationException($"Invalid {description} path '{path}': {ex.Message}", ex);
+        }
+
+        var relative = Path.GetRelativePath(projectDirectory, fullPath);
+        if (Path.IsPathRooted(relative) ||
+            relative.Equals("..", StringComparison.Ordinal) ||
+            relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+            relative.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Declared {description} '{path}' escapes the project root '{projectDirectory}'.");
+        }
+
+        return fullPath;
+    }
+
+    private static string[] NormalizeBuildEnvironment(IReadOnlyList<string>? names)
+    {
+        if (names == null || names.Count == 0)
+        {
+            return [];
+        }
+
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var seen = new HashSet<string>(comparer);
+        var result = new List<string>(names.Count);
+        foreach (var rawName in names)
+        {
+            var name = rawName?.Trim() ?? string.Empty;
+            if (!IsValidEnvironmentName(name))
+            {
+                throw new InvalidOperationException($"Invalid build environment variable name '{rawName}'.");
+            }
+
+            if (!seen.Add(name))
+            {
+                throw new InvalidOperationException($"Duplicate build environment variable '{name}'.");
+            }
+
+            result.Add(name);
+        }
+
+        return result.ToArray();
+    }
+
+    private static EidosBuildToolConfiguration[] NormalizeBuildTools(
+        IReadOnlyList<EidosProjectBuildToolManifestDocument>? tools,
+        string projectDirectory)
+    {
+        if (tools == null || tools.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<EidosBuildToolConfiguration>(tools.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tool in tools)
+        {
+            var name = tool.Name?.Trim() ?? string.Empty;
+            if (!IsBuildName(name))
+            {
+                throw new InvalidOperationException($"Invalid registered build tool name '{tool.Name}'.");
+            }
+
+            if (!seen.Add(name))
+            {
+                throw new InvalidOperationException($"Duplicate registered build tool '{name}'.");
+            }
+
+            if (string.IsNullOrWhiteSpace(tool.Path))
+            {
+                throw new InvalidOperationException($"Registered build tool '{name}' must declare a path.");
+            }
+
+            string toolPath;
+            try
+            {
+                toolPath = Path.GetFullPath(tool.Path, projectDirectory);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid registered build tool path '{tool.Path}': {ex.Message}",
+                    ex);
+            }
+
+            result.Add(new EidosBuildToolConfiguration { Name = name, Path = toolPath });
+        }
+
+        return result.ToArray();
+    }
+
+    private static bool IsValidEnvironmentName(string name) =>
+        name.Length > 0 &&
+        (char.IsAsciiLetter(name[0]) || name[0] == '_') &&
+        name.Skip(1).All(static character => char.IsAsciiLetterOrDigit(character) || character == '_');
+
+    private static bool IsBuildName(string name) =>
+        name.Length > 0 &&
+        (char.IsAsciiLetter(name[0]) || name[0] == '_') &&
+        name.Skip(1).All(static character =>
+            char.IsAsciiLetterOrDigit(character) || character is '_' or '-');
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static bool PathsOverlap(string left, string right) =>
+        IsWithin(left, right) || IsWithin(right, left);
+
+    private static bool IsWithin(string root, string path)
+    {
+        var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(path));
+        return !Path.IsPathRooted(relative) &&
+               !relative.Equals("..", StringComparison.Ordinal) &&
+               !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+               !relative.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal);
     }
 
     private static string[] ResolvePlatformLibraries(Dictionary<string, string[]>? platform)

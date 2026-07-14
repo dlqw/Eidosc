@@ -1,4 +1,5 @@
 using Eidosc.ProjectSystem;
+using Eidosc.BuildSystem;
 using System.CommandLine;
 using System.CommandLine.Help;
 using System.CommandLine.NamingConventionBinder;
@@ -179,6 +180,8 @@ public static partial class BuildCommand
                 "--profile-module-artifacts-only",
                 "Disable exact full-build/backend artifact restore so profile-json observes module artifact gates."),
             new Option<bool>("--no-cache", "Disable all persistent build cache reads and writes."),
+            new Option<string>("--emit-build-graph", "Write the canonical capability-constrained BuildGraph as JSON."),
+            new Option<bool>("--trace-build", "Trace Build host capabilities, dependencies, graph execution, and cache decisions."),
             cacheMaxMiBOption,
             _jobsOption,
             _codegenModeOption,
@@ -264,6 +267,8 @@ public static partial class BuildCommand
         public string? ProfileJson { get; set; }
         public bool ProfileModuleArtifactsOnly { get; set; }
         public bool NoCache { get; set; }
+        public string? EmitBuildGraph { get; set; }
+        public bool TraceBuild { get; set; }
         public int CacheMaxMib { get; set; } = 512;
         public int Jobs { get; set; } = Math.Max(1, Environment.ProcessorCount);
         public string CodegenMode { get; set; } = NativeCodegenModes.Auto;
@@ -385,6 +390,59 @@ public static partial class BuildCommand
                 .Configuration;
         var ffiConfig = inputResolution.ProjectTarget?.Ffi ?? projectConfig?.Ffi;
 
+        EidosBuildHostResult? buildHostResult = null;
+        if (projectConfig?.Build != null)
+        {
+            var projectDirectory = ProjectCommandPaths.ResolveProjectDirectory(inputResolution)
+                ?? Path.GetDirectoryName(inputResolution.ImportResolution.ProjectFilePath!)!;
+            buildHostResult = await EidosBuildHost.RunAsync(new EidosBuildHostOptions
+            {
+                ProjectDirectory = projectDirectory,
+                Configuration = projectConfig.Build,
+                LanguageVersion = inputResolution.GetLanguageVersion(),
+                TargetName = inputResolution.ProjectTarget?.TargetName ?? options.TargetName ?? "main",
+                TargetTriple = (targetInfo ?? TargetInfo.Default).Triple,
+                ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
+                                    inputResolution.ImportResolution.EffectiveSearchRoots,
+                PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
+                                     new Dictionary<string, string[]>(StringComparer.Ordinal),
+                NoImplicitPrelude = projectConfig.NoImplicitStdlib,
+                UseCache = !options.NoCache,
+                TraceBuild = options.TraceBuild
+            });
+
+            if (buildHostResult.Graph != null && !string.IsNullOrWhiteSpace(options.EmitBuildGraph))
+            {
+                var graphPath = Path.GetFullPath(options.EmitBuildGraph);
+                Directory.CreateDirectory(Path.GetDirectoryName(graphPath) ?? Directory.GetCurrentDirectory());
+                await File.WriteAllTextAsync(graphPath, buildHostResult.Graph.ToCanonicalJson());
+                CliOutput.WriteArtifact("BuildGraph", graphPath, !options.NoColor);
+            }
+
+            if (options.TraceBuild)
+            {
+                RenderBuildTrace(buildHostResult, !options.NoColor);
+            }
+
+            if (!buildHostResult.Success)
+            {
+                var buildProgramSource = await TryReadBuildProgramSourceAsync(buildHostResult.ProgramPath);
+                CliOutput.RenderDiagnostics(
+                    buildHostResult.Diagnostics,
+                    buildProgramSource,
+                    buildHostResult.ProgramPath,
+                    !options.NoColor);
+                commandStopwatch.Stop();
+                CliOutput.WriteFinished(
+                    "build",
+                    false,
+                    commandStopwatch.Elapsed,
+                    !options.NoColor,
+                    "Build host failed");
+                return 1;
+            }
+        }
+
         // 解析 effective native link mode：CLI 显式传入 > 项目配置 > 默认 no-pie
         var effectiveNativeLinkMode = ResolveNativeLinkMode(
             options.NativeLinkMode,
@@ -412,6 +470,8 @@ public static partial class BuildCommand
             EmitStyleSuggestions = true,
             AllowVirtualInputFile = sourceInput.IsInMemorySource,
             LlvmTargetTriple = targetInfo?.Triple ?? options.TargetTriple,
+            BuildHostFingerprint = buildHostResult?.CacheFingerprint,
+            BuildGraphFingerprint = buildHostResult?.Graph?.CanonicalHash,
             NativeLinkMode = effectiveNativeLinkMode,
             LlvmOptimizationLevel = optimizationLevel,
             LlvmEnableLto = options.Lto,
@@ -421,8 +481,11 @@ public static partial class BuildCommand
             AllowNativeObjectGroupRestore = options.Target == CompileTarget.Native && IsObjectGroupsCodegenMode(options.CodegenMode),
             TreatWarningsAsErrors = options.WerrorAll,
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
-            ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
-                                inputResolution.ImportResolution.EffectiveSearchRoots,
+            ImportSearchRoots = (inputResolution.ProjectTarget?.EffectiveSearchRoots ??
+                                 inputResolution.ImportResolution.EffectiveSearchRoots)
+                .Concat(buildHostResult?.GeneratedSourceRoots ?? [])
+                .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+                .ToArray(),
             PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal),
             ConfigFfiLibraries = ffiConfig?.Libraries ?? [],
             ConfigFfiLibraryPaths = ffiConfig?.LibraryPaths ?? [],
@@ -845,6 +908,70 @@ public static partial class BuildCommand
             CliMessages.PhaseTargetDetails(result.CompletedPhase, options.Target));
 
         return result.Success ? 0 : 1;
+    }
+
+    private static void RenderBuildTrace(EidosBuildHostResult result, bool useColors)
+    {
+        CliOutput.WriteStatus(
+            DiagnosticLevel.Note,
+            $"Build host {result.HostTriple} -> {result.TargetTriple}; program={result.ProgramHash}; fingerprint={result.CacheFingerprint}",
+            useColors);
+        foreach (var dependency in result.Dependencies)
+        {
+            CliOutput.WriteStatus(
+                DiagnosticLevel.Note,
+                $"Build dependency {dependency.Kind}:{dependency.Name} {dependency.Fingerprint}",
+                useColors);
+        }
+
+        foreach (var access in result.CapabilityTrace)
+        {
+            CliOutput.WriteStatus(
+                DiagnosticLevel.Note,
+                $"Build capability #{access.Sequence} {access.Kind}:{access.Name} {access.Fingerprint}",
+                useColors);
+        }
+
+        if (result.Graph != null)
+        {
+            CliOutput.WriteStatus(
+                DiagnosticLevel.Note,
+                $"BuildGraph {result.Graph.CanonicalHash}: {result.Graph.Steps.Count} step(s), {result.Graph.Artifacts.Count} artifact(s)",
+                useColors);
+        }
+
+        foreach (var step in result.Execution?.Steps ?? [])
+        {
+            CliOutput.WriteStatus(
+                DiagnosticLevel.Note,
+                $"Build step {step.Name}: tool={step.Tool}, exit={step.ExitCode}, cacheHit={step.CacheHit}, elapsed={step.Elapsed.TotalMilliseconds:F0}ms",
+                useColors);
+            if (!string.IsNullOrWhiteSpace(step.StandardOutput))
+            {
+                CliOutput.WriteStatus(DiagnosticLevel.Note, $"Build stdout {step.Name}: {step.StandardOutput.TrimEnd()}", useColors);
+            }
+            if (!string.IsNullOrWhiteSpace(step.StandardError))
+            {
+                CliOutput.WriteStatus(DiagnosticLevel.Warning, $"Build stderr {step.Name}: {step.StandardError.TrimEnd()}", useColors);
+            }
+        }
+    }
+
+    private static async Task<string> TryReadBuildProgramSourceAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return await File.ReadAllTextAsync(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
     }
 
     private static async Task WriteBuildProfileJsonAsync(
