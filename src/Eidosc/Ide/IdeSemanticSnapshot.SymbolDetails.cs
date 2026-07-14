@@ -719,7 +719,7 @@ public static partial class IdeSemanticSnapshotBuilder
                         break;
 
                     case TraitSymbol trait:
-                        AddQualifiedCompletionLabel(result, trait.Id, $"{prefix}::{binding.Name}");
+                        AddQualifiedCompletionLabel(result, trait.Id, $"{prefix}.{binding.Name}");
                         AddQualifiedOwnerMemberCompletionLabels(
                             symbolTable,
                             result,
@@ -729,7 +729,7 @@ public static partial class IdeSemanticSnapshotBuilder
                         break;
 
                     case EffectSymbol ability:
-                        AddQualifiedCompletionLabel(result, ability.Id, $"{prefix}::{binding.Name}");
+                        AddQualifiedCompletionLabel(result, ability.Id, $"{prefix}.{binding.Name}");
                         break;
                 }
             }
@@ -764,8 +764,8 @@ public static partial class IdeSemanticSnapshotBuilder
             }
 
             var label = collapseOwnerSegment
-                ? $"{prefix}::{member.Name}"
-                : $"{prefix}::{ownerName}::{member.Name}";
+                ? $"{prefix}.{member.Name}"
+                : $"{prefix}.{ownerName}.{member.Name}";
             AddQualifiedCompletionLabel(result, member.Id, label);
         }
     }

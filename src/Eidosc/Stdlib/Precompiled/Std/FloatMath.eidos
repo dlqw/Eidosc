@@ -154,17 +154,17 @@ FloatMath :: module {
 
     min3 :: Float -> Float -> Float -> Float need FFI
     {
-        a => b => c => FloatMath::fmin(FloatMath::fmin(a)(b))(c)
+        a => b => c => FloatMath.fmin(FloatMath.fmin(a)(b))(c)
     }
 
     max3 :: Float -> Float -> Float -> Float need FFI
     {
-        a => b => c => FloatMath::fmax(FloatMath::fmax(a)(b))(c)
+        a => b => c => FloatMath.fmax(FloatMath.fmax(a)(b))(c)
     }
 
     saturate :: Float -> Float
     {
-        value => FloatMath::clamp(value)(0.0)(1.0)
+        value => FloatMath.clamp(value)(0.0)(1.0)
     }
 
     square :: Float -> Float
@@ -179,22 +179,22 @@ FloatMath :: module {
 
     fract :: Float -> Float need FFI
     {
-        value => value - FloatMath::floor(value)
+        value => value - FloatMath.floor(value)
     }
 
     approx_eq :: Float -> Float -> Float -> Bool need FFI
     {
-        left => right => tolerance => FloatMath::abs(left - right) <= FloatMath::abs(tolerance)
+        left => right => tolerance => FloatMath.abs(left - right) <= FloatMath.abs(tolerance)
     }
 
     distance :: Float -> Float -> Float need FFI
     {
-        left => right => FloatMath::abs(left - right)
+        left => right => FloatMath.abs(left - right)
     }
 
     hypot :: Float -> Float -> Float need FFI
     {
-        x => y => FloatMath::sqrt(FloatMath::square(x) + FloatMath::square(y))
+        x => y => FloatMath.sqrt(FloatMath.square(x) + FloatMath.square(y))
     }
 
     degrees_to_radians :: Float -> Float
@@ -222,12 +222,12 @@ FloatMath :: module {
     wrap :: Float -> Float -> Float -> Float need FFI
     {
         value => lower => upper => {
-            start := FloatMath::fmin(lower)(upper);
-            stop := FloatMath::fmax(lower)(upper);
+            start := FloatMath.fmin(lower)(upper);
+            stop := FloatMath.fmax(lower)(upper);
             span := stop - start;
             if span == 0.0
             then { start }
-            else { start + ((value - start) - FloatMath::floor((value - start) / span) * span) }
+            else { start + ((value - start) - FloatMath.floor((value - start) / span) * span) }
         }
     }
 
@@ -235,7 +235,7 @@ FloatMath :: module {
     {
         value => length =>
             if length <= 0.0 then { 0.0 }
-            else { FloatMath::wrap(value)(0.0)(length) }
+            else { FloatMath.wrap(value)(0.0)(length) }
     }
 
     ping_pong :: Float -> Float -> Float need FFI
@@ -244,7 +244,7 @@ FloatMath :: module {
             if length <= 0.0 then { 0.0 }
             else {
                 doubled := length * 2.0;
-                t := FloatMath::repeat(value)(doubled);
+                t := FloatMath.repeat(value)(doubled);
                 if t <= length then { t } else { doubled - t }
             }
     }
@@ -257,9 +257,9 @@ FloatMath :: module {
     smoothstep :: Float -> Float -> Float -> Float
     {
         edge0 => edge1 => value =>
-            if edge0 == edge1 then { FloatMath::step(edge0)(value) }
+            if edge0 == edge1 then { FloatMath.step(edge0)(value) }
             else {
-                t := FloatMath::saturate((value - edge0) / (edge1 - edge0));
+                t := FloatMath.saturate((value - edge0) / (edge1 - edge0));
                 t * t * (3.0 - 2.0 * t)
             }
     }
@@ -268,38 +268,38 @@ FloatMath :: module {
     {
         in_min => in_max => out_min => out_max => value =>
             if in_min == in_max then { out_min }
-            else { FloatMath::lerp(out_min)(out_max)(FloatMath::inverse_lerp(in_min)(in_max)(value)) }
+            else { FloatMath.lerp(out_min)(out_max)(FloatMath.inverse_lerp(in_min)(in_max)(value)) }
     }
 
     move_toward :: Float -> Float -> Float -> Float need FFI
     {
         current => target => max_delta => {
             delta := target - current;
-            distance := FloatMath::abs(delta);
+            distance := FloatMath.abs(delta);
             if max_delta <= 0.0 then { current }
             else if distance <= max_delta then { target }
-            else { current + FloatMath::copysign(max_delta)(delta) }
+            else { current + FloatMath.copysign(max_delta)(delta) }
         }
     }
 
     angle_wrap_radians :: Float -> Float need FFI
     {
-        value => FloatMath::wrap(value + pi)(0.0)(tau) - pi
+        value => FloatMath.wrap(value + pi)(0.0)(tau) - pi
     }
 
     angle_wrap_degrees :: Float -> Float need FFI
     {
-        value => FloatMath::wrap(value + 180.0)(0.0)(360.0) - 180.0
+        value => FloatMath.wrap(value + 180.0)(0.0)(360.0) - 180.0
     }
 
     angle_delta_radians :: Float -> Float -> Float need FFI
     {
-        current => target => FloatMath::angle_wrap_radians(target - current)
+        current => target => FloatMath.angle_wrap_radians(target - current)
     }
 
     angle_delta_degrees :: Float -> Float -> Float need FFI
     {
-        current => target => FloatMath::angle_wrap_degrees(target - current)
+        current => target => FloatMath.angle_wrap_degrees(target - current)
     }
 
     // 常量

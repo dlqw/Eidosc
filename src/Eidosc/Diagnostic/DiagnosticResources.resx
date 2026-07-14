@@ -1603,7 +1603,7 @@
     <value>module import alias must start with an uppercase letter</value>
   </data>
   <data name="ParserImportAliasUseNameFirstForm" xml:space="preserve">
-    <value>in Eidos 0.5.0-alpha.1, module alias imports must use the binding form 'Alias :: import Module.Path;' instead of 'import Module.Path as Alias;'</value>
+    <value>in Eidos 0.6.0-alpha.1, module alias imports must use the binding form 'Alias :: import Module.Path;' instead of 'import Module.Path as Alias;'</value>
   </data>
   <data name="ParserImportBindingExpectsModulePath" xml:space="preserve">
     <value>name-first import binding expects a module path; selective and wildcard imports are not valid in 'Alias :: import ...;' form</value>
@@ -1735,10 +1735,19 @@
     <value>expected '&lt;-' in do binding</value>
   </data>
   <data name="ParserExpectedIdentifierAfterQualifiedSeparator" xml:space="preserve">
-    <value>expected identifier after '::'</value>
+    <value>expected identifier after qualified path separator</value>
   </data>
   <data name="ParserExpectedTypeIdentifierAfterQualifiedSeparator" xml:space="preserve">
-    <value>expected type identifier after '::'</value>
+    <value>expected type identifier after qualified path separator</value>
+  </data>
+  <data name="ParserQualifiedDoubleColonRemoved" xml:space="preserve">
+    <value>qualified names use '.' in Eidos 0.6.0-alpha.1; '::' is reserved for declaration bindings</value>
+  </data>
+  <data name="ParserExpectedCommaBetweenAdtConstructors" xml:space="preserve">
+    <value>expected ',' between ADT constructors</value>
+  </data>
+  <data name="ParserAdtPipeSeparatorRemoved" xml:space="preserve">
+    <value>ADT constructors use ',' in Eidos 0.6.0-alpha.1; '|' remains a pattern operator</value>
   </data>
   <data name="ParserListRestStandaloneNote" xml:space="preserve">
     <value>`..` is a list-rest marker, not a standalone pattern.</value>

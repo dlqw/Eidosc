@@ -1,3 +1,5 @@
+using Eidosc.Diagnostic;
+
 namespace Eidosc.Parsing.Handwritten;
 
 internal sealed record ParsedQualifiedPath(
@@ -28,19 +30,147 @@ internal static class QualifiedPathParser
     public static ParsedQualifiedPath ParseItemPath(
         ParserContext ctx,
         Func<Token, bool> isItem,
-        string expectedAfterColonMessage)
+        string expectedAfterSeparatorMessage)
+    {
+        return ctx.UsesDotNamespaces
+            ? ParseDotItemPath(ctx, isItem, expectedAfterSeparatorMessage)
+            : ParseLegacyItemPath(ctx, isItem, expectedAfterSeparatorMessage);
+    }
+
+    public static List<string> Parse(
+        ParserContext ctx,
+        Func<Token, bool> isSegment,
+        string expectedAfterSeparatorMessage)
+    {
+        if (!ctx.UsesDotNamespaces)
+        {
+            return ParseLegacy(ctx, isSegment, expectedAfterSeparatorMessage);
+        }
+
+        var parts = new List<string> { ctx.GetText() };
+        ctx.Advance();
+        ConsumeDotSegments(ctx, parts, isSegment, expectedAfterSeparatorMessage);
+        RecoverRemovedQualifiedSeparators(ctx, parts, isSegment, expectedAfterSeparatorMessage);
+        return parts;
+    }
+
+    public static bool IsQualifiedPathLookahead(ParserContext ctx)
+    {
+        if (ctx.UsesDotNamespaces)
+        {
+            return ctx.CheckPeek(1, ".") &&
+                   (TokenKind.IsTypeIdentifier(ctx.Current) && TokenKind.IsAnyIdentifier(ctx.Peek(2)) ||
+                    TokenKind.IsIdentifier(ctx.Current) && TokenKind.IsTypeIdentifier(ctx.Peek(2)));
+        }
+
+        return ctx.CheckPeek(1, "::") || IsLegacyModulePathLookahead(ctx);
+    }
+
+    public static bool IsPackageQualifiedItemLookahead(ParserContext ctx)
+        => IsPackageQualifiedItemLookahead(ctx, TokenKind.IsAnyIdentifier);
+
+    public static bool IsPackageQualifiedItemLookahead(ParserContext ctx, Func<Token, bool> isItem)
+    {
+        if (ctx.UsesDotNamespaces)
+        {
+            return TokenKind.IsAnyIdentifier(ctx.Current) &&
+                   IsDotItemPathLookahead(ctx, isItem);
+        }
+
+        return ctx.CheckPeek(1, "::") &&
+               IsLegacyPackageQualifiedItemLookahead(ctx, isItem, separatorOffset: 1);
+    }
+
+    private static ParsedQualifiedPath ParseDotItemPath(
+        ParserContext ctx,
+        Func<Token, bool> isItem,
+        string expectedAfterSeparatorMessage)
+    {
+        var parts = new List<string> { ctx.GetText() };
+        ctx.Advance();
+        ConsumeDotSegments(ctx, parts, TokenKind.IsAnyIdentifier, expectedAfterSeparatorMessage);
+        RecoverRemovedQualifiedSeparators(ctx, parts, TokenKind.IsAnyIdentifier, expectedAfterSeparatorMessage);
+
+        return parts.Count == 0
+            ? new ParsedQualifiedPath(null, [], string.Empty)
+            : new ParsedQualifiedPath(null, parts.Take(parts.Count - 1).ToList(), parts[^1]);
+    }
+
+    private static void ConsumeDotSegments(
+        ParserContext ctx,
+        List<string> parts,
+        Func<Token, bool> isSegment,
+        string expectedAfterSeparatorMessage)
+    {
+        while (ctx.Check("."))
+        {
+            if (!isSegment(ctx.Peek(1)))
+            {
+                break;
+            }
+
+            ctx.Advance();
+            parts.Add(ctx.GetText());
+            ctx.Advance();
+        }
+
+        if (ctx.Check(".") && !isSegment(ctx.Peek(1)) && !ctx.CheckPeek(1, "{") && !ctx.CheckPeek(1, "*"))
+        {
+            ctx.Error(expectedAfterSeparatorMessage);
+        }
+    }
+
+    private static void RecoverRemovedQualifiedSeparators(
+        ParserContext ctx,
+        List<string> parts,
+        Func<Token, bool> isSegment,
+        string expectedAfterSeparatorMessage)
+    {
+        while (ctx.Check("::"))
+        {
+            ctx.Error(DiagnosticMessages.ParserQualifiedDoubleColonRemoved);
+            ctx.Advance();
+            if (!isSegment(ctx.Current))
+            {
+                ctx.Error(expectedAfterSeparatorMessage);
+                return;
+            }
+
+            parts.Add(ctx.GetText());
+            ctx.Advance();
+            ConsumeDotSegments(ctx, parts, isSegment, expectedAfterSeparatorMessage);
+        }
+    }
+
+    private static bool IsDotItemPathLookahead(ParserContext ctx, Func<Token, bool> isItem)
+    {
+        var offset = 1;
+        var sawDot = false;
+        while (ctx.CheckPeek(offset, ".") && TokenKind.IsAnyIdentifier(ctx.Peek(offset + 1)))
+        {
+            sawDot = true;
+            offset += 2;
+        }
+
+        return sawDot && isItem(ctx.Peek(offset - 1));
+    }
+
+    private static ParsedQualifiedPath ParseLegacyItemPath(
+        ParserContext ctx,
+        Func<Token, bool> isItem,
+        string expectedAfterSeparatorMessage)
     {
         var first = ctx.GetText();
         ctx.Advance();
 
-        if (ctx.Check("::") && IsPackageQualifiedItemLookahead(ctx, isItem, separatorOffset: 0))
+        if (ctx.Check("::") && IsLegacyPackageQualifiedItemLookahead(ctx, isItem, separatorOffset: 0))
         {
             ctx.Advance();
-            return ParsePackageQualifiedItemPath(ctx, first, isItem, expectedAfterColonMessage);
+            return ParseLegacyPackageQualifiedItemPath(ctx, first, isItem, expectedAfterSeparatorMessage);
         }
 
         var parts = new List<string> { first };
-        ConsumeModulePathSegments(ctx, parts, TokenKind.IsAnyIdentifier);
+        ConsumeLegacyModulePathSegments(ctx, parts, TokenKind.IsAnyIdentifier);
 
         while (ctx.Match("::"))
         {
@@ -51,7 +181,7 @@ internal static class QualifiedPathParser
             }
             else
             {
-                ctx.Error(expectedAfterColonMessage);
+                ctx.Error(expectedAfterSeparatorMessage);
                 break;
             }
         }
@@ -61,16 +191,15 @@ internal static class QualifiedPathParser
             : new ParsedQualifiedPath(null, parts.Take(parts.Count - 1).ToList(), parts[^1]);
     }
 
-    public static List<string> Parse(
+    private static List<string> ParseLegacy(
         ParserContext ctx,
         Func<Token, bool> isSegment,
-        string expectedAfterColonMessage)
+        string expectedAfterSeparatorMessage)
     {
         var parts = new List<string> { ctx.GetText() };
         ctx.Advance();
 
-        ConsumeModulePathSegments(ctx, parts, isSegment);
-
+        ConsumeLegacyModulePathSegments(ctx, parts, isSegment);
         while (ctx.Match("::"))
         {
             if (isSegment(ctx.Current))
@@ -80,7 +209,7 @@ internal static class QualifiedPathParser
             }
             else
             {
-                ctx.Error(expectedAfterColonMessage);
+                ctx.Error(expectedAfterSeparatorMessage);
                 break;
             }
         }
@@ -88,33 +217,16 @@ internal static class QualifiedPathParser
         return parts;
     }
 
-    public static bool IsQualifiedPathLookahead(ParserContext ctx)
-    {
-        return ctx.CheckPeek(1, "::") || IsModulePathLookahead(ctx);
-    }
-
-    public static bool IsPackageQualifiedItemLookahead(ParserContext ctx)
-    {
-        return ctx.CheckPeek(1, "::") &&
-               IsPackageQualifiedItemLookahead(ctx, TokenKind.IsAnyIdentifier, separatorOffset: 1);
-    }
-
-    public static bool IsPackageQualifiedItemLookahead(ParserContext ctx, Func<Token, bool> isItem)
-    {
-        return ctx.CheckPeek(1, "::") &&
-               IsPackageQualifiedItemLookahead(ctx, isItem, separatorOffset: 1);
-    }
-
-    private static ParsedQualifiedPath ParsePackageQualifiedItemPath(
+    private static ParsedQualifiedPath ParseLegacyPackageQualifiedItemPath(
         ParserContext ctx,
         string packageAlias,
         Func<Token, bool> isItem,
-        string expectedAfterColonMessage)
+        string expectedAfterSeparatorMessage)
     {
         var modulePath = new List<string>();
         if (!TokenKind.IsAnyIdentifier(ctx.Current))
         {
-            ctx.Error(expectedAfterColonMessage);
+            ctx.Error(expectedAfterSeparatorMessage);
             return new ParsedQualifiedPath(packageAlias, modulePath, string.Empty);
         }
 
@@ -129,20 +241,20 @@ internal static class QualifiedPathParser
             }
             else
             {
-                ctx.Error(expectedAfterColonMessage);
+                ctx.Error(expectedAfterSeparatorMessage);
                 break;
             }
         }
 
         if (!ctx.Match("::"))
         {
-            ctx.Error(expectedAfterColonMessage);
+            ctx.Error(expectedAfterSeparatorMessage);
             return new ParsedQualifiedPath(packageAlias, modulePath, string.Empty);
         }
 
         if (!isItem(ctx.Current))
         {
-            ctx.Error(expectedAfterColonMessage);
+            ctx.Error(expectedAfterSeparatorMessage);
             return new ParsedQualifiedPath(packageAlias, modulePath, string.Empty);
         }
 
@@ -151,7 +263,7 @@ internal static class QualifiedPathParser
         return new ParsedQualifiedPath(packageAlias, modulePath, name);
     }
 
-    private static bool IsPackageQualifiedItemLookahead(
+    private static bool IsLegacyPackageQualifiedItemLookahead(
         ParserContext ctx,
         Func<Token, bool> isItem,
         int separatorOffset)
@@ -171,14 +283,14 @@ internal static class QualifiedPathParser
         return ctx.CheckPeek(offset, "::") && isItem(ctx.Peek(offset + 1));
     }
 
-    private static void ConsumeModulePathSegments(
+    private static void ConsumeLegacyModulePathSegments(
         ParserContext ctx,
         List<string> parts,
         Func<Token, bool> isSegment)
     {
         while ((ctx.Check(".") || ctx.Check("/")) &&
                isSegment(ctx.Peek(1)) &&
-               IsModulePathContinuationLookahead(ctx))
+               IsLegacyModulePathContinuationLookahead(ctx))
         {
             ctx.Advance();
             parts.Add(ctx.GetText());
@@ -186,7 +298,7 @@ internal static class QualifiedPathParser
         }
     }
 
-    private static bool IsModulePathLookahead(ParserContext ctx)
+    private static bool IsLegacyModulePathLookahead(ParserContext ctx)
     {
         var offset = 1;
         if (!(ctx.CheckPeek(offset, ".") || ctx.CheckPeek(offset, "/")) || !TokenKind.IsAnyIdentifier(ctx.Peek(offset + 1)))
@@ -203,7 +315,7 @@ internal static class QualifiedPathParser
         return ctx.CheckPeek(offset, "::");
     }
 
-    private static bool IsModulePathContinuationLookahead(ParserContext ctx)
+    private static bool IsLegacyModulePathContinuationLookahead(ParserContext ctx)
     {
         var offset = 0;
         if (!(ctx.CheckPeek(offset, ".") || ctx.CheckPeek(offset, "/")) || !TokenKind.IsAnyIdentifier(ctx.Peek(offset + 1)))
@@ -219,5 +331,4 @@ internal static class QualifiedPathParser
 
         return ctx.CheckPeek(offset, "::");
     }
-
 }

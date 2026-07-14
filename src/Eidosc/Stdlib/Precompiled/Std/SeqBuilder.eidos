@@ -5,10 +5,10 @@ SeqBuilder :: module {
     // wraps a reference-counted contiguous array (the same storage that backs
     // Seq[T]) and mutates it in place via the push/set intrinsics exported by
     // the RuntimeArray module. When Perceus sees the unique-owner pattern
-    // (`builder := SeqBuilder::push(builder)(x)`), the allocation is reused rather than copied,
+    // (`builder := SeqBuilder.push(builder)(x)`), the allocation is reused rather than copied,
     // giving amortized O(1) append.
     //
-    // When construction is done, call SeqBuilder::freeze to obtain a read-only Seq[T]
+    // When construction is done, call SeqBuilder.freeze to obtain a read-only Seq[T]
     // view. The freeze is a structural no-op (Seq shares the same buffer); the
     // type distinction is what carries the "do not mutate" intent.
     //
@@ -26,27 +26,27 @@ SeqBuilder :: module {
     // Construct an empty SeqBuilder with the given reserved capacity.
     with_capacity[T] :: Int -> SeqBuilder[T]
     {
-        capacity => SeqBuilder(RuntimeArray::with_capacity[T](capacity))
+        capacity => SeqBuilder(RuntimeArray.with_capacity[T](capacity))
     }
 
     empty[T] :: Unit -> SeqBuilder[T]
     {
-        _ => SeqBuilder::with_capacity[T](0)
+        _ => SeqBuilder.with_capacity[T](0)
     }
 
     singleton[T] :: T -> SeqBuilder[T]
     {
-        value => SeqBuilder(RuntimeArray::singleton(value))
+        value => SeqBuilder(RuntimeArray.singleton(value))
     }
 
-    filled[T: Trait::Clone] :: Int -> T -> SeqBuilder[T]
+    filled[T: Trait.Clone] :: Int -> T -> SeqBuilder[T]
     {
         count => value => {
-            mut values := SeqBuilder::with_capacity[T](count)
+            mut values := SeqBuilder.with_capacity[T](count)
             mut index := 0
             loop {
                 if index >= count then { break } else {
-                    values = SeqBuilder::push(values)(TraitInvoke::clone_value(value))
+                    values = SeqBuilder.push(values)(TraitInvoke.clone_value(value))
                     index = index + 1
                 }
             }
@@ -64,43 +64,43 @@ SeqBuilder :: module {
     // Number of elements currently stored.
     len[T] :: SeqBuilder[T] -> Int
     {
-        SeqBuilder(buf) => Seq::len(buf)
+        SeqBuilder(buf) => Seq.len(buf)
     }
 
     is_empty[T] :: SeqBuilder[T] -> Bool
     {
-        builder => SeqBuilder::len(builder) == 0
+        builder => SeqBuilder.len(builder) == 0
     }
 
     // Append one element. Reuses the buffer in place under unique ownership.
     push[T] :: SeqBuilder[T] -> T -> SeqBuilder[T]
     {
-        SeqBuilder(buf) => value => SeqBuilder(RuntimeArray::push(buf)(value))
+        SeqBuilder(buf) => value => SeqBuilder(RuntimeArray.push(buf)(value))
     }
 
     // Append all elements from another Seq. Reuses the buffer in place.
     push_seq[T] :: SeqBuilder[T] -> Seq[T] -> SeqBuilder[T]
     {
-        SeqBuilder(buf) => values => SeqBuilder(RuntimeArray::extend(buf)(values))
+        SeqBuilder(buf) => values => SeqBuilder(RuntimeArray.extend(buf)(values))
     }
 
     // Remove the last element in place. Calling this on an empty SeqBuilder is a no-op.
     pop_last[T] :: SeqBuilder[T] -> Unit
     {
-        SeqBuilder(buf) => RuntimeArray::pop_last(buf)
+        SeqBuilder(buf) => RuntimeArray.pop_last(buf)
     }
 
     // Swap two slots in place without cloning either element.
     swap[T] :: SeqBuilder[T] -> Int -> Int -> Unit
     {
-        SeqBuilder(buf) => left => right => RuntimeArray::swap(buf)(left)(right)
+        SeqBuilder(buf) => left => right => RuntimeArray.swap(buf)(left)(right)
     }
 
     // In-place write at index. Bounds are the caller's responsibility (mirrors
     // Seq indexing semantics); intended for builder-phase slot mutation only.
     set[T] :: SeqBuilder[T] -> Int -> T -> Unit
     {
-        SeqBuilder(buf) => index => value => RuntimeArray::set(buf)(index)(value)
+        SeqBuilder(buf) => index => value => RuntimeArray.set(buf)(index)(value)
     }
 
     // Read the element at index (O(1)).
@@ -113,8 +113,8 @@ SeqBuilder :: module {
     get_opt[T] :: SeqBuilder[T] -> Int -> Option[T]
     {
         builder => index => {
-            len := SeqBuilder::len(builder)
-            if index < 0 || index >= len then { None() } else { Some(SeqBuilder::get(builder)(index)) }
+            len := SeqBuilder.len(builder)
+            if index < 0 || index >= len then { None() } else { Some(SeqBuilder.get(builder)(index)) }
         }
     }
 
@@ -126,8 +126,8 @@ SeqBuilder :: module {
 
     // Materialize the SeqBuilder into a fresh Seq (eager snapshot of current contents).
     // Use this when the builder may be further mutated after handing off a Seq.
-    to_seq[T: Trait::Clone] :: SeqBuilder[T] -> Seq[T]
+    to_seq[T: Trait.Clone] :: SeqBuilder[T] -> Seq[T]
     {
-        SeqBuilder(buf) => Seq::clone(buf)
+        SeqBuilder(buf) => Seq.clone(buf)
     }
 }

@@ -49,7 +49,7 @@ public class EidosProjectInitializerTests
                 manifestSchema = 3
 
                 [language]
-                version = "0.5.0-alpha.1"
+                version = "0.6.0-alpha.1"
 
                 [package]
                 name = "dev.eidos.app"

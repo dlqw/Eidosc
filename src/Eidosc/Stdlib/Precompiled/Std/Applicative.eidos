@@ -7,36 +7,36 @@ Applicative :: module {
 
     lift[A, F: kind2 : Applicative[F]] :: A -> F[A]
     {
-        value => Applicative::pure(value)
+        value => Applicative.pure(value)
     }
 
     map[A, B, F: kind2 : Applicative[F], E: effects] :: F[A] -> (A -> B need E) -> F[B] need E
     {
-        values => f => Applicative::apply(Applicative::pure(f))(values)
+        values => f => Applicative.apply(Applicative.pure(f))(values)
     }
 
     ap[A, B, F: kind2 : Applicative[F], E: effects] :: F[A -> B need E] -> F[A] -> F[B] need E
     {
-        functions => values => Applicative::apply(functions)(values)
+        functions => values => Applicative.apply(functions)(values)
     }
 
     map2[A, B, C, F: kind2 : Applicative[F], E: effects] :: F[A] -> F[B] -> (A -> B -> C need E) -> F[C] need E
     {
-        left => right => f => Applicative::apply(Applicative::map(left)(f))(right)
+        left => right => f => Applicative.apply(Applicative.map(left)(f))(right)
     }
 
     lift2[A, B, C, F: kind2 : Applicative[F], E: effects] :: (A -> B -> C need E) -> F[A] -> F[B] -> F[C] need E
     {
-        f => left => right => Applicative::map2(left)(right)(f)
+        f => left => right => Applicative.map2(left)(right)(f)
     }
 
     product[A, B, F: kind2 : Applicative[F]] :: F[A] -> F[B] -> F[(A, B)]
     {
-        left => right => Applicative::map2(left)(right)(a => b => (a, b))
+        left => right => Applicative.map2(left)(right)(a => b => (a, b))
     }
 
     void[A, F: kind2 : Applicative[F]] :: F[A] -> F[Unit]
     {
-        values => Applicative::map(values)(_ => ())
+        values => Applicative.map(values)(_ => ())
     }
 }

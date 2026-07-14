@@ -216,7 +216,7 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North |
+    North ,
     South
 }
 

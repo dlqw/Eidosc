@@ -70,7 +70,7 @@ Wrapper :: type {
 @derive(Clone)
 @derive(Show)
 Shape :: type {
-    Circle(Int) | Rect(Int, Int)
+    Circle(Int) , Rect(Int, Int)
 }
 """;
         var result = Compile("derive_copy_multi.eidos", source);
@@ -85,7 +85,7 @@ Shape :: type {
 @derive(Copy)
 @derive(Clone)
 Color :: type {
-    Red | Green | Blue
+    Red , Green , Blue
 }
 """;
         var result = Compile("derive_eq_multi.eidos", source);
@@ -101,7 +101,7 @@ Color :: type {
 @derive(Copy)
 @derive(Clone)
 Ordering2 :: type {
-    Less2 | Equal2 | Greater2
+    Less2 , Equal2 , Greater2
 }
 """;
         var result = Compile("derive_ord_multi.eidos", source);
@@ -117,7 +117,7 @@ Ordering2 :: type {
 @derive(Eq)
 @derive(Show)
 Maybe[T] :: type {
-    Just(T) | Nothing
+    Just(T) , Nothing
 }
 """;
         var result = Compile("derive_all_generic.eidos", source);
@@ -153,9 +153,9 @@ DirectionVector :: trait {
 }
 
 Direction :: type {
-    North |
-    South |
-    East |
+    North ,
+    South ,
+    East ,
     West
 }
 
@@ -189,7 +189,7 @@ read_dx :: Direction -> Int
     {
         const string source = """
 Axis :: type {
-    Vertical | Horizontal
+    Vertical , Horizontal
 }
 
 DirectionVector :: trait {
@@ -198,9 +198,9 @@ DirectionVector :: trait {
 }
 
 Direction[A] :: type {
-    North -> Direction[Vertical] |
-    South -> Direction[Vertical] |
-    East -> Direction[Horizontal] |
+    North -> Direction[Vertical] ,
+    South -> Direction[Vertical] ,
+    East -> Direction[Horizontal] ,
     West -> Direction[Horizontal]
 }
 
@@ -232,7 +232,7 @@ DirectionFacts :: trait {
 
 @derive(Eq)
 Direction :: type {
-    North |
+    North ,
     South
 }
 
@@ -256,22 +256,22 @@ read_opposite :: Direction -> Direction
     public void ConstructorBridgeFacts_PathValueReferences_GeneratesTraitImpl()
     {
         const string source = """
-import Std::GameMath
+import Std.GameMath
 
-Pos :: type = GameMath::IVec2;
+Pos :: type = GameMath.IVec2;
 
 DirectionFacts :: trait {
     delta :: Self -> Pos
 }
 
 Direction :: type {
-    North |
+    North ,
     East
 }
 
 DirectionFactsDirection :: instance DirectionFacts for Direction {
-    North => { delta = GameMath::up_i } |
-    East => { delta = GameMath::east_i }
+    North => { delta = GameMath.up_i } |
+    East => { delta = GameMath.east_i }
 }
 
 read_delta :: Direction -> Pos
@@ -294,7 +294,7 @@ DirectionVector :: trait {
 }
 
 Direction :: type {
-    North |
+    North ,
     South
 }
 
@@ -455,7 +455,7 @@ my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
 @derive(Clone)
 @derive(Show)
 Result2[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 """;
         var result = CompileThroughTypeInference("derive_clone_result.eidos", source);
@@ -525,9 +525,9 @@ Point :: type {
     private static string WithStdTraitImports(string source)
     {
         return """
-import Std::Trait
-import Std::TraitInvoke
-import Std::Ordering
+import Std.Trait
+import Std.TraitInvoke
+import Std.Ordering
 
 """ + source;
     }

@@ -1013,7 +1013,7 @@ public sealed partial class QueryDrivenPipeline
         return result.Success;
     }
 
-    private static void EnqueueImports(
+    private void EnqueueImports(
         ModuleDecl moduleDecl,
         Queue<(List<string> path, string? packageAlias, string? parentKey)> queue,
         string? ambientPackageAlias,
@@ -1022,12 +1022,30 @@ public sealed partial class QueryDrivenPipeline
         foreach (var import in EnumerateImports(moduleDecl))
         {
             if (import.ModulePath.Count == 0) continue;
+            NormalizeDotNamespaceImport(import);
             var packageAlias = ResolveInheritedPackageAlias(import, ambientPackageAlias);
             queue.Enqueue((new List<string>(import.ModulePath), packageAlias, parentKey));
         }
     }
 
-    private static void ApplyPackageIdentityToImportedModuleTree(
+    private void NormalizeDotNamespaceImport(ImportDecl import)
+    {
+        if (!string.IsNullOrWhiteSpace(import.PackageAlias) || import.ModulePath.Count < 2)
+        {
+            return;
+        }
+
+        var namespaceRoot = import.ModulePath[0];
+        if (!IsStdPackageAlias(namespaceRoot) && !_options.PackageImportRoots.ContainsKey(namespaceRoot))
+        {
+            return;
+        }
+
+        import.SetPackageAlias(namespaceRoot);
+        import.SetModulePath(import.ModulePath.Skip(1).ToList());
+    }
+
+    private void ApplyPackageIdentityToImportedModuleTree(
         ModuleDecl moduleDecl,
         string? packageAlias,
         string? packageInstanceKey)
@@ -1045,6 +1063,7 @@ public sealed partial class QueryDrivenPipeline
 
             foreach (var import in module.Declarations.OfType<ImportDecl>())
             {
+                NormalizeDotNamespaceImport(import);
                 if (ShouldInheritPackageAlias(import, packageAlias))
                 {
                     import.SetPackageAlias(packageAlias);

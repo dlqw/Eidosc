@@ -73,7 +73,7 @@ public sealed class NameManglerTests
     [Fact]
     public void MangleFunctionName_PackageQualifiedModule_ReturnsReadablePackageAwareName()
     {
-        var mangled = new NameMangler().MangleFunctionName("Std::Seq", "map", [BaseTypes.Int]);
+        var mangled = new NameMangler().MangleFunctionName("Std.Seq", "map", [BaseTypes.Int]);
 
         Assert.StartsWith("eidos_Std__Seq_map_", mangled, StringComparison.Ordinal);
         Assert.DoesNotContain("u003A", mangled, StringComparison.Ordinal);
@@ -110,7 +110,7 @@ public sealed class NameManglerTests
     {
         return new LlvmFunctionNameAllocationRequest
         {
-            ModuleName = "Lib::Math",
+            ModuleName = "Lib.Math",
             SourceName = "value",
             SignatureKey = "i32()",
             FunctionIdKey = $"module-id:{moduleIdentityKey}::value",

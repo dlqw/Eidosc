@@ -10,7 +10,7 @@ namespace Eidosc.Ast.Types;
 /// Eq
 /// Ord
 /// Show
-/// std::io::Readable
+/// Std.Io.Readable
 /// </example>
 public record TraitRef : EidosAstNode
 {

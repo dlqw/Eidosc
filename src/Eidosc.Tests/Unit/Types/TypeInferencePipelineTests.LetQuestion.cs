@@ -168,7 +168,7 @@ public partial class TypeInferencePipelineTests
     }
 
     private const string LetQuestionOptionSource = """
-import Std::Option
+import Std.Option
 
 maybe_inc :: Int -> Option[Int]
 {
@@ -185,14 +185,14 @@ use_option :: Int -> Option[Int]
 """;
 
     private const string LetQuestionResultSource = """
-import Std::Result
+import Std.Result
 
-parse_like :: Int -> Result::ResultWith[String, Int]
+parse_like :: Int -> Result.ResultWith[String, Int]
 {
     value => if value > 0 then { Ok(value + 1) } else { Err("bad") }
 }
 
-use_result :: Int -> Result::ResultWith[String, Int]
+use_result :: Int -> Result.ResultWith[String, Int]
 {
     value => {
         let? next = parse_like(value);
@@ -208,13 +208,13 @@ use_result :: Int -> Result::ResultWith[String, Int]
 """;
 
     private const string TopLevelLetQuestionSource = """
-import Std::Option
+import Std.Option
 
 let? value = Some(1);
 """;
 
     private const string LetQuestionNonOptionResultSource = """
-import Std::Option
+import Std.Option
 
 bad :: Int -> Option[Int]
 {
@@ -226,15 +226,15 @@ bad :: Int -> Option[Int]
 """;
 
     private const string LetQuestionOptionInResultReturnSource = """
-import Std::Option
-import Std::Result
+import Std.Option
+import Std.Result
 
 maybe_inc :: Int -> Option[Int]
 {
     value => Some(value + 1)
 }
 
-bad :: Int -> Result::ResultWith[String, Int]
+bad :: Int -> Result.ResultWith[String, Int]
 {
     value => {
         let? next = maybe_inc(value);
@@ -244,14 +244,14 @@ bad :: Int -> Result::ResultWith[String, Int]
 """;
 
     private const string LetQuestionResultErrorMismatchSource = """
-import Std::Result
+import Std.Result
 
-parse_like :: Int -> Result::ResultWith[String, Int]
+parse_like :: Int -> Result.ResultWith[String, Int]
 {
     value => if value > 0 then { Ok(value + 1) } else { Err("bad") }
 }
 
-bad :: Int -> Result::ResultWith[Int, Int]
+bad :: Int -> Result.ResultWith[Int, Int]
 {
     value => {
         let? next = parse_like(value);
@@ -261,7 +261,7 @@ bad :: Int -> Result::ResultWith[Int, Int]
 """;
 
     private const string LetQuestionRefutablePatternSource = """
-import Std::Option
+import Std.Option
 
 maybe_inc :: Int -> Option[Int]
 {

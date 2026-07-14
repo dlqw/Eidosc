@@ -163,56 +163,56 @@ public partial class LlvmPipelineIntegrationTests
         var escapedUrl = EscapeEidosStringLiteral(url);
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        response := Network::http_get_response("{{escapedUrl}}");
-        result := Network::http_get_text_result("{{escapedUrl}}");
-        opt := Network::http_get_text_opt("{{escapedUrl}}");
-        queryResult := Network::http_get_query_text_result("{{server.BaseUrl}}query")("q")("hello world");
-        postResult := Network::http_post_text_result("{{server.BaseUrl}}echo")("ping");
-        jsonResponse := Network::http_post_json_response("{{server.BaseUrl}}echo")("{\"ok\":true}");
-        headerResponse := Network::send(Network::with_header(Network::get_request("{{server.BaseUrl}}header"))("X-Test")("header-value"));
-        acceptResponse := Network::send(Network::with_accept_json(Network::get_request("{{server.BaseUrl}}accept")));
-        replyHeaderResponse := Network::http_get_response("{{server.BaseUrl}}reply-header");
-        replyHeaderLowerResponse := Network::http_get_response("{{server.BaseUrl}}reply-header");
-        timeoutRequest := Network::with_total_timeout(Network::with_connect_timeout(Network::get_request("{{server.BaseUrl}}slow"))(2))(1);
-        timeoutConfigBit := if Network::connect_timeout_seconds(timeoutRequest) == 2 &&
-            Network::total_timeout_seconds(timeoutRequest) == 1
+        response := Network.http_get_response("{{escapedUrl}}");
+        result := Network.http_get_text_result("{{escapedUrl}}");
+        opt := Network.http_get_text_opt("{{escapedUrl}}");
+        queryResult := Network.http_get_query_text_result("{{server.BaseUrl}}query")("q")("hello world");
+        postResult := Network.http_post_text_result("{{server.BaseUrl}}echo")("ping");
+        jsonResponse := Network.http_post_json_response("{{server.BaseUrl}}echo")("{\"ok\":true}");
+        headerResponse := Network.send(Network.with_header(Network.get_request("{{server.BaseUrl}}header"))("X-Test")("header-value"));
+        acceptResponse := Network.send(Network.with_accept_json(Network.get_request("{{server.BaseUrl}}accept")));
+        replyHeaderResponse := Network.http_get_response("{{server.BaseUrl}}reply-header");
+        replyHeaderLowerResponse := Network.http_get_response("{{server.BaseUrl}}reply-header");
+        timeoutRequest := Network.with_total_timeout(Network.with_connect_timeout(Network.get_request("{{server.BaseUrl}}slow"))(2))(1);
+        timeoutConfigBit := if Network.connect_timeout_seconds(timeoutRequest) == 2 &&
+            Network.total_timeout_seconds(timeoutRequest) == 1
             then { 1 } else { 0 };
-        timeoutResponse := Network::send(timeoutRequest);
-        putResult := Network::http_put_text_result("{{server.BaseUrl}}echo")("pong");
-        deleteResponse := Network::send(Network::with_bearer_auth(Network::delete_request("{{server.BaseUrl}}auth"))("token-123"));
-        binaryBodyResponse := Network::http_get_bytes_response("{{server.BaseUrl}}binary");
-        binaryHeaderResponse := Network::http_get_bytes_response("{{server.BaseUrl}}binary");
-        binaryStatusResponse := Network::http_get_bytes_response("{{server.BaseUrl}}binary");
-        binaryContentTypeResponse := Network::http_get_bytes_response("{{server.BaseUrl}}binary");
-        binaryUrlResponse := Network::http_get_bytes_response("{{server.BaseUrl}}binary");
-        binaryErrorResponse := Network::http_get_bytes_response("{{server.BaseUrl}}binary");
-        binaryResult := Network::http_get_bytes_result("{{server.BaseUrl}}binary");
-        binaryOpt := Network::http_get_bytes_opt("{{server.BaseUrl}}binary");
-        postBinaryBodyResponse := Network::http_post_bytes_response("{{server.BaseUrl}}echo-binary")([0, 1, 255, 65]);
-        postBinaryTypeResponse := Network::http_post_bytes_response("{{server.BaseUrl}}echo-binary")([0, 1, 255, 65]);
-        putBinaryResult := Network::http_put_bytes_result("{{server.BaseUrl}}echo-binary")([5, 6, 7]);
-        postBinaryTextResult := Network::http_post_bytes_text_result("{{server.BaseUrl}}echo")([112, 105, 110, 103]);
-        customBinaryBodyResponse := Network::send_bytes_with_bytes_body(
-            Network::request("POST")("{{server.BaseUrl}}echo-binary")("application.custom")(""))([9, 8]);
-        customBinaryTypeResponse := Network::send_bytes_with_bytes_body(
-            Network::request("POST")("{{server.BaseUrl}}echo-binary")("application.custom")(""))([9, 8]);
-        customBinaryTextResponse := Network::send_with_bytes_body(
-            Network::request("POST")("{{server.BaseUrl}}echo")("application.octet-stream")(""))([111, 107]);
-        okBit := if Network::ok(response) then { 1 } else { 0 };
-        statusBit := if Network::status(response) == 200 then { 1 } else { 0 };
-        bodyBit := if Network::body(response) == "hello-from-eidos" then { 1 } else { 0 };
-        urlBit := if Text::ends_with(Network::effective_url(response))("/ok") then { 1 } else { 0 };
-        contentTypeBit := if Text::starts_with(Network::content_type(response))("text.plain") then { 1 } else { 0 };
-        errorBit := if Text::len(Network::error(response)) == 0 then { 1 } else { 0 };
-        successBit := if Network::is_success_status(response) then { 1 } else { 0 };
+        timeoutResponse := Network.send(timeoutRequest);
+        putResult := Network.http_put_text_result("{{server.BaseUrl}}echo")("pong");
+        deleteResponse := Network.send(Network.with_bearer_auth(Network.delete_request("{{server.BaseUrl}}auth"))("token-123"));
+        binaryBodyResponse := Network.http_get_bytes_response("{{server.BaseUrl}}binary");
+        binaryHeaderResponse := Network.http_get_bytes_response("{{server.BaseUrl}}binary");
+        binaryStatusResponse := Network.http_get_bytes_response("{{server.BaseUrl}}binary");
+        binaryContentTypeResponse := Network.http_get_bytes_response("{{server.BaseUrl}}binary");
+        binaryUrlResponse := Network.http_get_bytes_response("{{server.BaseUrl}}binary");
+        binaryErrorResponse := Network.http_get_bytes_response("{{server.BaseUrl}}binary");
+        binaryResult := Network.http_get_bytes_result("{{server.BaseUrl}}binary");
+        binaryOpt := Network.http_get_bytes_opt("{{server.BaseUrl}}binary");
+        postBinaryBodyResponse := Network.http_post_bytes_response("{{server.BaseUrl}}echo-binary")([0, 1, 255, 65]);
+        postBinaryTypeResponse := Network.http_post_bytes_response("{{server.BaseUrl}}echo-binary")([0, 1, 255, 65]);
+        putBinaryResult := Network.http_put_bytes_result("{{server.BaseUrl}}echo-binary")([5, 6, 7]);
+        postBinaryTextResult := Network.http_post_bytes_text_result("{{server.BaseUrl}}echo")([112, 105, 110, 103]);
+        customBinaryBodyResponse := Network.send_bytes_with_bytes_body(
+            Network.request("POST")("{{server.BaseUrl}}echo-binary")("application.custom")(""))([9, 8]);
+        customBinaryTypeResponse := Network.send_bytes_with_bytes_body(
+            Network.request("POST")("{{server.BaseUrl}}echo-binary")("application.custom")(""))([9, 8]);
+        customBinaryTextResponse := Network.send_with_bytes_body(
+            Network.request("POST")("{{server.BaseUrl}}echo")("application.octet-stream")(""))([111, 107]);
+        okBit := if Network.ok(response) then { 1 } else { 0 };
+        statusBit := if Network.status(response) == 200 then { 1 } else { 0 };
+        bodyBit := if Network.body(response) == "hello-from-eidos" then { 1 } else { 0 };
+        urlBit := if Text.ends_with(Network.effective_url(response))("/ok") then { 1 } else { 0 };
+        contentTypeBit := if Text.starts_with(Network.content_type(response))("text.plain") then { 1 } else { 0 };
+        errorBit := if Text.len(Network.error(response)) == 0 then { 1 } else { 0 };
+        successBit := if Network.is_success_status(response) then { 1 } else { 0 };
         resultBit := match result
         {
             Ok(body) => if body == "hello-from-eidos" then { 1 } else { 0 },
@@ -233,41 +233,41 @@ main :: Unit -> Int need IO
             Ok(body) => if body == "ping" then { 1 } else { 0 },
             Err(message) => 0
         };
-        jsonBit := if Network::body(jsonResponse) == "{\"ok\":true}" &&
-            Text::starts_with(Network::content_type(jsonResponse))("application.json")
+        jsonBit := if Network.body(jsonResponse) == "{\"ok\":true}" &&
+            Text.starts_with(Network.content_type(jsonResponse))("application.json")
             then { 1 } else { 0 };
-        headerBit := if Network::body(headerResponse) == "header-value" then { 1 } else { 0 };
-        acceptBit := if Network::body(acceptResponse) == "application.json" then { 1 } else { 0 };
-        replyHeaderBit := match Network::header_value_opt(replyHeaderResponse)("X-Reply")
+        headerBit := if Network.body(headerResponse) == "header-value" then { 1 } else { 0 };
+        acceptBit := if Network.body(acceptResponse) == "application.json" then { 1 } else { 0 };
+        replyHeaderBit := match Network.header_value_opt(replyHeaderResponse)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        replyHeaderLowerBit := match Network::header_value_opt(replyHeaderLowerResponse)("x-reply")
+        replyHeaderLowerBit := match Network.header_value_opt(replyHeaderLowerResponse)("x-reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        rawHeadersBit := if Text::contains(Network::headers(replyHeaderResponse))("X-Reply: server-value") then { 1 } else { 0 };
-        timeoutBit := if !Network::ok(timeoutResponse) &&
-            Text::contains(Network::error(timeoutResponse))("timed out")
+        rawHeadersBit := if Text.contains(Network.headers(replyHeaderResponse))("X-Reply: server-value") then { 1 } else { 0 };
+        timeoutBit := if !Network.ok(timeoutResponse) &&
+            Text.contains(Network.error(timeoutResponse))("timed out")
             then { 1 } else { 0 };
         putBit := match putResult
         {
             Ok(body) => if body == "pong" then { 1 } else { 0 },
             Err(message) => 0
         };
-        deleteBit := if Network::body(deleteResponse) == "Bearer token-123" then { 1 } else { 0 };
-        binaryBodyBit := match Network::body_bytes(binaryBodyResponse)
+        deleteBit := if Network.body(deleteResponse) == "Bearer token-123" then { 1 } else { 0 };
+        binaryBodyBit := match Network.body_bytes(binaryBodyResponse)
         {
             [0, 1, 255, 65] => 1,
             _ => 0
         };
-        binaryStatusBit := if Network::bytes_status(binaryStatusResponse) == 200 then { 1 } else { 0 };
-        binaryContentTypeBit := if Text::starts_with(Network::bytes_content_type(binaryContentTypeResponse))("application.octet-stream") then { 1 } else { 0 };
-        binaryUrlBit := if Text::ends_with(Network::bytes_effective_url(binaryUrlResponse))("/binary") then { 1 } else { 0 };
-        binaryErrorBit := if Text::len(Network::bytes_error(binaryErrorResponse)) == 0 then { 1 } else { 0 };
-        binaryHeaderBit := match Network::bytes_header_value_opt(binaryHeaderResponse)("x-binary-reply")
+        binaryStatusBit := if Network.bytes_status(binaryStatusResponse) == 200 then { 1 } else { 0 };
+        binaryContentTypeBit := if Text.starts_with(Network.bytes_content_type(binaryContentTypeResponse))("application.octet-stream") then { 1 } else { 0 };
+        binaryUrlBit := if Text.ends_with(Network.bytes_effective_url(binaryUrlResponse))("/binary") then { 1 } else { 0 };
+        binaryErrorBit := if Text.len(Network.bytes_error(binaryErrorResponse)) == 0 then { 1 } else { 0 };
+        binaryHeaderBit := match Network.bytes_header_value_opt(binaryHeaderResponse)("x-binary-reply")
         {
             Some(value) => if value == "bytes-value" then { 1 } else { 0 },
             None() => 0
@@ -294,12 +294,12 @@ main :: Unit -> Int need IO
             },
             None() => 0
         };
-        postBinaryBodyBit := match Network::body_bytes(postBinaryBodyResponse)
+        postBinaryBodyBit := match Network.body_bytes(postBinaryBodyResponse)
         {
             [0, 1, 255, 65] => 1,
             _ => 0
         };
-        postBinaryTypeBit := if Text::starts_with(Network::bytes_content_type(postBinaryTypeResponse))("application.octet-stream") then { 1 } else { 0 };
+        postBinaryTypeBit := if Text.starts_with(Network.bytes_content_type(postBinaryTypeResponse))("application.octet-stream") then { 1 } else { 0 };
         putBinaryResultBit := match putBinaryResult
         {
             Ok(bytes) => {
@@ -316,13 +316,13 @@ main :: Unit -> Int need IO
             Ok(body) => if body == "ping" then { 1 } else { 0 },
             Err(message) => 0
         };
-        customBinaryBodyBit := match Network::body_bytes(customBinaryBodyResponse)
+        customBinaryBodyBit := match Network.body_bytes(customBinaryBodyResponse)
         {
             [9, 8] => 1,
             _ => 0
         };
-        customBinaryTypeBit := if Text::starts_with(Network::bytes_content_type(customBinaryTypeResponse))("application.custom") then { 1 } else { 0 };
-        customBinaryTextBit := if Network::body(customBinaryTextResponse) == "ok" then { 1 } else { 0 };
+        customBinaryTypeBit := if Text.starts_with(Network.bytes_content_type(customBinaryTypeResponse))("application.custom") then { 1 } else { 0 };
+        customBinaryTextBit := if Network.body(customBinaryTextResponse) == "ok" then { 1 } else { 0 };
 
         if okBit + statusBit + bodyBit + urlBit + contentTypeBit + errorBit + successBit + resultBit + optBit + queryBit + postBit + jsonBit + headerBit + acceptBit + replyHeaderBit + replyHeaderLowerBit + rawHeadersBit + timeoutConfigBit + timeoutBit + putBit + deleteBit + binaryBodyBit + binaryStatusBit + binaryContentTypeBit + binaryUrlBit + binaryErrorBit + binaryHeaderBit + binaryResultBit + binaryOptBit + postBinaryBodyBit + postBinaryTypeBit + putBinaryResultBit + postBinaryTextBit + customBinaryBodyBit + customBinaryTypeBit + customBinaryTextBit == 31
             then { 0 }
@@ -354,34 +354,34 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        redirect := Network::http_get_response("{{baseUrl}}redirect");
-        replyHeader := Network::http_get_response("{{baseUrl}}reply-header");
-        bytesBodyResponse := Network::http_get_bytes_response("{{baseUrl}}binary");
-        bytesContentTypeResponse := Network::http_get_bytes_response("{{baseUrl}}binary");
-        uploadResult := Network::http_post_bytes_text_result("{{baseUrl}}echo")([112, 105, 110, 103]);
-        redirectBit := if Network::status(redirect) == 200 &&
-            Network::body(redirect) == "hello-from-eidos" &&
-            Text::ends_with(Network::effective_url(redirect))("/ok")
+        redirect := Network.http_get_response("{{baseUrl}}redirect");
+        replyHeader := Network.http_get_response("{{baseUrl}}reply-header");
+        bytesBodyResponse := Network.http_get_bytes_response("{{baseUrl}}binary");
+        bytesContentTypeResponse := Network.http_get_bytes_response("{{baseUrl}}binary");
+        uploadResult := Network.http_post_bytes_text_result("{{baseUrl}}echo")([112, 105, 110, 103]);
+        redirectBit := if Network.status(redirect) == 200 &&
+            Network.body(redirect) == "hello-from-eidos" &&
+            Text.ends_with(Network.effective_url(redirect))("/ok")
             then { 1 } else { 0 };
-        headerBit := match Network::header_value_opt(replyHeader)("X-Reply")
+        headerBit := match Network.header_value_opt(replyHeader)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        bytesBit := match Network::body_bytes(bytesBodyResponse)
+        bytesBit := match Network.body_bytes(bytesBodyResponse)
         {
             [0, 1, 255, 65] => 1,
             _ => 0
         };
-        contentTypeBit := if Text::starts_with(Network::bytes_content_type(bytesContentTypeResponse))("application.octet-stream")
+        contentTypeBit := if Text.starts_with(Network.bytes_content_type(bytesContentTypeResponse))("application.octet-stream")
             then { 1 } else { 0 };
         uploadBit := match uploadResult
         {
@@ -420,24 +420,24 @@ main :: Unit -> Int need IO
         var missingUrl = EscapeEidosStringLiteral($"{server.BaseUrl}missing");
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        response := Network::http_get_response("{{missingUrl}}");
-        result := Network::http_get_text_result("{{missingUrl}}");
-        bodyBit := if Network::body(response) == "missing-body" then { 1 } else { 0 };
-        statusBit := if Network::status(response) == 404 then { 1 } else { 0 };
-        errorBit := if Text::contains(Network::error(response))("404") then { 1 } else { 0 };
-        headerBit := if Text::contains(Network::headers(response))("Content-Type: text.plain") then { 1 } else { 0 };
+        response := Network.http_get_response("{{missingUrl}}");
+        result := Network.http_get_text_result("{{missingUrl}}");
+        bodyBit := if Network.body(response) == "missing-body" then { 1 } else { 0 };
+        statusBit := if Network.status(response) == 404 then { 1 } else { 0 };
+        errorBit := if Text.contains(Network.error(response))("404") then { 1 } else { 0 };
+        headerBit := if Text.contains(Network.headers(response))("Content-Type: text.plain") then { 1 } else { 0 };
         resultBit := match result
         {
             Ok(body) => 0,
-            Err(message) => if Text::contains(message)("404") then { 1 } else { 0 }
+            Err(message) => if Text.contains(message)("404") then { 1 } else { 0 }
         };
 
         if bodyBit + statusBit + errorBit + headerBit + resultBit == 5
@@ -469,22 +469,22 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std::Network
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        uploadBodyResponse := Network::http_post_bytes_response("{{baseUrl}}echo-binary")([9, 0, 255, 7]);
-        uploadTypeResponse := Network::http_post_bytes_response("{{baseUrl}}echo-binary")([9, 0, 255, 7]);
-        putResult := Network::http_put_bytes_result("{{baseUrl}}echo-binary")([1, 2, 3, 4]);
-        uploadBodyBit := match Network::body_bytes(uploadBodyResponse)
+        uploadBodyResponse := Network.http_post_bytes_response("{{baseUrl}}echo-binary")([9, 0, 255, 7]);
+        uploadTypeResponse := Network.http_post_bytes_response("{{baseUrl}}echo-binary")([9, 0, 255, 7]);
+        putResult := Network.http_put_bytes_result("{{baseUrl}}echo-binary")([1, 2, 3, 4]);
+        uploadBodyBit := match Network.body_bytes(uploadBodyResponse)
         {
             [9, 0, 255, 7] => 1,
             _ => 0
         };
-        uploadTypeBit := if Text::starts_with(Network::bytes_content_type(uploadTypeResponse))("application.octet-stream")
+        uploadTypeBit := if Text.starts_with(Network.bytes_content_type(uploadTypeResponse))("application.octet-stream")
             then { 1 } else { 0 };
         putBodyBit := match putResult
         {
@@ -527,18 +527,18 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std::Network
-import Std::Text
+import Std.Network
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        request := Network::with_header(
-            Network::with_query_param(Network::get_request("{{baseUrl}}query-header"))("q")("hello world"))("X-Test")("alpha");
-        response := Network::send(request);
-        bodyBit := if Network::body(response) == "q=hello%20world|alpha" then { 1 } else { 0 };
-        statusBit := if Network::status(response) == 200 then { 1 } else { 0 };
-        contentTypeBit := if Text::starts_with(Network::content_type(response))("text.plain") then { 1 } else { 0 };
+        request := Network.with_header(
+            Network.with_query_param(Network.get_request("{{baseUrl}}query-header"))("q")("hello world"))("X-Test")("alpha");
+        response := Network.send(request);
+        bodyBit := if Network.body(response) == "q=hello%20world|alpha" then { 1 } else { 0 };
+        statusBit := if Network.status(response) == 200 then { 1 } else { 0 };
+        contentTypeBit := if Text.starts_with(Network.content_type(response))("text.plain") then { 1 } else { 0 };
 
         if bodyBit + statusBit + contentTypeBit == 3
             then { 0 }
@@ -586,32 +586,32 @@ main :: Unit -> Int need IO
         var missingBinaryUrl = EscapeEidosStringLiteral($"{server.BaseUrl}missing-binary");
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        bodyResponse := Network::http_get_bytes_response("{{missingBinaryUrl}}");
-        statusResponse := Network::http_get_bytes_response("{{missingBinaryUrl}}");
-        errorResponse := Network::http_get_bytes_response("{{missingBinaryUrl}}");
-        typeResponse := Network::http_get_bytes_response("{{missingBinaryUrl}}");
-        result := Network::http_get_bytes_result("{{missingBinaryUrl}}");
-        opt := Network::http_get_bytes_opt("{{missingBinaryUrl}}");
-        bodyBit := match Network::body_bytes(bodyResponse)
+        bodyResponse := Network.http_get_bytes_response("{{missingBinaryUrl}}");
+        statusResponse := Network.http_get_bytes_response("{{missingBinaryUrl}}");
+        errorResponse := Network.http_get_bytes_response("{{missingBinaryUrl}}");
+        typeResponse := Network.http_get_bytes_response("{{missingBinaryUrl}}");
+        result := Network.http_get_bytes_result("{{missingBinaryUrl}}");
+        opt := Network.http_get_bytes_opt("{{missingBinaryUrl}}");
+        bodyBit := match Network.body_bytes(bodyResponse)
         {
             [222, 173, 190, 239] => 1,
             _ => 0
         };
-        statusBit := if Network::bytes_status(statusResponse) == 404 then { 1 } else { 0 };
-        errorBit := if Text::contains(Network::bytes_error(errorResponse))("404") then { 1 } else { 0 };
-        typeBit := if Text::starts_with(Network::bytes_content_type(typeResponse))("application.octet-stream") then { 1 } else { 0 };
+        statusBit := if Network.bytes_status(statusResponse) == 404 then { 1 } else { 0 };
+        errorBit := if Text.contains(Network.bytes_error(errorResponse))("404") then { 1 } else { 0 };
+        typeBit := if Text.starts_with(Network.bytes_content_type(typeResponse))("application.octet-stream") then { 1 } else { 0 };
         resultBit := match result
         {
             Ok(bytes) => 0,
-            Err(message) => if Text::contains(message)("404") then { 1 } else { 0 }
+            Err(message) => if Text.contains(message)("404") then { 1 } else { 0 }
         };
         optBit := match opt
         {
@@ -648,17 +648,17 @@ main :: Unit -> Int need IO
         var slowUrl = EscapeEidosStringLiteral($"{server.BaseUrl}slow");
 
         var source = $$"""
-import Std::Network
-import Std::Text
+import Std.Network
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        request := Network::with_total_timeout(Network::with_connect_timeout(Network::get_request("{{slowUrl}}"))(2))(1);
-        response := Network::send(request);
-        okBit := if Network::ok(response) then { 0 } else { 1 };
-        statusBit := if Network::status(response) == 0 then { 1 } else { 0 };
-        errorBit := if Text::contains(Network::error(response))("timed out") then { 1 } else { 0 };
+        request := Network.with_total_timeout(Network.with_connect_timeout(Network.get_request("{{slowUrl}}"))(2))(1);
+        response := Network.send(request);
+        okBit := if Network.ok(response) then { 0 } else { 1 };
+        statusBit := if Network.status(response) == 0 then { 1 } else { 0 };
+        errorBit := if Text.contains(Network.error(response))("timed out") then { 1 } else { 0 };
 
         if okBit + statusBit + errorBit == 3
             then { 0 }
@@ -689,39 +689,39 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        request := Network::with_header(
-            Network::with_query_param(Network::get_request("{{baseUrl}}query-header"))("q")("hello world"))("X-Test")("alpha");
-        queryHeaderResponse := Network::send(request);
-        replyHeaderResponse := Network::http_get_response("{{baseUrl}}reply-header");
-        binaryHeaderResponse := Network::http_get_bytes_response("{{baseUrl}}binary");
-        binaryErrorStatusResponse := Network::http_get_bytes_response("{{baseUrl}}missing-binary");
-        binaryErrorMessageResponse := Network::http_get_bytes_response("{{baseUrl}}missing-binary");
-        timeoutRequest := Network::with_total_timeout(Network::with_connect_timeout(Network::get_request("{{baseUrl}}slow"))(2))(1);
-        timeoutResponse := Network::send(timeoutRequest);
-        queryHeaderBit := if Network::body(queryHeaderResponse) == "q=hello%20world|alpha" then { 1 } else { 0 };
-        replyHeaderBit := match Network::header_value_opt(replyHeaderResponse)("x-reply")
+        request := Network.with_header(
+            Network.with_query_param(Network.get_request("{{baseUrl}}query-header"))("q")("hello world"))("X-Test")("alpha");
+        queryHeaderResponse := Network.send(request);
+        replyHeaderResponse := Network.http_get_response("{{baseUrl}}reply-header");
+        binaryHeaderResponse := Network.http_get_bytes_response("{{baseUrl}}binary");
+        binaryErrorStatusResponse := Network.http_get_bytes_response("{{baseUrl}}missing-binary");
+        binaryErrorMessageResponse := Network.http_get_bytes_response("{{baseUrl}}missing-binary");
+        timeoutRequest := Network.with_total_timeout(Network.with_connect_timeout(Network.get_request("{{baseUrl}}slow"))(2))(1);
+        timeoutResponse := Network.send(timeoutRequest);
+        queryHeaderBit := if Network.body(queryHeaderResponse) == "q=hello%20world|alpha" then { 1 } else { 0 };
+        replyHeaderBit := match Network.header_value_opt(replyHeaderResponse)("x-reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        binaryHeaderBit := match Network::bytes_header_value_opt(binaryHeaderResponse)("x-binary-reply")
+        binaryHeaderBit := match Network.bytes_header_value_opt(binaryHeaderResponse)("x-binary-reply")
         {
             Some(value) => if value == "bytes-value" then { 1 } else { 0 },
             None() => 0
         };
-        binaryErrorBit := if Network::bytes_status(binaryErrorStatusResponse) == 404 &&
-            Text::contains(Network::bytes_error(binaryErrorMessageResponse))("404")
+        binaryErrorBit := if Network.bytes_status(binaryErrorStatusResponse) == 404 &&
+            Text.contains(Network.bytes_error(binaryErrorMessageResponse))("404")
             then { 1 } else { 0 };
-        timeoutBit := if !Network::ok(timeoutResponse) &&
-            Text::contains(Network::error(timeoutResponse))("timed out")
+        timeoutBit := if !Network.ok(timeoutResponse) &&
+            Text.contains(Network.error(timeoutResponse))("timed out")
             then { 1 } else { 0 };
 
         if queryHeaderBit + replyHeaderBit + binaryHeaderBit + binaryErrorBit + timeoutBit == 5
@@ -781,17 +781,17 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        response := Network::send(Network::request("HEAD")("{{baseUrl}}reply-header")("text.plain")(""));
-        statusBit := if Network::status(response) == 200 then { 1 } else { 0 };
-        bodyBit := if Network::body(response) == "" then { 1 } else { 0 };
-        headerBit := match Network::header_value_opt(response)("X-Reply")
+        response := Network.send(Network.request("HEAD")("{{baseUrl}}reply-header")("text.plain")(""));
+        statusBit := if Network.status(response) == 200 then { 1 } else { 0 };
+        bodyBit := if Network.body(response) == "" then { 1 } else { 0 };
+        headerBit := match Network.header_value_opt(response)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
@@ -832,13 +832,13 @@ main :: Unit -> Int need IO
         var okUrl = EscapeEidosStringLiteral($"{server.BaseUrl}ok");
 
         var source = $$"""
-import Std::Network
+import Std.Network
 
 main :: Unit -> Int need IO
 {
     _ => {
-        response := Network::http_get_response("{{okUrl}}");
-        if Network::status(response) == 200 && Network::body(response) == "hello-from-eidos"
+        response := Network.http_get_response("{{okUrl}}");
+        if Network.status(response) == 200 && Network.body(response) == "hello-from-eidos"
             then { 0 }
             else { 1 }
     }
@@ -874,28 +874,28 @@ main :: Unit -> Int need IO
         var escapedUrl = EscapeEidosStringLiteral(url);
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Result
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Result
+import Std.Text
 
 main :: Unit -> Int need IO
 {
     _ => {
-        response := Network::http_get_response("{{escapedUrl}}");
-        result := Network::http_get_text_result("{{escapedUrl}}");
-        opt := Network::http_get_text_opt("{{escapedUrl}}");
-        okBit := if Network::ok(response) then { 0 } else { 1 };
-        statusBit := if Network::status(response) == 404 then { 1 } else { 0 };
-        bodyBit := if Network::body(response) == "missing-body" then { 1 } else { 0 };
-        urlBit := if Text::ends_with(Network::effective_url(response))("/missing") then { 1 } else { 0 };
-        contentTypeBit := if Text::starts_with(Network::content_type(response))("text.plain") then { 1 } else { 0 };
-        errorBit := if Text::len(Network::error(response)) > 0 then { 1 } else { 0 };
-        successBit := if Network::is_success_status(response) then { 0 } else { 1 };
+        response := Network.http_get_response("{{escapedUrl}}");
+        result := Network.http_get_text_result("{{escapedUrl}}");
+        opt := Network.http_get_text_opt("{{escapedUrl}}");
+        okBit := if Network.ok(response) then { 0 } else { 1 };
+        statusBit := if Network.status(response) == 404 then { 1 } else { 0 };
+        bodyBit := if Network.body(response) == "missing-body" then { 1 } else { 0 };
+        urlBit := if Text.ends_with(Network.effective_url(response))("/missing") then { 1 } else { 0 };
+        contentTypeBit := if Text.starts_with(Network.content_type(response))("text.plain") then { 1 } else { 0 };
+        errorBit := if Text.len(Network.error(response)) > 0 then { 1 } else { 0 };
+        successBit := if Network.is_success_status(response) then { 0 } else { 1 };
         resultBit := match result
         {
             Ok(body) => 0,
-            Err(message) => if Text::len(message) > 0 then { 1 } else { 0 }
+            Err(message) => if Text.len(message) > 0 then { 1 } else { 0 }
         };
         optBit := match opt
         {

@@ -54,12 +54,12 @@ Time :: module {
     sub_seconds :: Int -> Int -> Int { ts => s => ts - s }
     diff_seconds :: Int -> Int -> Int { a => b => b - a }
 
-    add_minutes :: Int -> Int -> Int { ts => minutes => Time::add_seconds(ts)(minutes * 60) }
-    add_hours :: Int -> Int -> Int { ts => hours => Time::add_seconds(ts)(hours * 3600) }
-    add_days :: Int -> Int -> Int { ts => days => Time::add_seconds(ts)(days * 86400) }
-    sub_minutes :: Int -> Int -> Int { ts => minutes => Time::sub_seconds(ts)(minutes * 60) }
-    sub_hours :: Int -> Int -> Int { ts => hours => Time::sub_seconds(ts)(hours * 3600) }
-    sub_days :: Int -> Int -> Int { ts => days => Time::sub_seconds(ts)(days * 86400) }
+    add_minutes :: Int -> Int -> Int { ts => minutes => Time.add_seconds(ts)(minutes * 60) }
+    add_hours :: Int -> Int -> Int { ts => hours => Time.add_seconds(ts)(hours * 3600) }
+    add_days :: Int -> Int -> Int { ts => days => Time.add_seconds(ts)(days * 86400) }
+    sub_minutes :: Int -> Int -> Int { ts => minutes => Time.sub_seconds(ts)(minutes * 60) }
+    sub_hours :: Int -> Int -> Int { ts => hours => Time.sub_seconds(ts)(hours * 3600) }
+    sub_days :: Int -> Int -> Int { ts => days => Time.sub_seconds(ts)(days * 86400) }
 
     duration_seconds :: Int -> Duration
     {
@@ -108,12 +108,12 @@ Time :: module {
 
     duration_add :: Duration -> Duration -> Duration
     {
-        left => right => Duration{seconds: Time::to_seconds(left) + Time::to_seconds(right)}
+        left => right => Duration{seconds: Time.to_seconds(left) + Time.to_seconds(right)}
     }
 
     duration_sub :: Duration -> Duration -> Duration
     {
-        left => right => Duration{seconds: Time::to_seconds(left) - Time::to_seconds(right)}
+        left => right => Duration{seconds: Time.to_seconds(left) - Time.to_seconds(right)}
     }
 
     duration_negate :: Duration -> Duration
@@ -135,18 +135,18 @@ Time :: module {
     duration_min :: Duration -> Duration -> Duration
     {
         left => right =>
-            if Time::to_seconds(left) <= Time::to_seconds(right) then { left } else { right }
+            if Time.to_seconds(left) <= Time.to_seconds(right) then { left } else { right }
     }
 
     duration_max :: Duration -> Duration -> Duration
     {
         left => right =>
-            if Time::to_seconds(left) >= Time::to_seconds(right) then { left } else { right }
+            if Time.to_seconds(left) >= Time.to_seconds(right) then { left } else { right }
     }
 
     duration_clamp :: Duration -> Duration -> Duration -> Duration
     {
-        duration => low => high => Time::duration_min(Time::duration_max(duration)(low))(high)
+        duration => low => high => Time.duration_min(Time.duration_max(duration)(low))(high)
     }
 
     duration_is_zero :: Duration -> Bool
@@ -166,12 +166,12 @@ Time :: module {
 
     add_duration :: Int -> Duration -> Int
     {
-        ts => duration => ts + Time::to_seconds(duration)
+        ts => duration => ts + Time.to_seconds(duration)
     }
 
     sub_duration :: Int -> Duration -> Int
     {
-        ts => duration => ts - Time::to_seconds(duration)
+        ts => duration => ts - Time.to_seconds(duration)
     }
 
     diff_duration :: Int -> Int -> Duration

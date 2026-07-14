@@ -25,11 +25,11 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(appRoot, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    AResult :: import a::Common.Result;
-                    BResult :: import b::Common.Result;
+                    AResult :: import a.Common.Result;
+                    BResult :: import b.Common.Result;
 
-                    keepA :: AResult::Error -> AResult::Error { x => x }
-                    keepB :: BResult::Error -> BResult::Error { x => x }
+                    keepA :: AResult.Error -> AResult.Error { x => x }
+                    keepB :: BResult.Error -> BResult.Error { x => x }
                 }
                 """);
 
@@ -61,11 +61,11 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("a::Common/Result"));
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("b::Common/Result"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("a.Common/Result"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("b.Common/Result"));
             Assert.NotEqual(
-                result.SymbolTable.Modules.ModulePaths["a::Common/Result"],
-                result.SymbolTable.Modules.ModulePaths["b::Common/Result"]);
+                result.SymbolTable.Modules.ModulePaths["a.Common/Result"],
+                result.SymbolTable.Modules.ModulePaths["b.Common/Result"]);
 
             var aIdentityKey = ModuleRegistry.ToModuleIdentityKey(
                 "a",
@@ -105,13 +105,13 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(appRoot, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import pkg::Feature
+                    import pkg.Feature
                 }
                 """);
 
             File.WriteAllText(Path.Combine(packageRoot, "Feature.eidos"), """
                 Feature :: module {
-                    import Std::Seq
+                    import Std.Seq
 
                     export Marker :: type { Marker }
                 }
@@ -132,9 +132,9 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg::Feature"));
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std::Seq"));
-            Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg::Std.Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg.Feature"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
+            Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg.Std.Seq"));
         }
         finally
         {
@@ -162,8 +162,8 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(appRoot, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import a::Common.Tools
-                    import b::Common.Tools
+                    import a.Common.Tools
+                    import b.Common.Tools
 
                     main :: Unit -> Int { _ => 0 }
                 }
@@ -203,10 +203,10 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.Equal(2, packageFunctions.Count);
             Assert.Contains(packageFunctions, function =>
-                string.Equals(function.FunctionId.Module, "a::Common/Tools", StringComparison.Ordinal) &&
+                string.Equals(function.FunctionId.Module, "a.Common/Tools", StringComparison.Ordinal) &&
                 function.FunctionId.ModuleIdentityKey.Contains(NormalizePackageInstanceRoot(aRoot), StringComparison.Ordinal));
             Assert.Contains(packageFunctions, function =>
-                string.Equals(function.FunctionId.Module, "b::Common/Tools", StringComparison.Ordinal) &&
+                string.Equals(function.FunctionId.Module, "b.Common/Tools", StringComparison.Ordinal) &&
                 function.FunctionId.ModuleIdentityKey.Contains(NormalizePackageInstanceRoot(bRoot), StringComparison.Ordinal));
             Assert.NotEqual(packageFunctions[0].FunctionId.ModuleIdentityKey, packageFunctions[1].FunctionId.ModuleIdentityKey);
         }
@@ -236,8 +236,8 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(appRoot, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import a::Common.Box
-                    import b::Common.Box
+                    import a.Common.Box
+                    import b.Common.Box
 
                     main :: Unit -> Int { _ => 0 }
                 }
@@ -301,7 +301,7 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(tempDir, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import Std::Seq
+                    import Std.Seq
                 }
                 """);
 
@@ -316,7 +316,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std::Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
         }
         finally
         {
@@ -340,9 +340,9 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(srcDir, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import Std::Seq
+                    import Std.Seq
 
-                    keep :: Std::Seq::Seq[Int] -> Std::Seq::Seq[Int] { xs => xs }
+                    keep :: Std.Seq.Seq[Int] -> Std.Seq.Seq[Int] { xs => xs }
                 }
                 """);
             File.WriteAllText(Path.Combine(projectDir, "eidos.toml"), """
@@ -366,7 +366,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std::Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
         }
         finally
         {
@@ -390,11 +390,11 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(srcDir, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import Std::Ordering
+                    import Std.Ordering
 
-                    keep :: Unit -> Std::Ordering::Ordering
+                    keep :: Unit -> Std.Ordering.Ordering
                     {
-                        _ => Std::Ordering::Equal()
+                        _ => Std.Ordering.Equal()
                     }
                 }
                 """);
@@ -441,7 +441,7 @@ public sealed class PackageQualifiedModuleResolutionTests
                 Main :: module {
                     import Seq
 
-                    keep :: Seq::Seq[Int] -> Seq::Seq[Int] { xs => xs }
+                    keep :: Seq.Seq[Int] -> Seq.Seq[Int] { xs => xs }
                 }
                 """);
 
@@ -456,7 +456,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std::Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
         }
         finally
         {
@@ -508,8 +508,8 @@ public sealed class PackageQualifiedModuleResolutionTests
             Assert.False(result.Success);
             Assert.Contains(result.Diagnostics, diagnostic =>
                 diagnostic.Message.Contains("Ambiguous module path 'Seq'", StringComparison.Ordinal) &&
-                diagnostic.Message.Contains("Std::Seq", StringComparison.Ordinal) &&
-                diagnostic.Message.Contains("pkg::Seq", StringComparison.Ordinal));
+                diagnostic.Message.Contains("Std.Seq", StringComparison.Ordinal) &&
+                diagnostic.Message.Contains("pkg.Seq", StringComparison.Ordinal));
         }
         finally
         {
@@ -527,8 +527,8 @@ public sealed class PackageQualifiedModuleResolutionTests
 
         Assert.True(result.Success, FormatDiagnostics(result));
         Assert.NotNull(result.SymbolTable);
-        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std::Math"));
-        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std::FloatMath"));
+        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Math"));
+        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.FloatMath"));
         Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("Math"));
         Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("FloatMath"));
     }
@@ -552,11 +552,11 @@ public sealed class PackageQualifiedModuleResolutionTests
             Directory.CreateDirectory(tempDir);
             var entryFile = Path.Combine(tempDir, "Main.eidos");
             File.WriteAllText(entryFile, """
-                import Std::GameMath
+                import Std.GameMath
 
                 main :: Unit -> Int
                 {
-                    _ => GameMath::scale_i(GameMath::east_i, 4).x
+                    _ => GameMath.scale_i(GameMath.east_i, 4).x
                 }
                 """);
 
@@ -604,7 +604,7 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(appRoot, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import pkg::Feature.Missing
+                    import pkg.Feature.Missing
                 }
                 """);
 
@@ -626,7 +626,7 @@ public sealed class PackageQualifiedModuleResolutionTests
                 result.Diagnostics,
                 diagnostic => diagnostic.Code == "E3000" &&
                               diagnostic.Message.Contains(
-                                  "Unable to resolve imported module 'pkg::Feature::Missing'",
+                                  "Unable to resolve imported module 'pkg.Feature.Missing'",
                                   StringComparison.Ordinal));
             Assert.Contains(diagnostic.Notes, note => note == $"entry file: {entryFile}");
             Assert.Contains(diagnostic.Notes, note => note == $"searched root: {pkgRoot}");

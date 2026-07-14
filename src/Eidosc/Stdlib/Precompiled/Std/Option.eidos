@@ -1,6 +1,6 @@
 Option :: module {
     import Trait
-    import Ordering::{Ordering}
+    import Ordering.{Ordering}
     import Ordering
     import TraitInvoke
     import Functor
@@ -10,12 +10,12 @@ Option :: module {
     import Traversable
     import Semigroup
 
-    Option[T] :: type { Some(T) | None }
+    Option[T] :: type { Some(T) , None }
 
-    CloneOptionT :: instance Trait::Clone {
-        clone[T: Trait::Clone] :: Option[T] -> Option[T]
+    CloneOptionT :: instance Trait.Clone {
+        clone[T: Trait.Clone] :: Option[T] -> Option[T]
             {
-                Some(value) => Some(TraitInvoke::clone_value(value)),
+                Some(value) => Some(TraitInvoke.clone_value(value)),
                 None() => None()
             }
     }
@@ -118,9 +118,9 @@ Option :: module {
         None() => fallback => fallback(())
     }
 
-    contains[T: Trait::Eq] :: Option[T] -> T -> Bool
+    contains[T: Trait.Eq] :: Option[T] -> T -> Bool
     {
-        Some(value) => expected => TraitInvoke::eq_value(value)(expected),
+        Some(value) => expected => TraitInvoke.eq_value(value)(expected),
         None() => _ => false
     }
 
@@ -153,7 +153,7 @@ Option :: module {
         None() => None()
     }
 
-    FoldableOption :: instance Foldable::Foldable[Option] {
+    FoldableOption :: instance Foldable.Foldable[Option] {
         fold_left[A, B, E: effects] :: Option[A] -> B -> (B -> A -> B need E) -> B need E
             {
                 Some(value) => acc => f => f(acc)(value),
@@ -166,55 +166,55 @@ Option :: module {
             }
     }
 
-    TraversableOption :: instance Traversable::Traversable[Option] {
-        traverse[A, B, G: kind2 : Applicative::Applicative[G], E: effects] :: Option[A] -> (A -> G[B] need E) -> G[Option[B]] need E
+    TraversableOption :: instance Traversable.Traversable[Option] {
+        traverse[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: Option[A] -> (A -> G[B] need E) -> G[Option[B]] need E
             {
-                Some(value) => f => Traversable::map_applicative(Option::some_wrap)(f(value)),
-                None() => _ => Traversable::lift_pure(None())
+                Some(value) => f => Traversable.map_applicative(Option.some_wrap)(f(value)),
+                None() => _ => Traversable.lift_pure(None())
             }
     }
 
-    sequence[A, G: kind2 : Applicative::Applicative[G]] :: Option[G[A]] -> G[Option[A]]
+    sequence[A, G: kind2 : Applicative.Applicative[G]] :: Option[G[A]] -> G[Option[A]]
     {
-        option => Traversable::traverse(option)(Traversable::identity_applicative)
+        option => Traversable.traverse(option)(Traversable.identity_applicative)
     }
 
-    EqOptionT :: instance Trait::Eq {
-        eq[T: Trait::Eq] :: Option[T] -> Option[T] -> Bool
+    EqOptionT :: instance Trait.Eq {
+        eq[T: Trait.Eq] :: Option[T] -> Option[T] -> Bool
             {
-                (Some(leftValue), Some(rightValue)) => TraitInvoke::eq_value(leftValue)(rightValue),
+                (Some(leftValue), Some(rightValue)) => TraitInvoke.eq_value(leftValue)(rightValue),
                 (Some(leftValue), None()) => false,
                 (None(), Some(rightValue)) => false,
                 (None(), None()) => true
             }
     }
 
-    OrdOptionT :: instance Trait::Ord {
-        compare[T: Trait::Ord] :: Option[T] -> Option[T] -> Ordering
+    OrdOptionT :: instance Trait.Ord {
+        compare[T: Trait.Ord] :: Option[T] -> Option[T] -> Ordering
             {
-                (Some(leftValue), Some(rightValue)) => TraitInvoke::compare_value(leftValue)(rightValue),
+                (Some(leftValue), Some(rightValue)) => TraitInvoke.compare_value(leftValue)(rightValue),
                 (Some(leftValue), None()) => Greater(),
                 (None(), Some(rightValue)) => Less(),
                 (None(), None()) => Equal()
             }
     }
 
-    ShowOptionT :: instance Trait::Show {
-        show[T: Trait::Show] :: Option[T] -> String
+    ShowOptionT :: instance Trait.Show {
+        show[T: Trait.Show] :: Option[T] -> String
             {
-                Some(value) => "Some(" ++ TraitInvoke::show_value(value) ++ ")",
+                Some(value) => "Some(" ++ TraitInvoke.show_value(value) ++ ")",
                 None() => "None"
             }
     }
 
-    FunctorOption :: instance Functor::Functor[Option] {
+    FunctorOption :: instance Functor.Functor[Option] {
         fmap[A, B, E: effects] :: Option[A] -> (A -> B need E) -> Option[B] need E
             {
-                option => f => Option::map(option)(f)
+                option => f => Option.map(option)(f)
             }
     }
 
-    ApplicativeOption :: instance Applicative::Applicative[Option] {
+    ApplicativeOption :: instance Applicative.Applicative[Option] {
         pure[A] :: A -> Option[A]
             {
                 value => Some(value)
@@ -227,21 +227,21 @@ Option :: module {
             }
     }
 
-    MonadOption :: instance Monad::Monad[Option] {
+    MonadOption :: instance Monad.Monad[Option] {
         pure[A] :: A -> Option[A]
             {
                 value => Some(value)
             }
         bind[A, B, E: effects] :: Option[A] -> (A -> Option[B] need E) -> Option[B] need E
             {
-                option => f => Option::and_then(option)(f)
+                option => f => Option.and_then(option)(f)
             }
     }
 
 
-    append[T: Semigroup::Semigroup] :: Option[T] -> Option[T] -> Option[T]
+    append[T: Semigroup.Semigroup] :: Option[T] -> Option[T] -> Option[T]
     {
-        Some(left) => Some(right) => Some(Semigroup::append(left)(right)),
+        Some(left) => Some(right) => Some(Semigroup.append(left)(right)),
         Some(value) => None() => Some(value),
         None() => Some(value) => Some(value),
         None() => None() => None()

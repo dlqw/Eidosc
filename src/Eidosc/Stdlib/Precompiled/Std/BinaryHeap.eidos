@@ -21,12 +21,12 @@ BinaryHeap :: module {
 
     len[T] :: BinaryHeap[T] -> Int
     {
-        BinaryHeap{items: items} => Seq::len(items)
+        BinaryHeap{items: items} => Seq.len(items)
     }
 
     is_empty[T] :: BinaryHeap[T] -> Bool
     {
-        heap => BinaryHeap::len(heap) == 0
+        heap => BinaryHeap.len(heap) == 0
     }
 
     to_seq[T] :: BinaryHeap[T] -> Seq[T]
@@ -34,10 +34,10 @@ BinaryHeap :: module {
         BinaryHeap{items: items} => items
     }
 
-    CloneBinaryHeapT :: instance Trait::Clone {
-        clone[T: Trait::Clone] :: BinaryHeap[T] -> BinaryHeap[T]
+    CloneBinaryHeapT :: instance Trait.Clone {
+        clone[T: Trait.Clone] :: BinaryHeap[T] -> BinaryHeap[T]
             {
-                BinaryHeap{items: items} => BinaryHeap{items: TraitInvoke::clone_value(items)}
+                BinaryHeap{items: items} => BinaryHeap{items: TraitInvoke.clone_value(items)}
             }
     }
 
@@ -60,16 +60,16 @@ BinaryHeap :: module {
     }
 
     @internal
-    sift_up_from[T: Trait::Ord] :: Seq[T] -> Int -> Seq[T]
+    sift_up_from[T: Trait.Ord] :: Seq[T] -> Int -> Seq[T]
     {
         values => start => {
             mut heap := values
             mut index := start
             loop {
                 if index <= 0 then { break } else {
-                    parent := BinaryHeap::parent_index(index)
+                    parent := BinaryHeap.parent_index(index)
                     if heap[index] > heap[parent] then {
-                        RuntimeArray::swap(heap)(index)(parent)
+                        RuntimeArray.swap(heap)(index)(parent)
                         index = parent
                     } else { break }
                 }
@@ -79,22 +79,22 @@ BinaryHeap :: module {
     }
 
     @internal
-    sift_down_from[T: Trait::Ord] :: Seq[T] -> Int -> Seq[T]
+    sift_down_from[T: Trait.Ord] :: Seq[T] -> Int -> Seq[T]
     {
         values => start => {
-            len := Seq::len(values)
+            len := Seq.len(values)
             mut heap := values
             mut index := start
             loop {
-                left := BinaryHeap::left_child_index(index)
+                left := BinaryHeap.left_child_index(index)
                 if left >= len then { break } else {
-                    right := BinaryHeap::right_child_index(index)
+                    right := BinaryHeap.right_child_index(index)
                     mut largest := left
                     if right < len && heap[right] > heap[left] then {
                         largest = right
                     } else { () }
                     if heap[largest] > heap[index] then {
-                        RuntimeArray::swap(heap)(largest)(index)
+                        RuntimeArray.swap(heap)(largest)(index)
                         index = largest
                     } else { break }
                 }
@@ -103,34 +103,34 @@ BinaryHeap :: module {
         }
     }
 
-    push[T: Trait::Ord] :: BinaryHeap[T] -> T -> BinaryHeap[T]
+    push[T: Trait.Ord] :: BinaryHeap[T] -> T -> BinaryHeap[T]
     {
         BinaryHeap{items: items} => value => {
-            pushed := RuntimeArray::push(items)(value)
-            index := Seq::len(pushed) - 1
-            BinaryHeap{items: BinaryHeap::sift_up_from(pushed)(index)}
+            pushed := RuntimeArray.push(items)(value)
+            index := Seq.len(pushed) - 1
+            BinaryHeap{items: BinaryHeap.sift_up_from(pushed)(index)}
         }
     }
 
-    from_seq[T: Trait::Ord] :: Seq[T] -> BinaryHeap[T]
+    from_seq[T: Trait.Ord] :: Seq[T] -> BinaryHeap[T]
     {
         values => {
             mut heap := values
-            len := Seq::len(heap)
+            len := Seq.len(heap)
             mut index := (len / 2) - 1
             loop {
                 if index < 0 then { break } else {
                     mut current := index
                     loop {
-                        left := BinaryHeap::left_child_index(current)
+                        left := BinaryHeap.left_child_index(current)
                         if left >= len then { break } else {
-                            right := BinaryHeap::right_child_index(current)
+                            right := BinaryHeap.right_child_index(current)
                             mut largest := left
                             if right < len && heap[right] > heap[left] then {
                                 largest = right
                             } else { () }
                             if heap[largest] > heap[current] then {
-                                RuntimeArray::swap(heap)(largest)(current)
+                                RuntimeArray.swap(heap)(largest)(current)
                                 current = largest
                             } else { break }
                         }
@@ -142,27 +142,27 @@ BinaryHeap :: module {
         }
     }
 
-    peek[T: Trait::Clone] :: BinaryHeap[T] -> Option[T]
+    peek[T: Trait.Clone] :: BinaryHeap[T] -> Option[T]
     {
         BinaryHeap{items: items} =>
-            if Seq::len(items) == 0 then { None() }
-            else { Some(TraitInvoke::clone_value(items[0])) }
+            if Seq.len(items) == 0 then { None() }
+            else { Some(TraitInvoke.clone_value(items[0])) }
     }
 
-    pop[T: Trait::Ord + Trait::Clone] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
+    pop[T: Trait.Ord + Trait.Clone] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
     {
         BinaryHeap{items: items} => {
-            len := Seq::len(items)
+            len := Seq.len(items)
             if len == 0 then { None() }
             else {
-                top := TraitInvoke::clone_value(items[0])
+                top := TraitInvoke.clone_value(items[0])
                 if len == 1 then {
-                Some((top, BinaryHeap::empty(())))
+                Some((top, BinaryHeap.empty(())))
                 } else {
                     lastIndex := len - 1
-                    RuntimeArray::swap(items)(0)(lastIndex)
-                    RuntimeArray::pop_last(items)
-                    Some((top, BinaryHeap{items: BinaryHeap::sift_down_from(items)(0)}))
+                    RuntimeArray.swap(items)(0)(lastIndex)
+                    RuntimeArray.pop_last(items)
+                    Some((top, BinaryHeap{items: BinaryHeap.sift_down_from(items)(0)}))
                 }
             }
         }

@@ -689,7 +689,7 @@ public class MirOptimizerTests
     [Fact]
     public void Inlining_FunctionRefWithDifferentSymbol_ResolvesCandidateByStructuredFunctionIdentity()
     {
-        const string qualifiedName = "Lib::helper";
+        const string qualifiedName = "Lib.helper";
         var callee = BuildInlineIdentityFunction(
             "helper",
             SymbolId.None,

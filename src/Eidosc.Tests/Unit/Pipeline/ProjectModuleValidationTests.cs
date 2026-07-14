@@ -28,9 +28,9 @@ Demo.Main :: module
 {
     import Cap.Io
 
-    run :: String -> Int need Io::Writer
+    run :: String -> Int need Io.Writer
     {
-        text => Io::write(text)
+        text => Io.write(text)
     }
 }
 """;
@@ -86,17 +86,17 @@ Demo.Base :: module
 Demo.Facade :: module
 {
     export BaseApi :: import Demo.Base;
-    export import Demo.Base::{Writer as W, write}
+    export import Demo.Base.{Writer as W, write}
 }
 
 Demo.Main :: module
 {
     import Demo.Facade
-    import Demo.Facade::{W}
+    import Demo.Facade.{W}
 
-    run :: String -> Int need Facade::W
+    run :: String -> Int need Facade.W
     {
-        text => Facade::write(text)
+        text => Facade.write(text)
     }
 }
 """;
@@ -155,7 +155,7 @@ import Cap.Io
 
 main :: Unit -> Int
 {
-    _ => Io::id(0)
+    _ => Io.id(0)
 }
 """;
 
@@ -222,7 +222,7 @@ import Cap.Io
 
 main :: Unit -> Int
 {
-    _ => Io::first(0)
+    _ => Io.first(0)
 }
 """;
 
@@ -289,7 +289,7 @@ main :: Unit -> Int
                 result.Diagnostics,
                 diagnostic => diagnostic.Code == "E3000" &&
                               diagnostic.Message.Contains(
-                                  "Unable to resolve imported module 'Cap::Missing'",
+                                  "Unable to resolve imported module 'Cap.Missing'",
                                   StringComparison.Ordinal));
 
             Assert.Contains(diagnostic.Notes, note => note == $"entry file: {entryFile}");
@@ -331,7 +331,7 @@ import Cap.Io
 
 main :: Unit -> Int
 {
-    _ => Io::id(1)
+    _ => Io.id(1)
 }
 """;
 
@@ -465,7 +465,7 @@ import Cap.Io
 
 main :: Unit -> Int
 {
-    _ => Io::id(2)
+    _ => Io.id(2)
 }
 """;
 
@@ -601,11 +601,11 @@ main :: Unit -> Int
         const string appSource = """
 App.Main :: module
 {
-    import shared::Shared.Tools
+    import shared.Shared.Tools
 
     main :: Unit -> Int
     {
-        _ => Tools::answer(())
+        _ => Tools.answer(())
     }
 }
 """;
@@ -663,7 +663,7 @@ Shared.Tools :: module
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("shared::Shared/Tools"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("shared.Shared/Tools"));
         }
         finally
         {

@@ -287,7 +287,7 @@ combined :: append(a)(missing);
             .WithSuggestion(
                 "Add import",
                 SuggestionKind.AddImport,
-                replacement: "import Std::Seq::{map}\n",
+                replacement: "import Std.Seq.{map}\n",
                 requiresCleanTypes: false)
             .WithSuggestion(
                 "Rewrite as fluent call",

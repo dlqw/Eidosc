@@ -268,9 +268,9 @@ public sealed class BuildCommandTests
                             LocalIndexHash: "local-main",
                             DependencyIndexHash: "deps-main",
                             MemberIndexHash: "index-main",
-                            [new ProjectModuleMemberBinding("main", "Value", "Main::Function:main", IsPublic: true)],
+                            [new ProjectModuleMemberBinding("main", "Value", "Main.Function:main", IsPublic: true)],
                             [],
-                            [new ProjectModuleMemberBinding("main", "Value", "Main::Function:main", IsPublic: true)])
+                            [new ProjectModuleMemberBinding("main", "Value", "Main.Function:main", IsPublic: true)])
                     ]),
                 ModuleMemberIndexRestorePlan = new ProjectModuleMemberIndexRestorePlan(
                     "module-member-index-restore-plan-v1",

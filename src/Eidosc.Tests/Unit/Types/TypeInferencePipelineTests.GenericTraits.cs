@@ -108,16 +108,16 @@ id[T: Marker] :: T -> T
 
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std::Trait
-import Std::Ordering
-import Std::Text
+import Std.Trait
+import Std.Ordering
+import Std.Text
 
-eq_self[T: Trait::Eq] :: T -> Bool
+eq_self[T: Trait.Eq] :: T -> Bool
 {
     x => x == x
 }
 
-ord_self[T: Trait::Ord] :: T -> Bool
+ord_self[T: Trait.Ord] :: T -> Bool
 {
     x => x <= x
 }
@@ -125,8 +125,8 @@ ord_self[T: Trait::Ord] :: T -> Bool
 main :: Unit -> Int
 {
     _ => {
-        lessLabel := Ordering::show(Ordering::compare_int(1)(2));
-        echo := Text::show(Text::clone("ok"));
+        lessLabel := Ordering.show(Ordering.compare_int(1)(2));
+        echo := Text.show(Text.clone("ok"));
 
         if eq_self(41) &&
            ord_self('a') &&
@@ -162,7 +162,7 @@ main :: Unit -> Int
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std::Result
+import Std.Result
 
 inc :: Int -> Int
 {
@@ -171,7 +171,7 @@ inc :: Int -> Int
 
 main :: Unit -> Bool
 {
-    _ => Result::contains(Ok(inc))(inc)
+    _ => Result.contains(Ok(inc))(inc)
 }
 """;
 
@@ -200,7 +200,7 @@ main :: Unit -> Bool
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std::Option
+import Std.Option
 
 inc :: Int -> Int
 {
@@ -209,7 +209,7 @@ inc :: Int -> Int
 
 main :: Unit -> Bool
 {
-    _ => Option::contains(Some(inc))(inc)
+    _ => Option.contains(Some(inc))(inc)
 }
 """;
 
@@ -435,13 +435,13 @@ Box[A] :: type {
     Box(A)
 }
 
-@impl(Core::Functor[Box])
+@impl(Core.Functor[Box])
 fmap :: Person -> Box[Int]
 {
     p => Box(1)
 }
 
-id[T: Core::Functor[Box]] :: T -> T
+id[T: Core.Functor[Box]] :: T -> T
 {
     x => x
 }
@@ -480,13 +480,13 @@ Bag[A] :: type {
     Bag(A)
 }
 
-@impl(Core::Functor[Bag])
+@impl(Core.Functor[Bag])
 fmap :: Person -> Bag[Int]
 {
     p => Bag(1)
 }
 
-id[T: Core::Functor[Box]] :: T -> T
+id[T: Core.Functor[Box]] :: T -> T
 {
     x => x
 }
@@ -534,13 +534,13 @@ Box[A] :: type {
     Box(A)
 }
 
-@impl(Core::Functor[Box])
+@impl(Core.Functor[Box])
 fmap :: Person -> Box[Int]
 {
     p => Box(1)
 }
 
-id[T: Core::Functor[Box]] :: T -> T
+id[T: Core.Functor[Box]] :: T -> T
 {
     x => x
 }
@@ -604,13 +604,13 @@ Bag[A] :: type {
     Bag(A)
 }
 
-@impl(Core::Functor[Bag])
+@impl(Core.Functor[Bag])
 fmap :: Person -> Bag[Int]
 {
     p => Bag(1)
 }
 
-id[T: Core::Functor[Box]] :: T -> T
+id[T: Core.Functor[Box]] :: T -> T
 {
     x => x
 }
@@ -650,7 +650,7 @@ bad :: Person -> Person
     {
         const string source = """
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 bad :: Option -> Int

@@ -1,5 +1,5 @@
 Trait :: module {
-    import Ordering::{Ordering}
+    import Ordering.{Ordering}
 
     Eq :: trait {
         eq :: Self -> Self -> Bool

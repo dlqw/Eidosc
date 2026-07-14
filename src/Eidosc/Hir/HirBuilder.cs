@@ -43,14 +43,14 @@ public sealed partial class HirBuilder
 
     private static readonly FrozenDictionary<Ast.BinaryOp, StdlibDesugaring> StdlibOperatorDesugaring = new Dictionary<Ast.BinaryOp, StdlibDesugaring>
     {
-        [Ast.BinaryOp.Bind] = new("Std::Monad::Monad", "bind", false),
-        [Ast.BinaryOp.Coalesce] = new("Std::Option", "unwrap_or", false),
-        [Ast.BinaryOp.ComposeRight] = new("Std::Fn", "compose", true),
-        [Ast.BinaryOp.ComposeLeft] = new("Std::Fn", "compose", false),
-        [Ast.BinaryOp.Fmap] = new("Std::Functor::Functor", "fmap", true),
-        [Ast.BinaryOp.Ap] = new("Std::Applicative::Applicative", "apply", false),
-        [Ast.BinaryOp.Append] = new("Std::Semigroup::Semigroup", "append", false),
-        [Ast.BinaryOp.Prepend] = new("Std::Seq", "cons", false),
+        [Ast.BinaryOp.Bind] = new("Std.Monad.Monad", "bind", false),
+        [Ast.BinaryOp.Coalesce] = new("Std.Option", "unwrap_or", false),
+        [Ast.BinaryOp.ComposeRight] = new("Std.Fn", "compose", true),
+        [Ast.BinaryOp.ComposeLeft] = new("Std.Fn", "compose", false),
+        [Ast.BinaryOp.Fmap] = new("Std.Functor.Functor", "fmap", true),
+        [Ast.BinaryOp.Ap] = new("Std.Applicative.Applicative", "apply", false),
+        [Ast.BinaryOp.Append] = new("Std.Semigroup.Semigroup", "append", false),
+        [Ast.BinaryOp.Prepend] = new("Std.Seq", "cons", false),
     }.ToFrozenDictionary();
 
     private readonly SymbolTable _symbolTable;

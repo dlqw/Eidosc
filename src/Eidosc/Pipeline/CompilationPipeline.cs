@@ -609,7 +609,7 @@ public sealed partial class CompilationPipeline
         var rootModuleKey = ToImportKey(_ast.PackageAlias, GetRootModulePath(_ast));
         EnqueueImports(_ast, pendingImports, null, rootModuleKey);
 
-        // Auto-import Std::Prelude for non-stdlib modules unless disabled.
+        // Auto-import Std.Prelude for non-stdlib modules unless disabled.
         if (!_options.NoImplicitPrelude)
         {
             var rootModulePath = GetRootModulePath(_ast);
@@ -1352,7 +1352,7 @@ public sealed partial class CompilationPipeline
         ]);
     }
 
-    private static void ApplyPrecompiledStdRootPackageIdentity(ModuleDecl moduleDecl, string entryFilePath)
+    private void ApplyPrecompiledStdRootPackageIdentity(ModuleDecl moduleDecl, string entryFilePath)
     {
         if (!IsPrecompiledStdInputPath(entryFilePath))
         {
@@ -1396,7 +1396,7 @@ public sealed partial class CompilationPipeline
         }
     }
 
-    private static void EnqueueImports(
+    private void EnqueueImports(
         ModuleDecl moduleDecl,
         Queue<(List<string> path, string? packageAlias, string? parentKey)> queue,
         string? ambientPackageAlias,
@@ -1409,12 +1409,30 @@ public sealed partial class CompilationPipeline
                 continue;
             }
 
+            NormalizeDotNamespaceImport(import);
             var packageAlias = ResolveInheritedPackageAlias(import, ambientPackageAlias);
             queue.Enqueue((new List<string>(import.ModulePath), packageAlias, parentKey));
         }
     }
 
-    private static void ApplyPackageIdentityToImportedModuleTree(
+    private void NormalizeDotNamespaceImport(ImportDecl import)
+    {
+        if (!string.IsNullOrWhiteSpace(import.PackageAlias) || import.ModulePath.Count < 2)
+        {
+            return;
+        }
+
+        var namespaceRoot = import.ModulePath[0];
+        if (!IsStdPackageAlias(namespaceRoot) && !_options.PackageImportRoots.ContainsKey(namespaceRoot))
+        {
+            return;
+        }
+
+        import.SetPackageAlias(namespaceRoot);
+        import.SetModulePath(import.ModulePath.Skip(1).ToList());
+    }
+
+    private void ApplyPackageIdentityToImportedModuleTree(
         ModuleDecl moduleDecl,
         string? packageAlias,
         string? packageInstanceKey)
@@ -1432,6 +1450,7 @@ public sealed partial class CompilationPipeline
 
             foreach (var import in module.Declarations.OfType<ImportDecl>())
             {
+                NormalizeDotNamespaceImport(import);
                 if (ShouldInheritPackageAlias(import, packageAlias))
                 {
                     import.SetPackageAlias(packageAlias);

@@ -39,7 +39,7 @@ public sealed class EidosProjectLanguageVersionTests
                 manifestSchema = 3
 
                 [language]
-                version = "0.5.0-alpha.1"
+                version = "0.6.0-alpha.1"
                 """);
 
             var loaded = EidosProjectConfigurationLoader.LoadFromPath(tempDir);
@@ -66,7 +66,7 @@ public sealed class EidosProjectLanguageVersionTests
         var text = manifest.ToToml();
 
         Assert.Contains("[language]", text, StringComparison.Ordinal);
-        Assert.Contains("version = \"0.5.0-alpha.1\"", text, StringComparison.Ordinal);
+        Assert.Contains("version = \"0.6.0-alpha.1\"", text, StringComparison.Ordinal);
         Assert.Contains("manifestSchema = 3", text, StringComparison.Ordinal);
     }
 
@@ -118,7 +118,7 @@ public sealed class EidosProjectLanguageVersionTests
                 manifestSchema = 3
 
                 [language]
-                version = "0.5.0-alpha.1"
+                version = "0.6.0-alpha.1"
 
                 [package]
                 name = "dev.eidos.invalid"

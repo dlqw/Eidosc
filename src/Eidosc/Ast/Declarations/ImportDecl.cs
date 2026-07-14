@@ -10,17 +10,17 @@ namespace Eidosc.Ast.Declarations;
 public enum ImportKind
 {
     /// <summary>
-    /// 导入整个模块 (import A::B)
+    /// 导入整个模块 (import A.B)
     /// </summary>
     Module,
 
     /// <summary>
-    /// 选择性导入 (import A::B::{X, Y})
+    /// 选择性导入 (import A.B.{X, Y})
     /// </summary>
     Selective,
 
     /// <summary>
-    /// 通配符导入 (import A::B::*)
+    /// 通配符导入 (import A.B.*)
     /// </summary>
     Wildcard
 }
@@ -46,14 +46,14 @@ public sealed record SelectiveImportNode
 /// </summary>
 /// <example>
 /// import std/io
-/// import std/collection::{List, Map}
+/// import Std.Collection.{List, Map}
 /// C :: import std/collection;
-/// import std/collection::*
+/// import Std.Collection.*
 /// </example>
 public record ImportDecl : Declaration
 {
     /// <summary>
-    /// 显式 package 别名，例如 import crypto::hash/sha256 中的 crypto。
+    /// 显式 package 别名，例如 import crypto.Hash.Sha256 中的 crypto。
     /// </summary>
     public string? PackageAlias { get; private set; }
 

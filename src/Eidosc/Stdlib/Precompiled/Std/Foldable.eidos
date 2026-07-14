@@ -6,31 +6,31 @@ Foldable :: module {
 
     length[A, F: kind2 : Foldable[F]] :: F[A] -> Int
     {
-        values => Foldable::fold_left(values)(0)(count => _ => count + 1)
+        values => Foldable.fold_left(values)(0)(count => _ => count + 1)
     }
 
     is_empty[A, F: kind2 : Foldable[F]] :: F[A] -> Bool
     {
-        values => Foldable::length(values) == 0
+        values => Foldable.length(values) == 0
     }
 
     non_empty[A, F: kind2 : Foldable[F]] :: F[A] -> Bool
     {
-        values => !Foldable::is_empty(values)
+        values => !Foldable.is_empty(values)
     }
 
     all[A, F: kind2 : Foldable[F], E: effects] :: F[A] -> (A -> Bool need E) -> Bool need E
     {
-        values => predicate => Foldable::fold_left(values)(true)(acc => item => acc && predicate(item))
+        values => predicate => Foldable.fold_left(values)(true)(acc => item => acc && predicate(item))
     }
 
     any[A, F: kind2 : Foldable[F], E: effects] :: F[A] -> (A -> Bool need E) -> Bool need E
     {
-        values => predicate => Foldable::fold_left(values)(false)(acc => item => acc || predicate(item))
+        values => predicate => Foldable.fold_left(values)(false)(acc => item => acc || predicate(item))
     }
 
     count[A, F: kind2 : Foldable[F], E: effects] :: F[A] -> (A -> Bool need E) -> Int need E
     {
-        values => predicate => Foldable::fold_left(values)(0)(acc => item => if predicate(item) then { acc + 1 } else { acc })
+        values => predicate => Foldable.fold_left(values)(0)(acc => item => if predicate(item) then { acc + 1 } else { acc })
     }
 }

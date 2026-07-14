@@ -13,7 +13,7 @@ Promise[A] :: type {
 
 /// Observable state of a runtime-backed promise.
 Status :: type {
-    PromisePending | PromiseFulfilled
+    PromisePending , PromiseFulfilled
 }
 
 @internal
@@ -35,19 +35,19 @@ try_get_runtime :: RawPtr -> RawPtr
 /// Create a runtime-backed RawPtr payload promise.
 new[A] :: Unit -> Promise[A] need FFI
 {
-    _ => Promise{promise: Promise::new_runtime(())}
+    _ => Promise{promise: Promise.new_runtime(())}
 }
 
 /// Create a runtime-backed promise that owns one boxed Eidos value.
 new_value[A] :: Unit -> Promise[A] need FFI
 {
-    _ => Promise{promise: Promise::new_value_runtime(())}
+    _ => Promise{promise: Promise.new_value_runtime(())}
 }
 
 /// Fulfill the promise with a non-null raw pointer. Returns false after the first fulfillment.
 fulfill_raw[A] :: Promise[A] -> RawPtr -> Bool need FFI
 {
-    Promise{promise: promise} => value => Promise::fulfill_runtime(promise)(value)
+    Promise{promise: promise} => value => Promise.fulfill_runtime(promise)(value)
 }
 
 /// Fulfill the promise only when the payload is non-null.
@@ -56,7 +56,7 @@ fulfill_raw_if_non_null[A] :: Promise[A] -> RawPtr -> Bool need FFI
     promise => value => if ptr_is_null(value) then {
         false
     } else {
-        Promise::fulfill_raw(promise)(value)
+        Promise.fulfill_raw(promise)(value)
     }
 }
 
@@ -64,7 +64,7 @@ fulfill_raw_if_non_null[A] :: Promise[A] -> RawPtr -> Bool need FFI
 try_await_raw[A] :: Promise[A] -> Option[RawPtr] need FFI
 {
     Promise{promise: promise} => {
-        value := Promise::try_get_runtime(promise);
+        value := Promise.try_get_runtime(promise);
         if ptr_is_null(value) then { None() } else { Some(value) }
     }
 }
@@ -73,9 +73,9 @@ try_await_raw[A] :: Promise[A] -> Option[RawPtr] need FFI
 fulfill_value[A] :: Promise[A] -> A -> Bool need FFI
 {
     Promise{promise: promise} => value => {
-        boxed := FFI::box_value[A](value);
-        fulfilled := Promise::fulfill_runtime(promise)(boxed);
-        FFI::free_boxed_value(boxed);
+        boxed := FFI.box_value[A](value);
+        fulfilled := Promise.fulfill_runtime(promise)(boxed);
+        FFI.free_boxed_value(boxed);
         fulfilled
     }
 }
@@ -84,11 +84,11 @@ fulfill_value[A] :: Promise[A] -> A -> Bool need FFI
 try_await_value[A] :: Promise[A] -> Option[A] need FFI
 {
     Promise{promise: promise} => {
-        boxed := Promise::try_get_runtime(promise);
+        boxed := Promise.try_get_runtime(promise);
         if ptr_is_null(boxed) then {
             None()
         } else {
-            Some(FFI::unbox_value[A](boxed))
+            Some(FFI.unbox_value[A](boxed))
         }
     }
 }
@@ -96,43 +96,43 @@ try_await_value[A] :: Promise[A] -> Option[A] need FFI
 /// Try to read a fulfilled raw pointer, returning the fallback while still pending.
 try_await_raw_or[A] :: Promise[A] -> RawPtr -> RawPtr need FFI
 {
-    promise => fallback => match Promise::try_await_raw(promise) { Some(value) => value, None() => fallback }
+    promise => fallback => match Promise.try_await_raw(promise) { Some(value) => value, None() => fallback }
 }
 
 /// Try to read a fulfilled raw pointer, evaluating the fallback only while still pending.
 try_await_raw_or_else[A, E: effects] :: Promise[A] -> (Unit -> RawPtr need E) -> RawPtr need FFI, E
 {
-    promise => fallback => match Promise::try_await_raw(promise) { Some(value) => value, None() => fallback(()) }
+    promise => fallback => match Promise.try_await_raw(promise) { Some(value) => value, None() => fallback(()) }
 }
 
 /// Try to read a fulfilled Eidos value, returning the fallback while still pending.
 try_await_value_or[A] :: Promise[A] -> A -> A need FFI
 {
-    promise => fallback => match Promise::try_await_value(promise) { Some(value) => value, None() => fallback }
+    promise => fallback => match Promise.try_await_value(promise) { Some(value) => value, None() => fallback }
 }
 
 /// Try to read a fulfilled Eidos value, evaluating the fallback only while still pending.
 try_await_value_or_else[A, E: effects] :: Promise[A] -> (Unit -> A need E) -> A need FFI, E
 {
-    promise => fallback => match Promise::try_await_value(promise) { Some(value) => value, None() => fallback(()) }
+    promise => fallback => match Promise.try_await_value(promise) { Some(value) => value, None() => fallback(()) }
 }
 
 /// Return true when the promise has already been fulfilled with a raw pointer.
 is_fulfilled[A] :: Promise[A] -> Bool need FFI
 {
-    promise => Option::is_some(Promise::try_await_raw(promise))
+    promise => Option.is_some(Promise.try_await_raw(promise))
 }
 
 /// Return true while the promise has not yet been fulfilled.
 is_pending[A] :: Promise[A] -> Bool need FFI
 {
-    promise => Option::is_none(Promise::try_await_raw(promise))
+    promise => Option.is_none(Promise.try_await_raw(promise))
 }
 
 /// Return a promise state snapshot.
 status[A] :: Promise[A] -> Status need FFI
 {
-    promise => if Promise::is_fulfilled(promise) then { PromiseFulfilled() } else { PromisePending() }
+    promise => if Promise.is_fulfilled(promise) then { PromiseFulfilled() } else { PromisePending() }
 }
 
 /// Return true when a promise status represents fulfillment.
@@ -145,7 +145,7 @@ status_is_fulfilled :: Status -> Bool
 /// Return true when a promise status represents a pending promise.
 status_is_pending :: Status -> Bool
 {
-    status => !Promise::status_is_fulfilled(status)
+    status => !Promise.status_is_fulfilled(status)
 }
 
 /// Select a value from a promise status snapshot.
@@ -165,8 +165,8 @@ status_value_or_else[A, E1: effects, E2: effects] :: Status -> (Unit -> A need E
 /// Fulfill the promise only when it is still pending.
 fulfill_raw_if_pending[A] :: Promise[A] -> RawPtr -> Bool need FFI
 {
-    promise => value => if Promise::is_pending(promise) then {
-        Promise::fulfill_raw(promise)(value)
+    promise => value => if Promise.is_pending(promise) then {
+        Promise.fulfill_raw(promise)(value)
     } else {
         false
     }
@@ -175,8 +175,8 @@ fulfill_raw_if_pending[A] :: Promise[A] -> RawPtr -> Bool need FFI
 /// Fulfill the promise with an Eidos value only when it is still pending.
 fulfill_value_if_pending[A] :: Promise[A] -> A -> Bool need FFI
 {
-    promise => value => if Promise::is_pending(promise) then {
-        Promise::fulfill_value(promise)(value)
+    promise => value => if Promise.is_pending(promise) then {
+        Promise.fulfill_value(promise)(value)
     } else {
         false
     }

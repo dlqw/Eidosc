@@ -18,7 +18,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -58,7 +58,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -99,7 +99,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -140,7 +140,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -180,7 +180,7 @@ normalize :: Int -> Int
 }
 
 OptionN :: type {
-    Some{value: Int} | None
+    Some{value: Int} , None
 }
 
 classify :: OptionN -> Int
@@ -221,7 +221,7 @@ normalize :: Int -> Int
 }
 
 OptionN :: type {
-    Some{value: Int} | None
+    Some{value: Int} , None
 }
 
 classify :: OptionN -> Int
@@ -261,7 +261,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -302,7 +302,7 @@ normalize :: Int -> Int
 }
 
 PairN :: type {
-    PairN{left: Int, right: Int} | None
+    PairN{left: Int, right: Int} , None
 }
 
 classify :: PairN -> Int
@@ -343,7 +343,7 @@ normalize :: Int -> Int
 }
 
 PairN :: type {
-    PairN{left: Int, right: Int} | None
+    PairN{left: Int, right: Int} , None
 }
 
 classify :: PairN -> Int
@@ -384,7 +384,7 @@ normalize :: Int -> Int
 }
 
 PairN :: type {
-    PairN{left: Int, right: Int} | None
+    PairN{left: Int, right: Int} , None
 }
 
 classify :: PairN -> Int
@@ -424,7 +424,7 @@ normalize :: Int -> Int
 }
 
 PairN :: type {
-    PairN{left: Int, right: Int} | None
+    PairN{left: Int, right: Int} , None
 }
 
 classify :: PairN -> Int
@@ -465,7 +465,7 @@ normalize :: Int -> Int
 }
 
 PairN :: type {
-    PairN{left: Int, right: Int} | None
+    PairN{left: Int, right: Int} , None
 }
 
 classify :: PairN -> Int
@@ -507,7 +507,7 @@ normalize :: Int -> Int
 }
 
 PairN :: type {
-    PairN{left: Int, right: Int} | None
+    PairN{left: Int, right: Int} , None
 }
 
 classify :: PairN -> Int
@@ -548,7 +548,7 @@ normalizeBool :: Bool -> Bool
 }
 
 PairB :: type {
-    PairB{flag: Bool, right: Int} | None
+    PairB{flag: Bool, right: Int} , None
 }
 
 classify :: PairB -> Int
@@ -590,7 +590,7 @@ normalizeBool :: Bool -> Bool
 }
 
 PairB :: type {
-    PairB{flag: Bool, right: Int} | None
+    PairB{flag: Bool, right: Int} , None
 }
 
 classify :: PairB -> Int
@@ -631,7 +631,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -673,7 +673,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -714,7 +714,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -755,7 +755,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -795,7 +795,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -837,7 +837,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -878,7 +878,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -920,7 +920,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -961,7 +961,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -1001,7 +1001,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -1042,7 +1042,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} | None
+    PairC{tag: Char, right: Int} , None
 }
 
 classify :: PairC -> Int
@@ -1082,7 +1082,7 @@ normalizeBool :: Bool -> Bool
 }
 
 PairB :: type {
-    PairB{flag: Bool, right: Int} | None
+    PairB{flag: Bool, right: Int} , None
 }
 
 classify :: PairB -> Int
@@ -1125,7 +1125,7 @@ normalizeBool :: Bool -> Bool
 }
 
 PairB :: type {
-    PairB{flag: Bool, right: Int} | None
+    PairB{flag: Bool, right: Int} , None
 }
 
 classify :: PairB -> Int

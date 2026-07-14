@@ -228,20 +228,29 @@ public static class SyntaxMigrationPlanner
 
     private static SyntaxMigrationPlan CreateProjectPlan(string manifestPath, string fromSyntax, string toSyntax)
     {
-        var loaded = EidosProjectConfigurationLoader.LoadFromPath(manifestPath);
-        var sourceFiles = CollectProjectSourceFiles(loaded)
+        var normalizedManifestPath = Path.GetFullPath(manifestPath);
+        var projectDirectory = Path.GetDirectoryName(normalizedManifestPath) ?? Directory.GetCurrentDirectory();
+        var manifest = EidosProjectManifestDocument.Load(normalizedManifestPath);
+        var sourceRoots = manifest.SourceRoots is { Length: > 0 }
+            ? manifest.SourceRoots
+            : ["src"];
+        var sourceFiles = sourceRoots
+            .Select(root => Path.GetFullPath(root, projectDirectory))
+            .Where(Directory.Exists)
+            .SelectMany(EnumerateEidosFiles)
             .Select(Path.GetFullPath)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var filePlans = CreateFilePlans(sourceFiles);
+        var filePlans = CreateFilePlans(sourceFiles, fromSyntax, toSyntax);
+        var manifestSyntax = manifest.Language?.Version ?? EidosLanguageVersions.Legacy;
 
         return new SyntaxMigrationPlan(
-            loaded.ProjectDirectory,
-            loaded.FilePath,
+            projectDirectory,
+            normalizedManifestPath,
             fromSyntax,
             toSyntax,
-            loaded.Configuration.LanguageVersion,
-            !string.Equals(loaded.Configuration.LanguageVersion, toSyntax, StringComparison.Ordinal),
+            manifestSyntax,
+            !string.Equals(manifestSyntax, toSyntax, StringComparison.Ordinal),
             GetSourceRewriteStatus(filePlans),
             sourceFiles,
             filePlans);
@@ -250,7 +259,7 @@ public static class SyntaxMigrationPlanner
     private static SyntaxMigrationPlan CreateSingleFilePlan(string sourceFilePath, string fromSyntax, string toSyntax)
     {
         sourceFilePath = Path.GetFullPath(sourceFilePath);
-        var filePlans = CreateFilePlans([sourceFilePath]);
+        var filePlans = CreateFilePlans([sourceFilePath], fromSyntax, toSyntax);
         return new SyntaxMigrationPlan(
             Path.GetDirectoryName(sourceFilePath) ?? Directory.GetCurrentDirectory(),
             null,
@@ -268,7 +277,7 @@ public static class SyntaxMigrationPlanner
         var sourceFiles = EnumerateEidosFiles(directoryPath)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var filePlans = CreateFilePlans(sourceFiles);
+        var filePlans = CreateFilePlans(sourceFiles, fromSyntax, toSyntax);
 
         return new SyntaxMigrationPlan(
             directoryPath,
@@ -282,35 +291,41 @@ public static class SyntaxMigrationPlanner
             filePlans);
     }
 
-    private static SyntaxMigrationFilePlan[] CreateFilePlans(IReadOnlyList<string> sourceFiles)
+    private static SyntaxMigrationFilePlan[] CreateFilePlans(
+        IReadOnlyList<string> sourceFiles,
+        string fromSyntax,
+        string toSyntax)
     {
         return sourceFiles
-            .Select(CreateFilePlan)
+            .Select(sourceFile => CreateFilePlan(sourceFile, fromSyntax, toSyntax))
             .ToArray();
     }
 
-    private static SyntaxMigrationFilePlan CreateFilePlan(string sourcePath)
+    private static SyntaxMigrationFilePlan CreateFilePlan(
+        string sourcePath,
+        string fromSyntax,
+        string toSyntax)
     {
         var source = File.ReadAllText(sourcePath);
         var tokens = Tokenize(source, sourcePath);
-        var (ast, diagnostics) = SyntaxParser.Parse(tokens, sourcePath);
+        var (ast, diagnostics) = SyntaxParser.Parse(tokens, sourcePath, fromSyntax);
 
-        // Token-level cons-operator rewrite runs independently of AST parsing: a legacy
-        // `head :: tail` (whitespace around ::) is no longer parseable as cons once `::`
-        // leaves the operator table, so the AST may be null or skip the containing body.
-        // Scanning the full token stream catches it regardless.
         var edits = new List<SyntaxMigrationEdit>();
         var fullSpan = new SourceSpan(new SourceLocation(0, 1, 1, sourcePath), source.Length);
-        AddWhitespaceSeparatedConsEdits(source, tokens, fullSpan, edits);
 
         if (ast == null)
         {
+            AddWhitespaceSeparatedConsEdits(source, tokens, fullSpan, edits);
             return new SyntaxMigrationFilePlan(
                 sourcePath,
                 "parse-error",
                 diagnostics.Select(static diagnostic => diagnostic.ToString() ?? "").ToArray(),
                 NormalizeEdits(edits));
         }
+
+        var declarationBindingPositions = CollectDeclarationBindingPositions(source, tokens, ast, fromSyntax);
+        AddWhitespaceSeparatedConsEdits(source, tokens, fullSpan, edits, declarationBindingPositions);
+
         var moduleLevelLetDecls = CollectModuleLevelLetDecls(ast);
         var functionsRequiringFfi = CollectFunctionsRequiringFfi(ast);
         var functionsRequiringIo = CollectFunctionsRequiringIo(ast);
@@ -368,9 +383,19 @@ public static class SyntaxMigrationPlanner
                     break;
                 case ImportDecl importDecl:
                     AddImportPathEdits(tokens, importDecl, edits);
-                    AddImportModuleAliasEdits(tokens, importDecl, edits);
+                    AddImportModuleAliasEdits(
+                        tokens,
+                        importDecl,
+                        edits,
+                        string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal));
                     break;
             }
+        }
+
+        if (string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal))
+        {
+            AddDotNamespaceEdits(tokens, fullSpan, edits, declarationBindingPositions);
+            AddAdtCommaSeparatorEdits(tokens, ast, edits);
         }
 
         var normalizedEdits = NormalizeEdits(edits);
@@ -1320,7 +1345,7 @@ public static class SyntaxMigrationPlanner
                 tokens[i].Length,
                 ".",
                 "import-module-path",
-                "Rewrite legacy slash-separated import module path to 0.5.0-alpha.1 dot-separated module path."));
+                "Rewrite legacy slash-separated import module path to 0.6.0-alpha.1 dot-separated module path."));
             converted++;
         }
 
@@ -1331,15 +1356,16 @@ public static class SyntaxMigrationPlanner
     }
 
     /// <summary>
-    /// Rewrites a legacy module-alias import <c>import PackageAlias::Mod.Path as Alias;</c>
-    /// to the 0.5.0-alpha.1 name-first binding form <c>Alias :: import PackageAlias::Mod.Path;</c>.
+    /// Rewrites a legacy module-alias import <c>import PackageAlias.Mod.Path as Alias;</c>
+    /// to the 0.6.0-alpha.1 name-first binding form <c>Alias :: import PackageAlias.Mod.Path;</c>.
     /// Only the module-kind aliased import is rewritten; selective/wildcard/unaliased imports
     /// and the leading <c>export</c> modifier are left untouched.
     /// </summary>
     private static void AddImportModuleAliasEdits(
         IReadOnlyList<Token> tokens,
         ImportDecl importDecl,
-        List<SyntaxMigrationEdit> edits)
+        List<SyntaxMigrationEdit> edits,
+        bool usesDotNamespaces)
     {
         if (importDecl.Kind != ImportKind.Module || string.IsNullOrEmpty(importDecl.Alias))
         {
@@ -1365,11 +1391,12 @@ public static class SyntaxMigrationPlanner
         }
 
         // Reconstruct the module path from AST so the rewrite is independent of whether the
-        // slash-to-dot path edit ran first. Package alias and module path use `::` and `.`.
+        // slash-to-dot path edit ran first.
         var modulePathText = string.Join(".", importDecl.ModulePath);
+        var namespaceSeparator = usesDotNamespaces ? "." : "::";
         var qualifiedPath = string.IsNullOrEmpty(importDecl.PackageAlias)
             ? modulePathText
-            : $"{importDecl.PackageAlias}::{modulePathText}";
+            : $"{importDecl.PackageAlias}{namespaceSeparator}{modulePathText}";
 
         var start = tokens[importIndex].Location.Position;
         var aliasToken = tokens[aliasIndex];
@@ -1380,7 +1407,7 @@ public static class SyntaxMigrationPlanner
             replacementEnd - start,
             $"{importDecl.Alias} :: import {qualifiedPath}",
             "import-module-alias-name-first",
-            "Rewrite legacy module-alias import to 0.5.0-alpha.1 name-first binding form."));
+            "Rewrite legacy module-alias import to 0.6.0-alpha.1 name-first binding form."));
     }
 
     private static int FindImportPathEndTokenIndex(IReadOnlyList<Token> tokens, SourceSpan span, int startIndex)
@@ -1444,20 +1471,22 @@ public static class SyntaxMigrationPlanner
             tokens[assignIndex].Length,
             "=",
             "assignment-operator",
-            "Rewrite legacy assignment operator to 0.5.0-alpha.1 assignment operator."));
+            "Rewrite legacy assignment operator to 0.6.0-alpha.1 assignment operator."));
     }
 
     private static void AddWhitespaceSeparatedConsEdits(
         string source,
         IReadOnlyList<Token> tokens,
         SourceSpan span,
-        List<SyntaxMigrationEdit> edits)
+        List<SyntaxMigrationEdit> edits,
+        IReadOnlySet<int>? declarationBindingPositions = null)
     {
         for (var i = 0; i < tokens.Count; i++)
         {
             var token = tokens[i];
             if (!IsInside(token, span) ||
                 !string.Equals(GetTokenText(token), "::", StringComparison.Ordinal) ||
+                declarationBindingPositions?.Contains(token.Location.Position) == true ||
                 LooksLikeNameFirstStaticBinding(source, tokens, i) ||
                 !HasWhitespaceAround(source, token.Location.Position, token.Length))
             {
@@ -1469,7 +1498,110 @@ public static class SyntaxMigrationPlanner
                 token.Length,
                 "+:",
                 "cons-operator",
-                "Rewrite legacy list cons operator to 0.5.0-alpha.1 cons operator."));
+                "Rewrite legacy list cons operator to 0.6.0-alpha.1 cons operator."));
+        }
+    }
+
+    private static HashSet<int> CollectDeclarationBindingPositions(
+        string source,
+        IReadOnlyList<Token> tokens,
+        ModuleDecl ast,
+        string fromSyntax)
+    {
+        var positions = new HashSet<int>();
+        foreach (var node in EnumerateAst(ast))
+        {
+            if (ReferenceEquals(node, ast) ||
+                node is not Declaration and not AssociatedTypeDecl and not AssociatedConstDecl ||
+                node is Assignment or LetQuestionDecl or OperatorDecl)
+            {
+                continue;
+            }
+
+            var bindingIndex = FindTopLevelTokenIndex(tokens, node.Span, "::");
+            if (bindingIndex >= 0 &&
+                (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) ||
+                 LooksLikeNameFirstStaticBinding(source, tokens, bindingIndex)))
+            {
+                positions.Add(tokens[bindingIndex].Location.Position);
+            }
+        }
+
+        return positions;
+    }
+
+    private static void AddDotNamespaceEdits(
+        IReadOnlyList<Token> tokens,
+        SourceSpan span,
+        List<SyntaxMigrationEdit> edits,
+        IReadOnlySet<int> declarationBindingPositions)
+    {
+        foreach (var token in tokens)
+        {
+            if (!IsInside(token, span) ||
+                !string.Equals(GetTokenText(token), "::", StringComparison.Ordinal) ||
+                declarationBindingPositions.Contains(token.Location.Position) ||
+                edits.Any(edit =>
+                    token.Location.Position >= edit.Start &&
+                    token.Location.Position + token.Length <= edit.Start + edit.Length))
+            {
+                continue;
+            }
+
+            edits.Add(new SyntaxMigrationEdit(
+                token.Location.Position,
+                token.Length,
+                ".",
+                "qualified-namespace-separator",
+                "Rewrite the removed qualified-name '::' separator to the Eidos 0.6 dot Namespace syntax."));
+        }
+    }
+
+    private static void AddAdtCommaSeparatorEdits(
+        IReadOnlyList<Token> tokens,
+        ModuleDecl ast,
+        List<SyntaxMigrationEdit> edits)
+    {
+        foreach (var adt in EnumerateAst(ast).OfType<AdtDef>())
+        {
+            var bodyStart = FindTopLevelTokenIndex(tokens, adt.Span, "{");
+            if (bodyStart < 0)
+            {
+                continue;
+            }
+
+            var depth = 0;
+            for (var i = bodyStart; i < tokens.Count && IsInside(tokens[i], adt.Span); i++)
+            {
+                var text = GetTokenText(tokens[i]);
+                if (text == "{")
+                {
+                    depth++;
+                    continue;
+                }
+
+                if (text == "}")
+                {
+                    depth--;
+                    if (depth <= 0)
+                    {
+                        break;
+                    }
+                    continue;
+                }
+
+                if (depth != 1 || text != "|")
+                {
+                    continue;
+                }
+
+                edits.Add(new SyntaxMigrationEdit(
+                    tokens[i].Location.Position,
+                    tokens[i].Length,
+                    ",",
+                    "adt-constructor-separator",
+                    "Rewrite the removed ADT constructor '|' separator to ','."));
+            }
         }
     }
 

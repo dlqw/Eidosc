@@ -91,12 +91,12 @@ public sealed class NameResolverBoundaryTests
     public void CompilationPipeline_ImportedModuleQualifiedType_PrefersModuleAliasOverGlobalModulePath()
     {
         const string source = """
-import Std::Task
-import Std::HashMap
+import Std.Task
+import Std.HashMap
 
-keep_task[A] :: Task::Task[A] -> Task::Task[A] { task => task }
-keep_map :: HashMap::HashMap[Int, Int] -> HashMap::HashMap[Int, Int] { map => map }
-keep_package_task[A] :: Std::Task::Task[A] -> Std::Task::Task[A] { task => task }
+keep_task[A] :: Task.Task[A] -> Task.Task[A] { task => task }
+keep_map :: HashMap.HashMap[Int, Int] -> HashMap.HashMap[Int, Int] { map => map }
+keep_package_task[A] :: Std.Task.Task[A] -> Std.Task.Task[A] { task => task }
 """;
 
         var result = new CompilationPipeline(source, new CompilationOptions

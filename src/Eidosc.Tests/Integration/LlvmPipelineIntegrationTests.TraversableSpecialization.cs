@@ -11,7 +11,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultMapHigherOrderClosure_NativeSmoke_ReturnsMappedValue()
     {
         const string source = """
-            import Std::Result
+            import Std.Result
 
             inc :: Int -> Int
             {
@@ -22,7 +22,7 @@ public partial class LlvmPipelineIntegrationTests
             {
                 _ => {
                     input: Result[Int, String] := Ok(1);
-                    Result::unwrap_or(Result::map(input)(inc))(0)
+                    Result.unwrap_or(Result.map(input)(inc))(0)
                 }
             }
             """;
@@ -39,7 +39,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultApplyCurriedPartial_NativeSmoke_ReturnsAppliedValue()
     {
         const string source = """
-            import Std::Result
+            import Std.Result
 
             add :: Int -> Int -> Int
             {
@@ -51,7 +51,7 @@ public partial class LlvmPipelineIntegrationTests
                 _ => {
                     applyFunction: Result[Int -> Int, String] := Ok(add(20));
                     applyInput: Result[Int, String] := Ok(4);
-                    Result::unwrap_or(Result::apply(applyFunction)(applyInput))(0)
+                    Result.unwrap_or(Result.apply(applyFunction)(applyInput))(0)
                 }
             }
             """;
@@ -79,15 +79,15 @@ public partial class LlvmPipelineIntegrationTests
     public void NestedCtorPattern_NativeSmoke_ShortCircuitsBeforeReadingFields()
     {
         const string source = """
-            import Std::Option
-            import Std::Result
+            import Std.Option
+            import Std.Result
 
             main :: Unit -> Int
             {
                 _ => {
                     optNoneInput: Option[Result[Int, String]] := None();
 
-                    if Option::is_none(Result::unwrap_or(Result::transpose_option(optNoneInput))(Some(99))) then { 9 } else { 0 }
+                    if Option.is_none(Result.unwrap_or(Result.transpose_option(optNoneInput))(Some(99))) then { 9 } else { 0 }
                 }
             }
             """;
@@ -107,9 +107,9 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultTraverse_WithResultApplicative_NativeSmoke_ReturnsInnerValue()
     {
         const string source = """
-            import Std::Result
+            import Std.Result
 
-            positive_result :: Int -> Result::ResultWith[String, Int]
+            positive_result :: Int -> Result.ResultWith[String, Int]
             {
                 x => if x > 0 then { Ok(x + 1) } else { Err("bad") }
             }
@@ -117,10 +117,10 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    input: Result::ResultWith[String, Int] := Ok(2);
-                    match Result::traverse(input)(positive_result)
+                    input: Result.ResultWith[String, Int] := Ok(2);
+                    match Result.traverse(input)(positive_result)
                     {
-                        Ok(inner) => Result::unwrap_or(inner)(0),
+                        Ok(inner) => Result.unwrap_or(inner)(0),
                         Err(_) => 0
                     }
                 }
@@ -139,7 +139,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultPureThenApply_WithCurriedUnwrapOr_NativeSmoke_ReturnsCombinedValue()
     {
         const string source = """
-            import Std::Result
+            import Std.Result
 
             add :: Int -> Int -> Int
             {
@@ -149,12 +149,12 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    pureValue: Result::ResultWith[String, Int] := Result::pure(5);
-                    pureCollapsed := Result::unwrap_or(pureValue)(0);
+                    pureValue: Result.ResultWith[String, Int] := Result.pure(5);
+                    pureCollapsed := Result.unwrap_or(pureValue)(0);
                     applyFunction: Result[Int -> Int, String] := Ok(add(20));
                     applyInput: Result[Int, String] := Ok(4);
-                    applied := Result::apply(applyFunction)(applyInput);
-                    appliedCollapsed := Result::unwrap_or(applied)(0);
+                    applied := Result.apply(applyFunction)(applyInput);
+                    appliedCollapsed := Result.unwrap_or(applied)(0);
                     pureCollapsed + appliedCollapsed
                 }
             }
@@ -172,7 +172,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultSequence_AfterApply_NativeSmoke_ReturnsCombinedValue()
     {
         const string source = """
-            import Std::Result
+            import Std.Result
 
             add :: Int -> Int -> Int
             {
@@ -182,16 +182,16 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    pureValue: Result::ResultWith[String, Int] := Result::pure(5);
-                    pureCollapsed := Result::unwrap_or(pureValue)(0);
+                    pureValue: Result.ResultWith[String, Int] := Result.pure(5);
+                    pureCollapsed := Result.unwrap_or(pureValue)(0);
                     applyFunction: Result[Int -> Int, String] := Ok(add(20));
                     applyInput: Result[Int, String] := Ok(4);
                     nestedSequenceInput: Result[Result[Int, String], String] := Ok(Ok(7));
-                    applied := Result::apply(applyFunction)(applyInput);
-                    appliedCollapsed := Result::unwrap_or(applied)(0);
-                    sequencedValue := match Result::sequence(nestedSequenceInput)
+                    applied := Result.apply(applyFunction)(applyInput);
+                    appliedCollapsed := Result.unwrap_or(applied)(0);
+                    sequencedValue := match Result.sequence(nestedSequenceInput)
                     {
-                        Ok(inner) => Result::unwrap_or(inner)(0),
+                        Ok(inner) => Result.unwrap_or(inner)(0),
                         Err(_) => 0
                     };
                     pureCollapsed + appliedCollapsed + sequencedValue
@@ -211,18 +211,18 @@ public partial class LlvmPipelineIntegrationTests
     public void SeqSequence_WithResultApplicative_NativeSmoke_ReturnsHead()
     {
         const string source = """
-            import Std::Seq
-            import Std::Result
+            import Std.Seq
+            import Std.Result
 
             collapse_seq_result :: Result[Seq[Int], String] -> Int
             {
-                Ok(values) => Seq::head_or(values)(0),
+                Ok(values) => Seq.head_or(values)(0),
                 Err(_) => 0
             }
 
             main :: Unit -> Int
             {
-                _ => collapse_seq_result(Seq::sequence([Ok(2), Ok(3)]))
+                _ => collapse_seq_result(Seq.sequence([Ok(2), Ok(3)]))
             }
             """;
 
@@ -238,7 +238,7 @@ public partial class LlvmPipelineIntegrationTests
     public void SeqPartition_WithTupleResult_NativeSmoke_ReturnsPartitionSizes()
     {
         const string source = """
-            import Std::Seq
+            import Std.Seq
 
             is_small :: Int -> Bool
             {
@@ -248,9 +248,9 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    pieces := Seq::partition([1, 2, 3, 4])(is_small);
+                    pieces := Seq.partition([1, 2, 3, 4])(is_small);
                     (left, right) := pieces;
-                    Seq::len(left) + Seq::len(right)
+                    Seq.len(left) + Seq.len(right)
                 }
             }
             """;
@@ -267,8 +267,8 @@ public partial class LlvmPipelineIntegrationTests
     public void TupleReturnAndSeqTupleElement_NativeSmoke_PreservesAggregatePayload()
     {
         const string source = """
-            import Std::Seq
-            import Std::Option
+            import Std.Seq
+            import Std.Option
 
             choose_pair :: Bool -> (Int, Int) -> (Int, Int) -> (Int, Int)
             {
@@ -281,7 +281,7 @@ public partial class LlvmPipelineIntegrationTests
                     chosen := choose_pair(true)((0, 7))((-1, -1));
                     (chosenIndex, chosenValue) := chosen;
                     pairs := [(0, 7), (1, 8), (2, 9)];
-                    first := Option::unwrap_or(Seq::get_opt(pairs)(0))((-1, -1));
+                    first := Option.unwrap_or(Seq.get_opt(pairs)(0))((-1, -1));
                     (firstIndex, firstValue) := first;
                     chosenIndex * 10 + chosenValue + firstIndex * 10 + firstValue
                 }
@@ -300,12 +300,12 @@ public partial class LlvmPipelineIntegrationTests
     public void OptionShowSome_NativeSmoke_ReturnsTrue()
     {
         const string source = """
-            import Std::Option
-            import Std::Ordering
+            import Std.Option
+            import Std.Ordering
 
             main :: Unit -> Int
             {
-                _ => if Option::show(Some(8)) == "Some(8)" then { 1 } else { 0 }
+                _ => if Option.show(Some(8)) == "Some(8)" then { 1 } else { 0 }
             }
             """;
 
@@ -321,8 +321,8 @@ public partial class LlvmPipelineIntegrationTests
     public void OptionZipMapOr_WithTuplePatternFunction_NativeSmoke_ReturnsSum()
     {
         const string source = """
-            import Std::Option
-            import Std::Ordering
+            import Std.Option
+            import Std.Ordering
 
             pair_sum :: (Int, Int) -> Int
             {
@@ -333,7 +333,7 @@ public partial class LlvmPipelineIntegrationTests
             {
                 _ => {
                     base: Option[Int] := Some(1);
-                    Option::map_or(Option::zip(base)(Some(2)))(0)(pair_sum)
+                    Option.map_or(Option.zip(base)(Some(2)))(0)(pair_sum)
                 }
             }
             """;
@@ -347,15 +347,15 @@ public partial class LlvmPipelineIntegrationTests
     }
 
     private const string ResultShowSource = """
-        import Std::Result
+        import Std.Result
 
         main :: Unit -> Int
         {
             _ => {
                 ok: Result[Int, String] := Ok(3);
                 err: Result[Int, String] := Err("oops");
-                shownOk := if Result::show(ok) == "Ok(3)" then { 1 } else { 0 };
-                shownErr := if Result::show(err) == "Err(oops)" then { 1 } else { 0 };
+                shownOk := if Result.show(ok) == "Ok(3)" then { 1 } else { 0 };
+                shownErr := if Result.show(err) == "Err(oops)" then { 1 } else { 0 };
                 shownOk + shownErr
             }
         }

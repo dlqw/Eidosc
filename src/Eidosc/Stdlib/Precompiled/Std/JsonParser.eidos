@@ -2,7 +2,7 @@ JsonParser :: module {
     import Option
     import Result
     import Seq
-    import JsonValue::{JsonValue}
+    import JsonValue.{JsonValue}
     import JsonValue
 
     @internal
@@ -64,8 +64,8 @@ JsonParser :: module {
             if index >= string_length(src) then { index }
             else {
                 c := string_char_at(src, index);
-                if JsonParser::char_code_is_space(c)
-                    then { JsonParser::skip_whitespace(src)(index + 1) }
+                if JsonParser.char_code_is_space(c)
+                    then { JsonParser.skip_whitespace(src)(index + 1) }
                     else { index }
             }
     }
@@ -79,8 +79,8 @@ JsonParser :: module {
             if index >= string_length(src) then { acc }
             else {
                 c := string_char_at(src, index);
-                if JsonParser::char_code_is_digit(c)
-                    then { JsonParser::parse_int_digits(src)(index + 1)(acc * 10 + JsonParser::digit_value(c)) }
+                if JsonParser.char_code_is_digit(c)
+                    then { JsonParser.parse_int_digits(src)(index + 1)(acc * 10 + JsonParser.digit_value(c)) }
                     else { acc }
             }
     }
@@ -135,9 +135,9 @@ JsonParser :: module {
                 c0 := string_char_at(src, index);
                 neg := c0 == 45;
                 start := if neg then { index + 1 } else { index };
-                afterInt := JsonParser::skip_past_digits(src)(start)(len);
-                afterFrac := JsonParser::skip_fractional(src)(afterInt)(len);
-                afterExp := JsonParser::skip_exponent(src)(afterFrac)(len);
+                afterInt := JsonParser.skip_past_digits(src)(start)(len);
+                afterFrac := JsonParser.skip_fractional(src)(afterInt)(len);
+                afterExp := JsonParser.skip_exponent(src)(afterFrac)(len);
                 numStr := string_slice(src, index, afterExp - index);
                 result := string_to_float(numStr);
                 Ok((JsonNumber(result), afterExp))
@@ -151,8 +151,8 @@ JsonParser :: module {
             if index >= len then { index }
             else {
                 c := string_char_at(src, index);
-                if JsonParser::char_code_is_digit(c)
-                    then { JsonParser::skip_past_digits(src)(index + 1)(len) }
+                if JsonParser.char_code_is_digit(c)
+                    then { JsonParser.skip_past_digits(src)(index + 1)(len) }
                     else { index }
             }
     }
@@ -166,7 +166,7 @@ JsonParser :: module {
                 c := string_char_at(src, index);
                 if c == 46 then {
                     afterDot := index + 1;
-                    JsonParser::skip_past_digits(src)(afterDot)(len)
+                    JsonParser.skip_past_digits(src)(afterDot)(len)
                 }
                 else { index }
             }
@@ -185,7 +185,7 @@ JsonParser :: module {
                     else {
                         sign := string_char_at(src, afterE);
                         afterSign := if sign == 43 || sign == 45 then { afterE + 1 } else { afterE };
-                        JsonParser::skip_past_digits(src)(afterSign)(len)
+                        JsonParser.skip_past_digits(src)(afterSign)(len)
                     }
                 }
                 else { index }
@@ -211,9 +211,9 @@ JsonParser :: module {
             else {
                 c := string_char_at(src, index);
                 if c == 34 then { Ok((acc, index + 1)) }
-                else if c == 92 then { JsonParser::parse_escape(src)(index + 1)(acc) }
+                else if c == 92 then { JsonParser.parse_escape(src)(index + 1)(acc) }
                 else if c < 32 then { Err("Control character in string at position " ++ int_to_string(index)) }
-                else { JsonParser::parse_string_chars(src)(index + 1)(acc ++ string_from_char(c)) }
+                else { JsonParser.parse_string_chars(src)(index + 1)(acc ++ string_from_char(c)) }
             }
     }
 
@@ -224,15 +224,15 @@ JsonParser :: module {
             if index >= string_length(src) then { Err("Unterminated escape sequence") }
             else {
                 c := string_char_at(src, index);
-                if c == 34 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\"") }
-                else if c == 92 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\\") }
-                else if c == 47 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "/") }
-                else if c == 98 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\b") }
-                else if c == 102 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\f") }
-                else if c == 110 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\n") }
-                else if c == 114 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\r") }
-                else if c == 116 then { JsonParser::parse_string_chars(src)(index + 1)(acc ++ "\t") }
-                else if c == 117 then { JsonParser::parse_unicode_escape(src)(index + 1)(acc) }
+                if c == 34 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\"") }
+                else if c == 92 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\\") }
+                else if c == 47 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "/") }
+                else if c == 98 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\b") }
+                else if c == 102 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\f") }
+                else if c == 110 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\n") }
+                else if c == 114 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\r") }
+                else if c == 116 then { JsonParser.parse_string_chars(src)(index + 1)(acc ++ "\t") }
+                else if c == 117 then { JsonParser.parse_unicode_escape(src)(index + 1)(acc) }
                 else { Err("Invalid escape character at position " ++ int_to_string(index)) }
             }
     }
@@ -243,12 +243,12 @@ JsonParser :: module {
         src => index => acc =>
             if index + 3 >= string_length(src) then { Err("Incomplete unicode escape at position " ++ int_to_string(index)) }
             else {
-                h0 := JsonParser::hex_digit_value(string_char_at(src, index));
-                h1 := JsonParser::hex_digit_value(string_char_at(src, index + 1));
-                h2 := JsonParser::hex_digit_value(string_char_at(src, index + 2));
-                h3 := JsonParser::hex_digit_value(string_char_at(src, index + 3));
+                h0 := JsonParser.hex_digit_value(string_char_at(src, index));
+                h1 := JsonParser.hex_digit_value(string_char_at(src, index + 1));
+                h2 := JsonParser.hex_digit_value(string_char_at(src, index + 2));
+                h3 := JsonParser.hex_digit_value(string_char_at(src, index + 3));
                 code := h0 * 4096 + h1 * 256 + h2 * 16 + h3;
-                JsonParser::parse_string_chars(src)(index + 4)(acc ++ string_from_char(code))
+                JsonParser.parse_string_chars(src)(index + 4)(acc ++ string_from_char(code))
             }
     }
 
@@ -261,7 +261,7 @@ JsonParser :: module {
                 c := string_char_at(src, index);
                 if c != 34 then { Err("Expected '\"' at position " ++ int_to_string(index)) }
                 else {
-                    match JsonParser::parse_string_chars(src)(index + 1)("")
+                    match JsonParser.parse_string_chars(src)(index + 1)("")
                     {
                         Ok((text, next)) => Ok((JsonString(text), next)),
                         Err(msg) => Err(msg)
@@ -278,23 +278,23 @@ JsonParser :: module {
         src => index => acc =>
             if index >= string_length(src) then { Err("Unterminated array") }
             else {
-                afterWs := JsonParser::skip_whitespace(src)(index);
+                afterWs := JsonParser.skip_whitespace(src)(index);
                 if afterWs >= string_length(src) then { Err("Unterminated array") }
                 else {
                     c := string_char_at(src, afterWs);
                     if c == 93 then { Ok((acc, afterWs + 1)) }
                     else {
-                        match JsonParser::parse_value(src)(afterWs)
+                        match JsonParser.parse_value(src)(afterWs)
                         {
                             Ok((elem, next)) => {
-                                afterWs2 := JsonParser::skip_whitespace(src)(next);
+                                afterWs2 := JsonParser.skip_whitespace(src)(next);
                                 if afterWs2 >= string_length(src) then { Err("Unterminated array") }
                                 else {
                                     c2 := string_char_at(src, afterWs2);
                                     if c2 == 44
-                                        then { JsonParser::parse_array_elements(src)(afterWs2 + 1)(Seq::append(acc)([elem])) }
+                                        then { JsonParser.parse_array_elements(src)(afterWs2 + 1)(Seq.append(acc)([elem])) }
                                         else if c2 == 93
-                                            then { Ok((Seq::append(acc)([elem]), afterWs2 + 1)) }
+                                            then { Ok((Seq.append(acc)([elem]), afterWs2 + 1)) }
                                             else { Err("Expected ',' or ']' in array at position " ++ int_to_string(afterWs2)) }
                                 }
                             },
@@ -314,7 +314,7 @@ JsonParser :: module {
                 c := string_char_at(src, index);
                 if c != 91 then { Err("Expected '[' at position " ++ int_to_string(index)) }
                 else {
-                    match JsonParser::parse_array_elements(src)(index + 1)([])
+                    match JsonParser.parse_array_elements(src)(index + 1)([])
                     {
                         Ok((items, next)) => Ok((JsonArray(items), next)),
                         Err(msg) => Err(msg)
@@ -331,14 +331,14 @@ JsonParser :: module {
         src => index => acc =>
             if index >= string_length(src) then { Err("Unterminated object") }
             else {
-                afterWs := JsonParser::skip_whitespace(src)(index);
+                afterWs := JsonParser.skip_whitespace(src)(index);
                 if afterWs >= string_length(src) then { Err("Unterminated object") }
                 else {
                     c := string_char_at(src, afterWs);
                     if c == 125 then { Ok((acc, afterWs + 1)) }
                     else {
                         // Expect a string key
-                        match JsonParser::parse_string_value(src)(afterWs)
+                        match JsonParser.parse_string_value(src)(afterWs)
                         {
                             Ok((keyVal, afterKey)) => {
                                 key := match keyVal
@@ -346,24 +346,24 @@ JsonParser :: module {
                                     JsonString(s) => s,
                                     _ => ""
                                 };
-                                ws1 := JsonParser::skip_whitespace(src)(afterKey);
+                                ws1 := JsonParser.skip_whitespace(src)(afterKey);
                                 if ws1 >= string_length(src) then { Err("Unterminated object") }
                                 else {
                                     colon := string_char_at(src, ws1);
                                     if colon != 58 then { Err("Expected ':' in object at position " ++ int_to_string(ws1)) }
                                     else {
-                                        ws2 := JsonParser::skip_whitespace(src)(ws1 + 1);
-                                        match JsonParser::parse_value(src)(ws2)
+                                        ws2 := JsonParser.skip_whitespace(src)(ws1 + 1);
+                                        match JsonParser.parse_value(src)(ws2)
                                         {
                                             Ok((val_, afterVal)) => {
-                                                ws3 := JsonParser::skip_whitespace(src)(afterVal);
+                                                ws3 := JsonParser.skip_whitespace(src)(afterVal);
                                                 if ws3 >= string_length(src) then { Err("Unterminated object") }
                                                 else {
                                                     c2 := string_char_at(src, ws3);
                                                     if c2 == 44
-                                                        then { JsonParser::parse_object_fields(src)(ws3 + 1)(Seq::append(acc)([(key, val_)])) }
+                                                        then { JsonParser.parse_object_fields(src)(ws3 + 1)(Seq.append(acc)([(key, val_)])) }
                                                         else if c2 == 125
-                                                            then { Ok((Seq::append(acc)([(key, val_)]), ws3 + 1)) }
+                                                            then { Ok((Seq.append(acc)([(key, val_)]), ws3 + 1)) }
                                                             else { Err("Expected ',' or '}' in object at position " ++ int_to_string(ws3)) }
                                                 }
                                             },
@@ -388,7 +388,7 @@ JsonParser :: module {
                 c := string_char_at(src, index);
                 if c != 123 then { Err("Expected '{' at position " ++ int_to_string(index)) }
                 else {
-                    match JsonParser::parse_object_fields(src)(index + 1)([])
+                    match JsonParser.parse_object_fields(src)(index + 1)([])
                     {
                         Ok((fields, next)) => Ok((JsonObject(fields), next)),
                         Err(msg) => Err(msg)
@@ -406,14 +406,14 @@ JsonParser :: module {
             if index >= string_length(src) then { Err("Unexpected end of input at position " ++ int_to_string(index)) }
             else {
                 c := string_char_at(src, index);
-                if c == 110 then { JsonParser::parse_null(src)(index) }
-                else if c == 116 then { JsonParser::parse_true(src)(index) }
-                else if c == 102 then { JsonParser::parse_false(src)(index) }
-                else if c == 34 then { JsonParser::parse_string_value(src)(index) }
-                else if c == 91 then { JsonParser::parse_array(src)(index) }
-                else if c == 123 then { JsonParser::parse_object(src)(index) }
-                else if JsonParser::char_code_is_digit(c) || c == 45
-                    then { JsonParser::parse_number(src)(index) }
+                if c == 110 then { JsonParser.parse_null(src)(index) }
+                else if c == 116 then { JsonParser.parse_true(src)(index) }
+                else if c == 102 then { JsonParser.parse_false(src)(index) }
+                else if c == 34 then { JsonParser.parse_string_value(src)(index) }
+                else if c == 91 then { JsonParser.parse_array(src)(index) }
+                else if c == 123 then { JsonParser.parse_object(src)(index) }
+                else if JsonParser.char_code_is_digit(c) || c == 45
+                    then { JsonParser.parse_number(src)(index) }
                     else { Err("Unexpected character at position " ++ int_to_string(index)) }
             }
     }
@@ -423,11 +423,11 @@ JsonParser :: module {
     parse :: String -> Result[JsonValue, String]
     {
         src => {
-            start := JsonParser::skip_whitespace(src)(0);
-            match JsonParser::parse_value(src)(start)
+            start := JsonParser.skip_whitespace(src)(0);
+            match JsonParser.parse_value(src)(start)
             {
                 Ok((value, next)) => {
-                    rest := JsonParser::skip_whitespace(src)(next);
+                    rest := JsonParser.skip_whitespace(src)(next);
                     if rest >= string_length(src)
                         then { Ok(value) }
                         else { Err("Unexpected trailing characters after position " ++ int_to_string(rest)) }
@@ -439,28 +439,28 @@ JsonParser :: module {
 
     parse_opt :: String -> Option[JsonValue]
     {
-        src => Result::ok(JsonParser::parse(src))
+        src => Result.ok(JsonParser.parse(src))
     }
 
     parse_or :: String -> JsonValue -> JsonValue
     {
-        src => fallback => Result::unwrap_or(JsonParser::parse(src))(fallback)
+        src => fallback => Result.unwrap_or(JsonParser.parse(src))(fallback)
     }
 
     parse_or_else[E: effects] :: String -> (String -> JsonValue need E) -> JsonValue need E
     {
-        src => fallback => Result::unwrap_or_else(JsonParser::parse(src))(fallback)
+        src => fallback => Result.unwrap_or_else(JsonParser.parse(src))(fallback)
     }
 
     is_valid :: String -> Bool
     {
-        src => Result::is_ok(JsonParser::parse(src))
+        src => Result.is_ok(JsonParser.parse(src))
     }
 
     parse_as_bool :: String -> Result[Bool, String]
     {
         src =>
-            match JsonParser::parse(src)
+            match JsonParser.parse(src)
             {
                 Ok(JsonBool(value)) => Ok(value),
                 Ok(_) => Err("Expected JSON bool"),
@@ -470,18 +470,18 @@ JsonParser :: module {
 
     parse_bool_opt :: String -> Option[Bool]
     {
-        src => Result::ok(JsonParser::parse_as_bool(src))
+        src => Result.ok(JsonParser.parse_as_bool(src))
     }
 
     parse_bool_or :: String -> Bool -> Bool
     {
-        src => fallback => Result::unwrap_or(JsonParser::parse_as_bool(src))(fallback)
+        src => fallback => Result.unwrap_or(JsonParser.parse_as_bool(src))(fallback)
     }
 
     parse_as_float :: String -> Result[Float, String]
     {
         src =>
-            match JsonParser::parse(src)
+            match JsonParser.parse(src)
             {
                 Ok(JsonNumber(value)) => Ok(value),
                 Ok(_) => Err("Expected JSON number"),
@@ -491,18 +491,18 @@ JsonParser :: module {
 
     parse_float_opt :: String -> Option[Float]
     {
-        src => Result::ok(JsonParser::parse_as_float(src))
+        src => Result.ok(JsonParser.parse_as_float(src))
     }
 
     parse_float_or :: String -> Float -> Float
     {
-        src => fallback => Result::unwrap_or(JsonParser::parse_as_float(src))(fallback)
+        src => fallback => Result.unwrap_or(JsonParser.parse_as_float(src))(fallback)
     }
 
     parse_as_string :: String -> Result[String, String]
     {
         src =>
-            match JsonParser::parse(src)
+            match JsonParser.parse(src)
             {
                 Ok(JsonString(value)) => Ok(value),
                 Ok(_) => Err("Expected JSON string"),
@@ -512,18 +512,18 @@ JsonParser :: module {
 
     parse_string_opt :: String -> Option[String]
     {
-        src => Result::ok(JsonParser::parse_as_string(src))
+        src => Result.ok(JsonParser.parse_as_string(src))
     }
 
     parse_string_or :: String -> String -> String
     {
-        src => fallback => Result::unwrap_or(JsonParser::parse_as_string(src))(fallback)
+        src => fallback => Result.unwrap_or(JsonParser.parse_as_string(src))(fallback)
     }
 
     parse_as_array :: String -> Result[Seq[JsonValue], String]
     {
         src =>
-            match JsonParser::parse(src)
+            match JsonParser.parse(src)
             {
                 Ok(JsonArray(items)) => Ok(items),
                 Ok(_) => Err("Expected JSON array"),
@@ -533,18 +533,18 @@ JsonParser :: module {
 
     parse_array_opt :: String -> Option[Seq[JsonValue]]
     {
-        src => Result::ok(JsonParser::parse_as_array(src))
+        src => Result.ok(JsonParser.parse_as_array(src))
     }
 
     parse_array_or :: String -> Seq[JsonValue] -> Seq[JsonValue]
     {
-        src => fallback => Result::unwrap_or(JsonParser::parse_as_array(src))(fallback)
+        src => fallback => Result.unwrap_or(JsonParser.parse_as_array(src))(fallback)
     }
 
     parse_as_object :: String -> Result[Seq[(String, JsonValue)], String]
     {
         src =>
-            match JsonParser::parse(src)
+            match JsonParser.parse(src)
             {
                 Ok(JsonObject(fields)) => Ok(fields),
                 Ok(_) => Err("Expected JSON object"),
@@ -554,11 +554,11 @@ JsonParser :: module {
 
     parse_object_opt :: String -> Option[Seq[(String, JsonValue)]]
     {
-        src => Result::ok(JsonParser::parse_as_object(src))
+        src => Result.ok(JsonParser.parse_as_object(src))
     }
 
     parse_object_or :: String -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
     {
-        src => fallback => Result::unwrap_or(JsonParser::parse_as_object(src))(fallback)
+        src => fallback => Result.unwrap_or(JsonParser.parse_as_object(src))(fallback)
     }
 }

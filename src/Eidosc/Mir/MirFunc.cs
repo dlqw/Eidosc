@@ -474,27 +474,27 @@ public enum TraitInvokeHelperKind
     None,
 
     /// <summary>
-    /// Identifies <c>Std::TraitInvoke::eq_value</c>.
+    /// Identifies <c>Std.TraitInvoke.eq_value</c>.
     /// </summary>
     EqValue,
 
     /// <summary>
-    /// Identifies <c>Std::TraitInvoke::compare_value</c>.
+    /// Identifies <c>Std.TraitInvoke.compare_value</c>.
     /// </summary>
     CompareValue,
 
     /// <summary>
-    /// Identifies <c>Std::TraitInvoke::show_value</c>.
+    /// Identifies <c>Std.TraitInvoke.show_value</c>.
     /// </summary>
     ShowValue,
 
     /// <summary>
-    /// Identifies <c>Std::TraitInvoke::hash_value</c>.
+    /// Identifies <c>Std.TraitInvoke.hash_value</c>.
     /// </summary>
     HashValue,
 
     /// <summary>
-    /// Identifies <c>Std::TraitInvoke::clone_value</c>.
+    /// Identifies <c>Std.TraitInvoke.clone_value</c>.
     /// </summary>
     CloneValue
 }

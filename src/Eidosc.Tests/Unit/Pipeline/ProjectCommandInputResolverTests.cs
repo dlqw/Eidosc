@@ -102,7 +102,7 @@ public class ProjectCommandInputResolverTests
         var depEntry = Path.Combine(depDir, "src", "Raw.eidos");
         Directory.CreateDirectory(Path.GetDirectoryName(activeFile)!);
         Directory.CreateDirectory(Path.GetDirectoryName(depEntry)!);
-        File.WriteAllText(activeFile, "import Raylib::Raw");
+        File.WriteAllText(activeFile, "import Raylib.Raw");
         File.WriteAllText(appEntry, "main :: Int -> Int { _ => 0 }");
         File.WriteAllText(depEntry, "Raw :: module { export answer :: Int { 42 } }");
         File.WriteAllText(

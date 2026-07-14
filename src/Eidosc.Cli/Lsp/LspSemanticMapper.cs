@@ -1440,19 +1440,6 @@ public static class LspSemanticMapper
                         modifiers: 0);
                 }
 
-                if (i + 1 < sourceText.Length &&
-                    sourceText[i] == ':' &&
-                    sourceText[i + 1] == ':')
-                {
-                    AddCandidate(
-                        candidates,
-                        line,
-                        startCharacter,
-                        i - start,
-                        SemanticTokenModuleType,
-                        modifiers: 0);
-                }
-
                 if (IsSemanticTokenKeyword(sourceText, start, i - start))
                 {
                     AddCandidate(
@@ -1534,9 +1521,9 @@ public static class LspSemanticMapper
 
     private static bool ContainsQualifiedSeparator(string text, int start, int end)
     {
-        for (var index = start; index + 1 < end; index++)
+        for (var index = start; index < end; index++)
         {
-            if (text[index] == ':' && text[index + 1] == ':')
+            if (text[index] == '.')
             {
                 return true;
             }
@@ -1570,7 +1557,8 @@ public static class LspSemanticMapper
     {
         lastOffset = 0;
         lastLength = 0;
-        var segmentCount = 0;
+        var segmentStarts = new List<int>();
+        var segmentRanges = new List<(int Offset, int Length)>();
 
         for (var index = start; index < end;)
         {
@@ -1589,24 +1577,30 @@ public static class LspSemanticMapper
 
             var offset = segmentStart - start;
             var length = index - segmentStart;
-            if (segmentCount > 0)
-            {
-                AddCandidate(
-                    candidates,
-                    line,
-                    startCharacter + lastOffset,
-                    lastLength,
-                    SemanticTokenModuleType,
-                    modifiers: 0,
-                    isSemantic: true);
-            }
-
             lastOffset = offset;
             lastLength = length;
-            segmentCount++;
+            segmentStarts.Add(segmentStart);
+            segmentRanges.Add((offset, length));
         }
 
-        return segmentCount >= 2;
+        if (segmentRanges.Count < 2 || !IsNamespacePath(text, segmentStarts))
+        {
+            return false;
+        }
+
+        foreach (var (offset, length) in segmentRanges.Take(segmentRanges.Count - 1))
+        {
+            AddCandidate(
+                candidates,
+                line,
+                startCharacter + offset,
+                length,
+                SemanticTokenModuleType,
+                modifiers: 0,
+                isSemantic: true);
+        }
+
+        return true;
     }
 
     private static bool TryAddQualifiedModulePrefixTokens(
@@ -1631,27 +1625,24 @@ public static class LspSemanticMapper
         cursor += firstLength;
         cursorCharacter += firstLength;
 
-        var sawQualifiedSegment = false;
+        var segmentStarts = new List<int> { start };
         while (TryReadQualifiedModuleSeparator(sourceText, cursor, out var separatorLength) &&
                TryReadIdentifier(sourceText, cursor + separatorLength, out var segmentLength))
         {
-            sawQualifiedSegment = true;
             cursor += separatorLength;
             cursorCharacter += separatorLength;
+            segmentStarts.Add(cursor);
             segmentRanges.Add((cursorCharacter, segmentLength));
             cursor += segmentLength;
             cursorCharacter += segmentLength;
         }
 
-        if (!sawQualifiedSegment ||
-            cursor + 1 >= sourceText.Length ||
-            sourceText[cursor] != ':' ||
-            sourceText[cursor + 1] != ':')
+        if (segmentRanges.Count < 2 || !IsNamespacePath(sourceText, segmentStarts))
         {
             return false;
         }
 
-        foreach (var (segmentCharacter, segmentLength) in segmentRanges)
+        foreach (var (segmentCharacter, segmentLength) in segmentRanges.Take(segmentRanges.Count - 1))
         {
             AddCandidate(
                 candidates,
@@ -1659,6 +1650,19 @@ public static class LspSemanticMapper
                 segmentCharacter,
                 segmentLength,
                 SemanticTokenModuleType,
+                modifiers: 0,
+                isSemantic: false);
+        }
+
+        var (leafCharacter, leafLength) = segmentRanges[^1];
+        if (char.IsLower(sourceText[segmentStarts[^1]]) && NextNonWhitespaceIs(sourceText, cursor, '('))
+        {
+            AddCandidate(
+                candidates,
+                line,
+                leafCharacter,
+                leafLength,
+                SemanticTokenFunctionType,
                 modifiers: 0,
                 isSemantic: false);
         }
@@ -1675,21 +1679,24 @@ public static class LspSemanticMapper
             return false;
         }
 
-        if (sourceText[start] == '/')
+        if (sourceText[start] == '.')
         {
             length = 1;
             return true;
         }
 
-        if (start + 1 < sourceText.Length &&
-            sourceText[start] == ':' &&
-            sourceText[start + 1] == ':')
+        return false;
+    }
+
+    private static bool IsNamespacePath(string sourceText, IReadOnlyList<int> segmentStarts)
+    {
+        if (segmentStarts.Count < 2)
         {
-            length = 2;
-            return true;
+            return false;
         }
 
-        return false;
+        return char.IsUpper(sourceText[segmentStarts[0]]) ||
+               char.IsUpper(sourceText[segmentStarts[1]]);
     }
 
     private static bool TryReadIdentifier(string sourceText, int start, out int length)

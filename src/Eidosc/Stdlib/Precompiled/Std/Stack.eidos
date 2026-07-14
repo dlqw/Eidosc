@@ -18,17 +18,17 @@ Stack :: module {
 
     from_seq[T] :: Seq[T] -> Stack[T]
     {
-        values => Stack{items: Seq::reverse(values)}
+        values => Stack{items: Seq.reverse(values)}
     }
 
     len[T] :: Stack[T] -> Int
     {
-        Stack{items: items} => Seq::len(items)
+        Stack{items: items} => Seq.len(items)
     }
 
     is_empty[T] :: Stack[T] -> Bool
     {
-        stack => Stack::len(stack) == 0
+        stack => Stack.len(stack) == 0
     }
 
     push[T] :: Stack[T] -> T -> Stack[T]
@@ -50,6 +50,6 @@ Stack :: module {
 
     to_seq[T] :: Stack[T] -> Seq[T]
     {
-        Stack{items: items} => Seq::reverse(items)
+        Stack{items: items} => Seq.reverse(items)
     }
 }

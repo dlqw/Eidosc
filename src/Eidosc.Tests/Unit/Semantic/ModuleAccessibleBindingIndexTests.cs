@@ -29,7 +29,7 @@ Lib.Api :: module {
 
             File.WriteAllText(entryFile, """
 Main :: module {
-    import Lib.Api::{public_id}
+    import Lib.Api.{public_id}
 
     run :: Int -> Int
     {
@@ -79,7 +79,7 @@ Seq :: module {
 Main :: module {
     use :: Int -> Int
     {
-        x => Seq::map(x)
+        x => Seq.map(x)
     }
 }
 """;

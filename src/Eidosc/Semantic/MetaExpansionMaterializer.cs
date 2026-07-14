@@ -54,7 +54,7 @@ internal sealed class MetaExpansionMaterializer(
             !expansion.TryGet("declarations", out var declarationValues) ||
             declarationValues is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } declarationList)
         {
-            reason = "derive generator must return Meta::Expansion created by Meta::expansion";
+            reason = "derive generator must return Meta.Expansion created by Meta.expansion";
             return false;
         }
 
@@ -65,7 +65,7 @@ internal sealed class MetaExpansionMaterializer(
         {
             if (declarationList.Elements[outputIndex] is not ComptimeMetaObjectValue declaration)
             {
-                reason = $"expansion output {outputIndex} is not a structured Meta::Declaration";
+                reason = $"expansion output {outputIndex} is not a structured Meta.Declaration";
                 return false;
             }
 
@@ -186,7 +186,7 @@ internal sealed class MetaExpansionMaterializer(
                 !TryGetType(parameter, "type", out var parameterType, out reason))
             {
                 reason = string.IsNullOrWhiteSpace(reason)
-                    ? $"function parameter {index} is not a Meta::Parameter"
+                    ? $"function parameter {index} is not a Meta.Parameter"
                     : reason;
                 return false;
             }
@@ -245,7 +245,7 @@ internal sealed class MetaExpansionMaterializer(
             _symbolTable.GetSymbol<TraitSymbol>(trait.SymbolId) == null)
         {
             reason = string.IsNullOrWhiteSpace(reason)
-                ? "Meta::implementation requires a trait declaration handle"
+                ? "Meta.implementation requires a trait declaration handle"
                 : reason;
             return false;
         }
@@ -256,7 +256,7 @@ internal sealed class MetaExpansionMaterializer(
                 MetaComptimeIntrinsics.CreateAdtTargetTypeValue(_target, _symbolTable).TypeRef.StableIdentity,
                 StringComparison.Ordinal))
         {
-            reason = "Meta::implementation target must be the current derive target";
+            reason = "Meta.implementation target must be the current derive target";
             return false;
         }
 

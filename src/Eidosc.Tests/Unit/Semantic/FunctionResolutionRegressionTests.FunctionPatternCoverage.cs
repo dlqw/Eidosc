@@ -73,7 +73,7 @@ classify :: (Bool, Bool) -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -130,7 +130,7 @@ classify :: Bool -> Int
     public void CompilationPipeline_FunctionPatternBodyWithCurriedAdtHead_TracksConstructorCoverage()
     {
         const string source = """
-OptionString :: type { SomeString(String) | NoneString }
+OptionString :: type { SomeString(String) , NoneString }
 
 optionStringMap :: OptionString -> (String -> String) -> OptionString
 {
@@ -155,7 +155,7 @@ optionStringMap :: OptionString -> (String -> String) -> OptionString
     public void CompilationPipeline_FunctionPatternBodyWithCurriedTupledAdtParameters_TracksProductCoverage()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 zip_sum :: OptionInt -> OptionInt -> Int
 {
@@ -181,7 +181,7 @@ zip_sum :: OptionInt -> OptionInt -> Int
     public void CompilationPipeline_FunctionPatternBodyWithThreeCurriedAdtParameters_TracksProductCoverage()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 zip3_sum :: OptionInt -> OptionInt -> OptionInt -> Int
 {
@@ -208,7 +208,7 @@ zip3_sum :: OptionInt -> OptionInt -> OptionInt -> Int
     public void CompilationPipeline_FunctionPatternBodyWithCurriedAdtWildcardThenConstructor_DoesNotReportFalseCoveredWarning()
     {
         const string source = """
-Link :: type { Empty | Node(Int) }
+Link :: type { Empty , Node(Int) }
 
 merge :: Link -> Link -> Int
 {
@@ -237,7 +237,7 @@ merge :: Link -> Link -> Int
     public void CompilationPipeline_FunctionPatternBodyWithCurriedAdtHeadNonExhaustive_ReportsMissingConstructor()
     {
         const string source = """
-OptionString :: type { SomeString(String) | NoneString }
+OptionString :: type { SomeString(String) , NoneString }
 
 optionStringMap :: OptionString -> (String -> String) -> OptionString
 {
@@ -536,7 +536,7 @@ invalid_let :: Int -> Int
     public void CompilationPipeline_IfLetPattern_BindsVariablesInsideThenBranch()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 unwrap_or_zero :: Option[Int] -> Int
 {
@@ -564,7 +564,7 @@ unwrap_or_zero :: Option[Int] -> Int
     public void CompilationPipeline_IfLetPattern_DoesNotLeakBindingsIntoElseBranch()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 bad_if_let :: Option[Int] -> Int
 {
@@ -589,7 +589,7 @@ bad_if_let :: Option[Int] -> Int
     public void CompilationPipeline_WhileLetPattern_BindsVariablesInsideLoopBody()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 accumulate :: Option[Int] -> Int
 {
@@ -623,7 +623,7 @@ accumulate :: Option[Int] -> Int
     public void CompilationPipeline_WhileLetPattern_DoesNotLeakBindingsOutsideLoopBody()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 bad_while_let :: Option[Int] -> Int
 {

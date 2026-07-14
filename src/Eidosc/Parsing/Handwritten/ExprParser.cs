@@ -890,7 +890,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return lambda;
         }
 
-        // Path expression: ident::ident... or Module/Path::member...
+        // Namespace path expression: Module.Path.member or package_alias.Module.member.
         if (QualifiedPathParser.IsQualifiedPathLookahead(ctx))
         {
             var path = ParsePathExpr(startToken);

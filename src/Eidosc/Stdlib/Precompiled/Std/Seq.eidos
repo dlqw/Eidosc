@@ -1,7 +1,7 @@
 Seq :: module {
     import Option
     import Trait
-    import Ordering::{Ordering}
+    import Ordering.{Ordering}
     import Ordering
     import TraitInvoke
     import RuntimeArray
@@ -24,7 +24,7 @@ Seq :: module {
     len_from[T] :: Seq[T] -> Int -> Int
     {
         [] => acc => acc,
-        [_, ..tail] => acc => Seq::len_from(tail)(acc + 1)
+        [_, ..tail] => acc => Seq.len_from(tail)(acc + 1)
     }
 
     is_empty[T] :: Seq[T] -> Bool
@@ -41,26 +41,26 @@ Seq :: module {
 
     head_or[T] :: Seq[T] -> T -> T
     {
-        xs => fallback => Option::unwrap_or(Seq::head(xs))(fallback)
+        xs => fallback => Option.unwrap_or(Seq.head(xs))(fallback)
     }
 
     @internal
     get_from_opt[T] :: Seq[T] -> Int -> Option[T]
     {
         xs => index => {
-            len := Seq::len(xs)
+            len := Seq.len(xs)
             if index < 0 || index >= len then { None() } else { Some(xs[index]) }
         }
     }
 
     get_opt[T] :: Seq[T] -> Int -> Option[T]
     {
-        xs => index => Seq::get_from_opt(xs)(index)
+        xs => index => Seq.get_from_opt(xs)(index)
     }
 
     get_or[T] :: Seq[T] -> Int -> T -> T
     {
-        xs => index => fallback => Option::unwrap_or(Seq::get_opt(xs)(index))(fallback)
+        xs => index => fallback => Option.unwrap_or(Seq.get_opt(xs)(index))(fallback)
     }
 
     tail[T] :: Seq[T] -> Option[Seq[T]]
@@ -71,7 +71,7 @@ Seq :: module {
 
     tail_or[T] :: Seq[T] -> Seq[T] -> Seq[T]
     {
-        xs => fallback => Option::unwrap_or(Seq::tail(xs))(fallback)
+        xs => fallback => Option.unwrap_or(Seq.tail(xs))(fallback)
     }
 
     singleton[T] :: T -> Seq[T]
@@ -87,14 +87,14 @@ Seq :: module {
     last[T] :: Seq[T] -> Option[T]
     {
         xs => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             if len <= 0 then { None() } else { Some(xs[len - 1]) }
         }
     }
 
     last_or[T] :: Seq[T] -> T -> T
     {
-        xs => fallback => Option::unwrap_or(Seq::last(xs))(fallback)
+        xs => fallback => Option.unwrap_or(Seq.last(xs))(fallback)
     }
 
     map[T, U, E: effects] :: Seq[T] -> (T -> U need E) -> Seq[U] need E
@@ -115,7 +115,7 @@ Seq :: module {
     fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
     {
         xs => initial => f => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             mut acc: B := initial;
             loop {
@@ -133,7 +133,7 @@ Seq :: module {
     fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E
     {
         xs => initial => f => {
-            mut index := Seq::len(xs) - 1;
+            mut index := Seq.len(xs) - 1;
             mut acc: B := initial;
             loop {
                 if index < 0 then { break }
@@ -147,40 +147,40 @@ Seq :: module {
         }
     }
 
-    FoldableSeq :: instance Foldable::Foldable[Seq] {
+    FoldableSeq :: instance Foldable.Foldable[Seq] {
         fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
             {
-                xs => initial => f => Seq::fold_left(xs)(initial)(f)
+                xs => initial => f => Seq.fold_left(xs)(initial)(f)
             }
         fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E
             {
-                xs => initial => f => Seq::fold_right(xs)(initial)(f)
+                xs => initial => f => Seq.fold_right(xs)(initial)(f)
             }
     }
 
-    TraversableSeq :: instance Traversable::Traversable[Seq] {
-        traverse[A, B, G: kind2 : Applicative::Applicative[G], E: effects] :: Seq[A] -> (A -> G[B] need E) -> G[Seq[B]] need E
+    TraversableSeq :: instance Traversable.Traversable[Seq] {
+        traverse[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: Seq[A] -> (A -> G[B] need E) -> G[Seq[B]] need E
             {
-                [] => _ => Traversable::lift_pure([]),
-                [head, ..tail] => f => Traversable::map2_applicative(Seq::cons)(f(head))(Traversable::traverse(tail)(f))
+                [] => _ => Traversable.lift_pure([]),
+                [head, ..tail] => f => Traversable.map2_applicative(Seq.cons)(f(head))(Traversable.traverse(tail)(f))
             }
     }
 
-    sequence[A, G: kind2 : Applicative::Applicative[G]] :: Seq[G[A]] -> G[Seq[A]]
+    sequence[A, G: kind2 : Applicative.Applicative[G]] :: Seq[G[A]] -> G[Seq[A]]
     {
-        xs => Traversable::traverse(xs)(Traversable::identity_applicative)
+        xs => Traversable.traverse(xs)(Traversable.identity_applicative)
     }
 
     find[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[T] need E
     {
-        xs => pred => Seq::head(Seq::filter(xs)(pred))
+        xs => pred => Seq.head(Seq.filter(xs)(pred))
     }
 
     @internal
     find_index_from[T, E: effects] :: Seq[T] -> Int -> (T -> Bool need E) -> Option[Int] need E
     {
         xs => start => pred => {
-            len := Seq::len(xs)
+            len := Seq.len(xs)
             mut index := if start < 0 then 0 else start
             mut result: Option[Int] := None()
             loop {
@@ -195,13 +195,13 @@ Seq :: module {
 
     find_index[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[Int] need E
     {
-        xs => pred => Seq::find_index_from(xs)(0)(pred)
+        xs => pred => Seq.find_index_from(xs)(0)(pred)
     }
 
     any[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
         xs => pred => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             mut found := false;
             loop {
@@ -219,7 +219,7 @@ Seq :: module {
     all[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
         xs => pred => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             mut ok := true;
             loop {
@@ -242,13 +242,13 @@ Seq :: module {
     take[T] :: Seq[T] -> Int -> Seq[T]
     {
         xs => n => {
-            len := Seq::len(xs)
+            len := Seq.len(xs)
             count := if n < 0 then 0 else if n > len then len else n
             mut acc: Seq[T] := []
             mut index := 0
             loop {
                 if index >= count then { break } else {
-                    acc = RuntimeArray::push(acc)(xs[index])
+                    acc = RuntimeArray.push(acc)(xs[index])
                     index = index + 1
                 }
             }
@@ -259,13 +259,13 @@ Seq :: module {
     drop[T] :: Seq[T] -> Int -> Seq[T]
     {
         xs => n => {
-            len := Seq::len(xs)
+            len := Seq.len(xs)
             start := if n < 0 then 0 else if n > len then len else n
             mut acc: Seq[T] := []
             mut index := start
             loop {
                 if index >= len then { break } else {
-                    acc = RuntimeArray::push(acc)(xs[index])
+                    acc = RuntimeArray.push(acc)(xs[index])
                     index = index + 1
                 }
             }
@@ -276,7 +276,7 @@ Seq :: module {
     count[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Int need E
     {
         xs => pred => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             mut total := 0;
             loop {
@@ -293,20 +293,20 @@ Seq :: module {
 
     none[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
-        xs => pred => !Seq::any(xs)(pred)
+        xs => pred => !Seq.any(xs)(pred)
     }
 
     zip[A, B] :: Seq[A] -> Seq[B] -> Seq[(A, B)]
     {
         left => right => {
-            leftLen := Seq::len(left)
-            rightLen := Seq::len(right)
+            leftLen := Seq.len(left)
+            rightLen := Seq.len(right)
             len := if leftLen < rightLen then leftLen else rightLen
             mut acc: Seq[(A, B)] := []
             mut index := 0
             loop {
                 if index >= len then { break } else {
-                    acc = RuntimeArray::push(acc)((left[index], right[index]))
+                    acc = RuntimeArray.push(acc)((left[index], right[index]))
                     index = index + 1
                 }
             }
@@ -317,14 +317,14 @@ Seq :: module {
     zip_with[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
     {
         left => right => f => {
-            leftLen := Seq::len(left)
-            rightLen := Seq::len(right)
+            leftLen := Seq.len(left)
+            rightLen := Seq.len(right)
             len := if leftLen < rightLen then leftLen else rightLen
             mut acc: Seq[C] := []
             mut index := 0
             loop {
                 if index >= len then { break } else {
-                    acc = RuntimeArray::push(acc)(f(left[index])(right[index]))
+                    acc = RuntimeArray.push(acc)(f(left[index])(right[index]))
                     index = index + 1
                 }
             }
@@ -348,12 +348,12 @@ Seq :: module {
     reverse[T] :: Seq[T] -> Seq[T]
     {
         xs => {
-            len := Seq::len(xs)
+            len := Seq.len(xs)
             mut acc: Seq[T] := []
             mut index := len - 1
             loop {
                 if index < 0 then { break } else {
-                    acc = RuntimeArray::push(acc)(xs[index])
+                    acc = RuntimeArray.push(acc)(xs[index])
                     index = index - 1
                 }
             }
@@ -362,35 +362,35 @@ Seq :: module {
     }
 
     @internal
-    show_items[T: Trait::Show] :: Seq[T] -> String
+    show_items[T: Trait.Show] :: Seq[T] -> String
     {
         // fold_left with a (String, Bool) accumulator: built string so far and an
         // is-first flag (to suppress the leading separator). fold_left is lowered
         // as a comprehension, which the borrow analysis accepts in this module
         // context (the hand-rolled index loop form is rejected here).
         xs => {
-            pair := Seq::fold_left(xs)(("", true))(acc => x =>
+            pair := Seq.fold_left(xs)(("", true))(acc => x =>
                 match acc {
                     (s, first) =>
-                        if first then (TraitInvoke::show_value(x), false)
-                        else (s ++ ", " ++ TraitInvoke::show_value(x), false)
+                        if first then (TraitInvoke.show_value(x), false)
+                        else (s ++ ", " ++ TraitInvoke.show_value(x), false)
                 })
             match pair { (s, _) => s }
         }
     }
 
-    EqSeqT :: instance Trait::Eq {
-        eq[T: Trait::Eq] :: Seq[T] -> Seq[T] -> Bool
+    EqSeqT :: instance Trait.Eq {
+        eq[T: Trait.Eq] :: Seq[T] -> Seq[T] -> Bool
             {
                 left => right => {
-                    leftLen := Seq::len(left)
-                    rightLen := Seq::len(right)
+                    leftLen := Seq.len(left)
+                    rightLen := Seq.len(right)
                     if leftLen != rightLen then { false } else {
                         mut index := 0
                         mut ok := true
                         loop {
                             if index >= leftLen || !ok then { break } else {
-                                if TraitInvoke::eq_value(left[index])(right[index]) then { () } else { ok = false }
+                                if TraitInvoke.eq_value(left[index])(right[index]) then { () } else { ok = false }
                                 index = index + 1
                             }
                         }
@@ -400,17 +400,17 @@ Seq :: module {
             }
     }
 
-    OrdSeqT :: instance Trait::Ord {
-        compare[T: Trait::Ord] :: Seq[T] -> Seq[T] -> Ordering
+    OrdSeqT :: instance Trait.Ord {
+        compare[T: Trait.Ord] :: Seq[T] -> Seq[T] -> Ordering
             {
                 left => right => {
-                    leftLen := Seq::len(left)
-                    rightLen := Seq::len(right)
+                    leftLen := Seq.len(left)
+                    rightLen := Seq.len(right)
                     mut index := 0
                     mut result: Ordering := Equal()
                     loop {
                         if index >= leftLen || index >= rightLen then { break } else {
-                            cmp := TraitInvoke::compare_value(left[index])(right[index])
+                            cmp := TraitInvoke.compare_value(left[index])(right[index])
                             match cmp {
                                 Equal() => { index = index + 1 },
                                 _ => { result = cmp; break }
@@ -427,23 +427,23 @@ Seq :: module {
             }
     }
 
-    ShowSeqT :: instance Trait::Show {
-        show[T: Trait::Show] :: Seq[T] -> String
+    ShowSeqT :: instance Trait.Show {
+        show[T: Trait.Show] :: Seq[T] -> String
             {
-                xs => "[" ++ Seq::show_items(xs) ++ "]"
+                xs => "[" ++ Seq.show_items(xs) ++ "]"
             }
     }
 
-    CloneSeqT :: instance Trait::Clone {
-        clone[T: Trait::Clone] :: Seq[T] -> Seq[T]
+    CloneSeqT :: instance Trait.Clone {
+        clone[T: Trait.Clone] :: Seq[T] -> Seq[T]
             {
                 xs => {
-                    len := Seq::len(xs)
+                    len := Seq.len(xs)
                     mut acc: Seq[T] := []
                     mut index := 0
                     loop {
                         if index >= len then { break } else {
-                            acc = RuntimeArray::push(acc)(TraitInvoke::clone_value(xs[index]))
+                            acc = RuntimeArray.push(acc)(TraitInvoke.clone_value(xs[index]))
                             index = index + 1
                         }
                     }
@@ -452,10 +452,10 @@ Seq :: module {
             }
     }
 
-    FunctorSeq :: instance Functor::Functor[Seq] {
+    FunctorSeq :: instance Functor.Functor[Seq] {
         fmap[A, B, E: effects] :: Seq[A] -> (A -> B need E) -> Seq[B] need E
             {
-                values => f => Seq::map(values)(f)
+                values => f => Seq.map(values)(f)
             }
     }
 
@@ -507,10 +507,10 @@ Seq :: module {
     }
 
 
-    ApplicativeSeq :: instance Applicative::Applicative[Seq] {
+    ApplicativeSeq :: instance Applicative.Applicative[Seq] {
         pure[A] :: A -> Seq[A]
             {
-                value => Seq::singleton(value)
+                value => Seq.singleton(value)
             }
         apply[A, B, E: effects] :: Seq[A -> B need E] -> Seq[A] -> Seq[B] need E
             {
@@ -518,14 +518,14 @@ Seq :: module {
             }
     }
 
-    MonadSeq :: instance Monad::Monad[Seq] {
+    MonadSeq :: instance Monad.Monad[Seq] {
         pure[A] :: A -> Seq[A]
             {
-                value => Seq::singleton(value)
+                value => Seq.singleton(value)
             }
         bind[A, B, E: effects] :: Seq[A] -> (A -> Seq[B] need E) -> Seq[B] need E
             {
-                xs => f => Seq::flat_map(xs)(f)
+                xs => f => Seq.flat_map(xs)(f)
             }
     }
 
@@ -546,7 +546,7 @@ Seq :: module {
     sum :: Seq[Int] -> Int
     {
         xs => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             mut total := 0;
             loop {
@@ -564,7 +564,7 @@ Seq :: module {
     product :: Seq[Int] -> Int
     {
         xs => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             mut total := 1;
             loop {
@@ -583,12 +583,12 @@ Seq :: module {
 
     elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
     {
-        target => xs => eq_fn => Seq::any(xs)(x => eq_fn(x)(target))
+        target => xs => eq_fn => Seq.any(xs)(x => eq_fn(x)(target))
     }
 
     not_elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
     {
-        target => xs => eq_fn => !Seq::elem(target)(xs)(eq_fn)
+        target => xs => eq_fn => !Seq.elem(target)(xs)(eq_fn)
     }
 
     // ── Side-effect iteration ────────────────────────────────────
@@ -596,7 +596,7 @@ Seq :: module {
     for_each[T, E: effects] :: Seq[T] -> (T -> Unit need E) -> Unit need E
     {
         xs => f => {
-            len := Seq::len(xs);
+            len := Seq.len(xs);
             mut index := 0;
             loop {
                 if index >= len then { break }

@@ -50,12 +50,12 @@ Range :: module {
 
     is_singleton :: Range -> Bool
     {
-        range => Range::len(range) == 1
+        range => Range.len(range) == 1
     }
 
     midpoint_floor :: Range -> Int
     {
-        range => match Range::normalize(range)
+        range => match Range.normalize(range)
         {
             Range{start: from, end: to} => from + ((to - from) / 2)
         }
@@ -68,9 +68,9 @@ Range :: module {
 
     contains_range :: Range -> Range -> Bool
     {
-        outer => inner => match Range::normalize(outer)
+        outer => inner => match Range.normalize(outer)
         {
-            Range{start: outerStart, end: outerEnd} => match Range::normalize(inner)
+            Range{start: outerStart, end: outerEnd} => match Range.normalize(inner)
             {
                 Range{start: innerStart, end: innerEnd} => outerStart <= innerStart && innerEnd <= outerEnd
             }
@@ -79,7 +79,7 @@ Range :: module {
 
     clamp_value :: Range -> Int -> Int
     {
-        range => value => match Range::normalize(range)
+        range => value => match Range.normalize(range)
         {
             Range{start: from, end: to} =>
                 if to <= from then { from }
@@ -91,9 +91,9 @@ Range :: module {
 
     intersects :: Range -> Range -> Bool
     {
-        left => right => match Range::normalize(left)
+        left => right => match Range.normalize(left)
         {
-            Range{start: aStart, end: aEnd} => match Range::normalize(right)
+            Range{start: aStart, end: aEnd} => match Range.normalize(right)
             {
                 Range{start: bStart, end: bEnd} => aStart < bEnd && bStart < aEnd
             }
@@ -102,9 +102,9 @@ Range :: module {
 
     intersection_opt :: Range -> Range -> Option[Range]
     {
-        left => right => match Range::normalize(left)
+        left => right => match Range.normalize(left)
         {
-            Range{start: aStart, end: aEnd} => match Range::normalize(right)
+            Range{start: aStart, end: aEnd} => match Range.normalize(right)
             {
                 Range{start: bStart, end: bEnd} => {
                     hitStart := if aStart >= bStart then { aStart } else { bStart };
@@ -120,14 +120,14 @@ Range :: module {
 
     overlap_len :: Range -> Range -> Int
     {
-        left => right => Range::len(Option::unwrap_or(Range::intersection_opt(left)(right))(Range::make(0)(0)))
+        left => right => Range.len(Option.unwrap_or(Range.intersection_opt(left)(right))(Range.make(0)(0)))
     }
 
     cover :: Range -> Range -> Range
     {
-        left => right => match Range::normalize(left)
+        left => right => match Range.normalize(left)
         {
-            Range{start: aStart, end: aEnd} => match Range::normalize(right)
+            Range{start: aStart, end: aEnd} => match Range.normalize(right)
             {
                 Range{start: bStart, end: bEnd} => {
                     coverStart := if aStart <= bStart then { aStart } else { bStart };
@@ -145,20 +145,20 @@ Range :: module {
 
     touches :: Range -> Range -> Bool
     {
-        left => right => match Range::normalize(left)
+        left => right => match Range.normalize(left)
         {
-            Range{start: aStart, end: aEnd} => match Range::normalize(right)
+            Range{start: aStart, end: aEnd} => match Range.normalize(right)
             {
-                Range{start: bStart, end: bEnd} => Range::intersects(left)(right) || aEnd == bStart || bEnd == aStart
+                Range{start: bStart, end: bEnd} => Range.intersects(left)(right) || aEnd == bStart || bEnd == aStart
             }
         }
     }
 
     is_before :: Range -> Range -> Bool
     {
-        left => right => match Range::normalize(left)
+        left => right => match Range.normalize(left)
         {
-            Range{start: _, end: aEnd} => match Range::normalize(right)
+            Range{start: _, end: aEnd} => match Range.normalize(right)
             {
                 Range{start: bStart, end: _} => aEnd <= bStart
             }
@@ -167,25 +167,25 @@ Range :: module {
 
     is_after :: Range -> Range -> Bool
     {
-        left => right => Range::is_before(right)(left)
+        left => right => Range.is_before(right)(left)
     }
 
     union_opt :: Range -> Range -> Option[Range]
     {
         left => right =>
-            if Range::touches(left)(right)
-                then { Some(Range::cover(left)(right)) }
+            if Range.touches(left)(right)
+                then { Some(Range.cover(left)(right)) }
                 else { None() }
     }
 
     gap_opt :: Range -> Range -> Option[Range]
     {
-        left => right => match Range::normalize(left)
+        left => right => match Range.normalize(left)
         {
-            Range{start: aStart, end: aEnd} => match Range::normalize(right)
+            Range{start: aStart, end: aEnd} => match Range.normalize(right)
             {
                 Range{start: bStart, end: bEnd} =>
-                    if Range::touches(left)(right) then { None() }
+                    if Range.touches(left)(right) then { None() }
                     else if aEnd < bStart then { Some(Range{start: aEnd, end: bStart}) }
                     else { Some(Range{start: bEnd, end: aStart}) }
             }
@@ -194,6 +194,6 @@ Range :: module {
 
     distance :: Range -> Range -> Int
     {
-        left => right => Range::len(Option::unwrap_or(Range::gap_opt(left)(right))(Range::make(0)(0)))
+        left => right => Range.len(Option.unwrap_or(Range.gap_opt(left)(right))(Range.make(0)(0)))
     }
 }

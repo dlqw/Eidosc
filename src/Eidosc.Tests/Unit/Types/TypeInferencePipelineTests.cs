@@ -185,7 +185,7 @@ main :: Unit -> Int
     public void Types_CurriedFunctionBodyPatternBranch_WithFourCtorSegments_TypeChecks()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 quad_sum :: OptionInt -> OptionInt -> OptionInt -> OptionInt -> Int
 {
@@ -214,9 +214,9 @@ main :: Unit -> Int
     public void Types_CurriedFunctionBody_WithNestedMatchInRemainingLambda_TypeChecks()
     {
         const string source = """
-Token :: type { Ident(String) | Punct(String) | End }
-Tokens :: type { Cons(Token, Tokens) | Nil }
-ParseResult :: type { ParseOk(Int, Tokens) | ParseError(String) }
+Token :: type { Ident(String) , Punct(String) , End }
+Tokens :: type { Cons(Token, Tokens) , Nil }
+ParseResult :: type { ParseOk(Int, Tokens) , ParseError(String) }
 
 helper :: String -> ParseResult
 {
@@ -263,12 +263,12 @@ main :: Unit -> ParseResult
     public void Types_CurriedFunctionBody_WithEccStyleSixArgumentTailParser_TypeChecks()
     {
         const string source = """
-Token :: type { Punct(String) | Text(String) | End }
-Tokens :: type { Cons(Token, Tokens) | Nil }
-CType :: type { TyInt | TyPtr(CType) }
-Stmt :: type { StmtDecl(String, CType) | StmtInit(String, CType, String) }
-Stmts :: type { StmtCons(Stmt, Stmts) | StmtNil }
-DeclItemListResult :: type { DeclItemListOk(Stmts, Tokens) | DeclItemListError(String) }
+Token :: type { Punct(String) , Text(String) , End }
+Tokens :: type { Cons(Token, Tokens) , Nil }
+CType :: type { TyInt , TyPtr(CType) }
+Stmt :: type { StmtDecl(String, CType) , StmtInit(String, CType, String) }
+Stmts :: type { StmtCons(Stmt, Stmts) , StmtNil }
+DeclItemListResult :: type { DeclItemListOk(Stmts, Tokens) , DeclItemListError(String) }
 
 push_stmt :: Stmt -> Stmts -> Stmts
 {
@@ -331,7 +331,7 @@ Core :: module {
     }
 }
 
-helper :: Unit -> Unit need Core::Emitter
+helper :: Unit -> Unit need Core.Emitter
 {
     _ => print_newline()
 }
@@ -364,7 +364,7 @@ Core.Io :: module
     }
 }
 
-helper :: Unit -> Unit need Core::Io::Emitter
+helper :: Unit -> Unit need Core.Io.Emitter
 {
     _ => print_newline()
 }
@@ -680,7 +680,7 @@ Main :: module {
     {
         _ => match ()
         {
-            (Main::is_key(81) -> true) => true,
+            (Main.is_key(81) -> true) => true,
             _ => false
         }
     }
@@ -809,7 +809,7 @@ classify :: Int -> Int
     {
         const string source = """
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 bad :: Unit -> Option[Int]
@@ -833,7 +833,7 @@ bad :: Unit -> Option[Int]
     {
         const string source = """
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 bad :: Option[Int] -> Int
@@ -861,7 +861,7 @@ bad :: Option[Int] -> Int
     {
         const string source = """
 Option[T] :: type {
-    Some(T) | None
+    Some(T) , None
 }
 
 plus_one :: Option[Int] -> Int

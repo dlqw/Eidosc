@@ -230,7 +230,7 @@ classify :: Int -> Int
         const string source = """
 OptionI :: type
 {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -294,7 +294,7 @@ abs :: Int -> Int
         const string source = """
 OptionI :: type
 {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -674,7 +674,7 @@ classify :: Int -> Int
     public void Build_IfLetExpression_LowersToHirMatchWithWildcardElse()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 unwrap_or_zero :: Option[Int] -> Int
 {
@@ -703,7 +703,7 @@ unwrap_or_zero :: Option[Int] -> Int
     public void Build_WhileLetExpression_LowersToHirLoopWithMatchAndBreakFallback()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 accumulate :: Option[Int] -> Int
 {
@@ -922,7 +922,7 @@ demo :: Int -> MRef[Int]
     public void Build_AdtConstructorWithNamedField_PreservesHirCtorFieldMetadata()
     {
         const string source = """
-Option :: type { None | Some{value: Int} }
+Option :: type { None , Some{value: Int} }
 """;
 
         var result = RunSource(source, CompilationPhase.Hir);
@@ -973,8 +973,8 @@ main :: Unit -> Int
     public void Build_DoExpression_SyntheticContinuationLambdasCarryCallableTypes()
     {
         const string source = """
-import Std::Option
-import Std::Monad
+import Std.Option
+import Std.Monad
 
 main :: Unit -> Int
 {
@@ -984,7 +984,7 @@ main :: Unit -> Int
             y <- Some(3)
             Some(x + y)
         };
-        Option::unwrap_or(result)(0)
+        Option.unwrap_or(result)(0)
     }
 }
 """;

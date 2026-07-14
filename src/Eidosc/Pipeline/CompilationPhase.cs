@@ -171,7 +171,7 @@ public sealed class CompilationOptions
 
     /// <summary>
     /// package 别名到该 package 可导入源码根的映射。用于解析 package-qualified import，
-    /// 例如 import crypto::hash/sha256。
+    /// 例如 import crypto.Hash.Sha256。
     /// </summary>
     public Dictionary<string, string[]> PackageImportRoots { get; set; } = new(StringComparer.Ordinal);
 
@@ -364,8 +364,8 @@ public sealed class CompilationOptions
     public string[] ConfigFfiLinkerFlags { get; set; } = [];
 
     /// <summary>
-    /// 是否禁用自动导入 Std::Prelude。为 false 时，编译器会为每个非标准库模块
-    /// 自动注入 <c>import Std::Prelude</c>，使核心类型和函数无需显式导入即可使用。
+    /// 是否禁用自动导入 Std.Prelude。为 false 时，编译器会为每个非标准库模块
+    /// 自动注入 <c>import Std.Prelude</c>，使核心类型和函数无需显式导入即可使用。
     /// </summary>
     public bool NoImplicitPrelude { get; set; }
 

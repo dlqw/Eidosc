@@ -260,7 +260,7 @@ test :: Int -> Int { x => id(x) }
     public void Parser_CtorCallWithLiteralArgument_PreservesPositionalArg()
     {
         const string source = """
-Foo :: type { A(Int) | B }
+Foo :: type { A(Int) , B }
 make :: Unit -> Foo { _ => A(1) }
 """;
 
@@ -277,8 +277,8 @@ make :: Unit -> Foo { _ => A(1) }
     public void Parser_CtorPatternWithIdentifierArguments_PreservesConstructorNameAndBindings()
     {
         const string source = """
-CToken :: type { TkInt(Int) | TkEof }
-CTokenList :: type { TokNil | TokCons(CToken, CTokenList) }
+CToken :: type { TkInt(Int) , TkEof }
+CTokenList :: type { TokNil , TokCons(CToken, CTokenList) }
 tokenCount :: CTokenList -> Int {
     TokNil => 0,
     TokCons(tok, tail) => 1
@@ -350,7 +350,7 @@ Pair :: type {
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 """;

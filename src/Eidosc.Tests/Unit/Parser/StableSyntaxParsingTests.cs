@@ -43,10 +43,10 @@ identity<T> :: T -> T
     }
 
     [Fact]
-    public void Parser_PackageQualifiedImport_UsesPackageAliasAndSlashModulePath()
+    public void Parser_PackageQualifiedImport_PreservesDottedNamespaceUntilProjectResolution()
     {
         const string source = """
-Sha256A :: import crypto_a::Hash.Sha256;
+Sha256A :: import crypto_a.Hash.Sha256;
 """;
 
         var result = RunParser(source, "stable_package_import_parser_tests.eidos");
@@ -54,8 +54,8 @@ Sha256A :: import crypto_a::Hash.Sha256;
         Assert.True(result.Success, FormatDiagnostics(result));
         var module = Assert.IsType<ModuleDecl>(result.Ast);
         var import = Assert.Single(module.Declarations.OfType<ImportDecl>());
-        Assert.Equal("crypto_a", import.PackageAlias);
-        Assert.Equal(["Hash", "Sha256"], import.ModulePath);
+        Assert.Null(import.PackageAlias);
+        Assert.Equal(["crypto_a", "Hash", "Sha256"], import.ModulePath);
         Assert.Equal("Sha256A", import.Alias);
     }
 

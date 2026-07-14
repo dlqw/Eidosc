@@ -14,10 +14,10 @@ public partial class FunctionResolutionRegressionTests
     public void CompilationPipeline_ModuleQualifiedStdlibCalls_StayDisambiguatedAcrossSameNamedExports()
     {
         const string source = """
-import Std::Option
-import Std::Result
-import Std::Seq
-import Std::Text
+import Std.Option
+import Std.Result
+import Std.Seq
+import Std.Text
 
 inc :: Int -> Int
 {
@@ -30,10 +30,10 @@ main :: Unit -> Int
         xs := [1, 2, 3];
         resultBase: Result[Int, String] := Ok(1);
 
-        viaOption := Option::unwrap_or(Option::map(Some(1))(inc))(0);
-        viaResult := Result::unwrap_or(Result::map(resultBase)(inc))(0);
-        viaList := Seq::len(Seq::map(xs)(inc));
-        viaText := Text::len(Text::clone("ab"));
+        viaOption := Option.unwrap_or(Option.map(Some(1))(inc))(0);
+        viaResult := Result.unwrap_or(Result.map(resultBase)(inc))(0);
+        viaList := Seq.len(Seq.map(xs)(inc));
+        viaText := Text.len(Text.clone("ab"));
 
         viaOption + viaResult + viaList + viaText
     }
@@ -57,17 +57,17 @@ main :: Unit -> Int
     public void CompilationPipeline_ModuleImport_ExposesImportedTraitMethodsAsBareNames()
     {
         const string source = """
-import Std::Trait
-import Std::Text
+import Std.Trait
+import Std.Text
 
-render[T: Trait::Show] :: T -> String
+render[T: Trait.Show] :: T -> String
 {
     value => show(value)
 }
 
 main :: Unit -> String
 {
-    _ => render(Text::clone("ok"))
+    _ => render(Text.clone("ok"))
 }
 """;
 
@@ -91,7 +91,7 @@ main :: Unit -> String
     public void CompilationPipeline_ModuleImport_ExposesPublicValuesAsBareNames()
     {
         const string source = """
-import Std::Seq
+import Std.Seq
 
 main :: Unit -> Int
 {
@@ -122,7 +122,7 @@ main :: Unit -> Int
     public void CompilationPipeline_ModuleImport_ExposesImportedInstanceHelpersAsBareNames()
     {
         const string source = """
-import Std::Result
+import Std.Result
 
 recover_err :: String -> Result[Int, String]
 {
@@ -219,7 +219,7 @@ main :: Unit -> Int
     _ => {
         first := append([1])([2]);
         second := append([3])([4]);
-        Seq::len(first) + Seq::len(second)
+        Seq.len(first) + Seq.len(second)
     }
 }
 """;
@@ -283,14 +283,14 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedCallUsesArgumentTypesForSameNamedModuleMembers()
     {
         const string source = """
-import Std::Seq
-import Std::Option
+import Std.Seq
+import Std.Option
 
 main :: Unit -> Int
 {
     _ => {
         xs := append([1])([2]);
-        Seq::len(xs)
+        Seq.len(xs)
     }
 }
 """;
@@ -315,14 +315,14 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedCallCanSelectOptionOverSameNamedListMember()
     {
         const string source = """
-import Std::Seq
-import Std::Option
+import Std.Seq
+import Std.Option
 
 main :: Unit -> Int
 {
     _ => {
         value := append(Some(1))(Some(2));
-        Option::unwrap_or(value)(0)
+        Option.unwrap_or(value)(0)
     }
 }
 """;
@@ -351,10 +351,10 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedTraitHelpersAcrossModules_ResolveByArgumentTypes()
     {
         const string source = """
-import Std::Option
-import Std::Result
-import Std::Ordering
-import Std::Seq
+import Std.Option
+import Std.Result
+import Std.Ordering
+import Std.Seq
 
 add :: Int -> Int -> Int
 {
@@ -372,9 +372,9 @@ main :: Unit -> Int
         optionApplied := unwrap_or(apply(Some(add(20)))(Some(3)))(0);
         optionShown := show(Some(8));
         resultShown := show(Ok(7));
-        orderShown := Ordering::show(compare_int(1)(2));
+        orderShown := Ordering.show(compare_int(1)(2));
         optionCompare := if is_lt(compare(None())(Some(1))) then { 1 } else { 0 };
-        resultInput: Result::ResultWith[String, Int] := Ok(2);
+        resultInput: Result.ResultWith[String, Int] := Ok(2);
         resultTraversed := match traverse(resultInput)(x => Ok(x + 1))
         {
             Ok(inner) => unwrap_or(inner)(0),
@@ -434,8 +434,8 @@ B :: module {
     }
 }
 
-import A::*
-import B::*
+import A.*
+import B.*
 
 main :: Unit -> Int
 {
@@ -455,8 +455,8 @@ main :: Unit -> Int
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
                           diagnostic.Message.Contains("Ambiguous callable overload 'pick'", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("A::pick", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("B::pick", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("A.pick", StringComparison.Ordinal) &&
+                          diagnostic.Message.Contains("B.pick", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -477,8 +477,8 @@ B :: module {
     }
 }
 
-import A::*
-import B::*
+import A.*
+import B.*
 
 main :: Unit -> Int
 {
@@ -498,8 +498,8 @@ main :: Unit -> Int
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
                           diagnostic.Message.Contains("Ambiguous callable overload 'join'", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("A::join", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("B::join", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("A.join", StringComparison.Ordinal) &&
+                          diagnostic.Message.Contains("B.join", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -520,8 +520,8 @@ B :: module {
     }
 }
 
-import A::*
-import B::*
+import A.*
+import B.*
 
 main :: Unit -> Int
 {
@@ -541,8 +541,8 @@ main :: Unit -> Int
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
                           diagnostic.Message.Contains("Ambiguous callable overload 'pick'", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("A::pick", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("B::pick", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("A.pick", StringComparison.Ordinal) &&
+                          diagnostic.Message.Contains("B.pick", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -563,8 +563,8 @@ B :: module {
     }
 }
 
-import A::*
-import B::*
+import A.*
+import B.*
 
 main :: Unit -> Int
 {
@@ -584,16 +584,16 @@ main :: Unit -> Int
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
                           diagnostic.Message.Contains("Ambiguous callable overload 'pick'", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("A::pick", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("B::pick", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("A.pick", StringComparison.Ordinal) &&
+                          diagnostic.Message.Contains("B.pick", StringComparison.Ordinal));
     }
 
     [Fact]
     public void CompilationPipeline_BareImportedValueWithoutCallStillReportsAmbiguity()
     {
         const string source = """
-import Std::Seq
-import Std::Option
+import Std.Seq
+import Std.Option
 
 f :: append;
 """;
@@ -616,7 +616,7 @@ f :: append;
     public void CompilationPipeline_ExplicitPreludeWildcardImport_DoesNotDuplicateImplicitPreludeBindings()
     {
         const string source = """
-import Std::Prelude::*
+import Std.Prelude.*
 
 main :: Unit -> Int
 {
@@ -647,32 +647,32 @@ main :: Unit -> Int
     {
         const string source = """
 Probe :: module {
-    import Std::Applicative
-    import Std::Option
-    import Std::Traversable
+    import Std.Applicative
+    import Std.Option
+    import Std.Traversable
 
-    local_identity_applicative[A, G: kind2 : Applicative::Applicative[G]] :: G[A] -> G[A]
+    local_identity_applicative[A, G: kind2 : Applicative.Applicative[G]] :: G[A] -> G[A]
     {
         value => value
     }
 
-    lift[A, G: kind2 : Applicative::Applicative[G]] :: A -> G[A]
+    lift[A, G: kind2 : Applicative.Applicative[G]] :: A -> G[A]
     {
-        value => Applicative::pure(value)
+        value => Applicative.pure(value)
     }
 
-    sequence_generic[A, T: kind2 : Traversable::Traversable[T], G: kind2 : Applicative::Applicative[G]] :: T[G[A]] -> G[T[A]]
+    sequence_generic[A, T: kind2 : Traversable.Traversable[T], G: kind2 : Applicative.Applicative[G]] :: T[G[A]] -> G[T[A]]
     {
-        values => Traversable::traverse(values)(local_identity_applicative)
+        values => Traversable.traverse(values)(local_identity_applicative)
     }
 
     main :: Unit -> Option[String]
     {
         _ => {
-            value := Probe::lift("ok");
+            value := Probe.lift("ok");
             values := Some(value);
             sequenced := sequence_generic(values);
-            Option::unwrap_or(sequenced)(None())
+            Option.unwrap_or(sequenced)(None())
         }
     }
 }
@@ -691,22 +691,22 @@ Probe :: module {
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Cannot resolve path 'Applicative::pure'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Cannot resolve path 'Applicative.pure'", StringComparison.Ordinal));
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Cannot resolve path 'Traversable::traverse'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Cannot resolve path 'Traversable.traverse'", StringComparison.Ordinal));
     }
 
     [Fact]
     public void CompilationPipeline_ModuleImport_ExposesNestedQualifiedTraitMethodsFromImportedModule()
     {
         const string source = """
-import Std::Trait
+import Std.Trait
 
-eq_self[T: Trait::Eq] :: T -> Bool
+eq_self[T: Trait.Eq] :: T -> Bool
 {
-    value => Trait::Eq::eq(value)(value)
+    value => Trait.Eq.eq(value)(value)
 }
 """;
 
@@ -723,7 +723,7 @@ eq_self[T: Trait::Eq] :: T -> Bool
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Cannot resolve path 'Trait::Eq::eq'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Cannot resolve path 'Trait.Eq.eq'", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -738,7 +738,7 @@ Demo.Show :: module
 
     render[T: Show] :: T -> String
     {
-        value => Show::show(value)
+        value => Show.show(value)
     }
 }
 """;
@@ -756,7 +756,7 @@ Demo.Show :: module
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Cannot resolve path 'Show::show'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Cannot resolve path 'Show.show'", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -771,7 +771,7 @@ Demo.Append :: module
 
     append3[T: Append] :: T -> T -> T -> T
     {
-        left => middle => right => Append::append(Append::append(left)(middle))(right)
+        left => middle => right => Append.append(Append.append(left)(middle))(right)
     }
 
     @impl(Append)
@@ -838,7 +838,7 @@ App :: module {
 
     append3[T: Semigroup] :: T -> T -> T -> T
     {
-        left => middle => right => Semigroup::append(Semigroup::append(left)(middle))(right)
+        left => middle => right => Semigroup.append(Semigroup.append(left)(middle))(right)
     }
 }
 """;
@@ -889,7 +889,7 @@ App :: module {
     main :: Unit -> Int
     {
         _ => {
-            task := Async::spawn(_ => 41);
+            task := Async.spawn(_ => 41);
             1
         }
     }
@@ -925,15 +925,15 @@ Demo.Logger :: module
         _ => 0
     }
 
-    run :: String -> Int need Logger::Logger
+    run :: String -> Int need Logger.Logger
     {
         _ => 0
     }
 
-    main :: Unit -> Int need Logger::Logger
+    main :: Unit -> Int need Logger.Logger
     {
         _ => {
-            run("hello") + Logger::log("world")
+            run("hello") + Logger.log("world")
         }
     }
 }
@@ -952,11 +952,11 @@ Demo.Logger :: module
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Undefined effect 'Logger::Logger'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Undefined effect 'Logger.Logger'", StringComparison.Ordinal));
         Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("Cannot resolve path 'Logger::log'", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Cannot resolve path 'Logger.log'", StringComparison.Ordinal));
     }
 
     [Fact]

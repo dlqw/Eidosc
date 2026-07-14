@@ -304,7 +304,7 @@ public sealed class DeclParserTests
     }
 
     [Fact]
-    public void Parse_adt_rejects_mixed_constructor_separators()
+    public void Parse_adt_rejects_pipe_constructor_separator()
     {
         var ctx = MakeNameFirstCtx(TypeId("Direction"), "::", "type", "{",
             TypeId("North"), ",", TypeId("South"), "|", TypeId("East"), "}");
@@ -315,7 +315,7 @@ public sealed class DeclParserTests
         var adt = Assert.IsType<AdtDef>(result);
         Assert.Equal(3, adt.Constructors.Count);
         Assert.Contains(ctx.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("cannot mix ',' and '|'", StringComparison.Ordinal));
+            diagnostic.Message.Contains("ADT constructors use ','", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -330,7 +330,7 @@ public sealed class DeclParserTests
         var adt = Assert.IsType<AdtDef>(result);
         Assert.Equal(2, adt.Constructors.Count);
         Assert.Contains(ctx.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Expected ',' between ADT constructors", StringComparison.Ordinal));
+            diagnostic.Message.Contains("expected ',' between ADT constructors", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1048,14 +1048,14 @@ public sealed class DeclParserTests
     [Fact]
     public void Parse_name_first_import_package_qualified_dot_path()
     {
-        var ctx = MakeNameFirstCtx(TypeId("Seq"), "::", "import", TypeId("Std"), "::", TypeId("Collections"), ".", TypeId("Seq"), ";");
+        var ctx = MakeNameFirstCtx(TypeId("Seq"), "::", "import", TypeId("Std"), ".", TypeId("Collections"), ".", TypeId("Seq"), ";");
         var parser = new DeclParser(ctx);
 
         var result = parser.ParseTopLevel();
 
         var import = Assert.IsType<ImportDecl>(result);
-        Assert.Equal("Std", import.PackageAlias);
-        Assert.Equal(["Collections", "Seq"], import.ModulePath);
+        Assert.Null(import.PackageAlias);
+        Assert.Equal(["Std", "Collections", "Seq"], import.ModulePath);
         Assert.Equal("Seq", import.Alias);
         Assert.Equal(ImportKind.Module, import.Kind);
         Assert.Empty(ctx.Diagnostics);
@@ -1064,28 +1064,28 @@ public sealed class DeclParserTests
     [Fact]
     public void Parse_name_first_import_selective_and_wildcard()
     {
-        var selectiveCtx = MakeNameFirstCtx("import", TypeId("Std"), "::", TypeId("Seq"), "::",
+        var selectiveCtx = MakeNameFirstCtx("import", TypeId("Std"), ".", TypeId("Seq"), ".",
             "{", Ident("map"), ",", Ident("filter"), "as", Ident("where"), "}", ";");
         var selectiveParser = new DeclParser(selectiveCtx);
 
         var selectiveResult = selectiveParser.ParseTopLevel();
 
         var selective = Assert.IsType<ImportDecl>(selectiveResult);
-        Assert.Equal("Std", selective.PackageAlias);
-        Assert.Equal(["Seq"], selective.ModulePath);
+        Assert.Null(selective.PackageAlias);
+        Assert.Equal(["Std", "Seq"], selective.ModulePath);
         Assert.Equal(ImportKind.Selective, selective.Kind);
         Assert.Equal(["map", "filter"], selective.SelectiveImports.Select(static item => item.Name).ToArray());
         Assert.Equal("where", selective.SelectiveImports[1].Alias);
         Assert.Empty(selectiveCtx.Diagnostics);
 
-        var wildcardCtx = MakeNameFirstCtx("import", TypeId("Std"), "::", TypeId("Prelude"), "::", "*", ";");
+        var wildcardCtx = MakeNameFirstCtx("import", TypeId("Std"), ".", TypeId("Prelude"), ".", "*", ";");
         var wildcardParser = new DeclParser(wildcardCtx);
 
         var wildcardResult = wildcardParser.ParseTopLevel();
 
         var wildcard = Assert.IsType<ImportDecl>(wildcardResult);
-        Assert.Equal("Std", wildcard.PackageAlias);
-        Assert.Equal(["Prelude"], wildcard.ModulePath);
+        Assert.Null(wildcard.PackageAlias);
+        Assert.Equal(["Std", "Prelude"], wildcard.ModulePath);
         Assert.Equal(ImportKind.Wildcard, wildcard.Kind);
         Assert.Empty(wildcardCtx.Diagnostics);
     }

@@ -93,7 +93,7 @@ read_dir :: GameState -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 
@@ -114,7 +114,7 @@ make_int :: Unit -> Expr[Int]
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 
@@ -162,7 +162,7 @@ eval_int :: Expr[Int] -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 
@@ -190,7 +190,7 @@ classify[T] :: Expr[T] -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 
@@ -214,7 +214,7 @@ eval[T] :: Expr[T] -> T
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 
@@ -370,7 +370,7 @@ proof_in_branch[T] :: Expr[T] -> TypeEq[T, Int]
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] |
+    IntLit(Int) -> Expr[Int] ,
     BoolLit(Bool) -> Expr[Bool]
 }
 
@@ -517,7 +517,7 @@ consume :: Box -> Int
     {
         const string source = """
 Direction[A] :: type {
-    North -> Direction[Int] |
+    North -> Direction[Int] ,
     East -> Direction[Bool]
 }
 
@@ -544,10 +544,10 @@ bad :: AnyDirection -> Direction[Int]
     public void Types_ExistentialGadtWrapper_AllowsDerivedTraitDispatchInsideBranch()
     {
         const string source = """
-import Std::Trait
+import Std.Trait
 
 Axis :: type {
-    Horizontal | Vertical
+    Horizontal , Vertical
 }
 
 DirectionVector :: trait {
@@ -556,7 +556,7 @@ DirectionVector :: trait {
 }
 
 Direction[A] :: type {
-    North -> Direction[Vertical] |
+    North -> Direction[Vertical] ,
     East -> Direction[Horizontal]
 }
 
@@ -585,17 +585,17 @@ dx_any :: AnyDirection -> Int
     public void Types_ExistentialGadtWrapper_AllowsNestedPayloadConstructorPatterns()
     {
         const string source = """
-import Std::Trait
+import Std.Trait
 
 Axis :: type {
-    Horizontal | Vertical
+    Horizontal , Vertical
 }
 
 @derive(Clone)
 Direction[A] :: type {
-    North -> Direction[Vertical] |
-    South -> Direction[Vertical] |
-    East -> Direction[Horizontal] |
+    North -> Direction[Vertical] ,
+    South -> Direction[Vertical] ,
+    East -> Direction[Horizontal] ,
     West -> Direction[Horizontal]
 }
 
@@ -722,7 +722,7 @@ Shape :: type {
         radius: Int,
         color: Int
     }
-    | Rect {
+    , Rect {
         width: Int,
         height: Int,
         color: Int
@@ -749,7 +749,7 @@ Shape :: type {
         radius: Int,
         color: Int
     }
-    | Rect {
+    , Rect {
         width: Int,
         height: Int,
         color: Int
@@ -778,7 +778,7 @@ Slot[T] :: type {
         value: T,
         mark: Int
     }
-    | Two {
+    , Two {
         left: T,
         right: T,
         mark: Int
@@ -850,7 +850,7 @@ bad :: Lift[Int] -> Lift[Int]
     {
         const string source = """
 Either[A, B] :: type {
-    Left(A) | Right(B)
+    Left(A) , Right(B)
 }
 
 Lift[F: kind2] :: type {
@@ -874,7 +874,7 @@ use :: Lift[Either[String]] -> Lift[Either[String]]
     {
         const string source = """
 Either[A, B] :: type {
-    Left(A) | Right(B)
+    Left(A) , Right(B)
 }
 
 Lift[F: kind2] :: type {
@@ -955,7 +955,7 @@ use :: UseK[ApplyToInt] -> UseK[ApplyToInt]
     {
         const string source = """
 Bad[F] :: type {
-    A(F[Int]) |
+    A(F[Int]) ,
     B(F)
 }
 """;

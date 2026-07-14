@@ -15,7 +15,7 @@ Fn :: module {
     {
         count => f => value =>
             if count <= 0 then { value }
-            else { Fn::repeat(count - 1)(f)(f(value)) }
+            else { Fn.repeat(count - 1)(f)(f(value)) }
     }
     on[A, B, C, E1: effects, E2: effects] :: (B -> B -> C need E1) -> (A -> B need E2) -> A -> A -> C need E1, E2
     {
@@ -25,31 +25,31 @@ Fn :: module {
     {
         predicate => value => !predicate(value)
     }
-    and_pred[A: Trait::Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
+    and_pred[A: Trait.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
     {
         left => right => value => {
-            copied := TraitInvoke::clone_value(value);
+            copied := TraitInvoke.clone_value(value);
             if left(value) then { right(copied) } else { false }
         }
     }
-    or_pred[A: Trait::Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
+    or_pred[A: Trait.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
     {
         left => right => value => {
-            copied := TraitInvoke::clone_value(value);
+            copied := TraitInvoke.clone_value(value);
             if left(value) then { true } else { right(copied) }
         }
     }
-    juxt[A: Trait::Clone, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (A -> C need E2) -> A -> (B, C) need E1, E2
+    juxt[A: Trait.Clone, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (A -> C need E2) -> A -> (B, C) need E1, E2
     {
         left => right => value => {
-            copied := TraitInvoke::clone_value(value);
+            copied := TraitInvoke.clone_value(value);
             (left(value), right(copied))
         }
     }
-    converge[A: Trait::Clone, B, C, D, E1: effects, E2: effects, E3: effects] :: (B -> C -> D need E1) -> (A -> B need E2) -> (A -> C need E3) -> A -> D need E1, E2, E3
+    converge[A: Trait.Clone, B, C, D, E1: effects, E2: effects, E3: effects] :: (B -> C -> D need E1) -> (A -> B need E2) -> (A -> C need E3) -> A -> D need E1, E2, E3
     {
         combine => left => right => value => {
-            copied := TraitInvoke::clone_value(value);
+            copied := TraitInvoke.clone_value(value);
             combine(left(value))(right(copied))
         }
     }

@@ -87,14 +87,14 @@ public sealed class FunctionFingerprintDiffSnapshotTests
             "prev-module",
             "curr-module",
             [
-                ("sym:Std::File::528", "same"),
-                ("sym:Std::File::528", "old"),
-                ("sym:Std::File::528", "removed")
+                ("sym:Std.File::528", "same"),
+                ("sym:Std.File::528", "old"),
+                ("sym:Std.File::528", "removed")
             ],
             [
-                ("sym:Std::File::528", "same"),
-                ("sym:Std::File::528", "new"),
-                ("sym:Std::File::528", "added")
+                ("sym:Std.File::528", "same"),
+                ("sym:Std.File::528", "new"),
+                ("sym:Std.File::528", "added")
             ]);
 
         Assert.Equal(1, snapshot.Count(FunctionFingerprintDiffStatus.Unchanged));
@@ -102,7 +102,7 @@ public sealed class FunctionFingerprintDiffSnapshotTests
         Assert.Equal(0, snapshot.Count(FunctionFingerprintDiffStatus.Added));
         Assert.Equal(0, snapshot.Count(FunctionFingerprintDiffStatus.Removed));
         Assert.Contains(snapshot.Functions, static entry =>
-            entry.FunctionKey == "sym:Std::File::528" &&
+            entry.FunctionKey == "sym:Std.File::528" &&
             entry.Status == FunctionFingerprintDiffStatus.Unchanged &&
             entry.PreviousBodyHash == "same" &&
             entry.CurrentBodyHash == "same");

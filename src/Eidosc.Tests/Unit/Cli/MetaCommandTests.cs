@@ -16,10 +16,10 @@ public sealed class MetaCommandTests
         var sourcePath = Path.Combine(tempDir, "main.eidos");
         var generatedDir = Path.Combine(tempDir, "generated");
         await File.WriteAllTextAsync(sourcePath, """
-deriveAnswer :: comptime Meta::DeriveInput -> Meta::Expansion {
+deriveAnswer :: comptime Meta.DeriveInput -> Meta.Expansion {
     input => {
-        Meta::warning(Meta::deriveSpan(input), "trace warning");
-        Meta::expansion([Meta::function("answer", [], Int, Meta::exprInt(42))])
+        Meta.warning(Meta.deriveSpan(input), "trace warning");
+        Meta.expansion([Meta.function("answer", [], Int, Meta.exprInt(42))])
     }
 }
 
@@ -63,7 +63,7 @@ Subject :: type {
         var declaration = Assert.Single(json.RootElement.GetProperty("Declarations").EnumerateArray());
         Assert.Equal("answer", declaration.GetProperty("Name").GetString());
         Assert.Contains("[comptime #", stderr.ToString(), StringComparison.Ordinal);
-        Assert.Contains("Meta::warning", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Meta.warning", stderr.ToString(), StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(generatedDir, "generated-manifest.json")));
         Assert.True(Directory.EnumerateFiles(generatedDir, "*.eidos").Any());
 

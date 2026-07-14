@@ -369,7 +369,7 @@ A :: module {
 
 main :: Unit -> Int
 {
-    _ => A::pick(1) + A::pick("s")
+    _ => A.pick(1) + A.pick("s")
 }
 """;
 

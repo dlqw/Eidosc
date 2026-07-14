@@ -27,7 +27,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -80,7 +80,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -147,7 +147,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -330,7 +330,7 @@ main :: Unit -> Int
         var llvmIr = Assert.IsType<string>(result.LlvmIrText);
 
         Assert.True(result.Success);
-        // Seq::zip now builds its Seq[(A, B)] result with an index loop that grows
+        // Seq.zip now builds its Seq[(A, B)] result with an index loop that grows
         // an array via array_push (the cons-per-element array_new/array_set form was
         // the previous, runtime-crashing lowering). The key invariant this test
         // guards is that tuple elements use their wide (16-byte for (Int, Int))

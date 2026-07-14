@@ -57,19 +57,19 @@ Cap.Io :: module {
 
         const string facadeSource = """
 Cap.Facade :: module {
-    export import Cap.Io::{Writer as W, write}
+    export import Cap.Io.{Writer as W, write}
 }
 """;
 
         const string entrySource = """
 import Cap.Facade
 
-run :: String -> Int need Facade::W
+run :: String -> Int need Facade.W
 {
-    text => Facade::write(text)
+    text => Facade.write(text)
 }
 
-main :: Unit -> Int need Facade::W
+main :: Unit -> Int need Facade.W
 {
     _ => run("hello")
 }
@@ -95,11 +95,11 @@ main :: Unit -> Int need Facade::W
             var snapshot = IdeSemanticSnapshotBuilder.Build(result);
             Assert.Contains(
                 snapshot.Completions,
-                item => item.Label == "Facade::W" &&
+                item => item.Label == "Facade.W" &&
                         item.Detail.Contains("qualified", StringComparison.Ordinal));
             Assert.Contains(
                 snapshot.Completions,
-                item => item.Label == "Cap.Facade::W" &&
+                item => item.Label == "Cap.Facade.W" &&
                         item.Detail.Contains("qualified", StringComparison.Ordinal));
         }
         finally

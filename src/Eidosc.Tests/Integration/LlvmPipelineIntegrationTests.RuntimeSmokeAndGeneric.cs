@@ -204,7 +204,7 @@ B :: module {
 
 main :: Unit -> Int
 {
-    _ => A::f(1) + B::f(1)
+    _ => A.f(1) + B.f(1)
 }
 """;
 
@@ -538,14 +538,14 @@ main :: Unit -> Int
     {
         ReadOnlySpan<string> requiredImports =
         [
-            "import Std::Async",
-            "import Std::Barrier",
-            "import Std::Channel",
-            "import Std::Mutex",
-            "import Std::Promise",
-            "import Std::RwLock",
-            "import Std::Task",
-            "import Std::TaskGroup"
+            "import Std.Async",
+            "import Std.Barrier",
+            "import Std.Channel",
+            "import Std.Mutex",
+            "import Std.Promise",
+            "import Std.RwLock",
+            "import Std.Task",
+            "import Std.TaskGroup"
         ];
 
         foreach (var requiredImport in requiredImports)
@@ -886,23 +886,23 @@ main :: Unit -> Int
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std::Network
-import Std::Option
-import Std::Text
+import Std.Network
+import Std.Option
+import Std.Text
 
 main :: Unit -> Int
 {
     _ => {
-        redirect := Network::http_get_response("{{baseUrl}}redirect");
-        replyHeader := Network::http_get_response("{{baseUrl}}reply-header");
-        headerBit := match Network::header_value_opt(replyHeader)("X-Reply")
+        redirect := Network.http_get_response("{{baseUrl}}redirect");
+        replyHeader := Network.http_get_response("{{baseUrl}}reply-header");
+        headerBit := match Network.header_value_opt(replyHeader)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        redirectBit := if Network::status(redirect) == 200 &&
-            Network::body(redirect) == "hello-from-eidos" &&
-            Text::ends_with(Network::effective_url(redirect))("/ok")
+        redirectBit := if Network.status(redirect) == 200 &&
+            Network.body(redirect) == "hello-from-eidos" &&
+            Text.ends_with(Network.effective_url(redirect))("/ok")
             then { 1 } else { 0 };
 
         if redirectBit + headerBit == 2

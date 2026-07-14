@@ -117,7 +117,7 @@ classify :: Bool -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -148,7 +148,7 @@ classify :: OptionI -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -179,7 +179,7 @@ classify :: OptionI -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -207,7 +207,7 @@ classify :: OptionI -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int
@@ -235,7 +235,7 @@ classify :: OptionI -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) | None
+    Some(Int) , None
 }
 
 classify :: OptionI -> Int

@@ -59,16 +59,16 @@ public sealed class ProjectModuleExecutionPlanTests
     public void FromSchedule_MarksPrecompiledModulesAsReadyArtifacts()
     {
         var graph = new ModuleDependencyGraph();
-        graph.RegisterModuleIdentity("<precompiled:Std::Core>", "Std::Core");
+        graph.RegisterModuleIdentity("<precompiled:Std.Core>", "Std.Core");
         graph.RegisterModuleIdentity("main.eidos", "Main");
-        graph.AddDependency("Main", "Std::Core");
+        graph.AddDependency("Main", "Std.Core");
         var schedule = ProjectModuleBuildSchedule.FromGraphSnapshot(ProjectModuleGraphSnapshot.FromDependencyGraph(graph));
         var invalidation = new ProjectModuleInvalidationPlan(
             [
-                new ProjectModuleInvalidationChange("Std::Core", ProjectModuleInvalidationReason.ExportSurfaceChanged),
+                new ProjectModuleInvalidationChange("Std.Core", ProjectModuleInvalidationReason.ExportSurfaceChanged),
                 new ProjectModuleInvalidationChange("Main", ProjectModuleInvalidationReason.DependencySignatureChanged)
             ],
-            ["Std::Core", "Main"],
+            ["Std.Core", "Main"],
             []);
 
         var plan = ProjectModuleExecutionPlan.FromSchedule(
@@ -92,7 +92,7 @@ public sealed class ProjectModuleExecutionPlanTests
     {
         var item = new ProjectModuleBuildItem(
             0,
-            "Std::Array",
+            "Std.Array",
             ["C:/repo/Eidosc/src/Eidosc/Stdlib/Precompiled/Std/Array.eidos"],
             [],
             []);
@@ -171,11 +171,11 @@ public sealed class ProjectModuleExecutionPlanTests
     public void ArtifactRestorePlan_RestoresOnlyWhenAllArtifactsReady()
     {
         var graph = new ModuleDependencyGraph();
-        graph.RegisterModuleIdentity("<precompiled:Std::Core>", "Std::Core");
+        graph.RegisterModuleIdentity("<precompiled:Std.Core>", "Std.Core");
         graph.RegisterModuleIdentity("a.eidos", "A");
         graph.RegisterModuleIdentity("b.eidos", "B");
         var schedule = ProjectModuleBuildSchedule.FromGraphSnapshot(ProjectModuleGraphSnapshot.FromDependencyGraph(graph));
-        var invalidation = new ProjectModuleInvalidationPlan([], [], ["Std::Core", "A", "B"]);
+        var invalidation = new ProjectModuleInvalidationPlan([], [], ["Std.Core", "A", "B"]);
         var execution = ProjectModuleExecutionPlan.FromSchedule(
             schedule,
             invalidation,
@@ -183,7 +183,7 @@ public sealed class ProjectModuleExecutionPlanTests
         var readiness = new ProjectModuleArtifactReadinessPlan(
             [
                 new ProjectModuleArtifactReadinessItem(
-                    "Std::Core",
+                    "Std.Core",
                     ProjectModuleExecutionAction.ReadyArtifact,
                     SemanticReady: true,
                     TypedSemanticReady: true,
@@ -224,7 +224,7 @@ public sealed class ProjectModuleExecutionPlanTests
         Assert.Contains(restore.Layers.SelectMany(static layer => layer.Modules), static item =>
             item.ModuleKey == "B" && item.Action == ProjectModuleArtifactRestoreAction.Blocked);
         Assert.Contains(restore.Layers.SelectMany(static layer => layer.Modules), static item =>
-            item.ModuleKey == "Std::Core" && item.Action == ProjectModuleArtifactRestoreAction.ReadyArtifact);
+            item.ModuleKey == "Std.Core" && item.Action == ProjectModuleArtifactRestoreAction.ReadyArtifact);
     }
 
     [Fact]

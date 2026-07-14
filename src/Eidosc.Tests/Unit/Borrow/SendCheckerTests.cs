@@ -544,7 +544,7 @@ make_pair :: Int -> Int -> (Int, Int)
     public void CompilationPipeline_OptionInt_PassesSendCheck()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
+Option[T] :: type { Some(T) , None }
 
 make_some :: Int -> Option[Int]
 {

@@ -18,20 +18,20 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std::Seq
-import Std::Trait
-import Std::SeqBuilder
+import Std.Seq
+import Std.Trait
+import Std.SeqBuilder
 
-snapshot[A: Trait::Clone] :: SeqBuilder::SeqBuilder[A] -> Seq[A]
+snapshot[A: Trait.Clone] :: SeqBuilder.SeqBuilder[A] -> Seq[A]
 {
-    vec => SeqBuilder::to_seq(vec)
+    vec => SeqBuilder.to_seq(vec)
 }
 
 main :: Unit -> Int
 {
     _ => {
-        vec := SeqBuilder::push(SeqBuilder::empty[Int](()))(41)
-        Seq::get_or(snapshot[Int](vec))(0)(0)
+        vec := SeqBuilder.push(SeqBuilder.empty[Int](()))(41)
+        Seq.get_or(snapshot[Int](vec))(0)(0)
     }
 }
 """;
@@ -54,13 +54,13 @@ main :: Unit -> Int
         }
 
         const string source = """
-import Std::SeqBuilder
+import Std.SeqBuilder
 
 main :: Unit -> Int
 {
     _ => {
-        builder := SeqBuilder::push_seq(SeqBuilder::push(SeqBuilder::empty[Int](()))(1))([2, 3])
-        xs := SeqBuilder::freeze(builder)
+        builder := SeqBuilder.push_seq(SeqBuilder.push(SeqBuilder.empty[Int](()))(1))([2, 3])
+        xs := SeqBuilder.freeze(builder)
         xs[0] * 100 + xs[1] * 10 + xs[2]
     }
 }
@@ -84,21 +84,21 @@ main :: Unit -> Int
         }
 
         const string source = """
-import Std::HashMap
-import Std::HashSet
+import Std.HashMap
+import Std.HashSet
 
 main :: Unit -> Int
 {
     _ => {
-        map0 := HashMap::empty[String, String](())
-        map1 := HashMap::insert(map0)("alpha")("one")
-        map2 := HashMap::insert(map1)("beta")("two")
-        map3 := HashMap::insert(map2)("alpha")("uno")
-        set0 := HashSet::from_seq[String](["alpha", "beta", "alpha"])
-        if HashMap::len(map3) == 2 &&
-           HashMap::get_or(map3)("alpha")("missing") == "uno" &&
-           HashSet::len(set0) == 2 &&
-           HashSet::contains(set0)("beta")
+        map0 := HashMap.empty[String, String](())
+        map1 := HashMap.insert(map0)("alpha")("one")
+        map2 := HashMap.insert(map1)("beta")("two")
+        map3 := HashMap.insert(map2)("alpha")("uno")
+        set0 := HashSet.from_seq[String](["alpha", "beta", "alpha"])
+        if HashMap.len(map3) == 2 &&
+           HashMap.get_or(map3)("alpha")("missing") == "uno" &&
+           HashSet.len(set0) == 2 &&
+           HashSet.contains(set0)("beta")
         then { 42 }
         else { 1 }
     }

@@ -96,7 +96,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => LibB::inc(LibA::id(value))
+        value => LibB.inc(LibA.id(value))
     }
 }
 """);

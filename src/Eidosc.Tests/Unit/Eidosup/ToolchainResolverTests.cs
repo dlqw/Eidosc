@@ -214,7 +214,7 @@ public sealed class ToolchainResolverTests
         var stdlibPath = Path.Combine(directory, "stdlib", "Std", "Core.eidos");
         await File.WriteAllTextAsync(executablePath, "binary");
         await File.WriteAllTextAsync(runtimePath, "header");
-        await File.WriteAllTextAsync(stdlibPath, "module Std::Core");
+        await File.WriteAllTextAsync(stdlibPath, "module Std.Core");
         var manifest = new InstallManifest(
             InstallManifest.CurrentSchema,
             identity.Id,
@@ -239,7 +239,7 @@ public sealed class ToolchainResolverTests
             FixedTime,
             [
                 new InstalledFile(platform.ExecutableName, 6, await HashAsync(executablePath)),
-                new InstalledFile("stdlib/Std/Core.eidos", 16, await HashAsync(stdlibPath)),
+                new InstalledFile("stdlib/Std/Core.eidos", 15, await HashAsync(stdlibPath)),
                 new InstalledFile("runtime/runtime.h", 6, await HashAsync(runtimePath))
             ]);
         await manifest.WriteAsync(directory, CancellationToken.None);

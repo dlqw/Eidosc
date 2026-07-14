@@ -108,7 +108,7 @@ main :: String -> Unit need IO
     public void CompilationPipeline_MultipleWhenGuards_AreLoweredInOrder()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 addIfPositive :: Int -> OptionInt -> Int
 {

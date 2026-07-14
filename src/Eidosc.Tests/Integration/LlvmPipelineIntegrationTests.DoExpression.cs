@@ -8,8 +8,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_Option_NativeSmoke_BindsSequentialValues()
     {
         const string source = """
-            import Std::Option
-            import Std::Monad
+            import Std.Option
+            import Std.Monad
 
             main :: Unit -> Int
             {
@@ -19,7 +19,7 @@ public partial class LlvmPipelineIntegrationTests
                         y <- Some(3)
                         Some(x + y)
                     };
-                    Option::unwrap_or(result)(0)
+                    Option.unwrap_or(result)(0)
                 }
             }
             """;
@@ -36,8 +36,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_ListWithSemicolonSeparators_NativeSmoke_BindsSequentialValues()
     {
         const string source = """
-            import Std::Seq
-            import Std::Monad
+            import Std.Seq
+            import Std.Monad
 
             main :: Unit -> Int
             {
@@ -47,7 +47,7 @@ public partial class LlvmPipelineIntegrationTests
                         y <- [10, 20];
                         [x + y]
                     };
-                    Seq::sum(values)
+                    Seq.sum(values)
                 }
             }
             """;
@@ -64,8 +64,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_ListTuplePattern_NativeSmoke_MaterializesAggregateScrutinee()
     {
         const string source = """
-            import Std::Seq
-            import Std::Monad
+            import Std.Seq
+            import Std.Monad
 
             main :: Unit -> Int
             {
@@ -74,7 +74,7 @@ public partial class LlvmPipelineIntegrationTests
                         (x, y) <- [(1, 10), (2, 20)];
                         [x + y]
                     };
-                    Seq::sum(values)
+                    Seq.sum(values)
                 }
             }
             """;
@@ -91,8 +91,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_LocalLetBinding_NativeSmoke_BindsValueForFollowingItems()
     {
         const string source = """
-            import Std::Option
-            import Std::Monad
+            import Std.Option
+            import Std.Monad
 
             main :: Unit -> Int
             {
@@ -102,7 +102,7 @@ public partial class LlvmPipelineIntegrationTests
                         y <- Some(3);
                         Some(x + y)
                     };
-                    Option::unwrap_or(result)(0)
+                    Option.unwrap_or(result)(0)
                 }
             }
             """;
@@ -119,9 +119,9 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_LocalLetCapturedByNestedLambda_NativeSmoke_CapturesAcrossContinuation()
     {
         const string source = """
-            import Std::Option
-            import Std::Monad
-            import Std::Seq
+            import Std.Option
+            import Std.Monad
+            import Std.Seq
 
             main :: Unit -> Int
             {
@@ -130,9 +130,9 @@ public partial class LlvmPipelineIntegrationTests
                         offset := 2;
                         x <- Some(3);
                         add_offset := y => y + offset + x;
-                        Some(Seq::sum(Seq::map([1, 2])(add_offset)))
+                        Some(Seq.sum(Seq.map([1, 2])(add_offset)))
                     };
-                    Option::unwrap_or(result)(0)
+                    Option.unwrap_or(result)(0)
                 }
             }
             """;

@@ -13,7 +13,7 @@ Mutex[A] :: type {
 
 /// Observable non-blocking mutex state.
 Status :: type {
-    MutexAvailable | MutexLocked
+    MutexAvailable , MutexLocked
 }
 
 @internal
@@ -39,16 +39,16 @@ replace_inner_runtime :: RawPtr -> RawPtr -> Unit
 /// Create a runtime-backed mutex handle.
 new[A] :: Unit -> Mutex[A] need FFI
 {
-    _ => Mutex{handle: Mutex::new_runtime(ptr_null())}
+    _ => Mutex{handle: Mutex.new_runtime(ptr_null())}
 }
 
 /// Create a runtime-backed mutex that owns a boxed Eidos value.
 new_value[A] :: A -> Mutex[A] need FFI
 {
     value => {
-        boxed := FFI::box_value[A](value);
-        mutex := Mutex{handle: Mutex::new_runtime(boxed)};
-        FFI::free_boxed_value(boxed);
+        boxed := FFI.box_value[A](value);
+        mutex := Mutex{handle: Mutex.new_runtime(boxed)};
+        FFI.free_boxed_value(boxed);
         mutex
     }
 }
@@ -56,14 +56,14 @@ new_value[A] :: A -> Mutex[A] need FFI
 /// Try to acquire the mutex without suspending the caller.
 try_lock[A] :: Mutex[A] -> Bool need FFI
 {
-    Mutex{handle: handle} => Mutex::try_lock_runtime(handle)
+    Mutex{handle: handle} => Mutex.try_lock_runtime(handle)
 }
 
 /// Release a mutex previously acquired by try_lock.
 unlock[A] :: Mutex[A] -> Unit need FFI
 {
     Mutex{handle: handle} => {
-        Mutex::unlock_runtime(handle);
+        Mutex.unlock_runtime(handle);
         ()
     }
 }
@@ -71,8 +71,8 @@ unlock[A] :: Mutex[A] -> Unit need FFI
 /// Probe whether the mutex can be acquired now, releasing it immediately on success.
 try_lock_then_unlock[A] :: Mutex[A] -> Bool need FFI
 {
-    mutex => if Mutex::try_lock(mutex) then {
-        released := Mutex::unlock(mutex);
+    mutex => if Mutex.try_lock(mutex) then {
+        released := Mutex.unlock(mutex);
         true
     } else {
         false
@@ -82,7 +82,7 @@ try_lock_then_unlock[A] :: Mutex[A] -> Bool need FFI
 /// Probe the mutex state without keeping the lock.
 status[A] :: Mutex[A] -> Status need FFI
 {
-    mutex => if Mutex::try_lock_then_unlock(mutex) then {
+    mutex => if Mutex.try_lock_then_unlock(mutex) then {
         MutexAvailable()
     } else {
         MutexLocked()
@@ -99,7 +99,7 @@ status_is_available :: Status -> Bool
 /// Return true when the status means the mutex is currently held.
 status_is_locked :: Status -> Bool
 {
-    status => !Mutex::status_is_available(status)
+    status => !Mutex.status_is_available(status)
 }
 
 /// Select a value from a mutex status snapshot.
@@ -119,9 +119,9 @@ status_value_or_else[A, E1: effects, E2: effects] :: Status -> (Unit -> A need E
 /// Try to run a critical section immediately, releasing the mutex on success.
 try_with_lock[A, B, E: effects] :: Mutex[A] -> (Unit -> B need E) -> Option[B] need FFI, E
 {
-    mutex => body => if Mutex::try_lock(mutex) then {
+    mutex => body => if Mutex.try_lock(mutex) then {
         result := body(());
-        released := Mutex::unlock(mutex);
+        released := Mutex.unlock(mutex);
         Some(result)
     } else {
         None()
@@ -131,11 +131,11 @@ try_with_lock[A, B, E: effects] :: Mutex[A] -> (Unit -> B need E) -> Option[B] n
 /// Try to read the protected Eidos value under the mutex.
 try_with_value[A, B, E: effects] :: Mutex[A] -> (A -> B need E) -> Option[B] need FFI, E
 {
-    Mutex{handle: handle} => body => if Mutex::try_lock_runtime(handle) then {
-        boxed := Mutex::get_inner_runtime(handle);
-        value := FFI::unbox_value[A](boxed);
+    Mutex{handle: handle} => body => if Mutex.try_lock_runtime(handle) then {
+        boxed := Mutex.get_inner_runtime(handle);
+        value := FFI.unbox_value[A](boxed);
         result := body(value);
-        released := Mutex::unlock_runtime(handle);
+        released := Mutex.unlock_runtime(handle);
         Some(result)
     } else {
         None()
@@ -145,14 +145,14 @@ try_with_value[A, B, E: effects] :: Mutex[A] -> (A -> B need E) -> Option[B] nee
 /// Try to replace the protected Eidos value using the current value.
 try_update[A, E: effects] :: Mutex[A] -> (A -> A need E) -> Option[A] need FFI, E
 {
-    Mutex{handle: handle} => update => if Mutex::try_lock_runtime(handle) then {
-        oldBoxed := Mutex::get_inner_runtime(handle);
-        oldValue := FFI::unbox_value[A](oldBoxed);
+    Mutex{handle: handle} => update => if Mutex.try_lock_runtime(handle) then {
+        oldBoxed := Mutex.get_inner_runtime(handle);
+        oldValue := FFI.unbox_value[A](oldBoxed);
         newValue := update(oldValue);
-        newBoxed := FFI::box_value[A](newValue);
-        Mutex::replace_inner_runtime(handle)(newBoxed);
-        FFI::free_boxed_value(newBoxed);
-        released := Mutex::unlock_runtime(handle);
+        newBoxed := FFI.box_value[A](newValue);
+        Mutex.replace_inner_runtime(handle)(newBoxed);
+        FFI.free_boxed_value(newBoxed);
+        released := Mutex.unlock_runtime(handle);
         Some(newValue)
     } else {
         None()

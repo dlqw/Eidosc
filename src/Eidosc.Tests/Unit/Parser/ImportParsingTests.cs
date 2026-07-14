@@ -11,7 +11,7 @@ public class ImportParsingTests
     public void Parser_ImportWildcard_ParsesAsWildcardKind()
     {
         const string source = """
-import Core::*
+import Core.*
 """;
 
         var result = RunParser(source, "import_wildcard_parser_tests.eidos");
@@ -27,7 +27,7 @@ import Core::*
     public void Parser_ImportSelectiveWithAlias_ParsesSelectiveItems()
     {
         const string source = """
-import Core::{Writer, Reader as ReadCap}
+import Core.{Writer, Reader as ReadCap}
 """;
 
         var result = RunParser(source, "import_selective_parser_tests.eidos");
@@ -118,7 +118,7 @@ import Core as C
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Eidos 0.5.0-alpha.1", StringComparison.Ordinal));
+            diagnostic.Message.Contains("Eidos 0.6.0-alpha.1", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -334,7 +334,7 @@ Lib :: module {
     {
         const string source = """
 Main :: module {
-    import Std::GameMath
+    import Std.GameMath
 
     main :: Unit -> Unit { _ => () }
 }
@@ -587,7 +587,7 @@ Main :: module {
 
     export main :: Int -> Int
     {
-        value => Lib::id(value)
+        value => Lib.id(value)
     }
 }
 """);

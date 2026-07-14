@@ -186,7 +186,7 @@ public class ContentHashTests
     {
         using var temp = new TempDirectory();
         File.WriteAllText(Path.Combine(temp.Path, "Test.eidos"), "x :: 1;");
-        File.WriteAllText(Path.Combine(temp.Path, "eidos.toml"), "manifestSchema = 3\n\n[language]\nversion = \"0.5.0-alpha.1\"\n");
+        File.WriteAllText(Path.Combine(temp.Path, "eidos.toml"), "manifestSchema = 3\n\n[language]\nversion = \"0.6.0-alpha.1\"\n");
 
         var hash1 = ContentHash.ComputeForDirectory(temp.Path);
         var hash2 = ContentHash.ComputeForDirectory(temp.Path);

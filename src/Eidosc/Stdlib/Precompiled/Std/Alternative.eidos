@@ -78,15 +78,15 @@ Alternative :: module {
 
     empty_for[A, F: kind2 : Alternative[F]] :: Unit -> F[A]
     {
-        _ => Alternative::empty(())
+        _ => Alternative.empty(())
     }
 
     choose[A, F: kind2 : Alternative[F]] :: F[A] -> F[A] -> F[A]
     {
-        values => fallback => Alternative::or_else(values)(fallback)
+        values => fallback => Alternative.or_else(values)(fallback)
     }
 
-    AlternativeSeq :: instance Alternative::Alternative[Seq] {
+    AlternativeSeq :: instance Alternative.Alternative[Seq] {
         empty[A] :: Unit -> Seq[A]
             {
                 _ => []
@@ -98,7 +98,7 @@ Alternative :: module {
             }
     }
 
-    AlternativeOption :: instance Alternative::Alternative[Option] {
+    AlternativeOption :: instance Alternative.Alternative[Option] {
         empty[A] :: Unit -> Option[A]
             {
                 _ => None()

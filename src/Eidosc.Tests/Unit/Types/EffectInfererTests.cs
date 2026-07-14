@@ -89,7 +89,7 @@ import Cap
 
 main :: Int -> Int
 {
-    value => Cap::write(value)
+    value => Cap.write(value)
 }
 """);
 

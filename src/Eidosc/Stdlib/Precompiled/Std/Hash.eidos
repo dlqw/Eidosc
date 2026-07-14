@@ -23,12 +23,12 @@ Hash :: module {
 
     hash_string :: String -> Int
     {
-        s => Hash::hash_string_with_seed(s)(16777619)
+        s => Hash.hash_string_with_seed(s)(16777619)
     }
 
     hash_string_with_seed :: String -> Int -> Int
     {
-        s => seed => Hash::hash_string_loop(s)(0)(seed)
+        s => seed => Hash.hash_string_loop(s)(0)(seed)
     }
 
     normalize :: Int -> Int
@@ -40,7 +40,7 @@ Hash :: module {
     {
         h => capacity =>
             if capacity <= 0 then { 0 }
-            else { Hash::normalize(h) % capacity }
+            else { Hash.normalize(h) % capacity }
     }
 
     mix :: Int -> Int -> Int
@@ -50,77 +50,77 @@ Hash :: module {
 
     mix_int :: Int -> Int -> Int
     {
-        seed => value => Hash::mix(seed)(Hash::hash_int(value))
+        seed => value => Hash.mix(seed)(Hash.hash_int(value))
     }
 
     mix_bool :: Int -> Bool -> Int
     {
-        seed => value => Hash::mix(seed)(Hash::hash_bool(value))
+        seed => value => Hash.mix(seed)(Hash.hash_bool(value))
     }
 
     mix_string :: Int -> String -> Int
     {
-        seed => value => Hash::hash_string_with_seed(value)(seed)
+        seed => value => Hash.hash_string_with_seed(value)(seed)
     }
 
     combine2 :: Int -> Int -> Int
     {
-        first => second => Hash::mix(first)(second)
+        first => second => Hash.mix(first)(second)
     }
 
     combine3 :: Int -> Int -> Int -> Int
     {
-        first => second => third => Hash::mix(Hash::mix(first)(second))(third)
+        first => second => third => Hash.mix(Hash.mix(first)(second))(third)
     }
 
     combine_all :: Seq[Int] -> Int -> Int
     {
         [] => seed => seed,
-        [head, ..tail] => seed => Hash::combine_all(tail)(Hash::mix(seed)(head))
+        [head, ..tail] => seed => Hash.combine_all(tail)(Hash.mix(seed)(head))
     }
 
     combine_seq :: Seq[Int] -> Int
     {
-        values => Hash::combine_all(values)(16777619)
+        values => Hash.combine_all(values)(16777619)
     }
 
-    hash_seq_with_seed[T: Trait::Hash] :: Seq[T] -> Int -> Int
+    hash_seq_with_seed[T: Trait.Hash] :: Seq[T] -> Int -> Int
     {
         [] => seed => seed,
-        [head, ..tail] => seed => Hash::hash_seq_with_seed(tail)(Hash::mix(seed)(TraitInvoke::hash_value(head)))
+        [head, ..tail] => seed => Hash.hash_seq_with_seed(tail)(Hash.mix(seed)(TraitInvoke.hash_value(head)))
     }
 
-    hash_seq[T: Trait::Hash] :: Seq[T] -> Int
+    hash_seq[T: Trait.Hash] :: Seq[T] -> Int
     {
-        values => Hash::hash_seq_with_seed(values)(16777619)
+        values => Hash.hash_seq_with_seed(values)(16777619)
     }
 
-    hash_pair_with_seed[A: Trait::Hash, B: Trait::Hash] :: A -> B -> Int -> Int
+    hash_pair_with_seed[A: Trait.Hash, B: Trait.Hash] :: A -> B -> Int -> Int
     {
         left => right => seed =>
-            Hash::mix(Hash::mix(seed)(TraitInvoke::hash_value(left)))(TraitInvoke::hash_value(right))
+            Hash.mix(Hash.mix(seed)(TraitInvoke.hash_value(left)))(TraitInvoke.hash_value(right))
     }
 
-    hash_pair[A: Trait::Hash, B: Trait::Hash] :: A -> B -> Int
+    hash_pair[A: Trait.Hash, B: Trait.Hash] :: A -> B -> Int
     {
-        left => right => Hash::hash_pair_with_seed(left)(right)(16777619)
+        left => right => Hash.hash_pair_with_seed(left)(right)(16777619)
     }
 
     // Int hash — identity
-    HashInt :: instance Trait::Hash {
+    HashInt :: instance Trait.Hash {
         hash :: Int -> Int { n => n }
     }
 
     // Bool hash — 1 for true, 0 for false
-    HashBool :: instance Trait::Hash {
+    HashBool :: instance Trait.Hash {
         hash :: Bool -> Int { b => if b then { 1 } else { 0 } }
     }
 
     // String hash — FNV-1a variant (uses multiply-add instead of XOR)
-    HashString :: instance Trait::Hash {
+    HashString :: instance Trait.Hash {
         hash :: String -> Int
             {
-                s => Hash::hash_string_loop(s)(0)(16777619)
+                s => Hash.hash_string_loop(s)(0)(16777619)
             }
     }
 
@@ -131,7 +131,7 @@ Hash :: module {
             if idx >= string_length(s) then { h }
             else {
                 c := string_char_at(s, idx);
-                Hash::hash_string_loop(s)(idx + 1)((h + c) * 16777619)
+                Hash.hash_string_loop(s)(idx + 1)((h + c) * 16777619)
             }
     }
 }

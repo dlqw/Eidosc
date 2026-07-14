@@ -437,7 +437,7 @@ id :: Int -> Int { x => x }
             Assert.Contains(
                 result.Diagnostics,
                 diagnostic => diagnostic.Code == "E3000" &&
-                              diagnostic.Message.Contains("Unable to resolve imported module 'Missing::Thing'", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Unable to resolve imported module 'Missing.Thing'", StringComparison.Ordinal));
         }
         finally
         {
@@ -475,7 +475,7 @@ id :: Int -> Int { x => x }
             Assert.Contains(
                 result.Diagnostics,
                 diagnostic => diagnostic.Code == "E4001" &&
-                              diagnostic.Message.Contains("Imported module 'Broken::Mod' failed to parse", StringComparison.Ordinal));
+                              diagnostic.Message.Contains("Imported module 'Broken.Mod' failed to parse", StringComparison.Ordinal));
         }
         finally
         {
@@ -945,7 +945,7 @@ id :: Int -> Int { x => x }
         var entryFile = workspace.WriteFile("Main.eidos", """
 import Lib
 
-use :: Int -> Int { x => Lib::one(x) }
+use :: Int -> Int { x => Lib.one(x) }
 """);
         var libFile = workspace.WriteFile("Lib.eidos", """
 Lib :: module {
@@ -970,7 +970,7 @@ Lib :: module {
         var entryFile = workspace.WriteFile("Main.eidos", """
 import Lib
 
-use :: Int -> Int { x => Lib::one(x) }
+use :: Int -> Int { x => Lib.one(x) }
 """);
         var libFile = workspace.WriteFile("Lib.eidos", """
 Lib :: module {
@@ -1001,7 +1001,7 @@ Lib :: module {
         var entryFile = workspace.WriteFile("Main.eidos", """
 import LibA
 
-use :: Int -> Int { x => LibA::one(x) }
+use :: Int -> Int { x => LibA.one(x) }
 """);
         var libAFile = workspace.WriteFile("LibA.eidos", """
 LibA :: module {
@@ -1022,7 +1022,7 @@ LibB :: module {
         workspace.WriteFile("Main.eidos", """
 import LibB
 
-use :: Int -> Int { x => LibB::one(x) }
+use :: Int -> Int { x => LibB.one(x) }
 """);
         var second = session.Compile(entryFile, File.ReadAllText(entryFile), options);
 
@@ -1083,7 +1083,7 @@ import Lib
 
 main :: Unit -> Int
 {
-    _ => Lib::parse("ok")
+    _ => Lib.parse("ok")
 }
 """);
         var libFile = workspace.WriteFile("Lib.eidos", """
@@ -1200,7 +1200,7 @@ id :: Int -> Int { x => x }
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, d =>
             d.Code == "E3000" &&
-            d.Message.Contains("Unable to resolve imported module 'Missing::Thing'", StringComparison.Ordinal));
+            d.Message.Contains("Unable to resolve imported module 'Missing.Thing'", StringComparison.Ordinal));
         Assert.NotNull(result.Ast);
     }
 

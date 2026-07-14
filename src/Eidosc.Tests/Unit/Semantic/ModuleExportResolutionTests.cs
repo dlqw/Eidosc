@@ -25,7 +25,7 @@ Lib.Api :: module
 }
 """),
             ("main.eidos", """
-import Lib.Api::{secret}
+import Lib.Api.{secret}
 
 run :: Int -> Int
 {
@@ -64,7 +64,7 @@ import Lib.Api
 
 run :: Int -> Int
 {
-    x => Api::secret(x)
+    x => Api.secret(x)
 }
 """));
 
@@ -72,7 +72,7 @@ run :: Int -> Int
         Assert.Contains(
             result.Diagnostics,
             diagnostic => diagnostic.Code == "E3000" &&
-                          diagnostic.Message.Contains("Api::secret", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("Api.secret", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -95,7 +95,7 @@ Lib.Api :: module
 }
 """),
             ("main.eidos", """
-import Lib.Api::{public_id}
+import Lib.Api.{public_id}
 
 run :: Int -> Int
 {
@@ -127,7 +127,7 @@ Lib.Api :: module
 }
 """),
             ("main.eidos", """
-import Lib.Api::{parse}
+import Lib.Api.{parse}
 
 run :: Unit -> Int
 {
@@ -163,7 +163,7 @@ import Lib.Api
 
 run :: Unit -> Int
 {
-    _ => Api::parse("ok") + Api::parse(1)
+    _ => Api.parse("ok") + Api.parse(1)
 }
 """));
 
@@ -189,24 +189,24 @@ Cap.Io :: module
             ("Cap/Facade.eidos", """
 Cap.Facade :: module
 {
-    export import Cap.Io::{Writer as W, write}
+    export import Cap.Io.{Writer as W, write}
 }
 """),
             ("main.eidos", """
 import Cap.Facade
-import Cap.Facade::{W}
+import Cap.Facade.{W}
 
 run_short :: String -> Int need W
 {
     _ => 0
 }
 
-run_qualified :: String -> Int need Facade::W
+run_qualified :: String -> Int need Facade.W
 {
-    text => Facade::write(text)
+    text => Facade.write(text)
 }
 
-main :: Unit -> Int need Facade::W
+main :: Unit -> Int need Facade.W
 {
     _ => run_short("hello") + run_qualified("hello")
 }
@@ -230,7 +230,7 @@ Lib.Api :: module
 }
 """),
             ("main.eidos", """
-import Lib.Api::{public_id as PublicId}
+import Lib.Api.{public_id as PublicId}
 
 run :: Int -> Int
 {
@@ -258,7 +258,7 @@ Lib.Api :: module
 }
 """),
             ("main.eidos", """
-import Lib.Api::{Box as box}
+import Lib.Api.{Box as box}
 
 run :: Unit -> Int
 {
@@ -297,11 +297,11 @@ Demo.Facade :: module
         x => x
     }
 
-    export import Core.Base::{bar as foo}
+    export import Core.Base.{bar as foo}
 }
 """),
             ("main.eidos", """
-import Demo.Facade::{foo}
+import Demo.Facade.{foo}
 
 run :: Unit -> Int
 {

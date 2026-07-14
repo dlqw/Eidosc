@@ -10,7 +10,7 @@ public class CurriedPatternBranchResolutionTests
     public void CompilationPipeline_CurriedFunctionBodyBranch_BindsIntermediatePatternVariables()
     {
         const string source = """
-OptionString :: type { SomeString(String) | NoneString }
+OptionString :: type { SomeString(String) , NoneString }
 
 optionStringMap :: OptionString -> (String -> String) -> OptionString
 {
@@ -100,7 +100,7 @@ project :: Int -> Int {
     public void CompilationPipeline_CurriedFunctionBodyBranch_BindsCtorVariablesFromLaterSegments()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 zip_sum :: OptionInt -> OptionInt -> Int
 {
@@ -131,7 +131,7 @@ zip_sum :: OptionInt -> OptionInt -> Int
     public void CompilationPipeline_NameFirstCurriedFunctionBodyBranch_PreservesLiteralCtorPatternsInLaterSegments()
     {
         const string source = """
-Token :: type { TkKeyword(String) | TkEof }
+Token :: type { TkKeyword(String) , TkEof }
 
 matchKeyword :: Int -> Seq[Token] -> Int
 {
@@ -162,7 +162,7 @@ matchKeyword :: Int -> Seq[Token] -> Int
     public void CompilationPipeline_CurriedFunctionBodyBranch_BindsCtorVariablesAcrossFourSegments()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 quad_sum :: OptionInt -> OptionInt -> OptionInt -> OptionInt -> Int
 {
@@ -218,7 +218,7 @@ pickPositive :: Int -> Int -> Int
     public void CompilationPipeline_CurriedFunctionBodyBranch_AllowsPatternGuardOnLaterSegment()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 addIfSome :: Int -> OptionInt -> Int
 {
@@ -246,7 +246,7 @@ addIfSome :: Int -> OptionInt -> Int
     public void CompilationPipeline_CurriedFunctionBodyBranch_AllowsMultipleGuardsOnLaterSegment()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) | NoneInt }
+OptionInt :: type { SomeInt(Int) , NoneInt }
 
 addIfPositive :: Int -> OptionInt -> Int
 {

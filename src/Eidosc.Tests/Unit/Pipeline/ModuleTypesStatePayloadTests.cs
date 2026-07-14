@@ -156,8 +156,8 @@ minimum :: Unit -> Int
     public void Run_MirTargetWithTypesAstState_RestoresLetQuestionDesugaring()
     {
         const string source = """
-Option[T] :: type { Some(T) | None }
-Result[T, E] :: type { Ok(T) | Err(E) }
+Option[T] :: type { Some(T) , None }
+Result[T, E] :: type { Ok(T) , Err(E) }
 
 maybe_inc :: Int -> Option[Int]
 {
@@ -643,7 +643,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => LibB::inc(LibA::id(value))
+        value => LibB.inc(LibA.id(value))
     }
 }
 """);
@@ -678,7 +678,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => Changed::id(value)
+        value => Changed.id(value)
     }
 }
 """);

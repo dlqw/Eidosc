@@ -9,42 +9,42 @@ Queue :: module {
 
     empty[T] :: Unit -> Queue[T]
     {
-        _ => Queue{items: Deque::empty(())}
+        _ => Queue{items: Deque.empty(())}
     }
 
     singleton[T] :: T -> Queue[T]
     {
-        value => Queue{items: Deque::singleton(value)}
+        value => Queue{items: Deque.singleton(value)}
     }
 
     from_seq[T] :: Seq[T] -> Queue[T]
     {
-        values => Queue{items: Deque::from_seq(values)}
+        values => Queue{items: Deque.from_seq(values)}
     }
 
     len[T] :: Queue[T] -> Int
     {
-        Queue{items: items} => Deque::len(items)
+        Queue{items: items} => Deque.len(items)
     }
 
     is_empty[T] :: Queue[T] -> Bool
     {
-        queue => Queue::len(queue) == 0
+        queue => Queue.len(queue) == 0
     }
 
     enqueue[T] :: Queue[T] -> T -> Queue[T]
     {
-        Queue{items: items} => value => Queue{items: Deque::push_back(items)(value)}
+        Queue{items: items} => value => Queue{items: Deque.push_back(items)(value)}
     }
 
     peek[T] :: Queue[T] -> Option[T]
     {
-        Queue{items: items} => Deque::front(items)
+        Queue{items: items} => Deque.front(items)
     }
 
     dequeue[T] :: Queue[T] -> Option[(T, Queue[T])]
     {
-        Queue{items: items} => match Deque::pop_front(items) {
+        Queue{items: items} => match Deque.pop_front(items) {
             Some((value, rest)) => Some((value, Queue{items: rest})),
             None() => None()
         }
@@ -52,6 +52,6 @@ Queue :: module {
 
     to_seq[T] :: Queue[T] -> Seq[T]
     {
-        Queue{items: items} => Deque::to_seq(items)
+        Queue{items: items} => Deque.to_seq(items)
     }
 }

@@ -22,7 +22,7 @@ internal static class MetaComptimeIntrinsics
         context.Meta?.Trace?.Record(
             context.Meta.TracePhase,
             traceKind,
-            $"Meta::{name}",
+            $"Meta.{name}",
             "begin",
             $"arguments={call.PositionalArgs.Count}",
             call.Span,
@@ -31,7 +31,7 @@ internal static class MetaComptimeIntrinsics
         context.Meta?.Trace?.Record(
             context.Meta.TracePhase,
             traceKind,
-            $"Meta::{name}",
+            $"Meta.{name}",
             result ? "success" : "failure",
             result ? value.CanonicalText : reason,
             call.Span,
@@ -50,7 +50,7 @@ internal static class MetaComptimeIntrinsics
         reason = string.Empty;
         if (context.Meta == null)
         {
-            reason = $"Meta::{name} requires a compiler meta evaluation context";
+            reason = $"Meta.{name} requires a compiler meta evaluation context";
             return false;
         }
 
@@ -187,7 +187,7 @@ internal static class MetaComptimeIntrinsics
             !TryGetReferencedSymbol(call.PositionalArgs[0], out var symbolId) ||
             meta.SymbolTable.GetSymbol(symbolId) is not { } symbol)
         {
-            return Fail("Meta::decl expects one resolved declaration, type, trait, constructor, or function reference", out value, out reason);
+            return Fail("Meta.decl expects one resolved declaration, type, trait, constructor, or function reference", out value, out reason);
         }
 
         value = CreateDeclValue(symbol, meta.SymbolTable);
@@ -325,7 +325,7 @@ internal static class MetaComptimeIntrinsics
             arguments[1] is not ComptimeStringValue target ||
             string.IsNullOrWhiteSpace(target.Value))
         {
-            return Fail("Meta::layoutOf expects (Type, non-empty target triple)", out value, out reason);
+            return Fail("Meta.layoutOf expects (Type, non-empty target triple)", out value, out reason);
         }
 
         var pointerSize = target.Value.Contains("64", StringComparison.Ordinal) ||
@@ -409,7 +409,7 @@ internal static class MetaComptimeIntrinsics
             arguments[1] is not ComptimeStringValue message ||
             !TryReadSpan(spanValue, out var span))
         {
-            return Fail($"Meta::{level.ToString().ToLowerInvariant()} expects (Meta::Span, String)", out value, out reason);
+            return Fail($"Meta.{level.ToString().ToLowerInvariant()} expects (Meta.Span, String)", out value, out reason);
         }
 
         if (!budget.TryConsumeDiagnostic(out reason))

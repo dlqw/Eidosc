@@ -111,7 +111,7 @@ Main :: module {
 
     main :: Int -> Int
     {
-        value => LibB::inc(LibA::unbox(LibA::Box(value)))
+        value => LibB.inc(LibA.unbox(LibA.Box(value)))
     }
 }
 """);

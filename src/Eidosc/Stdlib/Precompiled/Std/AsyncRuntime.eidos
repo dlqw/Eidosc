@@ -21,34 +21,34 @@ run[A, E: effects] :: (Unit -> A need E) -> A need E
 /// Start the runtime scheduler with the requested worker count.
 start :: Int -> Unit need FFI
 {
-    workerCount => AsyncRuntime::start_runtime(workerCount)
+    workerCount => AsyncRuntime.start_runtime(workerCount)
 }
 
 /// Start the runtime scheduler using the runtime default worker count.
 start_default :: Unit -> Unit need FFI
 {
-    _ => AsyncRuntime::start(0)
+    _ => AsyncRuntime.start(0)
 }
 
 /// Shut down the runtime scheduler if it is running.
 shutdown :: Unit -> Unit need FFI
 {
-    _ => AsyncRuntime::shutdown_runtime(())
+    _ => AsyncRuntime.shutdown_runtime(())
 }
 
 /// Return the current runtime worker index, or the runtime sentinel outside worker threads.
 worker_index :: Unit -> Int need FFI
 {
-    _ => AsyncRuntime::worker_index_runtime(())
+    _ => AsyncRuntime.worker_index_runtime(())
 }
 
 /// Start the scheduler for a synchronous action, then shut it down before returning.
 with_scheduler[A, E: effects] :: Int -> (Unit -> A need E) -> A need FFI, E
 {
     workerCount => action => {
-        started := AsyncRuntime::start(workerCount);
-        result := AsyncRuntime::run(action);
-        stopped := AsyncRuntime::shutdown(());
+        started := AsyncRuntime.start(workerCount);
+        result := AsyncRuntime.run(action);
+        stopped := AsyncRuntime.shutdown(());
         result
     }
 }

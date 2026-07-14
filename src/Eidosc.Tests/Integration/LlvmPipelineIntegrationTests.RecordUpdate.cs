@@ -15,10 +15,10 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std::Text
+import Std.Text
 
 Direction :: type {
-    North |
+    North ,
     East
 }
 
@@ -53,7 +53,7 @@ main :: Unit -> Int
             tick: 0
         };
         updated := update_state(state);
-        Text::len(updated.label) + Text::len(updated.food) + updated.score + updated.tick
+        Text.len(updated.label) + Text.len(updated.food) + updated.score + updated.tick
     }
 }
 """;

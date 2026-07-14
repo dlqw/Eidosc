@@ -45,7 +45,7 @@ File :: module {
 
     read_text_or :: String -> String -> String need IO
     {
-        path => fallback => match File::read_text(path)
+        path => fallback => match File.read_text(path)
         {
             Ok(text) => text,
             Err(_) => fallback
@@ -54,7 +54,7 @@ File :: module {
 
     read_text_or_else[E: effects] :: String -> (Unit -> String need E) -> String need IO, E
     {
-        path => fallback => match File::read_text(path)
+        path => fallback => match File.read_text(path)
         {
             Ok(text) => text,
             Err(_) => fallback(())
@@ -71,7 +71,7 @@ File :: module {
 
     read_text_opt :: String -> Option[String] need IO
     {
-        path => match File::read_text(path)
+        path => match File.read_text(path)
         {
             Ok(text) => Some(text),
             Err(error) => None()
@@ -101,28 +101,28 @@ File :: module {
     last_separator_index :: String -> Int
     {
         path => {
-            slash := Text::last_index_of_or(path)("/")(-1);
-            backslash := Text::last_index_of_or(path)("\\")(-1);
+            slash := Text.last_index_of_or(path)("/")(-1);
+            backslash := Text.last_index_of_or(path)("\\")(-1);
             if slash > backslash then { slash } else { backslash }
         }
     }
 
     has_trailing_separator :: String -> Bool
     {
-        path => Text::ends_with(path)("/") || Text::ends_with(path)("\\")
+        path => Text.ends_with(path)("/") || Text.ends_with(path)("\\")
     }
 
     has_leading_separator :: String -> Bool
     {
-        path => Text::starts_with(path)("/") || Text::starts_with(path)("\\")
+        path => Text.starts_with(path)("/") || Text.starts_with(path)("\\")
     }
 
     join_path :: String -> String -> String
     {
         left => right =>
-            if Text::empty(left) then { Text::clone(right) }
-            else if Text::empty(right) then { Text::clone(left) }
-            else if File::has_trailing_separator(left) || File::has_leading_separator(right) then { left ++ right }
+            if Text.empty(left) then { Text.clone(right) }
+            else if Text.empty(right) then { Text.clone(left) }
+            else if File.has_trailing_separator(left) || File.has_leading_separator(right) then { left ++ right }
             else { left ++ "/" ++ right }
     }
 
@@ -130,106 +130,106 @@ File :: module {
     {
         [] => "",
         [head] => head,
-        [head, ..tail] => File::join_path(head)(File::join_paths(tail))
+        [head, ..tail] => File.join_path(head)(File.join_paths(tail))
     }
 
     normalize_separators :: String -> String
     {
-        path => Text::replace_all(path)("\\")("/")
+        path => Text.replace_all(path)("\\")("/")
     }
 
     ensure_trailing_separator :: String -> String
     {
         path =>
-            if Text::empty(path) || File::has_trailing_separator(path) then { Text::clone(path) }
+            if Text.empty(path) || File.has_trailing_separator(path) then { Text.clone(path) }
             else { path ++ "/" }
     }
 
     trim_trailing_separator :: String -> String
     {
         path =>
-            if string_length(path) <= 1 then { Text::clone(path) }
-            else if File::has_trailing_separator(path) then { File::trim_trailing_separator(Text::drop_last(path)(1)) }
-            else { Text::clone(path) }
+            if string_length(path) <= 1 then { Text.clone(path) }
+            else if File.has_trailing_separator(path) then { File.trim_trailing_separator(Text.drop_last(path)(1)) }
+            else { Text.clone(path) }
     }
 
     file_name :: String -> String
     {
         path => {
-            separator := File::last_separator_index(path);
-            if separator < 0 then { Text::clone(path) }
-            else { Text::drop(path)(separator + 1) }
+            separator := File.last_separator_index(path);
+            if separator < 0 then { Text.clone(path) }
+            else { Text.drop(path)(separator + 1) }
         }
     }
 
     directory_name :: String -> String
     {
         path => {
-            separator := File::last_separator_index(path);
+            separator := File.last_separator_index(path);
             if separator < 0 then { "" }
-            else { Text::take(path)(separator) }
+            else { Text.take(path)(separator) }
         }
     }
 
     extension :: String -> String
     {
         path => {
-            name := File::file_name(path);
-            dot := Text::last_index_of_or(name)(".")(-1);
+            name := File.file_name(path);
+            dot := Text.last_index_of_or(name)(".")(-1);
             if dot <= 0 then { "" }
-            else { Text::drop(name)(dot) }
+            else { Text.drop(name)(dot) }
         }
     }
 
     extension_without_dot :: String -> String
     {
         path => {
-            ext := File::extension(path);
-            if Text::empty(ext) then { "" }
-            else { Text::drop(ext)(1) }
+            ext := File.extension(path);
+            if Text.empty(ext) then { "" }
+            else { Text.drop(ext)(1) }
         }
     }
 
     stem :: String -> String
     {
         path => {
-            name := File::file_name(path);
-            dot := Text::last_index_of_or(name)(".")(-1);
-            if dot <= 0 then { Text::clone(name) }
-            else { Text::take(name)(dot) }
+            name := File.file_name(path);
+            dot := Text.last_index_of_or(name)(".")(-1);
+            if dot <= 0 then { Text.clone(name) }
+            else { Text.take(name)(dot) }
         }
     }
 
     file_name_without_extension :: String -> String
     {
-        path => File::stem(path)
+        path => File.stem(path)
     }
 
     normalize_extension :: String -> String
     {
         ext =>
-            if Text::empty(ext) then { "" }
-            else if Text::starts_with(ext)(".") then { Text::clone(ext) }
+            if Text.empty(ext) then { "" }
+            else if Text.starts_with(ext)(".") then { Text.clone(ext) }
             else { "." ++ ext }
     }
 
     has_extension :: String -> String -> Bool
     {
-        path => ext => File::extension(path) == File::normalize_extension(ext)
+        path => ext => File.extension(path) == File.normalize_extension(ext)
     }
 
     change_extension :: String -> String -> String
     {
         path => ext => {
-            dir := File::directory_name(path);
-            changed := File::stem(path) ++ File::normalize_extension(ext);
-            if Text::empty(dir) then { changed } else { File::join_path(dir)(changed) }
+            dir := File.directory_name(path);
+            changed := File.stem(path) ++ File.normalize_extension(ext);
+            if Text.empty(dir) then { changed } else { File.join_path(dir)(changed) }
         }
     }
 
     without_extension :: String -> String
     {
-        path => File::change_extension(path)("")
+        path => File.change_extension(path)("")
     }
 
     last_success :: Unit -> Bool need IO

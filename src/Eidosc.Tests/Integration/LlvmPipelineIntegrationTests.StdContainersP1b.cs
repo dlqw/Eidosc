@@ -15,20 +15,20 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std::BinaryHeap
-import Std::Seq
-import Std::Option
-import Std::PriorityQueue
+import Std.BinaryHeap
+import Std.Seq
+import Std.Option
+import Std.PriorityQueue
 
 check_heap :: Unit -> Int
 {
     _ => {
-        heap := BinaryHeap::from_seq[Int]([3, 10, 4, 7, 1])
-        match BinaryHeap::pop(heap) {
+        heap := BinaryHeap.from_seq[Int]([3, 10, 4, 7, 1])
+        match BinaryHeap.pop(heap) {
             Some((first, rest1)) =>
-                match BinaryHeap::pop(rest1) {
+                match BinaryHeap.pop(rest1) {
                     Some((second, rest2)) =>
-                        match BinaryHeap::peek(rest2) {
+                        match BinaryHeap.peek(rest2) {
                             Some(third) =>
                                 if first == 10 && second == 7 && third == 4 then { 20 } else { 1 },
                             None() => 2
@@ -43,15 +43,15 @@ check_heap :: Unit -> Int
 check_priority_queue :: Unit -> Int
 {
     _ => {
-        q0 := PriorityQueue::empty[Int](())
-        q1 := PriorityQueue::enqueue(PriorityQueue::enqueue(PriorityQueue::enqueue(q0)(5))(12))(9)
-        match PriorityQueue::dequeue(q1) {
+        q0 := PriorityQueue.empty[Int](())
+        q1 := PriorityQueue.enqueue(PriorityQueue.enqueue(PriorityQueue.enqueue(q0)(5))(12))(9)
+        match PriorityQueue.dequeue(q1) {
             Some((first, rest1)) =>
-                match PriorityQueue::dequeue(rest1) {
+                match PriorityQueue.dequeue(rest1) {
                     Some((second, rest2)) =>
-                        match PriorityQueue::peek(rest2) {
+                        match PriorityQueue.peek(rest2) {
                             Some(third) =>
-                                if first == 12 && second == 9 && third == 5 && PriorityQueue::len(rest2) == 1 then { 22 } else { 5 },
+                                if first == 12 && second == 9 && third == 5 && PriorityQueue.len(rest2) == 1 then { 22 } else { 5 },
                             None() => 6
                         },
                     None() => 7

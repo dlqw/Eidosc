@@ -68,7 +68,7 @@ public sealed class LspLocalizationResourceTests
         Assert.Equal("显示编译器信息", CliMessages.InfoCommandDescription);
         Assert.Equal("版本: 1.2.3", CliMessages.InfoVersionLine("1.2.3"));
         Assert.Equal("Add a dependency to eidos.toml", CliMessages.PkgAddCommandDescription);
-        Assert.Equal("Added dependency: Std::Json", CliMessages.PkgAddedDependency("Std::Json"));
+        Assert.Equal("Added dependency: Std.Json", CliMessages.PkgAddedDependency("Std.Json"));
         Assert.Contains("eidosc build src/Main.eidos --emit-llvm", CliMessages.HelpBuildExamples);
         Assert.Equal("Package management", CliMessages.PkgCommandDescription);
         Assert.Equal("创建新的 Eidos 项目目录", CliMessages.NewCommandDescription);
@@ -104,7 +104,7 @@ public sealed class LspLocalizationResourceTests
                 "main",
                 DiagnosticMessages.SpawnArgumentTypeMustImplementSend("Ref[Int]")));
         Assert.Contains("zero-capture function", DiagnosticMessages.CfnFromCapturedClosureUnsupported);
-        Assert.Equal("Module 'Std::Missing' not found", DiagnosticMessages.ModuleNotFound("Std::Missing"));
+        Assert.Equal("Module 'Std.Missing' not found", DiagnosticMessages.ModuleNotFound("Std.Missing"));
         Assert.Equal(
             "Trait 'Show' expects 1 type argument(s) in @impl, got 0",
             DiagnosticMessages.TraitExpectsTypeArgumentsInImpl("Show", 1, 0));
@@ -116,11 +116,11 @@ public sealed class LspLocalizationResourceTests
         Assert.Equal("Undefined trait 'Eq'", DiagnosticMessages.UndefinedTrait("Eq"));
         Assert.Equal("Undefined effect 'Logger'", DiagnosticMessages.UndefinedEffect("Logger"));
         Assert.Equal(
-            "Undefined effect 'App::Logger'. Available effects named 'Logger': Std::Logger",
-            DiagnosticMessages.UndefinedEffectWithCandidates("App::Logger", "Logger", "Std::Logger"));
+            "Undefined effect 'App.Logger'. Available effects named 'Logger': Std.Logger",
+            DiagnosticMessages.UndefinedEffectWithCandidates("App.Logger", "Logger", "Std.Logger"));
         Assert.Equal(
-            "Ambiguous effect 'Logger'. Candidates: Std::Logger, App::Logger. Use a module-qualified effect path.",
-            DiagnosticMessages.AmbiguousEffectWithCandidates("Logger", "Std::Logger, App::Logger"));
+            "Ambiguous effect 'Logger'. Candidates: Std.Logger, App.Logger. Use a module-qualified effect path.",
+            DiagnosticMessages.AmbiguousEffectWithCandidates("Logger", "Std.Logger, App.Logger"));
         Assert.Equal(
             "Symbol 'map' not found in imported module",
             DiagnosticMessages.SymbolNotFoundInImportedModule("map"));
@@ -160,10 +160,10 @@ public sealed class LspLocalizationResourceTests
     [Fact]
     public void DocMessages_ResolveDocumentationRendererResources()
     {
-        Assert.Equal("# Module `Std::Seq`", DocMessages.MarkdownModuleHeader("Std::Seq"));
+        Assert.Equal("# Module `Std.Seq`", DocMessages.MarkdownModuleHeader("Std.Seq"));
         Assert.Equal("#### Fields", DocMessages.MarkdownFieldsHeader);
-        Assert.Equal("Std::Seq — Documentation", DocMessages.HtmlTitle("Std::Seq"));
-        Assert.Equal("Module <code>Std::Seq</code>", DocMessages.HtmlModuleHeader("Std::Seq"));
+        Assert.Equal("Std.Seq — Documentation", DocMessages.HtmlTitle("Std.Seq"));
+        Assert.Equal("Module <code>Std.Seq</code>", DocMessages.HtmlModuleHeader("Std.Seq"));
     }
 
     [Fact]

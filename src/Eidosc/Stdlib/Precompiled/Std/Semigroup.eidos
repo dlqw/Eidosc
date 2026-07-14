@@ -33,26 +33,26 @@ Semigroup :: module {
         left => middle => right => [x | xs <- [left, middle, right], x <- xs]
     }
 
-    append3[T: Semigroup::Semigroup] :: T -> T -> T -> T
+    append3[T: Semigroup.Semigroup] :: T -> T -> T -> T
     {
-        left => middle => right => Semigroup::append(Semigroup::append(left)(middle))(right)
+        left => middle => right => Semigroup.append(Semigroup.append(left)(middle))(right)
     }
 
-    SemigroupInt :: instance Semigroup::Semigroup {
+    SemigroupInt :: instance Semigroup.Semigroup {
         append :: Int -> Int -> Int
             {
-                left => right => Semigroup::append_int(left)(right)
+                left => right => Semigroup.append_int(left)(right)
             }
     }
 
-    SemigroupString :: instance Semigroup::Semigroup {
+    SemigroupString :: instance Semigroup.Semigroup {
         append :: String -> String -> String
             {
-                left => right => Semigroup::append_string(left)(right)
+                left => right => Semigroup.append_string(left)(right)
             }
     }
 
-    SemigroupSeq :: instance Semigroup::Semigroup {
+    SemigroupSeq :: instance Semigroup.Semigroup {
         append[T] :: Seq[T] -> Seq[T] -> Seq[T]
             {
                 left => right => [x | xs <- [left, right], x <- xs]

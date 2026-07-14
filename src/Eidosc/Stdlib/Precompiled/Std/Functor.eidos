@@ -5,11 +5,11 @@ Functor :: module {
 
     replace[A, B, F: kind2 : Functor[F]] :: F[A] -> B -> F[B]
     {
-        values => replacement => Functor::fmap(values)(_ => replacement)
+        values => replacement => Functor.fmap(values)(_ => replacement)
     }
 
     void[A, F: kind2 : Functor[F]] :: F[A] -> F[Unit]
     {
-        values => Functor::replace(values)(())
+        values => Functor.replace(values)(())
     }
 }

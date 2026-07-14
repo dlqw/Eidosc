@@ -46,17 +46,17 @@ Math :: module {
 
     min3 :: Int -> Int -> Int -> Int
     {
-        a => b => c => Math::min(Math::min(a)(b))(c)
+        a => b => c => Math.min(Math.min(a)(b))(c)
     }
 
     max3 :: Int -> Int -> Int -> Int
     {
-        a => b => c => Math::max(Math::max(a)(b))(c)
+        a => b => c => Math.max(Math.max(a)(b))(c)
     }
 
     clamp01 :: Int -> Int
     {
-        value => Math::clamp(value)(0)(1)
+        value => Math.clamp(value)(0)(1)
     }
 
     sign :: Int -> Int
@@ -88,7 +88,7 @@ Math :: module {
 
     distance :: Int -> Int -> Int
     {
-        left => right => Math::abs(left - right)
+        left => right => Math.abs(left - right)
     }
 
     gcd :: Int -> Int -> Int
@@ -140,21 +140,21 @@ Math :: module {
     {
         dividend => divisor =>
             if divisor == 0 then { 0 }
-            else { 0 - Math::div_floor(0 - dividend)(divisor) }
+            else { 0 - Math.div_floor(0 - dividend)(divisor) }
     }
 
     mod_floor :: Int -> Int -> Int
     {
         dividend => divisor =>
             if divisor == 0 then { 0 }
-            else { dividend - Math::div_floor(dividend)(divisor) * divisor }
+            else { dividend - Math.div_floor(dividend)(divisor) * divisor }
     }
 
     wrap :: Int -> Int -> Int
     {
         value => modulus =>
             if modulus <= 0 then { 0 }
-            else { Math::mod_floor(value)(modulus) }
+            else { Math.mod_floor(value)(modulus) }
     }
 
     wrap_range :: Int -> Int -> Int -> Int
@@ -162,40 +162,40 @@ Math :: module {
         value => lower => upper => {
             span := upper - lower;
             if span <= 0 then { lower }
-            else { lower + Math::wrap(value - lower)(span) }
+            else { lower + Math.wrap(value - lower)(span) }
         }
     }
 
     average_floor :: Int -> Int -> Int
     {
-        left => right => Math::div_floor(left + right)(2)
+        left => right => Math.div_floor(left + right)(2)
     }
 
     average_ceil :: Int -> Int -> Int
     {
-        left => right => Math::div_ceil(left + right)(2)
+        left => right => Math.div_ceil(left + right)(2)
     }
 
     align_down :: Int -> Int -> Int
     {
         value => alignment =>
             if alignment <= 0 then { value }
-            else { value - Math::wrap(value)(alignment) }
+            else { value - Math.wrap(value)(alignment) }
     }
 
     align_up :: Int -> Int -> Int
     {
         value => alignment =>
             if alignment <= 0 then { value }
-            else { Math::align_down(value + alignment - 1)(alignment) }
+            else { Math.align_down(value + alignment - 1)(alignment) }
     }
 
     approach :: Int -> Int -> Int -> Int
     {
         current => target => delta =>
             if delta <= 0 then { current }
-            else if current < target then { Math::min(current + delta)(target) }
-            else { Math::max(current - delta)(target) }
+            else if current < target then { Math.min(current + delta)(target) }
+            else { Math.max(current - delta)(target) }
     }
 
     factorial :: Int -> Int
@@ -203,7 +203,7 @@ Math :: module {
         n =>
             if n < 0 then { 0 }
             else if n == 0 then { 1 }
-            else { n * Math::factorial(n - 1) }
+            else { n * Math.factorial(n - 1) }
     }
 
     // Float 版本
@@ -219,19 +219,19 @@ Math :: module {
     }
     sign_f :: Float -> Float need FFI { x => math_copysign(1.0)(x) }
     pow_f :: Float -> Float -> Float need FFI { base => exp => math_pow(base)(exp) }
-    is_zero_f :: Float -> Bool { x => FloatMath::is_zero(x) }
-    is_positive_f :: Float -> Bool { x => FloatMath::is_positive(x) }
-    is_negative_f :: Float -> Bool { x => FloatMath::is_negative(x) }
-    between_inclusive_f :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath::between_inclusive(value)(lower)(upper) }
-    between_exclusive_f :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath::between_exclusive(value)(lower)(upper) }
-    square_f :: Float -> Float { value => FloatMath::square(value) }
-    cube_f :: Float -> Float { value => FloatMath::cube(value) }
-    approx_eq_f :: Float -> Float -> Float -> Bool need FFI { left => right => tolerance => FloatMath::approx_eq(left)(right)(tolerance) }
-    distance_f :: Float -> Float -> Float need FFI { left => right => FloatMath::distance(left)(right) }
-    hypot_f :: Float -> Float -> Float need FFI { left => right => FloatMath::hypot(left)(right) }
-    degrees_to_radians_f :: Float -> Float { degrees => FloatMath::degrees_to_radians(degrees) }
-    radians_to_degrees_f :: Float -> Float { radians => FloatMath::radians_to_degrees(radians) }
-    lerp_f :: Float -> Float -> Float -> Float { start => end => t => FloatMath::lerp(start)(end)(t) }
-    inverse_lerp_f :: Float -> Float -> Float -> Float { start => end => value => FloatMath::inverse_lerp(start)(end)(value) }
+    is_zero_f :: Float -> Bool { x => FloatMath.is_zero(x) }
+    is_positive_f :: Float -> Bool { x => FloatMath.is_positive(x) }
+    is_negative_f :: Float -> Bool { x => FloatMath.is_negative(x) }
+    between_inclusive_f :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath.between_inclusive(value)(lower)(upper) }
+    between_exclusive_f :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath.between_exclusive(value)(lower)(upper) }
+    square_f :: Float -> Float { value => FloatMath.square(value) }
+    cube_f :: Float -> Float { value => FloatMath.cube(value) }
+    approx_eq_f :: Float -> Float -> Float -> Bool need FFI { left => right => tolerance => FloatMath.approx_eq(left)(right)(tolerance) }
+    distance_f :: Float -> Float -> Float need FFI { left => right => FloatMath.distance(left)(right) }
+    hypot_f :: Float -> Float -> Float need FFI { left => right => FloatMath.hypot(left)(right) }
+    degrees_to_radians_f :: Float -> Float { degrees => FloatMath.degrees_to_radians(degrees) }
+    radians_to_degrees_f :: Float -> Float { radians => FloatMath.radians_to_degrees(radians) }
+    lerp_f :: Float -> Float -> Float -> Float { start => end => t => FloatMath.lerp(start)(end)(t) }
+    inverse_lerp_f :: Float -> Float -> Float -> Float { start => end => value => FloatMath.inverse_lerp(start)(end)(value) }
 
 }

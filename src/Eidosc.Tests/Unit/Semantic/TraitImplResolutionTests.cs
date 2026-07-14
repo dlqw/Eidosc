@@ -761,7 +761,7 @@ Eq :: trait {
 }
 
 Option[A] :: type {
-    None | Some(A)
+    None , Some(A)
 }
 
 @impl(Eq)
@@ -801,7 +801,7 @@ Eq :: trait {
 }
 
 Option[A] :: type {
-    None | Some(A)
+    None , Some(A)
 }
 
 @impl(Eq)
@@ -845,7 +845,7 @@ Show :: trait {
 }
 
 Option[A] :: type {
-    None | Some(A)
+    None , Some(A)
 }
 
 @impl(Show)
@@ -1093,7 +1093,7 @@ Person :: type {
 }
 
 Result[T, E] :: type {
-    Ok(T) | Err(E)
+    Ok(T) , Err(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -1151,7 +1151,7 @@ M :: module {
         Person(String)
     }
 
-    @impl(M::Show)
+    @impl(M.Show)
     show :: Person -> String
     {
         p => "ok"
@@ -1204,7 +1204,7 @@ Person :: type {
     Person(String)
 }
 
-@impl(M::Show)
+@impl(M.Show)
 show :: Person -> String
 {
     p => "ok"
@@ -1251,13 +1251,13 @@ show :: Person -> String
 
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std::Trait
+import Std.Trait
 
 Person :: type {
     Person(String)
 }
 
-@impl(Trait::Eq)
+@impl(Trait.Eq)
 eq :: Person -> Person -> Bool
 {
     _ => _ => true
@@ -1312,7 +1312,7 @@ Person :: type {
     Person(String)
 }
 
-@impl(N::Show)
+@impl(N.Show)
 show :: Person -> String
 {
     p => "ok"
@@ -1327,8 +1327,8 @@ show :: Person -> String
         }).Run();
 
         Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, d => d.Code == "E3000" && d.Message.Contains("Undefined trait 'N::Show' in @impl"));
-        Assert.DoesNotContain(result.Diagnostics, d => d.Message.Contains("Cannot resolve path 'N::Show'"));
+        Assert.Contains(result.Diagnostics, d => d.Code == "E3000" && d.Message.Contains("Undefined trait 'N.Show' in @impl"));
+        Assert.DoesNotContain(result.Diagnostics, d => d.Message.Contains("Cannot resolve path 'N.Show'"));
     }
 
     [Fact]

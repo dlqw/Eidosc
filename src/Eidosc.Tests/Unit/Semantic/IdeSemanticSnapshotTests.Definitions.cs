@@ -25,7 +25,7 @@ Feature :: module {
 
         const string source = """
 Main :: module {
-    import pkg::Feature
+    import pkg.Feature
 }
 """;
         File.WriteAllText(entryFile, source);
@@ -52,8 +52,8 @@ Main :: module {
                 occurrence.Source == "ImportDecl" &&
                 occurrence.Span?.FilePath == entryFile &&
                 occurrence.Span.StartLine == 1 &&
-                occurrence.Span.StartCharacter == 16 &&
-                occurrence.Span.EndCharacter == 23);
+                occurrence.Span.StartCharacter == 15 &&
+                occurrence.Span.EndCharacter == 22);
 
             var targetSymbol = Assert.Single(snapshot.Symbols, symbol => symbol.SymbolId == importOccurrence.SymbolId);
             Assert.Equal("Feature", targetSymbol.Name);
