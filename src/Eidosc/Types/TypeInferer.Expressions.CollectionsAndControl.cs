@@ -286,14 +286,6 @@ public sealed partial class TypeInferer
 
         var hasLeftSymbol = TryResolveClosedCaseTypeSymbol(leftConstructor, out var leftSymbol);
         var hasRightSymbol = TryResolveClosedCaseTypeSymbol(rightConstructor, out var rightSymbol);
-        if (!hasLeftSymbol && hasRightSymbol)
-        {
-            hasLeftSymbol = TryResolveClosedCaseWithinRoot(leftConstructor, rightSymbol, out leftSymbol);
-        }
-        if (!hasRightSymbol && hasLeftSymbol)
-        {
-            hasRightSymbol = TryResolveClosedCaseWithinRoot(rightConstructor, leftSymbol, out rightSymbol);
-        }
         if (!hasLeftSymbol || !hasRightSymbol)
         {
             return false;
@@ -357,8 +349,7 @@ public sealed partial class TypeInferer
     {
         var resolved = _substitution.Apply(source);
         if (resolved is not TyCon sourceConstructor ||
-            (!TryResolveClosedCaseTypeSymbol(sourceConstructor, out var sourceSymbol) &&
-             !TryResolveClosedCaseWithinRoot(sourceConstructor, target.Symbol, out sourceSymbol)) ||
+            !TryResolveClosedCaseTypeSymbol(sourceConstructor, out var sourceSymbol) ||
             sourceSymbol == target.Symbol ||
             !_symbolTable.IsClosedCaseSubtype(sourceSymbol, target.Symbol))
         {
@@ -376,51 +367,6 @@ public sealed partial class TypeInferer
                     : _symbolTable.GetSymbol(sourceSymbol)?.TypeId ?? TypeId.None
             },
             target);
-    }
-
-    private bool TryResolveClosedCaseWithinRoot(TyCon type, SymbolId relatedType, out SymbolId symbol)
-    {
-        var simpleName = type.Name.Split(
-            WellKnownStrings.Separators.Path,
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault() ?? type.Name;
-        var root = _symbolTable.GetClosedCaseRoot(relatedType);
-        var matches = new List<SymbolId>(2);
-        CollectNamedClosedCases(root, simpleName, matches);
-        if (matches.Count == 1)
-        {
-            symbol = matches[0];
-            return true;
-        }
-
-        symbol = SymbolId.None;
-        return false;
-    }
-
-    private void CollectNamedClosedCases(SymbolId parent, string name, List<SymbolId> matches)
-    {
-        if (matches.Count > 1 || _symbolTable.GetSymbol<AdtSymbol>(parent) is not { } parentSymbol)
-        {
-            return;
-        }
-
-        foreach (var caseId in parentSymbol.DirectCases)
-        {
-            if (_symbolTable.GetSymbol<AdtSymbol>(caseId) is not { } caseSymbol)
-            {
-                continue;
-            }
-
-            if (string.Equals(caseSymbol.Name, name, StringComparison.Ordinal))
-            {
-                matches.Add(caseId);
-                if (matches.Count > 1)
-                {
-                    return;
-                }
-            }
-
-            CollectNamedClosedCases(caseId, name, matches);
-        }
     }
 
     private Type InferUnsupportedExpression(EidosAstNode expr)

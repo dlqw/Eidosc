@@ -360,58 +360,6 @@ public sealed partial class TypeInferer
             }
         }
 
-        var pathSegments = type.Name.Split(
-            WellKnownStrings.Separators.Path,
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (pathSegments.Length >= 2 &&
-            _symbolTable.LookupType(pathSegments[^2]) is { IsValid: true } parent &&
-            _symbolTable.LookupDirectCase(parent, pathSegments[^1]) is { IsValid: true } directCase)
-        {
-            symbol = directCase;
-            return true;
-        }
-
-        if (pathSegments.Length >= 2)
-        {
-            var caseCandidates = _symbolTable.Symbols.Values
-                .OfType<AdtSymbol>()
-                .Where(candidate =>
-                    candidate.IsCaseType &&
-                    string.Equals(candidate.Name, pathSegments[^1], StringComparison.Ordinal) &&
-                    _symbolTable.GetSymbol<AdtSymbol>(candidate.ParentAdt) is { } candidateParent &&
-                    string.Equals(candidateParent.Name, pathSegments[^2], StringComparison.Ordinal))
-                .Select(static candidate => candidate.Id)
-                .Distinct()
-                .Take(2)
-                .ToArray();
-            if (caseCandidates.Length == 1)
-            {
-                symbol = caseCandidates[0];
-                return true;
-            }
-        }
-
-        var simpleName = pathSegments.Length == 0 ? type.Name : pathSegments[^1];
-        if (_symbolTable.LookupType(simpleName) is { IsValid: true } byName)
-        {
-            symbol = byName;
-            return true;
-        }
-
-
-        var globalCandidates = _symbolTable.Symbols.Values
-            .OfType<AdtSymbol>()
-            .Where(candidate => string.Equals(candidate.Name, simpleName, StringComparison.Ordinal))
-            .Select(static candidate => candidate.Id)
-            .Distinct()
-            .Take(2)
-            .ToArray();
-        if (globalCandidates.Length == 1)
-        {
-            symbol = globalCandidates[0];
-            return true;
-        }
-
         symbol = SymbolId.None;
         return false;
     }

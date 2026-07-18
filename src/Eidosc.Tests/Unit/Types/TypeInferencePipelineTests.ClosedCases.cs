@@ -347,6 +347,45 @@ bad_join :: Bool -> Unit
     }
 
     [Fact]
+    public void Types_ClosedCaseJoin_UsesSymbolIdentityForSameNamedLeavesInDifferentBranches()
+    {
+        const string source = """
+Tree :: type {
+    Left :: type {
+        Leaf :: type {},
+    },
+
+    Right :: type {
+        Leaf :: type {},
+    },
+}
+
+choose_leaf :: Bool -> Tree
+{
+    choose => {
+        value := if choose then Tree.Left.Leaf() else Tree.Right.Leaf();
+        value
+    }
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var tree = Assert.Single(result.SymbolTable!.Symbols.Values.OfType<AdtSymbol>(), static symbol =>
+            !symbol.IsCaseType && string.Equals(symbol.Name, "Tree", StringComparison.Ordinal));
+        var injections = result.TypeInferer!.GetClosedCaseInjectionSnapshot();
+        Assert.Equal(2, injections.Count(injection => injection.Value.TargetAncestor == tree.Id));
+        Assert.Equal(
+            2,
+            injections
+                .Where(injection => injection.Value.TargetAncestor == tree.Id)
+                .Select(static injection => injection.Value.SourceCase)
+                .Distinct()
+                .Count());
+    }
+
+    [Fact]
     public void Types_NestedClosedCaseGenericIdentity_CapturesRootAndEveryCasePathArgument()
     {
         const string source = """
