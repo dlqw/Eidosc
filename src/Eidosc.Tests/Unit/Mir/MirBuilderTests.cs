@@ -967,7 +967,7 @@ public partial class MirBuilderTests
     }
 
     [Fact]
-    public void Build_BuiltinStringSliceCall_FirstArgumentIsCopiedNotMoved()
+    public void Build_BuiltinStringSliceCall_NonCopyArgumentIsMoved()
     {
         var intType = new TypeId(BaseTypes.IntId);
         var stringType = new TypeId(BaseTypes.StringId);
@@ -1054,21 +1054,21 @@ public partial class MirBuilderTests
         Assert.Equal(3, call.Arguments.Count);
 
         var sourceLocal = Assert.Single(callerFunc.Locals, local => local.IsParameter && local.Name == "src").Id;
-        var sourceCopies = entry.Instructions
-            .OfType<MirCopy>()
-            .Where(copy => copy.Source.Local.Equals(sourceLocal))
+        var sourceMoves = entry.Instructions
+            .OfType<MirMove>()
+            .Where(move => move.Source.Local.Equals(sourceLocal))
             .ToList();
-        Assert.NotEmpty(sourceCopies);
+        Assert.NotEmpty(sourceMoves);
         Assert.DoesNotContain(
-            entry.Instructions.OfType<MirMove>(),
-            move => move.Source.Local.Equals(sourceLocal));
+            entry.Instructions.OfType<MirCopy>(),
+            copy => copy.Source.Local.Equals(sourceLocal));
 
         var firstArg = Assert.IsType<MirPlace>(call.Arguments[0]);
-        Assert.Contains(sourceCopies, copy => copy.Target.Local.Equals(firstArg.Local));
+        Assert.Contains(sourceMoves, move => move.Target.Local.Equals(firstArg.Local));
     }
 
     [Fact]
-    public void Build_BuiltinPrintStringCall_FirstArgumentIsCopiedNotMoved()
+    public void Build_BuiltinPrintStringCall_NonCopyArgumentIsMoved()
     {
         var unitType = new TypeId(BaseTypes.UnitId);
         var stringType = new TypeId(BaseTypes.StringId);
@@ -1129,17 +1129,17 @@ public partial class MirBuilderTests
         Assert.Single(call.Arguments);
 
         var sourceLocal = Assert.Single(callerFunc.Locals, local => local.IsParameter && local.Name == "src").Id;
-        var sourceCopies = entry.Instructions
-            .OfType<MirCopy>()
-            .Where(copy => copy.Source.Local.Equals(sourceLocal))
+        var sourceMoves = entry.Instructions
+            .OfType<MirMove>()
+            .Where(move => move.Source.Local.Equals(sourceLocal))
             .ToList();
-        Assert.NotEmpty(sourceCopies);
+        Assert.NotEmpty(sourceMoves);
         Assert.DoesNotContain(
-            entry.Instructions.OfType<MirMove>(),
-            move => move.Source.Local.Equals(sourceLocal));
+            entry.Instructions.OfType<MirCopy>(),
+            copy => copy.Source.Local.Equals(sourceLocal));
 
         var firstArg = Assert.IsType<MirPlace>(call.Arguments[0]);
-        Assert.Contains(sourceCopies, copy => copy.Target.Local.Equals(firstArg.Local));
+        Assert.Contains(sourceMoves, move => move.Target.Local.Equals(firstArg.Local));
     }
 
 }

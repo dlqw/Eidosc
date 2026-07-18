@@ -536,8 +536,7 @@ internal sealed class TypeIdRegistry
         for (var i = 0; i < constraints.Count; i++)
         {
             var traitName = constraints[i].TraitName;
-            if (string.Equals(traitName, "Copy", StringComparison.Ordinal) ||
-                string.Equals(traitName, BuiltinTraits.TraitNames.Clone, StringComparison.Ordinal))
+            if (string.Equals(traitName, BuiltinTraits.TraitNames.Copy, StringComparison.Ordinal))
             {
                 return true;
             }

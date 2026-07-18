@@ -1,5 +1,6 @@
 using Eidosc.Symbols;
 using System.Collections.Immutable;
+using Eidosc.Mir;
 using Eidosc.Semantic;
 
 namespace Eidosc.Types;
@@ -40,7 +41,25 @@ public static class CopyTypeSemantics
         TypeId typeId,
         Func<TypeId, bool>? hasCopyImplResolver,
         IReadOnlyDictionary<int, TypeDescriptor>? typeDescriptors,
-        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null)
+        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null,
+        IReadOnlyDictionary<int, List<ConstructorTypeLayout>>? constructorLayouts = null)
+    {
+        return IsCopyTypeCore(
+            typeId,
+            hasCopyImplResolver,
+            typeDescriptors,
+            dynamicTypeKeys,
+            constructorLayouts,
+            []);
+    }
+
+    private static bool IsCopyTypeCore(
+        TypeId typeId,
+        Func<TypeId, bool>? hasCopyImplResolver,
+        IReadOnlyDictionary<int, TypeDescriptor>? typeDescriptors,
+        IReadOnlyDictionary<int, string>? dynamicTypeKeys,
+        IReadOnlyDictionary<int, List<ConstructorTypeLayout>>? constructorLayouts,
+        HashSet<int> visiting)
     {
         if (!typeId.IsValid)
         {
@@ -52,42 +71,71 @@ public static class CopyTypeSemantics
             return true;
         }
 
-        if (IsFunctionType(typeId, typeDescriptors, dynamicTypeKeys))
+        if (!visiting.Add(typeId.Value))
         {
             return true;
         }
 
-        return hasCopyImplResolver?.Invoke(typeId) ?? false;
+        try
+        {
+            var descriptor = ResolveDescriptor(typeId, typeDescriptors, dynamicTypeKeys);
+            return descriptor switch
+            {
+                TypeDescriptor.Ref => true,
+                TypeDescriptor.MutRef => false,
+                TypeDescriptor.Tuple tuple => tuple.FieldTypes.All(IsNestedCopyType),
+                TypeDescriptor.TyCon => HasCopyEvidence(typeId) && HasCopyLayout(typeId),
+                TypeDescriptor.TypeVar => HasCopyEvidence(typeId),
+                TypeDescriptor.Function => true,
+                TypeDescriptor.Builtin => false,
+                TypeDescriptor.Shared => false,
+                null when constructorLayouts?.ContainsKey(typeId.Value) == true =>
+                    HasCopyEvidence(typeId) && HasCopyLayout(typeId),
+                null => HasCopyEvidence(typeId),
+                _ => false
+            };
+        }
+        finally
+        {
+            visiting.Remove(typeId.Value);
+        }
+
+        bool IsNestedCopyType(TypeId nestedType) =>
+            IsCopyTypeCore(
+                nestedType,
+                hasCopyImplResolver,
+                typeDescriptors,
+                dynamicTypeKeys,
+                constructorLayouts,
+                visiting);
+
+        bool HasCopyEvidence(TypeId candidate) => hasCopyImplResolver?.Invoke(candidate) ?? false;
+
+        bool HasCopyLayout(TypeId candidate)
+        {
+            return constructorLayouts != null &&
+                   constructorLayouts.TryGetValue(candidate.Value, out var layouts) &&
+                   layouts.Count > 0 &&
+                   layouts.All(layout => layout.FieldTypeIds.All(IsNestedCopyType));
+        }
     }
 
-    /// <summary>
-    /// MIR 生成阶段的 copy 判定：额外将未解析的类型变量视为 Copy。
-    /// 泛型模板中的参数类型尚未确定，MIR builder 应生成 MirCopy 而非 MirMove，
-    /// 具体的 move 检查在特化版本中完成。
-    /// </summary>
-    public static bool IsCopyTypeForMirBuilding(
+    private static TypeDescriptor? ResolveDescriptor(
         TypeId typeId,
-        Func<TypeId, bool>? hasCopyImplResolver = null,
-        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null)
-    {
-        return IsCopyTypeForMirBuilding(typeId, hasCopyImplResolver, null, dynamicTypeKeys);
-    }
-
-    /// <summary>
-    /// MIR 生成阶段的 copy 判定，优先使用结构化类型描述表。
-    /// </summary>
-    public static bool IsCopyTypeForMirBuilding(
-        TypeId typeId,
-        Func<TypeId, bool>? hasCopyImplResolver,
         IReadOnlyDictionary<int, TypeDescriptor>? typeDescriptors,
-        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null)
+        IReadOnlyDictionary<int, string>? dynamicTypeKeys)
     {
-        if (IsCopyType(typeId, hasCopyImplResolver, typeDescriptors, dynamicTypeKeys))
+        if (typeDescriptors != null &&
+            typeDescriptors.TryGetValue(typeId.Value, out var descriptor))
         {
-            return true;
+            return descriptor;
         }
 
-        return IsTypeVariable(typeId, typeDescriptors, dynamicTypeKeys);
+        return dynamicTypeKeys != null &&
+               dynamicTypeKeys.TryGetValue(typeId.Value, out var typeKey) &&
+               TypeKeyParsing.TryParseTypeDescriptor(typeKey, out descriptor)
+            ? descriptor
+            : null;
     }
 
     /// <summary>
@@ -163,7 +211,7 @@ public static class CopyTypeSemantics
     }
 
     /// <summary>
-    /// 基于符号表创建 copy-impl 判定器（优先 Copy trait，回退 Clone）。
+    /// 基于符号表创建精确的 Copy impl/constraint 判定器。
     /// </summary>
     public static Func<TypeId, bool> CreateSymbolTableCopyResolver(
         SymbolTable symbolTable,
@@ -171,51 +219,31 @@ public static class CopyTypeSemantics
     {
         ArgumentNullException.ThrowIfNull(symbolTable);
 
-        var copyLikeTraits = ResolveCopyLikeTraits(symbolTable);
-        if (copyLikeTraits.Count == 0)
+        var copyTrait = LookupTrait(symbolTable, BuiltinTraits.TraitNames.Copy);
+        if (!copyTrait.HasValue)
         {
             return _ => false;
         }
 
         return typeId => typeId.IsValid &&
-                          (HasCopyLikeTypeParameterConstraint(symbolTable, typeId, copyLikeTraits) ||
-                           HasCopyLikeImpl(symbolTable, typeId, copyLikeTraits, typeDescriptors));
+                          (HasCopyTypeParameterConstraint(symbolTable, typeId, copyTrait.Value) ||
+                           HasCopyImpl(symbolTable, typeId, copyTrait.Value, typeDescriptors));
     }
 
-    private static IReadOnlyList<SymbolId> ResolveCopyLikeTraits(SymbolTable symbolTable)
-    {
-        var traits = new List<SymbolId>(2);
-        var seen = new HashSet<int>();
-
-        AddIfPresent(LookupTrait(symbolTable, "Copy"));
-        AddIfPresent(LookupTrait(symbolTable, BuiltinTraits.TraitNames.Clone));
-        return traits;
-
-        void AddIfPresent(SymbolId? traitId)
-        {
-            if (!traitId.HasValue || !seen.Add(traitId.Value.Value))
-            {
-                return;
-            }
-
-            traits.Add(traitId.Value);
-        }
-    }
-
-    private static bool HasCopyLikeTypeParameterConstraint(
+    private static bool HasCopyTypeParameterConstraint(
         SymbolTable symbolTable,
         TypeId typeId,
-        IReadOnlyList<SymbolId> copyLikeTraits)
+        SymbolId copyTrait)
     {
         var typeParam = symbolTable.GetSymbol<TypeParamSymbol>(new SymbolId(typeId.Value));
         return typeParam != null &&
-               typeParam.TraitConstraints.Any(copyLikeTraits.Contains);
+               typeParam.TraitConstraints.Contains(copyTrait);
     }
 
-    private static bool HasCopyLikeImpl(
+    private static bool HasCopyImpl(
         SymbolTable symbolTable,
         TypeId typeId,
-        IReadOnlyList<SymbolId> copyLikeTraits,
+        SymbolId copyTrait,
         IReadOnlyDictionary<int, TypeDescriptor>? typeDescriptors)
     {
         if (!TryBuildCopyImplLookup(
@@ -228,19 +256,11 @@ public static class CopyTypeSemantics
             return false;
         }
 
-        for (var i = 0; i < copyLikeTraits.Count; i++)
-        {
-            if (symbolTable.LookupImplForTraitByKeys(
-                    lookupTypeId,
-                    copyLikeTraits[i],
-                    implementingTypeKey,
-                    traitTypeArgKeys: null) != null)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return symbolTable.LookupImplForTraitByKeys(
+            lookupTypeId,
+            copyTrait,
+            implementingTypeKey,
+            traitTypeArgKeys: null) != null;
     }
 
     private static bool TryBuildCopyImplLookup(

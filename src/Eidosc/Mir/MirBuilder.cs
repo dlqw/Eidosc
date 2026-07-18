@@ -14,7 +14,6 @@ public sealed partial class MirBuilder
 {
     private readonly Func<TypeId, bool>? _hasCopyImplResolver;
     private readonly SymbolTable? _symbolTable;
-    private readonly ParameterEffectMap? _parameterEffects;
     private readonly HashSet<int> _extraCopyLikeTypeIds = [];
     private readonly Dictionary<int, string> _dynamicTypeKeysById = [];
     private readonly Dictionary<int, TypeDescriptor> _typeDescriptorsById = [];
@@ -55,7 +54,6 @@ public sealed partial class MirBuilder
     private readonly Dictionary<TypeId, HashSet<string>> _partialNamedFieldByAdtType = new();
     private readonly Dictionary<TypeId, HashSet<string>> _allNamedFieldByAdtType = new();
     private readonly Dictionary<TypeId, string> _adtDisplayNameByType = new();
-    private readonly HashSet<int> _copyFirstArgumentFunctionSymbols = [];
     private Dictionary<LocalId, int> _knownListLengths = new();
     private HashSet<LocalId> _runtimeArrayLocals = [];
     private HashSet<LocalId> _comprehensionElementLocals = [];
@@ -120,7 +118,6 @@ public sealed partial class MirBuilder
     {
         _substitution = substitution;
         _hasCopyImplResolver = hasCopyImplResolver;
-        _parameterEffects = parameterEffects;
         _symbolTable = symbolTable;
         if (symbolTable != null)
         {
@@ -253,7 +250,6 @@ public sealed partial class MirBuilder
         _partialNamedFieldByAdtType.Clear();
         _allNamedFieldByAdtType.Clear();
         _adtDisplayNameByType.Clear();
-        _copyFirstArgumentFunctionSymbols.Clear();
         _copyTypeCache.Clear();
         _generatedLambdaFunctions.Clear();
         _loopContextStack.Clear();
@@ -326,7 +322,6 @@ public sealed partial class MirBuilder
             .ToList();
         DetectModuleValueCycles(moduleValueDecls);
 
-        PopulateCloneMethodSymbols();
 
         foreach (var val in resolutionDeclarations.OfType<HirVal>())
         {
@@ -1360,8 +1355,7 @@ public sealed partial class MirBuilder
         for (var i = 0; i < call.Arguments.Count; i++)
         {
             var argument = call.Arguments[i];
-            var forceCopy = ShouldPassCallArgumentByCopy(func, i);
-            args.Add(PrepareCallArgumentForNode(argument, call.Span, forceCopy));
+            args.Add(PrepareCallArgumentForNode(argument, call.Span, forceCopy: false));
         }
         var resultType = ResolveCallResultType(call, func);
         func = AttachCallSiteSignature(func, args, resultType);
@@ -1570,10 +1564,7 @@ public sealed partial class MirBuilder
             var group = argumentGroups[groupIndex];
             for (var argIndex = 0; argIndex < group.Count; argIndex++)
             {
-                // Arg position within the full flattened call determines by-copy policy.
-                var flatPosition = flattenedArgs.Count;
-                var forceCopy = ShouldPassCallArgumentByCopy(functionRef, flatPosition);
-                flattenedArgs.Add(PrepareCallArgumentForNode(group[argIndex], call.Span, forceCopy));
+                flattenedArgs.Add(PrepareCallArgumentForNode(group[argIndex], call.Span, forceCopy: false));
             }
         }
 

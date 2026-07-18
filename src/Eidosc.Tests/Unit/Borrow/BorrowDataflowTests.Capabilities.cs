@@ -241,31 +241,6 @@ public partial class BorrowDataflowTests
     }
 
     [Fact]
-    public void BorrowChecker_CallCopyArgWithoutReadCapability_ReportsReadCapabilityDenied()
-    {
-        var (func, signatureCache, symbolTable) = CreateCallArgCapabilityFixture(
-            "call_cap_copy_denied",
-            new SymbolId(923),
-            ParamBorrowMode.Copy);
-
-        var usage = new VariableUsageAnalyzer(func);
-        usage.Analyze();
-
-        var liveness = new LivenessAnalyzer(func, usage);
-        liveness.Analyze();
-
-        var checker = new BorrowChecker(
-            func,
-            liveness,
-            signatureCache,
-            symbolTable,
-            capabilitySnapshot: BorrowCapabilitySnapshot.Enforced(BorrowCapabilityKind.Move));
-        checker.Check();
-
-        Assert.Contains(checker.Diagnostics, d => d.Kind == BorrowErrorKind.ReadCapabilityDenied);
-    }
-
-    [Fact]
     public void BorrowChecker_CallOwnArgAfterCopyFromIndexedBorrowedValue_DoesNotReportNeedOwnershipButBorrowed()
     {
         var intType = new TypeId(BaseTypes.IntId);

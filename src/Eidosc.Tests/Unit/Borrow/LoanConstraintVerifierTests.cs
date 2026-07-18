@@ -1016,24 +1016,6 @@ public partial class LoanConstraintVerifierTests
     }
 
     [Fact]
-    public void VerifyFunction_CallCopyArgWithoutReadCapability_ReportsReadCapabilityDenied()
-    {
-        var (func, signatureCache, symbolTable) = CreateCallArgCapabilityFixture(
-            "loan_call_cap_copy_denied",
-            new SymbolId(933),
-            ParamBorrowMode.Copy);
-
-        var verifier = new LoanConstraintVerifier(
-            signatureCache,
-            symbolTable,
-            BorrowCapabilitySnapshot.Enforced(BorrowCapabilityKind.Move));
-        var results = verifier.VerifyFunction(func);
-
-        Assert.Contains(results, result => result.Violation == LoanConstraintViolation.ReadCapabilityDenied);
-        Assert.Contains(verifier.Diagnostics, diagnostic => diagnostic.Kind == BorrowErrorKind.ReadCapabilityDenied);
-    }
-
-    [Fact]
     public void VerifyFunction_CallOwnArgAfterCopyFromIndexedBorrowedValue_DoesNotReportNeedOwnershipButBorrowed()
     {
         var intType = new TypeId(BaseTypes.IntId);

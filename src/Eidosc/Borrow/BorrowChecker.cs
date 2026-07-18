@@ -1119,15 +1119,6 @@ public sealed class BorrowChecker
                 currentState,
                 readAction: DiagnosticMessages.BorrowActionCreateSharedBorrowThroughCallArgument,
                 mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
-            ParamBorrowMode.Copy => RequireCallArgumentLoadCapability(
-                argumentPlace,
-                isMutableBorrow: false,
-                span,
-                blockId,
-                index,
-                currentState,
-                readAction: DiagnosticMessages.BorrowActionReadThroughCallArgument,
-                mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
             _ => true
         };
     }

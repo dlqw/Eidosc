@@ -115,7 +115,7 @@ public class LoanSignatureInfererTests
     }
 
     [Fact]
-    public void Infer_UserTypeWithCopyImpl_ParamModeIsCopy()
+    public void Infer_UserTypeWithCopyImpl_ParamModeRemainsOwnedByValue()
     {
         var symbolTable = new SymbolTable();
         var copyTraitId = symbolTable.DeclareTrait("Copy", SourceSpan.Empty);
@@ -155,7 +155,7 @@ public class LoanSignatureInfererTests
         var signature = inferer.Infer(force: true);
         var requirement = Assert.Single(signature.ParamRequirements);
 
-        Assert.Equal(ParamBorrowMode.Copy, requirement.Mode);
+        Assert.Equal(ParamBorrowMode.Own, requirement.Mode);
         Assert.Equal(
             OwnershipPassingKind.ByValue,
             signature.OwnershipContract.GetParameter(0).Projection.Kind);

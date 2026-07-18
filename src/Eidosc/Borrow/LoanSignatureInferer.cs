@@ -20,7 +20,6 @@ public sealed class LoanSignatureInferer
     private readonly LoanSignatureCache _cache;
     private readonly ControlFlowGraph? _precomputedCfg;
     private readonly SymbolTable _symbolTable;
-    private readonly Func<TypeId, bool> _hasCopyImplResolver;
     private readonly IReadOnlyDictionary<int, string>? _dynamicTypeKeys;
     private readonly IReadOnlyDictionary<int, TypeDescriptor>? _typeDescriptors;
 
@@ -77,7 +76,6 @@ public sealed class LoanSignatureInferer
         _cache = cache;
         _precomputedCfg = cfg;
         _symbolTable = symbolTable;
-        _hasCopyImplResolver = CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable);
         _dynamicTypeKeys = dynamicTypeKeys;
         _typeDescriptors = typeDescriptors ?? ParseLegacyTypeDescriptors(dynamicTypeKeys);
     }
@@ -234,9 +232,7 @@ public sealed class LoanSignatureInferer
         {
             OwnershipPassingKind.SharedBorrow => ParamBorrowMode.BorrowShared,
             OwnershipPassingKind.MutableBorrow => ParamBorrowMode.BorrowMutable,
-            OwnershipPassingKind.ByValue => IsCopyType(local.TypeId)
-                ? ParamBorrowMode.Copy
-                : ParamBorrowMode.Own,
+            OwnershipPassingKind.ByValue => ParamBorrowMode.Own,
             _ => ParamBorrowMode.Own
         };
     }
@@ -423,18 +419,6 @@ public sealed class LoanSignatureInferer
     private LifetimeId AllocateLifetime()
     {
         return new LifetimeId { Value = _nextLifetimeId++ };
-    }
-
-    /// <summary>
-    /// 检查类型是否实现了 Copy trait
-    /// </summary>
-    private bool IsCopyType(TypeId typeId)
-    {
-        return CopyTypeSemantics.IsCopyType(
-            typeId,
-            _hasCopyImplResolver,
-            _typeDescriptors,
-            _dynamicTypeKeys);
     }
 
     /// <summary>

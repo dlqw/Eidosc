@@ -389,7 +389,6 @@ public sealed partial class LoanConstraintVerifier
             ParamBorrowMode.Own => VerifyOwnership(place.Local, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowShared => VerifySharedBorrow(place.Local, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowMutable => VerifyMutableBorrow(place.Local, span, blockId, instructionIndex, state),
-            ParamBorrowMode.Copy => VerifyCopyArgument(place.Local, span, blockId, instructionIndex, state),
             _ => LoanConstraintResult.Success()
         };
     }
@@ -422,15 +421,6 @@ public sealed partial class LoanConstraintVerifier
                 instructionIndex,
                 state,
                 readAction: DiagnosticMessages.BorrowActionCreateSharedBorrowThroughCallArgument,
-                mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
-            ParamBorrowMode.Copy => RequireCallArgumentLoadCapability(
-                place,
-                isMutableBorrow: false,
-                span,
-                blockId,
-                instructionIndex,
-                state,
-                readAction: DiagnosticMessages.BorrowActionReadThroughCallArgument,
                 mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
             _ => LoanConstraintResult.Success()
         };
@@ -527,7 +517,6 @@ public sealed partial class LoanConstraintVerifier
             ParamBorrowMode.Own => ValidateMoveOfOwnedTarget(target, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowShared => VerifySharedBorrowTarget(target, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowMutable => VerifyMutableBorrowTarget(target, span, blockId, instructionIndex, state),
-            ParamBorrowMode.Copy => ValidateReadLocal(target.BaseLocal, span, blockId, instructionIndex, state, null),
             _ => LoanConstraintResult.Success()
         };
     }
@@ -792,16 +781,6 @@ public sealed partial class LoanConstraintVerifier
         }
 
         return LoanConstraintResult.Success();
-    }
-
-    private LoanConstraintResult VerifyCopyArgument(
-        LocalId localId,
-        SourceSpan span,
-        BlockId blockId,
-        int instructionIndex,
-        LoanVerifierState state)
-    {
-        return ValidateReadLocal(localId, span, blockId, instructionIndex, state, null);
     }
 
     private LoanConstraintResult VerifyReturnConstraints(
