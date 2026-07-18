@@ -235,9 +235,10 @@ try_update[A, E: effects] :: RwLock[A] -> (A -> A need E) -> Option[A] need ffi,
         new_value := update(old_value);
         new_boxed := Ffi.box_value[A](new_value);
         RwLock.replace_inner_runtime(handle)(new_boxed);
+        result := Ffi.unbox_value[A](new_boxed);
         Ffi.free_boxed_value(new_boxed);
         released := RwLock.unlock_write_runtime(handle);
-        Some(new_value)
+        Some(result)
     } else {
         None()
     }

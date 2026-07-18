@@ -156,9 +156,10 @@ try_update[A, E: effects] :: Mutex[A] -> (A -> A need E) -> Option[A] need ffi, 
         new_value := update(old_value);
         new_boxed := Ffi.box_value[A](new_value);
         Mutex.replace_inner_runtime(handle)(new_boxed);
+        result := Ffi.unbox_value[A](new_boxed);
         Ffi.free_boxed_value(new_boxed);
         released := Mutex.unlock_runtime(handle);
-        Some(new_value)
+        Some(result)
     } else {
         None()
     }
