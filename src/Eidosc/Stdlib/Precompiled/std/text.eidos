@@ -1,0 +1,521 @@
+Text :: module {
+    import Seq
+    import Option
+    import Traits
+    import Ordering.{Ordering}
+    import Ordering
+
+
+
+    string_length :: String -> Int internal intrinsic "string_length";
+
+
+
+
+    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
+
+
+
+
+    string_slice :: String -> Int -> Int -> String internal intrinsic "string_slice";
+
+
+
+
+    string_equals :: String -> String -> Bool internal intrinsic "string_equals";
+
+
+
+
+    string_from_char :: Int -> String internal intrinsic "string_from_char";
+
+
+
+
+    char_from_code :: Int -> Char internal intrinsic "char_from_code";
+
+
+
+
+    int_to_string :: Int -> String internal intrinsic "int_to_string";
+
+
+    len :: String -> Int { s => string_length(s) }
+
+    empty :: String -> Bool { s => string_length(s) == 0 }
+
+    from_int :: Int -> String { value => int_to_string(value) }
+
+    from_bool :: Bool -> String
+    {
+        true => "true",
+        false => "false"
+    }
+
+    clone :: String -> String
+    {
+        s => string_slice(s, 0, string_length(s))
+    }
+
+    from_code :: Int -> String { code => string_from_char(code) }
+
+
+    is_ascii_space_code :: Int -> Bool
+     internal
+{
+        code => code == 32 || code == 9 || code == 10 || code == 13
+    }
+
+    is_ascii_digit_code :: Int -> Bool
+    {
+        code => code >= 48 && code <= 57
+    }
+
+    is_ascii_lower_code :: Int -> Bool
+    {
+        code => code >= 97 && code <= 122
+    }
+
+    is_ascii_upper_code :: Int -> Bool
+    {
+        code => code >= 65 && code <= 90
+    }
+
+    is_ascii_alpha_code :: Int -> Bool
+    {
+        code => Text.is_ascii_lower_code(code) || Text.is_ascii_upper_code(code)
+    }
+
+    is_ascii_alnum_code :: Int -> Bool
+    {
+        code => Text.is_ascii_alpha_code(code) || Text.is_ascii_digit_code(code)
+    }
+
+    to_ascii_lower_code :: Int -> Int
+    {
+        code => if Text.is_ascii_upper_code(code) then { code + 32 } else { code }
+    }
+
+    to_ascii_upper_code :: Int -> Int
+    {
+        code => if Text.is_ascii_lower_code(code) then { code - 32 } else { code }
+    }
+
+
+    trim_start_index :: String -> Int -> Int
+     internal
+{
+        s => index => {
+            text_len := string_length(s);
+            if index >= text_len then { index }
+            else if Text.is_ascii_space_code(Text.char_code_at(s)(index)) then
+            {
+                Text.trim_start_index(s)(index + 1)
+            }
+            else { index }
+        }
+    }
+
+
+    trim_end_count :: String -> Int -> Int
+     internal
+{
+        s => count => {
+            if count <= 0 then { 0 }
+            else if Text.is_ascii_space_code(Text.char_code_at(s)(count - 1)) then
+            {
+                Text.trim_end_count(s)(count - 1)
+            }
+            else { count }
+        }
+    }
+
+    trim_start :: String -> String
+    {
+        s => {
+            text_len := string_length(s);
+            start := Text.trim_start_index(s)(0);
+            if start <= 0 then { Text.clone(s) }
+            else if start >= text_len then { "" }
+            else { string_slice(s, start, text_len - start) }
+        }
+    }
+
+    trim_end :: String -> String
+    {
+        s => {
+            count := Text.trim_end_count(s)(string_length(s));
+            if count <= 0 then { "" }
+            else if count >= string_length(s) then { Text.clone(s) }
+            else { string_slice(s, 0, count) }
+        }
+    }
+
+    trim :: String -> String
+    {
+        s => Text.trim_end(Text.trim_start(s))
+    }
+
+    is_blank :: String -> Bool
+    {
+        s => Text.trim(s) == ""
+    }
+
+    char_code_at :: String -> Int -> Int { (s, i) => string_char_at(s, i) }
+
+    char_code_at_opt :: String -> Int -> Option[Int]
+    {
+        s => i => if i >= 0 && i < string_length(s) then { Some(Text.char_code_at(s)(i)) } else { None() }
+    }
+
+    char_code_at_or :: String -> Int -> Int -> Int
+    {
+        s => i => fallback => Option.unwrap_or(Text.char_code_at_opt(s)(i))(fallback)
+    }
+
+    char_at_opt :: String -> Int -> Option[Char]
+    {
+        s => i => if i >= 0 && i < string_length(s) then { Some(char_from_code(Text.char_code_at(s)(i))) } else { None() }
+    }
+
+    char_at_or :: String -> Int -> Char -> Char
+    {
+        s => i => fallback => Option.unwrap_or(Text.char_at_opt(s)(i))(fallback)
+    }
+
+    slice :: String -> Int -> Int -> String { (s, start, count) => string_slice(s, start, count) }
+
+    take :: String -> Int -> String
+    {
+        s => count => {
+            text_len := string_length(s);
+            if count <= 0 then { "" }
+            else if count >= text_len then { Text.clone(s) }
+            else { string_slice(s, 0, count) }
+        }
+    }
+
+    drop :: String -> Int -> String
+    {
+        s => count => {
+            text_len := string_length(s);
+            if count <= 0 then { Text.clone(s) }
+            else if count >= text_len then { "" }
+            else { string_slice(s, count, text_len - count) }
+        }
+    }
+
+    take_last :: String -> Int -> String
+    {
+        s => count => {
+            text_len := string_length(s);
+            if count <= 0 then { "" }
+            else if count >= text_len then { Text.clone(s) }
+            else { string_slice(s, text_len - count, count) }
+        }
+    }
+
+    drop_last :: String -> Int -> String
+    {
+        s => count => {
+            text_len := string_length(s);
+            if count <= 0 then { Text.clone(s) }
+            else if count >= text_len then { "" }
+            else { string_slice(s, 0, text_len - count) }
+        }
+    }
+
+    starts_with :: String -> String -> Bool
+    {
+        s => prefix => {
+            prefix_len := string_length(prefix);
+            if prefix_len > string_length(s) then { false }
+            else { string_equals(string_slice(s, 0, prefix_len), prefix) }
+        }
+    }
+
+    ends_with :: String -> String -> Bool
+    {
+        s => suffix => {
+            suffix_len := string_length(suffix);
+            text_len := string_length(s);
+            if suffix_len > text_len then { false }
+            else { string_equals(string_slice(s, text_len - suffix_len, suffix_len), suffix) }
+        }
+    }
+
+
+    contains_from :: String -> String -> Int -> Bool
+     internal
+{
+        s => needle => index => {
+            needle_len := string_length(needle);
+            text_len := string_length(s);
+            if index + needle_len > text_len then { false }
+            else if string_equals(string_slice(s, index, needle_len), needle) then { true }
+            else { Text.contains_from(s)(needle)(index + 1) }
+        }
+    }
+
+    contains :: String -> String -> Bool
+    {
+        s => needle => if string_length(needle) == 0 then { true } else { Text.contains_from(s)(needle)(0) }
+    }
+
+
+    index_of_from_opt :: String -> String -> Int -> Option[Int]
+     internal
+{
+        s => needle => index => {
+            needle_len := string_length(needle);
+            text_len := string_length(s);
+            if index + needle_len > text_len then { None() }
+            else if string_equals(string_slice(s, index, needle_len), needle) then { Some(index) }
+            else { Text.index_of_from_opt(s)(needle)(index + 1) }
+        }
+    }
+
+    index_of_opt :: String -> String -> Option[Int]
+    {
+        s => needle => if string_length(needle) == 0 then { Some(0) } else { Text.index_of_from_opt(s)(needle)(0) }
+    }
+
+    index_of_or :: String -> String -> Int -> Int
+    {
+        s => needle => fallback => Option.unwrap_or(Text.index_of_opt(s)(needle))(fallback)
+    }
+
+
+    last_index_of_from_opt :: String -> String -> Int -> Option[Int]
+     internal
+{
+        s => needle => index => {
+            needle_len := string_length(needle);
+            if index < 0 then { None() }
+            else if string_equals(string_slice(s, index, needle_len), needle) then { Some(index) }
+            else { Text.last_index_of_from_opt(s)(needle)(index - 1) }
+        }
+    }
+
+    last_index_of_opt :: String -> String -> Option[Int]
+    {
+        s => needle => {
+            needle_len := string_length(needle);
+            text_len := string_length(s);
+            if needle_len == 0 then { Some(text_len) }
+            else if needle_len > text_len then { None() }
+            else { Text.last_index_of_from_opt(s)(needle)(text_len - needle_len) }
+        }
+    }
+
+    last_index_of_or :: String -> String -> Int -> Int
+    {
+        s => needle => fallback => Option.unwrap_or(Text.last_index_of_opt(s)(needle))(fallback)
+    }
+
+
+    count_from :: String -> String -> Int -> Int
+     internal
+{
+        s => needle => index => {
+            needle_len := string_length(needle);
+            text_len := string_length(s);
+            if index + needle_len > text_len then { 0 }
+            else if string_equals(string_slice(s, index, needle_len), needle) then
+            {
+                1 + Text.count_from(s)(needle)(index + 1)
+            }
+            else { Text.count_from(s)(needle)(index + 1) }
+        }
+    }
+
+    count :: String -> String -> Int
+    {
+        s => needle => if string_length(needle) == 0 then { 0 } else { Text.count_from(s)(needle)(0) }
+    }
+
+    repeat :: String -> Int -> String
+    {
+        s => times => if times <= 0 then { "" } else { s ++ Text.repeat(s)(times - 1) }
+    }
+
+    replace_all :: String -> String -> String -> String
+    {
+        s => needle => replacement => {
+            needle_len := string_length(needle);
+            if needle_len == 0 then { Text.clone(s) }
+            else {
+                match Text.index_of_opt(s)(needle)
+                {
+                    Some(index) => {
+                        prefix := string_slice(s, 0, index);
+                        rest_start := index + needle_len;
+                        rest := string_slice(s, rest_start, string_length(s) - rest_start);
+                        prefix ++ replacement ++ Text.replace_all(rest)(needle)(replacement)
+                    },
+                    None() => Text.clone(s)
+                }
+            }
+        }
+    }
+
+    split_once :: String -> String -> Option[(String, String)]
+    {
+        s => separator => {
+            separator_len := string_length(separator);
+            if separator_len == 0 then { None() }
+            else {
+                match Text.index_of_opt(s)(separator)
+                {
+                    Some(index) => {
+                        right_start := index + separator_len;
+                        Some((string_slice(s, 0, index), string_slice(s, right_start, string_length(s) - right_start)))
+                    },
+                    None() => None()
+                }
+            }
+        }
+    }
+
+    before_or :: String -> String -> String -> String
+    {
+        s => separator => fallback => match Text.split_once(s)(separator)
+        {
+            Some((before, _)) => before,
+            None() => fallback
+        }
+    }
+
+    after_or :: String -> String -> String -> String
+    {
+        s => separator => fallback => match Text.split_once(s)(separator)
+        {
+            Some((_, after)) => after,
+            None() => fallback
+        }
+    }
+
+    split :: String -> String -> Seq[String]
+    {
+        s => separator => {
+            separator_len := string_length(separator);
+            if separator_len == 0 then { [Text.clone(s)] }
+            else {
+                match Text.split_once(s)(separator)
+                {
+                    Some((before, after)) => [before, ..Text.split(after)(separator)],
+                    None() => [Text.clone(s)]
+                }
+            }
+        }
+    }
+
+
+    map_ascii_codes[E: effects] :: String -> Int -> (Int -> Int need E) -> String need E
+     internal
+{
+        s => index => mapper => {
+            if index >= string_length(s) then { "" }
+            else { string_from_char(mapper(string_char_at(s, index))) ++ Text.map_ascii_codes(s)(index + 1)(mapper) }
+        }
+    }
+
+    to_lower_ascii :: String -> String
+    {
+        s => Text.map_ascii_codes(s)(0)(Text.to_ascii_lower_code)
+    }
+
+    to_upper_ascii :: String -> String
+    {
+        s => Text.map_ascii_codes(s)(0)(Text.to_ascii_upper_code)
+    }
+
+    capitalize_ascii :: String -> String
+    {
+        s => if string_length(s) == 0 then { "" }
+             else { string_from_char(Text.to_ascii_upper_code(string_char_at(s, 0))) ++ Text.to_lower_ascii(string_slice(s, 1, string_length(s) - 1)) }
+    }
+
+
+    repeat_to_length :: String -> Int -> String
+     internal
+{
+        fill => count => {
+            if count <= 0 || string_length(fill) == 0 then { "" }
+            else {
+                fill_len := string_length(fill);
+                if fill_len >= count then { Text.take(fill)(count) }
+                else { fill ++ Text.repeat_to_length(fill)(count - fill_len) }
+            }
+        }
+    }
+
+    pad_left :: String -> Int -> String -> String
+    {
+        s => width => fill => {
+            text_len := string_length(s);
+            if string_length(fill) == 0 || text_len >= width then { Text.clone(s) }
+            else { Text.repeat_to_length(fill)(width - text_len) ++ s }
+        }
+    }
+
+    pad_right :: String -> Int -> String -> String
+    {
+        s => width => fill => {
+            text_len := string_length(s);
+            if string_length(fill) == 0 || text_len >= width then { Text.clone(s) }
+            else { s ++ Text.repeat_to_length(fill)(width - text_len) }
+        }
+    }
+
+    join :: Seq[String] -> String -> String
+    {
+        [] => _ => "",
+        [head] => _ => head,
+        [head, ..tail] => separator => head ++ separator ++ Text.join(tail)(separator)
+    }
+
+    concat :: Seq[String] -> String
+    {
+        parts => Text.join(parts)("")
+    }
+
+    EqString :: instance Traits.Eq {
+        eq :: String -> String -> Bool { left => right => string_equals(left, right) }
+    }
+
+
+    compare_from :: String -> String -> Int -> Ordering
+     internal
+{
+        left => right => index => {
+            left_len := string_length(left);
+            right_len := string_length(right);
+            if index >= left_len && index >= right_len then { Equal() }
+            else if index >= left_len then { Less() }
+            else if index >= right_len then { Greater() }
+            else {
+                char_ordering := Ordering.compare_int(string_char_at(left, index))(string_char_at(right, index));
+                if Ordering.is_eq(char_ordering) then { Text.compare_from(left)(right)(index + 1) }
+                else { char_ordering }
+            }
+        }
+    }
+
+    OrdString :: instance Traits.Ord {
+        compare :: String -> String -> Ordering
+            {
+                left => right => Text.compare_from(left)(right)(0)
+            }
+    }
+
+    ShowString :: instance Traits.Show {
+        show :: String -> String { s => Text.clone(s) }
+    }
+
+    CloneString :: instance Traits.Clone {
+        clone :: String -> String { s => Text.clone(s) }
+    }
+
+    append :: String -> String -> String { left => right => left ++ right }
+}

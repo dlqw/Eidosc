@@ -99,13 +99,13 @@ id[T] :: T -> T where t: kind1
     x => x
 }
 """)]
-    public void Parser_TypeParamName_Lowercase_FailsWithParserDiagnostic(string inputFile, string source)
+    public void Parser_TypeParamName_Lowercase_RemainsSyntacticallyValid(string inputFile, string source)
     {
         var result = RunParser(source, inputFile);
 
-        Assert.False(result.Success);
+        Assert.True(result.Success);
         Assert.Equal(CompilationPhase.Parser, result.CompletedPhase);
-        Assert.NotEmpty(result.Diagnostics);
+        Assert.Empty(result.Diagnostics);
     }
 
     [Fact]

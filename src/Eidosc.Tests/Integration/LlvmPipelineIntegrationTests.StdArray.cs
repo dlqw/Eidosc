@@ -11,7 +11,7 @@ public partial class LlvmPipelineIntegrationTests
     public void RuntimeArrayImportSource_LowersRuntimeArrayPrimitivesToLlvmCalls()
     {
         const string source = """
-import Std.RuntimeArray
+import std.RuntimeArray
 
 main :: Unit -> Int
 {
@@ -47,7 +47,7 @@ main :: Unit -> Int
     public void SeqBuilderPopLast_NativeSmoke_ShrinksWithoutCopyingPrefix()
     {
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
 
 main :: Unit -> Int
 {
@@ -71,7 +71,7 @@ main :: Unit -> Int
     public void SeqBuilderSwap_NativeSmoke_SwapsCompositeSlotsWithoutClone()
     {
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
 
 main :: Unit -> Int
 {
@@ -97,8 +97,8 @@ main :: Unit -> Int
     public void SeqBuilderWithCapacity_SpecializesCompositeTypeArgumentInsideGenericFunction()
     {
         const string source = """
-import Std.SeqBuilder
-import Std.Seq
+import std.SeqBuilder
+import std.Seq
 
 build_aa[A] :: Int -> SeqBuilder[(A, A)]
 {
@@ -126,8 +126,8 @@ main :: Unit -> Int
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
 
         var llvmIr = Assert.IsType<string>(result.LlvmIrText);
-        Assert.Contains("@eidos_Std__SeqBuilder__with_capacity__spec_", llvmIr, StringComparison.Ordinal);
+        Assert.Contains("@eidos_std__SeqBuilder__with_capacity__spec_", llvmIr, StringComparison.Ordinal);
         Assert.Contains("call ptr @eidos_array_new_with_policy(i64 %capacity, i64 16", llvmIr, StringComparison.Ordinal);
-        Assert.DoesNotContain("musttail call ptr @eidos_Std__SeqBuilder__with_capacity(i64 %n)", llvmIr, StringComparison.Ordinal);
+        Assert.DoesNotContain("musttail call ptr @eidos_std__SeqBuilder__with_capacity(i64 %n)", llvmIr, StringComparison.Ordinal);
     }
 }

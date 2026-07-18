@@ -17,7 +17,7 @@ public class ImplSelectionTests
         new(symbolId, typeId, text, [.. args]);
 
     private static ImplTypeRefKey VarKey(string name) =>
-        new(SymbolId.None, TypeId.None, name, []);
+        new(SymbolId.None, TypeId.None, $"var:{name}", []);
 
     private static ImplTypeRefKey ConstIntKey(int parameterIndex, int value) =>
         ImplTypeRefKey.FromValueArgument(new ImplValueRefKey(
@@ -33,6 +33,79 @@ public class ImplSelectionTests
             new TypeId(BaseTypes.IntId),
             $"param:{parameterIndex}",
             name));
+
+    [Fact]
+    public void DeclareImpl_WithoutExistingSymbolId_AllocatesDistinctIds()
+    {
+        var symbolTable = new SymbolTable();
+        var traitId = symbolTable.DeclareTrait("Show", TestSpan);
+        var optionId = symbolTable.DeclareAdt("Option", TestSpan);
+        var optionSymbol = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(optionId));
+
+        var genericImplId = symbolTable.DeclareImpl(
+            traitId,
+            optionSymbol.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Option[T]",
+            canonicalImplementingType: "Option[T]");
+        var concreteImplId = symbolTable.DeclareImpl(
+            traitId,
+            optionSymbol.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Option[Int]",
+            canonicalImplementingType: "Option[Int]");
+
+        Assert.True(genericImplId.IsValid);
+        Assert.True(concreteImplId.IsValid);
+        Assert.NotEqual(genericImplId, concreteImplId);
+    }
+
+    [Fact]
+    public void DeclareImpl_ReusingPendingSymbolId_ReplacesPreviousIndexEntry()
+    {
+        var symbolTable = new SymbolTable();
+        var traitId = symbolTable.DeclareTrait("Clone", TestSpan);
+        var seqId = symbolTable.DeclareAdt("Seq", TestSpan);
+        var seq = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(seqId));
+        var seqKey = TypeKey(seqId, seq.TypeId, "Seq", VarKey("T"));
+        var pendingImplId = symbolTable.DeclarePendingImpl("CloneSeqT", TestSpan);
+
+        symbolTable.DeclareImpl(
+            traitId,
+            seq.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Seq[T]",
+            canonicalImplementingType: "Seq[T]",
+            implementingTypeKey: seqKey,
+            existingSymbolId: pendingImplId,
+            declaredName: "CloneSeqT");
+        symbolTable.DeclareImpl(
+            traitId,
+            seq.TypeId,
+            TestSpan,
+            implementingTypeDisplay: "Seq[T]",
+            canonicalImplementingType: "Seq[T]",
+            implementingTypeRequirements:
+            [
+                new ImplTypeArgTraitRequirement
+                {
+                    TypeArgIndex = 0,
+                    Trait = traitId,
+                    TraitName = "Clone"
+                }
+            ],
+            implementingTypeKey: seqKey,
+            existingSymbolId: pendingImplId,
+            declaredName: "CloneSeqT");
+
+        var candidates = symbolTable.LookupImplCandidatesForTraitByKeys(seq.TypeId, traitId, []);
+        var selected = symbolTable.LookupImplForTraitByKeys(seq.TypeId, traitId, seqKey, []);
+
+        Assert.Single(candidates);
+        Assert.Single(symbolTable.GetImplsForTrait(traitId));
+        Assert.Equal(pendingImplId, selected?.Id);
+        Assert.Single(Assert.IsType<ImplSymbol>(symbolTable.GetSymbol(pendingImplId)).ImplementingTypeRequirements);
+    }
 
     [Fact]
     public void LookupImplForTrait_OldApiWithMultipleCandidates_RemainsConservative()

@@ -34,14 +34,6 @@ public abstract record ImplTypeShapeNode
 
     private static ImplTypeShapeNode FromTypePath(TypePath typePath)
     {
-        if (typePath.ModulePath.Count == 0 &&
-            typePath.TypeArgs.Count == 0 &&
-            !string.IsNullOrWhiteSpace(typePath.TypeName) &&
-            IsVariableLikeName(typePath.TypeName))
-        {
-            return new ImplVariableShapeNode(typePath.TypeName);
-        }
-
         var name = typePath.ModulePath.Count > 0
             ? string.Join(WellKnownStrings.Separators.Path, typePath.ModulePath) + WellKnownStrings.Separators.Path + typePath.TypeName
             : typePath.TypeName;
@@ -51,20 +43,6 @@ public abstract record ImplTypeShapeNode
         };
     }
 
-    private static bool IsVariableLikeName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return false;
-        }
-
-        if (name.Length == 1 && char.IsLetter(name[0]))
-        {
-            return true;
-        }
-
-        return char.IsLower(name[0]);
-    }
 }
 
 public sealed record ImplWildcardShapeNode : ImplTypeShapeNode
@@ -125,6 +103,11 @@ public static class ImplSpecializationComparer
             return ImplWildcardShapeNode.Instance;
         }
 
+        if (ImplTypeShapeFactory.TryGetExplicitVariableIdentity(trimmed, out var variableIdentity))
+        {
+            return new ImplVariableShapeNode(variableIdentity);
+        }
+
         if (TrySplitTopLevelArrow(trimmed, out var paramText, out var returnText))
         {
             return new ImplArrowShapeNode(
@@ -146,9 +129,7 @@ public static class ImplSpecializationComparer
         var bracketIndex = trimmed.IndexOf('[');
         if (bracketIndex <= 0 || !trimmed.EndsWith("]", StringComparison.Ordinal))
         {
-            return IsVariableLikeCanonicalName(trimmed)
-                ? new ImplVariableShapeNode(trimmed)
-                : new ImplConstructorShapeNode(trimmed, []);
+            return new ImplConstructorShapeNode(trimmed, []);
         }
 
         var name = trimmed[..bracketIndex];
@@ -968,21 +949,6 @@ public static class ImplSpecializationComparer
     private static bool ValueTypesCompatible(TypeId left, TypeId right)
     {
         return !left.IsValid || !right.IsValid || left == right;
-    }
-
-    private static bool IsVariableLikeCanonicalName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return false;
-        }
-
-        if (name.Length == 1 && char.IsLetter(name[0]))
-        {
-            return true;
-        }
-
-        return char.IsLower(name[0]);
     }
 
     private static bool TrySplitTopLevelArrow(string text, out string left, out string right)

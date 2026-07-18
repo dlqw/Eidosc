@@ -193,7 +193,7 @@ main :: Unit -> Int
     {
         const string source = """
 Box :: type {
-    value: Int, tag: Int
+    value:: Int, tag:: Int
 
 }
 
@@ -431,7 +431,7 @@ borrow_first :: MRef[Seq[Int]] -> MRef[Int]
     {
         const string source = """
 ReaderBox[T] :: type {
-    reader: Ref[T], tag: Int
+    reader:: Ref[T], tag:: Int
 }
 
 read :: Ref[Int] -> Int
@@ -471,7 +471,7 @@ use :: Ref[ReaderBox[Int]] -> Int
     {
         const string source = """
 WriterBox[T] :: type {
-    writer: MRef[T], tag: Int
+    writer:: MRef[T], tag:: Int
 }
 
 read :: Ref[Int] -> Int
@@ -547,7 +547,7 @@ use :: Ref[Seq[Ref[Int]]] -> Int
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 read :: Ref[Range] -> Int

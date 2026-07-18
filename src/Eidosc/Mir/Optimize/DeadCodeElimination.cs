@@ -436,6 +436,7 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             MirDrop => true,              // RC decrement
             // No side effects:
             MirAssign => false,
+            MirCaseInject => false,
             MirBinOp => false,
             MirUnaryOp => false,
             MirLoad => false,
@@ -453,6 +454,7 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
         return instr switch
         {
             MirAssign { Target: { Kind: PlaceKind.Local } place } => place.Local,
+            MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
             MirCall { Target: { Kind: PlaceKind.Local } place } => place.Local,
             MirLoad { Target: { Kind: PlaceKind.Local } place } => place.Local,
             MirAlloc { Target: { Kind: PlaceKind.Local } place } => place.Local,
@@ -473,6 +475,9 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
         {
             case MirAssign assign:
                 AddUsedLocalsFromOperand(assign.Source, useSet, defined);
+                break;
+            case MirCaseInject injection:
+                AddUsedLocalsFromOperand(injection.Operand, useSet, defined);
                 break;
             case MirCall call:
                 AddUsedLocalsFromOperand(call.Function, useSet, defined);

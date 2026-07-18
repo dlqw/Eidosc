@@ -20,8 +20,8 @@ public partial class TraitImplResolutionTests
         const string source = """
 Direction :: type
 {
-    North ,
-    South
+    North :: type {} ,
+    South :: type {}
 }
 
 Direction :: trait
@@ -66,8 +66,8 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North ,
-    South
+    North :: type {} ,
+    South :: type {}
 }
 
 DirectionInfoDirection :: instance DirectionInfo for Direction
@@ -101,8 +101,8 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North ,
-    South
+    North :: type {} ,
+    South :: type {}
 }
 
 DirectionInfoDirection :: instance DirectionInfo for Direction
@@ -151,8 +151,8 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North ,
-    South
+    North :: type {} ,
+    South :: type {}
 }
 
 DirectionInfoDirection :: instance DirectionInfo for Direction
@@ -185,7 +185,7 @@ Show :: trait
 
 Person :: type
 {
-    Person(String)
+    Person:: type(String)
 }
 
 ShowPerson :: instance Show
@@ -267,7 +267,7 @@ Show :: trait
 
 Person :: type
 {
-    Person(String)
+    Person:: type(String)
 }
 
 ShowPerson :: instance Show
@@ -338,6 +338,21 @@ BoundedInt :: instance Bounded[Int]
         var intSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(intId.Value));
         var impl = symbolTable.LookupImplForTrait(intSymbol.TypeId, traitId.Value, ["Int"]);
         Assert.NotNull(impl);
+        var trait = Assert.IsType<TraitSymbol>(symbolTable.GetSymbol(traitId.Value));
+        Assert.Equal(2, trait.AssociatedConsts.Count);
+        Assert.Equal(2, impl.AssociatedConsts.Count);
+        Assert.All(trait.AssociatedConsts, associatedId =>
+        {
+            var associated = Assert.IsType<AssociatedConstSymbol>(symbolTable.GetSymbol(associatedId));
+            Assert.Equal(trait.Id, associated.OwnerTrait);
+            Assert.False(associated.OwnerImpl.IsValid);
+        });
+        Assert.All(impl.AssociatedConsts, associatedId =>
+        {
+            var associated = Assert.IsType<AssociatedConstSymbol>(symbolTable.GetSymbol(associatedId));
+            Assert.Equal(trait.Id, associated.OwnerTrait);
+            Assert.Equal(impl.Id, associated.OwnerImpl);
+        });
     }
 
     [Fact]

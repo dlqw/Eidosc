@@ -105,7 +105,7 @@ helper :: Unit -> Unit need emit("x")
     }
 
     [Fact]
-    public void Parser_NeedClauseWithLowercaseEffectPath_Fails()
+    public void Parser_NeedClauseWithLowercaseEffectPath_Parses()
     {
         const string source = """
 helper :: Unit -> Unit need emitter
@@ -116,7 +116,7 @@ helper :: Unit -> Unit need emitter
 
         var result = RunParser(source, "need_clause_lowercase_ability_tests.eidos");
 
-        Assert.False(result.Success);
+        Assert.True(result.Success);
         Assert.Equal(CompilationPhase.Parser, result.CompletedPhase);
     }
 

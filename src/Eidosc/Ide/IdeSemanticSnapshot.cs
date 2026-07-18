@@ -139,15 +139,18 @@ public sealed class IdeSymbolEntry
 public sealed class IdeGeneratedOriginEntry
 {
     public string StableIdentity { get; init; } = "";
+    public string GenerationSlotIdentity { get; init; } = "";
     public string GeneratorIdentity { get; init; } = "";
     public string TargetIdentity { get; init; } = "";
     public int GeneratorSymbolId { get; init; }
     public int TargetSymbolId { get; init; }
-    public int AttributeOccurrenceIndex { get; init; }
+    public int ClauseOccurrenceIndex { get; init; }
+    public string ClauseOccurrenceIdentity { get; init; } = "";
+    public int ClauseArgumentSubIndex { get; init; } = -1;
     public int ExpansionOutputIndex { get; init; }
     public string CanonicalArgumentsHash { get; init; } = "";
     public int MetaSchemaVersion { get; init; }
-    public IdeSpan? AttributeSpan { get; init; }
+    public IdeSpan? ClauseSpan { get; init; }
     public string VirtualDocumentPath { get; init; } = "";
 }
 
@@ -345,17 +348,6 @@ public static partial class IdeSemanticSnapshotBuilder
         WellKnownStrings.Keywords.Func, WellKnownStrings.Keywords.Fn, WellKnownStrings.Keywords.Type, WellKnownStrings.Keywords.Trait, WellKnownStrings.Keywords.Forall, WellKnownStrings.Keywords.Refl, WellKnownStrings.Keywords.By, WellKnownStrings.Keywords.Cases, WellKnownStrings.Keywords.Effect, WellKnownStrings.Keywords.Handler, WellKnownStrings.Keywords.Module, WellKnownStrings.Keywords.Import, WellKnownStrings.Keywords.Export,
         WellKnownStrings.Keywords.Let, WellKnownStrings.Keywords.Mut, WellKnownStrings.Keywords.If, WellKnownStrings.Keywords.Then, WellKnownStrings.Keywords.Else, "while", WellKnownStrings.Keywords.Match, WellKnownStrings.Keywords.When, WellKnownStrings.Keywords.With, WellKnownStrings.Keywords.Need, "loop", WellKnownStrings.Keywords.Return, WellKnownStrings.Keywords.Unreachable,
         WellKnownStrings.AdditionalKeywords.Break, WellKnownStrings.AdditionalKeywords.Continue, WellKnownStrings.AdditionalKeywords.As, WellKnownStrings.Operators.Ref, WellKnownStrings.Operators.MRef, WellKnownStrings.Keywords.Resume, WellKnownStrings.Keywords.Requires, WellKnownStrings.Keywords.Self
-    ];
-
-    private static readonly string[] AttributeCompletions =
-    [
-        "@derive",
-        "@impl",
-        "@operator",
-        "@ffi",
-        "@borrow",
-        "@transparent",
-        "@cstruct"
     ];
 
     private static readonly string[] DeriveTraitCompletions =
@@ -1195,15 +1187,18 @@ public static partial class IdeSemanticSnapshotBuilder
         return new IdeGeneratedOriginEntry
         {
             StableIdentity = origin.StableIdentity,
+            GenerationSlotIdentity = origin.GenerationSlotIdentity,
             GeneratorIdentity = origin.GeneratorIdentity,
             TargetIdentity = origin.TargetIdentity,
             GeneratorSymbolId = origin.GeneratorSymbolId.Value,
             TargetSymbolId = origin.TargetSymbolId.Value,
-            AttributeOccurrenceIndex = origin.AttributeOccurrenceIndex,
+            ClauseOccurrenceIndex = origin.ClauseOccurrenceIndex,
+            ClauseOccurrenceIdentity = origin.ClauseOccurrenceIdentity,
+            ClauseArgumentSubIndex = origin.ClauseArgumentSubIndex,
             ExpansionOutputIndex = origin.ExpansionOutputIndex,
             CanonicalArgumentsHash = origin.CanonicalArgumentsHash,
             MetaSchemaVersion = origin.MetaSchemaVersion,
-            AttributeSpan = IdeSpan.TryFrom(origin.AttributeSpan, out var attributeSpan) ? attributeSpan : null,
+            ClauseSpan = IdeSpan.TryFrom(origin.ClauseSpan, out var clauseSpan) ? clauseSpan : null,
             VirtualDocumentPath = origin.VirtualDocumentPath
         };
     }
@@ -1939,13 +1934,14 @@ public static partial class IdeSemanticSnapshotBuilder
                 ? context.GetName(con.ConstructorVarIndex.Value)
                 : "<type>";
 
-        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0 && con.EffectArgs.Count == 0)
         {
             return constructorName;
         }
 
         var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
-        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var effectArguments = con.EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count + con.EffectArgs.Count;
         var typeArgumentIndex = 0;
         var arguments = new List<string>(argumentCount);
         for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
@@ -1953,6 +1949,10 @@ public static partial class IdeSemanticSnapshotBuilder
             if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
             {
                 arguments.Add(valueArgument.DisplayText);
+            }
+            else if (effectArguments.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                arguments.Add(FormatTypeForIde(effectArgument.Argument, context));
             }
             else if (typeArgumentIndex < con.Args.Count)
             {

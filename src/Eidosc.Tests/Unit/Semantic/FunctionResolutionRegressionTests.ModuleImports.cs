@@ -14,10 +14,10 @@ public partial class FunctionResolutionRegressionTests
     public void CompilationPipeline_ModuleQualifiedStdlibCalls_StayDisambiguatedAcrossSameNamedExports()
     {
         const string source = """
-import Std.Option
-import Std.Result
-import Std.Seq
-import Std.Text
+import std.Option
+import std.Result
+import std.Seq
+import std.Text
 
 inc :: Int -> Int
 {
@@ -57,10 +57,10 @@ main :: Unit -> Int
     public void CompilationPipeline_ModuleImport_ExposesImportedTraitMethodsAsBareNames()
     {
         const string source = """
-import Std.Trait
-import Std.Text
+import std.Traits
+import std.Text
 
-render[T: Trait.Show] :: T -> String
+render[T: Traits.Show] :: T -> String
 {
     value => show(value)
 }
@@ -88,10 +88,43 @@ main :: Unit -> String
     }
 
     [Fact]
+    public void CompilationPipeline_CurrentLowercaseModuleQualifier_WinsOverSameNamedImportedTraitMethod()
+    {
+        const string source = """
+hash :: module {
+    import std.Traits
+
+    string_with_seed :: String -> Int -> Int
+    {
+        _ => seed => seed
+    }
+
+    hash_string :: String -> Int
+    {
+        value => hash.string_with_seed(value)(17)
+    }
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public void CompilationPipeline_ModuleImport_ExposesPublicValuesAsBareNames()
     {
         const string source = """
-import Std.Seq
+import std.Seq
 
 main :: Unit -> Int
 {
@@ -122,7 +155,7 @@ main :: Unit -> Int
     public void CompilationPipeline_ModuleImport_ExposesImportedInstanceHelpersAsBareNames()
     {
         const string source = """
-import Std.Result
+import std.Result
 
 recover_err :: String -> Result[Int, String]
 {
@@ -159,6 +192,9 @@ main :: Unit -> Int
     public void CompilationPipeline_UnqualifiedStdFunctionCall_UsesFirstArgumentTypeToInferModule()
     {
         const string source = """
+import std.Seq
+import std.Option
+
 main :: Unit -> Int
 {
     _ => {
@@ -219,7 +255,7 @@ main :: Unit -> Int
     _ => {
         first := append([1])([2]);
         second := append([3])([4]);
-        Seq.len(first) + Seq.len(second)
+        std.Seq.len(first) + std.Seq.len(second)
     }
 }
 """;
@@ -283,8 +319,8 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedCallUsesArgumentTypesForSameNamedModuleMembers()
     {
         const string source = """
-import Std.Seq
-import Std.Option
+import std.Seq
+import std.Option
 
 main :: Unit -> Int
 {
@@ -315,8 +351,8 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedCallCanSelectOptionOverSameNamedListMember()
     {
         const string source = """
-import Std.Seq
-import Std.Option
+import std.Seq
+import std.Option
 
 main :: Unit -> Int
 {
@@ -351,10 +387,10 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedTraitHelpersAcrossModules_ResolveByArgumentTypes()
     {
         const string source = """
-import Std.Option
-import Std.Result
-import Std.Ordering
-import Std.Seq
+import std.Option
+import std.Result
+import std.Ordering
+import std.Seq
 
 add :: Int -> Int -> Int
 {
@@ -374,7 +410,7 @@ main :: Unit -> Int
         resultShown := show(Ok(7));
         orderShown := Ordering.show(compare_int(1)(2));
         optionCompare := if is_lt(compare(None())(Some(1))) then { 1 } else { 0 };
-        resultInput: Result.ResultWith[String, Int] := Ok(2);
+        resultInput: Result.With[String, Int] := Ok(2);
         resultTraversed := match traverse(resultInput)(x => Ok(x + 1))
         {
             Ok(inner) => unwrap_or(inner)(0),
@@ -592,8 +628,8 @@ main :: Unit -> Int
     public void CompilationPipeline_BareImportedValueWithoutCallStillReportsAmbiguity()
     {
         const string source = """
-import Std.Seq
-import Std.Option
+import std.Seq
+import std.Option
 
 f :: append;
 """;
@@ -616,7 +652,7 @@ f :: append;
     public void CompilationPipeline_ExplicitPreludeWildcardImport_DoesNotDuplicateImplicitPreludeBindings()
     {
         const string source = """
-import Std.Prelude.*
+import std.Prelude.*
 
 main :: Unit -> Int
 {
@@ -647,9 +683,9 @@ main :: Unit -> Int
     {
         const string source = """
 Probe :: module {
-    import Std.Applicative
-    import Std.Option
-    import Std.Traversable
+    import std.Applicative
+    import std.Option
+    import std.Traversable
 
     local_identity_applicative[A, G: kind2 : Applicative.Applicative[G]] :: G[A] -> G[A]
     {
@@ -702,11 +738,11 @@ Probe :: module {
     public void CompilationPipeline_ModuleImport_ExposesNestedQualifiedTraitMethodsFromImportedModule()
     {
         const string source = """
-import Std.Trait
+import std.Traits
 
-eq_self[T: Trait.Eq] :: T -> Bool
+eq_self[T: Traits.Eq] :: T -> Bool
 {
-    value => Trait.Eq.eq(value)(value)
+    value => Traits.Eq.eq(value)(value)
 }
 """;
 
@@ -774,15 +810,17 @@ Demo.Append :: module
         left => middle => right => Append.append(Append.append(left)(middle))(right)
     }
 
-    @impl(Append)
+
     append :: Int -> Int -> Int
-    {
+     impl Append
+{
         left => right => left + right
     }
 
-    @impl(Append)
+
     append :: String -> String -> String
-    {
+     impl Append
+{
         left => right => left
     }
 }
@@ -820,15 +858,17 @@ Lib.Semigroup :: module
         append :: Self -> Self -> Self
     }
 
-    @impl(Semigroup)
+
     append :: Int -> Int -> Int
-    {
+     impl Semigroup
+{
         left => right => left + right
     }
 
-    @impl(Semigroup)
+
     append :: String -> String -> String
-    {
+     impl Semigroup
+{
         left => right => left
     }
 }
@@ -871,9 +911,7 @@ App :: module {
         const string source = """
 Lib.Async :: module
 {
-    Task[A] :: type {
-        Task{value: A}
-    }
+    Task[A] :: type {value:: A}
 
     Async :: effect;
 

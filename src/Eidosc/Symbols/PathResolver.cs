@@ -86,6 +86,15 @@ public sealed class PathResolver
     private PathResolutionResult ResolveQualifiedPath(IReadOnlyList<string> path, SymbolId? context)
     {
         var matches = new List<PathResolutionResult>();
+        if (_symbolTable.LookupType(path[0]) is { } rootType)
+        {
+            var typeMember = ResolveMemberPath(rootType, path.Skip(1).ToList(), context);
+            if (typeMember != null)
+            {
+                matches.Add(typeMember);
+            }
+        }
+
         for (int splitIndex = path.Count - 1; splitIndex >= 1; splitIndex--)
         {
             var modulePath = path.Take(splitIndex).ToList();
@@ -135,7 +144,7 @@ public sealed class PathResolver
         }
 
         if (remainingSegments.Count == 1 &&
-            LookupSameNamedTraitMember(moduleId, remainingSegments[0], requesterModuleId) is { } traitMember)
+            LookupTraitMemberInModule(moduleId, remainingSegments[0], requesterModuleId) is { } traitMember)
         {
             return traitMember;
         }
@@ -180,9 +189,42 @@ public sealed class PathResolver
             TraitSymbol trait when remainingSegments.Count == 1
                 => LookupTraitMethod(trait, remainingSegments[0]),
             AdtSymbol when remainingSegments.Count == 1
-                => LookupTypeConstructor(symbolId, remainingSegments[0]),
+                => LookupTypeMember(symbolId, remainingSegments[0]),
+            AdtSymbol => ResolveAdtMemberPath(symbolId, remainingSegments, requesterModuleId),
             _ => null
         };
+    }
+
+    private PathResolutionResult? ResolveAdtMemberPath(
+        SymbolId ownerId,
+        IReadOnlyList<string> remainingSegments,
+        SymbolId? requesterModuleId)
+    {
+        _ = requesterModuleId;
+        if (remainingSegments.Count == 0)
+        {
+            return null;
+        }
+
+        var directCase = _symbolTable.LookupDirectCase(ownerId, remainingSegments[0]);
+        if (!directCase.HasValue)
+        {
+            return null;
+        }
+
+        return remainingSegments.Count == 1
+            ? PathResolutionResult.Found(directCase.Value, ResolutionKind.Type)
+            : ResolveMemberPath(directCase.Value, remainingSegments.Skip(1).ToList(), requesterModuleId);
+    }
+
+    private PathResolutionResult? LookupTypeMember(SymbolId typeId, string memberName)
+    {
+        if (_symbolTable.LookupDirectCase(typeId, memberName) is { } caseType)
+        {
+            return PathResolutionResult.Found(caseType, ResolutionKind.Type);
+        }
+
+        return LookupTypeConstructor(typeId, memberName);
     }
 
     private IEnumerable<SymbolId> LookupModulePathCandidates(
@@ -341,32 +383,27 @@ public sealed class PathResolver
         return null;
     }
 
-    private PathResolutionResult? LookupSameNamedTraitMember(
+    private PathResolutionResult? LookupTraitMemberInModule(
         SymbolId moduleId,
         string memberName,
         SymbolId? requesterModuleId)
     {
-        var module = _moduleRegistry.GetModule(moduleId);
-        if (module == null || module.Path.Count == 0)
+        var matches = new List<PathResolutionResult>();
+        foreach (var binding in _moduleRegistry.GetAccessibleBindings(moduleId, requesterModuleId))
         {
-            return null;
-        }
-
-        var ownerName = module.Path[^1];
-        foreach (var binding in _moduleRegistry.GetAccessibleBindingsByName(
-                     moduleId,
-                     ownerName,
-                     requesterModuleId,
-                     TraitOwnerResolutionKinds))
-        {
-            var ownerSymbol = _symbolTable.GetSymbol(binding.SymbolId);
-            if (ownerSymbol is TraitSymbol trait)
+            if (_symbolTable.GetSymbol(binding.SymbolId) is not TraitSymbol trait ||
+                LookupTraitMethod(trait, memberName) is not { IsSuccess: true } candidate)
             {
-                return LookupTraitMethod(trait, memberName);
+                continue;
+            }
+
+            if (!matches.Any(match => match.SymbolId == candidate.SymbolId))
+            {
+                matches.Add(candidate);
             }
         }
 
-        return null;
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private PathResolutionResult? LookupSameNamedEffectMember(
@@ -405,17 +442,14 @@ public sealed class PathResolver
             AdtSymbol => ResolutionKind.Type,
             CtorSymbol => ResolutionKind.Constructor,
             TraitSymbol => ResolutionKind.Type,
+            AssociatedTypeSymbol => ResolutionKind.Type,
+            AssociatedConstSymbol => ResolutionKind.Value,
             EffectSymbol => ResolutionKind.Effect,
             ModuleSymbol => ResolutionKind.Module,
             // ProofSymbol removed
             _ => ResolutionKind.Value
         };
     }
-
-    private static readonly HashSet<ResolutionKind> TraitOwnerResolutionKinds =
-    [
-        ResolutionKind.Type
-    ];
 
     private static readonly HashSet<ResolutionKind> EffectOwnerResolutionKinds =
     [

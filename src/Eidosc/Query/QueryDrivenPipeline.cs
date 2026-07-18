@@ -34,6 +34,7 @@ public sealed partial class QueryDrivenPipeline
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
     private readonly IDictionary<string, (string Stamp, string SourceText)> _importSourceCache;
     private readonly ComptimeExecutionOptions _comptimeExecution;
+    private readonly HashSet<string> _compilerOwnedSourcePaths = new(StringComparer.OrdinalIgnoreCase);
 
     private GrammarData? _grammarData;
     private ScannerData? _scannerData;
@@ -75,6 +76,11 @@ public sealed partial class QueryDrivenPipeline
         _comptimeExecution = ComptimeExecutionOptions.Create(options);
         _cancellationToken = cancellationToken;
         _importSourceCache = importSourceCache ?? new Dictionary<string, (string Stamp, string SourceText)>(StringComparer.OrdinalIgnoreCase);
+        _compilerOwnedSourcePaths.UnionWith(options.ToolchainOwnedSourcePaths);
+        if (CompilerOwnedSourceGrant.IsVerifiedStdlibSource(sourcePath, sourceText))
+        {
+            _compilerOwnedSourcePaths.Add(sourcePath);
+        }
 
         if (sharedEngine != null)
         {
@@ -226,6 +232,8 @@ public sealed partial class QueryDrivenPipeline
         var nameResolver = new NameResolver(symbolTable, _sourceText, _options.ImportSearchRoots)
         {
             ComptimeExecution = _comptimeExecution,
+            CompilerOwnedSourceGrant = CompilerOwnedSourceGrant.Create(_compilerOwnedSourcePaths),
+            LanguageVersion = _options.LanguageVersion,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly()
         };
         nameResolver.Resolve(parse.Ast);
@@ -775,15 +783,15 @@ public sealed partial class QueryDrivenPipeline
         if (!_options.NoImplicitPrelude)
         {
             var rootPath = GetRootModulePath(ast);
-            var isStdlib = rootPath.Count > 0 && string.Equals(rootPath[0], "Std", StringComparison.Ordinal);
+            var isStdlib = rootPath.Count > 0 && string.Equals(rootPath[0], WellKnownStrings.Std.Module, StringComparison.Ordinal);
             if (!isStdlib)
             {
                 var preludePath = new List<string> { "Prelude" };
-                var preludeKey = ToImportKey("Std", preludePath);
+                var preludeKey = ToImportKey(WellKnownStrings.Std.Module, preludePath);
                 var alreadyImportsPrelude = pendingImports
                     .Any(item => ToImportKey(item.packageAlias, item.path) == preludeKey);
                 if (!alreadyImportsPrelude)
-                    pendingImports.Enqueue((preludePath, "Std", null));
+                    pendingImports.Enqueue((preludePath, WellKnownStrings.Std.Module, null));
             }
         }
 
@@ -851,6 +859,8 @@ public sealed partial class QueryDrivenPipeline
                 var sourceName = PrecompiledModuleCache.TryGetSourceFilePath(effectiveModulePath, out var srcFile)
                     ? srcFile
                     : $"<precompiled:{importKey}>";
+                _compilerOwnedSourcePaths.Add(sourceName);
+                _compilerOwnedSourcePaths.Add($"<precompiled:{importKey}>");
                 parseSuccess = TryParseModuleSource(
                     precompiledSource.Source,
                     sourceName,
@@ -960,7 +970,33 @@ public sealed partial class QueryDrivenPipeline
 
         var languageVersion = EidosProjectConfigurationLoader.TryLoadNearest(filePath)?.Configuration.LanguageVersion
             ?? _options.LanguageVersion;
-        return TryParseModuleSource(sourceText, filePath, languageVersion, out moduleDecl, out diagnostics);
+        return TryParseModuleSource(
+            sourceText,
+            GetLogicalSourceName(filePath),
+            languageVersion,
+            out moduleDecl,
+            out diagnostics);
+    }
+
+    private string GetLogicalSourceName(string physicalPath)
+    {
+        if (_options.GeneratedSourceUriMap.Count == 0)
+        {
+            return physicalPath;
+        }
+
+        var normalized = Path.GetFullPath(physicalPath);
+        if (_options.GeneratedSourceUriMap.TryGetValue(normalized, out var logicalUri))
+        {
+            return logicalUri;
+        }
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return _options.GeneratedSourceUriMap
+            .FirstOrDefault(entry => string.Equals(entry.Key, normalized, comparison))
+            .Value ?? physicalPath;
     }
 
     private string ReadImportedSourceText(string filePath)
@@ -1100,7 +1136,7 @@ public sealed partial class QueryDrivenPipeline
 
     private static bool IsStdPackageAlias(string? packageAlias)
     {
-        return string.Equals(packageAlias, "Std", StringComparison.Ordinal);
+        return string.Equals(packageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal);
     }
 
     private string BuildCurrentPackageInstanceKey()

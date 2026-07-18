@@ -225,6 +225,13 @@ public sealed class ImportScope
             : [];
     }
 
+    public IReadOnlyList<ImportedSymbol> GetEffectiveImportDetails(string name)
+    {
+        return _importDetailsByName.TryGetValue(name, out var details)
+            ? SelectEffectiveDetails(details)
+            : [];
+    }
+
     /// <summary>
     /// 获取所有导入的符号
     /// </summary>

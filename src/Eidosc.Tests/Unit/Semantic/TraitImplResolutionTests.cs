@@ -210,7 +210,7 @@ Iterator[I] :: trait
 
 Box[A] :: type
 {
-    Box(A)
+    Box:: type(A)
 }
 
 IteratorInt :: instance Iterator[Int]
@@ -266,7 +266,7 @@ Iterator[I] :: trait
 
 Pair[A, B] :: type
 {
-    Pair(A, B)
+    Pair:: type(A, B)
 }
 
 PairWithRight[R, L] :: type = Pair[L, R]
@@ -516,6 +516,13 @@ main :: Unit -> Int
                     }
                 }
                 break;
+
+            case MethodCallExpr { ResolvedStaticExpression: not null } methodCall:
+                foreach (var child in EnumerateAst(methodCall.ResolvedStaticExpression))
+                {
+                    yield return child;
+                }
+                break;
         }
     }
 
@@ -524,11 +531,12 @@ main :: Unit -> Int
     {
         const string source = """
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(MissingTrait)
+
 show :: Person -> String
+ impl MissingTrait
 {
     p => "person"
 }
@@ -554,11 +562,12 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Show)
+
 display :: Person -> String
+ impl Show
 {
     p => "person"
 }
@@ -584,11 +593,12 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Show)
+
 show :: Person -> Int
+ impl Show
 {
     p => 1
 }
@@ -614,11 +624,12 @@ LoggerUser :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(LoggerUser)
+
 act :: Person -> Unit
+ impl LoggerUser
 {
     p => p
 }
@@ -647,7 +658,7 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 show :: Person -> String
@@ -686,7 +697,7 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 show :: Person -> Int
@@ -717,6 +728,38 @@ show :: Person -> Int
     }
 
     [Fact]
+    public void CompilationPipeline_ConventionImpl_DoesNotInferFunctionImplForMarkerTrait()
+    {
+        const string source = """
+Marker :: trait {}
+
+Person :: type {}
+
+unrelated :: Person -> Int {
+    _ => 1
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "trait_impl_convention_marker.eidos",
+            StopAtPhase = CompilationPhase.Namer,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success);
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var traitId = symbolTable.LookupType("Marker");
+        var personId = symbolTable.LookupType("Person");
+        Assert.True(traitId.HasValue);
+        Assert.True(personId.HasValue);
+        var personSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(personId.Value));
+
+        Assert.Null(symbolTable.LookupImplForTrait(personSymbol.TypeId, traitId.Value));
+    }
+
+    [Fact]
     public void CompilationPipeline_ConventionImpl_GenericTrait_RequiresExplicitImplAttribute()
     {
         const string source = """
@@ -725,11 +768,11 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 fmap :: Person -> Box[Int]
@@ -761,11 +804,12 @@ Eq :: trait {
 }
 
 Option[A] :: type {
-    None , Some(A)
+    None :: type {} , Some:: type(A)
 }
 
-@impl(Eq)
+
 eq[A] :: Option[A] -> Option[A] -> Bool
+ impl Eq
 {
     left => true
 }
@@ -801,11 +845,12 @@ Eq :: trait {
 }
 
 Option[A] :: type {
-    None , Some(A)
+    None :: type {} , Some:: type(A)
 }
 
-@impl(Eq)
+
 eq[T: Eq] :: Option[T] -> Option[T] -> Bool
+ impl Eq
 {
     _ => _ => true
 }
@@ -845,17 +890,19 @@ Show :: trait {
 }
 
 Option[A] :: type {
-    None , Some(A)
+    None :: type {} , Some:: type(A)
 }
 
-@impl(Show)
+
 show[T] :: Option[T] -> String
+ impl Show
 {
     _ => "generic"
 }
 
-@impl(Show)
+
 show :: Option[Int] -> String
+ impl Show
 {
     _ => "int"
 }
@@ -899,15 +946,16 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Functor[Box])
+
 fmap :: Person -> Box[Int]
+ impl Functor[Box]
 {
     p => Box(1)
 }
@@ -950,15 +998,16 @@ Wrapper[T] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Wrapper[Box[Int]])
+
 get :: Person -> Int
+ impl Wrapper[Box[Int]]
 {
     p => 1
 }
@@ -1004,15 +1053,16 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Functor[Int, Box])
+
 fmap :: Person -> Box[Int]
+ impl Functor[Int, Box]
 {
     p => Box(1)
 }
@@ -1029,7 +1079,7 @@ fmap :: Person -> Box[Int]
         Assert.Contains(
             result.Diagnostics,
             diagnostic => diagnostic.Code == "E3000" &&
-                          diagnostic.Message.Contains("expects 1 type argument(s) in @impl, got 2", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("expects 1 type argument(s) in an impl clause, got 2", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1041,19 +1091,21 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 PersonAlias :: type = Person;
 
-@impl(Show)
+
 show :: Person -> String
+ impl Show
 {
     p => "person"
 }
 
-@impl(Show)
+
 show :: PersonAlias -> String
+ impl Show
 {
     p => "alias"
 }
@@ -1089,11 +1141,11 @@ Pairing[F: kind2, G: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -1101,17 +1153,19 @@ DeepResultWith[E, T] :: type = ResultWith[E, T];
 AlsoResultWith[E, T] :: type = Result[T, E];
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Pairing[DeepResultWith[String], Box])
+
 build :: Person -> DeepResultWith[String, Int]
+ impl Pairing[DeepResultWith[String], Box]
 {
     p => Ok(1)
 }
 
-@impl(Pairing[AlsoResultWith[String], Box])
+
 build :: Person -> AlsoResultWith[String, Int]
+ impl Pairing[AlsoResultWith[String], Box]
 {
     p => Ok(2)
 }
@@ -1148,12 +1202,13 @@ M :: module {
     }
 
     Person :: type {
-        Person(String)
+        Person:: type(String)
     }
 
-    @impl(M.Show)
+
     show :: Person -> String
-    {
+     impl M . Show
+{
         p => "ok"
     }
 }
@@ -1201,11 +1256,12 @@ M :: module {
 import M
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(M.Show)
+
 show :: Person -> String
+ impl M . Show
 {
     p => "ok"
 }
@@ -1251,14 +1307,15 @@ show :: Person -> String
 
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Trait
+import std.Traits
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Trait.Eq)
+
 eq :: Person -> Person -> Bool
+ impl Traits.Eq
 {
     _ => _ => true
 }
@@ -1278,7 +1335,7 @@ eq :: Person -> Person -> Bool
             Assert.True(result.Success);
 
             var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
-            var traitModuleId = symbolTable.Modules.LookupModuleByPath("Std", ["Trait"]);
+            var traitModuleId = symbolTable.Modules.LookupModuleByPath("std", ["Traits"]);
             Assert.True(traitModuleId.HasValue);
             Assert.True(symbolTable.Modules.TryLookupAccessibleBinding(
                 traitModuleId.Value,
@@ -1309,11 +1366,12 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(N.Show)
+
 show :: Person -> String
+ impl N . Show
 {
     p => "ok"
 }
@@ -1336,7 +1394,7 @@ show :: Person -> String
     {
         const string source = """
 Self :: type {
-    Self(Int)
+    Self:: type(Int)
 }
 """;
 
@@ -1401,15 +1459,16 @@ Applicative[F: kind2] :: trait {
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Traversable[T: kind2] :: trait {
     traverse[A, B, G: kind2 : Applicative[G]] :: T[A] -> (A -> G[B]) -> G[T[B]]
 }
 
-@impl(Traversable[Box])
+
 traverse[A, B, G: kind2 : Applicative[G]] :: Box[A] -> (A -> G[B]) -> G[Box[B]]
+ impl Traversable[Box]
 {
     value => f => f(value)
 }

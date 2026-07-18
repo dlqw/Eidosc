@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Eidosc.Diagnostic;
 using Eidosc.Ast.Declarations;
+using Eidosc.Mir;
 using Eidosc.Pipeline;
 using Eidosc.Types;
 using Xunit;
@@ -12,10 +13,254 @@ namespace Eidosc.Tests.Unit.Types;
 public partial class TypeInferencePipelineTests
 {
     [Fact]
+    public void Types_EmptyProductSynthesizesConstructorButClosedSumDoesNot()
+    {
+        const string source = """
+Marker :: type {}
+
+Anim :: type {
+    Dog :: type {},
+}
+
+make_marker :: Unit -> Marker
+{
+    _ => Marker()
+}
+
+bad :: Unit -> Anim
+{
+    _ => Anim()
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("Undefined", StringComparison.Ordinal) &&
+            diagnostic.Message.Contains("Marker", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("Undefined", StringComparison.Ordinal) &&
+            diagnostic.Message.Contains("Anim", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Types_ClosedCaseConstructor_PreservesExactTypeAndInjectsToParent()
+    {
+        const string source = """
+Anim :: type {
+    name :: String,
+
+    Dog :: type {
+        breed :: String,
+    },
+
+    Cat :: type {
+        lives :: Int,
+    },
+}
+
+make_dog :: Unit -> Anim.Dog
+{
+    _ => Dog { name: "Nori", breed: "Shiba" }
+}
+
+as_anim :: Anim.Dog -> Anim
+{
+    dog => dog
+}
+
+read_dog :: Anim.Dog -> String
+{
+    dog => dog.breed
+}
+
+read_anim :: Anim -> String
+{
+    anim => anim.name
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
+    public void Types_ClosedCase_InheritsCommonFieldsWithoutShadowing()
+    {
+        const string source = """
+Anim :: type {
+    name :: String,
+    Dog :: type { breed :: String, },
+}
+
+read_name :: Anim.Dog -> String
+{
+    dog => dog.name
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
+    public void Types_ClosedCaseSibling_DoesNotSubtypeAnotherSibling()
+    {
+        const string source = """
+Anim :: type {
+    Dog :: type {},
+    Cat :: type {},
+}
+
+bad :: Anim.Dog -> Anim.Cat
+{
+    dog => dog
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "E4000");
+    }
+
+    [Fact]
+    public void Mir_ClosedCaseInjectionIsExplicit()
+    {
+        const string source = """
+Anim :: type {
+    Dog :: type {},
+}
+
+as_anim :: Anim.Dog -> Anim
+{
+    dog => dog
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Mir);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var mir = Assert.IsType<MirModule>(result.MirModule);
+        Assert.Contains(
+            mir.Functions.SelectMany(static function => function.BasicBlocks).SelectMany(static block => block.Instructions),
+            static instruction => instruction is MirCaseInject);
+    }
+
+    [Fact]
+    public void Llvm_ClosedCaseInjectionUsesParentRuntimeLayout()
+    {
+        const string source = """
+Anim :: type {
+    Dog :: type {},
+    Cat :: type {},
+}
+
+as_anim :: Anim.Dog -> Anim
+{
+    dog => dog
+}
+
+choose :: Bool -> Anim
+{
+    value => if value then Dog() else Cat()
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Llvm);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.False(string.IsNullOrWhiteSpace(result.LlvmIrText));
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("Unknown MIR TypeId", StringComparison.Ordinal));
+        var mir = Assert.IsType<MirModule>(result.MirModule);
+        var injection = Assert.Single(
+            mir.Functions
+                .Where(static function => function.Name.EndsWith("as_anim", StringComparison.Ordinal))
+                .SelectMany(static function => function.BasicBlocks)
+                .SelectMany(static block => block.Instructions)
+                .OfType<MirCaseInject>());
+        Assert.True(mir.TypeDescriptors.TryGetValue(injection.SourceTypeId.Value, out var sourceDescriptor));
+        Assert.True(mir.TypeDescriptors.TryGetValue(injection.TargetTypeId.Value, out var targetDescriptor));
+        Assert.False(TypeDescriptorStructuralComparer.Instance.Equals(sourceDescriptor, targetDescriptor));
+        Assert.True(mir.ConstructorLayouts.ContainsKey(injection.SourceTypeId.Value));
+        Assert.True(mir.ConstructorLayouts.ContainsKey(injection.TargetTypeId.Value));
+        Assert.Equal(
+            mir.ConstructorLayouts[injection.TargetTypeId.Value],
+            mir.ConstructorLayouts[injection.SourceTypeId.Value]);
+    }
+
+    [Fact]
+    public void Types_QualifiedClosedCaseConstructorAndSiblingJoinResolveToParent()
+    {
+        const string source = """
+Anim :: type {
+    Dog :: type {},
+    Cat :: type {},
+}
+
+qualified :: Unit -> Anim.Dog
+{
+    _ => Anim.Dog()
+}
+
+choose :: Bool -> Anim
+{
+    value => if value then Dog() else Cat()
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
+    public void Namer_ClauseSchemaRejectsWrongTargetDuplicateAndMissingDependency()
+    {
+        const string source = """
+WrongTarget :: type extern c {}
+
+DuplicateRepr :: type repr c repr c {
+    value :: Int,
+}
+
+bad_link :: Unit -> Unit
+    link_name "bad";
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Namer);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("not valid on type", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("cannot be repeated", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("requires clause 'extern'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Namer_CompilerPrivateClauseCannotBeForgedByUserSource()
+    {
+        const string source = """
+forged :: Unit -> Unit
+    internal
+    intrinsic "unit";
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Namer);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("reserved for toolchain-owned source", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Types_ContextualRecordLiteral_UsesTypedBindingExpectedType()
     {
         const string source = """
-Pos :: type { x: Int, y: Int }
+Pos :: type { x:: Int, y:: Int }
 
 origin :: Pos = .{ x: 0, y: 0 };
 """;
@@ -29,7 +274,7 @@ origin :: Pos = .{ x: 0, y: 0 };
     public void Types_ContextualRecordLiteral_UsesFunctionReturnExpectedType()
     {
         const string source = """
-Pos :: type { x: Int, y: Int }
+Pos :: type { x:: Int, y:: Int }
 
 make_pos :: Int -> Int -> Pos
 {
@@ -46,7 +291,7 @@ make_pos :: Int -> Int -> Pos
     public void Types_ContextualRecordLiteral_WithoutExpectedTypeReportsDiagnostic()
     {
         const string source = """
-Pos :: type { x: Int, y: Int }
+Pos :: type { x:: Int, y:: Int }
 
 make_pos :: Unit -> Pos
 {
@@ -70,9 +315,9 @@ make_pos :: Unit -> Pos
     {
         const string source = """
 GameState :: type {
-    dir: Int,
-    score: Int,
-    tick: Int
+    dir:: Int,
+    score:: Int,
+    tick:: Int
 }
 
 read_dir :: GameState -> Int
@@ -93,8 +338,8 @@ read_dir :: GameState -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 
 make_int :: Unit -> Expr[Int]
@@ -114,8 +359,8 @@ make_int :: Unit -> Expr[Int]
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 
 bad :: Unit -> Expr[Bool]
@@ -139,7 +384,7 @@ bad :: Unit -> Expr[Bool]
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int]
+    IntLit:: type(Int) case Expr[Int]
 }
 
 eval_int :: Expr[Int] -> Int
@@ -162,8 +407,8 @@ eval_int :: Expr[Int] -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 
 classify[T] :: Expr[T] -> Int
@@ -190,8 +435,8 @@ classify[T] :: Expr[T] -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 
 eval[T] :: Expr[T] -> T
@@ -214,8 +459,8 @@ eval[T] :: Expr[T] -> T
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 
 eval[T] :: Expr[T] -> T
@@ -235,7 +480,7 @@ eval[T] :: Expr[T] -> T
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int]
+    IntLit:: type(Int) case Expr[Int]
 }
 
 proof_in_iflet[T] :: Expr[T] -> Int
@@ -259,7 +504,7 @@ proof_in_iflet[T] :: Expr[T] -> Int
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int]
+    IntLit:: type(Int) case Expr[Int]
 }
 
 proof_in_whilelet[T] :: Expr[T] -> Unit
@@ -345,7 +590,7 @@ bad[T] :: Unit -> TypeEq[T, Int]
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int]
+    IntLit:: type(Int) case Expr[Int]
 }
 
 proof_in_branch[T] :: Expr[T] -> TypeEq[T, Int]
@@ -370,8 +615,8 @@ proof_in_branch[T] :: Expr[T] -> TypeEq[T, Int]
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 
 proof_outside[T] :: Expr[T] -> TypeEq[T, Int]
@@ -401,10 +646,10 @@ proof_outside[T] :: Expr[T] -> TypeEq[T, Int]
     public void Types_GadtConstructor_ReturningOtherAdtFails()
     {
         const string source = """
-Other[T] :: type { Other(T) }
+Other[T] :: type { Other:: type(T) }
 
 Expr[T] :: type {
-    Bad(Int) -> Other[Int]
+    Bad:: type(Int) case Other[Int]
 }
 
 use :: Unit -> Expr[Int]
@@ -427,7 +672,7 @@ use :: Unit -> Expr[Int]
     {
         const string source = """
 Expr[T] :: type {
-    Bad(Int) -> Expr
+    Bad:: type(Int) case Expr
 }
 
 use :: Unit -> Expr[Int]
@@ -451,7 +696,7 @@ use :: Unit -> Expr[Int]
     {
         const string source = """
 Expr[F: kind2] :: type {
-    Bad(Int) -> Expr[Int]
+    Bad:: type(Int) case Expr[Int]
 }
 
 use :: Unit -> Expr[List]
@@ -474,7 +719,7 @@ use :: Unit -> Expr[List]
     {
         const string source = """
 Box :: type {
-    Pack[A](A) -> Box
+    Pack[A]:: type(A) case Box
 }
 
 make_int :: Unit -> Box
@@ -498,7 +743,7 @@ make_string :: Unit -> Box
     {
         const string source = """
 Box :: type {
-    Pack[A](A) -> Box
+    Pack[A]:: type(A) case Box
 }
 
 consume :: Box -> Int
@@ -517,12 +762,12 @@ consume :: Box -> Int
     {
         const string source = """
 Direction[A] :: type {
-    North -> Direction[Int] ,
-    East -> Direction[Bool]
+    North :: type case Direction[Int] {} ,
+    East :: type case Direction[Bool] {}
 }
 
 AnyDirection :: type {
-    AnyDirection[A](Direction[A]) -> AnyDirection
+    AnyDirection[A]:: type(Direction[A]) case AnyDirection
 }
 
 bad :: AnyDirection -> Direction[Int]
@@ -544,10 +789,10 @@ bad :: AnyDirection -> Direction[Int]
     public void Types_ExistentialGadtWrapper_AllowsDerivedTraitDispatchInsideBranch()
     {
         const string source = """
-import Std.Trait
+import std.Traits
 
 Axis :: type {
-    Horizontal , Vertical
+    Horizontal :: type {} , Vertical :: type {}
 }
 
 DirectionVector :: trait {
@@ -556,8 +801,8 @@ DirectionVector :: trait {
 }
 
 Direction[A] :: type {
-    North -> Direction[Vertical] ,
-    East -> Direction[Horizontal]
+    North :: type case Direction[Vertical] {} ,
+    East :: type case Direction[Horizontal] {}
 }
 
 DirectionVectorDirection[A] :: instance DirectionVector for Direction[A] {
@@ -566,7 +811,7 @@ DirectionVectorDirection[A] :: instance DirectionVector for Direction[A] {
 }
 
 AnyDirection :: type {
-    AnyDirection[A](Direction[A]) -> AnyDirection
+    AnyDirection[A]:: type(Direction[A]) case AnyDirection
 }
 
 dx_any :: AnyDirection -> Int
@@ -585,22 +830,23 @@ dx_any :: AnyDirection -> Int
     public void Types_ExistentialGadtWrapper_AllowsNestedPayloadConstructorPatterns()
     {
         const string source = """
-import Std.Trait
+import std.Traits
 
 Axis :: type {
-    Horizontal , Vertical
+    Horizontal :: type {} , Vertical :: type {}
 }
 
-@derive(Clone)
-Direction[A] :: type {
-    North -> Direction[Vertical] ,
-    South -> Direction[Vertical] ,
-    East -> Direction[Horizontal] ,
-    West -> Direction[Horizontal]
+
+Direction[A] :: type  derive Clone
+{
+    North :: type case Direction[Vertical] {} ,
+    South :: type case Direction[Vertical] {} ,
+    East :: type case Direction[Horizontal] {} ,
+    West :: type case Direction[Horizontal] {}
 }
 
 AnyDirection :: type {
-    AnyDirection[A](Direction[A]) -> AnyDirection
+    AnyDirection[A]:: type(Direction[A]) case AnyDirection
 }
 
 opposite :: AnyDirection -> AnyDirection
@@ -626,18 +872,17 @@ Label :: trait {
     label :: Self -> Int
 }
 
-Token :: type {
-    Token
-}
+Token :: type {}
 
-@impl(Label)
+
 label :: Token -> Int
+ impl Label
 {
     _ => 7
 }
 
 Box :: type {
-    Pack[A: Label](A) -> Box
+    Pack[A: Label]:: type(A) case Box
 }
 
 label_box :: Box -> Int
@@ -656,12 +901,10 @@ label_box :: Box -> Int
     {
         const string source = """
 GameState :: type {
-    GameState {
-        snake: Int,
-        dir: Int,
-        tick: Int
+        snake:: Int,
+        dir:: Int,
+        tick:: Int
     }
-}
 
 reset_tick :: GameState -> GameState
 {
@@ -687,12 +930,10 @@ read_state :: GameState -> Int
     {
         const string source = """
 GameState :: type {
-    GameState {
-        snake: Int,
-        dir: Int,
-        tick: Int
+        snake:: Int,
+        dir:: Int,
+        tick:: Int
     }
-}
 
 reset_tick :: GameState -> GameState
 {
@@ -718,14 +959,14 @@ read_state :: GameState -> Int
     {
         const string source = """
 Shape :: type {
-    Circle {
-        radius: Int,
-        color: Int
+    Circle :: type{
+        radius:: Int,
+        color:: Int
     }
-    , Rect {
-        width: Int,
-        height: Int,
-        color: Int
+    , Rect :: type{
+        width:: Int,
+        height:: Int,
+        color:: Int
     }
 }
 
@@ -745,14 +986,14 @@ repaint :: Shape -> Shape
     {
         const string source = """
 Shape :: type {
-    Circle {
-        radius: Int,
-        color: Int
+    Circle :: type{
+        radius:: Int,
+        color:: Int
     }
-    , Rect {
-        width: Int,
-        height: Int,
-        color: Int
+    , Rect :: type{
+        width:: Int,
+        height:: Int,
+        color:: Int
     }
 }
 
@@ -774,14 +1015,14 @@ resize :: Shape -> Shape
     {
         const string source = """
 Slot[T] :: type {
-    One {
-        value: T,
-        mark: Int
+    One :: type{
+        value:: T,
+        mark:: Int
     }
-    , Two {
-        left: T,
-        right: T,
-        mark: Int
+    , Two :: type{
+        left:: T,
+        right:: T,
+        mark:: Int
     }
 }
 
@@ -801,11 +1042,11 @@ mark[T] :: Slot[T] -> Slot[T]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Lift[F: kind2] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 
 use :: Lift[Box] -> Lift[Box]
@@ -825,7 +1066,7 @@ use :: Lift[Box] -> Lift[Box]
     {
         const string source = """
 Lift[F: kind2] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 
 bad :: Lift[Int] -> Lift[Int]
@@ -850,11 +1091,11 @@ bad :: Lift[Int] -> Lift[Int]
     {
         const string source = """
 Either[A, B] :: type {
-    Left(A) , Right(B)
+    Left:: type(A) , Right:: type(B)
 }
 
 Lift[F: kind2] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 
 use :: Lift[Either[String]] -> Lift[Either[String]]
@@ -874,11 +1115,11 @@ use :: Lift[Either[String]] -> Lift[Either[String]]
     {
         const string source = """
 Either[A, B] :: type {
-    Left(A) , Right(B)
+    Left:: type(A) , Right:: type(B)
 }
 
 Lift[F: kind2] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 
 bad :: Lift[Either[String, Int, Bool]] -> Lift[Either[String, Int, Bool]]
@@ -903,11 +1144,11 @@ bad :: Lift[Either[String, Int, Bool]] -> Lift[Either[String, Int, Bool]]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Lift[F] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 
 use :: Lift[Box] -> Lift[Box]
@@ -927,15 +1168,15 @@ use :: Lift[Box] -> Lift[Box]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 ApplyToInt[F: kind2] :: type {
-    ApplyToInt(F[Int])
+    ApplyToInt:: type(F[Int])
 }
 
 UseK[K] :: type {
-    UseK(K[Box])
+    UseK:: type(K[Box])
 }
 
 use :: UseK[ApplyToInt] -> UseK[ApplyToInt]
@@ -955,8 +1196,8 @@ use :: UseK[ApplyToInt] -> UseK[ApplyToInt]
     {
         const string source = """
 Bad[F] :: type {
-    A(F[Int]) ,
-    B(F)
+    A:: type(F[Int]) ,
+    B:: type(F)
 }
 """;
 
@@ -1175,99 +1416,4 @@ classify :: Int -> Int
     // A bare product type `T :: type { a: A, b: B }` desugars to a default constructor
     // named after the type, equivalent to `T :: type { T { a: A, b: B } }`.
 
-    [Fact]
-    public void Types_BareProductType_ConstructsWithNamedFields()
-    {
-        const string source = """
-GameState :: type {
-    snake: Int,
-    dir: Int,
-    tick: Int
-}
-
-init :: Unit -> GameState
-{
-    _ => GameState { snake: 0, dir: 1, tick: 0 }
-}
-""";
-
-        var result = RunPipeline(source, CompilationPhase.Types);
-
-        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
-    }
-
-    [Fact]
-    public void Types_BareProductType_SupportsRecordUpdateSpread()
-    {
-        const string source = """
-GameState :: type {
-    snake: Int,
-    dir: Int,
-    tick: Int
-}
-
-reset_tick :: GameState -> GameState
-{
-    state => { GameState { ..state, tick: 0 } }
-}
-
-read_state :: GameState -> Int
-{
-    state => {
-        updated := reset_tick(state);
-        updated.snake + updated.dir + updated.tick
-    }
-}
-""";
-
-        var result = RunPipeline(source, CompilationPhase.Borrow);
-
-        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
-    }
-
-    [Fact]
-    public void Types_BareProductType_SupportsRecordPattern()
-    {
-        const string source = """
-GameState :: type {
-    snake: Int,
-    dir: Int,
-    tick: Int
-}
-
-read_dir :: GameState -> Int
-{
-    GameState { snake: _, dir: d, tick: _ } => d
-}
-""";
-
-        var result = RunPipeline(source, CompilationPhase.Types);
-
-        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
-    }
-
-    [Fact]
-    public void Types_BareProductType_FieldAccess()
-    {
-        const string source = """
-Point :: type {
-    x: Int,
-    y: Int
-}
-
-make :: Int -> Int -> Point
-{
-    x => y => Point { x: x, y: y }
-}
-
-sum_x :: Point -> Int
-{
-    p => p.x + p.y
-}
-""";
-
-        var result = RunPipeline(source, CompilationPhase.Types);
-
-        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
-    }
 }

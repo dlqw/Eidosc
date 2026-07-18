@@ -8,13 +8,14 @@ internal sealed record PatternCoverageRequest(
     IReadOnlyList<PatternBranch> Branches,
     SourceSpan OwnerSpan,
     string OwnerDescription,
-    string? GuardSubjectName);
+    string? GuardSubjectName,
+    SymbolId PreferredAdt);
 
 internal sealed class PatternCoveragePass
 {
-    private readonly Func<IReadOnlyList<PatternBranch>, SourceSpan, string, string?, bool> _analyze;
+    private readonly Func<IReadOnlyList<PatternBranch>, SourceSpan, string, string?, SymbolId, bool> _analyze;
 
-    public PatternCoveragePass(Func<IReadOnlyList<PatternBranch>, SourceSpan, string, string?, bool> analyze)
+    public PatternCoveragePass(Func<IReadOnlyList<PatternBranch>, SourceSpan, string, string?, SymbolId, bool> analyze)
     {
         _analyze = analyze;
     }
@@ -25,6 +26,7 @@ internal sealed class PatternCoveragePass
             request.Branches,
             request.OwnerSpan,
             request.OwnerDescription,
-            request.GuardSubjectName);
+            request.GuardSubjectName,
+            request.PreferredAdt);
     }
 }

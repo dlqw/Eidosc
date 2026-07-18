@@ -832,6 +832,7 @@ public sealed partial class MirBuilder
         return node switch
         {
             HirError error => ReportHirErrorExpr(error),
+            HirCaseInject injection => ConvertCaseInject(injection),
             HirLiteral lit => ConvertLiteral(lit),
             HirConstGenericValue constGeneric => ConvertConstGenericValue(constGeneric),
             HirVar var => ConvertVar(var),
@@ -854,6 +855,24 @@ public sealed partial class MirBuilder
             HirIndexAccess indexAccess => ConvertIndexAccess(indexAccess),
             _ => ReportUnsupportedExpr(node)
         };
+    }
+
+    private MirOperand ConvertCaseInject(HirCaseInject injection)
+    {
+        var operand = ConvertExpr(injection.Operand);
+        operand = EnsureReadValue(operand, injection.SourceTypeId, injection.Span);
+        var target = NewTemp(injection.TypeId);
+        _currentBlock!.Instructions.Add(new MirCaseInject
+        {
+            Target = target,
+            Operand = operand,
+            SourceCase = injection.SourceCase,
+            TargetAncestor = injection.TargetAncestor,
+            SourceTypeId = injection.SourceTypeId,
+            TargetTypeId = injection.TypeId,
+            Span = injection.Span
+        });
+        return target;
     }
 
     private static MirConstGenericValue ConvertConstGenericValue(HirConstGenericValue value)

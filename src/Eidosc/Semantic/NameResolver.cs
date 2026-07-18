@@ -2,9 +2,11 @@ using Eidosc.Semantic.PatternCoverage;
 using Eidosc.Symbols;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
+using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Syntax;
 using Eidosc.Types;
 using Eidosc.Utils;
 using System.Diagnostics;
@@ -30,7 +32,7 @@ public sealed partial class NameResolver
     private readonly PathResolver _pathResolver;
     private readonly ImportResolver _importResolver;
     private readonly NameLookupService _lookupService;
-    private readonly AttributeBinder _attributeBinder;
+    private readonly DeclarationClauseSemanticBinder _clauseSemanticBinder;
     private readonly PatternCoveragePass _patternCoveragePass;
     private readonly Dictionary<SymbolId, ImportScope> _importScopes = new();
     private readonly HashSet<SymbolId> _importsProcessed = [];
@@ -39,36 +41,78 @@ public sealed partial class NameResolver
     private readonly Dictionary<SymbolId, ModuleDecl> _moduleDeclarations = new();
     private readonly Dictionary<SymbolId, AdtDef> _adtDefinitions = new();
     private readonly Dictionary<SymbolId, TraitDef> _traitDefinitions = new();
-    private readonly List<DeferredDeriveInvocation> _deferredDeriveInvocations = [];
-    private readonly HashSet<string> _generatedDeclarationIdentities = new(StringComparer.Ordinal);
+    private readonly Dictionary<SymbolId, Declaration> _declarationsBySymbol = new();
+    private readonly Dictionary<SymbolId, IReadOnlyList<GenericParameterKind>> _genericParameterKindsBySymbol = new();
+    private readonly List<MetaInvocationOccurrence> _metaInvocationOccurrences = [];
+    private readonly List<MetaSyntaxSiteOccurrence> _metaSyntaxSiteOccurrences = [];
+    private readonly HashSet<EidosAstNode> _registeredMetaSyntaxSites = new(ReferenceEqualityComparer.Instance);
+    private readonly GeneratedDeclarationIdentityRegistry _generatedDeclarationIdentities = new();
     private readonly HashSet<SymbolId> _metaResolvedComptimeSymbols = [];
     private readonly Dictionary<string, InstanceDecl> _instanceDeclarations = new(StringComparer.Ordinal);
     private readonly Dictionary<Scope, Dictionary<string, List<FunctionOverloadDeclaration>>> _functionOverloadDeclarations = new();
+    private readonly Dictionary<string, List<SymbolId>> _syntaxIdentitySymbols = new(StringComparer.Ordinal);
     private readonly Dictionary<SymbolId, SymbolId> _traitOwnerModules = new();
     private readonly Dictionary<SymbolId, CtorPatternShape> _ctorPatternShapes = new();
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
     internal ComptimeExecutionOptions ComptimeExecution { get; init; } = ComptimeExecutionOptions.Disabled;
+    internal CompilerOwnedSourceGrant CompilerOwnedSourceGrant { get; init; } = CompilerOwnedSourceGrant.None;
+    internal string LanguageVersion { get; init; } = ProjectSystem.EidosLanguageVersions.Current;
     private readonly Dictionary<string, ImplOverlapCheckSnapshotEntry> _implOverlapSnapshotEntries = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ImplOverlapCheckSnapshotEntry> _previousImplOverlapSnapshotEntries = new(StringComparer.Ordinal);
+    private readonly HashSet<DeclarationClause> _processedImplClauses = new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<SymbolId> _processedConventionImplFunctions = [];
     private HashSet<SymbolId>? _traitImplMethodIds;
     private readonly List<string> _patternDiagnosticContext = [];
+    private readonly Dictionary<SymbolId, SymbolId> _patternValueAdtBindings = [];
     private int _traitSignatureDepth;
     private int _instanceMethodDeclarationDepth;
+    private int _forcedPrivateGeneratedDeclarationDepth;
     private SymbolId _rootModule = SymbolId.None;
     private SymbolId _currentModule = SymbolId.None;
     private string? _rootInputFilePath;
     private readonly List<EidoscDiagnostic> _diagnostics = [];
+    private readonly HashSet<ClauseOccurrenceId> _completedMetaInvocations = [];
+    private readonly Dictionary<ClauseOccurrenceId, string> _metaInvocationInputFingerprints = [];
+    private readonly HashSet<ClauseOccurrenceId> _queryDependentMetaInvocations = [];
+    private readonly Dictionary<ClauseOccurrenceId, string> _metaInvocationQueryFingerprints = [];
+    private readonly HashSet<ClauseStage> _closedMetaExpansionStages = [];
+    private bool _isProvisionalSyntaxDiscovery;
 
-    private sealed record DeferredDeriveInvocation(
-        AdtDef Target,
+    private sealed record MetaInvocationOccurrence(
+        Declaration Target,
+        AdtDef? DeriveShape,
+        string TargetName,
+        IReadOnlyList<string> TargetPath,
         SymbolId ModuleId,
-        Ast.Attribute Attribute,
-        int AttributeOccurrenceIndex,
-        int ArgumentIndex,
-        string GeneratorText,
-        IReadOnlyList<string> Ancestors);
+        DeclarationClause Clause,
+        MetaInvocationIR Invocation,
+        IReadOnlyList<string> Ancestors,
+        string OrderingDomainIdentity);
+
+    private sealed record MetaSyntaxSiteOccurrence(
+        EidosAstNode SiteNode,
+        IMetaSyntaxSite Site,
+        SyntaxCategory Category,
+        Declaration Boundary,
+        SymbolId ModuleId,
+        Scope Scope,
+        bool IsMutablePatternBinding = false,
+        bool IsComptimePatternBinding = false,
+        bool IsParameterPatternBinding = false,
+        BlockExpr? StatementOwner = null,
+        int StatementIndex = -1,
+        ModuleDecl? ItemOwner = null,
+        int ItemIndex = -1,
+        Declaration? MemberOwner = null,
+        int MemberIndex = -1);
 
     public bool UsePrecompiledImportSignatureOnly { get; set; }
+
+    public ProjectSystem.EidosMetaConfiguration? PackageMetaConfiguration { get; set; }
+
+    public string MetaTargetTriple { get; set; } = string.Empty;
+
+    public bool LastMetaExpansionChanged { get; private set; }
 
     public ImplOverlapCheckSnapshot? PreviousImplOverlapCheckSnapshot
     {
@@ -162,6 +206,7 @@ public sealed partial class NameResolver
         IReadOnlyList<int> UnresolvedGuardBranchIndices,
         IReadOnlyList<string> UnresolvedGuardBranchHints,
         bool HasGuardedBranchesForCoverage,
+        bool RequiresHiddenCaseWildcard,
         Dictionary<int, PatternUsefulnessBranchFact> BranchFactsByIndex,
         List<SuppressedCoveredWarningTrace> SuppressedCoveredWarnings,
         HashSet<int> HandledCoveredBranches);
@@ -225,7 +270,7 @@ public sealed partial class NameResolver
         _pathResolver = _symbolTable.PathResolver;
         _importResolver = new ImportResolver(_symbolTable, _pathResolver, _moduleDeclarations);
         _lookupService = new NameLookupService(_symbolTable, _pathResolver);
-        _attributeBinder = new AttributeBinder();
+        _clauseSemanticBinder = new DeclarationClauseSemanticBinder();
         _patternCoveragePass = new PatternCoveragePass(AnalyzePatternBranchCoverage);
         _symbolTable.InitializeGlobalScope();
     }
@@ -248,7 +293,7 @@ public sealed partial class NameResolver
         _pathResolver = symbolTable.PathResolver;
         _importResolver = new ImportResolver(_symbolTable, _pathResolver, _moduleDeclarations);
         _lookupService = new NameLookupService(_symbolTable, _pathResolver);
-        _attributeBinder = new AttributeBinder();
+        _clauseSemanticBinder = new DeclarationClauseSemanticBinder();
         _patternCoveragePass = new PatternCoveragePass(AnalyzePatternBranchCoverage);
         _symbolTable.InitializeGlobalScope();
     }
@@ -262,9 +307,21 @@ public sealed partial class NameResolver
     {
         _rootInputFilePath = module.Span.FilePath;
         _implOverlapSnapshotEntries.Clear();
-        _deferredDeriveInvocations.Clear();
+        _processedImplClauses.Clear();
+        _processedConventionImplFunctions.Clear();
+        _metaInvocationOccurrences.Clear();
+        _metaSyntaxSiteOccurrences.Clear();
+        _registeredMetaSyntaxSites.Clear();
+        _completedMetaInvocations.Clear();
+        _metaInvocationInputFingerprints.Clear();
+        _queryDependentMetaInvocations.Clear();
+        _metaInvocationQueryFingerprints.Clear();
+        _closedMetaExpansionStages.Clear();
         _generatedDeclarationIdentities.Clear();
         _metaResolvedComptimeSymbols.Clear();
+        _genericParameterKindsBySymbol.Clear();
+        _declarationsBySymbol.Clear();
+        _syntaxIdentitySymbols.Clear();
         using (MeasurePass("root_module"))
         {
             var moduleName = module.Path.Count > 0 ? module.Path[^1] : WellKnownStrings.SpecialNames.Main;
@@ -278,6 +335,7 @@ public sealed partial class NameResolver
             _rootModule = _currentModule;
             module.SymbolId = _currentModule;
             _moduleDeclarations[_currentModule] = module;
+            _declarationsBySymbol[_currentModule] = module;
             if (_symbolTable.CurrentScope != null)
             {
                 _moduleScopes[_currentModule] = _symbolTable.CurrentScope;
@@ -308,20 +366,76 @@ public sealed partial class NameResolver
             ProcessImportsRecursive(module, _currentModule);
         }
 
-        using (MeasurePass("meta_expansion"))
+        using (MeasurePass("package_meta_extensions_syntax"))
         {
-            ProcessDeferredDeriveExpansions(module);
+            ProcessPackageMetaExtensions(module, ClauseStage.Syntax);
         }
 
-        // 第四遍：解析用户与生成声明的全部引用
+        using (MeasurePass("meta_expansion_syntax"))
+        {
+            ProcessMetaExpansions(module, ClauseStage.Syntax);
+        }
+
+        // 第四遍：先解析声明形状和签名。Semantic expansion 可以依赖这些事实，
+        // 但普通函数体必须等生成声明提交后再解析，避免产生不可撤销的前向引用诊断。
+        using (MeasurePass("resolve_semantic_shapes"))
+        {
+            ResolveModuleSemanticShapeReferencesRecursive(module, _currentModule);
+        }
+
+        using (MeasurePass("discover_meta_syntax_sites"))
+        {
+            ResolveProvisionalReferencesForSyntaxSites(module);
+        }
+
+        using (MeasurePass("meta_syntax_sites"))
+        {
+            if (ProcessMetaSyntaxSiteExpansions(module))
+            {
+                ResolveModuleSemanticShapeReferencesRecursive(module, _rootModule);
+            }
+        }
+
+        using (MeasurePass("meta_expansion_semantic"))
+        {
+            ProcessMetaExpansions(module, ClauseStage.Semantic);
+        }
+
         using (MeasurePass("resolve_references"))
         {
-            ResolveModuleReferencesRecursive(module, _currentModule);
+            ResolveModuleReferencesRecursive(module, _rootModule);
+        }
+
+        using (MeasurePass("package_meta_extensions"))
+        {
+            ProcessPackageMetaExtensions(module, ClauseStage.Semantic);
         }
 
         // Proof validation removed during migration
 
         return !_diagnostics.Exists(d => d.Level == EidoscDiagnosticLevel.Error);
+    }
+
+    private void ResolveProvisionalReferencesForSyntaxSites(ModuleDecl module)
+    {
+        var diagnosticCheckpoint = _diagnostics.Count;
+        _isProvisionalSyntaxDiscovery = true;
+        try
+        {
+            ResolveModuleReferencesRecursive(module, _rootModule);
+        }
+        finally
+        {
+            _isProvisionalSyntaxDiscovery = false;
+        }
+
+        // This pass exists only to build lexical scopes and register syntax-site occurrences.
+        // Semantic generators may still add declarations referenced by ordinary bodies, so the
+        // authoritative post-expansion reference pass must reproduce every retained diagnostic.
+        if (_diagnostics.Count > diagnosticCheckpoint)
+        {
+            _diagnostics.RemoveRange(diagnosticCheckpoint, _diagnostics.Count - diagnosticCheckpoint);
+        }
     }
 
     private ProfilePassScope MeasurePass(string name) => new(this, name);
@@ -379,6 +493,9 @@ public sealed partial class NameResolver
     {
         switch (decl)
         {
+            case ExpandDeclaration expansion:
+                ResolveExpandDeclarationReferences(expansion);
+                break;
             case FuncDef func:
                 ResolveFuncDefReferences(func);
                 break;
@@ -416,7 +533,45 @@ public sealed partial class NameResolver
         }
     }
 
-    private void ResolveFuncDefReferences(FuncDef func)
+    private void ResolveDeclarationSemanticShapeReferences(Declaration decl)
+    {
+        switch (decl)
+        {
+            case ExpandDeclaration expansion:
+                ResolveExpandDeclarationReferences(expansion);
+                break;
+            case FuncDef func:
+                ResolveFuncDefReferences(func, resolveBody: false);
+                break;
+            case FuncDecl funcDecl:
+                ResolveFuncDeclReferences(funcDecl);
+                break;
+            case LetDecl letDecl:
+                ResolveOptionalTypeReference(letDecl.TypeAnnotation);
+                UpdateVariableDeclaredType(letDecl.SymbolId, letDecl.TypeAnnotation);
+                break;
+            case AdtDef adt:
+                ResolveAdtDefReferences(adt);
+                break;
+            case EffectDef effect:
+                ResolveEffectDefReferences(effect);
+                break;
+            case TraitDef trait:
+                ResolveTraitDefReferences(trait, resolveBodies: false);
+                break;
+            case InstanceDecl instance:
+                ResolveInstanceDeclReferences(instance, resolveBodies: false);
+                break;
+            case Assignment:
+            case LetQuestionDecl:
+            case ImportDecl:
+            case ModuleDecl:
+            case ProofDecl:
+                break;
+        }
+    }
+
+    private void ResolveFuncDefReferences(FuncDef func, bool resolveBody = true)
     {
         using var scopeGuard = _symbolTable.PushScopeGuard(ScopeKind.Function);
 
@@ -434,7 +589,12 @@ public sealed partial class NameResolver
 
         ResolveEffectRequirements(func.RequiredAbilities);
 
-        TryRegisterTraitImplFromAttributes(func);
+        TryRegisterTraitImplFromClauses(func);
+
+        if (!resolveBody)
+        {
+            return;
+        }
 
         if (ShouldUseSignatureOnlyForTrustedPrecompiledFunction(func))
         {
@@ -442,10 +602,15 @@ public sealed partial class NameResolver
             return;
         }
 
+        var preferredInputAdt = GetFunctionPatternInputAdt(func);
         for (var i = 0; i < func.Body.Count; i++)
         {
             WarnIfFunctionBranchUsesRedundantMatch(func.Body[i]);
-            ResolvePatternBranchReferences(func.Body[i], i + 1, isParameterBranch: true);
+            ResolvePatternBranchReferences(
+                func.Body[i],
+                i + 1,
+                isParameterBranch: true,
+                preferredPatternAdt: preferredInputAdt);
         }
 
         func.SetPatternBodyExhaustive(ShouldSkipTrustedPrecompiledPatternCoverage(func.Span)
@@ -454,7 +619,8 @@ public sealed partial class NameResolver
                 func.Body,
                 func.Span,
                 $"function '{func.Name}'",
-                GuardSubjectName: null)));
+                GuardSubjectName: null,
+                PreferredAdt: preferredInputAdt)));
     }
 
     private void UpdateFunctionTypeParamSymbols(SymbolId functionId, IReadOnlyList<TypeParam> typeParams)
@@ -479,7 +645,8 @@ public sealed partial class NameResolver
         IReadOnlyList<PatternBranch> branches,
         SourceSpan ownerSpan,
         string ownerDescription,
-        string? guardSubjectName)
+        string? guardSubjectName,
+        SymbolId preferredAdt)
     {
         if (branches.Count == 0)
         {
@@ -487,12 +654,25 @@ public sealed partial class NameResolver
         }
 
         var facts = BuildPatternCoverageFacts(branches, guardSubjectName);
-        var context = CreatePatternCoverageContext(facts.BranchFacts);
+        var context = CreatePatternCoverageContext(facts.BranchFacts, preferredAdt);
 
         EmitPatternUnreachableWarnings(context);
         EmitAdditionalPatternCoveredWarnings(facts, context);
         EmitNonExhaustivePatternCoverageWarning(ownerSpan, ownerDescription, context);
         return context.Summary.IsExhaustive;
+    }
+
+    private SymbolId GetFunctionPatternInputAdt(FuncDef function)
+    {
+        if (function.Signature.FirstOrDefault() is not ArrowType { ParamType: { } parameterType })
+        {
+            return SymbolId.None;
+        }
+
+        return parameterType.SymbolId.IsValid &&
+               _symbolTable.GetSymbol<AdtSymbol>(parameterType.SymbolId) != null
+            ? parameterType.SymbolId
+            : SymbolId.None;
     }
 
     private bool ShouldSkipTrustedPrecompiledPatternCoverage(SourceSpan span)
@@ -684,10 +864,29 @@ public sealed partial class NameResolver
             return importedModuleResult;
         }
 
+        if (TryResolveCurrentModuleQualifiedPath(path, out var currentModuleResult, allowedKinds))
+        {
+            return currentModuleResult;
+        }
+
+        if (TryResolveImportedSymbolPath(path, out var importedSymbolResult, allowedKinds))
+        {
+            return importedSymbolResult;
+        }
+
         var result = _pathResolver.Resolve(path, _currentModule);
         if (result.IsSuccess && (allowedKinds == null || allowedKinds.Contains(result.Kind)))
         {
             return result;
+        }
+
+        if (result.IsSuccess &&
+            result.Kind == ResolutionKind.Type &&
+            allowedKinds != null &&
+            (allowedKinds.Contains(ResolutionKind.Constructor) || allowedKinds.Contains(ResolutionKind.Value)) &&
+            _symbolTable.GetSymbol<AdtSymbol>(result.SymbolId) is { IsCaseType: true, CaseConstructor.IsValid: true } caseType)
+        {
+            return PathResolutionResult.Found(caseType.CaseConstructor, ResolutionKind.Constructor);
         }
 
         if (TryResolveCurrentScopeEffectOperationPath(path, out var abilityOperationResult))
@@ -695,17 +894,13 @@ public sealed partial class NameResolver
             return abilityOperationResult;
         }
 
-        if (TryResolveCurrentModuleQualifiedPath(path, out var currentModuleResult))
-        {
-            return currentModuleResult;
-        }
-
         return result;
     }
 
     private bool TryResolveCurrentModuleQualifiedPath(
         IReadOnlyList<string> path,
-        out PathResolutionResult result)
+        out PathResolutionResult result,
+        IReadOnlySet<ResolutionKind>? allowedKinds)
     {
         result = PathResolutionResult.NotFound(DiagnosticMessages.CannotResolvePath(
             string.Join(WellKnownStrings.Separators.Path, path)));
@@ -724,7 +919,8 @@ public sealed partial class NameResolver
         }
 
         var memberName = path[^1];
-        if (TryLookupSameNamedTraitMember(_currentModule, memberName, out var traitMember))
+        if ((allowedKinds == null || allowedKinds.Contains(ResolutionKind.Value)) &&
+            TryLookupTraitMemberInModule(_currentModule, memberName, out var traitMember))
         {
             result = traitMember;
             return true;
@@ -734,13 +930,15 @@ public sealed partial class NameResolver
                 _currentModule,
                 memberName,
                 _currentModule,
+                allowedKinds,
                 out var binding))
         {
             result = PathResolutionResult.Found(binding.SymbolId, binding.Kind);
             return true;
         }
 
-        if (TryLookupSameNamedEffectMember(_currentModule, memberName, out var abilityMember))
+        if ((allowedKinds == null || allowedKinds.Contains(ResolutionKind.Effect)) &&
+            TryLookupSameNamedEffectMember(_currentModule, memberName, out var abilityMember))
         {
             result = abilityMember;
             return true;
@@ -933,6 +1131,7 @@ public sealed partial class NameResolver
     private void DeclareTypeParameterIfValid(TypeParam typeParam)
     {
         var name = typeParam.Name;
+        var bindingName = GetSyntaxBindingName(typeParam, name);
         var span = typeParam.Span;
         if (TryReportReservedSelfDeclaration(name, span, "type parameter"))
         {
@@ -951,13 +1150,31 @@ public sealed partial class NameResolver
                 $"Value generic parameter '{name}' requires an explicit comptime value type annotation.");
         }
 
+        if (typeParam.SymbolId.IsValid &&
+            _symbolTable.GetSymbol<TypeParamSymbol>(typeParam.SymbolId) is { } existing &&
+            string.Equals(existing.Name, bindingName, StringComparison.Ordinal) &&
+            _symbolTable.CurrentScope is { } currentScope)
+        {
+            if (typeParam.ParameterKind == GenericParameterKind.Value)
+            {
+                currentScope.BindValue(bindingName, typeParam.SymbolId);
+            }
+            else
+            {
+                currentScope.BindType(bindingName, typeParam.SymbolId);
+            }
+            RegisterSyntaxIdentitySymbol(typeParam, typeParam.SymbolId);
+            return;
+        }
+
         typeParam.SymbolId = _symbolTable.DeclareTypeParameter(
-            name,
+            bindingName,
             span,
             typeParam.GetKindText(),
             typeParam.IsComptime,
             FormatComptimeTypeAnnotation(typeParam.ComptimeTypeAnnotation),
             typeParam.ParameterKind);
+        RegisterSyntaxIdentitySymbol(typeParam, typeParam.SymbolId);
     }
 
     private static string? FormatComptimeTypeAnnotation(TypeNode? typeAnnotation)
@@ -979,7 +1196,8 @@ public sealed partial class NameResolver
         bool isPatternBound,
         PatternBindingMode bindingMode = PatternBindingMode.ByValue,
         bool isMutable = false,
-        bool isComptime = false)
+        bool isComptime = false,
+        SymbolId existingSymbolId = default)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -1004,6 +1222,14 @@ public sealed partial class NameResolver
             }
 
             return existingId;
+        }
+
+        if (existingSymbolId.IsValid &&
+            _symbolTable.GetSymbol<VarSymbol>(existingSymbolId) is { } existingSymbol &&
+            string.Equals(existingSymbol.Name, name, StringComparison.Ordinal) &&
+            _symbolTable.CurrentScope?.BindValue(name, existingSymbolId) == true)
+        {
+            return existingSymbolId;
         }
 
         return _symbolTable.DeclareVariable(

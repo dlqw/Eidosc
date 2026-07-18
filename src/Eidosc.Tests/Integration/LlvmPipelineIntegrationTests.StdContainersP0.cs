@@ -18,11 +18,11 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Seq
-import Std.Trait
-import Std.SeqBuilder
+import std.Seq
+import std.Traits
+import std.SeqBuilder
 
-snapshot[A: Trait.Clone] :: SeqBuilder.SeqBuilder[A] -> Seq[A]
+snapshot[A: Traits.Clone] :: SeqBuilder.SeqBuilder[A] -> Seq[A]
 {
     vec => SeqBuilder.to_seq(vec)
 }
@@ -54,7 +54,7 @@ main :: Unit -> Int
         }
 
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
 
 main :: Unit -> Int
 {
@@ -84,8 +84,8 @@ main :: Unit -> Int
         }
 
         const string source = """
-import Std.HashMap
-import Std.HashSet
+import std.HashMap
+import std.HashSet
 
 main :: Unit -> Int
 {

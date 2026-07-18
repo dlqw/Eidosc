@@ -322,7 +322,6 @@ public sealed partial class MirToLlvmConverter
 
         using (MeasureConverterSubphase("synthesize_constructor_stubs"))
         {
-            SynthesizeAdtConstructorStubs(llvmModule);
         }
 
         using (MeasureConverterSubphase("synthesize_destructors"))
@@ -733,6 +732,7 @@ public sealed partial class MirToLlvmConverter
         return instr switch
         {
             MirAssign assign => ConvertAssign(assign),
+            MirCaseInject injection => ConvertCaseInject(injection),
             MirStore store => ConvertStore(store),
             MirCall call => ConvertCall(call),
             MirLoad load => ConvertLoad(load),
@@ -832,6 +832,21 @@ public sealed partial class MirToLlvmConverter
         }
 
         return null;
+    }
+
+    private LlvmInstruction? ConvertCaseInject(MirCaseInject injection)
+    {
+        if (injection.Target is not MirPlace target)
+        {
+            return ReportUnsupportedInstruction(injection);
+        }
+
+        return ConvertAssign(new MirAssign
+        {
+            Target = target,
+            Source = injection.Operand,
+            Span = injection.Span
+        });
     }
 
     private LlvmInstruction? ConvertStore(MirStore store)

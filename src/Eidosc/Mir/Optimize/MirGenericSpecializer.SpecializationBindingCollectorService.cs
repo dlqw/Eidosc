@@ -106,6 +106,16 @@ public sealed partial class MirGenericSpecializer
                     SubstituteOperandType(assign.Source, templateLocalTypes, bindings),
                     bindings),
 
+                MirCaseInject injection =>
+                    TryCollectBindingFromResolvedType(
+                        injection.SourceTypeId,
+                        SubstituteOperandType(injection.Operand, templateLocalTypes, bindings),
+                        bindings) |
+                    TryCollectBindingFromResolvedType(
+                        injection.TargetTypeId,
+                        SubstituteOperandType(injection.Target, templateLocalTypes, bindings),
+                        bindings),
+
                 MirLoad load => TryCollectBindingFromResolvedType(
                     owner.ResolvePlaceType(load.Target, templateLocalTypes),
                     SubstituteOperandType(load.Source, templateLocalTypes, bindings),

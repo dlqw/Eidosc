@@ -730,7 +730,8 @@ public sealed class ConstraintSolver
         {
             TyVar => true,
             TyCon con => con.Args.Any(ContainsTypeVariable) ||
-                         con.ValueArgs.Any(static argument => !argument.IsConcrete),
+                         con.ValueArgs.Any(static argument => !argument.IsConcrete) ||
+                         con.EffectArgs.Any(static argument => !argument.IsConcrete),
             TyTuple tuple => tuple.Elements.Any(ContainsTypeVariable),
             TyFun fun => fun.Params.Any(ContainsTypeVariable) || ContainsTypeVariable(fun.Result),
             _ => false

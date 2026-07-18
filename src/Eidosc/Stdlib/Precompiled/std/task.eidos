@@ -1,0 +1,208 @@
+Task :: module {
+    import Ffi
+    import Option
+
+
+
+ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
+
+
+/// A concurrent task that produces a value.
+Task[A] :: type {handle:: RawPtr}
+
+/// Observable state of a runtime-backed Task.
+Status :: type {
+    TaskPending :: type {} , TaskCompleted :: type {}
+}
+
+
+
+completed_raw_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_new_completed_raw";
+
+
+
+
+completed_value_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_new_completed_value";
+
+
+
+
+is_completed_runtime :: RawPtr -> Bool internal need ffi extern c link_name "eidos_task_is_completed";
+
+
+
+
+try_get_raw_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_try_get_raw";
+
+
+
+
+try_get_value_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_try_get_value";
+
+
+
+
+spawn_closure_raw_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern c link_name "eidos_task_spawn_closure_raw";
+
+
+
+
+spawn_closure_value_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern c link_name "eidos_task_spawn_closure_value";
+
+
+
+
+await_closure_raw_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E internal need ffi extern c link_name "eidos_task_await_closure_raw";
+
+
+
+
+await_closure_value_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E internal need ffi extern c link_name "eidos_task_await_closure_value";
+
+
+/// Create an already-completed runtime-backed task with a non-null raw pointer payload.
+completed_raw[A] :: RawPtr -> Task[A] need ffi
+{
+    value => Task{handle: Task.completed_raw_runtime(value)}
+}
+
+/// Create an already-completed runtime-backed task with a boxed Eidos value.
+completed_value[A] :: A -> Task[A] need ffi
+{
+    value => {
+        boxed := Ffi.box_value[A](value);
+        task := Task{handle: Task.completed_value_runtime(boxed)};
+        Ffi.free_boxed_value(boxed);
+        task
+    }
+}
+
+/// Spawn a scheduler-backed raw pointer task from an Eidos thunk.
+spawn_raw[E: effects] :: (Unit -> RawPtr need E) -> Task[RawPtr] need ffi, E
+{
+    thunk => Task{handle: Task.spawn_closure_raw_runtime(thunk)}
+}
+
+/// Spawn a scheduler-backed task that returns a boxed Eidos value.
+spawn[A, E: effects] :: (Unit -> A need E) -> Task[A] need ffi, E
+{
+    thunk => Task{handle: Task.spawn_closure_value_runtime(_ => Ffi.box_value[A](thunk(())))}
+}
+
+/// Create a completed task only when the payload is non-null.
+completed_raw_opt[A] :: RawPtr -> Option[Task[A]] need ffi
+{
+    value => if ptr_is_null(value) then {
+        None()
+    } else {
+        Some(Task.completed_raw(value))
+    }
+}
+
+/// Check whether a runtime-backed task has completed.
+is_completed[A] :: Task[A] -> Bool need ffi
+{
+    Task{handle: handle} => Task.is_completed_runtime(handle)
+}
+
+/// Return true while the task has not completed.
+is_pending[A] :: Task[A] -> Bool need ffi
+{
+    task => !Task.is_completed(task)
+}
+
+/// Return a task state snapshot.
+status[A] :: Task[A] -> Status need ffi
+{
+    task => if Task.is_completed(task) then { TaskCompleted() } else { TaskPending() }
+}
+
+/// Return true when a task status represents completion.
+status_is_completed :: Status -> Bool
+{
+    TaskPending() => false,
+    TaskCompleted() => true
+}
+
+/// Return true when a task status represents pending work.
+status_is_pending :: Status -> Bool
+{
+    status => !Task.status_is_completed(status)
+}
+
+/// Select a value from a task status snapshot.
+status_value_or[A] :: Status -> A -> A -> A
+{
+    TaskPending() => pending_value => _ => pending_value,
+    TaskCompleted() => _ => completed_value => completed_value
+}
+
+/// Lazily select a value from a task status snapshot.
+status_value_or_else[A, E1: effects, E2: effects] :: Status -> (Unit -> A need E1) -> (Unit -> A need E2) -> A need E1, E2
+{
+    TaskPending() => pending_value => _ => pending_value(()),
+    TaskCompleted() => _ => completed_value => completed_value(())
+}
+
+/// Try to read a completed raw pointer payload without suspending the caller.
+try_await_raw[A] :: Task[A] -> Option[RawPtr] need ffi
+{
+    Task{handle: handle} => {
+        value := Task.try_get_raw_runtime(handle);
+        if ptr_is_null(value) then { None() } else { Some(value) }
+    }
+}
+
+/// Try to read a completed boxed Eidos value without suspending the caller.
+try_await_value[A] :: Task[A] -> Option[A] need ffi
+{
+    Task{handle: handle} => {
+        boxed := Task.try_get_value_runtime(handle);
+        if ptr_is_null(boxed) then {
+            None()
+        } else {
+            Some(Ffi.unbox_value[A](boxed))
+        }
+    }
+}
+
+/// Try to read a completed raw pointer payload, returning the fallback while pending.
+try_await_raw_or[A] :: Task[A] -> RawPtr -> RawPtr need ffi
+{
+    task => fallback => match Task.try_await_raw(task) { Some(value) => value, None() => fallback }
+}
+
+/// Try to read a completed raw pointer payload, evaluating the fallback only while pending.
+try_await_raw_or_else[A, E: effects] :: Task[A] -> (Unit -> RawPtr need E) -> RawPtr need ffi, E
+{
+    task => fallback => match Task.try_await_raw(task) { Some(value) => value, None() => fallback(()) }
+}
+
+/// Try to read a completed boxed Eidos value, returning the fallback while pending.
+try_await_value_or[A] :: Task[A] -> A -> A need ffi
+{
+    task => fallback => match Task.try_await_value(task) { Some(value) => value, None() => fallback }
+}
+
+/// Try to read a completed boxed Eidos value, evaluating the fallback only while pending.
+try_await_value_or_else[A, E: effects] :: Task[A] -> (Unit -> A need E) -> A need ffi, E
+{
+    task => fallback => match Task.try_await_value(task) { Some(value) => value, None() => fallback(()) }
+}
+
+/// Register a raw pointer continuation to run when a scheduler-backed task completes.
+await_raw[E: effects] :: Task[RawPtr] -> (RawPtr -> Unit need E) -> Unit need ffi, E
+{
+    Task{handle: handle} => continuation => Task.await_closure_raw_runtime(handle)(continuation)
+}
+
+/// Register a continuation to run with the boxed Eidos value when the task completes.
+await_value[A, E: effects] :: Task[A] -> (A -> Unit need E) -> Unit need ffi, E
+{
+    Task{handle: handle} => continuation => Task.await_closure_value_runtime(handle)(boxed => {
+        value := Ffi.unbox_value[A](boxed);
+        continuation(value)
+    })
+}
+
+}

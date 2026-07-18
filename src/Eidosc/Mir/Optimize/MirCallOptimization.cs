@@ -63,6 +63,7 @@ internal static class MirCallOptimization
         MirOperand? target = instruction switch
         {
             MirAssign assign => assign.Target,
+            MirCaseInject injection => injection.Target,
             MirCall call => call.Target,
             MirBinOp binOp => binOp.Target,
             MirUnaryOp unaryOp => unaryOp.Target,

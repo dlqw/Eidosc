@@ -22,7 +22,7 @@ internal static class ModuleParseUtilities
             scannerData,
             grammarData,
             cancellationToken);
-        var parseResult = ParseTokenList(lexResult.Tokens, sourceName, languageVersion);
+        var parseResult = ParseTokenList(lexResult.Tokens, sourceName, languageVersion, sourceText: sourceText);
         var diagnostics = new List<Diagnostic.Diagnostic>(lexResult.Diagnostics.Count + parseResult.Diagnostics.Count);
         diagnostics.AddRange(lexResult.Diagnostics);
         diagnostics.AddRange(parseResult.Diagnostics);
@@ -74,10 +74,15 @@ internal static class ModuleParseUtilities
         IReadOnlyList<Token> tokens,
         string sourceName,
         string languageVersion,
-        IReadOnlyList<Diagnostic.Diagnostic>? lexerDiagnostics = null)
+        IReadOnlyList<Diagnostic.Diagnostic>? lexerDiagnostics = null,
+        string? sourceText = null)
     {
         var parseTokens = CloneTokenList(tokens);
-        var (ast, parserDiagnostics) = SyntaxParser.Parse(parseTokens, sourceName, languageVersion);
+        var (ast, parserDiagnostics) = SyntaxParser.Parse(
+            parseTokens,
+            sourceName,
+            languageVersion,
+            sourceText: sourceText);
         var diagnostics = new List<Diagnostic.Diagnostic>(
             (lexerDiagnostics?.Count ?? 0) + parserDiagnostics.Count);
         if (lexerDiagnostics is not null)

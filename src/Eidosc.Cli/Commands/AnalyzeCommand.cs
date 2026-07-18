@@ -6,6 +6,7 @@ using Eidosc.Cli.Resources;
 using Eidosc.Diagnostic;
 using Eidosc.Debug;
 using Eidosc.Pipeline;
+using Eidosc.ProjectSystem;
 
 namespace Eidosc.Cli.Commands;
 
@@ -41,6 +42,7 @@ public static class AnalyzeCommand
             new Option<bool>("--no-color", CliMessages.CliNoColorOptionDescription),
             new Option<string[]>("--werror", CliMessages.WerrorOptionDescription),
             new Option<bool>("--werror-all", CliMessages.WerrorAllOptionDescription),
+            DenyOptionParser.Create(),
             importRootOption
         };
 
@@ -69,6 +71,7 @@ public static class AnalyzeCommand
         public bool NoColor { get; set; }
         public string[] Werror { get; set; } = [];
         public bool WerrorAll { get; set; }
+        public string[] Deny { get; set; } = [];
         public string[] ImportRoot { get; set; } = [];
     }
 
@@ -149,6 +152,10 @@ public static class AnalyzeCommand
         // 映射 CLI 阶段到内部阶段
         var internalPhase = CliCompilationPhaseMapper.MapPhase(options.Phase);
 
+        var projectConfig = inputResolution.ImportResolution.ProjectFilePath != null
+            ? EidosProjectConfigurationLoader.TryLoadFromPath(inputResolution.ImportResolution.ProjectFilePath)?.Configuration
+            : EidosProjectConfigurationLoader.TryLoadNearest(inputResolution.SourceFilePath)?.Configuration;
+
         // 创建编译选项
         var compileOptions = new CompilationOptions
         {
@@ -163,10 +170,12 @@ public static class AnalyzeCommand
             EmitStyleSuggestions = true,
             AllowVirtualInputFile = sourceInput.IsInMemorySource,
             TreatWarningsAsErrors = options.WerrorAll,
+            DenyStyle = DenyOptionParser.IncludesStyle(options.Deny),
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
             PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal)
+            ,MetaConfiguration = projectConfig?.Meta
         };
 
         // 运行编译管道

@@ -442,7 +442,7 @@ Main :: module {
     private static CompilationResult RunPipeline(CompilationPhase phase) =>
         new CompilationPipeline("""
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {

@@ -84,8 +84,8 @@ keep :: String -> String
     public void CompilationPipeline_NonCopyConditionalMoveInMonotonicIndexLoop_DoesNotReportMoveErrors()
     {
         const string source = """
-import Std.RuntimeArray
-import Std.Seq
+import std.RuntimeArray
+import std.Seq
 
 replace_bucket :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int, Int)]]
 {
@@ -120,7 +120,7 @@ replace_bucket :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int
     public void CompilationPipeline_NonCopyConditionalMoveWithoutOneShotGuard_StillReportsMoveError()
     {
         const string source = """
-import Std.RuntimeArray
+import std.RuntimeArray
 
 invalid_repeat :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int, Int)]]
 {
@@ -152,11 +152,11 @@ invalid_repeat :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int
     public void CompilationPipeline_LoopConsumeAndRebindNonCopyState_DoesNotReportMoveErrors()
     {
         const string source = """
-import Std.Option
+import std.Option
 
 Box :: type
 {
-    Box(Int)
+    Box:: type(Int)
 }
 
 step :: Box -> Option[(Int, Box)]

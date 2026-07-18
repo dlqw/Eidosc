@@ -1,0 +1,1322 @@
+Network :: module {
+    import Option
+    import Result
+    import Text
+
+
+
+    string_from_char :: Int -> String internal intrinsic "string_from_char";
+
+
+
+
+
+    http_request_text_with_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_text_with_options" need io;
+
+
+
+
+
+    http_request_body_hex_with_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_body_hex_with_options" need io;
+
+
+
+
+
+    http_request_text_with_binary_body_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_text_with_binary_body_options" need io;
+
+
+
+
+
+    http_request_body_hex_with_binary_body_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_body_hex_with_binary_body_options" need io;
+
+
+
+
+
+    http_last_status_code :: Unit -> Int internal intrinsic "http_last_status_code" need io;
+
+
+
+
+
+    http_last_effective_url :: Unit -> String internal intrinsic "http_last_effective_url" need io;
+
+
+
+
+
+    http_last_content_type :: Unit -> String internal intrinsic "http_last_content_type" need io;
+
+
+
+
+
+    http_last_headers :: Unit -> String internal intrinsic "http_last_headers" need io;
+
+
+
+
+
+    io_last_success :: Unit -> Bool internal intrinsic "io_last_success" need io;
+
+
+
+
+
+    io_last_error :: Unit -> String internal intrinsic "io_last_error" need io;
+
+
+    HttpRequest :: type {method:: String, url:: String, content_type:: String, body:: String, headers:: String, connect_timeout_seconds:: Int, total_timeout_seconds:: Int}
+    HttpResponse :: type {ok:: Bool, status:: Int, body:: String, headers:: String, effective_url:: String, content_type:: String, error:: String}
+    HttpBytesResponse :: type {ok:: Bool, status:: Int, body:: Seq[Int], headers:: String, effective_url:: String, content_type:: String, error:: String}
+
+
+    hex_digit :: Int -> String
+     internal
+{
+        0 => "0",
+        1 => "1",
+        2 => "2",
+        3 => "3",
+        4 => "4",
+        5 => "5",
+        6 => "6",
+        7 => "7",
+        8 => "8",
+        9 => "9",
+        10 => "A",
+        11 => "B",
+        12 => "C",
+        13 => "D",
+        14 => "E",
+        _ => "F"
+    }
+
+
+    is_unreserved_char_code :: Int -> Bool
+     internal
+{
+        code => (code >= 48 && code <= 57) ||
+            (code >= 65 && code <= 90) ||
+            (code >= 97 && code <= 122) ||
+            code == 45 || code == 46 || code == 95 || code == 126
+    }
+
+
+    percent_encode_byte :: Int -> String
+     internal
+{
+        value => "%" ++ Network.hex_digit(value / 16) ++ Network.hex_digit(value % 16)
+    }
+
+
+    url_encode_loop :: String -> Int -> String
+     internal
+{
+        src => index =>
+            if index >= Text.len(src) then { "" }
+            else
+            {
+                code := Text.char_code_at(src)(index);
+                encoded := if Network.is_unreserved_char_code(code)
+                    then { string_from_char(code) }
+                    else { Network.percent_encode_byte(code) };
+                encoded ++ Network.url_encode_loop(src)(index + 1)
+            }
+    }
+
+    url_encode_component :: String -> String
+    {
+        src => Network.url_encode_loop(src)(0)
+    }
+
+    add_query_param :: String -> String -> String -> String
+    {
+        url => key => value => {
+            separator := if Text.contains(url)("?") then { "&" } else { "?" };
+            url ++ separator ++ Network.url_encode_component(key) ++ "=" ++ Network.url_encode_component(value)
+        }
+    }
+
+
+    add_header_line :: String -> String -> String -> String
+     internal
+{
+        headers => key => value => {
+            line := key ++ ": " ++ value;
+            if Text.len(headers) == 0 then { line } else { headers ++ "\n" ++ line }
+        }
+    }
+
+
+    append_bytes :: Seq[Int] -> Seq[Int] -> Seq[Int]
+     internal
+{
+        left => right => [x | xs <- [left, right], x <- xs]
+    }
+
+
+    normalize_byte :: Int -> Int
+     internal
+{
+        value => {
+            modded := value % 256;
+            if modded < 0 then { modded + 256 } else { modded }
+        }
+    }
+
+
+    encode_hex_byte :: Int -> String
+     internal
+{
+        value => {
+            byte_value := Network.normalize_byte(value);
+            Network.hex_digit(byte_value / 16) ++ Network.hex_digit(byte_value % 16)
+        }
+    }
+
+
+    encode_hex_bytes :: Seq[Int] -> String
+     internal
+{
+        [] => "",
+        [head, ..tail] => Network.encode_hex_byte(head) ++ Network.encode_hex_bytes(tail)
+    }
+
+
+    hex_digit_value :: Int -> Option[Int]
+     internal
+{
+        code when code >= 48 && code <= 57 => Some(code - 48),
+        code when code >= 65 && code <= 70 => Some(code - 55),
+        code when code >= 97 && code <= 102 => Some(code - 87),
+        _ => None()
+    }
+
+
+    decode_hex_byte_from :: String -> Int -> Option[Int]
+     internal
+{
+        text => index =>
+            if index + 1 >= Text.len(text) then { None() }
+            else {
+                match Network.hex_digit_value(Text.char_code_at(Text.clone(text))(index))
+                {
+                    Some(high) => {
+                        match Network.hex_digit_value(Text.char_code_at(Text.clone(text))(index + 1))
+                        {
+                            Some(low) => Some(high * 16 + low),
+                            None() => None()
+                        }
+                    },
+                    None() => None()
+                }
+            }
+    }
+
+
+    decode_hex_bytes_from_opt :: String -> Int -> Option[Seq[Int]]
+     internal
+{
+        text => index =>
+            if index >= Text.len(text) then { Some([]) }
+            else {
+                match Network.decode_hex_byte_from(Text.clone(text))(index)
+                {
+                    Some(value) => {
+                        match Network.decode_hex_bytes_from_opt(text)(index + 2)
+                        {
+                            Some(rest) => Some(Network.append_bytes([value])(rest)),
+                            None() => None()
+                        }
+                    },
+                    None() => None()
+                }
+            }
+    }
+
+
+    binary_error_or_default :: String -> String
+     internal
+{
+        message =>
+            if Text.len(Text.clone(message)) > 0
+                then { message }
+                else { "failed to decode http binary body" }
+    }
+
+    request :: String -> String -> String -> String -> HttpRequest
+    {
+        method => url => content_type => body =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: "",
+                connect_timeout_seconds: 5,
+                total_timeout_seconds: 15
+            }
+    }
+
+    get_request :: String -> HttpRequest
+    {
+        url => HttpRequest{
+            method: "GET",
+            url: url,
+            content_type: "",
+            body: "",
+            headers: "",
+            connect_timeout_seconds: 5,
+            total_timeout_seconds: 15
+        }
+    }
+
+    post_text_request :: String -> String -> HttpRequest
+    {
+        url => body => HttpRequest{
+            method: "POST",
+            url: url,
+            content_type: "text/plain",
+            body: body,
+            headers: "",
+            connect_timeout_seconds: 5,
+            total_timeout_seconds: 15
+        }
+    }
+
+    post_json_request :: String -> String -> HttpRequest
+    {
+        url => body => HttpRequest{
+            method: "POST",
+            url: url,
+            content_type: "application/json",
+            body: body,
+            headers: "",
+            connect_timeout_seconds: 5,
+            total_timeout_seconds: 15
+        }
+    }
+
+    with_method :: HttpRequest -> String -> HttpRequest
+    {
+        HttpRequest{
+            method: _,
+            url: url,
+            content_type: content_type,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => method =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    with_url :: HttpRequest -> String -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: _,
+            content_type: content_type,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => url =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    with_body :: HttpRequest -> String -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: _,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => body =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    with_content_type :: HttpRequest -> String -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: _,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => content_type =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    put_text_request :: String -> String -> HttpRequest
+    {
+        url => body => HttpRequest{
+            method: "PUT",
+            url: url,
+            content_type: "text/plain",
+            body: body,
+            headers: "",
+            connect_timeout_seconds: 5,
+            total_timeout_seconds: 15
+        }
+    }
+
+    put_json_request :: String -> String -> HttpRequest
+    {
+        url => body => HttpRequest{
+            method: "PUT",
+            url: url,
+            content_type: "application/json",
+            body: body,
+            headers: "",
+            connect_timeout_seconds: 5,
+            total_timeout_seconds: 15
+        }
+    }
+
+    delete_request :: String -> HttpRequest
+    {
+        url => HttpRequest{
+            method: "DELETE",
+            url: url,
+            content_type: "",
+            body: "",
+            headers: "",
+            connect_timeout_seconds: 5,
+            total_timeout_seconds: 15
+        }
+    }
+
+    with_query_param :: HttpRequest -> String -> String -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => key => value =>
+            HttpRequest{
+                method: method,
+                url: Network.add_query_param(url)(key)(value),
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    with_header :: HttpRequest -> String -> String -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => key => value =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: Network.add_header_line(headers)(key)(value),
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    with_bearer_auth :: HttpRequest -> String -> HttpRequest
+    {
+        request => token => Network.with_header(request)("Authorization")("Bearer " ++ token)
+    }
+
+    with_accept :: HttpRequest -> String -> HttpRequest
+    {
+        request => value => Network.with_header(request)("Accept")(value)
+    }
+
+    with_accept_json :: HttpRequest -> HttpRequest
+    {
+        request => Network.with_accept(request)("application/json")
+    }
+
+    with_user_agent :: HttpRequest -> String -> HttpRequest
+    {
+        request => value => Network.with_header(request)("User-Agent")(value)
+    }
+
+    with_json_content_type :: HttpRequest -> HttpRequest
+    {
+        request => Network.with_content_type(request)("application/json")
+    }
+
+    with_connect_timeout :: HttpRequest -> Int -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: _,
+            total_timeout_seconds: total_timeout_seconds
+        } => seconds =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: seconds,
+                total_timeout_seconds: total_timeout_seconds
+            }
+    }
+
+    with_total_timeout :: HttpRequest -> Int -> HttpRequest
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: _
+        } => seconds =>
+            HttpRequest{
+                method: method,
+                url: url,
+                content_type: content_type,
+                body: body,
+                headers: headers,
+                connect_timeout_seconds: connect_timeout_seconds,
+                total_timeout_seconds: seconds
+            }
+    }
+
+    connect_timeout_seconds :: HttpRequest -> Int
+    {
+        HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: seconds, total_timeout_seconds: _} => seconds
+    }
+
+    total_timeout_seconds :: HttpRequest -> Int
+    {
+        HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: seconds} => seconds
+    }
+
+    request_method :: HttpRequest -> String
+    {
+        HttpRequest{method: method, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => method
+    }
+
+    request_url :: HttpRequest -> String
+    {
+        HttpRequest{method: _, url: url, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => url
+    }
+
+    request_body :: HttpRequest -> String
+    {
+        HttpRequest{method: _, url: _, content_type: _, body: body, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => body
+    }
+
+    request_content_type :: HttpRequest -> String
+    {
+        HttpRequest{method: _, url: _, content_type: content_type, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => content_type
+    }
+
+    request_headers :: HttpRequest -> String
+    {
+        HttpRequest{method: _, url: _, content_type: _, body: _, headers: headers, connect_timeout_seconds: _, total_timeout_seconds: _} => headers
+    }
+
+    send :: HttpRequest -> HttpResponse need io
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: request_body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => {
+            response_body := http_request_text_with_options(
+                method,
+                url,
+                content_type,
+                request_body,
+                headers,
+                connect_timeout_seconds,
+                total_timeout_seconds);
+            HttpResponse{
+                ok: io_last_success(),
+                status: http_last_status_code(),
+                body: response_body,
+                headers: http_last_headers(),
+                effective_url: http_last_effective_url(),
+                content_type: http_last_content_type(),
+                error: io_last_error()
+            }
+        }
+    }
+
+    send_bytes :: HttpRequest -> HttpBytesResponse need io
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: request_body,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => {
+            body_hex := http_request_body_hex_with_options(
+                method,
+                url,
+                content_type,
+                request_body,
+                headers,
+                connect_timeout_seconds,
+                total_timeout_seconds);
+            runtime_error := io_last_error();
+            match Network.decode_hex_bytes_from_opt(body_hex)(0)
+            {
+                Some(bytes) =>
+                    HttpBytesResponse{
+                        ok: io_last_success(),
+                        status: http_last_status_code(),
+                        body: bytes,
+                        headers: http_last_headers(),
+                        effective_url: http_last_effective_url(),
+                        content_type: http_last_content_type(),
+                        error: runtime_error
+                    },
+                None() =>
+                    HttpBytesResponse{
+                        ok: false,
+                        status: http_last_status_code(),
+                        body: [],
+                        headers: http_last_headers(),
+                        effective_url: http_last_effective_url(),
+                        content_type: http_last_content_type(),
+                        error: Network.binary_error_or_default(runtime_error)
+                    }
+            }
+        }
+    }
+
+    send_with_bytes_body :: HttpRequest -> Seq[Int] -> HttpResponse need io
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: _,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => body_bytes => {
+            body_hex := Network.encode_hex_bytes(body_bytes);
+            response_body := http_request_text_with_binary_body_options(
+                method,
+                url,
+                content_type,
+                body_hex,
+                headers,
+                connect_timeout_seconds,
+                total_timeout_seconds);
+            HttpResponse{
+                ok: io_last_success(),
+                status: http_last_status_code(),
+                body: response_body,
+                headers: http_last_headers(),
+                effective_url: http_last_effective_url(),
+                content_type: http_last_content_type(),
+                error: io_last_error()
+            }
+        }
+    }
+
+    send_bytes_with_bytes_body :: HttpRequest -> Seq[Int] -> HttpBytesResponse need io
+    {
+        HttpRequest{
+            method: method,
+            url: url,
+            content_type: content_type,
+            body: _,
+            headers: headers,
+            connect_timeout_seconds: connect_timeout_seconds,
+            total_timeout_seconds: total_timeout_seconds
+        } => body_bytes => {
+            request_body_hex := Network.encode_hex_bytes(body_bytes);
+            response_body_hex := http_request_body_hex_with_binary_body_options(
+                method,
+                url,
+                content_type,
+                request_body_hex,
+                headers,
+                connect_timeout_seconds,
+                total_timeout_seconds);
+            runtime_error := io_last_error();
+            match Network.decode_hex_bytes_from_opt(response_body_hex)(0)
+            {
+                    Some(bytes) =>
+                        HttpBytesResponse{
+                            ok: io_last_success(),
+                            status: http_last_status_code(),
+                            body: bytes,
+                            headers: http_last_headers(),
+                            effective_url: http_last_effective_url(),
+                            content_type: http_last_content_type(),
+                            error: runtime_error
+                        },
+                    None() =>
+                        HttpBytesResponse{
+                            ok: false,
+                            status: http_last_status_code(),
+                            body: [],
+                            headers: http_last_headers(),
+                            effective_url: http_last_effective_url(),
+                            content_type: http_last_content_type(),
+                            error: Network.binary_error_or_default(runtime_error)
+                        }
+            }
+        }
+    }
+
+    ok :: HttpResponse -> Bool
+    {
+        HttpResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
+    }
+
+    status :: HttpResponse -> Int
+    {
+        HttpResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
+    }
+
+    body :: HttpResponse -> String
+    {
+        HttpResponse{ok: _, status: _, body: text, headers: _, effective_url: _, content_type: _, error: _} => text
+    }
+
+    headers :: HttpResponse -> String
+    {
+        HttpResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => raw
+    }
+
+    effective_url :: HttpResponse -> String
+    {
+        HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => url
+    }
+
+    content_type :: HttpResponse -> String
+    {
+        HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => mime
+    }
+
+    error :: HttpResponse -> String
+    {
+        HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => message
+    }
+
+    bytes_ok :: HttpBytesResponse -> Bool
+    {
+        HttpBytesResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
+    }
+
+    bytes_status :: HttpBytesResponse -> Int
+    {
+        HttpBytesResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
+    }
+
+    body_bytes :: HttpBytesResponse -> Seq[Int]
+    {
+        HttpBytesResponse{ok: _, status: _, body: bytes, headers: _, effective_url: _, content_type: _, error: _} => bytes
+    }
+
+    bytes_headers :: HttpBytesResponse -> String
+    {
+        HttpBytesResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => raw
+    }
+
+    bytes_effective_url :: HttpBytesResponse -> String
+    {
+        HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => url
+    }
+
+    bytes_content_type :: HttpBytesResponse -> String
+    {
+        HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => mime
+    }
+
+    bytes_error :: HttpBytesResponse -> String
+    {
+        HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => message
+    }
+
+
+    normalize_header_char :: Int -> String
+     internal
+{
+        code =>
+            if code >= 65 && code <= 90
+                then { string_from_char(code + 32) }
+                else { string_from_char(code) }
+    }
+
+
+    normalize_header_name_from :: String -> Int -> String
+     internal
+{
+        text => index =>
+            if index >= Text.len(text) then { "" }
+            else {
+                Network.normalize_header_char(Text.char_code_at(text)(index)) ++
+                    Network.normalize_header_name_from(text)(index + 1)
+            }
+    }
+
+
+    normalize_header_name :: String -> String
+     internal
+{
+        text => Network.normalize_header_name_from(text)(0)
+    }
+
+
+    drop_header_value_padding :: String -> Int -> String
+     internal
+{
+        text => index =>
+            if index >= Text.len(text) then { "" }
+            else {
+                code := Text.char_code_at(text)(index);
+                if code == 32 || code == 9
+                    then { Network.drop_header_value_padding(text)(index + 1) }
+                    else { Text.drop(text)(index) }
+            }
+    }
+
+
+    find_line_end :: String -> Int -> Int
+     internal
+{
+        text => index =>
+            if index >= Text.len(text) then { index }
+            else if Text.char_code_at(text)(index) == 10 then { index }
+            else { Network.find_line_end(text)(index + 1) }
+    }
+
+
+    find_header_value_from :: String -> String -> Int -> Option[String]
+     internal
+{
+        text => prefix => start =>
+            if start >= Text.len(text) then { None() }
+            else {
+                line_end := Network.find_line_end(Text.clone(text))(start);
+                line := Text.slice(Text.clone(text))(start)(line_end - start);
+                prefix_len := Text.len(Text.clone(prefix));
+                matched := Text.starts_with(
+                    Network.normalize_header_name(Text.clone(line)))(
+                    Network.normalize_header_name(Text.clone(prefix)));
+                if matched
+                    then { Some(Network.drop_header_value_padding(line)(prefix_len)) }
+                    else { Network.find_header_value_from(text)(prefix)(line_end + 1) }
+            }
+    }
+
+    header_value_opt :: HttpResponse -> String -> Option[String]
+    {
+        response => name => Network.find_header_value_from(
+            Network.headers(response))(
+            name ++ ":")(
+            0)
+    }
+
+    header_value_or_empty :: HttpResponse -> String -> String
+    {
+        response => name => match Network.header_value_opt(response)(name)
+        {
+            Some(value) => value,
+            None() => ""
+        }
+    }
+
+    bytes_header_value_opt :: HttpBytesResponse -> String -> Option[String]
+    {
+        response => name => Network.find_header_value_from(
+            Network.bytes_headers(response))(
+            name ++ ":")(
+            0)
+    }
+
+    bytes_header_value_or_empty :: HttpBytesResponse -> String -> String
+    {
+        response => name => match Network.bytes_header_value_opt(response)(name)
+        {
+            Some(value) => value,
+            None() => ""
+        }
+    }
+
+    is_success_code :: Int -> Bool
+    {
+        code => code >= 200 && code < 300
+    }
+
+    is_redirect_code :: Int -> Bool
+    {
+        code => code >= 300 && code < 400
+    }
+
+    is_client_error_code :: Int -> Bool
+    {
+        code => code >= 400 && code < 500
+    }
+
+    is_server_error_code :: Int -> Bool
+    {
+        code => code >= 500 && code < 600
+    }
+
+    is_error_code :: Int -> Bool
+    {
+        code => Network.is_client_error_code(code) || Network.is_server_error_code(code)
+    }
+
+    is_success_status :: HttpResponse -> Bool
+    {
+        response => Network.is_success_code(Network.status(response))
+    }
+
+    is_redirect_status :: HttpResponse -> Bool
+    {
+        response => Network.is_redirect_code(Network.status(response))
+    }
+
+    is_client_error_status :: HttpResponse -> Bool
+    {
+        response => Network.is_client_error_code(Network.status(response))
+    }
+
+    is_server_error_status :: HttpResponse -> Bool
+    {
+        response => Network.is_server_error_code(Network.status(response))
+    }
+
+    is_error_status :: HttpResponse -> Bool
+    {
+        response => Network.is_error_code(Network.status(response))
+    }
+
+    bytes_is_success_status :: HttpBytesResponse -> Bool
+    {
+        response => Network.is_success_code(Network.bytes_status(response))
+    }
+
+    bytes_is_redirect_status :: HttpBytesResponse -> Bool
+    {
+        response => Network.is_redirect_code(Network.bytes_status(response))
+    }
+
+    bytes_is_client_error_status :: HttpBytesResponse -> Bool
+    {
+        response => Network.is_client_error_code(Network.bytes_status(response))
+    }
+
+    bytes_is_server_error_status :: HttpBytesResponse -> Bool
+    {
+        response => Network.is_server_error_code(Network.bytes_status(response))
+    }
+
+    bytes_is_error_status :: HttpBytesResponse -> Bool
+    {
+        response => Network.is_error_code(Network.bytes_status(response))
+    }
+
+    send_text_result :: HttpRequest -> Result[String, String] need io
+    {
+        request => {
+            response := Network.send(request);
+            if Network.ok(response)
+                then { Ok(Network.body(response)) }
+                else { Err(Network.error(response)) }
+        }
+    }
+
+    send_text_opt :: HttpRequest -> Option[String] need io
+    {
+        request => match Network.send_text_result(request)
+        {
+            Ok(body) => Some(body),
+            Err(error) => None()
+        }
+    }
+
+    send_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[String, String] need io
+    {
+        request => body_bytes => {
+            response := Network.send_with_bytes_body(request)(body_bytes);
+            if Network.ok(response)
+                then { Ok(Network.body(response)) }
+                else { Err(Network.error(response)) }
+        }
+    }
+
+    send_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[String] need io
+    {
+        request => body_bytes => match Network.send_with_bytes_body_result(request)(body_bytes)
+        {
+            Ok(body) => Some(body),
+            Err(error) => None()
+        }
+    }
+
+    send_bytes_result :: HttpRequest -> Result[Seq[Int], String] need io
+    {
+        request => {
+            response := Network.send_bytes(request);
+            match response
+            {
+                HttpBytesResponse{
+                    ok: is_ok,
+                    status: _,
+                    body: bytes,
+                    headers: _,
+                    effective_url: _,
+                    content_type: _,
+                    error: message
+                } =>
+                    if is_ok
+                        then { Ok(bytes) }
+                        else { Err(message) }
+            }
+        }
+    }
+
+    send_bytes_opt :: HttpRequest -> Option[Seq[Int]] need io
+    {
+        request => match Network.send_bytes_result(request)
+        {
+            Ok(body) => Some(body),
+            Err(error) => None()
+        }
+    }
+
+    send_bytes_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[Seq[Int], String] need io
+    {
+        request => body_bytes => {
+            response := Network.send_bytes_with_bytes_body(request)(body_bytes);
+            match response
+            {
+                HttpBytesResponse{
+                    ok: is_ok,
+                    status: _,
+                    body: bytes,
+                    headers: _,
+                    effective_url: _,
+                    content_type: _,
+                    error: message
+                } =>
+                    if is_ok
+                        then { Ok(bytes) }
+                        else { Err(message) }
+            }
+        }
+    }
+
+    send_bytes_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[Seq[Int]] need io
+    {
+        request => body_bytes => match Network.send_bytes_with_bytes_body_result(request)(body_bytes)
+        {
+            Ok(body) => Some(body),
+            Err(error) => None()
+        }
+    }
+
+    http_get_response :: String -> HttpResponse need io
+    {
+        url => Network.send(Network.get_request(url))
+    }
+
+    http_get_bytes_response :: String -> HttpBytesResponse need io
+    {
+        url => Network.send_bytes(Network.get_request(url))
+    }
+
+    http_get_text_or_empty :: String -> String need io
+    {
+        url => match Network.send_text_result(Network.get_request(url))
+        {
+            Ok(body) => body,
+            Err(error) => ""
+        }
+    }
+
+    http_get_text_result :: String -> Result[String, String] need io
+    {
+        url => Network.send_text_result(Network.get_request(url))
+    }
+
+    http_get_text_opt :: String -> Option[String] need io
+    {
+        url => Network.send_text_opt(Network.get_request(url))
+    }
+
+    http_get_bytes_or_empty :: String -> Seq[Int] need io
+    {
+        url => match Network.send_bytes_result(Network.get_request(url))
+        {
+            Ok(body) => body,
+            Err(error) => []
+        }
+    }
+
+    http_get_bytes_result :: String -> Result[Seq[Int], String] need io
+    {
+        url => Network.send_bytes_result(Network.get_request(url))
+    }
+
+    http_get_bytes_opt :: String -> Option[Seq[Int]] need io
+    {
+        url => Network.send_bytes_opt(Network.get_request(url))
+    }
+
+    http_post_text_response :: String -> String -> HttpResponse need io
+    {
+        url => body => Network.send(Network.post_text_request(url)(body))
+    }
+
+    http_post_text_result :: String -> String -> Result[String, String] need io
+    {
+        url => body => Network.send_text_result(Network.post_text_request(url)(body))
+    }
+
+    http_post_text_opt :: String -> String -> Option[String] need io
+    {
+        url => body => Network.send_text_opt(Network.post_text_request(url)(body))
+    }
+
+    http_post_json_response :: String -> String -> HttpResponse need io
+    {
+        url => body => Network.send(Network.post_json_request(url)(body))
+    }
+
+    http_post_json_result :: String -> String -> Result[String, String] need io
+    {
+        url => body => Network.send_text_result(Network.post_json_request(url)(body))
+    }
+
+    http_post_json_opt :: String -> String -> Option[String] need io
+    {
+        url => body => Network.send_text_opt(Network.post_json_request(url)(body))
+    }
+
+    http_post_bytes_text_response :: String -> Seq[Int] -> HttpResponse need io
+    {
+        url => body_bytes =>
+            Network.send_with_bytes_body(
+                Network.request("POST")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_post_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need io
+    {
+        url => body_bytes =>
+            Network.send_with_bytes_body_result(
+                Network.request("POST")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_post_bytes_text_opt :: String -> Seq[Int] -> Option[String] need io
+    {
+        url => body_bytes =>
+            Network.send_with_bytes_body_opt(
+                Network.request("POST")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_post_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need io
+    {
+        url => body_bytes =>
+            Network.send_bytes_with_bytes_body(
+                Network.request("POST")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_post_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need io
+    {
+        url => body_bytes =>
+            Network.send_bytes_with_bytes_body_result(
+                Network.request("POST")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_post_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need io
+    {
+        url => body_bytes =>
+            Network.send_bytes_with_bytes_body_opt(
+                Network.request("POST")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_put_text_response :: String -> String -> HttpResponse need io
+    {
+        url => body => Network.send(Network.put_text_request(url)(body))
+    }
+
+    http_put_text_result :: String -> String -> Result[String, String] need io
+    {
+        url => body => Network.send_text_result(Network.put_text_request(url)(body))
+    }
+
+    http_put_text_opt :: String -> String -> Option[String] need io
+    {
+        url => body => Network.send_text_opt(Network.put_text_request(url)(body))
+    }
+
+    http_put_json_response :: String -> String -> HttpResponse need io
+    {
+        url => body => Network.send(Network.put_json_request(url)(body))
+    }
+
+    http_put_json_result :: String -> String -> Result[String, String] need io
+    {
+        url => body => Network.send_text_result(Network.put_json_request(url)(body))
+    }
+
+    http_put_json_opt :: String -> String -> Option[String] need io
+    {
+        url => body => Network.send_text_opt(Network.put_json_request(url)(body))
+    }
+
+    http_put_bytes_text_response :: String -> Seq[Int] -> HttpResponse need io
+    {
+        url => body_bytes =>
+            Network.send_with_bytes_body(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_put_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need io
+    {
+        url => body_bytes =>
+            Network.send_with_bytes_body_result(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_put_bytes_text_opt :: String -> Seq[Int] -> Option[String] need io
+    {
+        url => body_bytes =>
+            Network.send_with_bytes_body_opt(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_put_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need io
+    {
+        url => body_bytes =>
+            Network.send_bytes_with_bytes_body(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_put_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need io
+    {
+        url => body_bytes =>
+            Network.send_bytes_with_bytes_body_result(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_put_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need io
+    {
+        url => body_bytes =>
+            Network.send_bytes_with_bytes_body_opt(
+                Network.request("PUT")(url)("application/octet-stream")(""))(
+                body_bytes)
+    }
+
+    http_delete_response :: String -> HttpResponse need io
+    {
+        url => Network.send(Network.delete_request(url))
+    }
+
+    http_delete_text_result :: String -> Result[String, String] need io
+    {
+        url => Network.send_text_result(Network.delete_request(url))
+    }
+
+    http_delete_text_opt :: String -> Option[String] need io
+    {
+        url => Network.send_text_opt(Network.delete_request(url))
+    }
+
+    http_get_query_response :: String -> String -> String -> HttpResponse need io
+    {
+        url => key => value =>
+            Network.send(
+                Network.with_query_param(Network.get_request(url))(key)(value))
+    }
+
+    http_get_query_text_result :: String -> String -> String -> Result[String, String] need io
+    {
+        url => key => value => Network.send_text_result(
+            Network.with_query_param(Network.get_request(url))(key)(value))
+    }
+
+    http_get_query_text_opt :: String -> String -> String -> Option[String] need io
+    {
+        url => key => value => Network.send_text_opt(
+            Network.with_query_param(Network.get_request(url))(key)(value))
+    }
+}

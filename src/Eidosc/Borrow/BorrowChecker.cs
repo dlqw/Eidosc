@@ -517,6 +517,15 @@ public sealed class BorrowChecker
                     ResolveSpan(assign.Target.Span, assign.Span));
                 break;
 
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target } injection:
+                OverwriteBorrower(
+                    target.Local,
+                    blockId,
+                    index,
+                    currentState,
+                    ResolveSpan(target.Span, injection.Span));
+                break;
+
             case MirBinOp binOp when binOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var local }:
                 OverwriteBorrower(local, blockId, index, currentState, ResolveSpan(binOp.Target.Span, binOp.Span));
                 break;

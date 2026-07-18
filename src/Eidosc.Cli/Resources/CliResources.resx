@@ -563,12 +563,12 @@
   </data>
   <data name="HelpBuildExamples" xml:space="preserve">
     <value>Examples:
-  eidosc build src/Main.eidos                       # 生成可执行文件（默认）
-  eidosc build src/Main.eidos -o myapp.exe
-  eidosc build src/Main.eidos -t LlvmIr -o out.ll
-  eidosc build src/Main.eidos --emit-llvm
-  eidosc build src/Main.eidos -t Cil                # 仅编译检查
-  eidosc build src/Main.eidos --target-triple x86_64-linux</value>
+  eidosc build src/main.eidos                       # 生成可执行文件（默认）
+  eidosc build src/main.eidos -o myapp.exe
+  eidosc build src/main.eidos -t LlvmIr -o out.ll
+  eidosc build src/main.eidos --emit-llvm
+  eidosc build src/main.eidos -t Cil                # 仅编译检查
+  eidosc build src/main.eidos --target-triple x86_64-linux</value>
   </data>
   <data name="HelpBuildNotes" xml:space="preserve">
     <value>Notes:
@@ -581,7 +581,7 @@
     <value>Examples:
   eidosc run .
   eidosc run --project ./App --target-name app
-  eidosc run src/Main.eidos -- arg1 arg2</value>
+  eidosc run src/main.eidos -- arg1 arg2</value>
   </data>
   <data name="HelpRunNotes" xml:space="preserve">
     <value>Notes:
@@ -590,9 +590,9 @@
   </data>
   <data name="HelpAnalyzeExamples" xml:space="preserve">
     <value>Examples:
-  eidosc analyze src/Main.eidos
-  eidosc analyze src/Main.eidos --profile
-  eidosc analyze src/Main.eidos --profile --profile-format Json</value>
+  eidosc analyze src/main.eidos
+  eidosc analyze src/main.eidos --profile
+  eidosc analyze src/main.eidos --profile --profile-format Json</value>
   </data>
   <data name="HelpAnalyzeNotes" xml:space="preserve">
     <value>Phases:
@@ -1784,5 +1784,8 @@ Graph Formats:
   </data>
   <data name="MetaInvalidComptimeBudget" xml:space="preserve">
     <value>--comptime-budget 必须是正整数。</value>
+  </data>
+  <data name="DenyOptionDescription" xml:space="preserve">
+    <value>Deny a diagnostic category; use '--deny style' to promote style warnings to errors.</value>
   </data>
 </root>

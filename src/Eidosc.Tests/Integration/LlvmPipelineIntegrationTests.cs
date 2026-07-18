@@ -195,7 +195,7 @@ main :: Int -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(relativePath),
             StopAtPhase = CompilationPhase.Mir,
-                UseColors = false
+            UseColors = false
         };
 
         return new CompilationPipeline(source, options).Run();
@@ -1002,7 +1002,7 @@ main :: Int -> Int
     {
         var source = """
             Pair[A, B] :: type {
-                Pair(A, B)
+                Pair:: type(A, B)
             }
 
             fst :: Pair[Int, Int] -> Int

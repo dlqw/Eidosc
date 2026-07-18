@@ -15,10 +15,10 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.BinaryHeap
-import Std.Seq
-import Std.Option
-import Std.PriorityQueue
+import std.BinaryHeap
+import std.Seq
+import std.Option
+import std.PriorityQueue
 
 check_heap :: Unit -> Int
 {

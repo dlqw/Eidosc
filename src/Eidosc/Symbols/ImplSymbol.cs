@@ -65,6 +65,10 @@ public sealed record ImplSymbol : Symbol
     /// </summary>
     public List<SymbolId> Methods { get; init; } = [];
 
+    public List<SymbolId> AssociatedTypes { get; init; } = [];
+
+    public List<SymbolId> AssociatedConsts { get; init; } = [];
+
     /// <summary>
     /// True when this impl contributes callable runtime methods.
     /// Proof-only impl registrations are used for trait proof obligations and

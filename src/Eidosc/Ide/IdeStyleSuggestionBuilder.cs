@@ -33,6 +33,7 @@ internal static class IdeStyleSuggestionBuilder
         var diagnostics = new List<Diagnostic.Diagnostic>();
         var visited = new HashSet<EidosAstNode>(ReferenceEqualityComparer.Instance);
         Visit(module, parent: null, sourceText, sourceFilePath, diagnostics, visited, symbolTable, validateReplacement);
+        diagnostics.AddRange(NamingStyleDiagnosticBuilder.Build(module, sourceText, sourceFilePath, symbolTable));
         return diagnostics;
     }
 
@@ -129,8 +130,7 @@ internal static class IdeStyleSuggestionBuilder
         if (!TryFlattenCall(call, out var rootFunction, out var argumentGroups) ||
             argumentGroups.Count == 0 ||
             argumentGroups.Any(group => group.Count == 0) ||
-            !TryGetCallableName(rootFunction, out var methodName) ||
-            !IsLowerIdentifier(methodName))
+            !TryGetCallableName(rootFunction, out var methodName))
         {
             return false;
         }
@@ -528,7 +528,6 @@ internal static class IdeStyleSuggestionBuilder
                 current.PositionalArgs.Count != 1 ||
                 current.Function == null ||
                 !TryGetCallableName(current.Function, out var methodName) ||
-                !IsLowerIdentifier(methodName) ||
                 !CanOfferCallableStyleReplacement(current.Function, symbolTable))
             {
                 receiver = current;
@@ -633,11 +632,6 @@ internal static class IdeStyleSuggestionBuilder
 
         text = sourceText.Substring(start, length).Trim();
         return text.Length > 0 && !text.Contains('\n') && !text.Contains('\r');
-    }
-
-    private static bool IsLowerIdentifier(string value)
-    {
-        return value.Length > 0 && (char.IsLower(value[0]) || value[0] == '_');
     }
 
     private static IEnumerable<EidosAstNode> EnumerateChildNodes(EidosAstNode node)

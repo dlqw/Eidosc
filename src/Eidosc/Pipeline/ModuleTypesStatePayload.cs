@@ -3,6 +3,7 @@ namespace Eidosc.Pipeline;
 using System.Collections.Immutable;
 using Eidosc.Ast.Declarations;
 using Eidosc.Symbols;
+using Eidosc.Syntax;
 using Eidosc.Types;
 using Eidosc.Utils;
 
@@ -19,13 +20,15 @@ public sealed record ModuleTypesStatePayload(
     TypeSubstitutionPayload TypeSubstitution,
     FunctionTypeParametersPayload FunctionTypeParameters,
     ComptimeValuesPayload ComptimeValues,
+    MetaQueryStatePayload MetaQueries,
     TypeConstraintsPayload Constraints,
     FunctionEffectSummariesPayload FunctionEffects,
+    ClosedCaseInjectionsPayload ClosedCaseInjections,
     AstInferredTypeMapPayload AstInferredTypes,
     AstTypesStatePayload AstState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-types-state-payload-v13";
+    public const string CurrentSchemaVersion = "module-types-state-payload-v19";
 
     public static ModuleTypesStatePayload Create(
         string moduleKey,
@@ -121,6 +124,7 @@ public sealed record ModuleTypesStatePayload(
             TypeSubstitutionPayload.Create(typeInferer?.Substitution),
             FunctionTypeParametersPayload.Create(typeInferer, allowedSymbolIds),
             ComptimeValuesPayload.Create(typeInferer, allowedSymbolIds),
+            MetaQueryStatePayload.Create(symbolTable),
             TypeConstraintsPayload.Create(
                 typeInferer,
                 sourcePaths,
@@ -129,6 +133,13 @@ public sealed record ModuleTypesStatePayload(
                     WellKnownStrings.SpecialNames.Main,
                     StringComparison.OrdinalIgnoreCase)),
             FunctionEffectSummariesPayload.Create(effectInferer, allowedSymbolIds),
+            ClosedCaseInjectionsPayload.Create(
+                typeInferer,
+                sourcePaths,
+                includeUnscoped: string.Equals(
+                    moduleKey,
+                    WellKnownStrings.SpecialNames.Main,
+                    StringComparison.OrdinalIgnoreCase)),
             astInferredTypes,
             astState,
             "");
@@ -142,6 +153,116 @@ public sealed record ModuleTypesStatePayload(
 
     private static string ComputeHash(ModuleTypesStatePayload payload) =>
         ModuleArtifactHash.ComputeJsonHash(payload with { PayloadHash = "" });
+}
+
+public sealed record ClosedCaseInjectionsPayload(
+    string SchemaVersion,
+    IReadOnlyList<ClosedCaseInjectionEntryPayload> Entries,
+    string Hash)
+{
+    public const string CurrentSchemaVersion = "closed-case-injections-payload-v1";
+
+    internal static ClosedCaseInjectionsPayload Create(
+        TypeInferer? typeInferer,
+        IReadOnlyList<string>? sourcePaths,
+        bool includeUnscoped)
+    {
+        var normalizedSourcePaths = (sourcePaths ?? [])
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Select(NormalizePath)
+            .ToHashSet(PathComparer);
+        var entries = typeInferer?.GetClosedCaseInjectionSnapshot()
+            .Where(entry => ShouldInclude(entry.Key, normalizedSourcePaths, includeUnscoped))
+            .Select(static entry => ClosedCaseInjectionEntryPayload.Create(entry.Key, entry.Value))
+            .ToArray() ?? [];
+        var payload = new ClosedCaseInjectionsPayload(CurrentSchemaVersion, entries, "");
+        return payload with { Hash = ComputeHash(payload) };
+    }
+
+    internal bool TryRestore(
+        LiveStateIdRemapper remapper,
+        out IReadOnlyList<KeyValuePair<SourceSpan, TypeInferer.ClosedCaseInjectionFact>> injections)
+    {
+        injections = [];
+        if (SchemaVersion != CurrentSchemaVersion ||
+            !string.Equals(Hash, ComputeHash(this), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var restored = new List<KeyValuePair<SourceSpan, TypeInferer.ClosedCaseInjectionFact>>(Entries.Count);
+        foreach (var entry in Entries)
+        {
+            if (!entry.SourceType.TryRestoreType(remapper, out var sourceType) ||
+                sourceType is not TyCon sourceConstructor ||
+                !entry.TargetType.TryRestoreType(remapper, out var targetType) ||
+                targetType is not TyCon targetConstructor)
+            {
+                return false;
+            }
+
+            restored.Add(new KeyValuePair<SourceSpan, TypeInferer.ClosedCaseInjectionFact>(
+                entry.Span.ToSourceSpan(),
+                new TypeInferer.ClosedCaseInjectionFact(
+                    new SymbolId(remapper.RemapSymbol(entry.SourceCase)),
+                    new SymbolId(remapper.RemapSymbol(entry.TargetAncestor)),
+                    sourceConstructor,
+                    targetConstructor)));
+        }
+
+        injections = restored;
+        return true;
+    }
+
+    private static bool ShouldInclude(
+        SourceSpan span,
+        IReadOnlySet<string> sourcePaths,
+        bool includeUnscoped)
+    {
+        if (string.IsNullOrWhiteSpace(span.FilePath))
+        {
+            return includeUnscoped;
+        }
+
+        return sourcePaths.Count == 0 || sourcePaths.Contains(NormalizePath(span.FilePath));
+    }
+
+    private static string NormalizePath(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path).Replace('\\', '/');
+        }
+        catch
+        {
+            return path.Replace('\\', '/');
+        }
+    }
+
+    private static StringComparer PathComparer => OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
+    private static string ComputeHash(ClosedCaseInjectionsPayload payload) =>
+        ModuleArtifactHash.ComputeJsonHash(payload with { Hash = "" });
+}
+
+public sealed record ClosedCaseInjectionEntryPayload(
+    SourceSpanPayload Span,
+    int SourceCase,
+    int TargetAncestor,
+    TypeShapePayload SourceType,
+    TypeShapePayload TargetType)
+{
+    internal static ClosedCaseInjectionEntryPayload Create(
+        SourceSpan span,
+        TypeInferer.ClosedCaseInjectionFact injection) =>
+        new(
+            SourceSpanPayload.Create(span),
+            injection.SourceCase.Value,
+            injection.TargetAncestor.Value,
+            TypeShapePayload.Create(injection.SourceType),
+            TypeShapePayload.Create(injection.TargetType));
 }
 
 public sealed record FunctionEffectSummariesPayload(
@@ -335,7 +456,7 @@ public sealed record ComptimeValuesPayload(
     int UnsupportedValues,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "comptime-values-payload-v4";
+    public const string CurrentSchemaVersion = "comptime-values-payload-v5";
 
     public static ComptimeValuesPayload Create(
         TypeInferer? typeInferer,
@@ -418,15 +539,25 @@ public sealed record ComptimeValuePayload(
     TypeShapePayload? StaticType = null,
     MetaTypeRefPayload? MetaType = null,
     MetaDeclValuePayload? MetaDeclaration = null,
-    string? MetaSchemaKind = null)
+    string? MetaSchemaKind = null,
+    IReadOnlyList<ComptimeMapEntryPayload>? MapEntries = null,
+    SyntaxCategory? SyntaxCategory = null,
+    IReadOnlyList<ComptimeSyntaxTokenPayload>? SyntaxTokens = null,
+    string? SyntaxTrailingTrivia = null,
+    ComptimeSyntaxOriginPayload? SyntaxOrigin = null,
+    string? SyntaxHygieneIdentity = null)
 {
     public const string NullKind = "Null";
     public const string ScalarKindName = "Scalar";
     public const string SequenceKindName = "Sequence";
+    public const string MapKindName = "Map";
+    public const string SetKindName = "Set";
     public const string AdtKindName = "Adt";
     public const string MetaTypeKindName = "MetaType";
     public const string MetaDeclarationKindName = "MetaDeclaration";
     public const string MetaObjectKindName = "MetaObject";
+    public const string SyntaxKindName = "Syntax";
+    public const string TokensKindName = "Tokens";
 
     internal static bool TryCreate(ComptimeValue value, out ComptimeValuePayload payload)
     {
@@ -467,6 +598,41 @@ public sealed record ComptimeValuePayload(
                     SequenceKindName,
                     SequenceKind: sequence.Kind.ToString(),
                     Elements: elements));
+                return true;
+            case ComptimeMapValue map:
+                var mapEntries = new List<ComptimeMapEntryPayload>(map.Entries.Count);
+                foreach (var entry in map.Entries)
+                {
+                    if (!TryCreate(entry.Key, out var keyPayload) ||
+                        !TryCreate(entry.Value, out var valuePayload))
+                    {
+                        payload = new ComptimeValuePayload("Unsupported");
+                        return false;
+                    }
+
+                    mapEntries.Add(new ComptimeMapEntryPayload(keyPayload, valuePayload));
+                }
+
+                payload = AttachStaticType(map, new ComptimeValuePayload(
+                    MapKindName,
+                    MapEntries: mapEntries));
+                return true;
+            case ComptimeSetValue set:
+                var setElements = new List<ComptimeValuePayload>(set.Elements.Count);
+                foreach (var element in set.Elements)
+                {
+                    if (!TryCreate(element, out var elementPayload))
+                    {
+                        payload = new ComptimeValuePayload("Unsupported");
+                        return false;
+                    }
+
+                    setElements.Add(elementPayload);
+                }
+
+                payload = AttachStaticType(set, new ComptimeValuePayload(
+                    SetKindName,
+                    Elements: setElements));
                 return true;
             case ComptimeAdtValue adt:
                 var positionalValues = new List<ComptimeValuePayload>(adt.PositionalValues.Count);
@@ -527,6 +693,24 @@ public sealed record ComptimeValuePayload(
                     MetaObjectKindName,
                     NamedValues: properties,
                     MetaSchemaKind: metaObject.SchemaKind));
+                return true;
+            case ComptimeSyntaxValue syntax:
+                payload = AttachStaticType(syntax, new ComptimeValuePayload(
+                    SyntaxKindName,
+                    SyntaxCategory: syntax.Category,
+                    SyntaxTokens: syntax.Tokens.Select(ComptimeSyntaxTokenPayload.Create).ToArray(),
+                    SyntaxTrailingTrivia: syntax.TrailingTrivia,
+                    SyntaxOrigin: ComptimeSyntaxOriginPayload.Create(syntax.Origin),
+                    SyntaxHygieneIdentity: syntax.HygieneIdentity));
+                return true;
+            case ComptimeTokensValue tokens:
+                payload = AttachStaticType(tokens, new ComptimeValuePayload(
+                    TokensKindName,
+                    SyntaxCategory: Eidosc.Syntax.SyntaxCategory.Tokens,
+                    SyntaxTokens: tokens.Tokens.Select(ComptimeSyntaxTokenPayload.Create).ToArray(),
+                    SyntaxTrailingTrivia: tokens.TrailingTrivia,
+                    SyntaxOrigin: ComptimeSyntaxOriginPayload.Create(tokens.Origin),
+                    SyntaxHygieneIdentity: tokens.HygieneIdentity));
                 return true;
             default:
                 payload = new ComptimeValuePayload("Unsupported");
@@ -589,6 +773,55 @@ public sealed record ComptimeValuePayload(
                 }
 
                 value = new ComptimeSequenceValue(sequenceKind, elements);
+                return true;
+
+            case MapKindName:
+                if (MapEntries == null)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                var mapEntries = new ComptimeMapEntry[MapEntries.Count];
+                for (var i = 0; i < MapEntries.Count; i++)
+                {
+                    if (!MapEntries[i].Key.TryRestoreValue(remapper, out var key) ||
+                        !MapEntries[i].Value.TryRestoreValue(remapper, out var mapValue))
+                    {
+                        value = ComptimeUnitValue.Instance;
+                        return false;
+                    }
+
+                    mapEntries[i] = new ComptimeMapEntry(key, mapValue);
+                }
+
+                if (!ComptimeMapValue.TryCreate(mapEntries, out var restoredMap, out _))
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                value = restoredMap;
+                return true;
+
+            case SetKindName:
+                if (Elements == null)
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                var setElements = new ComptimeValue[Elements.Count];
+                for (var i = 0; i < Elements.Count; i++)
+                {
+                    if (!Elements[i].TryRestoreValue(remapper, out setElements[i]))
+                    {
+                        value = ComptimeUnitValue.Instance;
+                        return false;
+                    }
+                }
+
+                value = ComptimeSetValue.Create(setElements);
                 return true;
 
             case AdtKindName:
@@ -672,6 +905,44 @@ public sealed record ComptimeValuePayload(
                 value = new ComptimeMetaObjectValue(MetaSchemaKind, metaProperties);
                 return true;
 
+            case SyntaxKindName:
+                if (SyntaxCategory == null ||
+                    SyntaxTokens == null ||
+                    SyntaxOrigin == null ||
+                    SyntaxTrailingTrivia == null ||
+                    SyntaxHygieneIdentity == null ||
+                    !TryRestoreSyntaxTokens(SyntaxTokens, remapper, out var syntaxTokens))
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                value = new ComptimeSyntaxValue(
+                    SyntaxCategory.Value,
+                    syntaxTokens,
+                    SyntaxTrailingTrivia,
+                    SyntaxOrigin.Restore(),
+                    SyntaxHygieneIdentity);
+                return true;
+
+            case TokensKindName:
+                if (SyntaxTokens == null ||
+                    SyntaxOrigin == null ||
+                    SyntaxTrailingTrivia == null ||
+                    SyntaxHygieneIdentity == null ||
+                    !TryRestoreSyntaxTokens(SyntaxTokens, remapper, out var tokenTreeTokens))
+                {
+                    value = ComptimeUnitValue.Instance;
+                    return false;
+                }
+
+                value = new ComptimeTokensValue(
+                    tokenTreeTokens,
+                    SyntaxTrailingTrivia,
+                    SyntaxOrigin.Restore(),
+                    SyntaxHygieneIdentity);
+                return true;
+
             default:
                 value = ComptimeUnitValue.Instance;
                 return false;
@@ -690,6 +961,25 @@ public sealed record ComptimeValuePayload(
         value.StaticType == null
             ? payload
             : payload with { StaticType = TypeShapePayload.Create(value.StaticType) };
+
+    private static bool TryRestoreSyntaxTokens(
+        IReadOnlyList<ComptimeSyntaxTokenPayload> payloads,
+        LiveStateIdRemapper? remapper,
+        out IReadOnlyList<ComptimeSyntaxToken> tokens)
+    {
+        var restored = new ComptimeSyntaxToken[payloads.Count];
+        for (var index = 0; index < payloads.Count; index++)
+        {
+            if (!payloads[index].TryRestore(remapper, out restored[index]))
+            {
+                tokens = [];
+                return false;
+            }
+        }
+
+        tokens = restored;
+        return true;
+    }
 
     private bool TryRestoreScalar(out ComptimeValue value)
     {
@@ -724,8 +1014,123 @@ public sealed record ComptimeValuePayload(
     }
 }
 
+public sealed record ComptimeSyntaxIdentityPayload(
+    string Kind,
+    string StableIdentity,
+    int SymbolId,
+    int TypeId,
+    string Category)
+{
+    internal static ComptimeSyntaxIdentityPayload Create(ComptimeSyntaxIdentity identity) => new(
+        identity.Kind.ToString(),
+        identity.StableIdentity,
+        identity.SymbolId.Value,
+        identity.TypeId.Value,
+        identity.Category);
+
+    internal bool TryRestore(LiveStateIdRemapper? remapper, out ComptimeSyntaxIdentity identity)
+    {
+        if (!Enum.TryParse<ComptimeSyntaxIdentityKind>(Kind, out var kind))
+        {
+            identity = null!;
+            return false;
+        }
+
+        identity = new ComptimeSyntaxIdentity(
+            kind,
+            StableIdentity,
+            new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
+            new TypeId(remapper?.RemapType(TypeId) ?? TypeId),
+            Category ?? string.Empty);
+        return true;
+    }
+}
+
+public sealed record ComptimeSyntaxTokenPayload(
+    int Kind,
+    string TerminalName,
+    int TerminalFlags,
+    string Spelling,
+    string LeadingTrivia,
+    string TrailingTrivia,
+    SourceSpanPayload OriginSpan,
+    ComptimeSyntaxIdentityPayload? Identity)
+{
+    internal static ComptimeSyntaxTokenPayload Create(ComptimeSyntaxToken token) => new(
+        (int)token.Kind,
+        token.TerminalName,
+        (int)token.TerminalFlags,
+        token.Spelling,
+        token.LeadingTrivia,
+        token.TrailingTrivia,
+        SourceSpanPayload.Create(token.OriginSpan),
+        token.Identity == null ? null : ComptimeSyntaxIdentityPayload.Create(token.Identity));
+
+    internal bool TryRestore(LiveStateIdRemapper? remapper, out ComptimeSyntaxToken token)
+    {
+        if (!Enum.IsDefined((SyntaxKind)Kind))
+        {
+            token = null!;
+            return false;
+        }
+
+        ComptimeSyntaxIdentity? identity = null;
+        if (Identity != null && !Identity.TryRestore(remapper, out identity))
+        {
+            token = null!;
+            return false;
+        }
+
+        token = new ComptimeSyntaxToken(
+            (SyntaxKind)Kind,
+            TerminalName,
+            (TerminalFlag)TerminalFlags,
+            Spelling,
+            LeadingTrivia,
+            TrailingTrivia,
+            new SourceSpan(
+                new SourceLocation(
+                    OriginSpan.Position,
+                    OriginSpan.Line,
+                    OriginSpan.Column,
+                    OriginSpan.FilePath),
+                OriginSpan.Length),
+            identity);
+        return true;
+    }
+}
+
+public sealed record ComptimeSyntaxOriginPayload(
+    string SourceUri,
+    int Position,
+    int Line,
+    int Column,
+    int Length,
+    string ExpansionTrace)
+{
+    internal static ComptimeSyntaxOriginPayload Create(ComptimeSyntaxOrigin origin) => new(
+        origin.SourceUri,
+        origin.Position,
+        origin.Line,
+        origin.Column,
+        origin.Length,
+        origin.ExpansionTrace);
+
+    internal ComptimeSyntaxOrigin Restore() => new(
+        SourceUri,
+        Position,
+        Line,
+        Column,
+        Length,
+        ExpansionTrace);
+}
+
 public sealed record ComptimeNamedValuePayload(
     string Name,
+    ComptimeValuePayload Value);
+
+public sealed record ComptimeMapEntryPayload(
+    ComptimeValuePayload Key,
     ComptimeValuePayload Value);
 
 public sealed record MetaTypeRefPayload(

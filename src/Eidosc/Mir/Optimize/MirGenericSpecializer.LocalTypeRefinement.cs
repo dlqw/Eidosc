@@ -100,6 +100,8 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => TryConcretizeLocalType(assign.Target, ResolveOperandType(assign.Source, localTypes), localTypes),
+            MirCaseInject { Target: MirPlace target } injection =>
+                TryConcretizeLocalType(target, injection.TargetTypeId, localTypes),
             MirLoad load => TryConcretizeLocalType(load.Target, ResolveOperandType(load.Source, localTypes), localTypes),
             MirStore store => TryConcretizeLocalType(store.Target, ResolveOperandType(store.Value, localTypes), localTypes),
             MirCopy copy => TryConcretizeLocalType(copy.Target, ResolvePlaceType(copy.Source, localTypes), localTypes) |

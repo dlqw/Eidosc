@@ -158,7 +158,9 @@ internal static class WorkspaceModuleLocator
             return null;
         }
 
-        var relativePath = Path.Combine(modulePath.ToArray());
+        var relativePath = Path.Combine(modulePath
+            .Select(ManifestNamingRules.NormalizeDependencyAlias)
+            .ToArray());
         var directFile = Path.Combine(rootDirectory, $"{relativePath}.eidos");
         if (File.Exists(directFile))
         {
@@ -198,7 +200,16 @@ internal static class WorkspaceModuleLocator
             normalized = normalized[..^".eidos".Length];
         }
 
-        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        return string.Join(
+            WellKnownStrings.Operators.Divide,
+            normalized
+                .Split(WellKnownStrings.Operators.Divide, StringSplitOptions.RemoveEmptyEntries)
+                .Select(ManifestNamingRules.NormalizeModulePathSegment));
     }
 
     private static bool TryGetEntryDirectory(string entryFilePath, out string entryDirectory)

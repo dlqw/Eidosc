@@ -13,10 +13,13 @@ public sealed partial class TypeInferer
     /// </summary>
     private void InferLetDecl(LetDecl letDecl)
     {
-        var type = letDecl.Value == null
-            ? CreateMissingInitializerRecoveryType("Let binding", null, letDecl.Span)
-            : letDecl.TypeAnnotation != null
-                ? ConvertTypeInCurrentTypeParamContext(letDecl.TypeAnnotation)
+        var isSignatureOnlyValue = letDecl.Value == null &&
+                                   letDecl.TypeAnnotation != null &&
+                                   ShouldUseSignatureOnlyForValue(letDecl);
+        var type = letDecl.TypeAnnotation != null && (letDecl.Value != null || isSignatureOnlyValue)
+            ? ConvertTypeInCurrentTypeParamContext(letDecl.TypeAnnotation)
+            : letDecl.Value == null
+                ? CreateMissingInitializerRecoveryType("Let binding", null, letDecl.Span)
                 : _substitution.FreshTypeVariable();
 
         Type valueType;
@@ -42,6 +45,14 @@ public sealed partial class TypeInferer
 
         if (letDecl.Value != null)
         {
+            if (letDecl.IsMutable &&
+                letDecl.TypeAnnotation == null &&
+                _substitution.Apply(valueType) is TyCon inferredConstructor &&
+                TryPromoteClosedCaseToRoot(inferredConstructor, out var mutableStorageType))
+            {
+                type = mutableStorageType;
+            }
+
             if (!TryInsertAutoDeref(type, valueType, letDecl.Value, letDecl.SetValue))
             {
                 valueType = TryUnify(type, valueType, letDecl.Value.Span, DiagnosticMessages.LetPatternTypeMismatch);
@@ -56,7 +67,7 @@ public sealed partial class TypeInferer
                     _comptimeValues,
                     _functionDefinitionsBySymbol,
                     _substitution.Apply,
-                    CreateMetaComptimeContext($"comptime binding at {letDecl.Span}"),
+                    CreateMetaComptimeContext($"comptime binding at {letDecl.Span}", letDecl.SymbolId),
                     BuildComptimeContext,
                     out var comptimeValue,
                     out var reason);
@@ -69,6 +80,13 @@ public sealed partial class TypeInferer
                         letDecl.Value.Span,
                         DiagnosticMessages.ComptimeBindingRhsMustBeEvaluable(reason),
                         code);
+                }
+                else if (!ComptimePhaseValueValidator.TryValidate(comptimeValue, out reason))
+                {
+                    AddError(
+                        letDecl.Value.Span,
+                        DiagnosticMessages.ComptimeBindingRhsMustBeEvaluable(reason),
+                        TypeErrorCode);
                 }
                 else if (letDecl.SymbolId.IsValid)
                 {
@@ -94,8 +112,36 @@ public sealed partial class TypeInferer
         letDecl.InferredType = resolvedType;
     }
 
+    private bool ShouldUseSignatureOnlyForValue(LetDecl declaration)
+    {
+        if (!UsePrecompiledImportSignatureOnly ||
+            string.IsNullOrWhiteSpace(_rootInputFilePath) ||
+            string.IsNullOrWhiteSpace(declaration.Span.FilePath) ||
+            string.Equals(
+                Path.GetFullPath(declaration.Span.FilePath),
+                Path.GetFullPath(_rootInputFilePath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var useSignatureOnly = PrecompiledModuleRegistry.IsStdlibSourcePath(declaration.Span.FilePath);
+        if (useSignatureOnly)
+        {
+            IncrementProfilingCounter("Types.precompiledImportSignatureOnly.values");
+        }
+
+        return useSignatureOnly;
+    }
+
     private void InferLetQuestionDecl(LetQuestionDecl letQuestionDecl)
     {
+        var hasFunctionContext = TryGetCurrentFunctionReturnType(out _);
+        if (!hasFunctionContext)
+        {
+            AddError(letQuestionDecl.Span, DiagnosticMessages.LetQuestionOutsideFunction);
+        }
+
         var valueType = letQuestionDecl.Value != null
             ? SafeInferExpression(letQuestionDecl.Value)
             : CreateMissingShapeRecoveryType(letQuestionDecl.Span, DiagnosticMessages.LetQuestionRequiresValueExpression);
@@ -141,7 +187,8 @@ public sealed partial class TypeInferer
             letQuestionDecl,
             bindingKind,
             adtId,
-            failurePayloadType);
+            failurePayloadType,
+            hasFunctionContext);
 
         if (!TryGetLetQuestionConstructors(
                 adtId,
@@ -190,6 +237,11 @@ public sealed partial class TypeInferer
         if (resolvedType is not TyCon tyCon)
         {
             return false;
+        }
+
+        if (TryPromoteClosedCaseToRoot(tyCon, out var rootType))
+        {
+            tyCon = rootType;
         }
 
         if (IsLetQuestionTyCon(tyCon, "Option", expectedArity: 1, out adtId))
@@ -246,11 +298,11 @@ public sealed partial class TypeInferer
         LetQuestionDecl letQuestionDecl,
         LetQuestionBindingKind bindingKind,
         SymbolId adtId,
-        Type? failurePayloadType)
+        Type? failurePayloadType,
+        bool hasFunctionContext)
     {
-        if (!TryGetCurrentFunctionReturnType(out var currentReturnType))
+        if (!hasFunctionContext || !TryGetCurrentFunctionReturnType(out var currentReturnType))
         {
-            AddError(letQuestionDecl.Span, DiagnosticMessages.LetQuestionOutsideFunction);
             return CreateErrorRecoveryType();
         }
 

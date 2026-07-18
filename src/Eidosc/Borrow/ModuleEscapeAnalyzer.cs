@@ -303,21 +303,35 @@ public sealed class ModuleEscapeAnalyzer
             };
         }
 
+        var aliases = BuildLocalAliases(func);
+        var parameterIndicesByRoot = new Dictionary<int, HashSet<int>>();
+        foreach (var (localValue, parameterIndex) in paramIndices)
+        {
+            var root = aliases.Find(localValue);
+            if (!parameterIndicesByRoot.TryGetValue(root, out var indices))
+            {
+                indices = [];
+                parameterIndicesByRoot[root] = indices;
+            }
+
+            indices.Add(parameterIndex);
+        }
+
         foreach (var block in func.BasicBlocks)
         {
             foreach (var instr in block.Instructions)
             {
-                AnalyzeInstructionForEscape(instr, paramIndices, escapingParams);
+                AnalyzeInstructionForEscape(instr, aliases, parameterIndicesByRoot, escapingParams);
             }
 
             // 终止符
             switch (block.Terminator)
             {
                 case MirReturn { Value: not null } ret:
-                    MarkParamIfLocal(ret.Value, paramIndices, escapingParams);
+                    MarkParamIfLocal(ret.Value, aliases, parameterIndicesByRoot, escapingParams);
                     break;
                 case MirSwitch { Discriminant: var disc }:
-                    MarkParamIfLocal(disc, paramIndices, escapingParams);
+                    MarkParamIfLocal(disc, aliases, parameterIndicesByRoot, escapingParams);
                     break;
             }
         }
@@ -333,7 +347,8 @@ public sealed class ModuleEscapeAnalyzer
 
     private void AnalyzeInstructionForEscape(
         MirInstruction instr,
-        Dictionary<int, int> paramIndices,
+        LocalUnionFind aliases,
+        IReadOnlyDictionary<int, HashSet<int>> parameterIndicesByRoot,
         HashSet<int> escapingParams)
     {
         switch (instr)
@@ -347,7 +362,7 @@ public sealed class ModuleEscapeAnalyzer
                     {
                         if (calleeSummary.EscapingParams.Contains(i))
                         {
-                            MarkParamIfLocal(call.Arguments[i], paramIndices, escapingParams);
+                            MarkParamIfLocal(call.Arguments[i], aliases, parameterIndicesByRoot, escapingParams);
                         }
                     }
                 }
@@ -356,58 +371,62 @@ public sealed class ModuleEscapeAnalyzer
                     // 未知/外部函数：保守标记所有参数位置的参数为逃逸
                     foreach (var arg in call.Arguments)
                     {
-                        MarkParamIfLocal(arg, paramIndices, escapingParams);
+                        MarkParamIfLocal(arg, aliases, parameterIndicesByRoot, escapingParams);
                     }
                 }
                 // 函数操作数本身可能是参数
-                MarkParamIfLocal(call.Function, paramIndices, escapingParams);
+                MarkParamIfLocal(call.Function, aliases, parameterIndicesByRoot, escapingParams);
                 break;
 
             case MirStore store:
-                MarkParamIfLocal(store.Value, paramIndices, escapingParams);
+                MarkParamIfLocal(store.Value, aliases, parameterIndicesByRoot, escapingParams);
                 break;
 
             case MirLoad load:
-                MarkParamIfLocal(load.Source, paramIndices, escapingParams);
-                break;
-
-            // MirCopy/MirMove: 如果 target 是参数，source 也逃逸（通过别名）
-            case MirCopy copy:
-                if (IsParamLocal(copy.Target, paramIndices, out var tgtIdx))
-                {
-                    MarkParamIfLocal(copy.Source, paramIndices, escapingParams);
-                }
-                break;
-
-            case MirMove move:
-                if (IsParamLocal(move.Target, paramIndices, out var tgtIdx2))
-                {
-                    MarkParamIfLocal(move.Source, paramIndices, escapingParams);
-                }
+                MarkParamIfLocal(load.Source, aliases, parameterIndicesByRoot, escapingParams);
                 break;
         }
     }
 
     private static void MarkParamIfLocal(
         MirOperand? operand,
-        Dictionary<int, int> paramIndices,
+        LocalUnionFind aliases,
+        IReadOnlyDictionary<int, HashSet<int>> parameterIndicesByRoot,
         HashSet<int> escapingParams)
     {
-        if (operand is MirPlace { Kind: PlaceKind.Local, Local: var localId }
-            && paramIndices.TryGetValue(localId.Value, out var paramIdx))
+        if (operand is not MirPlace { Kind: PlaceKind.Local, Local: var localId } ||
+            !parameterIndicesByRoot.TryGetValue(aliases.Find(localId.Value), out var parameterIndices))
         {
-            escapingParams.Add(paramIdx);
+            return;
+        }
+
+        foreach (var parameterIndex in parameterIndices)
+        {
+            escapingParams.Add(parameterIndex);
         }
     }
 
-    private static bool IsParamLocal(MirOperand? operand, Dictionary<int, int> paramIndices, out int paramIdx)
+    private static LocalUnionFind BuildLocalAliases(MirFunc function)
     {
-        if (operand is MirPlace { Kind: PlaceKind.Local, Local: var localId }
-            && paramIndices.TryGetValue(localId.Value, out paramIdx))
+        var aliases = new LocalUnionFind();
+        foreach (var instruction in function.BasicBlocks.SelectMany(static block => block.Instructions))
         {
-            return true;
+            var pair = instruction switch
+            {
+                MirAssign { Target: MirPlace target, Source: MirPlace source } => (Target: target, Source: source),
+                MirCaseInject { Target: MirPlace target, Operand: MirPlace source } => (Target: target, Source: source),
+                MirCopy copy => (Target: copy.Target, Source: copy.Source),
+                MirMove move => (Target: move.Target, Source: move.Source),
+                MirLoad { Target: MirPlace target, Source: MirPlace source } => (Target: target, Source: source),
+                _ => ((MirPlace Target, MirPlace Source)?)null
+            };
+
+            if (pair is { Target.Kind: PlaceKind.Local, Source.Kind: PlaceKind.Local } binding)
+            {
+                aliases.Union(binding.Target.Local.Value, binding.Source.Local.Value);
+            }
         }
-        paramIdx = -1;
-        return false;
+
+        return aliases;
     }
 }

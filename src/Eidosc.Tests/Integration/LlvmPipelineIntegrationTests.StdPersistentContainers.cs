@@ -16,10 +16,10 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Seq
-import Std.Option
-import Std.PersistentMap
-import Std.PersistentSet
+import std.Seq
+import std.Option
+import std.PersistentMap
+import std.PersistentSet
 
 check_map :: Unit -> Int
 {
@@ -104,8 +104,8 @@ main :: Unit -> Int
     [Fact]
     public void StdPersistentMap_Source_UsesSharedNodesWithoutTreeMapClone()
     {
-        Assert.True(PrecompiledModuleRegistry.TryGetSource("Std/PersistentMap", out var source));
+        Assert.True(PrecompiledModuleRegistry.TryGetSource("std/PersistentMap", out var source));
         Assert.Contains("Shared.Shared[Node[K, V]]", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("TreeMap.clone", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("tree_map.clone", source, StringComparison.Ordinal);
     }
 }

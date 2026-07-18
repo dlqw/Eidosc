@@ -12,7 +12,7 @@ public partial class FunctionResolutionRegressionTests
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
@@ -46,7 +46,7 @@ classify :: Seq[Tok] -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
@@ -81,7 +81,7 @@ classify :: Seq[Tok] -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
@@ -112,7 +112,7 @@ classify :: Seq[Tok] -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
@@ -148,7 +148,7 @@ classify :: Seq[Tok] -> Int
     {
         const string source = """
 Tok :: type {
-    TkCode(Int) , TkWord(String) , TkEof
+    TkCode:: type(Int) , TkWord:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
@@ -184,7 +184,7 @@ classify :: Seq[Tok] -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int

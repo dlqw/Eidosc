@@ -24,6 +24,31 @@ public sealed record AdtSymbol : Symbol
     public List<SymbolId> Fields { get; init; } = [];
 
     /// <summary>
+    /// Direct lexical case types in source order. An empty list denotes a
+    /// product or a leaf case; a non-empty list makes this node a sealed sum.
+    /// </summary>
+    public List<SymbolId> DirectCases { get; init; } = [];
+
+    /// <summary>
+    /// Lexical parent for an exact case type. This is not general-purpose
+    /// inheritance: only compiler-declared closed case edges populate it.
+    /// </summary>
+    public SymbolId ParentAdt { get; init; } = SymbolId.None;
+
+    public SymbolId CaseConstructor { get; init; } = SymbolId.None;
+
+    /// <summary>
+    /// Canonical direct-parent specialization for a closed case edge. This is
+    /// recorded for default and explicit GADT edges and survives symbol-cache
+    /// restoration; it is not a general inheritance contract.
+    /// </summary>
+    public string CanonicalParentSpecialization { get; init; } = string.Empty;
+
+    public bool IsCaseType => ParentAdt.IsValid;
+
+    public bool IsClosedSum => DirectCases.Count > 0;
+
+    /// <summary>
     /// 是否是类型别名
     /// </summary>
     public bool IsTypeAlias => AliasTarget != null;

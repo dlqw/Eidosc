@@ -516,11 +516,12 @@ public sealed partial class NameResolver
                 continue;
             }
 
+            var constructorAdt = symbolTable.GetClosedCaseRoot(ctorSymbol.OwnerAdt);
             if (!targetAdt.IsValid)
             {
-                targetAdt = ctorSymbol.OwnerAdt;
+                targetAdt = constructorAdt;
             }
-            else if (targetAdt != ctorSymbol.OwnerAdt)
+            else if (targetAdt != constructorAdt)
             {
                 targetConstructors.Clear();
                 targetAdt = SymbolId.None;

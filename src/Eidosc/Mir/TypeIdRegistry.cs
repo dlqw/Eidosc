@@ -5,6 +5,8 @@ using Eidosc.Semantic;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Types;
+using System.Security.Cryptography;
+using System.Text;
 using DrivenType = Eidosc.Types.Type;
 
 namespace Eidosc.Mir;
@@ -167,8 +169,15 @@ internal sealed class TypeIdRegistry
             return TypeId.None;
         }
 
-        return _symbolTable.GetSymbol(symbolId)?.TypeId is { } typeId && typeId.IsValid
-            ? typeId
+        var symbol = _symbolTable.GetSymbol(symbolId);
+        if (symbol?.TypeId is { IsValid: true } typeId)
+        {
+            return typeId;
+        }
+
+        return symbol is CtorSymbol { OwnerAdt.IsValid: true } constructor &&
+               _symbolTable.GetSymbol<AdtSymbol>(constructor.OwnerAdt) is { TypeId.IsValid: true } owner
+            ? owner.TypeId
             : TypeId.None;
     }
 
@@ -311,6 +320,68 @@ internal sealed class TypeIdRegistry
             ? _typeInferer.Substitution.Apply(type)
             : type;
         return GetTypeTypeIdCore(resolvedType);
+    }
+
+    public TypeId GetOrCreateClosedCaseLayoutTypeId(TyCon closedCaseType)
+    {
+        var sourceTypeId = GetTypeTypeId(closedCaseType);
+        if (!sourceTypeId.IsValid ||
+            !closedCaseType.Symbol.IsValid ||
+            _symbolTable.GetSymbol<AdtSymbol>(closedCaseType.Symbol) is not { IsCaseType: true })
+        {
+            return sourceTypeId;
+        }
+
+        var runtimeRoot = closedCaseType.Symbol;
+        var visited = new HashSet<SymbolId>();
+        while (runtimeRoot.IsValid && visited.Add(runtimeRoot) &&
+               _symbolTable.GetSymbol<AdtSymbol>(runtimeRoot) is { } current &&
+               current.ParentAdt.IsValid)
+        {
+            runtimeRoot = current.ParentAdt;
+        }
+
+        if (!runtimeRoot.IsValid ||
+            _symbolTable.GetSymbol<AdtSymbol>(runtimeRoot) is not { } rootSymbol)
+        {
+            return sourceTypeId;
+        }
+
+        var rootType = closedCaseType with
+        {
+            Name = rootSymbol.Name,
+            Symbol = runtimeRoot,
+            Id = rootSymbol.TypeId,
+            Args = closedCaseType.Args.Take(_symbolTable.GetClosedCaseEffectiveGenericParameterIds(runtimeRoot).Count(parameterId =>
+                _symbolTable.GetSymbol<TypeParamSymbol>(parameterId)?.ParameterKind == GenericParameterKind.Type)).ToList(),
+            ValueArgs = closedCaseType.ValueArgs
+                .Where(argument => argument.ParameterIndex >= 0 && argument.ParameterIndex < rootSymbol.TypeParams.Count)
+                .ToList(),
+            EffectArgs = closedCaseType.EffectArgs
+                .Where(argument => argument.ParameterIndex >= 0 && argument.ParameterIndex < rootSymbol.TypeParams.Count)
+                .ToList()
+        };
+        var runtimeTypeId = GetTypeTypeId(rootType);
+        if (!runtimeTypeId.IsValid)
+        {
+            return sourceTypeId;
+        }
+
+        RegisterLayoutAlias(sourceTypeId, runtimeTypeId);
+        return sourceTypeId;
+    }
+
+    private void RegisterLayoutAlias(TypeId aliasTypeId, TypeId runtimeTypeId)
+    {
+        if (aliasTypeId == runtimeTypeId)
+        {
+            return;
+        }
+
+        if (_constructorLayouts.TryGetValue(runtimeTypeId.Value, out var runtimeLayouts))
+        {
+            _constructorLayouts[aliasTypeId.Value] = runtimeLayouts;
+        }
     }
 
     private TypeId GetTypeTypeIdCore(DrivenType type)
@@ -522,6 +593,11 @@ internal sealed class TypeIdRegistry
                     : $"v{argument.CanonicalHash[..Math.Min(12, argument.CanonicalHash.Length)]}"))}";
         }
 
+        if (tyCon.EffectArgs.Count > 0)
+        {
+            typeName = $"{typeName}_{string.Join("_", tyCon.EffectArgs.Select(argument => $"e{CreateEffectArgumentToken(argument.Argument)}"))}";
+        }
+
         var layouts = new List<ConstructorTypeLayout>(adtSymbol.Constructors.Count);
         var isMultiCtor = adtSymbol.Constructors.Count > 1;
 
@@ -556,9 +632,16 @@ internal sealed class TypeIdRegistry
         return ConstructorRuntimeTypeId.Compute(_symbolTable, constructorSymbolId, constructorName);
     }
 
+    private string CreateEffectArgumentToken(DrivenType argument)
+    {
+        var canonical = TypeCanonicalKeyBuilder.Build(argument, GetTypeTypeId);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexString(hash.AsSpan(0, 6));
+    }
+
     private static bool NeedsDynamicTyConTypeId(TyCon tyCon)
     {
-        return tyCon.ConstructorVarIndex.HasValue || tyCon.Args.Count > 0 || tyCon.ValueArgs.Count > 0;
+        return tyCon.ConstructorVarIndex.HasValue || tyCon.Args.Count > 0 || tyCon.ValueArgs.Count > 0 || tyCon.EffectArgs.Count > 0;
     }
 
     private TypeId GetTyConTypeId(TyCon tyCon)
@@ -581,9 +664,16 @@ internal sealed class TypeIdRegistry
                     argument.ReferencedParameterIndex,
                     argument.ValueVariableIndex))
                 .ToArray();
+            var effectArgs = tyCon.EffectArgs
+                .Select(argument => new GenericEffectArgumentDescriptor(
+                    argument.ParameterIndex,
+                    TypeCanonicalKeyBuilder.Build(argument.Argument, GetTypeTypeId),
+                    GetTypeTypeId(argument.Argument)))
+                .ToArray();
             var typeId = GetOrCreateDynamicTypeId(new TypeDescriptor.TyCon(constructorKey, typeArgs)
             {
-                ValueArgs = valueArgs
+                ValueArgs = valueArgs,
+                EffectArgs = effectArgs
             });
             CollectConstructorLayouts(typeId, tyCon);
             return typeId;

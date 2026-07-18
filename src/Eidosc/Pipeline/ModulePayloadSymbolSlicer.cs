@@ -182,6 +182,11 @@ internal static class ModulePayloadSymbolSlicer
 
     private static IEnumerable<SymbolId> EnumerateReferencedSymbols(Symbol symbol, bool includeModuleMembers)
     {
+        if (symbol.DefinitionModuleId.IsValid)
+        {
+            yield return symbol.DefinitionModuleId;
+        }
+
         switch (symbol)
         {
             case FuncSymbol function:
@@ -202,7 +207,16 @@ internal static class ModulePayloadSymbolSlicer
                 foreach (var id in trait.TypeParams
                              .Concat(trait.Methods)
                              .Concat(trait.AssociatedTypes)
+                             .Concat(trait.AssociatedConsts)
                              .Concat(trait.ParentTraits)) yield return id;
+                break;
+            case AssociatedItemSymbol associatedItem:
+                yield return associatedItem.OwnerTrait;
+                yield return associatedItem.OwnerImpl;
+                if (associatedItem is AssociatedTypeSymbol associatedType)
+                {
+                    foreach (var id in associatedType.TypeParams) yield return id;
+                }
                 break;
             case EffectSymbol:
                 break;
@@ -212,6 +226,8 @@ internal static class ModulePayloadSymbolSlicer
             case ImplSymbol implementation:
                 yield return implementation.Trait;
                 foreach (var id in implementation.Methods
+                             .Concat(implementation.AssociatedTypes)
+                             .Concat(implementation.AssociatedConsts)
                              .Concat(implementation.TraitMethodImplementations.Keys)
                              .Concat(implementation.TraitMethodImplementations.Values)) yield return id;
                 foreach (var id in EnumerateImplTypeSymbols(implementation.ImplementingTypeKey)) yield return id;
@@ -262,6 +278,9 @@ internal static class ModulePayloadSymbolSlicer
                 break;
             case FieldSymbol field:
                 yield return field.FieldType;
+                break;
+            case AssociatedConstSymbol associatedConst:
+                yield return associatedConst.ValueType;
                 break;
             case ImplSymbol implementation:
                 yield return implementation.ImplementingType;

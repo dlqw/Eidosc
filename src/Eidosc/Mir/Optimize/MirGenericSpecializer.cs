@@ -12,6 +12,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
 {
     private readonly Func<TypeId, bool>? _hasCopyImplResolver;
     private readonly Func<string, IDisposable>? _measureSubphase;
+    private readonly SymbolTable? _symbolTable;
     private readonly HashSet<int> _extraCopyLikeTypeIds = [];
     private readonly SpecializerTemplateRegistry _templateRegistry = new();
     private readonly SpecializerDynamicTypeTable _dynamicTypes = new();
@@ -71,7 +72,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
     {
         _hasCopyImplResolver = hasCopyImplResolver;
         _measureSubphase = measureSubphase;
-        _ = symbolTable;
+        _symbolTable = symbolTable;
         if (extraCopyLikeTypeIds == null)
         {
             return;

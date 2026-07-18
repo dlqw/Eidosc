@@ -216,9 +216,10 @@ main :: Unit -> Int need Facade.W
     }
 
     [Fact]
-    public void Run_SelectiveImportRuntimeValueAlias_Uppercase_Fails()
+    public void Run_SelectiveImportRuntimeValueAlias_Uppercase_ResolvesAndReportsStyle()
     {
-        var result = RunWorkspaceCompilation(
+        var result = RunWorkspaceCompilationAtPhase(
+            CompilationPhase.Types,
             "main.eidos",
             ("Lib/Api.eidos", """
 Lib.Api :: module
@@ -234,44 +235,135 @@ import Lib.Api.{public_id as PublicId}
 
 run :: Int -> Int
 {
-    x => x
+    x => PublicId(x)
 }
 """));
 
-        Assert.False(result.Success);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code == "E3000" &&
-                          diagnostic.Message.Contains("Selective import alias 'PublicId'", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("runtime value", StringComparison.Ordinal));
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var style = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "S1101" && diagnostic.Message.Contains("'PublicId'", StringComparison.Ordinal));
+        Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "public_id");
     }
 
     [Fact]
-    public void Run_SelectiveImportCompileTimeAlias_Lowercase_Fails()
+    public void Run_SelectiveImportCompileTimeAlias_Lowercase_ResolvesAndReportsStyle()
     {
-        var result = RunWorkspaceCompilation(
+        var result = RunWorkspaceCompilationAtPhase(
+            CompilationPhase.Types,
             "main.eidos",
             ("Lib/Api.eidos", """
 Lib.Api :: module
 {
-    export Box :: type { Box(Int) }
+    export Box :: type { Box:: type(Int) }
 }
 """),
             ("main.eidos", """
 import Lib.Api.{Box as box}
 
-run :: Unit -> Int
+run :: box -> box
 {
-    _ => 0
+    value => value
 }
 """));
 
-        Assert.False(result.Success);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code == "E3000" &&
-                          diagnostic.Message.Contains("Selective import alias 'box'", StringComparison.Ordinal) &&
-                          diagnostic.Message.Contains("compile-time value", StringComparison.Ordinal));
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var style = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "S1102" && diagnostic.Message.Contains("'box'", StringComparison.Ordinal));
+        Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "Box");
+    }
+
+    [Fact]
+    public void Run_SelectiveImportsWithSameSpelling_ResolveByExpectedSemanticCategory()
+    {
+        var result = RunWorkspaceCompilationAtPhase(
+            CompilationPhase.Types,
+            "main.eidos",
+            ("Lib/Types.eidos", """
+Lib.Types :: module
+{
+    export Box :: type = Int;
+}
+"""),
+            ("Lib/Values.eidos", """
+Lib.Values :: module
+{
+    export identity :: Int -> Int
+    {
+        value => value
+    }
+}
+"""),
+            ("main.eidos", """
+import Lib.Types.{Box as entity}
+import Lib.Values.{identity as entity}
+
+run :: entity -> entity
+{
+    value => entity(value)
+}
+"""));
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var style = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "S1102" && diagnostic.Message.Contains("'entity'", StringComparison.Ordinal));
+        Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "Entity");
+    }
+
+    [Fact]
+    public void Run_SelectiveEffectAlias_ResolvesByEffectIdentityAndReportsStyle()
+    {
+        var result = RunWorkspaceCompilationAtPhase(
+            CompilationPhase.Types,
+            "main.eidos",
+            ("Cap/Io.eidos", """
+Cap.Io :: module
+{
+    export writer :: effect;
+}
+"""),
+            ("main.eidos", """
+import Cap.Io.{writer as WriterCap}
+
+run :: Unit -> Unit need WriterCap
+{
+    value => value
+}
+"""));
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var style = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "S1101" && diagnostic.Message.Contains("'WriterCap'", StringComparison.Ordinal));
+        Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "writer_cap");
+    }
+
+    [Fact]
+    public void Run_ModuleAlias_ResolvesIndependentlyOfSpellingAndReportsStyle()
+    {
+        var result = RunWorkspaceCompilationAtPhase(
+            CompilationPhase.Types,
+            "main.eidos",
+            ("Lib/Api.eidos", """
+Lib.Api :: module
+{
+    export public_id :: Int -> Int
+    {
+        value => value
+    }
+}
+"""),
+            ("main.eidos", """
+APIClient :: import Lib.Api;
+
+run :: Int -> Int
+{
+    value => APIClient.public_id(value)
+}
+"""));
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var style = Assert.Single(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "S1102" && diagnostic.Message.Contains("'APIClient'", StringComparison.Ordinal));
+        Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "ApiClient");
     }
 
     [Fact]
@@ -379,7 +471,8 @@ Demo.Facade :: module
                 InputFile = entryFile,
                 StopAtPhase = stopAtPhase,
                 ImportSearchRoots = [tempDir],
-                UseColors = false
+                UseColors = false,
+                EmitStyleSuggestions = stopAtPhase >= CompilationPhase.Types
             }).Run();
 
             return result;

@@ -1,0 +1,69 @@
+PersistentSet :: module {
+    import Seq
+    import PersistentMap
+    import Traits
+
+    PersistentSet[K] :: type {inner:: PersistentMap.PersistentMap[K, Bool]}
+
+    empty[K] :: Unit -> PersistentSet[K]
+    {
+        _ => PersistentSet{inner: PersistentMap.empty(())}
+    }
+
+    singleton[K: Traits.Ord + Traits.Clone] :: K -> PersistentSet[K]
+    {
+        key => PersistentSet{inner: PersistentMap.singleton(key)(true)}
+    }
+
+    from_seq[K: Traits.Ord + Traits.Clone] :: Seq[K] -> PersistentSet[K]
+    {
+        values => Seq.fold_left(values)(PersistentSet.empty(()))(set => key => PersistentSet.insert(set)(key))
+    }
+
+    len[K] :: PersistentSet[K] -> Int
+    {
+        PersistentSet{inner: inner} => PersistentMap.len(inner)
+    }
+
+    is_empty[K] :: PersistentSet[K] -> Bool
+    {
+        set => PersistentSet.len(set) == 0
+    }
+
+    insert[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> K -> PersistentSet[K]
+    {
+        PersistentSet{inner: inner} => key => PersistentSet{inner: PersistentMap.insert(inner)(key)(true)}
+    }
+
+    remove[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> K -> PersistentSet[K]
+    {
+        PersistentSet{inner: inner} => key => PersistentSet{inner: PersistentMap.remove(inner)(key)}
+    }
+
+    contains[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> K -> Bool
+    {
+        PersistentSet{inner: inner} => key => PersistentMap.contains_key(inner)(key)
+    }
+
+    to_seq[K: Traits.Clone] :: PersistentSet[K] -> Seq[K]
+    {
+        PersistentSet{inner: inner} => PersistentMap.keys(inner)
+    }
+
+    union[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> PersistentSet[K] -> PersistentSet[K]
+    {
+        left => right => Seq.fold_left(PersistentSet.to_seq(right))(left)(set => key => PersistentSet.insert(set)(key))
+    }
+
+    intersection[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> PersistentSet[K] -> PersistentSet[K]
+    {
+        left => right => Seq.fold_left(PersistentSet.to_seq(left))(PersistentSet.empty(()))(acc => key =>
+            if PersistentSet.contains(right)(key) then { PersistentSet.insert(acc)(key) } else { acc })
+    }
+
+    difference[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> PersistentSet[K] -> PersistentSet[K]
+    {
+        left => right => Seq.fold_left(PersistentSet.to_seq(left))(PersistentSet.empty(()))(acc => key =>
+            if PersistentSet.contains(right)(key) then { acc } else { PersistentSet.insert(acc)(key) })
+    }
+}

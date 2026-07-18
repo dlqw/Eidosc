@@ -26,6 +26,12 @@ public sealed partial class TypeInferer
         foreach (var elem in tuple.Elements)
         {
             var elementType = SafeInferExpression(elem);
+            if (_substitution.Apply(elementType) is TyCon elementConstructor &&
+                TryPromoteClosedCaseToRoot(elementConstructor, out var promotedElement))
+            {
+                RecordClosedCaseInjection(elementConstructor, promotedElement, elem.Span);
+                elementType = promotedElement;
+            }
             elementTypes.Add(elementType);
             hasRecovery |= ContainsErrorRecoveryType(elementType);
         }
@@ -54,19 +60,78 @@ public sealed partial class TypeInferer
 
         // 推断第一个元素的类型
         var firstType = SafeInferExpression(list.Elements[0]);
+        if (_substitution.Apply(firstType) is TyCon firstConstructor &&
+            TryPromoteClosedCaseToRoot(firstConstructor, out var promotedFirst))
+        {
+            RecordClosedCaseInjection(firstConstructor, promotedFirst, list.Elements[0].Span);
+            firstType = promotedFirst;
+        }
         var hasRecovery = ContainsErrorRecoveryType(firstType);
 
-        // 所有元素类型必须相同
+        var elementSpans = new List<SourceSpan> { list.Elements[0].Span };
         foreach (var elem in list.Elements.Skip(1))
         {
             var elemType = SafeInferExpression(elem);
-            firstType = TryUnify(firstType, elemType, elem.Span, DiagnosticMessages.ListElementTypeMismatch);
+            firstType = JoinControlFlowTypes(
+                firstType,
+                elemType,
+                elem.Span,
+                DiagnosticMessages.ListElementTypeMismatch,
+                elementSpans,
+                elem.Span);
+            elementSpans.Add(elem.Span);
             hasRecovery |= ContainsErrorRecoveryType(elemType) || ContainsErrorRecoveryType(firstType);
         }
 
         return hasRecovery
             ? CreateErrorRecoveryType()
             : new TyCon { Name = WellKnownStrings.BuiltinTypes.Seq, Args = [firstType] };
+    }
+
+    private Type InferListWithExpectedType(ListExpr list, TyCon expectedListType)
+    {
+        var expectedElementType = expectedListType.Args[0];
+        var prefixCount = list.HasRest
+            ? Math.Max(0, list.Elements.Count - 1)
+            : list.Elements.Count;
+        var hasRecovery = false;
+
+        for (var index = 0; index < prefixCount; index++)
+        {
+            var element = list.Elements[index];
+            var actualElementType = InferExpressionWithExpectedType(element, expectedElementType);
+            var unifiedElementType = TryUnify(
+                expectedElementType,
+                actualElementType,
+                element.Span,
+                DiagnosticMessages.ListElementTypeMismatch);
+            hasRecovery |= ContainsErrorRecoveryType(actualElementType) ||
+                           ContainsErrorRecoveryType(unifiedElementType);
+        }
+
+        if (list.HasRest && list.Elements.Count > 0)
+        {
+            var rest = list.Elements[^1];
+            var actualRestType = InferExpressionWithExpectedType(rest, expectedListType);
+            var unifiedRestType = TryUnify(
+                expectedListType,
+                actualRestType,
+                rest.Span,
+                DiagnosticMessages.ListRestExpressionTypeMismatch);
+            hasRecovery |= ContainsErrorRecoveryType(actualRestType) ||
+                           ContainsErrorRecoveryType(unifiedRestType);
+        }
+
+        if (hasRecovery)
+        {
+            var recovery = CreateErrorRecoveryType();
+            list.InferredType = recovery;
+            return recovery;
+        }
+
+        var resolvedListType = _substitution.Apply(expectedListType);
+        list.InferredType = resolvedListType;
+        return resolvedListType;
     }
 
     private Type InferRestList(ListExpr list)
@@ -80,21 +145,49 @@ public sealed partial class TypeInferer
         var prefixCount = list.Elements.Count - 1;
         Type elementType = _substitution.FreshTypeVariable();
         var hasRecovery = false;
+        var prefixElementSpans = new List<SourceSpan>();
 
         if (prefixCount > 0)
         {
             elementType = SafeInferExpression(list.Elements[0]);
+            if (_substitution.Apply(elementType) is TyCon firstConstructor &&
+                TryPromoteClosedCaseToRoot(firstConstructor, out var promotedFirst))
+            {
+                RecordClosedCaseInjection(firstConstructor, promotedFirst, list.Elements[0].Span);
+                elementType = promotedFirst;
+            }
             hasRecovery |= ContainsErrorRecoveryType(elementType);
+            prefixElementSpans.Add(list.Elements[0].Span);
             foreach (var elem in list.Elements.Skip(1).Take(prefixCount - 1))
             {
                 var elemType = SafeInferExpression(elem);
-                elementType = TryUnify(elementType, elemType, elem.Span, DiagnosticMessages.ListPrefixElementTypeMismatch);
+                elementType = JoinControlFlowTypes(
+                    elementType,
+                    elemType,
+                    elem.Span,
+                    DiagnosticMessages.ListPrefixElementTypeMismatch,
+                    prefixElementSpans,
+                    elem.Span);
+                prefixElementSpans.Add(elem.Span);
                 hasRecovery |= ContainsErrorRecoveryType(elemType) || ContainsErrorRecoveryType(elementType);
             }
         }
 
         var restType = SafeInferExpression(list.Elements[^1]);
         hasRecovery |= ContainsErrorRecoveryType(restType);
+        var resolvedRestType = _substitution.Apply(restType);
+        if (prefixCount > 0 &&
+            resolvedRestType is TyCon { Name: WellKnownStrings.BuiltinTypes.Seq, Args.Count: 1 } restSequence)
+        {
+            elementType = JoinControlFlowTypes(
+                elementType,
+                restSequence.Args[0],
+                list.Elements[^1].Span,
+                DiagnosticMessages.ListRestExpressionTypeMismatch,
+                prefixElementSpans);
+            hasRecovery |= ContainsErrorRecoveryType(elementType);
+        }
+
         var expectedRestType = new TyCon
         {
             Name = WellKnownStrings.BuiltinTypes.Seq,
@@ -145,7 +238,13 @@ public sealed partial class TypeInferer
         return BaseTypes.Never;
     }
 
-    private Type JoinControlFlowTypes(Type left, Type right, SourceSpan span, string context)
+    private Type JoinControlFlowTypes(
+        Type left,
+        Type right,
+        SourceSpan span,
+        string context,
+        IReadOnlyList<SourceSpan>? leftExpressionSpans = null,
+        SourceSpan? rightExpressionSpan = null)
     {
         var resolvedLeft = _substitution.Apply(left);
         var resolvedRight = _substitution.Apply(right);
@@ -160,7 +259,168 @@ public sealed partial class TypeInferer
             return resolvedLeft;
         }
 
+        if (TryJoinClosedCaseTypes(resolvedLeft, resolvedRight, out var closedJoin))
+        {
+            foreach (var leftSpan in leftExpressionSpans ?? [])
+            {
+                RecordClosedCaseInjection(resolvedLeft, closedJoin, leftSpan);
+            }
+            if (rightExpressionSpan is { } rightSpan)
+            {
+                RecordClosedCaseInjection(resolvedRight, closedJoin, rightSpan);
+            }
+            return closedJoin;
+        }
+
         return TryUnify(resolvedLeft, resolvedRight, span, context);
+    }
+
+    private bool TryJoinClosedCaseTypes(Type left, Type right, out TyCon join)
+    {
+        join = null!;
+        if (left is not TyCon leftConstructor ||
+            right is not TyCon rightConstructor)
+        {
+            return false;
+        }
+
+        var hasLeftSymbol = TryResolveClosedCaseTypeSymbol(leftConstructor, out var leftSymbol);
+        var hasRightSymbol = TryResolveClosedCaseTypeSymbol(rightConstructor, out var rightSymbol);
+        if (!hasLeftSymbol && hasRightSymbol)
+        {
+            hasLeftSymbol = TryResolveClosedCaseWithinRoot(leftConstructor, rightSymbol, out leftSymbol);
+        }
+        if (!hasRightSymbol && hasLeftSymbol)
+        {
+            hasRightSymbol = TryResolveClosedCaseWithinRoot(rightConstructor, leftSymbol, out rightSymbol);
+        }
+        if (!hasLeftSymbol || !hasRightSymbol)
+        {
+            return false;
+        }
+
+        if (_symbolTable.GetSymbol<AdtSymbol>(leftSymbol) is not { } leftAdt ||
+            _symbolTable.GetSymbol<AdtSymbol>(rightSymbol) is not { } rightAdt ||
+            !leftAdt.IsCaseType && !rightAdt.IsCaseType)
+        {
+            return false;
+        }
+
+        var common = _symbolTable.FindNearestClosedCommonAncestor(leftSymbol, rightSymbol);
+        if (!common.IsValid || _symbolTable.GetSymbol<AdtSymbol>(common) is not { } commonSymbol)
+        {
+            return false;
+        }
+
+        if (!TryProjectClosedCaseToAncestor(leftConstructor, common, out var projectedLeft) ||
+            !TryProjectClosedCaseToAncestor(rightConstructor, common, out var projectedRight))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (projectedLeft.Args.Count != projectedRight.Args.Count)
+            {
+                return false;
+            }
+
+            var joinedArguments = new List<Type>(projectedLeft.Args.Count);
+            for (var index = 0; index < projectedLeft.Args.Count; index++)
+            {
+                var leftArgument = _substitution.Apply(projectedLeft.Args[index]);
+                var rightArgument = _substitution.Apply(projectedRight.Args[index]);
+                if (TryJoinClosedCaseTypes(leftArgument, rightArgument, out var argumentJoin))
+                {
+                    joinedArguments.Add(argumentJoin);
+                    continue;
+                }
+
+                _substitution.Unify(leftArgument, rightArgument);
+                joinedArguments.Add(_substitution.Apply(leftArgument));
+            }
+
+            projectedLeft = projectedLeft with { Args = joinedArguments };
+            projectedRight = projectedRight with { Args = joinedArguments };
+            _substitution.Unify(projectedLeft, projectedRight);
+        }
+        catch (TypeInferenceException)
+        {
+            return false;
+        }
+
+        join = (TyCon)_substitution.Apply(projectedLeft);
+        return true;
+    }
+
+    private void RecordClosedCaseInjection(Type source, TyCon target, SourceSpan span)
+    {
+        var resolved = _substitution.Apply(source);
+        if (resolved is not TyCon sourceConstructor ||
+            (!TryResolveClosedCaseTypeSymbol(sourceConstructor, out var sourceSymbol) &&
+             !TryResolveClosedCaseWithinRoot(sourceConstructor, target.Symbol, out sourceSymbol)) ||
+            sourceSymbol == target.Symbol ||
+            !_symbolTable.IsClosedCaseSubtype(sourceSymbol, target.Symbol))
+        {
+            return;
+        }
+
+        _closedCaseInjections[span] = new ClosedCaseInjectionFact(
+            sourceSymbol,
+            target.Symbol,
+            sourceConstructor with
+            {
+                Symbol = sourceSymbol,
+                Id = sourceConstructor.Id.IsValid
+                    ? sourceConstructor.Id
+                    : _symbolTable.GetSymbol(sourceSymbol)?.TypeId ?? TypeId.None
+            },
+            target);
+    }
+
+    private bool TryResolveClosedCaseWithinRoot(TyCon type, SymbolId relatedType, out SymbolId symbol)
+    {
+        var simpleName = type.Name.Split(
+            WellKnownStrings.Separators.Path,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault() ?? type.Name;
+        var root = _symbolTable.GetClosedCaseRoot(relatedType);
+        var matches = new List<SymbolId>(2);
+        CollectNamedClosedCases(root, simpleName, matches);
+        if (matches.Count == 1)
+        {
+            symbol = matches[0];
+            return true;
+        }
+
+        symbol = SymbolId.None;
+        return false;
+    }
+
+    private void CollectNamedClosedCases(SymbolId parent, string name, List<SymbolId> matches)
+    {
+        if (matches.Count > 1 || _symbolTable.GetSymbol<AdtSymbol>(parent) is not { } parentSymbol)
+        {
+            return;
+        }
+
+        foreach (var caseId in parentSymbol.DirectCases)
+        {
+            if (_symbolTable.GetSymbol<AdtSymbol>(caseId) is not { } caseSymbol)
+            {
+                continue;
+            }
+
+            if (string.Equals(caseSymbol.Name, name, StringComparison.Ordinal))
+            {
+                matches.Add(caseId);
+                if (matches.Count > 1)
+                {
+                    return;
+                }
+            }
+
+            CollectNamedClosedCases(caseId, name, matches);
+        }
     }
 
     private Type InferUnsupportedExpression(EidosAstNode expr)
@@ -266,7 +526,7 @@ public sealed partial class TypeInferer
         }
 
         var targetType = InferAssignmentTarget(assign);
-        var valueType = SafeInferExpression(assign.Value);
+        var valueType = InferExpressionWithExpectedType(assign.Value, targetType);
         var assignmentType = (Type)BaseTypes.Unit;
         if (ContainsErrorRecoveryType(targetType) || ContainsErrorRecoveryType(valueType))
         {

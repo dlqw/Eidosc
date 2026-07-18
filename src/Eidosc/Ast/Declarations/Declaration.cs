@@ -13,6 +13,22 @@ public abstract record Declaration : EidosAstNode
     public List<Attribute> Attributes { get; protected set; } = [];
 
     /// <summary>
+    /// Typed pre-body clauses in source order. This is the public 0.7
+    /// declaration metadata surface; Attributes only represents legacy input.
+    /// </summary>
+    public List<DeclarationClause> Clauses { get; protected set; } = [];
+
+    /// <summary>
+    /// Versioned, typed clause occurrences produced by ClauseBinder in source order.
+    /// </summary>
+    public IReadOnlyList<ClauseIR> BoundClauses { get; private set; } = [];
+
+    /// <summary>
+    /// Unified derive/expand invocations lowered from <see cref="BoundClauses"/>.
+    /// </summary>
+    public IReadOnlyList<MetaInvocationIR> MetaInvocations { get; private set; } = [];
+
+    /// <summary>
     /// 是否显式标记为 export。
     /// </summary>
     public bool IsExported { get; protected set; }
@@ -28,6 +44,15 @@ public abstract record Declaration : EidosAstNode
                 attrsElement.AppendChild(attr.ToXmlElement(doc));
             }
             element.AppendChild(attrsElement);
+        }
+        if (Clauses.Count > 0)
+        {
+            var clausesElement = doc.CreateElement("Clauses");
+            foreach (var clause in Clauses)
+            {
+                clausesElement.AppendChild(clause.ToXmlElement(doc));
+            }
+            element.AppendChild(clausesElement);
         }
         return element;
     }
@@ -55,6 +80,14 @@ public abstract record Declaration : EidosAstNode
 
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
     internal void SetAttributes(List<Attribute> attrs) => Attributes = attrs;
+    internal void SetClauses(List<DeclarationClause> clauses) => Clauses = clauses;
+    internal void SetBoundClauses(
+        IReadOnlyList<ClauseIR> clauses,
+        IReadOnlyList<MetaInvocationIR> invocations)
+    {
+        BoundClauses = clauses;
+        MetaInvocations = invocations;
+    }
     internal void SetExported(bool exported) => IsExported = exported;
 
     protected static bool ContainsKeyword(NonTerminalCstNode node, string keyword)

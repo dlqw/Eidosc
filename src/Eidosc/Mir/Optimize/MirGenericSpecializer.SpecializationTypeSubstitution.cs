@@ -206,6 +206,13 @@ public sealed partial class MirGenericSpecializer
                 Target = ClonePlaceWithTypeSubstitution(assign.Target, bindings, substitutionService, resolvingTypeIds),
                 Source = CloneOperandWithTypeSubstitution(assign.Source, bindings, substitutionService, resolvingTypeIds)
             },
+            MirCaseInject injection => injection with
+            {
+                Target = CloneOperandWithTypeSubstitution(injection.Target, bindings, substitutionService, resolvingTypeIds),
+                Operand = CloneOperandWithTypeSubstitution(injection.Operand, bindings, substitutionService, resolvingTypeIds),
+                SourceTypeId = substitutionService.SubstituteTypeId(injection.SourceTypeId, bindings, resolvingTypeIds),
+                TargetTypeId = substitutionService.SubstituteTypeId(injection.TargetTypeId, bindings, resolvingTypeIds)
+            },
             MirCall call => call with
             {
                 Target = call.Target is null ? null : ClonePlaceWithTypeSubstitution(call.Target, bindings, substitutionService, resolvingTypeIds),

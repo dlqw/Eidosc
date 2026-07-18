@@ -19,7 +19,8 @@ public sealed partial class NameResolver
         {
             var alternative = orPattern.Alternatives[i];
             using var context = PushPatternDiagnosticContext($"alternative#{i + 1}");
-            ResolvePatternReferencesWithoutBinding(alternative);
+            alternative = ResolvePatternReferencesWithoutBinding(alternative);
+            orPattern.Alternatives[i] = alternative;
             var occurrences = new List<PatternBindingOccurrence>();
             CollectPatternBindingOccurrences(alternative, "pattern", occurrences);
             occurrencesByAlternative.Add(occurrences);
@@ -458,7 +459,7 @@ public sealed partial class NameResolver
 
         using (PushPatternDiagnosticContext("inner"))
         {
-            ResolvePatternReferencesWithoutBinding(notPattern.InnerPattern);
+            notPattern.InnerPattern = ResolvePatternReferencesWithoutBinding(notPattern.InnerPattern);
         }
 
         var bindingNames = new HashSet<string>(StringComparer.Ordinal);
@@ -488,7 +489,8 @@ public sealed partial class NameResolver
         {
             var conjunct = andPattern.Conjuncts[i];
             using var context = PushPatternDiagnosticContext($"conjunct#{i + 1}");
-            ResolvePatternReferencesWithoutBinding(conjunct);
+            conjunct = ResolvePatternReferencesWithoutBinding(conjunct);
+            andPattern.Conjuncts[i] = conjunct;
             var bindingNames = new HashSet<string>(StringComparer.Ordinal);
             CollectPatternBindingNames(conjunct, bindingNames);
             bindingSets.Add(bindingNames);

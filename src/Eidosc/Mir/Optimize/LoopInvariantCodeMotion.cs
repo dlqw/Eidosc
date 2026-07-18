@@ -227,6 +227,7 @@ public sealed class LoopInvariantCodeMotion : IMirOptimizationPass, IFunctionOpt
     private static bool InstructionUsesLocal(MirInstruction instruction, LocalId local) => instruction switch
     {
         MirAssign assign => OperandUsesLocal(assign.Source, local),
+        MirCaseInject injection => OperandUsesLocal(injection.Operand, local),
         MirCall call => OperandUsesLocal(call.Function, local) ||
                         call.Arguments.Any(argument => OperandUsesLocal(argument, local)),
         MirBinOp binOp => OperandUsesLocal(binOp.Left, local) || OperandUsesLocal(binOp.Right, local),

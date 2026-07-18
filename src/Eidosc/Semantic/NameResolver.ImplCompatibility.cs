@@ -73,22 +73,22 @@ public sealed partial class NameResolver
         return new List<string>(pieces);
     }
 
-    private static string RenderImplAttributeTypeArgText(TypeNode typeNode)
+    private static string RenderImplClauseTypeArgumentText(TypeNode typeNode)
     {
         return NormalizeTypeNode(typeNode, selfType: null, traitTypeArgBindings: null);
     }
 
-    private static string RenderImplAttributeGenericArgText(GenericArgumentNode argument)
+    private static string RenderImplClauseGenericArgumentText(GenericArgumentNode argument)
     {
         return argument switch
         {
-            TypeGenericArgumentNode typeArgument => RenderImplAttributeTypeArgText(typeArgument.Type),
+            TypeGenericArgumentNode typeArgument => RenderImplClauseTypeArgumentText(typeArgument.Type),
             UnresolvedGenericArgumentNode { TypeCandidate: { } typeCandidate } =>
-                RenderImplAttributeTypeArgText(typeCandidate),
+                RenderImplClauseTypeArgumentText(typeCandidate),
             ValueGenericArgumentNode valueArgument =>
                 NormalizeValueGenericArgument(valueArgument.Expression, traitTypeArgBindings: null),
             EffectGenericArgumentNode effectArgument =>
-                RenderImplAttributeTypeArgText(effectArgument.EffectRow),
+                RenderImplClauseTypeArgumentText(effectArgument.EffectRow),
             _ => string.Empty
         };
     }
@@ -162,8 +162,8 @@ public sealed partial class NameResolver
                         ? ComposeTraitRefDisplayName(traitRef)
                         : traitRef.TraitName,
                     TraitTypeArgs = traitRef.GenericArguments.Count > 0
-                        ? traitRef.GenericArguments.Select(RenderImplAttributeGenericArgText).ToList()
-                        : traitRef.TypeArgs.Select(RenderImplAttributeTypeArgText).ToList(),
+                        ? traitRef.GenericArguments.Select(RenderImplClauseGenericArgumentText).ToList()
+                        : traitRef.TypeArgs.Select(RenderImplClauseTypeArgumentText).ToList(),
                     TraitTypeArgKeys = traitRef.GenericArguments.Count > 0
                         ? traitRef.GenericArguments.Select(BuildImplGenericArgumentKey).ToList()
                         : traitRef.TypeArgs.Select(BuildImplTypeRefKey).ToList()
@@ -323,11 +323,6 @@ public sealed partial class NameResolver
         var candidateMethods = traitDefinition.Methods
             .Where(method => string.Equals(method.Name, function.Name, StringComparison.Ordinal))
             .ToList();
-
-        if (traitDefinition.Methods.Count == 0)
-        {
-            return true;
-        }
 
         if (candidateMethods.Count == 0)
         {

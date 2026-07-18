@@ -40,7 +40,7 @@ public class ProjectCommandInputResolverTests
         using var workspace = TestTempWorkspace.Create("eidosc_cli_project_input");
         var tempDir = workspace.Root;
         var projectDir = Path.Combine(tempDir, "App");
-        var entryFile = Path.Combine(projectDir, "src", "Main.eidos");
+        var entryFile = Path.Combine(projectDir, "src", "main.eidos");
         Directory.CreateDirectory(Path.GetDirectoryName(entryFile)!);
         File.WriteAllText(entryFile, "main :: Unit -> Int { _ => 0 }");
         File.WriteAllText(
@@ -98,7 +98,7 @@ public class ProjectCommandInputResolverTests
         var appDir = Path.Combine(tempDir, "App");
         var depDir = Path.Combine(tempDir, "Raylib");
         var activeFile = Path.Combine(appDir, "src", "Scratch.eidos");
-        var appEntry = Path.Combine(appDir, "src", "Main.eidos");
+        var appEntry = Path.Combine(appDir, "src", "main.eidos");
         var depEntry = Path.Combine(depDir, "src", "Raw.eidos");
         Directory.CreateDirectory(Path.GetDirectoryName(activeFile)!);
         Directory.CreateDirectory(Path.GetDirectoryName(depEntry)!);

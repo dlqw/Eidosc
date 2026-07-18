@@ -60,15 +60,14 @@ public sealed class PatternParserTests
     }
 
     [Fact]
-    public void Parse_lowercase_call_like_pattern_reports_syntax_error()
+    public void Parse_call_like_pattern_is_category_neutral_and_reports_invalid_payload_syntax()
     {
         var ctx = MakeCtx(Ident("view"), "(", Ident("x"), "->", Num("1"), ")", "=>");
         var parser = new PatternParser(ctx);
 
         var result = parser.ParsePattern();
 
-        Assert.IsType<WildcardPattern>(result);
-        Assert.Equal("=>", ctx.GetText());
+        Assert.IsType<CtorPattern>(result);
         Assert.Contains(ctx.Diagnostics, diagnostic => diagnostic.Code == "E4001");
         Assert.DoesNotContain(
             ctx.Diagnostics.SelectMany(diagnostic => diagnostic.Helps),
@@ -534,7 +533,7 @@ public sealed class PatternParserTests
         => new DebugNameToken(name, "identifier");
 
     private static Token TypeId(string name)
-        => new DebugNameToken(name, "typeIdentifier");
+        => new DebugNameToken(name, "identifier");
 
     private static Token Num(string text)
         => new DebugNameToken(text, "numberLiteral");
@@ -551,7 +550,6 @@ public sealed class PatternParserTests
     private static SyntaxKind DebugNameToKind(string debugName) => debugName switch
     {
         "identifier" => SyntaxKind.Identifier,
-        "typeIdentifier" => SyntaxKind.TypeIdentifier,
         "operatorIdentifier" => SyntaxKind.OperatorIdentifier,
         "numberLiteral" => SyntaxKind.NumberLiteral,
         "stringLiteral" => SyntaxKind.StringLiteral,

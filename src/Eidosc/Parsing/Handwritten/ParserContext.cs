@@ -9,20 +9,29 @@ public sealed class ParserContext
 {
     private readonly IReadOnlyList<Token> _tokens;
     private readonly EofToken _syntheticEof;
+    private readonly string? _sourceText;
     private int _position;
     private readonly List<Diagnostic.Diagnostic> _diagnostics = [];
+    private readonly HashSet<string> _namespaceRoots = new(StringComparer.Ordinal)
+    {
+        WellKnownStrings.Std.Module,
+        WellKnownStrings.Meta.Module,
+        WellKnownStrings.Build.Module
+    };
     private int _stepCount;
     private const int MaxSteps = 500_000;
 
     public ParserContext(
         IReadOnlyList<Token> tokens,
         string sourcePath,
-        string languageVersion = EidosLanguageVersions.Current)
+        string languageVersion = EidosLanguageVersions.Current,
+        string? sourceText = null)
     {
         _tokens = tokens;
         var eofLocation = tokens.Count > 0 ? tokens[^1].Location + tokens[^1].Length : SourceLocation.Empty;
         _syntheticEof = new EofToken(eofLocation);
         _position = 0;
+        _sourceText = sourceText;
         SourcePath = sourcePath;
         LanguageVersion = string.IsNullOrWhiteSpace(languageVersion)
             ? EidosLanguageVersions.Current
@@ -36,9 +45,13 @@ public sealed class ParserContext
     public string SourcePath { get; }
     public string LanguageVersion { get; }
     public bool IsNameFirstSyntax => !string.Equals(LanguageVersion, EidosLanguageVersions.Legacy, StringComparison.Ordinal);
-    public bool UsesDotNamespaces => string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
+    public bool UsesDotNamespaces =>
+        string.Equals(LanguageVersion, EidosLanguageVersions.Previous, StringComparison.Ordinal) ||
+        string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
+    public bool SupportsTypedClauses => string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
     public IReadOnlyList<Diagnostic.Diagnostic> Diagnostics => _diagnostics;
     public int Position => _position;
+    public int RawPosition => _position;
     public bool IsEof => _position >= _tokens.Count || Current is EofToken;
 
     public Token Current
@@ -53,6 +66,14 @@ public sealed class ParserContext
     public Token Peek(int offset = 0)
     {
         SkipComments();
+        var index = _position + offset;
+        return index >= 0 && index < _tokens.Count ? _tokens[index] : _syntheticEof;
+    }
+
+    public Token RawCurrent => RawPeek();
+
+    public Token RawPeek(int offset = 0)
+    {
         var index = _position + offset;
         return index >= 0 && index < _tokens.Count ? _tokens[index] : _syntheticEof;
     }
@@ -72,6 +93,25 @@ public sealed class ParserContext
                 $"token='{GetText()}', source={SourcePath}");
         var token = Current;
         if (_position < _tokens.Count) _position++;
+        return token;
+    }
+
+    public Token AdvanceRaw()
+    {
+        _stepCount++;
+        if (_stepCount > MaxSteps)
+        {
+            throw new InvalidOperationException(
+                $"Parser exceeded {MaxSteps} steps at position {_position}/{_tokens.Count}, " +
+                $"token='{GetRawText()}', source={SourcePath}");
+        }
+
+        var token = RawCurrent;
+        if (_position < _tokens.Count)
+        {
+            _position++;
+        }
+
         return token;
     }
 
@@ -150,6 +190,32 @@ public sealed class ParserContext
         };
     }
 
+    public string GetRawText(Token? token = null)
+    {
+        token ??= RawCurrent;
+        return token switch
+        {
+            CommentToken comment => comment.Comment,
+            ContentToken content => content.TextId.Resolve(),
+            EofToken => string.Empty,
+            ErrorToken error => error.Message,
+            _ => token.ToString() ?? string.Empty
+        };
+    }
+
+    public string GetSourceSlice(int startPosition, int endPosition)
+    {
+        if (_sourceText == null ||
+            startPosition < 0 ||
+            endPosition < startPosition ||
+            endPosition > _sourceText.Length)
+        {
+            return string.Empty;
+        }
+
+        return _sourceText[startPosition..endPosition];
+    }
+
     public string GetLiteralRawText(Token? token = null)
     {
         token ??= Current;
@@ -221,6 +287,17 @@ public sealed class ParserContext
 
     public bool IsAtPunctuation() => Current is ContentToken { Terminal.Flags: TerminalFlag.IsPunctuation };
     public bool IsAtKeyword() => Current is ContentToken { Terminal.Flags: TerminalFlag.IsKeyword };
+
+    public void RegisterNamespaceRoot(string? name)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            _namespaceRoots.Add(name);
+        }
+    }
+
+    public bool IsKnownNamespaceRoot(Token token) =>
+        TokenKind.IsAnyIdentifier(token) && _namespaceRoots.Contains(GetText(token));
 
     private static bool TextEquals(Token token, string expected)
     {

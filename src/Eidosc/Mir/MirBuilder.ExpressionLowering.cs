@@ -19,12 +19,18 @@ public sealed partial class MirBuilder
 
     private TypeId ResolveCallResultType(HirCall call, MirOperand functionOperand)
     {
+        if (TryResolveFunctionReturnType(functionOperand, out var functionReturnType) &&
+            functionReturnType.Value == BaseTypes.NeverId)
+        {
+            return functionReturnType;
+        }
+
         if (call.TypeId.IsValid)
         {
             return call.TypeId;
         }
 
-        if (TryResolveFunctionReturnType(functionOperand, out var functionReturnType))
+        if (functionReturnType.IsValid)
         {
             return functionReturnType;
         }
@@ -36,12 +42,6 @@ public sealed partial class MirBuilder
     {
         if (functionOperand is MirFunctionRef functionRef)
         {
-            if (functionRef.TypeId.IsValid)
-            {
-                returnType = functionRef.TypeId;
-                return true;
-            }
-
             if (functionRef.SymbolId.IsValid &&
                 _functionReturnTypesBySymbol.TryGetValue(functionRef.SymbolId, out var bySymbol) &&
                 bySymbol.IsValid)
@@ -55,6 +55,12 @@ public sealed partial class MirBuilder
                 byName.IsValid)
             {
                 returnType = byName;
+                return true;
+            }
+
+            if (functionRef.TypeId.IsValid)
+            {
+                returnType = functionRef.TypeId;
                 return true;
             }
         }

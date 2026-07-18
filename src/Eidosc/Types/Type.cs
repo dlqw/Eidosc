@@ -49,6 +49,12 @@ public sealed record TyVar : Type
     /// </summary>
     public bool IsRigidExistential { get; set; }
 
+    /// <summary>
+    /// Whether this variable was created by instantiating a quantified generic parameter.
+    /// Closed case values widen to their sealed root when inferred through this boundary.
+    /// </summary>
+    public bool IsGenericInstantiation { get; set; }
+
     public override bool IsConcrete => Instance?.IsConcrete ?? false;
 
     public override IEnumerable<int> FreeTypeVariables()
@@ -88,6 +94,11 @@ public sealed record TyCon : Type
     public List<GenericValueArgument> ValueArgs { get; init; } = [];
 
     /// <summary>
+    /// Effect-row arguments keyed by their declaration-order parameter index.
+    /// </summary>
+    public List<GenericEffectArgument> EffectArgs { get; init; } = [];
+
+    /// <summary>
     /// 类型名称 (用于显示)
     /// </summary>
     public string Name { get; init; } = "";
@@ -97,10 +108,17 @@ public sealed record TyCon : Type
     /// </summary>
     public int? ConstructorVarIndex { get; init; }
 
+    /// <summary>
+    /// Whether this constructor variable came from instantiating a quantified HKT parameter.
+    /// Closed case constructors inferred through that boundary bind to their sealed root.
+    /// </summary>
+    public bool IsGenericInstantiationConstructor { get; init; }
+
     public override bool IsConcrete =>
         !ConstructorVarIndex.HasValue &&
         Args.All(static argument => argument.IsConcrete) &&
-        ValueArgs.All(static argument => argument.IsConcrete);
+        ValueArgs.All(static argument => argument.IsConcrete) &&
+        EffectArgs.All(static argument => argument.IsConcrete);
 
     public override IEnumerable<int> FreeTypeVariables()
     {
@@ -110,6 +128,11 @@ public sealed record TyCon : Type
         }
 
         foreach (var v in Args.SelectMany(arg => arg.FreeTypeVariables()))
+        {
+            yield return v;
+        }
+
+        foreach (var v in EffectArgs.SelectMany(static argument => argument.Argument.FreeTypeVariables()))
         {
             yield return v;
         }
@@ -123,7 +146,7 @@ public sealed record TyCon : Type
                 ? $"'t{ConstructorVarIndex.Value}"
                 : "<type>";
 
-        if (Args.Count == 0 && ValueArgs.Count == 0)
+        if (Args.Count == 0 && ValueArgs.Count == 0 && EffectArgs.Count == 0)
             return constructorName;
 
         var args = FormatGenericArguments();
@@ -133,7 +156,8 @@ public sealed record TyCon : Type
     private string FormatGenericArguments()
     {
         var valueByIndex = ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
-        var totalCount = Args.Count + ValueArgs.Count;
+        var effectByIndex = EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var totalCount = Args.Count + ValueArgs.Count + EffectArgs.Count;
         var typeIndex = 0;
         var formatted = new List<string>(totalCount);
         for (var parameterIndex = 0; parameterIndex < totalCount; parameterIndex++)
@@ -141,6 +165,10 @@ public sealed record TyCon : Type
             if (valueByIndex.TryGetValue(parameterIndex, out var valueArgument))
             {
                 formatted.Add(valueArgument.DisplayText);
+            }
+            else if (effectByIndex.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                formatted.Add(effectArgument.Argument.ToString() ?? "<effect-row>");
             }
             else if (typeIndex < Args.Count)
             {
@@ -172,6 +200,14 @@ public sealed record GenericValueArgument(
     public bool IsInferenceVariable => ValueVariableIndex >= 0;
 
     public bool IsConcrete => ReferencedParameterIndex < 0 && !IsInferenceVariable;
+}
+
+/// <summary>
+/// Stable semantic identity of an effect-row generic argument.
+/// </summary>
+public sealed record GenericEffectArgument(int ParameterIndex, Type Argument)
+{
+    public bool IsConcrete => Argument.IsConcrete;
 }
 
 /// <summary>
@@ -388,15 +424,32 @@ public static class BaseTypes
 
     public const int TypeValueId = 12;
 
+    public const int Int64Id = WellKnownTypeIds.Int64Id;
+    public const int Int32Id = WellKnownTypeIds.Int32Id;
+    public const int Int16Id = WellKnownTypeIds.Int16Id;
+    public const int Int8Id = WellKnownTypeIds.Int8Id;
+    public const int Float64Id = WellKnownTypeIds.Float64Id;
+    public const int Float32Id = WellKnownTypeIds.Float32Id;
+    public const int Float16Id = WellKnownTypeIds.Float16Id;
+
     /// <summary>
     /// 整数类型
     /// </summary>
     public static TyCon Int { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Int, Id = new TypeId(IntId) };
 
+    public static TyCon Int64 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Int64, Id = new TypeId(Int64Id) };
+    public static TyCon Int32 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Int32, Id = new TypeId(Int32Id) };
+    public static TyCon Int16 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Int16, Id = new TypeId(Int16Id) };
+    public static TyCon Int8 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Int8, Id = new TypeId(Int8Id) };
+
     /// <summary>
     /// 浮点数类型
     /// </summary>
     public static TyCon Float { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float, Id = new TypeId(FloatId) };
+
+    public static TyCon Float64 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float64, Id = new TypeId(Float64Id) };
+    public static TyCon Float32 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float32, Id = new TypeId(Float32Id) };
+    public static TyCon Float16 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float16, Id = new TypeId(Float16Id) };
 
     /// <summary>
     /// 布尔类型
@@ -448,7 +501,14 @@ public static class BaseTypes
     public static TypeId GetBuiltInTypeId(string name) => name switch
     {
         WellKnownStrings.BuiltinTypes.Int => new TypeId(IntId),
+        WellKnownStrings.BuiltinTypes.Int64 => new TypeId(Int64Id),
+        WellKnownStrings.BuiltinTypes.Int32 => new TypeId(Int32Id),
+        WellKnownStrings.BuiltinTypes.Int16 => new TypeId(Int16Id),
+        WellKnownStrings.BuiltinTypes.Int8 => new TypeId(Int8Id),
         WellKnownStrings.BuiltinTypes.Float => new TypeId(FloatId),
+        WellKnownStrings.BuiltinTypes.Float64 => new TypeId(Float64Id),
+        WellKnownStrings.BuiltinTypes.Float32 => new TypeId(Float32Id),
+        WellKnownStrings.BuiltinTypes.Float16 => new TypeId(Float16Id),
         WellKnownStrings.BuiltinTypes.Bool => new TypeId(BoolId),
         WellKnownStrings.BuiltinTypes.String => new TypeId(StringId),
         WellKnownStrings.BuiltinTypes.Char => new TypeId(CharId),
@@ -467,10 +527,13 @@ public static class BaseTypes
     /// </summary>
     /// <param name="id">TypeId</param>
     /// <returns>是否是内置类型</returns>
-    public static bool IsBuiltIn(TypeId id) => id.Value is >= 1 and <= TypeValueId;
+    public static bool IsBuiltIn(TypeId id) =>
+        id.Value is >= 1 and <= TypeValueId or
+            Int64Id or Int32Id or Int16Id or Int8Id or
+            Float64Id or Float32Id or Float16Id;
 
     public static bool IsCompilerMeta(TypeId id) =>
-        id.Value is >= WellKnownTypeIds.MetaTypeInfoId and <= WellKnownTypeIds.MetaLayoutInfoId;
+        id.Value is >= WellKnownTypeIds.MetaTypeShapeId and <= WellKnownTypeIds.MetaGenericArgumentId;
 
     public static bool IsReservedCompilerType(TypeId id) => IsBuiltIn(id) || IsCompilerMeta(id);
 

@@ -1,12 +1,9 @@
 using Eidosc.Symbols;
-using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
-using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
 using Eidosc.Types;
 using Eidosc.Utils;
-using EidosAttribute = Eidosc.Ast.Attribute;
 
 namespace Eidosc.Semantic;
 
@@ -126,8 +123,8 @@ public sealed partial class NameResolver
         return DiagnosticMessages.ConventionGenericTraitsHint(functionName, names);
     }
 
-    private bool TryResolveTraitFromImplAttribute(
-        EidosAttribute attribute,
+    private bool TryResolveTraitFromImplClause(
+        DeclarationClause clause,
         out SymbolId traitId,
         out string traitName,
         out ImplTraitReference traitRef)
@@ -136,7 +133,7 @@ public sealed partial class NameResolver
         traitName = "";
         traitRef = new([], [], [], []);
 
-        if (!TryExtractTraitReferenceFromAttribute(attribute, out traitRef))
+        if (!TryExtractTraitReferenceFromClause(clause, out traitRef))
         {
             return false;
         }
@@ -147,7 +144,7 @@ public sealed partial class NameResolver
         if (result.IsSuccess && _symbolTable.GetSymbol(result.SymbolId) is TraitSymbol)
         {
             traitId = result.SymbolId;
-            traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, attribute.Span);
+            traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, clause.Span);
             return true;
         }
 
@@ -157,7 +154,7 @@ public sealed partial class NameResolver
             if (fallback is { } fallbackId && _symbolTable.GetSymbol(fallbackId) is TraitSymbol)
             {
                 traitId = fallbackId;
-                traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, attribute.Span);
+                traitRef = ResolveImplTraitReferenceGenericArguments(traitId, traitRef, clause.Span);
                 return true;
             }
         }
@@ -208,97 +205,26 @@ public sealed partial class NameResolver
                 .OfType<TypeNode>()
                 .ToList(),
             TypeArgTexts = resolvedArguments
-                .Select(RenderImplAttributeGenericArgText)
+                .Select(RenderImplClauseGenericArgumentText)
                 .Where(static text => !string.IsNullOrWhiteSpace(text))
                 .ToList()
         };
     }
 
-    private static bool TryExtractTraitReferenceFromAttribute(EidosAttribute attribute, out ImplTraitReference traitRef)
+    private static bool TryExtractTraitReferenceFromClause(
+        DeclarationClause clause,
+        out ImplTraitReference traitRef)
     {
         traitRef = new([], [], [], []);
-        if (attribute.Arguments.Count > 0)
-        {
-            var firstArg = attribute.Arguments[0];
-            if (firstArg is PathExpr pathExpr && pathExpr.Path.Count > 0)
-            {
-                var genericArguments = pathExpr.GenericArguments.ToList();
-                var typeArgs = genericArguments.Count > 0
-                    ? genericArguments
-                        .Select(RenderImplAttributeGenericArgText)
-                        .Where(text => !string.IsNullOrWhiteSpace(text))
-                        .ToList()
-                    : pathExpr.TypeArgs
-                        .Select(RenderImplAttributeTypeArgText)
-                        .Where(text => !string.IsNullOrWhiteSpace(text))
-                        .ToList();
-                traitRef = new(
-                    new List<string>(pathExpr.Path),
-                    typeArgs,
-                    pathExpr.TypeArgs.ToList(),
-                    genericArguments);
-                return true;
-            }
-
-            if (firstArg is IdentifierExpr identifier && !string.IsNullOrWhiteSpace(identifier.Name))
-            {
-                traitRef = new([identifier.Name], [], [], []);
-                return true;
-            }
-
-            if (firstArg is TypePath typePath && !string.IsNullOrWhiteSpace(typePath.TypeName))
-            {
-                var path = new List<string>(typePath.ModulePath);
-                path.Add(typePath.TypeName);
-                var genericArguments = typePath.GenericArguments.ToList();
-                var typeArgs = genericArguments.Count > 0
-                    ? genericArguments
-                        .Select(RenderImplAttributeGenericArgText)
-                        .Where(text => !string.IsNullOrWhiteSpace(text))
-                        .ToList()
-                    : typePath.TypeArgs
-                        .Select(RenderImplAttributeTypeArgText)
-                        .Where(text => !string.IsNullOrWhiteSpace(text))
-                        .ToList();
-                traitRef = new(path, typeArgs, typePath.TypeArgs.ToList(), genericArguments);
-                return true;
-            }
-
-            if (TryExtractQualifiedPathFromExpression(firstArg, out var exprPath) &&
-                exprPath.Count > 0)
-            {
-                traitRef = new(exprPath, [], [], []);
-                return true;
-            }
-        }
-
-        if (attribute.ArgumentTexts.Count > 0 && !string.IsNullOrWhiteSpace(attribute.ArgumentTexts[0]) &&
-            TryParseTraitReferenceText(attribute.ArgumentTexts[0], out var parsedRef))
+        if (clause.ArgumentTokens.Count > 0 &&
+            !string.IsNullOrWhiteSpace(clause.ArgumentTokens[0]) &&
+            TryParseTraitReferenceText(clause.ArgumentTokens[0], out var parsedRef))
         {
             traitRef = parsedRef;
             return true;
         }
 
         return false;
-    }
-
-    private static bool TryExtractQualifiedPathFromExpression(EidosAstNode expr, out List<string> path)
-    {
-        path = [];
-
-        switch (expr)
-        {
-            case PathExpr pathExpr when pathExpr.Path.Count > 0:
-                path.AddRange(pathExpr.Path.Where(part => !string.IsNullOrWhiteSpace(part)));
-                return path.Count > 0;
-
-            case IdentifierExpr identifierExpr when !string.IsNullOrWhiteSpace(identifierExpr.Name):
-                path.Add(identifierExpr.Name);
-                return true;
-
-            default:
-                return false;
-        }
     }
 
     private static bool TryParseTraitReferenceText(string traitRefText, out ImplTraitReference traitRef)

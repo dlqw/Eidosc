@@ -55,7 +55,7 @@ use[comptime N: Int] :: Unit -> Int
         var typeParam = Assert.Single(function.TypeParams);
         Assert.Equal(GenericParameterKind.Value, typeParam.ParameterKind);
 
-        var bodyReference = Assert.IsType<Eidosc.Ast.Expressions.PathExpr>(Assert.Single(function.Body).Expression);
+        var bodyReference = Assert.IsType<Eidosc.Ast.Expressions.IdentifierExpr>(Assert.Single(function.Body).Expression);
         Assert.Equal(typeParam.SymbolId, bodyReference.SymbolId);
 
         var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
@@ -95,7 +95,7 @@ use[E: effects] :: Unit -> Unit
 Size :: comptime 4;
 
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 use :: Vector[Size, Int] -> Unit
@@ -126,7 +126,7 @@ use :: Vector[Size, Int] -> Unit
     {
         const string source = """
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 use :: Vector[4, Int] -> Vector[4, Int]
@@ -157,7 +157,7 @@ use :: Vector[4, Int] -> Vector[4, Int]
     {
         const string source = """
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 bad :: Vector[4, Int] -> Vector[5, Int]
@@ -181,11 +181,11 @@ bad :: Vector[4, Int] -> Vector[5, Int]
     {
         const string source = """
 Buffer[comptime N: Int, comptime T: Type] :: type {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 Wrapper[comptime N: Int, comptime T: Type] :: type {
-    Wrapper(Buffer[N, T])
+    Wrapper:: type(Buffer[N, T])
 }
 
 use :: Wrapper[4, Int] -> Wrapper[4, Int]
@@ -210,7 +210,7 @@ use :: Wrapper[4, Int] -> Wrapper[4, Int]
     {
         const string source = """
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 make :: Unit -> Vector[4, Int]
@@ -224,7 +224,7 @@ make :: Unit -> Vector[4, Int]
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
         var module = Assert.IsType<ModuleDecl>(result.Ast);
         var function = Assert.Single(module.Declarations.OfType<FuncDef>(), declaration => declaration.Name == "make");
-        var constructor = Assert.IsType<Eidosc.Ast.Expressions.CtorExpr>(Assert.Single(function.Body).Expression);
+        var constructor = Assert.IsType<Eidosc.Ast.Expressions.CallExpr>(Assert.Single(function.Body).Expression);
         Assert.NotNull(constructor.InferredType);
         var functionType = Assert.IsType<TyFun>(function.InferredType);
         var resultType = Assert.IsType<TyCon>(functionType.Result);
@@ -236,7 +236,7 @@ make :: Unit -> Vector[4, Int]
     {
         const string source = """
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 make :: Unit -> Vector[4, Int]
@@ -250,7 +250,7 @@ make :: Unit -> Vector[4, Int]
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
         var module = Assert.IsType<ModuleDecl>(result.Ast);
         var function = Assert.Single(module.Declarations.OfType<FuncDef>(), declaration => declaration.Name == "make");
-        var constructor = Assert.IsType<Eidosc.Ast.Expressions.CtorExpr>(Assert.Single(function.Body).Expression);
+        var constructor = Assert.IsType<Eidosc.Ast.Expressions.CallExpr>(Assert.Single(function.Body).Expression);
         Assert.NotNull(constructor.InferredType);
         var functionType = Assert.IsType<TyFun>(function.InferredType);
         var resultType = Assert.IsType<TyCon>(functionType.Result);
@@ -262,11 +262,11 @@ make :: Unit -> Vector[4, Int]
     {
         const string source = """
 Buffer[comptime N: Int, comptime T: Type] :: type {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 Wrapper[comptime N: Int, comptime T: Type] :: type {
-    Wrapper(Buffer[N, T])
+    Wrapper:: type(Buffer[N, T])
 }
 
 make :: Buffer[4, Int] -> Wrapper[4, Int]
@@ -280,7 +280,7 @@ make :: Buffer[4, Int] -> Wrapper[4, Int]
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => $"{d.Code}: {d.Message}")));
         var module = Assert.IsType<ModuleDecl>(result.Ast);
         var function = Assert.Single(module.Declarations.OfType<FuncDef>(), declaration => declaration.Name == "make");
-        var constructor = Assert.IsType<Eidosc.Ast.Expressions.CtorExpr>(Assert.Single(function.Body).Expression);
+        var constructor = Assert.IsType<Eidosc.Ast.Expressions.CallExpr>(Assert.Single(function.Body).Expression);
         Assert.NotNull(constructor.InferredType);
         var functionType = Assert.IsType<TyFun>(function.InferredType);
         var resultType = Assert.IsType<TyCon>(functionType.Result);
@@ -292,11 +292,11 @@ make :: Buffer[4, Int] -> Wrapper[4, Int]
     {
         const string source = """
 Buffer[comptime N: Int, comptime T: Type] :: type {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 Wrapper[comptime N: Int, comptime T: Type] :: type {
-    Wrapper(Buffer[N, T])
+    Wrapper:: type(Buffer[N, T])
 }
 
 bad :: Buffer[5, Int] -> Wrapper[4, Int]
@@ -319,7 +319,7 @@ bad :: Buffer[5, Int] -> Wrapper[4, Int]
     {
         const string source = """
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 identity[comptime N: Int, comptime T: Type] :: Vector[N, T] -> Vector[N, T]
@@ -350,7 +350,7 @@ use :: Vector[4, Int] -> Vector[4, Int]
     {
         const string source = """
 Vector[comptime N: Int, comptime T: Type] :: type {
-    Vector(T)
+    Vector:: type(T)
 }
 
 identity[comptime N: Int, comptime T: Type] :: Vector[N, T] -> Vector[N, T]
@@ -425,7 +425,7 @@ use :: Unit -> Int
     {
         const string source = """
 Buffer[comptime N: Int, comptime T: Type] :: type {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 FixedBuffer[comptime N: Int, comptime T: Type] :: type = Buffer[N, T];
@@ -456,7 +456,7 @@ use :: FixedBuffer[4, Int] -> Buffer[4, Int]
     {
         const string source = """
 Buffer[comptime N: Int, comptime T: Type] :: type {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 Sized[comptime N: Int] :: trait {
@@ -464,11 +464,12 @@ Sized[comptime N: Int] :: trait {
 }
 
 Holder :: type {
-    Holder(Int)
+    Holder:: type(Int)
 }
 
-@impl(Sized[4])
+
 make :: Holder -> Buffer[4, Int]
+ impl Sized[4]
 {
     value => Buffer[4, Int](1)
 }
@@ -517,7 +518,7 @@ ho[F: kind2 -> kind1, G: kind2] :: F[G] -> F[G]
     {
         const string source = """
 Lift[F: kind2] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 """;
 
@@ -588,11 +589,11 @@ ho[F, G: kind2] :: F[G] -> F[G]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 UseK[K] :: type {
-    UseK(K[Box])
+    UseK:: type(K[Box])
 }
 """;
 
@@ -614,7 +615,7 @@ UseK[K] :: type {
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 HK[K] :: trait {
@@ -663,11 +664,11 @@ Traversable[T: kind2] :: trait {
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 ApplyToInt[F: kind2] :: type {
-    ApplyToInt(F[Int])
+    ApplyToInt:: type(F[Int])
 }
 
 ho[F: kind2 -> kind1, G: kind2] :: F[G] -> F[G]
@@ -691,19 +692,19 @@ use :: ApplyToInt[Box] -> ApplyToInt[Box]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Lift[F] :: type {
-    Lift(F[Int])
+    Lift:: type(F[Int])
 }
 
 ApplyToInt[F: kind2] :: type {
-    ApplyToInt(F[Int])
+    ApplyToInt:: type(F[Int])
 }
 
 UseK[K] :: type {
-    UseK(K[Box])
+    UseK:: type(K[Box])
 }
 
 useLift :: Lift[Box] -> Lift[Box]
@@ -727,7 +728,7 @@ useUseK :: UseK[ApplyToInt] -> UseK[ApplyToInt]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Functor[F: kind2] :: trait {

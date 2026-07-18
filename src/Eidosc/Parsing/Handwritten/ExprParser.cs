@@ -4,6 +4,7 @@ using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Syntax;
 using Eidosc.Utils;
 
 namespace Eidosc.Parsing.Handwritten;
@@ -13,6 +14,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     public ExprParser(ParserContext ctx) : this(ctx, new PatternParser(ctx), new TypeParser(ctx)) { }
 
     private bool _allowLambda = true;
+    private bool _allowRecordConstructor = true;
     private readonly Stack<HashSet<string>> _mutableBlockBindings = new();
 
     public EidosAstNode ParseExpr()
@@ -312,6 +314,16 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     {
         var startToken = ctx.Current;
 
+        if (ctx.Check(WellKnownStrings.Keywords.Quote))
+        {
+            return ParseQuoteExpr();
+        }
+
+        if (ctx.Check("expand"))
+        {
+            return ParseExpandExpr();
+        }
+
         if (ctx.Check("loop"))
         {
             return ParseLoopExpr();
@@ -462,14 +474,9 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return ParseMutableIdentLambda();
         }
 
-        // TypeIdentifier — could be constructor call Some(x) or bare
-        if (TokenKind.IsTypeIdentifier(ctx.Current))
-        {
-            return ParsePathOrCtorExpr();
-        }
-
-        // identifier — could be path expression, anonymous lambda, or simple var
-        if (TokenKind.IsIdentifier(ctx.Current))
+        // All names enter through the same unresolved identifier/path syntax.
+        // Symbol category is selected later by name lookup and type inference.
+        if (TokenKind.IsAnyIdentifier(ctx.Current))
         {
             return ParseIdentOrLambda();
         }
@@ -689,20 +696,6 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         }
     }
 
-    private EidosAstNode ParsePathOrCtorExpr()
-    {
-        var startToken = ctx.Current;
-        var path = ParsePathExpr(startToken);
-
-        // Constructor call: Path(args) or Path{fields}
-        if ((ctx.Check("(") || ctx.Check("{")) && IsConstructorPath(path))
-        {
-            return ParseCtorFromPath(path, startToken);
-        }
-
-        return path;
-    }
-
     private PathExpr ParsePathExpr(Token startToken)
     {
         var parsedPath = QualifiedPathParser.ParseItemPath(
@@ -715,10 +708,10 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         path.SetPackageAlias(parsedPath.PackageAlias);
         path.SetName(parsedPath.Name);
         path.SetModulePath(parsedPath.ModulePath);
-        path.SetIsTypePath(parsedPath.Name.Length > 0 && char.IsUpper(parsedPath.Name[0]));
+        path.SetIsTypePath(false);
 
         // Optional type args: Path[Int, String]
-        if (ctx.Check("[") && (path.IsTypePath || IsTypeArgLookahead()))
+        if (ctx.Check("[") && IsTypeArgLookahead())
         {
             var genericArguments = typeParser.TryParseGenericArguments();
             if (genericArguments != null)
@@ -810,11 +803,6 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         return literal;
     }
 
-    private static bool IsConstructorPath(PathExpr path)
-    {
-        return path.Name.Length > 0 && char.IsUpper(path.Name[0]);
-    }
-
     private void ParseCtorUpdateBase(CtorExpr ctor)
     {
         ctx.Expect("..");
@@ -890,12 +878,13 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return lambda;
         }
 
-        // Namespace path expression: Module.Path.member or package_alias.Module.member.
+        // Namespace/member chain. Its category remains unresolved in the parser.
         if (QualifiedPathParser.IsQualifiedPathLookahead(ctx))
         {
             var path = ParsePathExpr(startToken);
-            // Constructor call via path
-            if ((ctx.Check("(") || ctx.Check("{")) && IsConstructorPath(path))
+            // A record body is syntactically constructor-only; parentheses remain
+            // an ordinary CallExpr and are resolved by callable symbol identity.
+            if (_allowRecordConstructor && ctx.Check("{"))
                 return ParseCtorFromPath(path, startToken);
             return path;
         }
@@ -903,6 +892,14 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         // Simple identifier
         var name = ctx.GetText();
         ctx.Advance();
+        if (_allowRecordConstructor && ctx.Check("{"))
+        {
+            var path = new PathExpr();
+            path.SetSpan(ctx.SpanFrom(startToken));
+            path.SetName(name);
+            return ParseCtorFromPath(path, startToken);
+        }
+
         var ident = new IdentifierExpr();
         ident.SetSpan(ctx.SpanFrom(startToken));
         ident.SetName(name);
@@ -1267,22 +1264,64 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
 
     private EidosAstNode ParseMatchScrutinee()
     {
-        if (!TokenKind.IsTypeIdentifier(ctx.Current) &&
-            !(TokenKind.IsAnyIdentifier(ctx.Current) && QualifiedPathParser.IsQualifiedPathLookahead(ctx)))
+        var previousRecordConstructorMode = _allowRecordConstructor;
+        _allowRecordConstructor = false;
+        try
         {
             return ParseExpr();
         }
-
-        var saved = ctx.SavePosition();
-        var startToken = ctx.Current;
-        var path = ParsePathExpr(startToken);
-        if (ctx.Check("{"))
+        finally
         {
-            return path;
+            _allowRecordConstructor = previousRecordConstructorMode;
+        }
+    }
+
+    private ExpandExpr ParseExpandExpr()
+    {
+        var start = ctx.Expect("expand");
+        var invocation = new MetaInvocationSyntax();
+        var path = new List<string>();
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
+        {
+            ctx.Error("expression expand requires a meta generator path");
+        }
+        else
+        {
+            path.Add(ctx.GetText());
+            ctx.Advance();
+            while (ctx.Match("."))
+            {
+                if (!TokenKind.IsAnyIdentifier(ctx.Current))
+                {
+                    ctx.Error("expected a generator name after '.'");
+                    break;
+                }
+
+                path.Add(ctx.GetText());
+                ctx.Advance();
+            }
         }
 
-        ctx.RestorePosition(saved);
-        return ParseExpr();
+        invocation.SetGeneratorPath(path);
+        if (ctx.Match("("))
+        {
+            if (!ctx.Check(")"))
+            {
+                invocation.AddExplicitArgument(ParseExpr());
+                while (ctx.Match(","))
+                {
+                    invocation.AddExplicitArgument(ParseExpr());
+                }
+            }
+
+            ctx.Expect(")");
+        }
+
+        invocation.SetSpan(ctx.SpanFrom(start));
+        var expansion = new ExpandExpr();
+        expansion.SetInvocation(invocation);
+        expansion.SetSpan(ctx.SpanFrom(start));
+        return expansion;
     }
 
     internal PatternBranch ParsePatternBranch()
@@ -1430,6 +1469,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     {
         var startToken = ctx.Current;
         ctx.Expect(".");
+        var memberNameToken = ctx.Current;
         var fieldName = ctx.GetText();
         ctx.Advance();
 
@@ -1437,6 +1477,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         methodCall.SetSpan(ctx.SpanFrom(startToken));
         methodCall.SetReceiver(left);
         methodCall.SetMethodName(fieldName);
+        methodCall.SetMemberNameSpan(new SourceSpan(memberNameToken.Location, memberNameToken.Length));
 
         if (ctx.Match("("))
         {
@@ -1570,6 +1611,13 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                 RegisterMutableBinding(stmt);
 
                 var hasSemicolon = ctx.Match(";");
+                if (hasSemicolon && stmt is ExpandExpr expansion)
+                {
+                    var statementExpansion = new ExpandStmt();
+                    statementExpansion.SetInvocation(expansion.Invocation);
+                    statementExpansion.SetSpan(expansion.Span);
+                    stmt = statementExpansion;
+                }
                 block.AddStatement(stmt);
                 lastItem = stmt;
                 lastItemHadSemicolon = hasSemicolon;
@@ -1711,49 +1759,117 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return true;
         }
 
-        if ((ctx.Check("ref") ||
-             ctx.Check("mref") ||
-             ctx.Check("(") ||
-             ctx.Check("[") ||
-             ctx.Check("_")) &&
-            HasTopLevelTokenBeforeTerminator(":="))
+        if (ctx.Check("ref") || ctx.Check("mref"))
+        {
+            return TokenKind.IsIdentifier(ctx.Peek(1)) &&
+                   string.Equals(ctx.GetText(ctx.Peek(2)), ":=", StringComparison.Ordinal);
+        }
+
+        if (ctx.Check("(") || ctx.Check("[") || ctx.Check("_"))
+        {
+            return TryFindPatternBindingOperator(out _);
+        }
+
+        if (!TokenKind.IsIdentifier(ctx.Current))
+        {
+            return false;
+        }
+
+        if (ctx.CheckPeek(1, ":="))
         {
             return true;
         }
 
-        return TokenKind.IsIdentifier(ctx.Current) && HasTopLevelTokenBeforeTerminator(":=");
+        return ctx.CheckPeek(1, ":") && TryFindPatternBindingOperator(out _);
     }
 
     private bool IsNameFirstAssignmentStart()
     {
-        if (!(TokenKind.IsIdentifier(ctx.Current) || ctx.Check("*")))
-        {
-            return false;
-        }
-
-        return HasTopLevelTokenBeforeTerminator(":=") ||
-               HasTopLevelTokenBeforeTerminator("=");
+        return TryFindImmediatePlaceAssignmentOperator(out _, out _);
     }
 
     private bool IsPlaceAssignmentStart()
     {
-        if (!(TokenKind.IsIdentifier(ctx.Current) || ctx.Check("*")))
+        return TryFindImmediatePlaceAssignmentOperator(out var assignmentOperator, out var isComplexPlace) &&
+               isComplexPlace &&
+               assignmentOperator == ":=";
+    }
+
+    private bool IsKnownMutableLocalAssignmentStart()
+    {
+        return _mutableBlockBindings.Count > 0 &&
+               TokenKind.IsIdentifier(ctx.Current) &&
+               _mutableBlockBindings.Peek().Contains(ctx.GetText()) &&
+               ctx.CheckPeek(1, ":=");
+    }
+
+    private bool TryFindImmediatePlaceAssignmentOperator(
+        out string assignmentOperator,
+        out bool isComplexPlace)
+    {
+        assignmentOperator = string.Empty;
+        isComplexPlace = false;
+        var offset = 0;
+
+        while (string.Equals(ctx.GetText(ctx.Peek(offset)), "*", StringComparison.Ordinal))
+        {
+            isComplexPlace = true;
+            offset++;
+        }
+
+        if (!TokenKind.IsAnyIdentifier(ctx.Peek(offset)))
         {
             return false;
         }
 
-        if (!HasTopLevelTokenBeforeTerminator(":="))
+        offset++;
+        while (offset < 256)
         {
+            var text = ctx.GetText(ctx.Peek(offset));
+            if (text == ".")
+            {
+                if (!TokenKind.IsAnyIdentifier(ctx.Peek(offset + 1)))
+                {
+                    return false;
+                }
+
+                isComplexPlace = true;
+                offset += 2;
+                continue;
+            }
+
+            if (text == "[")
+            {
+                isComplexPlace = true;
+                if (!TrySkipBalancedTokenRange(ref offset, "[", "]"))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (text is ":=" or "=")
+            {
+                assignmentOperator = text;
+                return true;
+            }
+
             return false;
         }
 
-        if (ctx.Check("*"))
-        {
-            return true;
-        }
+        return false;
+    }
 
-        var depth = 0;
-        for (var offset = 0; offset < 64; offset++)
+    private bool TryFindPatternBindingOperator(out int operatorOffset)
+    {
+        operatorOffset = -1;
+        var offset = 0;
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        var braceDepth = 0;
+
+        while (offset < 256)
         {
             var token = ctx.Peek(offset);
             if (token is EofToken)
@@ -1762,47 +1878,98 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             }
 
             var text = ctx.GetText(token);
-            if (depth == 0)
+            if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
             {
                 if (text == ":=")
                 {
-                    return false;
-                }
-
-                if (text == ":")
-                {
-                    return false;
-                }
-
-                if (text is "." or "[")
-                {
+                    operatorOffset = offset;
                     return true;
                 }
 
-                if (text is ";" or "}" or "=>" or ",")
+                if (offset > 0 && text is ";" or "}" or "=>" or "=")
                 {
                     return false;
                 }
             }
 
-            depth += text switch
+            switch (text)
             {
-                "(" or "[" or "{" => 1,
-                ")" or "]" or "}" => -1,
-                _ => 0
-            };
-            depth = Math.Max(0, depth);
+                case "(":
+                    parenDepth++;
+                    break;
+                case ")":
+                    if (parenDepth == 0)
+                    {
+                        return false;
+                    }
+
+                    parenDepth--;
+                    break;
+                case "[":
+                    bracketDepth++;
+                    break;
+                case "]":
+                    if (bracketDepth == 0)
+                    {
+                        return false;
+                    }
+
+                    bracketDepth--;
+                    break;
+                case "{":
+                    braceDepth++;
+                    break;
+                case "}":
+                    if (braceDepth == 0)
+                    {
+                        return false;
+                    }
+
+                    braceDepth--;
+                    break;
+            }
+
+            offset++;
         }
 
         return false;
     }
 
-    private bool IsKnownMutableLocalAssignmentStart()
+    private bool TrySkipBalancedTokenRange(ref int offset, string open, string close)
     {
-        return _mutableBlockBindings.Count > 0 &&
-               TokenKind.IsIdentifier(ctx.Current) &&
-               _mutableBlockBindings.Peek().Contains(ctx.GetText()) &&
-               HasTopLevelTokenBeforeTerminator(":=");
+        if (!string.Equals(ctx.GetText(ctx.Peek(offset)), open, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var depth = 0;
+        while (offset < 256)
+        {
+            var token = ctx.Peek(offset);
+            if (token is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetText(token);
+            if (text == open)
+            {
+                depth++;
+            }
+            else if (text == close)
+            {
+                depth--;
+                offset++;
+                if (depth == 0)
+                {
+                    return true;
+                }
+            }
+
+            offset++;
+        }
+
+        return false;
     }
 
     private bool HasTopLevelTokenBeforeTerminator(string expected)
@@ -1871,15 +2038,59 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
 
     private bool IsTypeArgLookahead()
     {
-        // Expression indexes such as values[idx] are runtime indexes, not type applications.
-        // Type applications start with a type identifier or a parenthesized type such as
-        // id[Int], id[Result[T, E]], or id[(Int, Int)].
         if (!ctx.Check("["))
+        {
             return false;
-        var next = ctx.Peek(1);
-        return IsTypeArgStartToken(next) ||
-               (ctx.CheckPeek(1, "(") && IsParenthesizedTypeArgLookahead(1)) ||
-               HasTopLevelGenericArgumentSeparator();
+        }
+
+        // A single expression-shaped argument is deliberately left as IndexExpr.
+        // Name resolution reinterprets it as a generic application only when the
+        // receiver symbol actually declares a matching generic parameter. This
+        // keeps values[index] independent from identifier spelling.
+        return HasTopLevelGenericArgumentSeparator() || HasTypeOnlyGenericArgumentSyntax();
+    }
+
+    private bool HasTypeOnlyGenericArgumentSyntax()
+    {
+        var bracketDepth = 0;
+        var parenDepth = 0;
+        for (var offset = 0; offset < 64; offset++)
+        {
+            var token = ctx.Peek(offset);
+            if (token is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetText(token);
+            switch (text)
+            {
+                case "[":
+                    bracketDepth++;
+                    if (bracketDepth > 1)
+                    {
+                        return true;
+                    }
+                    break;
+                case "]":
+                    bracketDepth--;
+                    if (bracketDepth <= 0)
+                    {
+                        return false;
+                    }
+                    break;
+                case "(":
+                    parenDepth++;
+                    break;
+                case ")" when parenDepth > 0:
+                    parenDepth--;
+                    break;
+                case "->" or "need" when bracketDepth == 1:
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private bool HasTopLevelGenericArgumentSeparator()
@@ -1919,20 +2130,6 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         }
 
         return false;
-    }
-
-    private bool IsParenthesizedTypeArgLookahead(int openParenOffset)
-    {
-        var next = ctx.Peek(openParenOffset + 1);
-        return ctx.CheckPeek(openParenOffset + 1, ")") ||
-               IsTypeArgStartToken(next) ||
-               (ctx.CheckPeek(openParenOffset + 1, "(") &&
-                IsParenthesizedTypeArgLookahead(openParenOffset + 1));
-    }
-
-    private static bool IsTypeArgStartToken(Token token)
-    {
-        return TokenKind.IsTypeIdentifier(token);
     }
 
     private static BinaryOp MapBinaryOp(string op) => op switch

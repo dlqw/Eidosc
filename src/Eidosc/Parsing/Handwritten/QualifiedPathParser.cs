@@ -58,9 +58,12 @@ internal static class QualifiedPathParser
     {
         if (ctx.UsesDotNamespaces)
         {
-            return ctx.CheckPeek(1, ".") &&
-                   (TokenKind.IsTypeIdentifier(ctx.Current) && TokenKind.IsAnyIdentifier(ctx.Peek(2)) ||
-                    TokenKind.IsIdentifier(ctx.Current) && TokenKind.IsTypeIdentifier(ctx.Peek(2)));
+            if (!ctx.CheckPeek(1, ".") || !TokenKind.IsAnyIdentifier(ctx.Peek(2)))
+            {
+                return false;
+            }
+
+            return ctx.IsKnownNamespaceRoot(ctx.Current);
         }
 
         return ctx.CheckPeek(1, "::") || IsLegacyModulePathLookahead(ctx);

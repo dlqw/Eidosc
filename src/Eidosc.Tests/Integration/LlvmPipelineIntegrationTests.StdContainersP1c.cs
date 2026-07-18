@@ -15,10 +15,10 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Seq
-import Std.Option
-import Std.TreeMap
-import Std.TreeSet
+import std.Seq
+import std.Option
+import std.TreeMap
+import std.TreeSet
 
 check_map :: Unit -> Int
 {

@@ -93,7 +93,7 @@ public sealed class BindingPackageGenerator
             [
                 new BindingModuleRule
                 {
-                    Name = "Raw"
+                    Name = "raw"
                 }
             ]
         };
@@ -116,13 +116,18 @@ public sealed class BindingPackageGenerator
         {
             new(Path.Combine(packageDirectory, EidosProjectConfigurationLoader.DefaultFileName),
                 GenerateManifest(spec, noShim ? null : CreateShimPathIfNeeded(ir))),
-            new(Path.Combine(packageDirectory, "src", "Raw.eidos"), rawResult.Source)
+            new(Path.Combine(packageDirectory, "src", "raw.eidos"), rawResult.Source)
         };
 
         foreach (var wrapper in wrappers)
         {
             files.Add(new GeneratedFile(
-                Path.Combine(packageDirectory, "src", wrapper.ModulePath.Replace('/', Path.DirectorySeparatorChar) + ".eidos"),
+                Path.Combine(
+                    packageDirectory,
+                    "src",
+                    wrapper.ModulePath
+                        .Replace('.', Path.DirectorySeparatorChar)
+                        .Replace('/', Path.DirectorySeparatorChar) + ".eidos"),
                 wrapper.Source));
         }
 
@@ -169,7 +174,7 @@ public sealed class BindingPackageGenerator
                 new EidosProjectTargetManifestDocument
                 {
                     Name = "lib",
-                    Entry = "src/Raw.eidos",
+                    Entry = "src/raw.eidos",
                     Kind = "library"
                 }
             ],

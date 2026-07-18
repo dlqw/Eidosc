@@ -1584,6 +1584,9 @@ internal static partial class DiagnosticMessages
     public static string UnsupportedAstExpressionDuringHirLowering(string nodeType) =>
         Format(nameof(UnsupportedAstExpressionDuringHirLowering), nodeType);
 
+    public static string QuoteExpressionCrossedHirBoundary =>
+        Get(nameof(QuoteExpressionCrossedHirBoundary));
+
     public static string UnsupportedAstPatternDuringHirLowering(string patternType) =>
         Format(nameof(UnsupportedAstPatternDuringHirLowering), patternType);
 

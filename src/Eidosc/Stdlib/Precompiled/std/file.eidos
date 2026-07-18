@@ -1,0 +1,256 @@
+File :: module {
+    import Seq
+    import Option
+    import Result
+    import Text
+
+
+
+
+    file_exists :: String -> Bool internal intrinsic "file_exists" need io;
+
+
+
+
+
+    file_read_all_text :: String -> String internal intrinsic "file_read_all_text" need io;
+
+
+
+
+
+    file_write_all_text :: String -> String -> Bool internal intrinsic "file_write_all_text" need io;
+
+
+
+
+
+    io_last_success :: Unit -> Bool internal intrinsic "io_last_success" need io;
+
+
+
+
+
+    io_last_error :: Unit -> String internal intrinsic "io_last_error" need io;
+
+
+
+
+    string_length :: String -> Int internal intrinsic "string_length";
+
+
+    exists :: String -> Bool need io
+    {
+        path => file_exists(path)
+    }
+
+    read_text_or_empty :: String -> String need io
+    {
+        path => file_read_all_text(path)
+    }
+
+    read_text_or :: String -> String -> String need io
+    {
+        path => fallback => match File.read_text(path)
+        {
+            Ok(text) => text,
+            Err(_) => fallback
+        }
+    }
+
+    read_text_or_else[E: effects] :: String -> (Unit -> String need E) -> String need io, E
+    {
+        path => fallback => match File.read_text(path)
+        {
+            Ok(text) => text,
+            Err(_) => fallback(())
+        }
+    }
+
+    read_text :: String -> Result[String, String] need io
+    {
+        path => {
+            text := file_read_all_text(path);
+            if io_last_success() then { Ok(text) } else { Err(io_last_error()) }
+        }
+    }
+
+    read_text_opt :: String -> Option[String] need io
+    {
+        path => match File.read_text(path)
+        {
+            Ok(text) => Some(text),
+            Err(error) => None()
+        }
+    }
+
+    write_text :: String -> String -> Bool need io
+    {
+        path => content => file_write_all_text(path, content)
+    }
+
+    write_text_result :: String -> String -> Result[Bool, String] need io
+    {
+        path => content => if file_write_all_text(path, content) then { Ok(true) } else { Err(io_last_error()) }
+    }
+
+    write_text_error_opt :: String -> String -> Option[String] need io
+    {
+        path => content => if file_write_all_text(path, content) then { None() } else { Some(io_last_error()) }
+    }
+
+    is_separator :: String -> Bool
+    {
+        text => text == "/" || text == "\\"
+    }
+
+    last_separator_index :: String -> Int
+    {
+        path => {
+            slash := Text.last_index_of_or(path)("/")(-1);
+            backslash := Text.last_index_of_or(path)("\\")(-1);
+            if slash > backslash then { slash } else { backslash }
+        }
+    }
+
+    has_trailing_separator :: String -> Bool
+    {
+        path => Text.ends_with(path)("/") || Text.ends_with(path)("\\")
+    }
+
+    has_leading_separator :: String -> Bool
+    {
+        path => Text.starts_with(path)("/") || Text.starts_with(path)("\\")
+    }
+
+    join_path :: String -> String -> String
+    {
+        left => right =>
+            if Text.empty(left) then { Text.clone(right) }
+            else if Text.empty(right) then { Text.clone(left) }
+            else if File.has_trailing_separator(left) || File.has_leading_separator(right) then { left ++ right }
+            else { left ++ "/" ++ right }
+    }
+
+    join_paths :: Seq[String] -> String
+    {
+        [] => "",
+        [head] => head,
+        [head, ..tail] => File.join_path(head)(File.join_paths(tail))
+    }
+
+    normalize_separators :: String -> String
+    {
+        path => Text.replace_all(path)("\\")("/")
+    }
+
+    ensure_trailing_separator :: String -> String
+    {
+        path =>
+            if Text.empty(path) || File.has_trailing_separator(path) then { Text.clone(path) }
+            else { path ++ "/" }
+    }
+
+    trim_trailing_separator :: String -> String
+    {
+        path =>
+            if string_length(path) <= 1 then { Text.clone(path) }
+            else if File.has_trailing_separator(path) then { File.trim_trailing_separator(Text.drop_last(path)(1)) }
+            else { Text.clone(path) }
+    }
+
+    name :: String -> String
+    {
+        path => {
+            separator := File.last_separator_index(path);
+            if separator < 0 then { Text.clone(path) }
+            else { Text.drop(path)(separator + 1) }
+        }
+    }
+
+    directory_name :: String -> String
+    {
+        path => {
+            separator := File.last_separator_index(path);
+            if separator < 0 then { "" }
+            else { Text.take(path)(separator) }
+        }
+    }
+
+    extension :: String -> String
+    {
+        path => {
+            name := File.name(path);
+            dot := Text.last_index_of_or(name)(".")(-1);
+            if dot <= 0 then { "" }
+            else { Text.drop(name)(dot) }
+        }
+    }
+
+    extension_without_dot :: String -> String
+    {
+        path => {
+            ext := File.extension(path);
+            if Text.empty(ext) then { "" }
+            else { Text.drop(ext)(1) }
+        }
+    }
+
+    stem :: String -> String
+    {
+        path => {
+            name := File.name(path);
+            dot := Text.last_index_of_or(name)(".")(-1);
+            if dot <= 0 then { Text.clone(name) }
+            else { Text.take(name)(dot) }
+        }
+    }
+
+    name_without_extension :: String -> String
+    {
+        path => File.stem(path)
+    }
+
+    normalize_extension :: String -> String
+    {
+        ext =>
+            if Text.empty(ext) then { "" }
+            else if Text.starts_with(ext)(".") then { Text.clone(ext) }
+            else { "." ++ ext }
+    }
+
+    has_extension :: String -> String -> Bool
+    {
+        path => ext => File.extension(path) == File.normalize_extension(ext)
+    }
+
+    change_extension :: String -> String -> String
+    {
+        path => ext => {
+            dir := File.directory_name(path);
+            changed := File.stem(path) ++ File.normalize_extension(ext);
+            if Text.empty(dir) then { changed } else { File.join_path(dir)(changed) }
+        }
+    }
+
+    without_extension :: String -> String
+    {
+        path => File.change_extension(path)("")
+    }
+
+    last_success :: Unit -> Bool need io
+    {
+        _ => {
+            status := io_last_success();
+            status
+        }
+    }
+
+    last_error :: Unit -> String need io
+    {
+        _ => {
+            error := io_last_error();
+            error
+        }
+    }
+}

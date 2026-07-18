@@ -1339,7 +1339,7 @@ public sealed partial class MirToLlvmConverter
             : LlvmVoidType.Instance;
 
         var isUnresolvedExternalFfi = TryGetExternalFfiSymbolName(funcRef.Name, funcRef.SymbolId, out var unresolvedExternalFfiName);
-        if (!isUnresolvedExternalFfi && !IsPermittedUnresolvedFunctionName(funcRef.Name))
+        if (!isUnresolvedExternalFfi && !IsPermittedUnresolvedFunction(funcRef))
         {
             ReportUnresolvedDirectFunctionReference(call, funcRef);
         }
@@ -1366,17 +1366,16 @@ public sealed partial class MirToLlvmConverter
         };
     }
 
-    private static bool IsPermittedUnresolvedFunctionName(string? functionName)
+    private static bool IsPermittedUnresolvedFunction(MirFunctionRef function)
     {
-        // ADT constructor names (simple uppercase identifiers like "Some")
-        if (TypeSemantics.IsLikelyAdtConstructorByName(functionName))
+        if (TypeSemantics.IsAdtConstructorCall(function))
             return true;
 
         // Trait-qualified paths (e.g. "Applicative.pure") — trait resolution
         // may not connect the implementation in all cases, so these are
         // permitted to remain unresolved at the LLVM level.
-        if (!string.IsNullOrWhiteSpace(functionName) &&
-            functionName.Contains(WellKnownStrings.Separators.Path, StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(function.Name) &&
+            function.Name.Contains(WellKnownStrings.Separators.Path, StringComparison.Ordinal))
         {
             return true;
         }

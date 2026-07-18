@@ -1,0 +1,28 @@
+Shared :: module {
+    import Traits
+
+    Shared[T] :: type {
+    }
+
+
+    new[T] :: T -> Shared[T] intrinsic "shared_new";
+
+
+
+    borrow[T] :: Shared[T] -> Ref[T] intrinsic "shared_borrow";
+
+
+
+    clone[T] :: Shared[T] -> Shared[T] intrinsic "shared_clone";
+
+
+    CloneSharedT :: instance Traits.Clone {
+
+        clone[T] :: Shared[T] -> Shared[T] intrinsic "shared_clone";
+
+    }
+
+
+    ptr_eq[T] :: Shared[T] -> Shared[T] -> Bool intrinsic "shared_ptr_eq";
+
+}

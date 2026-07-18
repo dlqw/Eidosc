@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Eidosc.Ast.Types;
+using Eidosc.Syntax;
 using Eidosc.Utils;
 
 namespace Eidosc.Types;
@@ -161,6 +162,77 @@ internal sealed record ComptimeSequenceValue(
         $"sequence:{Kind}:{Elements.Count}:[{string.Join(";", Elements.Select(static element => element.CanonicalText))}]";
 }
 
+internal sealed record ComptimeMapEntry(ComptimeValue Key, ComptimeValue Value);
+
+internal sealed record ComptimeMapValue : ComptimeValue
+{
+    private ComptimeMapValue(IReadOnlyList<ComptimeMapEntry> entries)
+    {
+        Entries = entries;
+    }
+
+    public IReadOnlyList<ComptimeMapEntry> Entries { get; }
+
+    protected override string UntypedCanonicalText =>
+        $"map:{Entries.Count}:[{string.Join(";", Entries.Select(static entry =>
+            $"{entry.Key.CanonicalText}=>{entry.Value.CanonicalText}"))}]";
+
+    public static bool TryCreate(
+        IEnumerable<ComptimeMapEntry> entries,
+        out ComptimeMapValue value,
+        out string reason)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        var byKey = new Dictionary<string, ComptimeMapEntry>(StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            var key = entry.Key.CanonicalText;
+            if (byKey.TryGetValue(key, out var existing))
+            {
+                if (!existing.Value.StructuralEquals(entry.Value))
+                {
+                    value = new ComptimeMapValue([]);
+                    reason = "comptime map contains conflicting values for the same canonical key";
+                    return false;
+                }
+
+                continue;
+            }
+
+            byKey[key] = entry;
+        }
+
+        value = new ComptimeMapValue(byKey.Values
+            .OrderBy(static entry => entry.Key.CanonicalText, StringComparer.Ordinal)
+            .ThenBy(static entry => entry.Value.CanonicalText, StringComparer.Ordinal)
+            .ToArray());
+        reason = string.Empty;
+        return true;
+    }
+}
+
+internal sealed record ComptimeSetValue : ComptimeValue
+{
+    private ComptimeSetValue(IReadOnlyList<ComptimeValue> elements)
+    {
+        Elements = elements;
+    }
+
+    public IReadOnlyList<ComptimeValue> Elements { get; }
+
+    protected override string UntypedCanonicalText =>
+        $"set:{Elements.Count}:[{string.Join(";", Elements.Select(static element => element.CanonicalText))}]";
+
+    public static ComptimeSetValue Create(IEnumerable<ComptimeValue> elements)
+    {
+        ArgumentNullException.ThrowIfNull(elements);
+        return new ComptimeSetValue(elements
+            .DistinctBy(static element => element.CanonicalText, StringComparer.Ordinal)
+            .OrderBy(static element => element.CanonicalText, StringComparer.Ordinal)
+            .ToArray());
+    }
+}
+
 internal sealed record ComptimeNamedValue(string Name, ComptimeValue Value)
 {
     public string CanonicalText => $"{Convert.ToHexString(Encoding.UTF8.GetBytes(Name)).ToLowerInvariant()}={Value.CanonicalText}";
@@ -256,4 +328,88 @@ internal sealed record ComptimeMetaObjectValue(
         value = ComptimeUnitValue.Instance;
         return false;
     }
+}
+
+internal enum ComptimeSyntaxIdentityKind
+{
+    None,
+    Hygiene,
+    Declaration,
+    Type,
+    Identifier
+}
+
+internal sealed record ComptimeSyntaxIdentity(
+    ComptimeSyntaxIdentityKind Kind,
+    string StableIdentity,
+    SymbolId SymbolId,
+    TypeId TypeId,
+    string Category = "")
+{
+    public string CanonicalText =>
+        $"{Kind}:{ComptimeValue.EncodeText(StableIdentity)}:{ComptimeValue.EncodeText(Category)}";
+}
+
+internal sealed record ComptimeSyntaxToken(
+    SyntaxKind Kind,
+    string TerminalName,
+    TerminalFlag TerminalFlags,
+    string Spelling,
+    string LeadingTrivia,
+    string TrailingTrivia,
+    SourceSpan OriginSpan,
+    ComptimeSyntaxIdentity? Identity = null)
+{
+    public string CanonicalText =>
+        $"token:{SyntaxSchema.Version}:{Kind}:{ComptimeValue.EncodeText(TerminalName)}:" +
+        $"{(int)TerminalFlags}:{ComptimeValue.EncodeText(LeadingTrivia)}:" +
+        $"{ComptimeValue.EncodeText(Spelling)}:{ComptimeValue.EncodeText(TrailingTrivia)}:" +
+        $"{OriginSpan.Position}:{OriginSpan.Length}:" +
+        (Identity?.CanonicalText ?? "identity:none");
+}
+
+internal sealed record ComptimeSyntaxOrigin(
+    string SourceUri,
+    int Position,
+    int Line,
+    int Column,
+    int Length,
+    string ExpansionTrace)
+{
+    public string CanonicalText =>
+        $"origin:{ComptimeValue.EncodeText(SourceUri)}:{Position}:{Line}:{Column}:{Length}:" +
+        ComptimeValue.EncodeText(ExpansionTrace);
+}
+
+internal sealed record ComptimeSyntaxValue(
+    SyntaxCategory Category,
+    IReadOnlyList<ComptimeSyntaxToken> Tokens,
+    string TrailingTrivia,
+    ComptimeSyntaxOrigin Origin,
+    string HygieneIdentity) : ComptimeValue
+{
+    protected override string UntypedCanonicalText =>
+        $"syntax:{SyntaxSchema.Version}:{Category}:{ComptimeValue.EncodeText(HygieneIdentity)}:" +
+        $"{Origin.CanonicalText}:[{string.Join(";", Tokens.Select(static token => token.CanonicalText))}]:" +
+        ComptimeValue.EncodeText(TrailingTrivia);
+
+    public string Render() => string.Concat(
+        Tokens.Select(static token => token.LeadingTrivia + token.Spelling + token.TrailingTrivia)) +
+        TrailingTrivia;
+}
+
+internal sealed record ComptimeTokensValue(
+    IReadOnlyList<ComptimeSyntaxToken> Tokens,
+    string TrailingTrivia,
+    ComptimeSyntaxOrigin Origin,
+    string HygieneIdentity) : ComptimeValue
+{
+    protected override string UntypedCanonicalText =>
+        $"tokens:{SyntaxSchema.Version}:{ComptimeValue.EncodeText(HygieneIdentity)}:" +
+        $"{Origin.CanonicalText}:[{string.Join(";", Tokens.Select(static token => token.CanonicalText))}]:" +
+        ComptimeValue.EncodeText(TrailingTrivia);
+
+    public string Render() => string.Concat(
+        Tokens.Select(static token => token.LeadingTrivia + token.Spelling + token.TrailingTrivia)) +
+        TrailingTrivia;
 }

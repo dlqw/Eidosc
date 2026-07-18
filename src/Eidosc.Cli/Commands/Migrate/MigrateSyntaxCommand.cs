@@ -51,7 +51,7 @@ public static class MigrateSyntaxCommand
         return command;
     }
 
-    private static int Run(MigrateSyntaxOptions options)
+    internal static int Run(MigrateSyntaxOptions options)
     {
         if (!EidosLanguageVersions.IsMigrationVersion(options.From))
         {
@@ -158,8 +158,18 @@ public sealed record SyntaxMigrationEdit(
     string Kind,
     string Description);
 
-public static class SyntaxMigrationPlanner
+public static partial class SyntaxMigrationPlanner
 {
+    private static readonly HashSet<string> BuiltinDeriveNames = new(StringComparer.Ordinal)
+    {
+        "Eq",
+        "Show",
+        "Ord",
+        "Hash",
+        "Clone",
+        "Copy"
+    };
+
     private static readonly string[] IgnoredDirectoryNames =
     [
         ".git",
@@ -241,8 +251,11 @@ public static class SyntaxMigrationPlanner
             .Select(Path.GetFullPath)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var filePlans = CreateFilePlans(sourceFiles, fromSyntax, toSyntax);
         var manifestSyntax = manifest.Language?.Version ?? EidosLanguageVersions.Legacy;
+        var filePlans = string.Equals(manifestSyntax, toSyntax, StringComparison.Ordinal) &&
+                        string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal)
+            ? sourceFiles.Select(CreateVersion07NamingOnlyPlan).ToArray()
+            : CreateFilePlans(sourceFiles, fromSyntax, toSyntax);
 
         return new SyntaxMigrationPlan(
             projectDirectory,
@@ -254,6 +267,20 @@ public static class SyntaxMigrationPlanner
             GetSourceRewriteStatus(filePlans),
             sourceFiles,
             filePlans);
+    }
+
+    private static SyntaxMigrationFilePlan CreateVersion07NamingOnlyPlan(string sourcePath)
+    {
+        var source = File.ReadAllText(sourcePath);
+        var tokens = Tokenize(source, sourcePath);
+        var edits = new List<SyntaxMigrationEdit>();
+        AddVersion07NamingEdits(tokens, edits);
+        var normalizedEdits = NormalizeEdits(edits);
+        return new SyntaxMigrationFilePlan(
+            sourcePath,
+            normalizedEdits.Length == 0 ? "unchanged" : "ready",
+            [],
+            normalizedEdits);
     }
 
     private static SyntaxMigrationPlan CreateSingleFilePlan(string sourceFilePath, string fromSyntax, string toSyntax)
@@ -308,6 +335,25 @@ public static class SyntaxMigrationPlanner
     {
         var source = File.ReadAllText(sourcePath);
         var tokens = Tokenize(source, sourcePath);
+
+        if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
+            string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal) &&
+            !string.Equals(fromSyntax, toSyntax, StringComparison.Ordinal))
+        {
+            var (currentAst, currentDiagnostics) = SyntaxParser.Parse(tokens, sourcePath, toSyntax);
+            if (currentAst != null && currentDiagnostics.Count == 0)
+            {
+                var currentEdits = new List<SyntaxMigrationEdit>();
+                AddVersion07NamingEdits(tokens, currentEdits);
+                var normalizedCurrentEdits = NormalizeEdits(currentEdits);
+                return new SyntaxMigrationFilePlan(
+                    sourcePath,
+                    normalizedCurrentEdits.Length == 0 ? "unchanged" : "ready",
+                    [],
+                    normalizedCurrentEdits);
+            }
+        }
+
         var (ast, diagnostics) = SyntaxParser.Parse(tokens, sourcePath, fromSyntax);
 
         var edits = new List<SyntaxMigrationEdit>();
@@ -325,6 +371,19 @@ public static class SyntaxMigrationPlanner
 
         var declarationBindingPositions = CollectDeclarationBindingPositions(source, tokens, ast, fromSyntax);
         AddWhitespaceSeparatedConsEdits(source, tokens, fullSpan, edits, declarationBindingPositions);
+
+        if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
+            string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal))
+        {
+            AddVersion07Edits(source, tokens, ast, edits);
+            AddVersion07NamingEdits(tokens, edits);
+            var version07Edits = NormalizeEdits(edits);
+            return new SyntaxMigrationFilePlan(
+                sourcePath,
+                version07Edits.Length == 0 ? "unchanged" : "ready",
+                diagnostics.Select(static diagnostic => diagnostic.ToString() ?? "").ToArray(),
+                version07Edits);
+        }
 
         var moduleLevelLetDecls = CollectModuleLevelLetDecls(ast);
         var functionsRequiringFfi = CollectFunctionsRequiringFfi(ast);
@@ -396,6 +455,8 @@ public static class SyntaxMigrationPlanner
         {
             AddDotNamespaceEdits(tokens, fullSpan, edits, declarationBindingPositions);
             AddAdtCommaSeparatorEdits(tokens, ast, edits);
+            AddVersion07Edits(source, tokens, ast, edits);
+            AddVersion07NamingEdits(tokens, edits);
         }
 
         var normalizedEdits = NormalizeEdits(edits);
@@ -409,6 +470,418 @@ public static class SyntaxMigrationPlanner
     private static HashSet<FuncDef> CollectFunctionsRequiringFfi(EidosAstNode ast)
     {
         return CollectFunctionsRequiringNativeEffect(ast, IsFfiOrNativeCall);
+    }
+
+    private static void AddVersion07Edits(
+        string source,
+        IReadOnlyList<Token> tokens,
+        EidosAstNode ast,
+        List<SyntaxMigrationEdit> edits)
+    {
+        foreach (var declaration in EnumerateAst(ast).OfType<Declaration>())
+        {
+            AddAttributeClauseEdits(source, tokens, declaration, edits);
+            if (declaration is not AdtDef { IsTypeAlias: false } adt)
+            {
+                continue;
+            }
+
+            foreach (var field in adt.Fields)
+            {
+                ReplaceFieldColon(tokens, field, edits);
+            }
+
+            foreach (var constructor in adt.Constructors)
+            {
+                if (adt.Constructors.Count == 1 &&
+                    string.Equals(constructor.Name, adt.Name, StringComparison.Ordinal) &&
+                    constructor.PositionalArgs.Count == 0 &&
+                    constructor.ReturnType == null &&
+                    TryCollapseLegacyDefaultProductConstructor(tokens, constructor, edits))
+                {
+                    foreach (var field in constructor.NamedArgs)
+                    {
+                        ReplaceFieldColon(tokens, field, edits);
+                    }
+                    continue;
+                }
+
+                AddCaseTypeConstructorEdits(tokens, constructor, edits);
+                foreach (var field in constructor.NamedArgs)
+                {
+                    ReplaceFieldColon(tokens, field, edits);
+                }
+            }
+        }
+    }
+
+    private static bool TryCollapseLegacyDefaultProductConstructor(
+        IReadOnlyList<Token> tokens,
+        Constructor constructor,
+        List<SyntaxMigrationEdit> edits)
+    {
+        var constructorTokens = tokens
+            .Where(token => token.Location.Position >= constructor.Span.Position &&
+                            token.Location.Position < constructor.Span.EndPosition &&
+                            token is ContentToken)
+            .ToList();
+        if (constructorTokens.Count == 0 ||
+            constructorTokens.Any(token => string.Equals(GetTokenText(token), "::", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var openBraceIndex = constructorTokens.FindIndex(token => GetTokenText(token) == "{");
+        if (openBraceIndex < 0)
+        {
+            edits.Add(new SyntaxMigrationEdit(
+                constructor.Span.Position,
+                constructor.Span.Length,
+                string.Empty,
+                "default-product-constructor",
+                $"Use the synthesized default constructor for product type '{constructor.Name}'."));
+            return true;
+        }
+
+        var closeBraceIndex = constructorTokens.FindLastIndex(token => GetTokenText(token) == "}");
+        if (closeBraceIndex <= openBraceIndex)
+        {
+            return false;
+        }
+
+        var openBrace = constructorTokens[openBraceIndex];
+        var closeBrace = constructorTokens[closeBraceIndex];
+        edits.Add(new SyntaxMigrationEdit(
+            constructor.Span.Position,
+            openBrace.Location.Position + openBrace.Length - constructor.Span.Position,
+            string.Empty,
+            "default-product-constructor",
+            $"Lift fields from legacy same-named constructor '{constructor.Name}' into the product type body."));
+        edits.Add(new SyntaxMigrationEdit(
+            closeBrace.Location.Position,
+            closeBrace.Length,
+            string.Empty,
+            "default-product-constructor",
+            $"Use the synthesized default constructor for product type '{constructor.Name}'."));
+        return true;
+    }
+
+    private static void ReplaceFieldColon(
+        IReadOnlyList<Token> tokens,
+        Field field,
+        List<SyntaxMigrationEdit> edits)
+    {
+        var colon = tokens.FirstOrDefault(token =>
+            token.Location.Position >= field.Span.Position &&
+            token.Location.Position < field.Span.EndPosition &&
+            token is ContentToken &&
+            string.Equals(GetTokenText(token), ":", StringComparison.Ordinal));
+        if (colon == null)
+        {
+            return;
+        }
+
+        edits.Add(new SyntaxMigrationEdit(
+            colon.Location.Position,
+            colon.Length,
+            "::",
+            "type-body-field",
+            $"Use declaration binding syntax for field '{field.Name}'."));
+    }
+
+    private static void AddCaseTypeConstructorEdits(
+        IReadOnlyList<Token> tokens,
+        Constructor constructor,
+        List<SyntaxMigrationEdit> edits)
+    {
+        var constructorTokens = tokens
+            .Where(token => token.Location.Position >= constructor.Span.Position &&
+                            token.Location.Position < constructor.Span.EndPosition)
+            .ToList();
+        if (constructorTokens.Count == 0 ||
+            constructorTokens.Any(token =>
+                token is ContentToken &&
+                string.Equals(GetTokenText(token), "::", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        var depth = 0;
+        Token? shapeStart = null;
+        foreach (var token in constructorTokens.Skip(1))
+        {
+            var text = token is ContentToken ? GetTokenText(token) : string.Empty;
+            if (depth == 0 && text is "(" or "{" or "->")
+            {
+                shapeStart = token;
+                break;
+            }
+            depth += text switch
+            {
+                "[" => 1,
+                "]" => -1,
+                _ => 0
+            };
+        }
+
+        if (shapeStart == null)
+        {
+            edits.Add(new SyntaxMigrationEdit(
+                constructor.Span.EndPosition,
+                0,
+                " :: type {}",
+                "closed-case-type",
+                $"Convert constructor '{constructor.Name}' to a nullary closed case type."));
+        }
+        else if (shapeStart is ContentToken && GetTokenText(shapeStart) != "->")
+        {
+            edits.Add(new SyntaxMigrationEdit(
+                shapeStart.Location.Position,
+                0,
+                ":: type",
+                "closed-case-type",
+                $"Convert constructor '{constructor.Name}' to a closed case type."));
+        }
+        else if (shapeStart is ContentToken && GetTokenText(shapeStart) == "->")
+        {
+            edits.Add(new SyntaxMigrationEdit(
+                shapeStart.Location.Position,
+                shapeStart.Length,
+                ":: type case",
+                "gadt-case-type",
+                $"Convert nullary GADT constructor '{constructor.Name}' to a closed case type."));
+            if (constructor.ReturnType != null)
+            {
+                edits.Add(new SyntaxMigrationEdit(
+                    constructor.ReturnType.Span.EndPosition,
+                    0,
+                    " {}",
+                    "gadt-case-body",
+                    $"Add the empty record body for nullary GADT case '{constructor.Name}'."));
+            }
+            return;
+        }
+
+        var resultArrow = constructorTokens.FirstOrDefault(token =>
+            token is ContentToken && string.Equals(GetTokenText(token), "->", StringComparison.Ordinal));
+        if (resultArrow != null)
+        {
+            edits.Add(new SyntaxMigrationEdit(
+                resultArrow.Location.Position,
+                resultArrow.Length,
+                "case",
+                "gadt-case-clause",
+                $"Convert the result specialization of '{constructor.Name}' to a case clause."));
+        }
+    }
+
+    private static void AddAttributeClauseEdits(
+        string source,
+        IReadOnlyList<Token> tokens,
+        Declaration declaration,
+        List<SyntaxMigrationEdit> edits)
+    {
+        if (declaration.Attributes.Count == 0)
+        {
+            return;
+        }
+
+        var clauses = new List<string>();
+        foreach (var attribute in declaration.Attributes)
+        {
+            clauses.AddRange(ConvertAttributeToClauses(attribute));
+            var attributeEnd = FindAttributeEnd(tokens, attribute);
+            edits.Add(new SyntaxMigrationEdit(
+                attribute.Span.Position,
+                attributeEnd - attribute.Span.Position,
+                string.Empty,
+                "remove-attribute",
+                $"Replace '@{attribute.Name}' with typed declaration clauses."));
+        }
+
+        if (clauses.Count == 0 || !TryFindClauseInsertionPosition(tokens, declaration, out var insertion))
+        {
+            return;
+        }
+
+        var terminator = declaration is FuncDef { Body.Count: 0 } or FuncDecl ? ";" : string.Empty;
+        edits.Add(new SyntaxMigrationEdit(
+            insertion,
+            0,
+            $" {string.Join(" ", clauses)}{terminator}\n",
+            "declaration-clauses",
+            "Attach migrated typed clauses in the declaration's pre-body clause zone."));
+    }
+
+    private static IEnumerable<string> ConvertAttributeToClauses(AstAttribute attribute)
+    {
+        var arguments = attribute.ArgumentTexts.Select(static argument => argument.Trim()).ToList();
+        var specs = ClauseSchema.Entries.Values
+            .Where(spec => spec.Migration?.LegacySpellings.Contains(attribute.Name, StringComparer.Ordinal) == true)
+            .OrderBy(static spec => spec.Keyword, StringComparer.Ordinal)
+            .ToArray();
+        if (specs.Length == 0)
+        {
+            yield return arguments.Count == 0
+                ? $"expand {attribute.Name}"
+                : $"expand {attribute.Name}({string.Join(", ", arguments)})";
+            yield break;
+        }
+
+        if (specs.Any(static spec => spec.Migration!.RuleId == "attribute-derive"))
+        {
+            foreach (var argument in arguments)
+            {
+                yield return BuiltinDeriveNames.Contains(argument)
+                    ? $"derive {argument}"
+                    : $"expand {argument}";
+            }
+            yield break;
+        }
+
+        if (specs.Any(static spec => spec.Migration!.RuleId.StartsWith("attribute-ffi", StringComparison.Ordinal)))
+        {
+            yield return "need ffi";
+            yield return "extern c";
+            if (arguments.FirstOrDefault() is { Length: > 0 } ffiArgument)
+            {
+                var raw = ffiArgument.Trim('"', '\'');
+                var slash = raw.IndexOf('/');
+                if (slash >= 0)
+                {
+                    yield return $"link_library \"{raw[..slash]}\"";
+                    yield return $"link_name \"{raw[(slash + 1)..]}\"";
+                }
+                else
+                {
+                    yield return $"link_name \"{raw}\"";
+                }
+            }
+            yield break;
+        }
+
+        var spec = specs[0];
+        switch (spec.Migration!.RuleId)
+        {
+            case "attribute-cstruct-to-repr-c":
+                yield return $"{spec.Keyword} c";
+                break;
+            case "attribute-effects-to-need":
+                yield return $"{spec.Keyword} {string.Join(", ", arguments.Select(NormalizeEffectName))}";
+                break;
+            case "attribute-generator-to-expand":
+                yield return arguments.Count == 0
+                    ? $"{spec.Keyword} {attribute.Name}"
+                    : $"{spec.Keyword} {attribute.Name}({string.Join(", ", arguments)})";
+                break;
+            default:
+                yield return arguments.Count == 0
+                    ? spec.Keyword
+                    : $"{spec.Keyword} {string.Join(", ", arguments)}";
+                break;
+        }
+    }
+
+    private static string NormalizeEffectName(string effect) => effect.Trim() switch
+    {
+        "IO" => "io",
+        "FFI" => "ffi",
+        var other => other
+    };
+
+    private static bool TryFindClauseInsertionPosition(
+        IReadOnlyList<Token> tokens,
+        Declaration declaration,
+        out int position)
+    {
+        var depth = 0;
+        foreach (var token in tokens.Where(token =>
+                     token.Location.Position >= declaration.Span.Position &&
+                     token.Location.Position < declaration.Span.EndPosition))
+        {
+            var text = token is ContentToken ? GetTokenText(token) : string.Empty;
+            if (depth == 0 && text is "{" or ";" or "=")
+            {
+                position = token.Location.Position;
+                return true;
+            }
+            depth += text switch
+            {
+                "(" or "[" => 1,
+                ")" or "]" => -1,
+                _ => 0
+            };
+        }
+
+        position = declaration switch
+        {
+            FuncDef or FuncDecl => FindLastContentTokenEnd(tokens, declaration.Span),
+            _ => declaration.Span.EndPosition
+        };
+        return true;
+    }
+
+    private static int FindAttributeEnd(IReadOnlyList<Token> tokens, AstAttribute attribute)
+    {
+        var startIndex = FindTokenIndex(tokens, attribute.Span, "@");
+        if (startIndex < 0)
+        {
+            startIndex = tokens.ToList().FindIndex(token => token.Location.Position == attribute.Span.Position);
+        }
+
+        if (startIndex < 0)
+        {
+            return attribute.Span.EndPosition;
+        }
+
+        var end = tokens[startIndex].Location.Position + tokens[startIndex].Length;
+        var depth = 0;
+        for (var index = startIndex + 1; index < tokens.Count; index++)
+        {
+            var token = tokens[index];
+            if (token is CommentToken or EofToken)
+            {
+                break;
+            }
+
+            var text = GetTokenText(token);
+            if (depth == 0 && index > startIndex + 1 && text != "(")
+            {
+                break;
+            }
+
+            end = token.Location.Position + token.Length;
+            if (text == "(")
+            {
+                depth++;
+            }
+            else if (text == ")")
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        return end;
+    }
+
+    private static int FindLastContentTokenEnd(IReadOnlyList<Token> tokens, SourceSpan declarationSpan)
+    {
+        for (var index = tokens.Count - 1; index >= 0; index--)
+        {
+            var token = tokens[index];
+            if (token is ContentToken &&
+                token.Location.Position >= declarationSpan.Position &&
+                token.Location.Position < declarationSpan.EndPosition)
+            {
+                return token.Location.Position + token.Length;
+            }
+        }
+
+        return declarationSpan.EndPosition;
     }
 
     private static HashSet<FuncDef> CollectFunctionsRequiringIo(EidosAstNode ast)
@@ -1808,7 +2281,11 @@ public static class SyntaxMigrationPlanner
             prefix = prefix["export ".Length..].TrimStart();
         }
 
-        if (prefix.Length == 0 || prefix.Contains(';') || prefix.Contains('{') || prefix.Contains('}'))
+        if (prefix.Length == 0 ||
+            prefix.Contains(';') ||
+            prefix.Contains('{') ||
+            prefix.Contains('}') ||
+            prefix.Contains('='))
         {
             return false;
         }
@@ -1830,6 +2307,7 @@ public static class SyntaxMigrationPlanner
         var suffix = source[(op.Location.Position + op.Length)..lineEnd];
         return suffix.Contains("->", StringComparison.Ordinal) ||
                suffix.Contains("=>", StringComparison.Ordinal) ||
+               suffix.Contains('=') ||
                suffix.TrimStart().StartsWith("comptime ", StringComparison.Ordinal);
     }
 

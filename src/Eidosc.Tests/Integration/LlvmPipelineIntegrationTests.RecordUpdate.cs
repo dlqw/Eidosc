@@ -15,20 +15,20 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Text
+import std.Text
 
 Direction :: type {
-    North ,
-    East
+    North :: type {} ,
+    East :: type {}
 }
 
 State :: type {
-    label: String,
-    dir: Direction,
-    food: String,
-    score: Int,
-    alive: Bool,
-    tick: Int
+    label:: String,
+    dir:: Direction,
+    food:: String,
+    score:: Int,
+    alive:: Bool,
+    tick:: Int
 }
 
 update_state :: State -> State

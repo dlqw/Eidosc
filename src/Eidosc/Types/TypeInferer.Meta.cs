@@ -1,3 +1,4 @@
+using Eidosc.Ast.Declarations;
 using Eidosc.Diagnostic;
 using Eidosc.Utils;
 
@@ -5,7 +6,7 @@ namespace Eidosc.Types;
 
 public sealed partial class TypeInferer
 {
-    private MetaComptimeContext CreateMetaComptimeContext(string trace) => new(
+    private MetaComptimeContext CreateMetaComptimeContext(string trace, SymbolId requester) => new(
         _symbolTable,
         _adtDefinitionsBySymbol,
         _traitDefinitionsBySymbol,
@@ -13,7 +14,15 @@ public sealed partial class TypeInferer
         ExpansionTrace: trace,
         ResourceBudget: ComptimeExecution.CreateBudget(),
         Trace: ComptimeExecution.Trace,
-        TracePhase: "types.comptime");
+        TracePhase: "types.comptime",
+        Declarations: _declarationsBySymbol,
+        QueryAccess: new MetaQueryAccessContext(
+            _symbolTable.Modules.TryGetOwningModuleId(requester, out var moduleId) ? moduleId : SymbolId.None,
+            ClauseStage.Body,
+            MetaQueryCapability.CurrentPackagePrivateShapes | MetaQueryCapability.CurrentPackageBodies,
+            RequesterIdentity: _symbolTable.Modules.GetModule(moduleId) is { } requesterModule
+                ? MetaComptimeIntrinsics.CreateStableIdentity(requesterModule, _symbolTable)
+                : string.Empty));
 
     private void AddMetaComptimeDiagnostic(
         MetaDiagnosticLevel level,

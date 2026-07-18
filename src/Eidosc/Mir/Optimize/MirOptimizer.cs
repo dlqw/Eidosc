@@ -337,6 +337,10 @@ public sealed partial class MirOptimizer
             case MirAssign assign:
                 CollectOperandFunctionRefs(assign.Source, fingerprints);
                 break;
+            case MirCaseInject injection:
+                CollectOperandFunctionRefs(injection.Target, fingerprints);
+                CollectOperandFunctionRefs(injection.Operand, fingerprints);
+                break;
             case MirCall call:
                 CollectOperandFunctionRefs(call.Function, fingerprints);
                 foreach (var argument in call.Arguments)
@@ -376,6 +380,9 @@ public sealed partial class MirOptimizer
         return instruction switch
         {
             MirAssign assign => ContainsNewOperandFunctionRef(assign.Source, existingFingerprints),
+            MirCaseInject injection =>
+                ContainsNewOperandFunctionRef(injection.Target, existingFingerprints) ||
+                ContainsNewOperandFunctionRef(injection.Operand, existingFingerprints),
             MirCall call => ContainsNewOperandFunctionRef(call.Function, existingFingerprints) ||
                             ContainsNewOperandFunctionRef(call.Arguments, existingFingerprints),
             MirBinOp binOp => ContainsNewOperandFunctionRef(binOp.Left, existingFingerprints) ||

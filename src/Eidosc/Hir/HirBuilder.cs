@@ -43,14 +43,14 @@ public sealed partial class HirBuilder
 
     private static readonly FrozenDictionary<Ast.BinaryOp, StdlibDesugaring> StdlibOperatorDesugaring = new Dictionary<Ast.BinaryOp, StdlibDesugaring>
     {
-        [Ast.BinaryOp.Bind] = new("Std.Monad.Monad", "bind", false),
-        [Ast.BinaryOp.Coalesce] = new("Std.Option", "unwrap_or", false),
-        [Ast.BinaryOp.ComposeRight] = new("Std.Fn", "compose", true),
-        [Ast.BinaryOp.ComposeLeft] = new("Std.Fn", "compose", false),
-        [Ast.BinaryOp.Fmap] = new("Std.Functor.Functor", "fmap", true),
-        [Ast.BinaryOp.Ap] = new("Std.Applicative.Applicative", "apply", false),
-        [Ast.BinaryOp.Append] = new("Std.Semigroup.Semigroup", "append", false),
-        [Ast.BinaryOp.Prepend] = new("Std.Seq", "cons", false),
+        [Ast.BinaryOp.Bind] = new("std.Monad.Monad", "bind", false),
+        [Ast.BinaryOp.Coalesce] = new("std.Option", "unwrap_or", false),
+        [Ast.BinaryOp.ComposeRight] = new("std.Functions", "compose", true),
+        [Ast.BinaryOp.ComposeLeft] = new("std.Functions", "compose", false),
+        [Ast.BinaryOp.Fmap] = new("std.Functor.Functor", "fmap", true),
+        [Ast.BinaryOp.Ap] = new("std.Applicative.Applicative", "apply", false),
+        [Ast.BinaryOp.Append] = new("std.Semigroup.Semigroup", "append", false),
+        [Ast.BinaryOp.Prepend] = new("std.Seq", "cons", false),
     }.ToFrozenDictionary();
 
     private readonly SymbolTable _symbolTable;
@@ -109,6 +109,8 @@ public sealed partial class HirBuilder
         // impl 方法（FuncDef）已在 AppendModuleDeclarations 中作为 HirFunc 转换，
         // 这里根据 ImplSymbol 的语义信息将它们关联到对应的 HirImpl。
         CollectImplDeclarations(hirModule);
+
+        HirGeneratedOriginPropagator.Propagate(moduleDecl, hirModule);
 
         return hirModule;
     }
@@ -266,7 +268,10 @@ public sealed partial class HirBuilder
                 static entry => entry.index);
         try
         {
-            if (func.Body.Count > 0)
+            // Compile-time functions have already been evaluated by the Types phase and are
+            // never lowered to MIR. Keeping their executable AST bodies here would leak
+            // compile-time-only nodes such as quote expressions across the HIR boundary.
+            if (!func.IsComptime && func.Body.Count > 0)
             {
                 bodyNode = ConvertFunctionBody(func, parameters, returnType);
             }
@@ -523,6 +528,8 @@ public sealed partial class HirBuilder
     {
         return pattern switch
         {
+            ExpandPattern { ExpandedPattern: not null } expansion =>
+                IsIrrefutablePattern(expansion.ExpandedPattern),
             VarPattern => true,
             WildcardPattern => true,
             AsPattern asPattern => !string.IsNullOrWhiteSpace(asPattern.BindingName) &&
@@ -1203,7 +1210,7 @@ public sealed partial class HirBuilder
             return CreateRecoveredHirError(node);
         }
 
-        return node switch
+        var converted = node switch
         {
             LiteralExpr lit => ConvertLiteral(lit),
             IdentifierExpr id => ConvertIdentifier(id),
@@ -1261,9 +1268,46 @@ public sealed partial class HirBuilder
             GivenExpr given => ConvertExprOrFallback(given.Target, "given target", given.Span),
             AssociatedConstExpr associatedConst => ConvertAssociatedConstExpr(associatedConst),
             PathExpr path => ConvertPath(path),
+            QuoteExpr quote => ReportEscapedQuoteExpr(quote),
+            ExpandExpr { ExpandedExpression: { } expanded } => ConvertExpr(expanded),
+            ExpandExpr expansion => ReportAndCreateError(
+                "expression expand crossed the HIR boundary without materialization",
+                expansion.Span,
+                "E5122",
+                fallbackKind: "expression",
+                reason: "expand-crossed-namer-types-boundary",
+                context: "Namer-to-Types/HIR phase boundary",
+                astNodeKind: nameof(ExpandExpr)),
             _ => ReportUnsupportedExpr(node)
         };
+
+        if (_typeInferer != null &&
+            _typeInferer.TryGetClosedCaseInjection(node.Span, out var injection))
+        {
+            var sourceTypeId = _typeRegistry.GetOrCreateClosedCaseLayoutTypeId(injection.SourceType);
+            var targetTypeId = _typeRegistry.GetOrCreateClosedCaseLayoutTypeId(injection.TargetType);
+            return new HirCaseInject
+            {
+                Operand = converted,
+                SourceCase = injection.SourceCase,
+                TargetAncestor = injection.TargetAncestor,
+                SourceTypeId = sourceTypeId,
+                TypeId = targetTypeId,
+                Span = node.Span
+            };
+        }
+
+        return converted;
     }
+
+    private HirNode ReportEscapedQuoteExpr(QuoteExpr quote) => ReportAndCreateError(
+        DiagnosticMessages.QuoteExpressionCrossedHirBoundary,
+        quote.Span,
+        "E5121",
+        fallbackKind: "expression",
+        reason: "quote-crossed-types-hir-boundary",
+        context: "Types-to-HIR phase boundary",
+        astNodeKind: nameof(QuoteExpr));
 
     private HirNode ConvertAssociatedConstExpr(AssociatedConstExpr associatedConst)
     {
@@ -1975,6 +2019,14 @@ public sealed partial class HirBuilder
 
     private HirNode ConvertMethodCall(MethodCallExpr methodCall)
     {
+        if (methodCall.ResolvedStaticExpression != null)
+        {
+            return ConvertExprOrFallback(
+                methodCall.ResolvedStaticExpression,
+                "static member projection",
+                methodCall.Span);
+        }
+
         var desugared = methodCall.ToDesugaredCall();
         return ConvertCall(desugared, HirCallSurfaceSyntax.Method);
     }
@@ -2525,9 +2577,10 @@ public sealed partial class HirBuilder
 
     private HirNode BuildLetQuestionFailureValue(LetQuestionDecl letQuestionDecl, TypeId returnTypeId)
     {
+        HirCall failureCall;
         if (letQuestionDecl.BindingKind == LetQuestionBindingKind.Result)
         {
-            return BuildLetQuestionConstructorCall(
+            failureCall = BuildLetQuestionConstructorCall(
                 "Err",
                 letQuestionDecl.FailureConstructorSymbolId,
                 [
@@ -2542,13 +2595,41 @@ public sealed partial class HirBuilder
                 letQuestionDecl.Span,
                 returnTypeId);
         }
+        else
+        {
+            failureCall = BuildLetQuestionConstructorCall(
+                "None",
+                letQuestionDecl.FailureConstructorSymbolId,
+                [],
+                letQuestionDecl.Span,
+                returnTypeId);
+        }
 
-        return BuildLetQuestionConstructorCall(
-            "None",
-            letQuestionDecl.FailureConstructorSymbolId,
-            [],
-            letQuestionDecl.Span,
-            returnTypeId);
+        if (letQuestionDecl.ShortCircuitReturnType is not DrivenType returnType ||
+            _typeInferer?.Substitution.Apply(returnType) is not TyCon targetType ||
+            _symbolTable.GetSymbol<CtorSymbol>(letQuestionDecl.FailureConstructorSymbolId) is not { } constructor ||
+            _symbolTable.GetSymbol<AdtSymbol>(constructor.OwnerAdt) is not { IsCaseType: true } sourceCase)
+        {
+            return failureCall;
+        }
+
+        var sourceType = targetType with
+        {
+            Name = $"{targetType.Name}.{sourceCase.Name}",
+            Symbol = sourceCase.Id,
+            Id = sourceCase.TypeId
+        };
+        var sourceTypeId = _typeRegistry.GetOrCreateClosedCaseLayoutTypeId(sourceType);
+        failureCall = failureCall with { TypeId = sourceTypeId };
+        return new HirCaseInject
+        {
+            Operand = failureCall,
+            SourceCase = sourceCase.Id,
+            TargetAncestor = targetType.Symbol,
+            SourceTypeId = sourceTypeId,
+            TypeId = returnTypeId,
+            Span = letQuestionDecl.Span
+        };
     }
 
     private HirCall BuildLetQuestionConstructorCall(
@@ -2796,7 +2877,8 @@ public sealed partial class HirBuilder
             return CallConvention.Normal;
         }
 
-        return CallConvention.Normal;
+        return _symbolTable.GetSymbol<CtorSymbol>(symbolId) != null
+            ? CallConvention.Constructor
+            : CallConvention.Normal;
     }
 }
-

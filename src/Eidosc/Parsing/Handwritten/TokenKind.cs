@@ -18,12 +18,8 @@ public static class TokenKind
     public static bool IsIdentifier(Token token)
         => token is ContentToken { Kind: SyntaxKind.Identifier } || IsContextualLowerIdentifier(token);
 
-    public static bool IsTypeIdentifier(Token token)
-        => token is ContentToken { Kind: SyntaxKind.TypeIdentifier };
-
     public static bool IsAnyIdentifier(Token token)
-        => token is ContentToken { Kind: SyntaxKind.Identifier or SyntaxKind.TypeIdentifier }
-           || IsContextualLowerIdentifier(token);
+        => IsIdentifier(token);
 
     public static bool IsOperatorIdentifier(Token token)
         => token is ContentToken { Kind: SyntaxKind.OperatorIdentifier };

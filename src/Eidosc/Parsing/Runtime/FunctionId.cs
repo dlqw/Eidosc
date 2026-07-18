@@ -21,7 +21,7 @@ public sealed record FunctionId
     public SymbolKind Kind { get; init; } = SymbolKind.Function;
 
     /// <summary>
-    /// 模块全名（如 "Std.Math"）。
+    /// 模块全名（如 "std.Math"）。
     /// 空字符串表示当前模块或无法确定模块。
     /// </summary>
     public string Module { get; init; } = "";
@@ -43,7 +43,7 @@ public sealed record FunctionId
     public string Name { get; init; } = "";
 
     /// <summary>
-    /// 源码级符号全名（如 "Std.Math.abs"）。
+    /// 源码级符号全名（如 "std.Math.abs"）。
     /// 含 package 和模块路径前缀，使用 :: 分隔符连接最终符号名。
     /// </summary>
     public string QualifiedName { get; init; } = "";

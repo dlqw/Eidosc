@@ -28,9 +28,30 @@ public sealed class LspTextEdit
     public string NewText { get; set; } = "";
 }
 
+public sealed class LspTextDocumentEdit
+{
+    public LspVersionedTextDocumentIdentifier TextDocument { get; set; } = new();
+    public List<LspTextEdit> Edits { get; set; } = [];
+}
+
+public sealed class LspVersionedTextDocumentIdentifier
+{
+    public string Uri { get; set; } = "";
+    public int? Version { get; set; }
+}
+
+public sealed class LspRenameFile
+{
+    [JsonPropertyName("kind")]
+    public string Kind { get; set; } = "rename";
+    public string OldUri { get; set; } = "";
+    public string NewUri { get; set; } = "";
+}
+
 public sealed class LspWorkspaceEdit
 {
     public Dictionary<string, List<LspTextEdit>> Changes { get; set; } = [];
+    public List<object>? DocumentChanges { get; set; }
 }
 
 public sealed class LspCodeAction

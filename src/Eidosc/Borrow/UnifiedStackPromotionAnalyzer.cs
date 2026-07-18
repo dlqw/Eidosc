@@ -190,6 +190,10 @@ public sealed class UnifiedStackPromotionAnalyzer
                 AddAlias(move.Source, move.Target, aliases);
                 break;
 
+            case MirCaseInject injection:
+                AddAlias(injection.Operand, injection.Target, aliases);
+                break;
+
             case MirLoad load:
                 CollectLocalValue(load.Source, escapedLocals);
                 break;

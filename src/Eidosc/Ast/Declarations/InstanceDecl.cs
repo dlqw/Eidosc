@@ -21,6 +21,7 @@ public record InstanceDecl : Declaration
     public List<FuncDef> Methods { get; private set; } = [];
     public List<AssociatedTypeDecl> AssociatedTypes { get; private set; } = [];
     public List<AssociatedConstDecl> AssociatedConsts { get; private set; } = [];
+    public List<EidosAstNode> Members { get; private set; } = [];
 
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {
@@ -38,6 +39,20 @@ public record InstanceDecl : Declaration
     internal void SetMethods(List<FuncDef> methods) => Methods = methods;
     internal void SetAssociatedTypes(List<AssociatedTypeDecl> associatedTypes) => AssociatedTypes = associatedTypes;
     internal void SetAssociatedConsts(List<AssociatedConstDecl> associatedConsts) => AssociatedConsts = associatedConsts;
+    internal void SetMembers(List<EidosAstNode> members) => Members = members;
+    internal void AppendMember(EidosAstNode member) => Members.Add(member);
+    internal bool ReplaceMemberExpansion(ExpandDeclaration expansion, IReadOnlyList<EidosAstNode> members)
+    {
+        var index = Members.FindIndex(member => ReferenceEquals(member, expansion));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Members.RemoveAt(index);
+        Members.InsertRange(index, members);
+        return true;
+    }
 
     public override XmlElement ToXmlElement(XmlDocument doc)
     {

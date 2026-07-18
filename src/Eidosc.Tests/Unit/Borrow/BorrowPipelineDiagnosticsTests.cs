@@ -146,7 +146,7 @@ use :: Int -> Int
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 read :: Ref[Range] -> Int
@@ -226,7 +226,7 @@ use :: Ref[Int] -> Int
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 inc :: Int -> Int
@@ -257,7 +257,7 @@ use :: Ref[Range] -> Int
     {
         const string source = """
 ReaderBox[T] :: type {
-    reader: Ref[T], tag: Int
+    reader:: Ref[T], tag:: Int
 }
 
 read :: Ref[Int] -> Int
@@ -288,7 +288,7 @@ use :: Ref[ReaderBox[Int]] -> Int
     {
         const string source = """
 WriterBox[T] :: type {
-    writer: MRef[T], tag: Int
+    writer:: MRef[T], tag:: Int
 }
 
 read :: Ref[Int] -> Int
@@ -319,7 +319,7 @@ use :: Ref[WriterBox[Int]] -> Int
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 first_start :: Ref[Seq[Range]] -> Int
@@ -372,7 +372,7 @@ use :: Ref[Seq[Ref[Int]]] -> Int
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 start :: Ref[Range] -> Bool
@@ -430,7 +430,7 @@ passthrough :: Ref[Int] -> Ref[Int]
     {
         const string source = """
 Box :: type {
-    value: Int, tag: Int
+    value:: Int, tag:: Int
 }
 
 borrow_value :: Ref[Box] -> Ref[Int]

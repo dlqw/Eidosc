@@ -81,12 +81,12 @@ main :: Unit -> Float
     public void Types_StdlibSymbolicOperators_InferWithoutUnsupportedDiagnostics()
     {
         const string source = """
-import Std.Applicative
-import Std.Fn
-import Std.Functor
-import Std.Monad
-import Std.Option
-import Std.Semigroup
+import std.Applicative
+import std.Functions
+import std.Functor
+import std.Monad
+import std.Option
+import std.Semigroup
 
 inc :: Int -> Int
 {
@@ -149,8 +149,8 @@ main :: Unit -> Int
     public void Types_InvalidFmapOperand_ReportsMismatchWithoutTrustworthyFreshType()
     {
         const string source = """
-import Std.Functor
-import Std.Option
+import std.Functor
+import std.Option
 
 inc :: Int -> Int
 {

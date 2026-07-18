@@ -20,7 +20,7 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-main :: Unit -> Int need FFI, IO
+main :: Unit -> Int need ffi, io
 {
     _ => {
         line := read_line();

@@ -257,6 +257,57 @@ public sealed partial class MirGenericSpecializer
                 yield return projectedCandidate;
             }
         }
+
+        if (SupportsHigherKindedDispatchProjection(ownerTrait) &&
+            TryBuildClosedCaseRootConstructorShape(receiverTypeId, out var rootConstructorShape) &&
+            seen.Add(rootConstructorShape))
+        {
+            yield return rootConstructorShape;
+        }
+    }
+
+    private bool TryBuildClosedCaseRootConstructorShape(
+        TypeId receiverTypeId,
+        out ImplTypeShapeNode rootConstructorShape)
+    {
+        rootConstructorShape = ImplWildcardShapeNode.Instance;
+        if (_symbolTable == null ||
+            !TryGetTypeDescriptor(receiverTypeId, out var descriptor) ||
+            descriptor is not TypeDescriptor.TyCon tyCon ||
+            !TryResolveConstructorSymbolId(tyCon.Constructor, out var caseId) ||
+            _symbolTable.GetSymbol<AdtSymbol>(caseId) is not { IsCaseType: true })
+        {
+            return false;
+        }
+
+        var rootId = _symbolTable.GetClosedCaseRoot(caseId);
+        if (rootId == caseId ||
+            _symbolTable.GetSymbol<AdtSymbol>(rootId) is not { } rootSymbol)
+        {
+            return false;
+        }
+
+        var rootTypeParameterCount = _symbolTable
+            .GetClosedCaseEffectiveGenericParameterIds(rootId)
+            .Count(parameterId =>
+                _symbolTable.GetSymbol<TypeParamSymbol>(parameterId)?.ParameterKind == GenericParameterKind.Type);
+        if (tyCon.TypeArgs.Length < rootTypeParameterCount)
+        {
+            return false;
+        }
+
+        var rootShape = new ImplConstructorShapeNode(
+            TypeConstructorKey.FromSymbol(rootId).ToDescriptorString(),
+            tyCon.TypeArgs
+                .Take(rootTypeParameterCount)
+                .Select(BuildImplementingTypeShape)
+                .ToList())
+        {
+            SymbolId = rootId,
+            TypeId = rootSymbol.TypeId
+        };
+
+        return TryProjectHigherKindedImplementingType(rootShape, out rootConstructorShape);
     }
 
 }

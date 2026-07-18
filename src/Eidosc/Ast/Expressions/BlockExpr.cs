@@ -151,4 +151,26 @@ public record BlockExpr : Expression
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
     internal void AddStatement(EidosAstNode stmt) => Statements.Add(stmt);
     internal void SetResultExpression(EidosAstNode expr) => ResultExpression = expr;
+
+    internal bool ReplaceStatement(
+        EidosAstNode statement,
+        IReadOnlyList<EidosAstNode> replacements)
+    {
+        var index = Statements.FindIndex(candidate => ReferenceEquals(candidate, statement));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Statements.RemoveAt(index);
+        Statements.InsertRange(index, replacements);
+        if (ReferenceEquals(ResultExpression, statement))
+        {
+            ResultExpression = replacements.Count == 1 && replacements[0] is Expression
+                ? replacements[0]
+                : null;
+        }
+
+        return true;
+    }
 }

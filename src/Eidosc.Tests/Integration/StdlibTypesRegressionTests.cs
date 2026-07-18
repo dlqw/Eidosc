@@ -11,27 +11,27 @@ public sealed partial class StdlibTypesRegressionTests
 {
     private static readonly string[] RepresentativeStdlibFileNames =
     [
-        "Alternative.eidos",
-        "Applicative.eidos",
-        "FFI.eidos",
-        "Fn.eidos",
-        "Functor.eidos",
-        "GameMath.eidos",
-        "Option.eidos",
-        "Result.eidos",
-        "Seq.eidos",
-        "SeqBuilder.eidos",
-        "Text.eidos",
-        "Trait.eidos",
-        "Traversable.eidos"
+        "alternative.eidos",
+        "applicative.eidos",
+        "ffi.eidos",
+        "functions.eidos",
+        "functor.eidos",
+        "game_math.eidos",
+        "option.eidos",
+        "result.eidos",
+        "seq.eidos",
+        "seq_builder.eidos",
+        "text.eidos",
+        "traits.eidos",
+        "traversable.eidos"
     ];
 
     private static readonly string[] StandaloneTypeCheckExclusions =
     [
-        "AsyncRuntime.eidos",
-        "CommandLine.eidos",
-        "Promise.eidos",
-        "TaskGroup.eidos"
+        "async_runtime.eidos",
+        "command_line.eidos",
+        "promise.eidos",
+        "task_group.eidos"
     ];
 
     public static IEnumerable<object[]> StandaloneStdlibFiles() =>
@@ -56,7 +56,7 @@ public sealed partial class StdlibTypesRegressionTests
     [MemberData(nameof(StandaloneStdlibFiles))]
     public void StandaloneStdlibFile_TypesWithoutErrors(string filePath)
     {
-        var result = CompileFile(filePath, CompilationPhase.Types);
+        var result = CompileFile(filePath, CompilationPhase.Types, denyStyle: true);
         var errors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Level == DiagnosticLevel.Error)
             .Select(static diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")
@@ -113,7 +113,8 @@ public sealed partial class StdlibTypesRegressionTests
     private static CompilationResult CompileFile(
         string filePath,
         CompilationPhase phase,
-        bool noImplicitPrelude = true)
+        bool noImplicitPrelude = true,
+        bool denyStyle = false)
     {
         var source = File.ReadAllText(filePath);
         return new CompilationPipeline(source, new CompilationOptions
@@ -121,6 +122,7 @@ public sealed partial class StdlibTypesRegressionTests
             InputFile = filePath,
             StopAtPhase = phase,
             NoImplicitPrelude = noImplicitPrelude,
+            DenyStyle = denyStyle,
             UseColors = false
         }).Run();
     }

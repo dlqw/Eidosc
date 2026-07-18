@@ -254,7 +254,10 @@ internal static class PrecompiledModuleCache
 
             if (ch == '=' && IsValueInitializerEquals(source, index))
             {
-                builder.Append(';');
+                // Keep the typed-binding delimiter so the signature parser can
+                // distinguish `name :: Type = ;` from an untyped value whose
+                // expression happens to be a type-shaped identifier.
+                builder.Append("= ;");
                 valueInitializerReplacementCount++;
                 index = SkipValueInitializer(source, index);
                 continue;
@@ -316,21 +319,119 @@ internal static class PrecompiledModuleCache
             return false;
         }
 
-        var importTarget = trimmedLine["import".Length..].TrimStart();
-        var moduleNameLength = 0;
-        while (moduleNameLength < importTarget.Length &&
-               IsIdentifierChar(importTarget[moduleNameLength]))
-        {
-            moduleNameLength++;
-        }
-
-        if (moduleNameLength == 0)
+        if (!TryGetImportBindingNames(trimmedLine, out var bindingNames))
         {
             return false;
         }
 
-        var moduleName = importTarget[..moduleNameLength].ToString();
-        return !ContainsIdentifierOutsideRange(source, moduleName, lineStart, lineEnd);
+        return bindingNames.All(bindingName =>
+            !ContainsIdentifierOutsideRange(source, bindingName, lineStart, lineEnd));
+    }
+
+    private static bool TryGetImportBindingNames(
+        ReadOnlySpan<char> trimmedLine,
+        out IReadOnlyList<string> bindingNames)
+    {
+        bindingNames = [];
+        var importTarget = trimmedLine["import".Length..].Trim();
+        if (importTarget.EndsWith(";".AsSpan(), StringComparison.Ordinal))
+        {
+            importTarget = importTarget[..^1].TrimEnd();
+        }
+
+        var selectionStart = importTarget.IndexOf('{');
+        if (selectionStart >= 0)
+        {
+            var selectionEnd = importTarget.LastIndexOf('}');
+            if (selectionEnd <= selectionStart)
+            {
+                return false;
+            }
+
+            var selections = importTarget[(selectionStart + 1)..selectionEnd];
+            var result = new List<string>();
+            foreach (var rawSelection in selections.ToString().Split(','))
+            {
+                var selection = rawSelection.AsSpan().Trim();
+                if (selection.IsEmpty || selection.SequenceEqual("*".AsSpan()))
+                {
+                    return false;
+                }
+
+                var aliasSeparator = selection.IndexOf(" as ".AsSpan(), StringComparison.Ordinal);
+                var binding = aliasSeparator >= 0
+                    ? selection[(aliasSeparator + " as ".Length)..].Trim()
+                    : selection;
+                if (!TryReadSingleIdentifier(binding, out var identifier))
+                {
+                    return false;
+                }
+
+                result.Add(identifier);
+            }
+
+            bindingNames = result;
+            return result.Count > 0;
+        }
+
+        if (importTarget.EndsWith(".*".AsSpan(), StringComparison.Ordinal) ||
+            importTarget.EndsWith("::*".AsSpan(), StringComparison.Ordinal) ||
+            importTarget.EndsWith("/*".AsSpan(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var aliasStart = importTarget.IndexOf(" as ".AsSpan(), StringComparison.Ordinal);
+        if (aliasStart >= 0)
+        {
+            if (!TryReadSingleIdentifier(
+                    importTarget[(aliasStart + " as ".Length)..].Trim(),
+                    out var alias))
+            {
+                return false;
+            }
+
+            bindingNames = [alias];
+            return true;
+        }
+
+        var pathEnd = importTarget.Length;
+        while (pathEnd > 0 && char.IsWhiteSpace(importTarget[pathEnd - 1]))
+        {
+            pathEnd--;
+        }
+
+        var pathStart = pathEnd;
+        while (pathStart > 0 && IsIdentifierChar(importTarget[pathStart - 1]))
+        {
+            pathStart--;
+        }
+
+        if (pathStart == pathEnd)
+        {
+            return false;
+        }
+
+        bindingNames = [importTarget[pathStart..pathEnd].ToString()];
+        return true;
+    }
+
+    private static bool TryReadSingleIdentifier(ReadOnlySpan<char> text, out string identifier)
+    {
+        identifier = "";
+        var length = 0;
+        while (length < text.Length && IsIdentifierChar(text[length]))
+        {
+            length++;
+        }
+
+        if (length == 0 || !text[length..].Trim().IsEmpty)
+        {
+            return false;
+        }
+
+        identifier = text[..length].ToString();
+        return true;
     }
 
     private static bool ContainsIdentifierOutsideRange(

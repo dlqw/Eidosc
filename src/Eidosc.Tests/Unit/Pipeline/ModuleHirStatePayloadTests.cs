@@ -82,6 +82,10 @@ public sealed class ModuleHirStatePayloadTests
                         Tid(BaseTypes.IntId),
                         ReferencedParameterIndex: 0,
                         ValueVariableIndex: 7)
+                ],
+                EffectArgs =
+                [
+                    new GenericEffectArgumentDescriptor(1, "symbol:88", Tid(88))
                 ]
             },
             [5] = new TypeDescriptor.Ref(Tid(16)),
@@ -173,6 +177,14 @@ public sealed class ModuleHirStatePayloadTests
         var allExpressions = new List<HirNode>
         {
             new HirError { Reason = "synthetic", IsRecovered = true },
+            new HirCaseInject
+            {
+                Operand = Int(0) with { TypeId = Tid(701) },
+                SourceCase = Sid(702),
+                TargetAncestor = Sid(703),
+                SourceTypeId = Tid(701),
+                TypeId = Tid(704)
+            },
             Int(1),
             new HirLiteral { LiteralKind = LiteralKind.Float, Value = 1.25d },
             new HirLiteral { LiteralKind = LiteralKind.String, Value = "text" },

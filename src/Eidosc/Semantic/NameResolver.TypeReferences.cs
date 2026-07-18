@@ -37,10 +37,9 @@ public sealed partial class NameResolver
 
             UpdateAdtAliasTargetSymbol(adt);
 
-            foreach (var ctor in adt.Constructors)
-            {
-                ResolveConstructorReferences(ctor);
-            }
+            ResolveAdtConstructorsAndClosedCases(adt);
+
+            UpdateClosedCaseTypeParamSymbols(adt.Cases);
         }
         else
         {
@@ -51,10 +50,164 @@ public sealed partial class NameResolver
 
             UpdateAdtAliasTargetSymbol(adt);
 
-            foreach (var ctor in adt.Constructors)
+            ResolveAdtConstructorsAndClosedCases(adt);
+
+            UpdateClosedCaseTypeParamSymbols(adt.Cases);
+        }
+    }
+
+    private void ResolveAdtConstructorsAndClosedCases(AdtDef adt)
+    {
+        if (adt.Members.Count > 0)
+        {
+            if (!ResolveTypeMemberRange(adt, 0))
             {
-                ResolveConstructorReferences(ctor);
+                return;
             }
+            foreach (var constructor in adt.Constructors)
+            {
+                UpdateConstructorTypeParamSymbols(constructor);
+            }
+            return;
+        }
+
+        if (adt.Cases.Count == 0)
+        {
+            foreach (var constructor in adt.Constructors)
+            {
+                ResolveConstructorReferences(constructor);
+                UpdateConstructorTypeParamSymbols(constructor);
+            }
+            return;
+        }
+
+        ResolveClosedCaseReferences(adt.Cases);
+        foreach (var constructor in adt.Constructors)
+        {
+            UpdateConstructorTypeParamSymbols(constructor);
+        }
+    }
+
+    private void ResolveClosedCaseReferences(IReadOnlyList<CaseTypeDef> cases)
+    {
+        foreach (var caseType in cases)
+        {
+            if (!ResolveClosedCaseReference(caseType))
+            {
+                return;
+            }
+        }
+    }
+
+    private bool ResolveClosedCaseReference(CaseTypeDef caseType)
+    {
+        using var scopeGuard = _symbolTable.PushScopeGuard(ScopeKind.Module);
+        foreach (var typeParam in caseType.TypeParams)
+        {
+            DeclareTypeParameterIfValid(typeParam);
+            ResolveTypeParamReferences(typeParam);
+        }
+
+        if (_symbolTable.GetSymbol<AdtSymbol>(caseType.SymbolId) is { } caseSymbol)
+        {
+            _symbolTable.UpdateSymbol(caseSymbol with
+            {
+                TypeParams = caseType.TypeParams.Select(static parameter => parameter.SymbolId).ToList()
+            });
+        }
+
+        if (caseType.ParentSpecialization != null)
+        {
+            ResolveTypeReferences(caseType.ParentSpecialization);
+        }
+
+        if (_symbolTable.GetSymbol<AdtSymbol>(caseType.SymbolId) is { } resolvedCaseSymbol)
+        {
+            _symbolTable.UpdateSymbol(resolvedCaseSymbol with
+            {
+                CanonicalParentSpecialization = caseType.ParentSpecialization != null
+                    ? CanonicalizeTypeNodeForImplHead(caseType.ParentSpecialization)
+                    : BuildDefaultClosedCaseParentSpecialization(resolvedCaseSymbol.ParentAdt)
+            });
+        }
+
+        foreach (var positionalField in caseType.PositionalFields)
+        {
+            ResolveTypeReferences(positionalField);
+        }
+
+        return caseType.Members.Count > 0
+            ? ResolveTypeMemberRange(caseType, 0)
+            : ResolveLegacyClosedCaseMembers(caseType);
+    }
+
+    private bool ResolveLegacyClosedCaseMembers(CaseTypeDef caseType)
+    {
+        foreach (var field in caseType.Fields)
+        {
+            if (field.Type != null)
+            {
+                ResolveTypeReferences(field.Type);
+            }
+        }
+
+        ResolveClosedCaseReferences(caseType.Cases);
+        return true;
+    }
+
+    private string BuildDefaultClosedCaseParentSpecialization(SymbolId parentId)
+    {
+        if (_symbolTable.GetSymbol<AdtSymbol>(parentId) is not { } parent)
+        {
+            return string.Empty;
+        }
+
+        var name = GetClosedCaseQualifiedName(parentId);
+        var parameters = _symbolTable.GetClosedCaseEffectiveGenericParameterIds(parentId)
+            .Select(_symbolTable.GetSymbol<TypeParamSymbol>)
+            .OfType<TypeParamSymbol>()
+            .Select(static parameter => parameter.Name)
+            .ToArray();
+        return parameters.Length == 0
+            ? name
+            : $"{name}[{string.Join(",", parameters)}]";
+    }
+
+    private string GetClosedCaseQualifiedName(SymbolId typeId)
+    {
+        var names = _symbolTable.GetClosedCaseAncestors(typeId)
+            .Reverse()
+            .Select(id => _symbolTable.GetSymbol<AdtSymbol>(id)?.Name)
+            .Where(static name => !string.IsNullOrWhiteSpace(name));
+        return string.Join(WellKnownStrings.Separators.Path, names);
+    }
+
+    private void UpdateConstructorTypeParamSymbols(Constructor constructor)
+    {
+        if (_symbolTable.GetSymbol<CtorSymbol>(constructor.SymbolId) is not { } symbol)
+        {
+            return;
+        }
+
+        _symbolTable.UpdateSymbol(symbol with
+        {
+            TypeParams = constructor.TypeParams.Select(static parameter => parameter.SymbolId).ToList()
+        });
+    }
+
+    private void UpdateClosedCaseTypeParamSymbols(IReadOnlyList<CaseTypeDef> cases)
+    {
+        foreach (var caseType in cases)
+        {
+            if (_symbolTable.GetSymbol<AdtSymbol>(caseType.SymbolId) is { } caseSymbol)
+            {
+                _symbolTable.UpdateSymbol(caseSymbol with
+                {
+                    TypeParams = caseType.TypeParams.Select(static parameter => parameter.SymbolId).ToList()
+                });
+            }
+
+            UpdateClosedCaseTypeParamSymbols(caseType.Cases);
         }
     }
 
@@ -148,7 +301,7 @@ public sealed partial class NameResolver
         _ = ability;
     }
 
-    private void ResolveTraitDefReferences(TraitDef trait)
+    private void ResolveTraitDefReferences(TraitDef trait, bool resolveBodies = true)
     {
         var hasTypeParams = trait.TypeParams.Count > 0;
         using var scopeGuard = hasTypeParams ? _symbolTable.PushScopeGuard(ScopeKind.Module) : default;
@@ -169,6 +322,12 @@ public sealed partial class NameResolver
             }
         }
 
+        if (trait.Members.Count > 0)
+        {
+            ResolveTraitMemberRange(trait, 0, resolveBodies);
+            return;
+        }
+
         _traitSignatureDepth++;
         try
         {
@@ -179,15 +338,13 @@ public sealed partial class NameResolver
 
             foreach (var associatedConst in trait.AssociatedConsts)
             {
-                ResolveAssociatedConstReferences(associatedConst);
+                ResolveAssociatedConstReferences(associatedConst, resolveValue: resolveBodies);
             }
 
             foreach (var method in trait.Methods)
             {
-                ResolveFuncDefReferences(method);
+                ResolveFuncDefReferences(method, resolveBodies);
             }
-
-            // Proof traversal removed during migration
         }
         finally
         {
@@ -214,14 +371,14 @@ public sealed partial class NameResolver
         }
     }
 
-    private void ResolveAssociatedConstReferences(AssociatedConstDecl associatedConst)
+    private void ResolveAssociatedConstReferences(AssociatedConstDecl associatedConst, bool resolveValue = true)
     {
         if (associatedConst.Type != null)
         {
             ResolveTypeReferences(associatedConst.Type);
         }
 
-        if (associatedConst.Value != null)
+        if (resolveValue && associatedConst.Value != null)
         {
             ResolveExpressionReferences(associatedConst.Value);
         }
@@ -231,6 +388,10 @@ public sealed partial class NameResolver
     {
         switch (type)
         {
+            case ExpandType expansion:
+                ResolveExpandTypeReferences(expansion);
+                break;
+
             case TypePath typePath:
                 ResolveTypePathReference(typePath);
                 break;
@@ -347,6 +508,21 @@ public sealed partial class NameResolver
 
         ResolveTypeReferences(projection.Target);
 
+        if (projection.Target.SymbolId.IsValid &&
+            _symbolTable.GetSymbol<AdtSymbol>(projection.Target.SymbolId) is { } parentType &&
+            _symbolTable.LookupDirectCase(parentType.Id, projection.MemberName) is { IsValid: true } caseTypeId)
+        {
+            projection.SymbolId = caseTypeId;
+            if (projection.GenericArguments.Count > 0)
+            {
+                projection.SetGenericArguments(ResolveGenericArguments(
+                    caseTypeId,
+                    projection.GenericArguments,
+                    projection.Span));
+            }
+            return;
+        }
+
         if (projection.Target is not TypePath targetPath ||
             !targetPath.SymbolId.IsValid ||
             _symbolTable.GetSymbol(targetPath.SymbolId) is not TraitSymbol)
@@ -425,6 +601,25 @@ public sealed partial class NameResolver
 
     private void ResolveTypePathReference(TypePath typePath)
     {
+        if (TryUseAttachedSyntaxSymbol(typePath, out _))
+        {
+            if (typePath.GenericArguments.Count > 0)
+            {
+                typePath.SetGenericArguments(ResolveGenericArguments(
+                    typePath.SymbolId,
+                    typePath.GenericArguments,
+                    typePath.Span));
+            }
+            else
+            {
+                foreach (var argument in typePath.TypeArgs)
+                {
+                    ResolveTypeReferences(argument);
+                }
+            }
+            return;
+        }
+
         if (_traitSignatureDepth > 0 &&
             typePath.ModulePath.Count == 0 &&
             string.Equals(typePath.TypeName, ReservedSelfTypeName, StringComparison.Ordinal))
@@ -442,6 +637,12 @@ public sealed partial class NameResolver
                 ResolveTypeReferences(arg);
             }
 
+            return;
+        }
+
+        if (HasUnresolvedHygienicSyntaxIdentity(typePath))
+        {
+            AddUnresolvedHygienicIdentifierError(typePath, typePath.TypeName);
             return;
         }
 

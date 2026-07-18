@@ -1,0 +1,285 @@
+Option :: module {
+    import Traits
+    import Ordering.{Ordering}
+    import Ordering
+    import TraitInvoke
+    import Functor
+    import Applicative
+    import Foldable
+    import Monad
+    import Traversable
+    import Semigroup
+
+    Option[T] :: type { Some:: type(T) , None :: type {} }
+
+    CloneOptionT :: instance Traits.Clone {
+        clone[T: Traits.Clone] :: Option[T] -> Option[T]
+            {
+                Some(value) => Some(TraitInvoke.clone_value(value)),
+                None() => None()
+            }
+    }
+
+
+    identity[T] :: T -> T
+     internal
+{
+        value => value
+    }
+
+
+    compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
+     internal
+{
+        (g, f, value) => g(f(value))
+    }
+
+
+    apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
+     internal
+{
+        (value, f) => f(value)
+    }
+
+
+    bind_then[A, B, C, E1: effects, E2: effects] :: (A -> Option[B] need E1) -> (B -> Option[C] need E2) -> A -> Option[C] need E1, E2
+     internal
+{
+        (f, g, value) => f(value).bind(g)
+    }
+
+
+    some_wrap[T] :: T -> Option[T]
+     internal
+{
+        value => Some(value)
+    }
+
+    is_some[T] :: Option[T] -> Bool
+    {
+        Some(_) => true,
+        None() => false
+    }
+
+    is_none[T] :: Option[T] -> Bool
+    {
+        Some(_) => false,
+        None() => true
+    }
+
+    map[T, U, E: effects] :: Option[T] -> (T -> U need E) -> Option[U] need E
+    {
+        Some(value) => f => Some(f(value)),
+        None() => _ => None()
+    }
+
+    and_then[T, U, E: effects] :: Option[T] -> (T -> Option[U] need E) -> Option[U] need E
+    {
+        Some(value) => f => f(value),
+        None() => _ => None()
+    }
+
+    and[T, U] :: Option[T] -> Option[U] -> Option[U]
+    {
+        Some(_) => other => other,
+        None() => _ => None()
+    }
+
+    or[T] :: Option[T] -> Option[T] -> Option[T]
+    {
+        Some(value) => _ => Some(value),
+        None() => other => other
+    }
+
+    xor[T] :: Option[T] -> Option[T] -> Option[T]
+    {
+        (Some(left_value), Some(right_value)) => None(),
+        (Some(left_value), None()) => Some(left_value),
+        (None(), Some(right_value)) => Some(right_value),
+        (None(), None()) => None()
+    }
+
+    map_or[T, U, E: effects] :: Option[T] -> U -> (T -> U need E) -> U need E
+    {
+        Some(value) => _ => f => f(value),
+        None() => fallback => _ => fallback
+    }
+
+    map_or_else[T, U, E1: effects, E2: effects] :: Option[T] -> (Unit -> U need E1) -> (T -> U need E2) -> U need E1, E2
+    {
+        Some(value) => _ => f => f(value),
+        None() => fallback => _ => fallback(())
+    }
+
+    unwrap_or[T] :: Option[T] -> T -> T
+    {
+        Some(value) => _ => value,
+        None() => fallback => fallback
+    }
+
+    unwrap_or_else[T, E: effects] :: Option[T] -> (Unit -> T need E) -> T need E
+    {
+        Some(value) => _ => value,
+        None() => fallback => fallback(())
+    }
+
+    contains[T: Traits.Eq] :: Option[T] -> T -> Bool
+    {
+        Some(value) => expected => TraitInvoke.eq_value(value)(expected),
+        None() => _ => false
+    }
+
+    filter[T, E: effects] :: Option[T] -> (T -> Bool need E) -> Option[T] need E
+    {
+        Some(value) => predicate => if predicate(value) then { Some(value) } else { None() },
+        None() => _ => None()
+    }
+
+    zip[A, B] :: Option[A] -> Option[B] -> Option[(A, B)]
+    {
+        (Some(left_value), Some(right_value)) => Some((left_value, right_value)),
+        (Some(left_value), None()) => None(),
+        (None(), Some(right_value)) => None(),
+        (None(), None()) => None()
+    }
+
+    zip_with[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
+    {
+        (Some(left_value), Some(right_value), f) => Some(f(left_value)(right_value)),
+        (Some(left_value), None(), _) => None(),
+        (None(), Some(right_value), _) => None(),
+        (None(), None(), _) => None(),
+        _ => None()
+    }
+
+    flatten[T] :: Option[Option[T]] -> Option[T]
+    {
+        Some(inner) => inner,
+        None() => None()
+    }
+
+    FoldableOption :: instance Foldable.Foldable[Option] {
+        fold_left[A, B, E: effects] :: Option[A] -> B -> (B -> A -> B need E) -> B need E
+            {
+                Some(value) => acc => f => f(acc)(value),
+                None() => acc => _ => acc
+            }
+        fold_right[A, B, E: effects] :: Option[A] -> B -> (A -> B -> B need E) -> B need E
+            {
+                Some(value) => acc => f => f(value)(acc),
+                None() => acc => _ => acc
+            }
+    }
+
+    TraversableOption :: instance Traversable.Traversable[Option] {
+        traverse[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: Option[A] -> (A -> G[B] need E) -> G[Option[B]] need E
+            {
+                Some(value) => f => Traversable.map_applicative(Option.some_wrap)(f(value)),
+                None() => _ => Traversable.lift_pure(None())
+            }
+    }
+
+    sequence[A, G: kind2 : Applicative.Applicative[G]] :: Option[G[A]] -> G[Option[A]]
+    {
+        option => Traversable.traverse(option)(Traversable.identity_applicative)
+    }
+
+    EqOptionT :: instance Traits.Eq {
+        eq[T: Traits.Eq] :: Option[T] -> Option[T] -> Bool
+            {
+                (Some(left_value), Some(right_value)) => TraitInvoke.eq_value(left_value)(right_value),
+                (Some(left_value), None()) => false,
+                (None(), Some(right_value)) => false,
+                (None(), None()) => true
+            }
+    }
+
+    OrdOptionT :: instance Traits.Ord {
+        compare[T: Traits.Ord] :: Option[T] -> Option[T] -> Ordering
+            {
+                (Some(left_value), Some(right_value)) => TraitInvoke.compare_value(left_value)(right_value),
+                (Some(left_value), None()) => Greater(),
+                (None(), Some(right_value)) => Less(),
+                (None(), None()) => Equal()
+            }
+    }
+
+    ShowOptionT :: instance Traits.Show {
+        show[T: Traits.Show] :: Option[T] -> String
+            {
+                Some(value) => "Some(" ++ TraitInvoke.show_value(value) ++ ")",
+                None() => "None"
+            }
+    }
+
+    FunctorOption :: instance Functor.Functor[Option] {
+        fmap[A, B, E: effects] :: Option[A] -> (A -> B need E) -> Option[B] need E
+            {
+                option => f => Option.map(option)(f)
+            }
+    }
+
+    ApplicativeOption :: instance Applicative.Applicative[Option] {
+        pure[A] :: A -> Option[A]
+            {
+                value => Some(value)
+            }
+        apply[A, B, E: effects] :: Option[A -> B need E] -> Option[A] -> Option[B] need E
+            {
+                Some(f) => Some(value) => Some(f(value)),
+                Some(_) => None() => None(),
+                None() => _ => None()
+            }
+    }
+
+    MonadOption :: instance Monad.Monad[Option] {
+        pure[A] :: A -> Option[A]
+            {
+                value => Some(value)
+            }
+        bind[A, B, E: effects] :: Option[A] -> (A -> Option[B] need E) -> Option[B] need E
+            {
+                option => f => Option.and_then(option)(f)
+            }
+    }
+
+
+    append[T: Semigroup.Semigroup] :: Option[T] -> Option[T] -> Option[T]
+    {
+        Some(left) => Some(right) => Some(Semigroup.append(left)(right)),
+        Some(value) => None() => Some(value),
+        None() => Some(value) => Some(value),
+        None() => None() => None()
+    }
+
+    empty[A] :: Unit -> Option[A]
+    {
+        _ => None()
+    }
+
+    or_else[A] :: Option[A] -> Option[A] -> Option[A]
+    {
+        Some(value) => _ => Some(value),
+        None() => fallback => fallback
+    }
+
+    or_else_with[A, E: effects] :: Option[A] -> (Unit -> Option[A] need E) -> Option[A] need E
+    {
+        Some(value) => _ => Some(value),
+        None() => fallback => fallback(())
+    }
+
+    // ── Additional functions ──────────────────────────────────────
+
+    to_seq[T] :: Option[T] -> Seq[T]
+    {
+        Some(value) => [value],
+        None() => []
+    }
+
+    map2[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
+    {
+        Some(a) => Some(b) => f => Some(f(a)(b)),
+        _ => _ => _ => None()
+    }
+}

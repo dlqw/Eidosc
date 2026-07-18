@@ -12,7 +12,7 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private void TryRegisterTraitImplFromAttributes(FuncDef func)
+    private void TryRegisterTraitImplFromClauses(FuncDef func)
     {
         // Trait 内部的方法声明不应参与 impl 注册——它们是 trait 签名的一部分。
         if (_traitSignatureDepth > 0)
@@ -20,25 +20,30 @@ public sealed partial class NameResolver
             return;
         }
 
-        var hasImplAttribute = false;
-        foreach (var attribute in func.Attributes)
+        var hasImplClause = false;
+        foreach (var clause in func.Clauses)
         {
-            if (!string.Equals(attribute.Name, "impl", StringComparison.Ordinal))
+            if (clause.ClauseKind != DeclarationClauseKind.Impl)
             {
                 continue;
             }
 
-            hasImplAttribute = true;
-            if (!TryResolveTraitFromImplAttribute(attribute, out var traitId, out var traitName, out var traitRef))
+            hasImplClause = true;
+            if (!_processedImplClauses.Add(clause))
+            {
+                continue;
+            }
+
+            if (!TryResolveTraitFromImplClause(clause, out var traitId, out var traitName, out var traitRef))
             {
                 var name = string.IsNullOrWhiteSpace(traitName) ? "<missing>" : traitName;
-                AddUndefinedImplTraitError(attribute.Span, traitRef, DiagnosticMessages.UndefinedTraitInImpl(name));
+                AddUndefinedImplTraitError(clause.Span, traitRef, DiagnosticMessages.UndefinedTraitInImpl(name));
                 continue;
             }
 
             if (!TryGetImplTargetType(func, out var implementingTypePath, out var targetTypeId))
             {
-                AddError(attribute.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
+                AddError(clause.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
                 continue;
             }
 
@@ -48,19 +53,23 @@ public sealed partial class NameResolver
                     out var implementingTypeRequirements,
                     out var requirementError))
             {
-                AddError(attribute.Span, requirementError ?? DiagnosticMessages.UnsupportedConstrainedImplHead);
+                AddError(clause.Span, requirementError ?? DiagnosticMessages.UnsupportedConstrainedImplHead);
                 continue;
             }
 
-            if (!TryValidateTraitImplCompatibility(
+            var isProofOnlyMarkerImpl = _traitDefinitions.TryGetValue(traitId, out var traitDefinition) &&
+                                        traitDefinition.Methods.Count == 0;
+            var matchedTraitMethodId = SymbolId.None;
+            if (!isProofOnlyMarkerImpl &&
+                !TryValidateTraitImplCompatibility(
                     traitId,
                     func,
                     implementingTypePath,
                     traitRef.TypeArgTexts,
                     out var reason,
-                    out var matchedTraitMethodId))
+                    out matchedTraitMethodId))
             {
-                AddError(attribute.Span, reason);
+                AddError(clause.Span, reason);
                 continue;
             }
 
@@ -107,7 +116,7 @@ public sealed partial class NameResolver
                 var specializationRelation = ImplSpecializationComparer.CompareHeads(requestedHeadShape, conflictingHeadShape);
                 _diagnostics.Add(
                     BuildOverlappingImplRegistrationDiagnostic(
-                        attribute.Span,
+                        clause.Span,
                         requestedHead,
                         conflictingImpl,
                         conflictingHead,
@@ -120,7 +129,7 @@ public sealed partial class NameResolver
             var implId = _symbolTable.DeclareImpl(
                 traitId,
                 targetTypeId,
-                attribute.Span,
+                clause.Span,
                 traitRef.TypeArgTexts,
                 implementingTypeDisplay,
                 canonicalImplementingType,
@@ -130,13 +139,14 @@ public sealed partial class NameResolver
                 implementingTypeRequirements,
                 requestedHeadShape,
                 implementingTypeKey);
-            if (implId.IsValid && func.SymbolId.IsValid)
+            if (implId.IsValid && func.SymbolId.IsValid && matchedTraitMethodId.IsValid)
             {
                 _symbolTable.AddMethodToImpl(implId, func.SymbolId, matchedTraitMethodId);
             }
         }
 
-        if (!hasImplAttribute)
+        if (!hasImplClause &&
+            (!func.SymbolId.IsValid || _processedConventionImplFunctions.Add(func.SymbolId)))
         {
             TryRegisterTraitImplByConvention(func);
         }

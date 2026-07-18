@@ -340,9 +340,9 @@ public sealed class PipelineQuerySessionTests
     public void Compile_TypesQuery_ProvidesDeclaredAndInferredEffectSummaries()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-declared_but_pure :: Int -> Int need IO
+declared_but_pure :: Int -> Int need io
 {
     value => value
 }
@@ -362,7 +362,7 @@ declared_but_pure :: Int -> Int need IO
         var effectInferer = Assert.IsType<Eidosc.Types.EffectInferer>(types?.EffectInferer);
         var function = Assert.Single(effectInferer.FunctionSummaries.Keys, static item => item.Name == "declared_but_pure");
         var summary = effectInferer.FunctionSummaries[function];
-        Assert.True(summary.DeclaredUpperBound.ContainsName("IO"));
+        Assert.True(summary.DeclaredUpperBound.ContainsName("io"));
         Assert.True(summary.InferredEffects.IsPure);
     }
 
@@ -535,13 +535,13 @@ id :: Int -> Int { x => x }
         try
         {
             var inputPath = Path.Combine(workspace, "main.eidos");
-            var sourceRoot = Path.Combine(workspace, "src", "Cap");
-            var generatedRoot = Path.Combine(workspace, "generated", "Cap");
+            var sourceRoot = Path.Combine(workspace, "src", "cap");
+            var generatedRoot = Path.Combine(workspace, "generated", "cap");
             Directory.CreateDirectory(sourceRoot);
             Directory.CreateDirectory(generatedRoot);
 
-            var firstPath = Path.Combine(sourceRoot, "Io.eidos");
-            var secondPath = Path.Combine(generatedRoot, "Io.eidos");
+            var firstPath = Path.Combine(sourceRoot, "io.eidos");
+            var secondPath = Path.Combine(generatedRoot, "io.eidos");
             File.WriteAllText(firstPath, """
 Cap.Io :: module
 {
@@ -947,7 +947,7 @@ import Lib
 
 use :: Int -> Int { x => Lib.one(x) }
 """);
-        var libFile = workspace.WriteFile("Lib.eidos", """
+        var libFile = workspace.WriteFile("lib.eidos", """
 Lib :: module {
     export one :: Int -> Int { x => x }
 }
@@ -972,7 +972,7 @@ import Lib
 
 use :: Int -> Int { x => Lib.one(x) }
 """);
-        var libFile = workspace.WriteFile("Lib.eidos", """
+        var libFile = workspace.WriteFile("lib.eidos", """
 Lib :: module {
     export one :: Int -> Int { x => x }
 }
@@ -1003,12 +1003,12 @@ import LibA
 
 use :: Int -> Int { x => LibA.one(x) }
 """);
-        var libAFile = workspace.WriteFile("LibA.eidos", """
+        var libAFile = workspace.WriteFile("lib_a.eidos", """
 LibA :: module {
     export one :: Int -> Int { x => x }
 }
 """);
-        var libBFile = workspace.WriteFile("LibB.eidos", """
+        var libBFile = workspace.WriteFile("lib_b.eidos", """
 LibB :: module {
     export one :: Int -> Int { x => x }
 }
@@ -1086,7 +1086,7 @@ main :: Unit -> Int
     _ => Lib.parse("ok")
 }
 """);
-        var libFile = workspace.WriteFile("Lib.eidos", """
+        var libFile = workspace.WriteFile("lib.eidos", """
 Lib :: module {
     parse :: Int -> Int
     {
@@ -1107,7 +1107,7 @@ Lib :: module {
         var first = session.Compile(entryFile, File.ReadAllText(entryFile), options);
         Assert.True(first.Success, FormatDiagnostics(first));
 
-        workspace.WriteFile("Lib.eidos", """
+        workspace.WriteFile("lib.eidos", """
 Lib :: module {
     parse :: Int -> Int
     {
@@ -1120,7 +1120,7 @@ Lib :: module {
         var second = session.Compile(entryFile, File.ReadAllText(entryFile), options);
         Assert.False(second.Success);
 
-        workspace.WriteFile("Lib.eidos", """
+        workspace.WriteFile("lib.eidos", """
 Lib :: module {
     parse :: Int -> Int
     {
@@ -1149,7 +1149,7 @@ import IntParser
 
 value :: parse("ok");
 """);
-        workspace.WriteFile("TextParser.eidos", """
+        workspace.WriteFile("text_parser.eidos", """
 TextParser :: module {
     export parse :: String -> Int
     {
@@ -1157,7 +1157,7 @@ TextParser :: module {
     }
 }
 """);
-        workspace.WriteFile("IntParser.eidos", """
+        workspace.WriteFile("int_parser.eidos", """
 IntParser :: module {
     export parse :: Int -> Int
     {

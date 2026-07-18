@@ -1,4 +1,5 @@
 using System.IO;
+using System.CommandLine;
 using Eidosc.Cli.Commands.Migrate;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
@@ -13,7 +14,7 @@ public sealed class MigrateSyntaxCommandTests
     public void CreatePlan_RewritesLegacySlashImportPathToDot()
     {
         const string source = """
-import Std::Collection/Seq::{map, filter}
+import std::Collection/Seq::{map, filter}
 """;
         var (plan, _) = CreatePlanForSource(source);
 
@@ -38,7 +39,7 @@ build :: [Int] -> [Int] {
 
         // The `1 +: xs` is already modern; migration should not touch it. Instead verify with
         // a legacy cons source that whitespace-around `::` migrates to `+:`.
-        const string legacySource = """
+const string legacySource = """
 build :: [Int] -> [Int] {
     xs => 1 :: xs
 }
@@ -71,21 +72,21 @@ f :: [Int] -> Int {
     }
 
     [Fact]
-    public void CreatePlan_FromPrevious_RewritesQualifiedNamesAndAdtSeparatorsOnly()
+    public void CreatePlan_FromPreviousPrevious_RewritesQualifiedNamesAndAdtSeparatorsOnly()
     {
         const string source = """
 OptionI :: type {
     Some(Int) | None
 }
 
-answer::Int = Std::Option::unwrap_or(Some(42))(0);
+answer::Int = std::option::unwrap_or(Some(42))(0);
 """;
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.PreviousPrevious);
 
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
         Assert.Contains("OptionI :: type", rewritten, StringComparison.Ordinal);
-        Assert.Contains("Some(Int) , None", rewritten, StringComparison.Ordinal);
-        Assert.Contains("answer::Int = Std.Option.unwrap_or", rewritten, StringComparison.Ordinal);
+        Assert.Contains("Some:: type(Int) , None :: type {}", rewritten, StringComparison.Ordinal);
+        Assert.Contains("answer::Int = std.Option.unwrap_or", rewritten, StringComparison.Ordinal);
         Assert.Equal(
             2,
             GetAllEdits(plan).Count(edit =>
@@ -117,11 +118,11 @@ version = "0.5.0-alpha.1"
         {
             var plan = SyntaxMigrationPlanner.CreatePlan(
                 tempDir,
-                EidosLanguageVersions.Previous,
+                EidosLanguageVersions.PreviousPrevious,
                 EidosLanguageVersions.Current);
 
             Assert.True(plan.ManifestNeedsUpdate);
-            Assert.Equal(EidosLanguageVersions.Previous, plan.CurrentManifestSyntax);
+            Assert.Equal(EidosLanguageVersions.PreviousPrevious, plan.CurrentManifestSyntax);
             Assert.Equal("ready", plan.SourceRewriteStatus);
             Assert.Contains(
                 GetAllEdits(plan),
@@ -132,7 +133,7 @@ version = "0.5.0-alpha.1"
                 $"version = \"{EidosLanguageVersions.Current}\"",
                 File.ReadAllText(manifestPath),
                 StringComparison.Ordinal);
-            Assert.Contains("Std.Option.unwrap_or", File.ReadAllText(sourcePath), StringComparison.Ordinal);
+            Assert.Contains("std.Option.unwrap_or", File.ReadAllText(sourcePath), StringComparison.Ordinal);
         }
         finally
         {
@@ -141,6 +142,225 @@ version = "0.5.0-alpha.1"
                 Directory.Delete(tempDir, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_RewritesVersion07NamesTypeBodiesAndClauses()
+    {
+        const string source = """
+import std.Option
+
+logging :: Unit -> Unit
+    need io, ffi
+{
+    _ => ()
+}
+
+deriveMarker :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation {
+    input => meta.keep()
+}
+
+
+OptionI :: type  expand deriveMarker
+{
+    Some:: type(Int),
+    None :: type {},
+}
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("import std.Option", rewritten, StringComparison.Ordinal);
+        Assert.Contains("need io, ffi", rewritten, StringComparison.Ordinal);
+        Assert.Contains("meta.Target[meta.Stage.Semantic]", rewritten, StringComparison.Ordinal);
+        Assert.Contains("meta.Transformation", rewritten, StringComparison.Ordinal);
+        Assert.Contains("meta.keep()", rewritten, StringComparison.Ordinal);
+        Assert.Contains("OptionI :: type  expand deriveMarker", rewritten, StringComparison.Ordinal);
+        Assert.Contains("Some:: type(Int)", rewritten, StringComparison.Ordinal);
+        Assert.Contains("None :: type {}", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_RenamesKeywordConflictingStdModules()
+    {
+        const string source = "import Std.Fn\nimport Std.Trait\ncomposed :: Fn.compose(id)(id)\ntrait_name :: Trait.show(1)\n";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("import std.Functions", rewritten, StringComparison.Ordinal);
+        Assert.Contains("import std.Traits", rewritten, StringComparison.Ordinal);
+        Assert.Contains("Functions.compose", rewritten, StringComparison.Ordinal);
+        Assert.Contains("Traits.show", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_AlreadyVersion07Source_IsIdempotent()
+    {
+        const string source = """
+import std.Option
+
+User :: type
+    derive Eq
+{
+    name :: String,
+}
+
+OptionI :: type {
+    Some :: type(String),
+    None :: type {},
+}
+""";
+
+        var (plan, _) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+
+        Assert.Empty(GetAllEdits(plan));
+        Assert.All(plan.FilePlans, file => Assert.Equal("unchanged", file.Status));
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_ClassifiesLegacyDeriveByBuiltinIdentityNotCasing()
+    {
+        const string source = """
+@derive(Eq, URLCodec, deriveMarker)
+Payload :: type { Payload(Int) }
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("derive Eq", rewritten, StringComparison.Ordinal);
+        Assert.Contains("expand URLCodec", rewritten, StringComparison.Ordinal);
+        Assert.Contains("expand deriveMarker", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_UsesSchemaMigrationForNestedAttributesAndBodylessFfi()
+    {
+        const string source = """
+Api :: module {
+    @ffi("native/allocate")
+    allocate :: Cfn[Int, Int];
+
+    @cstruct
+    @derive(Eq, codec)
+    Payload :: type { Payload(Int) }
+}
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("need ffi", rewritten, StringComparison.Ordinal);
+        Assert.Contains("extern c", rewritten, StringComparison.Ordinal);
+        Assert.Contains("link_library \"native\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("link_name \"allocate\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("repr c", rewritten, StringComparison.Ordinal);
+        Assert.Contains("derive Eq", rewritten, StringComparison.Ordinal);
+        Assert.Contains("expand codec", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("@ffi", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("@derive", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_MigratesGeneratorAttributeThroughExpandSchema()
+    {
+        const string source = """
+@generator(target, 1)
+Payload :: type { Payload(Int) }
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("expand generator(target, 1)", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ClausesCommand_ProvidesDedicatedDryRunSurfaceForVersion07()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "eidos-migrate-clauses-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var sourcePath = Path.Combine(tempDir, "input.eidos");
+        const string source = "@derive(Eq)\nPayload :: type { Payload(Int) }\n";
+        File.WriteAllText(sourcePath, source);
+
+        try
+        {
+            var exitCode = await MigrateCommand.Create().InvokeAsync([
+                "clauses",
+                sourcePath,
+                "--to",
+                EidosLanguageVersions.Current,
+                "--dry-run"
+            ]);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal(source, File.ReadAllText(sourcePath));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_RenamesOnlyKnownMetaAndBuildMembers()
+    {
+        const string source = """
+shape :: comptime Meta.typeInfo(User);
+generated :: comptime Build.generatedSource(Emit, "generated");
+custom_meta :: comptime Meta.userDefinedMember(User);
+custom_build :: comptime Build.UserDefinedMember();
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("meta.shape_of(User)", rewritten, StringComparison.Ordinal);
+        Assert.Contains("build.generated_source(Emit", rewritten, StringComparison.Ordinal);
+        Assert.Contains("meta.userDefinedMember(User)", rewritten, StringComparison.Ordinal);
+        Assert.Contains("build.UserDefinedMember()", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_SameNamedRecordConstructor_BecomesProductBody()
+    {
+        const string source = """
+GameState :: type {
+    GameState {
+        score: Int,
+        alive: Bool,
+    }
+}
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("score:: Int", rewritten, StringComparison.Ordinal);
+        Assert.Contains("alive:: Bool", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("GameState :: type{", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("GameState {", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreatePlan_FromPrevious_NullaryGadtConstructor_UsesCaseClauseOrder()
+    {
+        const string source = """
+Direction[A] :: type {
+    North -> Direction[Int],
+    East -> Direction[Bool],
+}
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("North :: type case Direction[Int] {}", rewritten, StringComparison.Ordinal);
+        Assert.Contains("East :: type case Direction[Bool] {}", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("case type", rewritten, StringComparison.Ordinal);
     }
 
     private static (SyntaxMigrationPlan Plan, string SourceText) CreatePlanForSource(

@@ -13,7 +13,7 @@ public sealed record ModuleMirStateArtifactPayload(
     ModuleMirStatePayload MirState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v7";
+    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v10";
 
     public static ModuleMirStateArtifactPayload Create(
         string moduleKey,
@@ -197,7 +197,7 @@ public sealed record ModuleMirStatePayload(
     IReadOnlyList<MirFunctionFingerprint> FunctionFingerprints,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-payload-v7";
+    public const string CurrentSchemaVersion = "module-mir-state-payload-v10";
 
     public bool IsRestorable => Module != null &&
                                 UnsupportedNodeCount == 0 &&
@@ -544,7 +544,10 @@ public sealed record MirStateInstructionPayload(
     bool IsMutableBorrow = false,
     bool CreatesBorrowAlias = true,
     MirStateOperandPayload? Value = null,
-    int TypeId = 0)
+    int TypeId = 0,
+    int SourceSymbolId = 0,
+    int TargetSymbolId = 0,
+    int SourceTypeId = 0)
 {
     public static MirStateInstructionPayload Create(MirInstruction instruction, MirStatePayloadCreateContext context)
     {
@@ -557,6 +560,15 @@ public sealed record MirStateInstructionPayload(
                 span,
                 Target: MirStateOperandPayload.Create(assign.Target, context),
                 Source: MirStateOperandPayload.Create(assign.Source, context)),
+            MirCaseInject injection => new MirStateInstructionPayload(
+                nameof(MirCaseInject),
+                span,
+                Target: MirStateOperandPayload.Create(injection.Target, context),
+                Source: MirStateOperandPayload.Create(injection.Operand, context),
+                TypeId: injection.TargetTypeId.Value,
+                SourceSymbolId: injection.SourceCase.Value,
+                TargetSymbolId: injection.TargetAncestor.Value,
+                SourceTypeId: injection.SourceTypeId.Value),
             MirCall call => new MirStateInstructionPayload(
                 nameof(MirCall),
                 span,
@@ -616,6 +628,16 @@ public sealed record MirStateInstructionPayload(
         Kind switch
         {
             nameof(MirAssign) => new MirAssign { Span = Span.ToSourceSpan(), Target = RestorePlace(Target), Source = RestoreOperand(Source) },
+            nameof(MirCaseInject) => new MirCaseInject
+            {
+                Span = Span.ToSourceSpan(),
+                Target = RestoreOperand(Target),
+                Operand = RestoreOperand(Source),
+                SourceCase = new SymbolId(SourceSymbolId),
+                TargetAncestor = new SymbolId(TargetSymbolId),
+                SourceTypeId = new TypeId(SourceTypeId),
+                TargetTypeId = new TypeId(TypeId)
+            },
             nameof(MirCall) => new MirCall { Span = Span.ToSourceSpan(), Target = Target == null ? null : RestorePlace(Target), Function = RestoreOperand(Function), Arguments = RestoreOperands(Arguments), IsTailCall = IsTailCall },
             nameof(MirBinOp) => new MirBinOp { Span = Span.ToSourceSpan(), Target = RestoreOperand(Target), Operator = Enum.Parse<BinaryOp>(Operator ?? ""), Left = RestoreOperand(Left), Right = RestoreOperand(Right) },
             nameof(MirUnaryOp) => new MirUnaryOp { Span = Span.ToSourceSpan(), Target = RestoreOperand(Target), Operator = Enum.Parse<UnaryOp>(Operator ?? ""), Operand = RestoreOperand(Operand) },
@@ -1313,7 +1335,7 @@ public sealed class MirStatePayloadCreateContext
 
     public void ObserveInstruction(MirInstruction instruction)
     {
-        if (instruction is not (MirAssign or MirCall or MirBinOp or MirUnaryOp or MirLoad or MirStore or MirDrop or
+        if (instruction is not (MirAssign or MirCaseInject or MirCall or MirBinOp or MirUnaryOp or MirLoad or MirStore or MirDrop or
             MirCopy or MirMove or MirAlloc))
         {
             AddUnsupported(instruction);

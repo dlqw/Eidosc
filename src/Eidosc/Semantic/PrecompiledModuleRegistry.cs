@@ -13,8 +13,7 @@ namespace Eidosc.Semantic;
 public static class PrecompiledModuleRegistry
 {
     private const string ResourceExtension = ".eidos";
-    private const string InternalAttributeName = "internal";
-    private const string StdPackageAlias = "Std";
+        private const string StdPackageAlias = WellKnownStrings.Std.Module;
 
     private static readonly Lazy<SemanticVersion> CachedStdlibVersion =
         new(LoadStdlibVersion, isThreadSafe: true);
@@ -95,7 +94,7 @@ public static class PrecompiledModuleRegistry
             return false;
         }
 
-        modulePath = NormalizeModulePath(relative[..^ResourceExtension.Length]);
+        modulePath = NormalizePhysicalModulePath(relative[..^ResourceExtension.Length]);
         return modulePath.Length != 0;
     }
 
@@ -321,6 +320,13 @@ public static class PrecompiledModuleRegistry
         return TryParseModuleDecl(source, sourceName, out moduleDecl);
     }
 
+    internal static IReadOnlyList<Diagnostic.Diagnostic> GetModuleParseDiagnosticsForTest(
+        string source,
+        string? sourceName)
+    {
+        return ParseModuleDecl(source, sourceName, out _);
+    }
+
     private static IReadOnlyDictionary<string, string> LoadModuleSources()
     {
         var moduleSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -334,7 +340,7 @@ public static class PrecompiledModuleRegistry
                 continue;
             }
 
-            var modulePath = NormalizeModulePath(relativePath[..^ResourceExtension.Length]);
+            var modulePath = NormalizePhysicalModulePath(relativePath[..^ResourceExtension.Length]);
             if (string.IsNullOrEmpty(modulePath) || !moduleSources.TryAdd(modulePath, File.ReadAllText(path)))
             {
                 throw new InvalidOperationException($"External Std component contains duplicate module '{modulePath}'.");
@@ -389,14 +395,14 @@ public static class PrecompiledModuleRegistry
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var root = StdlibRoot.Value;
-        foreach (var modulePath in ModuleSources.Value.Keys)
+        foreach (var path in Directory.EnumerateFiles(root, $"*{ResourceExtension}", SearchOption.AllDirectories)
+                     .Order(StringComparer.Ordinal))
         {
-            var candidate = Path.Combine(
-                root,
-                modulePath.Replace('/', Path.DirectorySeparatorChar) + ResourceExtension);
-            if (File.Exists(candidate))
+            var relativePath = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+            var modulePath = NormalizePhysicalModulePath(relativePath[..^ResourceExtension.Length]);
+            if (!string.IsNullOrEmpty(modulePath))
             {
-                result[modulePath] = Path.GetFullPath(candidate);
+                result[modulePath] = Path.GetFullPath(path);
             }
         }
 
@@ -498,7 +504,7 @@ public static class PrecompiledModuleRegistry
         {
             if (!TryParseModuleDecl(source, normalizedPath, out var moduleDecl) || moduleDecl == null)
             {
-                return ExtractExportsFallback(source);
+                return ModuleExportAnalysisResult.Empty;
             }
 
             moduleDecl = SelectPrimaryModuleDecl(moduleDecl, normalizedPath);
@@ -629,13 +635,12 @@ public static class PrecompiledModuleRegistry
             return declaration.IsExported;
         }
 
-        return !HasInternalAttribute(declaration);
+        return !HasInternalClause(declaration);
     }
 
-    private static bool HasInternalAttribute(Declaration declaration)
+    private static bool HasInternalClause(Declaration declaration)
     {
-        return declaration.Attributes.Any(attribute =>
-            string.Equals(attribute.Name, InternalAttributeName, StringComparison.Ordinal));
+        return declaration.Clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Internal);
     }
 
     private static void AddDirectDeclaration(ExportSurfaceAccumulator accumulator, Declaration declaration)
@@ -678,13 +683,20 @@ public static class PrecompiledModuleRegistry
                 accumulator.AddType(adt.Name);
                 if (!adt.IsTypeAlias)
                 {
+                    var constructorNames = adt.Constructors
+                        .Select(ctor => ctor.Name)
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .ToList();
+                    if (adt.Cases.Count == 0 && constructorNames.Count == 0)
+                    {
+                        constructorNames.Add(adt.Name);
+                    }
+
                     accumulator.AddOwner(
                         adt.Name,
                         OwnerExportInfo.Create(
                             OwnerExportKind.Type,
-                            adt.Constructors
-                                .Select(ctor => ctor.Name)
-                                .Where(name => !string.IsNullOrWhiteSpace(name))));
+                            constructorNames));
                 }
                 break;
 
@@ -816,7 +828,7 @@ public static class PrecompiledModuleRegistry
     private static bool IsStdPrecompiledModulePath(string modulePath)
     {
         var normalized = NormalizeModulePath(modulePath);
-        return normalized.StartsWith($"{StdPackageAlias}/", StringComparison.Ordinal);
+        return normalized.StartsWith($"{StdPackageAlias}/", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string StripStdPackageAlias(string modulePath)
@@ -924,10 +936,20 @@ public static class PrecompiledModuleRegistry
         string? sourceName,
         out ModuleDecl? moduleDecl)
     {
+        var diagnostics = ParseModuleDecl(source, sourceName, out moduleDecl);
+        return moduleDecl != null &&
+               !diagnostics.Any(diagnostic => diagnostic.Level == Diagnostic.DiagnosticLevel.Error);
+    }
+
+    private static IReadOnlyList<Diagnostic.Diagnostic> ParseModuleDecl(
+        string source,
+        string? sourceName,
+        out ModuleDecl? moduleDecl)
+    {
         moduleDecl = null;
         if (string.IsNullOrWhiteSpace(source))
         {
-            return false;
+            return [];
         }
 
         var artifacts = SharedParserArtifacts.Value;
@@ -952,14 +974,10 @@ public static class PrecompiledModuleRegistry
         var (ast, diagnostics) = SyntaxParser.Parse(
             tokens,
             string.IsNullOrWhiteSpace(sourceName) ? "<memory>" : sourceName,
-            EidosLanguageVersions.Current);
-        if (ast == null || diagnostics.Any(diagnostic => diagnostic.Level == Diagnostic.DiagnosticLevel.Error))
-        {
-            return false;
-        }
-
+            EidosLanguageVersions.Current,
+            sourceText: source);
         moduleDecl = ast;
-        return true;
+        return diagnostics;
     }
 
     private static bool IsTokenText(Token token, string expected)
@@ -984,444 +1002,6 @@ public static class PrecompiledModuleRegistry
         return Path.Combine(baseDir, "cache", "grammar.bin");
     }
 
-    private static ModuleExportAnalysisResult ExtractExportsFallback(string source)
-    {
-        var functionNames = new HashSet<string>(StringComparer.Ordinal);
-        var typeNames = new HashSet<string>(StringComparer.Ordinal);
-        var traitNames = new HashSet<string>(StringComparer.Ordinal);
-        var abilityNames = new HashSet<string>(StringComparer.Ordinal);
-        var constructorNames = new HashSet<string>(StringComparer.Ordinal);
-        var pendingAttributes = new List<string>();
-
-        var braceDepth = 0;
-        var traitDepth = -1;
-        var adtDepth = -1;
-
-        using var reader = new StringReader(source);
-        while (reader.ReadLine() is { } line)
-        {
-            var trimmed = StripLineComment(line).Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            var lineAttributes = ExtractLeadingAttributes(ref trimmed);
-            if (lineAttributes.Count > 0)
-            {
-                pendingAttributes.AddRange(lineAttributes);
-            }
-
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            var isInternal = pendingAttributes.Contains(InternalAttributeName, StringComparer.Ordinal);
-
-            // Strip leading "export " keyword so subsequent checks see direct declarations.
-            if (trimmed.StartsWith("export ", StringComparison.Ordinal))
-            {
-                trimmed = trimmed["export ".Length..].TrimStart();
-            }
-
-            var inDirectAdtBody = adtDepth >= 0 && braceDepth == adtDepth;
-            if (inDirectAdtBody)
-            {
-                ExtractConstructorNames(trimmed, constructorNames);
-            }
-
-            if (braceDepth == 1 && traitDepth < 0 && adtDepth < 0)
-            {
-                var nameFirstSeparator = trimmed.IndexOf("::", StringComparison.Ordinal);
-                var isNameFirstDeclaration = nameFirstSeparator > 0;
-                var nameFirstName = isNameFirstDeclaration
-                    ? trimmed[..nameFirstSeparator].Trim()
-                    : string.Empty;
-                var nameFirstTail = isNameFirstDeclaration
-                    ? trimmed[(nameFirstSeparator + 2)..].TrimStart()
-                    : string.Empty;
-
-                if (trimmed.StartsWith("func ", StringComparison.Ordinal))
-                {
-                    if (!isInternal)
-                    {
-                        var functionName = ExtractDeclarationName(trimmed, WellKnownStrings.Keywords.Func);
-                        if (!string.IsNullOrWhiteSpace(functionName))
-                        {
-                            functionNames.Add(functionName);
-                        }
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (isNameFirstDeclaration && IsLikelyFunctionSignature(nameFirstTail))
-                {
-                    if (!isInternal && !string.IsNullOrWhiteSpace(nameFirstName))
-                    {
-                        functionNames.Add(ExtractNameFirstBaseName(nameFirstName));
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (trimmed.StartsWith("let ", StringComparison.Ordinal))
-                {
-                    if (!isInternal)
-                    {
-                        var letName = ExtractLetDeclarationName(trimmed);
-                        if (!string.IsNullOrWhiteSpace(letName))
-                        {
-                            functionNames.Add(letName);
-                        }
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (isNameFirstDeclaration &&
-                         nameFirstTail.StartsWith("trait", StringComparison.Ordinal))
-                {
-                    if (!isInternal && !string.IsNullOrWhiteSpace(nameFirstName))
-                    {
-                        traitNames.Add(ExtractNameFirstBaseName(nameFirstName));
-                    }
-
-                    if (LineOpensUnclosedBlock(trimmed))
-                    {
-                        traitDepth = braceDepth + 1;
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (trimmed.StartsWith("trait ", StringComparison.Ordinal))
-                {
-                    if (!isInternal)
-                    {
-                        var traitName = ExtractDeclarationName(trimmed, WellKnownStrings.Keywords.Trait);
-                        if (!string.IsNullOrWhiteSpace(traitName))
-                        {
-                            traitNames.Add(traitName);
-                        }
-                    }
-
-                    if (LineOpensUnclosedBlock(trimmed))
-                    {
-                        traitDepth = braceDepth + 1;
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (isNameFirstDeclaration &&
-                         nameFirstTail.StartsWith("ability", StringComparison.Ordinal))
-                {
-                    if (!isInternal && !string.IsNullOrWhiteSpace(nameFirstName))
-                    {
-                        abilityNames.Add(ExtractNameFirstBaseName(nameFirstName));
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (trimmed.StartsWith("ability ", StringComparison.Ordinal))
-                {
-                    if (!isInternal)
-                    {
-                        var abilityName = ExtractDeclarationName(trimmed, WellKnownStrings.Keywords.Effect);
-                        if (!string.IsNullOrWhiteSpace(abilityName))
-                        {
-                            abilityNames.Add(abilityName);
-                        }
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (isNameFirstDeclaration &&
-                         nameFirstTail.StartsWith("type", StringComparison.Ordinal))
-                {
-                    if (!isInternal && !string.IsNullOrWhiteSpace(nameFirstName))
-                    {
-                        typeNames.Add(ExtractNameFirstBaseName(nameFirstName));
-                    }
-
-                    var bodyStart = trimmed.IndexOf('{');
-                    if (bodyStart >= 0 && !trimmed.Contains('=', StringComparison.Ordinal))
-                    {
-                        var bodyEnd = trimmed.LastIndexOf('}');
-                        var body = bodyEnd > bodyStart
-                            ? trimmed[(bodyStart + 1)..bodyEnd]
-                            : trimmed[(bodyStart + 1)..];
-                        ExtractConstructorNames(body, constructorNames);
-
-                        if (bodyEnd < bodyStart)
-                        {
-                            adtDepth = braceDepth + 1;
-                        }
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (trimmed.StartsWith("type ", StringComparison.Ordinal) ||
-                         trimmed.StartsWith("type ", StringComparison.Ordinal))
-                {
-                    if (!isInternal)
-                    {
-                        var keyword = trimmed.StartsWith("type ", StringComparison.Ordinal) ? "adt" : WellKnownStrings.Keywords.Type;
-                        var typeName = ExtractDeclarationName(trimmed, keyword);
-                        if (!string.IsNullOrWhiteSpace(typeName))
-                        {
-                            typeNames.Add(typeName);
-                        }
-                    }
-
-                    var bodyStart = trimmed.IndexOf('{');
-                    if (bodyStart >= 0 && !trimmed.Contains('=', StringComparison.Ordinal))
-                    {
-                        var bodyEnd = trimmed.LastIndexOf('}');
-                        var body = bodyEnd > bodyStart
-                            ? trimmed[(bodyStart + 1)..bodyEnd]
-                            : trimmed[(bodyStart + 1)..];
-                        ExtractConstructorNames(body, constructorNames);
-
-                        if (bodyEnd < bodyStart)
-                        {
-                            adtDepth = braceDepth + 1;
-                        }
-                    }
-
-                    pendingAttributes.Clear();
-                }
-                else if (lineAttributes.Count == 0)
-                {
-                    pendingAttributes.Clear();
-                }
-            }
-            else if (lineAttributes.Count == 0)
-            {
-                pendingAttributes.Clear();
-            }
-
-            var nextBraceDepth = braceDepth + CountChar(trimmed, '{') - CountChar(trimmed, '}');
-            if (adtDepth >= 0 && nextBraceDepth < adtDepth)
-            {
-                adtDepth = -1;
-            }
-
-            if (traitDepth >= 0 && nextBraceDepth < traitDepth)
-            {
-                traitDepth = -1;
-            }
-
-            braceDepth = nextBraceDepth;
-        }
-
-        var fallbackExports = new PrecompiledModuleExports(
-            Order(functionNames),
-            Order(typeNames),
-            Order(traitNames),
-            Order(abilityNames),
-            Order(constructorNames));
-        return new ModuleExportAnalysisResult(fallbackExports, new Dictionary<string, OwnerExportInfo>(StringComparer.Ordinal));
-    }
-
-    private static IReadOnlyList<string> Order(HashSet<string> values)
-    {
-        return values.OrderBy(name => name, StringComparer.Ordinal).ToArray();
-    }
-
-    private static string ExtractDeclarationName(string line, string keyword)
-    {
-        var start = keyword.Length;
-        while (start < line.Length && char.IsWhiteSpace(line[start]))
-        {
-            start++;
-        }
-
-        var end = FindDeclarationNameEnd(line, start);
-        return end <= start ? string.Empty : line[start..end];
-    }
-
-    private static bool IsLikelyFunctionSignature(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        return text.Contains("->", StringComparison.Ordinal) ||
-               text.StartsWith("need ", StringComparison.Ordinal) ||
-               text.StartsWith("comptime ", StringComparison.Ordinal);
-    }
-
-    private static string ExtractNameFirstBaseName(string text)
-    {
-        var end = FindDeclarationNameEnd(text, 0);
-        return end <= 0 ? text : text[..end];
-    }
-
-    private static string ExtractLetDeclarationName(string line)
-    {
-        var start = WellKnownStrings.Keywords.Let.Length;
-        while (start < line.Length && char.IsWhiteSpace(line[start]))
-        {
-            start++;
-        }
-
-        if (line.AsSpan(start).StartsWith(WellKnownStrings.Keywords.Mut.AsSpan(), StringComparison.Ordinal))
-        {
-            var next = start + WellKnownStrings.Keywords.Mut.Length;
-            if (next >= line.Length || char.IsWhiteSpace(line[next]))
-            {
-                start = next;
-                while (start < line.Length && char.IsWhiteSpace(line[start]))
-                {
-                    start++;
-                }
-            }
-        }
-
-        var end = FindDeclarationNameEnd(line, start);
-        return end <= start ? string.Empty : line[start..end];
-    }
-
-    private static void ExtractConstructorNames(string sourceFragment, HashSet<string> constructorNames)
-    {
-        foreach (var segment in sourceFragment.Split('|', StringSplitOptions.TrimEntries))
-        {
-            var trimmed = segment
-                .Trim()
-                .TrimStart(',', '}')
-                .Trim();
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            var start = 0;
-            while (start < trimmed.Length && !char.IsLetter(trimmed[start]))
-            {
-                start++;
-            }
-
-            if (start >= trimmed.Length || !char.IsUpper(trimmed[start]))
-            {
-                continue;
-            }
-
-            var end = FindDeclarationNameEnd(trimmed, start);
-            if (end <= start)
-            {
-                continue;
-            }
-
-            constructorNames.Add(trimmed[start..end]);
-        }
-    }
-
-    private static bool LineOpensUnclosedBlock(string line)
-    {
-        return CountChar(line, '{') > CountChar(line, '}');
-    }
-
-    private static List<string> ExtractLeadingAttributes(ref string line)
-    {
-        var attributes = new List<string>();
-        var remaining = line;
-
-        while (remaining.StartsWith('@'))
-        {
-            var end = FindAttributeEnd(remaining);
-            if (end <= 1)
-            {
-                break;
-            }
-
-            var attributeText = remaining[1..end].Trim();
-            if (attributeText.Length == 0)
-            {
-                break;
-            }
-
-            var parenIndex = attributeText.IndexOf('(');
-            var attributeName = parenIndex >= 0 ? attributeText[..parenIndex] : attributeText;
-            if (!string.IsNullOrWhiteSpace(attributeName))
-            {
-                attributes.Add(attributeName);
-            }
-
-            remaining = remaining[end..].TrimStart();
-        }
-
-        line = remaining;
-        return attributes;
-    }
-
-    private static int FindAttributeEnd(string text)
-    {
-        if (text.Length < 2 || text[0] != '@')
-        {
-            return 0;
-        }
-
-        var depth = 0;
-        for (var i = 1; i < text.Length; i++)
-        {
-            var c = text[i];
-            if (c == '(')
-            {
-                depth++;
-                continue;
-            }
-
-            if (c == ')')
-            {
-                if (depth > 0)
-                {
-                    depth--;
-                }
-
-                continue;
-            }
-
-            if (depth == 0 && char.IsWhiteSpace(c))
-            {
-                return i;
-            }
-        }
-
-        return text.Length;
-    }
-
-    private static string StripLineComment(string line)
-    {
-        var commentIndex = line.IndexOf("//", StringComparison.Ordinal);
-        return commentIndex >= 0 ? line[..commentIndex] : line;
-    }
-
-    private static int CountChar(string line, char target)
-    {
-        var count = 0;
-        foreach (var c in line)
-        {
-            if (c == target)
-            {
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    private static int FindDeclarationNameEnd(string line, int start)
-    {
-        for (var i = start; i < line.Length; i++)
-        {
-            var c = line[i];
-            if (char.IsWhiteSpace(c) || c == ':' || c == '[' || c == '(' || c == '{' || c == '=')
-            {
-                return i;
-            }
-        }
-
-        return line.Length;
-    }
 
     private static string NormalizeModulePath(IReadOnlyList<string> modulePath)
     {
@@ -1431,6 +1011,17 @@ public static class PrecompiledModuleRegistry
         }
 
         return NormalizeModulePath(string.Join(WellKnownStrings.Operators.Divide, modulePath));
+    }
+
+    private static string NormalizePhysicalModulePath(string physicalModulePath)
+    {
+        var semanticPath = string.Join(
+            WellKnownStrings.Operators.Divide,
+            physicalModulePath
+                .Replace('\\', '/')
+                .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Select(ManifestNamingRules.NormalizeModulePathSegment));
+        return NormalizeModulePath(semanticPath);
     }
 
     private static string NormalizeModulePath(string? modulePath)
@@ -1450,6 +1041,15 @@ public static class PrecompiledModuleRegistry
         }
 
         normalized = normalized.Trim('/');
+        if (normalized.Equals(StdPackageAlias, StringComparison.OrdinalIgnoreCase))
+        {
+            return StdPackageAlias;
+        }
+
+        if (normalized.StartsWith($"{StdPackageAlias}/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = StdPackageAlias + normalized[StdPackageAlias.Length..];
+        }
         return normalized;
     }
 

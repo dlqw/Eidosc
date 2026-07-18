@@ -8,7 +8,8 @@ public partial class LlvmPipelineIntegrationTests
     public void ListPattern_TupleElementsFromVecFreeze_NativeSmoke_IndexAndMatchStayStable()
     {
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
+import std.Seq
 
 make_edges :: Int -> Seq[(Int, Int)]
 {
@@ -98,8 +99,10 @@ main :: Unit -> Int
     public void ListPattern_NestedAdtConstructor_NativeSmoke_MatchesElementFieldsAndRest()
     {
         const string source = """
+import std.Seq
+
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
@@ -135,7 +138,7 @@ main :: Unit -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 reclassify :: Seq[Tok] -> Int
@@ -167,6 +170,8 @@ main :: Unit -> Int
     public void ListPattern_MiddleRestAndSuffix_NativeSmoke_MatchesAndBindsMiddleSlice()
     {
         const string source = """
+import std.Seq
+
 score :: Seq[Int] -> Int
 {
     [head, ..middle, last] => head * 100 + Seq.len(middle) * 10 + last,

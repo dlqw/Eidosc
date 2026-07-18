@@ -452,7 +452,7 @@ public sealed class PipelineQuerySession
         private static string BuildOptionsFingerprint(CompilationOptions options)
         {
             var material = string.Join('\0',
-                "query-options-v2",
+                "query-options-v4",
                 options.LanguageVersion,
                 options.Target.ToString(),
                 options.StopAtPhase?.ToString() ?? "",
@@ -461,6 +461,7 @@ public sealed class PipelineQuerySession
                 options.ComptimeAllocatedValueBytesBudget.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 options.ComptimeDiagnosticBudget.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 options.TreatWarningsAsErrors.ToString(),
+                options.DenyStyle.ToString(),
                 string.Join(",", options.WarningCodesAsErrors.Order(StringComparer.Ordinal)),
                 string.Join("|", options.ImportSearchRoots.Select(NormalizePathForFingerprint).Order(StringComparer.Ordinal)),
                 string.Join("|", options.ConfigFfiLibraries.Order(StringComparer.Ordinal)),
@@ -468,6 +469,11 @@ public sealed class PipelineQuerySession
                 string.Join("|", options.ConfigFfiIncludePaths.Select(NormalizePathForFingerprint).Order(StringComparer.Ordinal)),
                 string.Join("|", options.ConfigFfiNativeSources.Select(NormalizePathForFingerprint).Order(StringComparer.Ordinal)),
                 string.Join("|", options.ConfigFfiLinkerFlags.Order(StringComparer.Ordinal)),
+                options.BuildHostFingerprint ?? "",
+                options.BuildGraphFingerprint ?? "",
+                string.Join("|", options.GeneratedSourceUriMap
+                    .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
+                    .Select(static entry => $"{NormalizePathForFingerprint(entry.Key)}={entry.Value}")),
                 options.NoImplicitPrelude.ToString());
             return global::Eidosc.ProjectSystem.ContentHash.ComputeHash(material);
         }

@@ -209,7 +209,7 @@ public sealed record ProjectModuleSemanticSignatureSnapshot(
     string SchemaVersion,
     IReadOnlyList<ProjectModuleSemanticSignatureNode> Nodes)
 {
-    public const string CurrentSchemaVersion = "semantic-signature-snapshot-v1";
+    public const string CurrentSchemaVersion = "semantic-signature-snapshot-v2";
 
     public static ProjectModuleSemanticSignatureSnapshot FromGraphSnapshot(
         ProjectModuleGraphSnapshot graph,
@@ -277,7 +277,7 @@ public sealed record ProjectModuleSemanticDeclarationSignature(
     IReadOnlyList<string> TypeParams,
     string Signature,
     IReadOnlyList<string> Members,
-    IReadOnlyList<string> Attributes,
+    IReadOnlyList<string> Clauses,
     bool IsExported,
     bool IsExternal)
 {
@@ -322,10 +322,10 @@ internal static class ProjectModuleSemanticSignatureBuilder
         switch (declaration)
         {
             case FuncDef function:
-                yield return CreateFunction("function", function.Name, function.TypeParams, function.Signature, function.RequiredAbilities, function.Attributes, function.IsExported, function.Body.Count == 0);
+                yield return CreateFunction("function", function.Name, function.TypeParams, function.Signature, function.RequiredAbilities, function.Clauses, function.IsExported, function.Body.Count == 0);
                 yield break;
             case FuncDecl function:
-                yield return CreateFunction("function-declaration", function.Name, function.TypeParams, function.Signature, function.RequiredAbilities, function.Attributes, function.IsExported, isExternal: false);
+                yield return CreateFunction("function-declaration", function.Name, function.TypeParams, function.Signature, function.RequiredAbilities, function.Clauses, function.IsExported, isExternal: false);
                 yield break;
             case AdtDef adt:
                 yield return CreateAdt(adt);
@@ -354,7 +354,7 @@ internal static class ProjectModuleSemanticSignatureBuilder
         IReadOnlyList<TypeParam> typeParams,
         IReadOnlyList<TypeNode> signature,
         IReadOnlyList<EffectRequirementNode> requiredAbilities,
-        IReadOnlyList<Attribute> attributes,
+        IReadOnlyList<DeclarationClause> clauses,
         bool isExported,
         bool isExternal)
     {
@@ -368,9 +368,9 @@ internal static class ProjectModuleSemanticSignatureBuilder
             RenderTypeParams(typeParams),
             renderedSignature + required,
             [],
-            RenderAttributes(attributes),
+            RenderClauses(clauses),
             isExported,
-            isExternal || HasFfiAttribute(attributes));
+            isExternal || HasExternClause(clauses));
     }
 
     private static ProjectModuleSemanticDeclarationSignature CreateAdt(AdtDef adt)
@@ -392,7 +392,7 @@ internal static class ProjectModuleSemanticSignatureBuilder
             RenderTypeParams(adt.TypeParams),
             "",
             members.OrderBy(static member => member, StringComparer.Ordinal).ToArray(),
-            RenderAttributes(adt.Attributes),
+            RenderClauses(adt.Clauses),
             adt.IsExported,
             IsExternal: false);
     }
@@ -411,7 +411,7 @@ internal static class ProjectModuleSemanticSignatureBuilder
             RenderTypeParams(trait.TypeParams),
             "",
             members.OrderBy(static member => member, StringComparer.Ordinal).ToArray(),
-            RenderAttributes(trait.Attributes),
+            RenderClauses(trait.Clauses),
             trait.IsExported,
             IsExternal: false);
     }
@@ -424,7 +424,7 @@ internal static class ProjectModuleSemanticSignatureBuilder
             [],
             "",
             [],
-            RenderAttributes(ability.Attributes),
+            RenderClauses(ability.Clauses),
             ability.IsExported,
             IsExternal: false);
     }
@@ -443,7 +443,7 @@ internal static class ProjectModuleSemanticSignatureBuilder
             RenderTypeParams(instance.TypeParams),
             $"{RenderTraitRef(instance.Trait)} for {RenderType(instance.TargetType)}",
             members.OrderBy(static member => member, StringComparer.Ordinal).ToArray(),
-            RenderAttributes(instance.Attributes),
+            RenderClauses(instance.Clauses),
             instance.IsExported,
             IsExternal: false);
     }
@@ -475,7 +475,7 @@ internal static class ProjectModuleSemanticSignatureBuilder
             [],
             $"{(let.IsMutable ? "mut " : "")}{RenderType(let.TypeAnnotation)}",
             [],
-            RenderAttributes(let.Attributes),
+            RenderClauses(let.Clauses),
             let.IsExported,
             IsExternal: false);
     }
@@ -514,16 +514,15 @@ internal static class ProjectModuleSemanticSignatureBuilder
             .ToArray();
     }
 
-    private static IReadOnlyList<string> RenderAttributes(IReadOnlyList<Attribute> attributes)
+    private static IReadOnlyList<string> RenderClauses(IReadOnlyList<DeclarationClause> clauses)
     {
-        return attributes
-            .Select(static attribute => $"{attribute.Name}({string.Join(",", attribute.ArgumentTexts.OrderBy(static text => text, StringComparer.Ordinal))})")
-            .OrderBy(static attribute => attribute, StringComparer.Ordinal)
+        return clauses
+            .Select(static clause => $"{clause.Keyword}({string.Join(",", clause.ArgumentTokens)})")
             .ToArray();
     }
 
-    private static bool HasFfiAttribute(IReadOnlyList<Attribute> attributes) =>
-        attributes.Any(static attribute => string.Equals(attribute.Name, WellKnownStrings.Keywords.Ffi, StringComparison.Ordinal));
+    private static bool HasExternClause(IReadOnlyList<DeclarationClause> clauses) =>
+        clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Extern);
 
     private static string RenderEffectRequirement(EffectRequirementNode requirement) =>
         string.Join(WellKnownStrings.Separators.Path, requirement.Path);
@@ -717,12 +716,15 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
     {
         yield return $"moduleLevel:{symbol.IsModuleLevel}";
         yield return $"typeResolved:{symbol.IsTypeResolved}";
+        yield return $"definitionModule:{FormatSymbol(symbolTable, symbol.DefinitionModuleId, canonical)}";
         if (symbol.GeneratedOrigin is { } origin)
         {
             yield return $"generated:{origin.StableIdentity}";
             yield return $"generatedBy:{origin.GeneratorIdentity}";
             yield return $"generatedTarget:{origin.TargetIdentity}";
-            yield return $"generatedOccurrence:{origin.AttributeOccurrenceIndex}";
+            yield return $"generatedOccurrence:{origin.ClauseOccurrenceIndex}";
+            yield return $"generatedClauseOccurrence:{origin.ClauseOccurrenceIdentity}";
+            yield return $"generatedClauseArgument:{origin.ClauseArgumentSubIndex}";
             yield return $"generatedOutput:{origin.ExpansionOutputIndex}";
             yield return $"generatedArguments:{origin.CanonicalArgumentsHash}";
             yield return $"generatedMetaSchema:{origin.MetaSchemaVersion}";
@@ -785,6 +787,16 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
                 yield return $"fieldType:{FormatType(symbolTable, field.FieldType, canonical)}";
                 yield return $"owner:{FormatSymbol(symbolTable, field.OwnerType, canonical)}";
                 yield return $"index:{field.Index}";
+                break;
+            case AssociatedTypeSymbol associatedType:
+                yield return $"ownerTrait:{FormatSymbol(symbolTable, associatedType.OwnerTrait, canonical)}";
+                yield return $"ownerImpl:{FormatSymbol(symbolTable, associatedType.OwnerImpl, canonical)}";
+                yield return $"typeParams:{FormatSymbols(symbolTable, associatedType.TypeParams, canonical)}";
+                break;
+            case AssociatedConstSymbol associatedConst:
+                yield return $"ownerTrait:{FormatSymbol(symbolTable, associatedConst.OwnerTrait, canonical)}";
+                yield return $"ownerImpl:{FormatSymbol(symbolTable, associatedConst.OwnerImpl, canonical)}";
+                yield return $"valueType:{FormatType(symbolTable, associatedConst.ValueType, canonical)}";
                 break;
             case TypeParamSymbol typeParam:
                 yield return $"kind:{typeParam.KindAnnotation}";
@@ -893,6 +905,7 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
         yield return $"typeParams:{FormatSymbols(symbolTable, trait.TypeParams, canonical)}";
         yield return $"methods:{FormatSymbols(symbolTable, trait.Methods, canonical)}";
         yield return $"associatedTypes:{FormatSymbols(symbolTable, trait.AssociatedTypes, canonical)}";
+        yield return $"associatedConsts:{FormatSymbols(symbolTable, trait.AssociatedConsts, canonical)}";
         yield return $"parentTraits:{FormatSymbols(symbolTable, trait.ParentTraits, canonical)}";
         yield return $"selfPosition:{trait.SelfPosition}";
     }
@@ -916,6 +929,8 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
         yield return $"implementingTypeDisplay:{impl.ImplementingTypeDisplay}";
         yield return $"implementingTypeKey:{FormatImplTypeRefKey(symbolTable, impl.ImplementingTypeKey, canonical)}";
         yield return $"methods:{FormatSymbols(symbolTable, impl.Methods, canonical)}";
+        yield return $"associatedTypes:{FormatSymbols(symbolTable, impl.AssociatedTypes, canonical)}";
+        yield return $"associatedConsts:{FormatSymbols(symbolTable, impl.AssociatedConsts, canonical)}";
         yield return $"runtimeMethods:{impl.HasRuntimeMethods}";
         yield return $"traitMethodImplementations:{string.Join(",", impl.TraitMethodImplementations.OrderBy(pair => FormatSymbol(symbolTable, pair.Key, canonical), StringComparer.Ordinal).Select(pair => $"{FormatSymbol(symbolTable, pair.Key, canonical)}->{FormatSymbol(symbolTable, pair.Value, canonical)}"))}";
         yield return $"traitTypeArgs:{string.Join(",", impl.TraitTypeArgs)}";
@@ -939,6 +954,20 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
         if (symbolTable.Modules.TryGetOwningModule(symbol.Id, out var module))
         {
             return $"{ModuleRegistry.FormatModuleFullName(module)}::{symbol.Kind}:{symbol.Name}";
+        }
+
+        var semanticOwnerId = symbol switch
+        {
+            AssociatedItemSymbol { OwnerImpl.IsValid: true } item => item.OwnerImpl,
+            AssociatedItemSymbol { OwnerTrait.IsValid: true } item => item.OwnerTrait,
+            FuncSymbol { OwnerTrait: { IsValid: true } ownerTrait } => ownerTrait,
+            FieldSymbol { OwnerType.IsValid: true } field => field.OwnerType,
+            CtorSymbol { OwnerAdt.IsValid: true } constructor => constructor.OwnerAdt,
+            _ => SymbolId.None
+        };
+        if (semanticOwnerId.IsValid && symbolTable.GetSymbol(semanticOwnerId) is { } semanticOwner)
+        {
+            return $"{FormatCanonicalSymbolName(symbolTable, semanticOwner)}::{symbol.Kind}:{symbol.Name}";
         }
 
         return $"{symbol.Kind}:{symbol.Name}";

@@ -158,8 +158,21 @@ public sealed partial class MirGenericSpecializer
                 changed = true;
             }
 
+            var substitutedEffectArgs = new GenericEffectArgumentDescriptor[tyCon.EffectArgs.Length];
+            for (var index = 0; index < tyCon.EffectArgs.Length; index++)
+            {
+                var effectArgument = tyCon.EffectArgs[index];
+                var substitutedTypeId = SubstituteTypeId(effectArgument.TypeId, bindings, resolvingTypeIds);
+                substitutedEffectArgs[index] = effectArgument with { TypeId = substitutedTypeId };
+                changed |= substitutedTypeId != effectArgument.TypeId;
+            }
+
             substitutedDescriptor = changed
                 ? new TypeDescriptor.TyCon(substitutedConstructor, substitutedTypeArgs)
+                {
+                    ValueArgs = tyCon.ValueArgs,
+                    EffectArgs = substitutedEffectArgs
+                }
                 : tyCon;
             return true;
         }

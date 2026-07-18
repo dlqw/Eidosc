@@ -1,8 +1,10 @@
 using Eidosc.Symbols;
+using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Types;
 
 namespace Eidosc.Semantic;
 
@@ -10,6 +12,18 @@ public sealed partial class NameResolver
 {
     private void ResolveIdentifierReference(IdentifierExpr ident)
     {
+        if (TryUseAttachedSyntaxSymbol(ident, out var attachedSymbol))
+        {
+            ident.IsConstructor = attachedSymbol is CtorSymbol;
+            return;
+        }
+
+        if (HasUnresolvedHygienicSyntaxIdentity(ident))
+        {
+            AddUnresolvedHygienicIdentifierError(ident, ident.Name);
+            return;
+        }
+
         if (ident.Name == WellKnownStrings.Keywords.ReflConstructor)
         {
             ident.IsConstructor = true;
@@ -80,6 +94,33 @@ public sealed partial class NameResolver
 
     private void ResolvePathReference(PathExpr path)
     {
+        if (TryUseAttachedSyntaxSymbol(path, out var attachedSymbol))
+        {
+            path.SetIsTypePath(IsTypeNamespaceSymbol(attachedSymbol.Id));
+            path.SetIsConstructorPath(attachedSymbol is CtorSymbol);
+            if (path.GenericArguments.Count > 0)
+            {
+                path.SetGenericArguments(ResolveGenericArguments(
+                    path.SymbolId,
+                    path.GenericArguments,
+                    path.Span));
+            }
+            else
+            {
+                foreach (var typeArg in path.TypeArgs)
+                {
+                    ResolveTypeReferences(typeArg);
+                }
+            }
+            return;
+        }
+
+        if (HasUnresolvedHygienicSyntaxIdentity(path))
+        {
+            AddUnresolvedHygienicIdentifierError(path, string.Join(WellKnownStrings.Separators.Path, path.Path));
+            return;
+        }
+
         // 反糖化：ptr_load_as[T](ptr) → ptr_load_{type}(ptr)
         //          ptr_store_as[T](ptr, val) → ptr_store_{type}(ptr, val)
         TryDesugarGenericPtrIntrinsic(path);
@@ -123,6 +164,8 @@ public sealed partial class NameResolver
         if (result.IsSuccess)
         {
             path.SymbolId = result.SymbolId;
+            path.SetIsTypePath(IsTypeNamespaceSymbol(result.SymbolId));
+            path.SetIsConstructorPath(result.IsConstructor);
         }
         else
         {
@@ -146,6 +189,27 @@ public sealed partial class NameResolver
         {
             ResolveTypeReferences(typeArg);
         }
+    }
+
+    private bool TryUseAttachedSyntaxSymbol(EidosAstNode node, out Symbol symbol)
+    {
+        if (TryUseMappedSyntaxIdentity(node, out symbol))
+        {
+            return true;
+        }
+
+        var identity = node.AttachedSyntaxIdentity;
+        if (identity is not { Kind: SyntaxIdentityKind.Declaration or SyntaxIdentityKind.Type or SyntaxIdentityKind.Identifier } ||
+            !identity.SymbolId.IsValid ||
+            node.SymbolId != identity.SymbolId ||
+            _symbolTable.GetSymbol(identity.SymbolId) is not { } resolved)
+        {
+            symbol = null!;
+            return false;
+        }
+
+        symbol = resolved;
+        return true;
     }
 
     private bool TryCollectQualifiedFunctionCandidates(PathExpr path, out IReadOnlyList<SymbolId> candidates)
@@ -334,6 +398,48 @@ public sealed partial class NameResolver
         return result.IsSuccess;
     }
 
+    private bool TryResolveImportedSymbolPath(
+        IReadOnlyList<string> path,
+        out PathResolutionResult result,
+        IReadOnlySet<ResolutionKind>? allowedKinds)
+    {
+        result = PathResolutionResult.NotFound(string.Empty);
+        if (path.Count == 0 ||
+            !_currentModule.IsValid ||
+            !_importScopes.TryGetValue(_currentModule, out var importScope))
+        {
+            return false;
+        }
+
+        var candidates = importScope.GetEffectiveImportDetails(path[0])
+            .Where(candidate =>
+                candidate.SymbolId.IsValid &&
+                (allowedKinds == null || allowedKinds.Contains(candidate.Kind)))
+            .DistinctBy(candidate => (candidate.SymbolId, candidate.Kind))
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            return false;
+        }
+
+        if (candidates.Length > 1)
+        {
+            result = PathResolutionResult.NotFound(
+                $"Identifier '{path[0]}' is ambiguous across imported symbols in the requested semantic namespace.");
+            return true;
+        }
+
+        var candidate = candidates[0];
+        if (path.Count == 1)
+        {
+            result = PathResolutionResult.Found(candidate.SymbolId, candidate.Kind);
+            return true;
+        }
+
+        result = ResolveImportedMemberPath(candidate.SymbolId, path.Skip(1).ToList(), allowedKinds);
+        return true;
+    }
+
     private PathResolutionResult ResolveImportedModulePath(SymbolId moduleId, IReadOnlyList<string> relativePath)
         => ResolveImportedModulePath(moduleId, relativePath, allowedKinds: null);
 
@@ -349,7 +455,7 @@ public sealed partial class NameResolver
 
         if ((allowedKinds == null || allowedKinds.Contains(ResolutionKind.Value)) &&
             relativePath.Count == 1 &&
-            TryLookupSameNamedTraitMember(moduleId, relativePath[0], out var traitMember))
+            TryLookupTraitMemberInModule(moduleId, relativePath[0], out var traitMember))
         {
             return traitMember;
         }
@@ -481,37 +587,42 @@ public sealed partial class NameResolver
         return false;
     }
 
-    private bool TryLookupSameNamedTraitMember(
+    private bool TryLookupTraitMemberInModule(
         SymbolId moduleId,
         string memberName,
         out PathResolutionResult result)
     {
         result = PathResolutionResult.NotFound(DiagnosticMessages.SymbolNotFoundInImportedModule(memberName));
-        var module = _symbolTable.Modules.GetModule(moduleId);
-        if (module == null || module.Path.Count == 0)
+        var matches = new List<PathResolutionResult>();
+        foreach (var binding in _symbolTable.Modules.GetAccessibleBindings(moduleId, _currentModule))
+        {
+            if (_symbolTable.GetSymbol(binding.SymbolId) is not TraitSymbol trait)
+            {
+                continue;
+            }
+
+            var candidate = LookupTraitMethod(trait, memberName);
+            if (candidate.IsSuccess &&
+                !matches.Any(match => match.SymbolId == candidate.SymbolId))
+            {
+                matches.Add(candidate);
+            }
+        }
+
+        if (matches.Count != 1)
         {
             return false;
         }
 
-        var ownerName = module.Path[^1];
-        foreach (var binding in _symbolTable.Modules.GetAccessibleBindingsByName(
-                     moduleId,
-                     ownerName,
-                     _currentModule,
-                     TypeResolutionKinds))
-        {
-            var ownerSymbol = _symbolTable.GetSymbol(binding.SymbolId);
-            if (ownerSymbol is TraitSymbol trait)
-            {
-                result = LookupTraitMethod(trait, memberName);
-                if (result.IsSuccess)
-                {
-                    return true;
-                }
-            }
-        }
+        result = matches[0];
+        return true;
+    }
 
-        return false;
+    private bool IsTypeNamespaceSymbol(SymbolId symbolId)
+    {
+        return symbolId.IsValid &&
+               _symbolTable.GetSymbol(symbolId) is AdtSymbol or TraitSymbol or AssociatedTypeSymbol or
+                   TypeParamSymbol { ParameterKind: GenericParameterKind.Type };
     }
 
     private bool TryLookupSameNamedEffectMember(
@@ -600,7 +711,8 @@ public sealed partial class NameResolver
         return symbol switch
         {
             FuncSymbol or VarSymbol => ResolutionKind.Value,
-            AdtSymbol or TraitSymbol => ResolutionKind.Type,
+            AdtSymbol or TraitSymbol or AssociatedTypeSymbol => ResolutionKind.Type,
+            AssociatedConstSymbol => ResolutionKind.Value,
             CtorSymbol => ResolutionKind.Constructor,
             ModuleSymbol => ResolutionKind.Module,
             EffectSymbol => ResolutionKind.Effect,

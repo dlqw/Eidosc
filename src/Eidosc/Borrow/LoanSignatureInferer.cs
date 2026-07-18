@@ -509,6 +509,7 @@ public sealed class LoanSignatureInferer
             MirBinOp binOp => OperandUsesParam(binOp.Left, paramId, blockId, instructionIndex) ||
                               OperandUsesParam(binOp.Right, paramId, blockId, instructionIndex),
             MirUnaryOp unaryOp => OperandUsesParam(unaryOp.Operand, paramId, blockId, instructionIndex),
+            MirCaseInject injection => OperandUsesParam(injection.Operand, paramId, blockId, instructionIndex),
             MirCall call => call.Arguments.Any(a => OperandUsesParam(a, paramId, blockId, instructionIndex)),
             _ => false
         };
@@ -523,6 +524,8 @@ public sealed class LoanSignatureInferer
         {
             MirStore store => store.Target?.Kind == PlaceKind.Local && store.Target.Local.Equals(paramId),
             MirAssign assign => assign.Target?.Kind == PlaceKind.Local && assign.Target.Local.Equals(paramId),
+            MirCaseInject { Target: MirPlace target } =>
+                target.Kind == PlaceKind.Local && target.Local.Equals(paramId),
             _ => false
         };
     }
@@ -585,6 +588,11 @@ public sealed class LoanSignatureInferer
 
             case MirAssign assign:
                 MarkDirectParamAssign(assign.Target);
+                break;
+
+            case MirCaseInject { Target: MirPlace target } injection:
+                MarkDirectParamAssign(target);
+                MarkOperandRead(injection.Operand, blockId, instructionIndex);
                 break;
 
             case MirLoad load when load.IsMutableBorrow || load.CreatesBorrowAlias:
@@ -902,6 +910,22 @@ public sealed class LoanSignatureInferer
                 else
                 {
                     state.Clear(assign.Target.Local);
+                }
+                break;
+
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target } injection:
+                if (injection.Operand is MirPlace { Kind: PlaceKind.Local, Local: var sourceLocal })
+                {
+                    TransferAlias(
+                        state,
+                        target.Local,
+                        sourceLocal,
+                        forceMutable: false,
+                        allowParamFallback: ShouldAllowDirectParamReferenceOriginFallback(sourceLocal));
+                }
+                else
+                {
+                    state.Clear(target.Local);
                 }
                 break;
 

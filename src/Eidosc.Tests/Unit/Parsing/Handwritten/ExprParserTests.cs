@@ -184,14 +184,14 @@ public sealed class ExprParserTests
     }
 
     [Fact]
-    public void Parse_ctor_positional()
+    public void Parse_call_like_syntax_keeps_constructor_category_unresolved()
     {
         var ctx = MakeCtx(TypeId("Some"), "(", Num("1"), ")");
         var parser = new ExprParser(ctx);
         var result = parser.ParseExpr();
-        var ctor = Assert.IsType<CtorExpr>(result);
-        Assert.Equal("Some", ctor.ConstructorName);
-        Assert.Single(ctor.PositionalArgs);
+        var call = Assert.IsType<CallExpr>(result);
+        Assert.Equal("Some", Assert.IsType<IdentifierExpr>(call.Function).Name);
+        Assert.Single(call.PositionalArgs);
         Assert.Empty(ctx.Diagnostics);
     }
 
@@ -398,7 +398,7 @@ public sealed class ExprParserTests
         Assert.Equal(BinaryOp.Or, firstCondition.Operator);
         AssertDecisionConditionUsesKey(firstCondition.Left, 87);
         AssertDecisionConditionUsesKey(firstCondition.Right, 265);
-        Assert.IsType<CtorExpr>(first.ThenBranch);
+        Assert.IsType<CallExpr>(first.ThenBranch);
 
         var second = Assert.IsType<IfExpr>(first.ElseBranch);
         AssertDecisionConditionUsesKey(second.Condition, 83);
@@ -506,7 +506,7 @@ public sealed class ExprParserTests
         var result = parser.ParseExpr();
 
         var match = Assert.IsType<MatchExpr>(result);
-        var scrutinee = Assert.IsType<PathExpr>(match.MatchedExpression);
+        var scrutinee = Assert.IsType<IdentifierExpr>(match.MatchedExpression);
         Assert.Equal("Tier", scrutinee.Name);
         var orPattern = Assert.IsType<OrPattern>(match.Branches[0].Pattern);
         Assert.Equal(2, orPattern.Alternatives.Count);
@@ -659,6 +659,49 @@ public sealed class ExprParserTests
     }
 
     [Fact]
+    public void Parse_semicolonless_qualified_call_before_mutable_assignment()
+    {
+        var ctx = MakeNameFirstCtx(
+            "{",
+            "mut", Ident("index"), ":=", Num("0"),
+            Ident("runtime_array"), ".", Ident("swap"),
+            "(", Ident("heap"), ",", Ident("index"), ",", Ident("parent"), ")",
+            Ident("index"), ":=", Ident("parent"),
+            Ident("index"),
+            "}");
+        var parser = new ExprParser(ctx);
+
+        var result = parser.ParseExpr();
+
+        var block = Assert.IsType<BlockExpr>(result);
+        Assert.Equal(4, block.Statements.Count);
+        Assert.IsAssignableFrom<Expression>(block.Statements[1]);
+        var assignment = Assert.IsType<Assignment>(block.Statements[2]);
+        Assert.Equal("index", assignment.Target);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_semicolonless_call_before_inferred_local_binding()
+    {
+        var ctx = MakeNameFirstCtx(
+            "{",
+            Ident("emit"), "(", Ident("value"), ")",
+            Ident("next"), ":=", Num("1"),
+            Ident("next"),
+            "}");
+        var parser = new ExprParser(ctx);
+
+        var result = parser.ParseExpr();
+
+        var block = Assert.IsType<BlockExpr>(result);
+        Assert.Equal(3, block.Statements.Count);
+        Assert.IsType<CallExpr>(block.Statements[0]);
+        Assert.IsType<LetDecl>(block.Statements[1]);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
     public void Parse_name_first_comptime_local_binding()
     {
         var ctx = MakeNameFirstCtx("{", "comptime", Ident("size"), ":", TypeId("Int"), ":=", Num("32"), ";", Ident("size"), "}");
@@ -738,11 +781,13 @@ public sealed class ExprParserTests
 
         var result = parser.ParseExpr();
 
-        var associatedConst = Assert.IsType<AssociatedConstExpr>(result);
-        Assert.Equal("Min", associatedConst.MemberName);
-        var target = Assert.IsType<TypePath>(associatedConst.Target);
-        Assert.Equal("Bounded", target.TypeName);
-        Assert.Single(target.TypeArgs);
+        var member = Assert.IsType<MethodCallExpr>(result);
+        Assert.Equal("Min", member.MethodName);
+        Assert.False(member.HasExplicitCallSyntax);
+        var target = Assert.IsType<IndexExpr>(member.Receiver);
+        Assert.Equal("Bounded", Assert.IsType<IdentifierExpr>(target.Object).Name);
+        Assert.Equal("Int", Assert.IsType<IdentifierExpr>(target.Index).Name);
+        Assert.Empty(target.GenericArguments);
         Assert.Empty(ctx.Diagnostics);
     }
 
@@ -800,7 +845,7 @@ public sealed class ExprParserTests
         => new DebugNameToken(name, "identifier");
 
     private static Token TypeId(string name)
-        => new DebugNameToken(name, "typeIdentifier");
+        => new DebugNameToken(name, "identifier");
 
     private static Token Num(string text)
         => new DebugNameToken(text, "numberLiteral");
@@ -836,7 +881,6 @@ public sealed class ExprParserTests
     private static SyntaxKind DebugNameToKind(string debugName) => debugName switch
     {
         "identifier" => SyntaxKind.Identifier,
-        "typeIdentifier" => SyntaxKind.TypeIdentifier,
         "operatorIdentifier" => SyntaxKind.OperatorIdentifier,
         "numberLiteral" => SyntaxKind.NumberLiteral,
         "stringLiteral" => SyntaxKind.StringLiteral,

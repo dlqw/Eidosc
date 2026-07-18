@@ -22,29 +22,6 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
-        if (binding.ReturnType != null)
-        {
-            var kindEnvByName = CreateTypeParamKindMapForCtorBinding(
-                binding.AdtId,
-                binding.AdtTypeParamNames,
-                binding.CtorId,
-                binding.CtorTypeParamNames);
-            var returnType = ConvertTypeWithAdditionalKindContext(
-                binding.ReturnType,
-                typeVarEnv,
-                kindEnvByName,
-                allowTypeConstructorReference: false);
-            var resolvedReturnType = _substitution.Apply(returnType);
-            if (resolvedReturnType is TyCon returnTyCon &&
-                returnTyCon.Symbol == binding.AdtId)
-            {
-                return resolvedReturnType;
-            }
-
-            AddError(span, DiagnosticMessages.GadtConstructorReturnTypeMustTargetOwnAdt(adtSymbol.Name));
-            return CreateErrorRecoveryType();
-        }
-
         var typeArgs = new List<Type>(binding.AdtTypeParamNames.Count);
         foreach (var name in binding.AdtTypeParamNames)
         {
@@ -78,13 +55,167 @@ public sealed partial class TypeInferer
             }
         }
 
-        return _substitution.Apply(new TyCon
+        var effectArgs = new List<GenericEffectArgument>();
+        for (var parameterIndex = 0; parameterIndex < binding.AdtGenericParameters.Count; parameterIndex++)
+        {
+            var parameter = binding.AdtGenericParameters[parameterIndex];
+            if (parameter.ParameterKind != GenericParameterKind.EffectRow)
+            {
+                continue;
+            }
+
+            if (!typeVarEnv.TryGetValue(parameter.Name, out var effectArgument))
+            {
+                AddError(span, $"Cannot construct type '{adtSymbol.Name}': missing effect-row parameter '{parameter.Name}'.");
+                return CreateErrorRecoveryType();
+            }
+
+            effectArgs.Add(new GenericEffectArgument(parameterIndex, effectArgument));
+        }
+
+        var rootType = new TyCon
         {
             Name = adtSymbol.Name,
             Symbol = adtSymbol.Id,
+            Id = adtSymbol.TypeId,
             Args = typeArgs,
-            ValueArgs = valueArgs
-        });
+            ValueArgs = valueArgs,
+            EffectArgs = effectArgs
+        };
+
+        if (binding.ResultAdtId == binding.AdtId)
+        {
+            return _substitution.Apply(rootType);
+        }
+
+        if (!_closedCaseDefinitionsBySymbol.TryGetValue(binding.ResultAdtId, out var caseDefinition))
+        {
+            AddError(span, DiagnosticMessages.CannotConstructAdtTypeMissingAdtSymbol(binding.ResultAdtId));
+            return CreateErrorRecoveryType();
+        }
+
+        return CreateExactClosedCaseType(binding, caseDefinition, rootType, typeVarEnv, span);
+    }
+
+    private Type CreateExactClosedCaseType(
+        CtorTypeBinding binding,
+        ClosedCaseDefinition caseDefinition,
+        TyCon rootType,
+        Dictionary<string, Type> typeVarEnv,
+        SourceSpan span)
+    {
+        var kindEnvByName = CreateTypeParamKindMapForCtorBinding(
+            binding.AdtId,
+            binding.AdtTypeParamNames,
+            binding.CtorId,
+            binding.CtorTypeParamNames);
+
+        return CreateExactClosedCaseType(caseDefinition, rootType, typeVarEnv, kindEnvByName, span);
+    }
+
+    private Type CreateExactClosedCaseType(
+        ClosedCaseDefinition caseDefinition,
+        TyCon rootType,
+        Dictionary<string, Type> typeVarEnv,
+        IReadOnlyDictionary<string, Kind> kindEnvByName,
+        SourceSpan span)
+    {
+        TyCon current = rootType;
+
+        foreach (var caseType in caseDefinition.Path)
+        {
+            if (_symbolTable.GetSymbol<AdtSymbol>(caseType.SymbolId) is not { } caseSymbol ||
+                current.Symbol != caseSymbol.ParentAdt)
+            {
+                AddError(span, $"Invalid closed case path for '{caseType.Name}'.");
+                return CreateErrorRecoveryType();
+            }
+
+            var parentType = current;
+            if (caseType.ParentSpecialization != null)
+            {
+                var resolvedParent = _substitution.Apply(ConvertTypeWithAdditionalKindContext(
+                    caseType.ParentSpecialization,
+                    typeVarEnv,
+                    kindEnvByName,
+                    allowTypeConstructorReference: false));
+                if (resolvedParent is not TyCon specializedParent ||
+                    specializedParent.Symbol != caseSymbol.ParentAdt)
+                {
+                    AddError(
+                        caseType.ParentSpecialization.Span,
+                        DiagnosticMessages.GadtConstructorReturnTypeMustTargetOwnAdt(
+                            _symbolTable.GetSymbol<AdtSymbol>(caseSymbol.ParentAdt)?.Name ?? caseDefinition.Root.Name));
+                    return CreateErrorRecoveryType();
+                }
+
+                parentType = specializedParent;
+            }
+
+            var exactTypeArguments = parentType.Args.ToList();
+            foreach (var parameter in caseType.TypeParams)
+            {
+                if (parameter.ParameterKind != GenericParameterKind.Type)
+                {
+                    continue;
+                }
+
+                if (!typeVarEnv.TryGetValue(parameter.Name, out var typeArgument))
+                {
+                    AddError(span, DiagnosticMessages.CannotConstructAdtTypeMissingTypeParameter(caseSymbol.Name, parameter.Name));
+                    return CreateErrorRecoveryType();
+                }
+                exactTypeArguments.Add(typeArgument);
+            }
+
+            var exactValueArguments = parentType.ValueArgs.ToList();
+            if (_valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var scopedValues))
+            {
+                var parameterOffset = GetClosedCaseEffectiveGenericParameterCount(caseSymbol.ParentAdt);
+                for (var parameterIndex = 0; parameterIndex < caseType.TypeParams.Count; parameterIndex++)
+                {
+                    var parameter = caseType.TypeParams[parameterIndex];
+                    if (parameter.ParameterKind == GenericParameterKind.Value &&
+                        scopedValues.TryGetValue(parameter.SymbolId, out var valueArgument))
+                    {
+                        exactValueArguments.Add(valueArgument with { ParameterIndex = parameterOffset + parameterIndex });
+                    }
+                }
+            }
+
+            var exactEffectArguments = parentType.EffectArgs.ToList();
+            var effectParameterOffset = GetClosedCaseEffectiveGenericParameterCount(caseSymbol.ParentAdt);
+            for (var parameterIndex = 0; parameterIndex < caseType.TypeParams.Count; parameterIndex++)
+            {
+                var parameter = caseType.TypeParams[parameterIndex];
+                if (parameter.ParameterKind != GenericParameterKind.EffectRow)
+                {
+                    continue;
+                }
+
+                if (!typeVarEnv.TryGetValue(parameter.Name, out var effectArgument))
+                {
+                    AddError(span, $"Cannot construct type '{caseSymbol.Name}': missing effect-row parameter '{parameter.Name}'.");
+                    return CreateErrorRecoveryType();
+                }
+
+                exactEffectArguments.Add(new GenericEffectArgument(
+                    effectParameterOffset + parameterIndex,
+                    effectArgument));
+            }
+
+            current = new TyCon
+            {
+                Name = GetQualifiedCaseTypeName(caseSymbol.Id),
+                Symbol = caseSymbol.Id,
+                Id = caseSymbol.TypeId,
+                Args = exactTypeArguments,
+                ValueArgs = exactValueArguments,
+                EffectArgs = exactEffectArguments
+            };
+        }
+
+        return _substitution.Apply(current);
     }
 
     private Type InferMethodCall(MethodCallExpr method)
@@ -95,6 +226,14 @@ public sealed partial class TypeInferer
         {
             AddError(method.Span, DiagnosticMessages.MethodCallMissingMethodName);
             return CreateErrorRecoveryType();
+        }
+
+        if (method.ResolvedStaticExpression != null)
+        {
+            var staticType = SafeInferExpression(method.ResolvedStaticExpression);
+            method.InferredType = staticType;
+            method.InferredEffects = method.ResolvedStaticExpression.InferredEffects;
+            return staticType;
         }
 
         if (CanInferFieldAccess(method))
@@ -121,7 +260,8 @@ public sealed partial class TypeInferer
             }
         }
 
-        if (method.Receiver != null &&
+        if (!method.ResolvedAsStaticPath &&
+            method.Receiver != null &&
             method.HasExplicitCallSyntax &&
             TryInferTypeDirectedMethodCall(method, out var typedMethodResult))
         {
@@ -643,7 +783,9 @@ public sealed partial class TypeInferer
                     : 0;
                 try
                 {
-                    trial.Unify(paramType, argumentType);
+                    trial.Unify(
+                        paramType,
+                        NormalizeClosedCaseArgumentForExpectedType(paramType, argumentType, trial));
                 }
                 catch (TypeInferenceException)
                 {
@@ -672,7 +814,11 @@ public sealed partial class TypeInferer
             try
             {
                 trial.Unify(resolvedFunctionType, new TyFun { Params = [param], Result = ret });
-                trial.Unify(trial.Apply(param), trial.Apply(argumentTypes[i]));
+                var expectedParameter = trial.Apply(param);
+                var actualArgument = trial.Apply(argumentTypes[i]);
+                trial.Unify(
+                    expectedParameter,
+                    NormalizeClosedCaseArgumentForExpectedType(expectedParameter, actualArgument, trial));
             }
             catch (TypeInferenceException)
             {
@@ -683,6 +829,95 @@ public sealed partial class TypeInferer
         }
 
         return true;
+    }
+
+    private Type NormalizeClosedCaseArgumentForExpectedType(
+        Type expected,
+        Type actual,
+        Substitution substitution)
+    {
+        var resolvedExpected = substitution.Apply(expected);
+        var resolvedActual = substitution.Apply(actual);
+        if (resolvedExpected is TyCon expectedConstructor &&
+            resolvedActual is TyCon actualConstructor)
+        {
+            if (expectedConstructor is
+                {
+                    ConstructorVarIndex: not null,
+                    IsGenericInstantiationConstructor: true
+                } &&
+                TryPromoteClosedCaseToRoot(actualConstructor, out var promotedActual))
+            {
+                return promotedActual with
+                {
+                    Args = expectedConstructor.Args.Count == promotedActual.Args.Count
+                        ? NormalizeClosedCaseArguments(
+                            expectedConstructor.Args,
+                            promotedActual.Args,
+                            substitution)
+                        : promotedActual.Args
+                };
+            }
+
+            if (TryResolveClosedCaseTypeSymbol(expectedConstructor, out var expectedSymbol) &&
+                TryResolveClosedCaseTypeSymbol(actualConstructor, out var actualSymbol) &&
+                actualSymbol != expectedSymbol &&
+                _symbolTable.IsClosedCaseSubtype(actualSymbol, expectedSymbol))
+            {
+                return actualConstructor with
+                {
+                    Name = expectedConstructor.Name,
+                    Symbol = expectedSymbol,
+                    Id = expectedConstructor.Id,
+                    Args = NormalizeClosedCaseArguments(
+                        expectedConstructor.Args,
+                        actualConstructor.Args,
+                        substitution)
+                };
+            }
+
+            if (HaveSameTypeConstructorIdentity(expectedConstructor, actualConstructor) &&
+                expectedConstructor.Args.Count == actualConstructor.Args.Count)
+            {
+                return actualConstructor with
+                {
+                    Args = NormalizeClosedCaseArguments(
+                        expectedConstructor.Args,
+                        actualConstructor.Args,
+                        substitution)
+                };
+            }
+        }
+
+        if (resolvedExpected is TyTuple expectedTuple &&
+            resolvedActual is TyTuple actualTuple &&
+            expectedTuple.Elements.Count == actualTuple.Elements.Count)
+        {
+            return actualTuple with
+            {
+                Elements = NormalizeClosedCaseArguments(
+                    expectedTuple.Elements,
+                    actualTuple.Elements,
+                    substitution)
+            };
+        }
+
+        return resolvedActual;
+    }
+
+    private List<Type> NormalizeClosedCaseArguments(
+        IReadOnlyList<Type> expected,
+        IReadOnlyList<Type> actual,
+        Substitution substitution)
+    {
+        var normalized = new List<Type>(expected.Count);
+        for (var index = 0; index < expected.Count; index++)
+        {
+            normalized.Add(index < actual.Count
+                ? NormalizeClosedCaseArgumentForExpectedType(expected[index], actual[index], substitution)
+                : substitution.Apply(expected[index]));
+        }
+        return normalized;
     }
 
     private bool IsModuleMember(SymbolId candidateId)
@@ -704,15 +939,21 @@ public sealed partial class TypeInferer
             return 0;
         }
 
-        if (receiverTyCon.Symbol.IsValid &&
-            TryGetOwningModuleId(receiverTyCon.Symbol, out var receiverModuleId) &&
+        var receiverSymbol = receiverTyCon.Symbol.IsValid
+            ? _symbolTable.GetClosedCaseRoot(receiverTyCon.Symbol)
+            : SymbolId.None;
+        if (receiverSymbol.IsValid &&
+            TryGetOwningModuleId(receiverSymbol, out var receiverModuleId) &&
             candidateModule.Id.Equals(receiverModuleId))
         {
             return 8;
         }
 
         var moduleLeaf = candidateModule.Path.LastOrDefault();
-        if (string.Equals(moduleLeaf, receiverTyCon.Name, StringComparison.Ordinal))
+        var receiverName = receiverSymbol.IsValid
+            ? _symbolTable.GetSymbol(receiverSymbol)?.Name ?? receiverTyCon.Name
+            : receiverTyCon.Name;
+        if (string.Equals(moduleLeaf, receiverName, StringComparison.OrdinalIgnoreCase))
         {
             return 8;
         }
@@ -721,7 +962,7 @@ public sealed partial class TypeInferer
             !string.IsNullOrWhiteSpace(function.Span.FilePath))
         {
             var sourceModuleLeaf = Path.GetFileNameWithoutExtension(function.Span.FilePath);
-            if (string.Equals(sourceModuleLeaf, receiverTyCon.Name, StringComparison.Ordinal))
+            if (string.Equals(sourceModuleLeaf, receiverName, StringComparison.OrdinalIgnoreCase))
             {
                 return 8;
             }
@@ -881,7 +1122,8 @@ public sealed partial class TypeInferer
 
     private static bool CanInferFieldAccess(MethodCallExpr method)
     {
-        return !method.HasExplicitCallSyntax &&
+        return !method.ResolvedAsStaticPath &&
+               !method.HasExplicitCallSyntax &&
                method.Receiver != null &&
                method.PositionalArgs.Count == 0 &&
                method.NamedArgs.Count == 0;
@@ -931,21 +1173,49 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        if (!receiverCon.Symbol.IsValid ||
-            !_adtDefinitionsBySymbol.TryGetValue(receiverCon.Symbol, out var adtDefinition))
+        if (!receiverCon.Symbol.IsValid)
         {
             return false;
         }
 
+        var definitionSymbol = GetClosedCaseRoot(receiverCon.Symbol);
+        if (!_adtDefinitionsBySymbol.TryGetValue(definitionSymbol, out var adtDefinition))
+        {
+            return false;
+        }
+
+        var casePath = _closedCaseDefinitionsBySymbol.TryGetValue(receiverCon.Symbol, out var caseDefinition)
+            ? caseDefinition.Path
+            : [];
+        var fieldOwner = adtDefinition.SymbolId;
         var fieldDefinition = adtDefinition.Fields.FirstOrDefault(field =>
             string.Equals(field.Name, fieldName, StringComparison.Ordinal) &&
             field.Type != null);
+        if (fieldDefinition == null)
+        {
+            foreach (var caseType in casePath)
+            {
+                fieldDefinition = caseType.Fields.FirstOrDefault(field =>
+                    string.Equals(field.Name, fieldName, StringComparison.Ordinal) &&
+                    field.Type != null);
+                if (fieldDefinition != null)
+                {
+                    fieldOwner = caseType.SymbolId;
+                    break;
+                }
+            }
+        }
         if (fieldDefinition?.Type != null)
         {
-            var typeVarEnv = CreateAdtTypeVarEnv(adtDefinition, receiverCon.Args, receiverCon.ValueArgs);
+            var typeVarEnv = CreateClosedCaseTypeVarEnv(
+                adtDefinition,
+                casePath,
+                receiverCon.Args,
+                receiverCon.ValueArgs,
+                receiverCon.EffectArgs);
             var kindEnvByName = CreateTypeParamKindMapForOwner(adtDefinition.SymbolId, GetAdtTypeParamNames(adtDefinition));
             fieldType = _substitution.Apply(ConvertTypeWithAdditionalKindContext(fieldDefinition.Type, typeVarEnv, kindEnvByName));
-            fieldSymbolId = TryResolveAdtFieldSymbolId(adtDefinition.SymbolId, fieldName);
+            fieldSymbolId = TryResolveAdtFieldSymbolId(fieldOwner, fieldName);
             return true;
         }
 
@@ -956,10 +1226,78 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var ctorTypeVarEnv = CreateCtorTypeVarEnv(recordCtorBindings[0], receiverCon.Args, receiverCon.ValueArgs);
+        var ctorTypeVarEnv = CreateCtorTypeVarEnv(
+            recordCtorBindings[0],
+            receiverCon.Args,
+            receiverCon.ValueArgs,
+            receiverCon.EffectArgs);
         var ctorKindEnvByName = CreateTypeParamKindMapForOwner(adtDefinition.SymbolId, GetAdtTypeParamNames(adtDefinition));
         fieldType = _substitution.Apply(ConvertTypeWithAdditionalKindContext(ctorFieldType, ctorTypeVarEnv, ctorKindEnvByName));
         return true;
+    }
+
+    private Dictionary<string, Type> CreateClosedCaseTypeVarEnv(
+        AdtDef root,
+        IReadOnlyList<CaseTypeDef> casePath,
+        IReadOnlyList<Type> typeArgs,
+        IReadOnlyList<GenericValueArgument> valueArgs,
+        IReadOnlyList<GenericEffectArgument> effectArgs)
+    {
+        var typeVarEnv = new Dictionary<string, Type>(StringComparer.Ordinal);
+        var parameters = root.TypeParams
+            .Concat(casePath.SelectMany(static caseType => caseType.TypeParams))
+            .ToArray();
+        var typeArgumentIndex = 0;
+        foreach (var parameter in parameters)
+        {
+            if (parameter.ParameterKind != GenericParameterKind.Type)
+            {
+                continue;
+            }
+
+            typeVarEnv[parameter.Name] = typeArgumentIndex < typeArgs.Count
+                ? typeArgs[typeArgumentIndex++]
+                : _substitution.FreshTypeVariable();
+        }
+
+        var scopedValueArguments = new Dictionary<SymbolId, GenericValueArgument>();
+        var valueArgumentsByParameterIndex = valueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var effectArgumentsByParameterIndex = effectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        for (var parameterIndex = 0; parameterIndex < parameters.Length; parameterIndex++)
+        {
+            var parameter = parameters[parameterIndex];
+            if (parameter.ParameterKind == GenericParameterKind.Value &&
+                parameter.SymbolId.IsValid &&
+                valueArgumentsByParameterIndex.TryGetValue(parameterIndex, out var valueArgument))
+            {
+                scopedValueArguments[parameter.SymbolId] = valueArgument;
+            }
+            else if (parameter.ParameterKind == GenericParameterKind.EffectRow &&
+                     effectArgumentsByParameterIndex.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                typeVarEnv[parameter.Name] = effectArgument.Argument;
+            }
+        }
+
+        if (scopedValueArguments.Count > 0)
+        {
+            _valueGenericArgumentsByTypeEnv[typeVarEnv] = scopedValueArguments;
+        }
+
+        return typeVarEnv;
+    }
+
+    private SymbolId GetClosedCaseRoot(SymbolId symbolId)
+    {
+        var current = symbolId;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid && visited.Add(current) &&
+               _symbolTable.GetSymbol<AdtSymbol>(current) is { ParentAdt.IsValid: true } caseSymbol)
+        {
+            current = caseSymbol.ParentAdt;
+        }
+
+        return current;
     }
 
     /// <summary>
@@ -1083,7 +1421,8 @@ public sealed partial class TypeInferer
     private Dictionary<string, Type> CreateAdtTypeVarEnv(
         AdtDef adtDefinition,
         IReadOnlyList<Type> typeArgs,
-        IReadOnlyList<GenericValueArgument> valueArgs)
+        IReadOnlyList<GenericValueArgument> valueArgs,
+        IReadOnlyList<GenericEffectArgument>? effectArgs = null)
     {
         var typeVarEnv = new Dictionary<string, Type>(StringComparer.Ordinal);
         var typeParamNames = GetAdtTypeParamNames(adtDefinition);
@@ -1095,6 +1434,8 @@ public sealed partial class TypeInferer
 
         var scopedValueArguments = new Dictionary<SymbolId, GenericValueArgument>();
         var valueArgumentsByParameterIndex = valueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var effectArgumentsByParameterIndex = (effectArgs ?? [])
+            .ToDictionary(static argument => argument.ParameterIndex);
         for (var parameterIndex = 0; parameterIndex < adtDefinition.TypeParams.Count; parameterIndex++)
         {
             var parameter = adtDefinition.TypeParams[parameterIndex];
@@ -1102,6 +1443,11 @@ public sealed partial class TypeInferer
                 valueArgumentsByParameterIndex.TryGetValue(parameterIndex, out var valueArgument))
             {
                 scopedValueArguments[parameter.SymbolId] = valueArgument;
+            }
+            else if (parameter.ParameterKind == GenericParameterKind.EffectRow &&
+                     effectArgumentsByParameterIndex.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                typeVarEnv[parameter.Name] = effectArgument.Argument;
             }
         }
 

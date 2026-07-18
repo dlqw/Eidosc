@@ -366,6 +366,20 @@ public sealed class PatternParser(ParserContext ctx)
     {
         var startToken = ctx.Current;
 
+        if (ctx.Match("expand"))
+        {
+            var invocation = MetaInvocationSyntaxParser.Parse(
+                ctx,
+                () => ParsePattern(),
+                "pattern expand");
+            var expansion = new ExpandPattern();
+            expansion.SetInvocation(invocation);
+            expansion.SetSpan(new SourceSpan(
+                startToken.Location,
+                Math.Max(0, invocation.Span.EndPosition - startToken.Location.Position)));
+            return expansion;
+        }
+
         if (InternalNameParser.TryParseLeadingDoubleUnderscoreName(ctx, out var internalName))
         {
             var varPat = new VarPattern();
@@ -438,21 +452,19 @@ public sealed class PatternParser(ParserContext ctx)
             return varPat;
         }
 
-        // TypeIdentifier: Constructor(...) or bare constructor (no parens => var pattern? No — type id in pattern position is always a ctor)
-        if (TokenKind.IsTypeIdentifier(ctx.Current) ||
-            (TokenKind.IsAnyIdentifier(ctx.Current) && QualifiedPathParser.IsPackageQualifiedItemLookahead(ctx)))
+        // Constructor syntax is unambiguous when qualified or followed by a
+        // positional/record body. Bare names remain unresolved until the
+        // expected pattern namespace is available to semantic analysis.
+        if (TokenKind.IsAnyIdentifier(ctx.Current) &&
+            (ctx.CheckPeek(1, ".") ||
+             QualifiedPathParser.IsQualifiedPathLookahead(ctx) ||
+             ctx.CheckPeek(1, "(") ||
+             ctx.CheckPeek(1, "{")))
         {
             return ParseCtorPattern();
         }
 
-        if (TokenKind.IsIdentifier(ctx.Current) && ctx.CheckPeek(1, "("))
-        {
-            ctx.Error(DiagnosticMessages.ParserExpectedPattern(ctx.GetText()));
-            return ConsumeInvalidCallLikePattern(startToken);
-        }
-
-        // Lowercase identifier: variable binding
-        if (TokenKind.IsIdentifier(ctx.Current))
+        if (TokenKind.IsAnyIdentifier(ctx.Current))
         {
             var name = ctx.GetText();
             ctx.Advance();
@@ -460,6 +472,7 @@ public sealed class PatternParser(ParserContext ctx)
             varPat.SetSpan(ctx.SpanFrom(startToken));
             varPat.SetName(name);
             varPat.SetBindingMode(PatternBindingMode.ByValue);
+            varPat.SetMayResolveToConstructor(true);
             return varPat;
         }
 

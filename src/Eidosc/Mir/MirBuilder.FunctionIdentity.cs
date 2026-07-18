@@ -163,7 +163,7 @@ public sealed partial class MirBuilder
     private TraitInvokeHelperKind GetTraitInvokeHelperKind(HirFunc func)
     {
         var modulePath = ResolveFunctionModulePath(func);
-        if (modulePath is not ["Std", "TraitInvoke"] and not ["TraitInvoke"])
+        if (modulePath is not [WellKnownStrings.Std.Module, "TraitInvoke"] and not ["TraitInvoke"])
         {
             return TraitInvokeHelperKind.None;
         }

@@ -45,6 +45,11 @@ public sealed partial class MirGenericSpecializer
                 Target = RewriteConstGenericPlace(assign.Target, bindings),
                 Source = RewriteConstGenericOperand(assign.Source, bindings)
             },
+            MirCaseInject injection => injection with
+            {
+                Target = RewriteConstGenericOperand(injection.Target, bindings),
+                Operand = RewriteConstGenericOperand(injection.Operand, bindings)
+            },
             MirCall call => call with
             {
                 Target = call.Target == null ? null : RewriteConstGenericPlace(call.Target, bindings),
@@ -277,6 +282,8 @@ public sealed partial class MirGenericSpecializer
         {
             MirAssign assign => OperandContainsUnresolvedConstGenericValue(assign.Target) ||
                                 OperandContainsUnresolvedConstGenericValue(assign.Source),
+            MirCaseInject injection => OperandContainsUnresolvedConstGenericValue(injection.Target) ||
+                                       OperandContainsUnresolvedConstGenericValue(injection.Operand),
             MirCall call => OperandContainsUnresolvedConstGenericValue(call.Target) ||
                             OperandContainsUnresolvedConstGenericValue(call.Function) ||
                             call.Arguments.Any(OperandContainsUnresolvedConstGenericValue),

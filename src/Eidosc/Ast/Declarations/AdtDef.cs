@@ -54,6 +54,18 @@ public record AdtDef : Declaration
     /// </summary>
     public List<Field> Fields { get; private set; } = [];
 
+    /// <summary>
+    /// Closed nominal case types declared directly in this type body.
+    /// Constructors are a lowering projection; this list is the authoritative
+    /// syntax model for the 0.7 <c>Case :: type</c> surface.
+    /// </summary>
+    public List<CaseTypeDef> Cases { get; private set; } = [];
+
+    /// <summary>
+    /// Lexical type-body member order, including pending member expansion sites.
+    /// </summary>
+    public List<EidosAstNode> Members { get; private set; } = [];
+
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {
         Span = node.Span;
@@ -259,6 +271,27 @@ public record AdtDef : Declaration
     internal void SetTypeAlias(Eidosc.Ast.Types.TypeNode target) { IsTypeAlias = true; AliasTarget = target; }
     internal void SetConstructors(List<Constructor> ctors) => Constructors = ctors;
     internal void SetFields(List<Field> fields) => Fields = fields;
+    internal void SetCases(List<CaseTypeDef> cases) => Cases = cases;
+    internal void SetMembers(List<EidosAstNode> members) => Members = members;
+    internal void AppendMember(EidosAstNode member) => Members.Add(member);
+    internal bool ReplaceMemberExpansion(ExpandDeclaration expansion, IReadOnlyList<EidosAstNode> members) =>
+        ReplaceMemberExpansionCore(Members, expansion, members);
+
+    private static bool ReplaceMemberExpansionCore(
+        List<EidosAstNode> owner,
+        ExpandDeclaration expansion,
+        IReadOnlyList<EidosAstNode> members)
+    {
+        var index = owner.FindIndex(member => ReferenceEquals(member, expansion));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        owner.RemoveAt(index);
+        owner.InsertRange(index, members);
+        return true;
+    }
 
     public override XmlElement ToXmlElement(XmlDocument doc)
     {
@@ -301,6 +334,136 @@ public record AdtDef : Declaration
                 fieldsElement.AppendChild(field.ToXmlElement(doc));
             }
             element.AppendChild(fieldsElement);
+        }
+
+        if (Cases.Count > 0)
+        {
+            var casesElement = doc.CreateElement("Cases");
+            foreach (var caseType in Cases)
+            {
+                casesElement.AppendChild(caseType.ToXmlElement(doc));
+            }
+            element.AppendChild(casesElement);
+        }
+
+        return element;
+    }
+}
+
+/// <summary>
+/// A lexical, sealed case type. It has an exact nominal identity distinct from
+/// both its parent type and its same-named value constructor.
+/// </summary>
+public record CaseTypeDef : Declaration
+{
+    public string Name { get; private set; } = "";
+
+    public List<TypeParam> TypeParams { get; private set; } = [];
+
+    public List<TypeNode> PositionalFields { get; private set; } = [];
+
+    public List<Field> Fields { get; private set; } = [];
+
+    public List<CaseTypeDef> Cases { get; private set; } = [];
+
+    public List<EidosAstNode> Members { get; private set; } = [];
+
+    /// <summary>
+    /// Explicit parent specialization from the <c>case Parent[Args]</c> clause.
+    /// Null means the lexical parent with its unchanged generic arguments.
+    /// </summary>
+    public TypeNode? ParentSpecialization { get; private set; }
+
+    public SymbolId ConstructorSymbolId { get; internal set; } = SymbolId.None;
+
+    public bool IsLeaf => Cases.Count == 0;
+
+    public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
+    {
+        Span = node.Span;
+    }
+
+    internal void SetName(string name) => Name = name;
+    internal void SetTypeParams(List<TypeParam> typeParams) => TypeParams = typeParams;
+    internal void AddPositionalField(TypeNode type) => PositionalFields.Add(type);
+    internal void AddField(Field field)
+    {
+        Fields.Add(field);
+        Members.Add(field);
+    }
+    internal void AddCase(CaseTypeDef caseType)
+    {
+        Cases.Add(caseType);
+        Members.Add(caseType);
+    }
+    internal void AddMemberExpansion(ExpandDeclaration expansion) => Members.Add(expansion);
+    internal void SetFields(List<Field> fields) => Fields = fields;
+    internal void SetCases(List<CaseTypeDef> cases) => Cases = cases;
+    internal void AppendMember(EidosAstNode member) => Members.Add(member);
+    internal bool ReplaceMemberExpansion(ExpandDeclaration expansion, IReadOnlyList<EidosAstNode> members)
+    {
+        var index = Members.FindIndex(member => ReferenceEquals(member, expansion));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Members.RemoveAt(index);
+        Members.InsertRange(index, members);
+        return true;
+    }
+    internal void SetParentSpecialization(TypeNode? parent) => ParentSpecialization = parent;
+
+    public override XmlElement ToXmlElement(XmlDocument doc)
+    {
+        var element = CreateElement(doc, "CaseType");
+        element.SetAttribute(WellKnownStrings.XmlAttributes.Name, Name);
+
+        if (TypeParams.Count > 0)
+        {
+            var parameters = doc.CreateElement(WellKnownStrings.XmlElements.TypeParams);
+            foreach (var parameter in TypeParams)
+            {
+                parameters.AppendChild(parameter.ToXmlElement(doc));
+            }
+            element.AppendChild(parameters);
+        }
+
+        if (PositionalFields.Count > 0)
+        {
+            var positional = doc.CreateElement(WellKnownStrings.XmlElements.PositionalArgs);
+            foreach (var field in PositionalFields)
+            {
+                positional.AppendChild(field.ToXmlElement(doc));
+            }
+            element.AppendChild(positional);
+        }
+
+        if (Fields.Count > 0)
+        {
+            var fields = doc.CreateElement(WellKnownStrings.XmlElements.Fields);
+            foreach (var field in Fields)
+            {
+                fields.AppendChild(field.ToXmlElement(doc));
+            }
+            element.AppendChild(fields);
+        }
+
+        if (Cases.Count > 0)
+        {
+            var cases = doc.CreateElement("Cases");
+            foreach (var child in Cases)
+            {
+                cases.AppendChild(child.ToXmlElement(doc));
+            }
+            element.AppendChild(cases);
+        }
+
+        if (ParentSpecialization != null)
+        {
+            var parent = doc.CreateElement("ParentSpecialization");
+            parent.AppendChild(ParentSpecialization.ToXmlElement(doc));
+            element.AppendChild(parent);
         }
 
         return element;
@@ -587,7 +750,7 @@ public record Constructor : EidosAstNode
 
     private static bool IsTypeIdentifierTerminal(TerminalCstNode term)
     {
-        return term.Terminal?.ToString() == WellKnownStrings.Terminals.TypeIdentifier;
+        return term.Terminal?.ToString() == WellKnownStrings.Terminals.Identifier;
     }
 
     internal void SetName(string name) => Name = name;
@@ -595,6 +758,7 @@ public record Constructor : EidosAstNode
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
     internal void AddPositionalArg(Eidosc.Ast.Types.TypeNode type) => PositionalArgs.Add(type);
     internal void AddNamedArg(Field field) => NamedArgs.Add(field);
+    internal void InsertNamedArg(int index, Field field) => NamedArgs.Insert(index, field);
     internal void SetReturnType(Eidosc.Ast.Types.TypeNode? returnType) => ReturnType = returnType;
 
     public override XmlElement ToXmlElement(XmlDocument doc)
@@ -747,7 +911,7 @@ public record Field : EidosAstNode
     {
         typeNode = null!;
 
-        if (node is TerminalCstNode term && term.Terminal?.ToString() == WellKnownStrings.Terminals.TypeIdentifier)
+        if (node is TerminalCstNode term && term.Terminal?.ToString() == WellKnownStrings.Terminals.Identifier)
         {
             var typePath = new TypePath();
             typePath.SetTypeName(GetTokenText(term));

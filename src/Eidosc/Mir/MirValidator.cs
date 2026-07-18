@@ -263,6 +263,12 @@ public sealed class MirValidator
             case MirAssign { Target.Kind: not PlaceKind.Local } assign:
                 ReportUnsupportedPlaceRole(assign.Target, assign.Span, function, block, instructionIndex, "assign target place");
                 break;
+            case MirCaseInject { Target: not MirPlace } injection:
+                ReportUnsupportedTargetOperand(injection.Target, injection.Span, function, block, instructionIndex);
+                break;
+            case MirCaseInject { Target: MirPlace { Kind: not PlaceKind.Local } target } injection:
+                ReportUnsupportedPlaceRole(target, injection.Span, function, block, instructionIndex, "case injection target place");
+                break;
             case MirCall { Target: { Kind: not PlaceKind.Local } } call:
                 ReportUnsupportedPlaceRole(call.Target, call.Span, function, block, instructionIndex, "call target place");
                 break;
@@ -296,6 +302,26 @@ public sealed class MirValidator
     {
         switch (instruction)
         {
+            case MirCaseInject injection:
+                ValidateRequiredTypeId(
+                    injection.SourceTypeId,
+                    module,
+                    function,
+                    block,
+                    instructionIndex,
+                    "case injection source type",
+                    injection.Span,
+                    "case injection requires a concrete source type");
+                ValidateRequiredTypeId(
+                    injection.TargetTypeId,
+                    module,
+                    function,
+                    block,
+                    instructionIndex,
+                    "case injection target type",
+                    injection.Span,
+                    "case injection requires a concrete target type");
+                break;
             case MirAlloc alloc:
                 ValidateRequiredTypeId(
                     alloc.TypeId,
@@ -482,6 +508,7 @@ public sealed class MirValidator
     private void ValidateInstructionKind(MirInstruction instruction, MirFunc function, MirBasicBlock block, int instructionIndex)
     {
         if (instruction is MirAssign or
+            MirCaseInject or
             MirCall or
             MirBinOp or
             MirUnaryOp or
@@ -1272,6 +1299,10 @@ public sealed class MirValidator
             case MirAssign assign:
                 yield return assign.Target;
                 yield return assign.Source;
+                break;
+            case MirCaseInject injection:
+                yield return injection.Target;
+                yield return injection.Operand;
                 break;
             case MirCall call:
                 yield return call.Target;

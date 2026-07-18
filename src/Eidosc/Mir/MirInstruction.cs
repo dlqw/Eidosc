@@ -31,6 +31,18 @@ public sealed record MirAssign : MirInstruction
     public override string ToString() => $"{Target} = {Source}";
 }
 
+public sealed record MirCaseInject : MirInstruction
+{
+    public MirOperand Target { get; init; } = null!;
+    public MirOperand Operand { get; init; } = null!;
+    public SymbolId SourceCase { get; init; } = SymbolId.None;
+    public SymbolId TargetAncestor { get; init; } = SymbolId.None;
+    public TypeId SourceTypeId { get; init; } = TypeId.None;
+    public TypeId TargetTypeId { get; init; } = TypeId.None;
+
+    public override string ToString() => $"{Target} = case_inject {SourceTypeId} -> {TargetTypeId} {Operand}";
+}
+
 /// <summary>
 /// 函数调用（目标 + 函数 + 参数）
 /// </summary>

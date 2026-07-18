@@ -159,6 +159,10 @@ public sealed class ModuleRegistry
         return _modules.TryGetValue(id, out var module) ? module : null;
     }
 
+    public IReadOnlyList<ModuleSymbol> GetModules() => _modules.Values
+        .OrderBy(static module => module.Identity.ToIdentityKey(), StringComparer.Ordinal)
+        .ToArray();
+
     /// <summary>
     /// 获取模块成员
     /// </summary>
@@ -207,6 +211,96 @@ public sealed class ModuleRegistry
                 ownerModules.Add(moduleId);
             }
         }
+    }
+
+    internal bool UnregisterModule(SymbolId moduleId)
+    {
+        if (!_modules.Remove(moduleId, out var module))
+        {
+            return false;
+        }
+
+        InvalidateAccessibleBindingCache();
+        RemoveIndexEntry(_modulePaths, module.Identity.ToDisplayKey(), moduleId);
+        RemoveIndexEntry(_moduleIdentityKeys, module.Identity.ToIdentityKey(), moduleId);
+
+        var unqualifiedPathKey = ToModuleKey(null, module.Path);
+        if (_moduleCandidatesByPath.TryGetValue(unqualifiedPathKey, out var candidates))
+        {
+            candidates.RemoveAll(candidate => candidate == moduleId);
+            if (candidates.Count == 0)
+            {
+                _moduleCandidatesByPath.Remove(unqualifiedPathKey);
+            }
+        }
+
+        foreach (var memberId in module.Members)
+        {
+            if (!_memberOwnerModules.TryGetValue(memberId, out var owners))
+            {
+                continue;
+            }
+
+            owners.RemoveAll(candidate => candidate == moduleId);
+            if (owners.Count == 0)
+            {
+                _memberOwnerModules.Remove(memberId);
+            }
+        }
+
+        _memberOwnerModules.Remove(moduleId);
+        if (module.Path.Count > 0 &&
+            _rootModules.TryGetValue(module.Path[0], out var rootId) &&
+            rootId == moduleId)
+        {
+            var replacementRoot = _modules
+                .Where(entry => entry.Value.Path.Count > 0 &&
+                                string.Equals(entry.Value.Path[0], module.Path[0], StringComparison.Ordinal))
+                .OrderBy(entry => entry.Value.Identity.ToDisplayKey(), StringComparer.Ordinal)
+                .Select(static entry => entry.Key)
+                .FirstOrDefault();
+            if (replacementRoot.IsValid)
+            {
+                _rootModules[module.Path[0]] = replacementRoot;
+            }
+            else
+            {
+                _rootModules.Remove(module.Path[0]);
+            }
+        }
+
+        return true;
+
+        static void RemoveIndexEntry(
+            Dictionary<string, SymbolId> index,
+            string key,
+            SymbolId expectedId)
+        {
+            if (index.TryGetValue(key, out var indexedId) && indexedId == expectedId)
+            {
+                index.Remove(key);
+            }
+        }
+    }
+
+    public void RemoveMemberFromModule(SymbolId moduleId, SymbolId memberId)
+    {
+        if (!_modules.TryGetValue(moduleId, out var module))
+        {
+            return;
+        }
+
+        module.Members.RemoveAll(candidate => candidate == memberId);
+        module.ExportedBindings.RemoveAll(binding => binding.SymbolId == memberId);
+        if (_memberOwnerModules.TryGetValue(memberId, out var owners))
+        {
+            owners.RemoveAll(candidate => candidate == moduleId);
+            if (owners.Count == 0)
+            {
+                _memberOwnerModules.Remove(memberId);
+            }
+        }
+        InvalidateAccessibleBindingCache();
     }
 
     private List<SymbolId> AddMemberOwner(SymbolId moduleId, SymbolId memberId)
@@ -568,17 +662,17 @@ public sealed class ModuleRegistry
             return false;
         }
 
-        return string.Equals(module.PackageAlias, "Std", StringComparison.Ordinal) &&
-               string.Equals(requesterModule.PackageAlias, "Std", StringComparison.Ordinal) &&
+        return string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) &&
+               string.Equals(requesterModule.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) &&
                string.Equals(module.PackageAlias, requesterModule.PackageAlias, StringComparison.Ordinal) &&
                string.Equals(module.PackageInstanceKey, requesterModule.PackageInstanceKey, StringComparison.Ordinal);
     }
 
     private IEnumerable<ModuleBindingEntry> EnumerateSyntheticPackageBindings(ModuleSymbol module)
     {
-        if (!string.Equals(module.PackageAlias, "Std", StringComparison.Ordinal) ||
+        if (!string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) ||
             module.Path.Count != 1 ||
-            !string.Equals(module.Path[0], WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal))
+            !string.Equals(module.Path[0], WellKnownStrings.Std.SeqModule, StringComparison.Ordinal))
         {
             yield break;
         }
@@ -634,6 +728,8 @@ public sealed class ModuleRegistry
             AdtSymbol => ResolutionKind.Type,
             CtorSymbol => ResolutionKind.Constructor,
             TraitSymbol => ResolutionKind.Type,
+            AssociatedTypeSymbol => ResolutionKind.Type,
+            AssociatedConstSymbol => ResolutionKind.Value,
             EffectSymbol => ResolutionKind.Effect,
             ModuleSymbol => ResolutionKind.Module,
             // ProofSymbol removed

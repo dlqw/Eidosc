@@ -1,0 +1,122 @@
+TraitInvoke :: module {
+    import Traits
+    import Ordering.{Ordering}
+    import Ordering
+
+    eq_value[T: Traits.Eq] :: T -> T -> Bool
+    {
+        left => right => left == right
+    }
+
+    ne_value[T: Traits.Eq] :: T -> T -> Bool
+    {
+        left => right => !TraitInvoke.eq_value(left)(right)
+    }
+
+    compare_value[T: Traits.Ord] :: T -> T -> Ordering
+    {
+        (left, right) when left < right => Less(),
+        (left, right) when left > right => Greater(),
+        _ => Equal()
+    }
+
+    lt_value[T: Traits.Ord] :: T -> T -> Bool
+    {
+        left => right => Ordering.is_lt(TraitInvoke.compare_value(left)(right))
+    }
+
+    le_value[T: Traits.Ord] :: T -> T -> Bool
+    {
+        left => right => Ordering.is_le(TraitInvoke.compare_value(left)(right))
+    }
+
+    gt_value[T: Traits.Ord] :: T -> T -> Bool
+    {
+        left => right => Ordering.is_gt(TraitInvoke.compare_value(left)(right))
+    }
+
+    ge_value[T: Traits.Ord] :: T -> T -> Bool
+    {
+        left => right => Ordering.is_ge(TraitInvoke.compare_value(left)(right))
+    }
+
+    min_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
+    {
+        left => right => {
+            left_for_compare := TraitInvoke.clone_value(left);
+            right_for_compare := TraitInvoke.clone_value(right);
+            if TraitInvoke.le_value(left_for_compare)(right_for_compare) then { left } else { right }
+        }
+    }
+
+    max_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
+    {
+        left => right => {
+            left_for_compare := TraitInvoke.clone_value(left);
+            right_for_compare := TraitInvoke.clone_value(right);
+            if TraitInvoke.ge_value(left_for_compare)(right_for_compare) then { left } else { right }
+        }
+    }
+
+    clamp_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> T
+    {
+        value => low => high => {
+            value_for_low := TraitInvoke.clone_value(value);
+            low_for_compare := TraitInvoke.clone_value(low);
+            if TraitInvoke.lt_value(value_for_low)(low_for_compare) then { low }
+            else {
+                value_for_high := TraitInvoke.clone_value(value);
+                high_for_compare := TraitInvoke.clone_value(high);
+                if TraitInvoke.gt_value(value_for_high)(high_for_compare) then { high } else { value }
+            }
+        }
+    }
+
+    between_inclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
+    {
+        value => low => high => {
+            value_for_low := TraitInvoke.clone_value(value);
+            low_for_compare := TraitInvoke.clone_value(low);
+            value_for_high := TraitInvoke.clone_value(value);
+            high_for_compare := TraitInvoke.clone_value(high);
+            TraitInvoke.ge_value(value_for_low)(low_for_compare) && TraitInvoke.le_value(value_for_high)(high_for_compare)
+        }
+    }
+
+    between_exclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
+    {
+        value => low => high => {
+            value_for_low := TraitInvoke.clone_value(value);
+            low_for_compare := TraitInvoke.clone_value(low);
+            value_for_high := TraitInvoke.clone_value(value);
+            high_for_compare := TraitInvoke.clone_value(high);
+            TraitInvoke.gt_value(value_for_low)(low_for_compare) && TraitInvoke.lt_value(value_for_high)(high_for_compare)
+        }
+    }
+
+    show_value[T: Traits.Show] :: T -> String
+    {
+        value => show(value)
+    }
+
+    hash_value[T: Traits.Hash] :: T -> Int
+    {
+        value => hash(value)
+    }
+
+    hash_bucket_index[T: Traits.Hash] :: T -> Int -> Int
+    {
+        value => capacity =>
+            if capacity <= 0 then { 0 }
+            else {
+                h := TraitInvoke.hash_value(value);
+                normalized := if h < 0 then { 0 - h } else { h };
+                normalized % capacity
+            }
+    }
+
+    clone_value[T: Traits.Clone] :: T -> T
+    {
+        value => clone(value)
+    }
+}

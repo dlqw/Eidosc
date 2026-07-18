@@ -52,7 +52,7 @@ public sealed class PackageDependencyResolver
             }
         }
 
-        if (!config.NoImplicitStdlib && !packages.ContainsKey("Std"))
+        if (!config.NoImplicitStdlib && !packages.ContainsKey(WellKnownStrings.Std.Module))
             AddEmbeddedStdlib(packages);
 
         return new ResolvedPackageGraph { Packages = packages };
@@ -135,12 +135,12 @@ public sealed class PackageDependencyResolver
 
     private ResolvedPackage ResolveVersion(string name, DependencySpec spec, LockedPackage? locked)
     {
-        if (name == "Std")
+        if (name == WellKnownStrings.Std.Module)
         {
             var stdlibVersion = PrecompiledModuleRegistry.StdlibVersion;
             return new ResolvedPackage
             {
-                Name = "Std",
+                Name = WellKnownStrings.Std.Module,
                 Source = DependencySourceKind.Version,
                 Version = stdlibVersion?.ToString() ?? "0.1.0"
             };
@@ -254,9 +254,9 @@ public sealed class PackageDependencyResolver
     private static void AddEmbeddedStdlib(Dictionary<string, ResolvedPackage> packages)
     {
         var version = PrecompiledModuleRegistry.StdlibVersion;
-        packages["Std"] = new ResolvedPackage
+        packages[WellKnownStrings.Std.Module] = new ResolvedPackage
         {
-            Name = "Std",
+            Name = WellKnownStrings.Std.Module,
             Source = DependencySourceKind.Version,
             Version = version?.ToString() ?? "0.1.0"
         };

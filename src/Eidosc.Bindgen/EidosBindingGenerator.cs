@@ -25,19 +25,19 @@ public sealed class EidosBindingGenerator
         sb.AppendLine();
 
         // Module declaration
-        sb.AppendLine($"module {_libraryName}_ffi");
-        sb.AppendLine();
-        sb.AppendLine($"link \"{_libraryName}\"");
+        sb.AppendLine($"{_libraryName}_ffi :: module {{");
         sb.AppendLine();
 
         // Enums → val constants
         GenerateEnums(sb);
 
-        // Structs → @cstruct declarations
+        // Structs → typed repr declarations
         GenerateStructs(sb);
 
-        // Functions → @ffi declarations
+        // Functions → typed extern declarations
         GenerateFunctions(sb);
+
+        sb.AppendLine("}");
 
         return sb.ToString();
     }
@@ -56,7 +56,7 @@ public sealed class EidosBindingGenerator
             foreach (var v in en.Values)
             {
                 var eidosName = TypeMapper.EidosFunctionName(v.Name);
-                sb.AppendLine($"val {eidosName}: Int = {v.Value}");
+                sb.AppendLine($"export {eidosName} :: Int = {v.Value};");
             }
 
             sb.AppendLine();
@@ -75,14 +75,13 @@ public sealed class EidosBindingGenerator
             var name = st.EffectiveName;
 
             sb.AppendLine($"// {name} (size: {st.Size}, alignment: {st.Alignment})");
-            sb.AppendLine("@cstruct");
-            sb.AppendLine($"type {name} = struct {{");
+            sb.AppendLine($"export {name} :: type repr c {{");
 
             foreach (var field in st.Fields)
             {
                 var mapping = TypeMapper.MapCType(field.Type);
                 var eidosField = ToEidosFieldName(field.Name);
-                sb.AppendLine($"    {eidosField}: {mapping.EidosType},  // offset: {field.Offset}, size: {field.Size}");
+                sb.AppendLine($"    {eidosField} :: {mapping.EidosType},  // offset: {field.Offset}, size: {field.Size}");
             }
 
             sb.AppendLine("}");
@@ -132,8 +131,7 @@ public sealed class EidosBindingGenerator
         var eidosName = TypeMapper.EidosFunctionName(fn.Name);
         var retMapping = TypeMapper.MapCType(fn.ReturnType);
 
-        sb.Append($"@ffi(\"{fn.Name}\")");
-        sb.Append($" func {eidosName}: ");
+        sb.Append($"export {eidosName} :: ");
 
         if (fn.Params.Count == 0)
         {
@@ -149,7 +147,7 @@ public sealed class EidosBindingGenerator
             sb.Append(retMapping.EidosType);
         }
 
-        sb.AppendLine();
+        sb.AppendLine($" need ffi extern c link_name \"{fn.Name}\";");
     }
 
     private void GenerateShimmedFunction(StringBuilder sb, CFunctionInfo fn)
@@ -159,8 +157,7 @@ public sealed class EidosBindingGenerator
 
         sb.Append($"// Needs C shim (struct-by-value params)");
         sb.AppendLine();
-        sb.Append($"// @ffi(\"eidos_shim_{fn.Name}\")");
-        sb.Append($" func {eidosName}: ");
+        sb.Append($"// export {eidosName} :: ");
 
         if (fn.Params.Count == 0)
         {
@@ -178,7 +175,7 @@ public sealed class EidosBindingGenerator
             sb.Append(retMapping.EidosType);
         }
 
-        sb.AppendLine();
+        sb.AppendLine($" need ffi extern c link_name \"eidos_shim_{fn.Name}\";");
     }
 
     private static (bool canBind, string reason) CanBindFunction(CFunctionInfo fn)

@@ -8,7 +8,7 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private static void AssignPatternBindingSymbols(
+    private void AssignPatternBindingSymbols(
         Pattern pattern,
         IReadOnlyDictionary<string, SymbolId> bindingSymbols)
     {
@@ -18,6 +18,7 @@ public sealed partial class NameResolver
                 !string.IsNullOrWhiteSpace(varPattern.Name) &&
                 bindingSymbols.TryGetValue(varPattern.Name, out var varSymbolId):
                 varPattern.SymbolId = varSymbolId;
+                RegisterSyntaxIdentitySymbol(varPattern, varSymbolId);
                 return;
 
             case CtorPattern ctorPattern:
@@ -39,6 +40,7 @@ public sealed partial class NameResolver
                         bindingSymbols.TryGetValue(named.FieldName, out var namedSymbolId))
                     {
                         named.SymbolId = namedSymbolId;
+                        RegisterSyntaxIdentitySymbol(named, namedSymbolId);
                     }
                 }
 
@@ -115,6 +117,7 @@ public sealed partial class NameResolver
                     bindingSymbols.TryGetValue(asPattern.BindingName, out var asSymbolId))
                 {
                     asPattern.SymbolId = asSymbolId;
+                    RegisterSyntaxIdentitySymbol(asPattern, asSymbolId);
                 }
 
                 if (asPattern.InnerPattern != null)

@@ -286,7 +286,7 @@ public sealed partial class NameResolver
         }
 
         using var context = PushPatternDiagnosticContext($"proof-case#{caseIndex + 1}");
-        ResolvePatternBindings(proofCase.Pattern);
+        proofCase.SetPattern(ResolvePatternBindings(proofCase.Pattern));
         ResolveProofTermReferences(proofCase.BodyTerm, goal);
     }
 
@@ -352,7 +352,7 @@ public sealed partial class NameResolver
         using var context = PushPatternDiagnosticContext("let-pattern");
         if (IsRejectedPredeclaredLetPattern(letDecl))
         {
-            ResolvePatternReferencesWithoutBinding(letDecl.Pattern);
+            letDecl.SetPattern(ResolvePatternReferencesWithoutBinding(letDecl.Pattern));
         }
         else if (letDecl.SymbolId.IsValid)
         {
@@ -360,7 +360,7 @@ public sealed partial class NameResolver
         }
         else
         {
-            ResolvePatternBindings(letDecl.Pattern, letDecl.IsMutable, letDecl.IsComptime);
+            letDecl.SetPattern(ResolvePatternBindings(letDecl.Pattern, letDecl.IsMutable, letDecl.IsComptime));
             letDecl.SymbolId = GetSingleLetPatternSymbol(letDecl.Pattern);
         }
 
@@ -388,10 +388,16 @@ public sealed partial class NameResolver
             !string.Equals(varPattern.Name, WellKnownStrings.Punctuation.Underscore, StringComparison.Ordinal))
         {
             varPattern.SymbolId = symbolId;
+            var bindingName = _symbolTable.GetSymbol(symbolId)?.Name;
+            _symbolTable.CurrentScope?.BindValue(
+                string.IsNullOrWhiteSpace(bindingName)
+                    ? GetSyntaxBindingName(varPattern, varPattern.Name)
+                    : bindingName,
+                symbolId);
             return;
         }
 
-        ResolvePatternBindings(pattern);
+        _ = ResolvePatternBindings(pattern);
     }
 
     private static SymbolId GetSingleLetPatternSymbol(Pattern pattern)
@@ -416,7 +422,7 @@ public sealed partial class NameResolver
         }
 
         using var context = PushPatternDiagnosticContext("let-question-pattern");
-        ResolvePatternBindings(letQuestionDecl.Pattern);
+        letQuestionDecl.SetPattern(ResolvePatternBindings(letQuestionDecl.Pattern));
 
         if (!IsPatternIrrefutable(letQuestionDecl.Pattern))
         {

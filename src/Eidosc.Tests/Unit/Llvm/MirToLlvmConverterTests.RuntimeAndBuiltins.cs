@@ -701,6 +701,7 @@ public partial class MirToLlvmConverterTests
                     {
                         Name = "TokCons",
                         SymbolId = SymbolId.None,
+                        SymbolKind = SymbolKind.Constructor,
                         TypeId = adtType
                     },
                     Arguments = [arg0, arg1]
@@ -761,6 +762,7 @@ public partial class MirToLlvmConverterTests
                     {
                         Name = "TokBox",
                         SymbolId = SymbolId.None,
+                        SymbolKind = SymbolKind.Constructor,
                         TypeId = adtType,
                         Span = span
                     },

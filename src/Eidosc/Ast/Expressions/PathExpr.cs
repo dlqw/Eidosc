@@ -82,6 +82,11 @@ public record PathExpr : Expression
     /// </summary>
     public bool IsTypePath { get; private set; }
 
+    /// <summary>
+    /// Name resolution bound this path to a constructor symbol.
+    /// </summary>
+    public bool IsConstructorPath { get; private set; }
+
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {
         Span = node.Span;
@@ -108,8 +113,9 @@ public record PathExpr : Expression
                 }
             }
 
-            // 判断是否是类型路径（首字母大写）
-            IsTypePath = Name.Length > 0 && char.IsUpper(Name[0]);
+            // The parser keeps path category unresolved. Name resolution sets this
+            // flag from the bound symbol when the path denotes a type value.
+            IsTypePath = false;
         }
     }
 
@@ -218,6 +224,7 @@ public record PathExpr : Expression
     internal void SetPackageAlias(string? packageAlias) => PackageAlias = string.IsNullOrWhiteSpace(packageAlias) ? null : packageAlias;
     internal void SetModulePath(List<string> path) => ModulePath = path;
     internal void SetIsTypePath(bool value) => IsTypePath = value;
+    internal void SetIsConstructorPath(bool value) => IsConstructorPath = value;
     internal void SetTypeArgs(List<TypeNode> args) => TypeArgs = args;
     internal void SetGenericArguments(IEnumerable<GenericArgumentNode> arguments)
     {

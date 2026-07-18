@@ -64,7 +64,9 @@ public partial class TypeInferencePipelineTests
         AssertNoLetQuestionHirOrMirNodeTypes();
 
         var function = Assert.Single(result.HirModule!.Declarations.OfType<HirFunc>(), item => item.Name == "use_option");
-        var body = Assert.IsType<HirBlock>(function.Body);
+        var bodyInjection = Assert.IsType<HirCaseInject>(function.Body);
+        Assert.NotEqual(bodyInjection.SourceCase, bodyInjection.TargetAncestor);
+        var body = Assert.IsType<HirBlock>(bodyInjection.Operand);
         var match = Assert.IsType<HirMatch>(body.Result);
 
         Assert.Equal(2, match.Branches.Count);
@@ -75,7 +77,8 @@ public partial class TypeInferencePipelineTests
         var failurePattern = Assert.IsType<HirCtorPattern>(match.Branches[1].Pattern);
         Assert.Equal("None", failurePattern.ConstructorName);
         var failureReturn = Assert.IsType<HirReturn>(match.Branches[1].Body);
-        var failureValue = Assert.IsType<HirCall>(failureReturn.Value);
+        var failureInjection = Assert.IsType<HirCaseInject>(failureReturn.Value);
+        var failureValue = Assert.IsType<HirCall>(failureInjection.Operand);
         var failureConstructor = Assert.IsType<HirVar>(failureValue.Function);
         Assert.Equal("None", failureConstructor.Name);
     }
@@ -91,7 +94,9 @@ public partial class TypeInferencePipelineTests
         AssertNoLetQuestionHirOrMirNodeTypes();
 
         var function = Assert.Single(result.HirModule!.Declarations.OfType<HirFunc>(), item => item.Name == "use_result");
-        var body = Assert.IsType<HirBlock>(function.Body);
+        var bodyInjection = Assert.IsType<HirCaseInject>(function.Body);
+        Assert.NotEqual(bodyInjection.SourceCase, bodyInjection.TargetAncestor);
+        var body = Assert.IsType<HirBlock>(bodyInjection.Operand);
         var match = Assert.IsType<HirMatch>(body.Result);
 
         Assert.Equal(2, match.Branches.Count);
@@ -106,7 +111,8 @@ public partial class TypeInferencePipelineTests
         Assert.True(errorBinding.SymbolId.IsValid);
 
         var failureReturn = Assert.IsType<HirReturn>(match.Branches[1].Body);
-        var failureValue = Assert.IsType<HirCall>(failureReturn.Value);
+        var failureInjection = Assert.IsType<HirCaseInject>(failureReturn.Value);
+        var failureValue = Assert.IsType<HirCall>(failureInjection.Operand);
         var failureConstructor = Assert.IsType<HirVar>(failureValue.Function);
         Assert.Equal("Err", failureConstructor.Name);
         var returnedError = Assert.IsType<HirVar>(Assert.Single(failureValue.Arguments));
@@ -168,7 +174,7 @@ public partial class TypeInferencePipelineTests
     }
 
     private const string LetQuestionOptionSource = """
-import Std.Option
+import std.Option
 
 maybe_inc :: Int -> Option[Int]
 {
@@ -185,14 +191,14 @@ use_option :: Int -> Option[Int]
 """;
 
     private const string LetQuestionResultSource = """
-import Std.Result
+import std.Result
 
-parse_like :: Int -> Result.ResultWith[String, Int]
+parse_like :: Int -> Result.With[String, Int]
 {
     value => if value > 0 then { Ok(value + 1) } else { Err("bad") }
 }
 
-use_result :: Int -> Result.ResultWith[String, Int]
+use_result :: Int -> Result.With[String, Int]
 {
     value => {
         let? next = parse_like(value);
@@ -208,13 +214,13 @@ use_result :: Int -> Result.ResultWith[String, Int]
 """;
 
     private const string TopLevelLetQuestionSource = """
-import Std.Option
+import std.Option
 
 let? value = Some(1);
 """;
 
     private const string LetQuestionNonOptionResultSource = """
-import Std.Option
+import std.Option
 
 bad :: Int -> Option[Int]
 {
@@ -226,15 +232,15 @@ bad :: Int -> Option[Int]
 """;
 
     private const string LetQuestionOptionInResultReturnSource = """
-import Std.Option
-import Std.Result
+import std.Option
+import std.Result
 
 maybe_inc :: Int -> Option[Int]
 {
     value => Some(value + 1)
 }
 
-bad :: Int -> Result.ResultWith[String, Int]
+bad :: Int -> Result.With[String, Int]
 {
     value => {
         let? next = maybe_inc(value);
@@ -244,14 +250,14 @@ bad :: Int -> Result.ResultWith[String, Int]
 """;
 
     private const string LetQuestionResultErrorMismatchSource = """
-import Std.Result
+import std.Result
 
-parse_like :: Int -> Result.ResultWith[String, Int]
+parse_like :: Int -> Result.With[String, Int]
 {
     value => if value > 0 then { Ok(value + 1) } else { Err("bad") }
 }
 
-bad :: Int -> Result.ResultWith[Int, Int]
+bad :: Int -> Result.With[Int, Int]
 {
     value => {
         let? next = parse_like(value);
@@ -261,7 +267,7 @@ bad :: Int -> Result.ResultWith[Int, Int]
 """;
 
     private const string LetQuestionRefutablePatternSource = """
-import Std.Option
+import std.Option
 
 maybe_inc :: Int -> Option[Int]
 {

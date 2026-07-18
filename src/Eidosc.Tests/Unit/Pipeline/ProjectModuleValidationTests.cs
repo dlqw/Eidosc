@@ -133,11 +133,11 @@ Demo.Main :: module
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
         var appDir = Path.Combine(tempDir, "App");
-        var moduleDir = Path.Combine(tempDir, "src", "Cap");
+        var moduleDir = Path.Combine(tempDir, "src", "cap");
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(moduleDir);
 
-        var moduleFile = Path.Combine(moduleDir, "Io.eidos");
+        var moduleFile = Path.Combine(moduleDir, "io.eidos");
         var entryFile = Path.Combine(appDir, "main.eidos");
 
         const string moduleSource = """
@@ -192,11 +192,11 @@ main :: Unit -> Int
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
         var appDir = Path.Combine(tempDir, "App");
-        var moduleDir = Path.Combine(tempDir, "src", "Cap");
+        var moduleDir = Path.Combine(tempDir, "src", "cap");
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(moduleDir);
 
-        var moduleFile = Path.Combine(moduleDir, "Io.eidos");
+        var moduleFile = Path.Combine(moduleDir, "io.eidos");
         var entryFile = Path.Combine(appDir, "main.eidos");
 
         const string moduleSource = """
@@ -310,11 +310,11 @@ main :: Unit -> Int
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
         var appDir = Path.Combine(tempDir, "App");
-        var generatedModuleDir = Path.Combine(tempDir, "generated", "Cap");
+        var generatedModuleDir = Path.Combine(tempDir, "generated", "cap");
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(generatedModuleDir);
 
-        var moduleFile = Path.Combine(generatedModuleDir, "Io.eidos");
+        var moduleFile = Path.Combine(generatedModuleDir, "io.eidos");
         var entryFile = Path.Combine(appDir, "main.eidos");
         const string moduleSource = """
 Cap.Io :: module
@@ -367,14 +367,14 @@ main :: Unit -> Int
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
         var appDir = Path.Combine(tempDir, "App");
-        var sourceModuleDir = Path.Combine(tempDir, "src", "Cap");
-        var generatedModuleDir = Path.Combine(tempDir, "generated", "Cap");
+        var sourceModuleDir = Path.Combine(tempDir, "src", "cap");
+        var generatedModuleDir = Path.Combine(tempDir, "generated", "cap");
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(sourceModuleDir);
         Directory.CreateDirectory(generatedModuleDir);
 
-        var sourceModuleFile = Path.Combine(sourceModuleDir, "Io.eidos");
-        var generatedModuleFile = Path.Combine(generatedModuleDir, "Io.eidos");
+        var sourceModuleFile = Path.Combine(sourceModuleDir, "io.eidos");
+        var generatedModuleFile = Path.Combine(generatedModuleDir, "io.eidos");
         var entryFile = Path.Combine(appDir, "main.eidos");
         const string firstModuleSource = """
 Cap.Io :: module
@@ -442,13 +442,13 @@ main :: Unit -> Int
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
         var appDir = Path.Combine(tempDir, "App");
-        var sharedModuleDir = Path.Combine(tempDir, "shared_b", "Cap");
+        var sharedModuleDir = Path.Combine(tempDir, "shared_b", "cap");
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(Path.Combine(tempDir, "src"));
         Directory.CreateDirectory(Path.Combine(tempDir, "shared_a"));
         Directory.CreateDirectory(sharedModuleDir);
 
-        var moduleFile = Path.Combine(sharedModuleDir, "Io.eidos");
+        var moduleFile = Path.Combine(sharedModuleDir, "io.eidos");
         var entryFile = Path.Combine(appDir, "main.eidos");
         const string moduleSource = """
 Cap.Io :: module
@@ -506,14 +506,14 @@ main :: Unit -> Int
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
         var appDir = Path.Combine(tempDir, "App");
-        var sourceModuleDir = Path.Combine(tempDir, "src", "Cap");
-        var explicitModuleDir = Path.Combine(tempDir, "manual_modules", "Cap");
+        var sourceModuleDir = Path.Combine(tempDir, "src", "cap");
+        var explicitModuleDir = Path.Combine(tempDir, "manual_modules", "cap");
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(sourceModuleDir);
         Directory.CreateDirectory(explicitModuleDir);
 
-        var sourceModuleFile = Path.Combine(sourceModuleDir, "Io.eidos");
-        var explicitModuleFile = Path.Combine(explicitModuleDir, "Io.eidos");
+        var sourceModuleFile = Path.Combine(sourceModuleDir, "io.eidos");
+        var explicitModuleFile = Path.Combine(explicitModuleDir, "io.eidos");
         var entryFile = Path.Combine(appDir, "main.eidos");
         const string sourceModule = """
 Cap.Io :: module

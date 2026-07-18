@@ -138,7 +138,7 @@ public sealed partial class MirGenericSpecializerTests
                 optionSymbolId,
                 optionSymbol.TypeId,
                 "Option",
-                [new ImplTypeRefKey(SymbolId.None, TypeId.None, "T", [])]));
+                [new ImplTypeRefKey(SymbolId.None, TypeId.None, "var:T", [])]));
         var intImplId = symbolTable.DeclareImpl(
             traitId,
             optionSymbol.TypeId,

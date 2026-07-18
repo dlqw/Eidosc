@@ -20,6 +20,8 @@ public sealed partial class TypeInferer
         {
             return pattern switch
             {
+                ExpandPattern { ExpandedPattern: not null } expansion =>
+                    InferExpandedPattern(expansion, expectedType),
                 VarPattern varPattern => InferVarPattern(varPattern, expectedType),
                 WildcardPattern wildcardPattern => InferWildcardPattern(wildcardPattern, expectedType),
                 LiteralPattern lit => InferLiteralPattern(lit, expectedType),
@@ -39,6 +41,13 @@ public sealed partial class TypeInferer
         {
             _substitution.AllowRigidExistentialRefinement = previousAllowRigidRefinement;
         }
+    }
+
+    private Type InferExpandedPattern(ExpandPattern expansion, Type? expectedType)
+    {
+        var inferred = InferPattern(expansion.ExpandedPattern!, expectedType);
+        expansion.InferredType = inferred;
+        return inferred;
     }
 
     private Type InferUnsupportedPattern(Pattern pattern)
@@ -138,9 +147,26 @@ public sealed partial class TypeInferer
 
             var typeVarEnv = CreateCtorTypeVarEnv(binding, rigidExistentialCtorParams: true);
             var ctorType = CreateAdtTypeFromBinding(binding, typeVarEnv, ctor.Span);
-            var resultType = expectedType != null
-                ? TryUnify(expectedType, ctorType, ctor.Span, DiagnosticMessages.ConstructorPatternTypeMismatch)
-                : ctorType;
+            Type resultType;
+            if (expectedType == null)
+            {
+                resultType = ctorType;
+            }
+            else if (TryJoinClosedCaseTypes(
+                         _substitution.Apply(expectedType),
+                         _substitution.Apply(ctorType),
+                         out var patternAncestor))
+            {
+                resultType = patternAncestor;
+            }
+            else
+            {
+                resultType = TryUnify(
+                    expectedType,
+                    ctorType,
+                    ctor.Span,
+                    DiagnosticMessages.ConstructorPatternTypeMismatch);
+            }
             var kindEnvByName = CreateTypeParamKindMapForCtorBinding(
                 binding.AdtId,
                 binding.AdtTypeParamNames,

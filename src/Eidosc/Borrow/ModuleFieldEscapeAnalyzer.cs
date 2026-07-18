@@ -394,6 +394,14 @@ public sealed class ModuleFieldEscapeAnalyzer
                 AddAlias(move.Target, move.Source, aliases);
                 break;
 
+            case MirCaseInject
+                {
+                    Target: MirPlace target,
+                    Operand: MirPlace source
+                }:
+                AddAlias(target, source, aliases);
+                break;
+
         }
     }
 

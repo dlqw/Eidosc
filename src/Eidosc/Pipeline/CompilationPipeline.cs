@@ -23,7 +23,7 @@ namespace Eidosc.Pipeline;
 /// </summary>
 public sealed partial class CompilationPipeline
 {
-    internal const string GrammarCacheVersion = "2026-06-12.01";
+    internal const string GrammarCacheVersion = "2026-07-17.02-unified-identifier-kind-layout";
 
     private readonly CompilationOptions _options;
     private readonly DebugContext _debugContext;
@@ -116,11 +116,20 @@ public sealed partial class CompilationPipeline
     private BorrowCodegenHintsSnapshot? _borrowCodegenHintsSnapshot;
     private string? _liveStateFlagsHash;
     private CompilationLiveStatePayload? _compilationLiveStatePayload;
+    private readonly HashSet<string> _compilerOwnedSourcePaths = new(StringComparer.OrdinalIgnoreCase);
 
     public CompilationPipeline(string sourceCode, CompilationOptions options)
     {
         _sourceCode = sourceCode;
         _options = options;
+        foreach (var sourcePath in options.ToolchainOwnedSourcePaths)
+        {
+            _compilerOwnedSourcePaths.Add(sourcePath);
+        }
+        if (CompilerOwnedSourceGrant.IsVerifiedStdlibSource(options.InputFile, sourceCode))
+        {
+            _compilerOwnedSourcePaths.Add(options.InputFile!);
+        }
         ResolveInputLanguageVersion(options);
         _profiler = new CompilationProfiler(options.EnableDetailedProfiling);
         _comptimeExecution = ComptimeExecutionOptions.Create(options);
@@ -226,8 +235,8 @@ public sealed partial class CompilationPipeline
             _diagnostics.Add(CreateInternalErrorDiagnostic(ex, includeExceptionDetails));
         }
 
-        ApplyWarningEscalation();
         AppendStyleSuggestions();
+        ApplyWarningEscalation();
         if (_diagnostics.Any(diagnostic => diagnostic.Level == Diagnostic.DiagnosticLevel.Error))
         {
             success = false;
@@ -325,7 +334,7 @@ public sealed partial class CompilationPipeline
 
     private void AppendStyleSuggestions()
     {
-        if (!_options.EmitStyleSuggestions ||
+        if (!_options.EmitStyleSuggestions && !_options.DenyStyle ||
             _ast == null ||
             _typeInferer == null ||
             _typeInferer?.TypeAnalysisIncomplete == true ||
@@ -513,8 +522,9 @@ public sealed partial class CompilationPipeline
     private void ApplyWarningEscalation()
     {
         var escalateAll = _options.TreatWarningsAsErrors;
+        var denyStyle = _options.DenyStyle;
         var escalateCodes = _options.WarningCodesAsErrors;
-        if (!escalateAll && escalateCodes.Count == 0)
+        if (!escalateAll && !denyStyle && escalateCodes.Count == 0)
         {
             return;
         }
@@ -528,6 +538,7 @@ public sealed partial class CompilationPipeline
             }
 
             var shouldEscalate = escalateAll ||
+                                 denyStyle && diagnostic.Metadata.ContainsKey("style") ||
                                  (!string.IsNullOrWhiteSpace(diagnostic.Code) &&
                                   escalateCodes.Contains(diagnostic.Code!));
             if (!shouldEscalate)
@@ -615,16 +626,16 @@ public sealed partial class CompilationPipeline
             var rootModulePath = GetRootModulePath(_ast);
             var isStdlibModule = IsStdPackageAlias(_ast.PackageAlias) ||
                                  (rootModulePath.Count > 0 &&
-                                  string.Equals(rootModulePath[0], "Std", StringComparison.Ordinal));
+                                  string.Equals(rootModulePath[0], WellKnownStrings.Std.Module, StringComparison.Ordinal));
             if (!isStdlibModule)
             {
                 var preludePath = new List<string> { "Prelude" };
-                var preludeKey = ToImportKey("Std", preludePath);
+                var preludeKey = ToImportKey(WellKnownStrings.Std.Module, preludePath);
                 var alreadyImportsPrelude = pendingImports
                     .Any(item => ToImportKey(item.packageAlias, item.path) == preludeKey);
                 if (!alreadyImportsPrelude)
                 {
-                    pendingImports.Enqueue((preludePath, "Std", rootModuleKey));
+                    pendingImports.Enqueue((preludePath, WellKnownStrings.Std.Module, rootModuleKey));
                 }
             }
         }
@@ -739,6 +750,8 @@ public sealed partial class CompilationPipeline
                     var precompiledSourceName = PrecompiledModuleRegistry.TryGetSourceFilePath(effectiveModulePath, out var precompiledSourceFile)
                         ? precompiledSourceFile
                         : $"<precompiled:{importKey}>";
+                    _compilerOwnedSourcePaths.Add(precompiledSourceName);
+                    _compilerOwnedSourcePaths.Add($"<precompiled:{importKey}>");
                     _moduleSourceTextCache[NormalizeModuleSourcePath(precompiledSourceName)] = precompiledSource;
                     _moduleSourceTextCache[NormalizeModuleSourcePath($"<precompiled:{importKey}>")] = precompiledSource;
                     AddProfilingCounter("Build.importSourceText.precompiledReads", 1);
@@ -1349,6 +1362,8 @@ public sealed partial class CompilationPipeline
             $"triple={_options.LlvmTargetTriple ?? ""}",
             $"nativeLinkMode={_options.NativeLinkMode}",
             $"stdlib={PrecompiledModuleRegistry.GetStdlibImageFingerprint()}"
+            ,$"clauseSchema={Ast.Declarations.ClauseSchema.Version}"
+            ,$"compilerSourceGrants={string.Join('|', _compilerOwnedSourcePaths.Select(NormalizeModuleSourcePath).Order(StringComparer.Ordinal))}"
         ]);
     }
 
@@ -1360,7 +1375,7 @@ public sealed partial class CompilationPipeline
             return;
         }
 
-        ApplyPackageIdentityToImportedModuleTree(moduleDecl, "Std", "precompiled:Std");
+        ApplyPackageIdentityToImportedModuleTree(moduleDecl, WellKnownStrings.Std.Module, "precompiled:std");
     }
 
     private static void EnqueueImports(ModuleDecl moduleDecl, Queue<List<string>> queue)
@@ -1487,7 +1502,7 @@ public sealed partial class CompilationPipeline
 
     private static bool IsStdPackageAlias(string? packageAlias)
     {
-        return string.Equals(packageAlias, "Std", StringComparison.Ordinal);
+        return string.Equals(packageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal);
     }
 
     private string BuildCurrentPackageInstanceKey()
@@ -1726,10 +1741,10 @@ public sealed partial class CompilationPipeline
             candidates.AddRange(dependencyModules.Select(module => new ImportModuleCandidate(dependencyAlias, module, IsPrecompiled: false)));
         }
 
-        var stdEffectivePath = BuildEffectiveModulePath("Std", modulePath);
+        var stdEffectivePath = BuildEffectiveModulePath(WellKnownStrings.Std.Module, modulePath);
         if (TryGetPrecompiledModuleSource(stdEffectivePath, out _))
         {
-            candidates.Add(new ImportModuleCandidate("Std", WorkspaceModule: null, IsPrecompiled: true));
+            candidates.Add(new ImportModuleCandidate(WellKnownStrings.Std.Module, WorkspaceModule: null, IsPrecompiled: true));
         }
 
         return candidates;
@@ -1967,12 +1982,42 @@ public sealed partial class CompilationPipeline
 
         try
         {
-            return Path.GetFullPath(_options.InputFile);
+            return GetLogicalSourceName(Path.GetFullPath(_options.InputFile));
         }
         catch
         {
             return _options.InputFile;
         }
+    }
+
+    private string GetLogicalSourceName(string physicalPath)
+    {
+        if (_options.GeneratedSourceUriMap.Count == 0)
+        {
+            return physicalPath;
+        }
+
+        string normalized;
+        try
+        {
+            normalized = Path.GetFullPath(physicalPath);
+        }
+        catch
+        {
+            normalized = physicalPath;
+        }
+
+        if (_options.GeneratedSourceUriMap.TryGetValue(normalized, out var logicalUri))
+        {
+            return logicalUri;
+        }
+
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        return _options.GeneratedSourceUriMap
+            .FirstOrDefault(entry => string.Equals(entry.Key, normalized, comparison))
+            .Value ?? physicalPath;
     }
 
     private string GetCachePath()

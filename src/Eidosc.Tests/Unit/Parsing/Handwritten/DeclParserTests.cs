@@ -84,7 +84,7 @@ public sealed class DeclParserTests
         var decl = Assert.IsType<LetDecl>(result);
         var optionType = Assert.IsType<TypePath>(decl.TypeAnnotation);
         Assert.Equal("Option", optionType.TypeName);
-        Assert.Equal("Std", optionType.PackageAlias);
+        Assert.Equal("std", optionType.PackageAlias);
         Assert.Equal(["Option"], optionType.ModulePath);
         var innerType = Assert.IsType<TypePath>(Assert.Single(optionType.TypeArgs));
         Assert.Equal("Int", innerType.TypeName);
@@ -105,7 +105,7 @@ public sealed class DeclParserTests
         var decl = Assert.IsType<LetDecl>(result);
         var outerOption = Assert.IsType<TypePath>(decl.TypeAnnotation);
         Assert.Equal("Option", outerOption.TypeName);
-        Assert.Equal("Std", outerOption.PackageAlias);
+        Assert.Equal("std", outerOption.PackageAlias);
         Assert.Equal(["Option"], outerOption.ModulePath);
 
         var listType = Assert.IsType<TypePath>(Assert.Single(outerOption.TypeArgs));
@@ -113,7 +113,7 @@ public sealed class DeclParserTests
 
         var innerOption = Assert.IsType<TypePath>(Assert.Single(listType.TypeArgs));
         Assert.Equal("Option", innerOption.TypeName);
-        Assert.Equal("Std", innerOption.PackageAlias);
+        Assert.Equal("std", innerOption.PackageAlias);
         Assert.Equal(["Option"], innerOption.ModulePath);
         var intType = Assert.IsType<TypePath>(Assert.Single(innerOption.TypeArgs));
         Assert.Equal("Int", intType.TypeName);
@@ -291,15 +291,15 @@ public sealed class DeclParserTests
     public void Parse_gadt_with_comma_constructors()
     {
         var ctx = MakeNameFirstCtx(TypeId("Direction"), "[", TypeId("A"), "]", "::", "type", "{",
-            TypeId("North"), "->", TypeId("Direction"), "[", TypeId("Vertical"), "]", ",",
-            TypeId("East"), "->", TypeId("Direction"), "[", TypeId("Horizontal"), "]", "}");
+            TypeId("North"), "::", "type", "case", TypeId("Direction"), "[", TypeId("Vertical"), "]", "{", "}", ",",
+            TypeId("East"), "::", "type", "case", TypeId("Direction"), "[", TypeId("Horizontal"), "]", "{", "}", "}");
         var parser = new DeclParser(ctx);
 
         var result = parser.ParseTopLevel();
 
         var adt = Assert.IsType<AdtDef>(result);
         Assert.Equal(2, adt.Constructors.Count);
-        Assert.All(adt.Constructors, ctor => Assert.NotNull(ctor.ReturnType));
+        Assert.All(adt.Cases, caseType => Assert.NotNull(caseType.ParentSpecialization));
         Assert.Empty(ctx.Diagnostics);
     }
 
@@ -307,30 +307,33 @@ public sealed class DeclParserTests
     public void Parse_adt_rejects_pipe_constructor_separator()
     {
         var ctx = MakeNameFirstCtx(TypeId("Direction"), "::", "type", "{",
-            TypeId("North"), ",", TypeId("South"), "|", TypeId("East"), "}");
+            TypeId("North"), "::", "type", "{", "}", ",",
+            TypeId("South"), "::", "type", "{", "}", "|",
+            TypeId("East"), "::", "type", "{", "}", "}");
         var parser = new DeclParser(ctx);
 
         var result = parser.ParseTopLevel();
 
         var adt = Assert.IsType<AdtDef>(result);
-        Assert.Equal(3, adt.Constructors.Count);
+        Assert.Equal(3, adt.Cases.Count);
         Assert.Contains(ctx.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("ADT constructors use ','", StringComparison.Ordinal));
+            diagnostic.Message.Contains("expected a field declaration", StringComparison.Ordinal));
     }
 
     [Fact]
     public void Parse_adt_requires_constructor_separator()
     {
         var ctx = MakeNameFirstCtx(TypeId("Direction"), "::", "type", "{",
-            TypeId("North"), TypeId("South"), "}");
+            TypeId("North"), "::", "type", "{", "}",
+            TypeId("South"), "::", "type", "{", "}", "}");
         var parser = new DeclParser(ctx);
 
         var result = parser.ParseTopLevel();
 
         var adt = Assert.IsType<AdtDef>(result);
-        Assert.Equal(2, adt.Constructors.Count);
+        Assert.Equal(2, adt.Cases.Count);
         Assert.Contains(ctx.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("expected ',' between ADT constructors", StringComparison.Ordinal));
+            diagnostic.Message.Contains("expected ',' between type body members", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -369,9 +372,9 @@ public sealed class DeclParserTests
     [Fact]
     public void Parse_adt_bare_product_fields_name_first()
     {
-        // Name-first bare product type: `Point :: type { x: Int, y: Int }`.
+        // Name-first bare product type: `Point :: type { x :: Int, y :: Int }`.
         var ctx = MakeNameFirstCtx(TypeId("Point"), "::", "type", "{",
-            Ident("x"), ":", TypeId("Int"), ",", Ident("y"), ":", TypeId("Int"), "}");
+            Ident("x"), "::", TypeId("Int"), ",", Ident("y"), "::", TypeId("Int"), "}");
         var parser = new DeclParser(ctx);
         var result = parser.ParseTopLevel();
         var adt = Assert.IsType<AdtDef>(result);
@@ -381,6 +384,158 @@ public sealed class DeclParserTests
         Assert.Equal("x", adt.Fields[0].Name);
         Assert.Equal("y", adt.Fields[1].Name);
         Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_name_first_product_fields_use_double_colon()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Player"), "::", "type", "{",
+            Ident("hp"), "::", TypeId("Int32"), ",",
+            Ident("atk"), "::", TypeId("Int32"), ",", "}");
+        var parser = new DeclParser(ctx);
+
+        var adt = Assert.IsType<AdtDef>(parser.ParseTopLevel());
+
+        Assert.Empty(adt.Cases);
+        Assert.Empty(adt.Constructors);
+        Assert.Collection(
+            adt.Fields,
+            field => Assert.Equal("hp", field.Name),
+            field => Assert.Equal("atk", field.Name));
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_closed_case_types_preserves_common_and_local_fields()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Anim"), "::", "type", "{",
+            Ident("name"), "::", TypeId("String"), ",",
+            TypeId("Dog"), "::", "type", "{",
+                Ident("breed"), "::", TypeId("Breed"), ",", "}", ",",
+            TypeId("Cat"), "::", "type", "{",
+                Ident("lives"), "::", TypeId("Int32"), ",", "}", ",",
+            "}");
+        var parser = new DeclParser(ctx);
+
+        var adt = Assert.IsType<AdtDef>(parser.ParseTopLevel());
+
+        Assert.Equal("name", Assert.Single(adt.Fields).Name);
+        Assert.Collection(
+            adt.Cases,
+            dog =>
+            {
+                Assert.Equal("Dog", dog.Name);
+                Assert.Equal("breed", Assert.Single(dog.Fields).Name);
+            },
+            cat =>
+            {
+                Assert.Equal("Cat", cat.Name);
+                Assert.Equal("lives", Assert.Single(cat.Fields).Name);
+            });
+        Assert.Equal(2, adt.Constructors.Count);
+        Assert.All(adt.Constructors, constructor => Assert.Equal(2, constructor.NamedArgs.Count));
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_closed_type_body_reports_duplicate_cases()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Anim"), "::", "type", "{",
+            TypeId("Dog"), "::", "type", "{", "}", ",",
+            TypeId("Dog"), "::", "type", "{", "}", "}");
+
+        _ = new DeclParser(ctx).ParseTopLevel();
+
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("duplicate case type 'Dog'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parse_closed_case_reports_inherited_field_shadowing()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Anim"), "::", "type", "{",
+            Ident("name"), "::", TypeId("String"), ",",
+            TypeId("Dog"), "::", "type", "{",
+                Ident("name"), "::", TypeId("String"), "}", "}");
+
+        _ = new DeclParser(ctx).ParseTopLevel();
+
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("shadows an inherited", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parse_positional_case_rejects_common_named_fields()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Anim"), "::", "type", "{",
+            Ident("name"), "::", TypeId("String"), ",",
+            TypeId("Dog"), "::", "type", "(", TypeId("String"), ")", "}");
+
+        _ = new DeclParser(ctx).ParseTopLevel();
+
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("positional case type cannot inherit", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parse_common_field_after_case_is_rejected()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Anim"), "::", "type", "{",
+            TypeId("Dog"), "::", "type", "{", "}", ",",
+            Ident("name"), "::", TypeId("String"), "}");
+
+        _ = new DeclParser(ctx).ParseTopLevel();
+
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("common fields must be declared before", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parse_case_type_with_positional_payload_and_parent_specialization()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Expr"), "[", TypeId("T"), "]", "::", "type", "{",
+            TypeId("IntLit"), "::", "type", "(", TypeId("Int"), ")",
+                "case", TypeId("Expr"), "[", TypeId("Int"), "]", ",",
+            "}");
+        var parser = new DeclParser(ctx);
+
+        var adt = Assert.IsType<AdtDef>(parser.ParseTopLevel());
+        var caseType = Assert.Single(adt.Cases);
+
+        Assert.Equal("IntLit", caseType.Name);
+        Assert.Single(caseType.PositionalFields);
+        var parent = Assert.IsType<TypePath>(caseType.ParentSpecialization);
+        Assert.Equal("Expr", parent.TypeName);
+        Assert.Single(parent.TypeArgs);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_type_body_rejects_legacy_colon_field_without_accepting_it()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Player"), "::", "type", "{",
+            Ident("hp"), ":", TypeId("Int32"), "}");
+        var parser = new DeclParser(ctx);
+
+        var adt = Assert.IsType<AdtDef>(parser.ParseTopLevel());
+
+        Assert.Empty(adt.Fields);
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("fields use 'name :: Type'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parse_type_body_rejects_common_field_after_case()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Anim"), "::", "type", "{",
+            TypeId("Dog"), "::", "type", "{", "}", ",",
+            Ident("name"), "::", TypeId("String"), ",", "}");
+        var parser = new DeclParser(ctx);
+
+        _ = Assert.IsType<AdtDef>(parser.ParseTopLevel());
+
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("before the first case type", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -725,13 +880,13 @@ public sealed class DeclParserTests
     }
 
     [Fact]
-    public void Parse_name_first_function_suffix_where_need_clauses()
+    public void Parse_name_first_function_pre_body_where_need_clauses()
     {
         var ctx = MakeNameFirstCtx(Ident("showValue"), "[", TypeId("T"), "]", "::",
             TypeId("T"), "->", TypeId("String"),
-            "{", Ident("value"), "=>", Str("value"), "}",
+            "where", TypeId("T"), ":", TypeId("Show"),
             "need", TypeId("Console"),
-            "where", TypeId("T"), ":", TypeId("Show"));
+            "{", Ident("value"), "=>", Str("value"), "}");
         var parser = new DeclParser(ctx);
 
         var result = parser.ParseTopLevel();
@@ -862,7 +1017,7 @@ public sealed class DeclParserTests
     }
 
     [Fact]
-    public void Parse_name_first_trait_where_clause_before_and_after_body()
+    public void Parse_name_first_trait_where_clause_before_body()
     {
         var prefixCtx = MakeNameFirstCtx(TypeId("ShowBox"), "[", TypeId("T"), "]", "::", "trait",
             "where", TypeId("T"), ":", TypeId("Show"),
@@ -876,17 +1031,6 @@ public sealed class DeclParserTests
         Assert.Equal("Show", prefixTrait.TypeParams[0].TraitConstraints[0].TraitName);
         Assert.Empty(prefixCtx.Diagnostics);
 
-        var suffixCtx = MakeNameFirstCtx(TypeId("EqBox"), "[", TypeId("T"), "]", "::", "trait",
-            "{", Ident("eq"), "::", TypeId("T"), "->", TypeId("T"), "->", TypeId("Bool"), "}",
-            "where", TypeId("T"), ":", TypeId("Eq"));
-        var suffixParser = new DeclParser(suffixCtx);
-
-        var suffixResult = suffixParser.ParseTopLevel();
-
-        var suffixTrait = Assert.IsType<TraitDef>(suffixResult);
-        Assert.Single(suffixTrait.TypeParams[0].TraitConstraints);
-        Assert.Equal("Eq", suffixTrait.TypeParams[0].TraitConstraints[0].TraitName);
-        Assert.Empty(suffixCtx.Diagnostics);
     }
 
     [Fact]
@@ -1091,16 +1235,78 @@ public sealed class DeclParserTests
     }
 
     [Fact]
-    public void Parse_attribute()
+    public void Parse_attribute_reports_migration_diagnostic_and_does_not_bind_it()
     {
-        var ctx = MakeCtx("@", Ident("impl"), "(", TypeId("Show"), ")",
-            "func", Ident("show"), ":", TypeId("Self"), "->", TypeId("String"));
+        var ctx = MakeNameFirstCtx("@", Ident("impl"), "(", TypeId("Show"), ")",
+            Ident("show"), "::", TypeId("Self"), "->", TypeId("String"));
         var parser = new DeclParser(ctx);
         var result = parser.ParseTopLevel();
         var func = Assert.IsType<FuncDef>(result);
-        Assert.Single(func.Attributes);
-        Assert.Equal("impl", func.Attributes[0].Name);
+        Assert.Empty(func.Attributes);
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("eidosc migrate clauses --to 0.7.0-alpha.1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parse_type_pre_body_clauses_are_typed_and_source_ordered()
+    {
+        var ctx = MakeNameFirstCtx(TypeId("Player"), "::", "type",
+            "derive", TypeId("Eq"), ",", TypeId("Show"),
+            "expand", Ident("derive_json"), "(", TypeId("JsonOptions"), "{", "}", ")",
+            "{", Ident("name"), "::", TypeId("String"), "}");
+        var parser = new DeclParser(ctx);
+
+        var adt = Assert.IsType<AdtDef>(parser.ParseTopLevel());
+
+        Assert.Collection(
+            adt.Clauses,
+            derive =>
+            {
+                Assert.Equal(DeclarationClauseKind.Derive, derive.ClauseKind);
+                Assert.Equal(["Eq", "Show"], derive.ArgumentTokens);
+            },
+            expand =>
+            {
+                Assert.Equal(DeclarationClauseKind.Expand, expand.ClauseKind);
+                Assert.Equal("derive_json(JsonOptions{})", Assert.Single(expand.ArgumentTokens));
+                var invocation = Assert.IsType<MetaInvocationSyntax>(expand.MetaInvocation);
+                Assert.Equal(["derive_json"], invocation.GeneratorPath);
+                Assert.Single(invocation.ExplicitArguments);
+                Assert.IsType<CtorExpr>(invocation.ExplicitArguments[0]);
+            });
         Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_foreign_function_uses_pre_body_clauses()
+    {
+        var ctx = MakeNameFirstCtx(Ident("puts"), "::", TypeId("String"), "->", TypeId("Int"),
+            "need", Ident("ffi"),
+            "extern", Ident("c"),
+            "link_library", Str("libc"),
+            "link_name", Str("puts"), ";");
+        var parser = new DeclParser(ctx);
+
+        var function = Assert.IsType<FuncDecl>(parser.ParseTopLevel());
+
+        Assert.Equal(4, function.Clauses.Count);
+        Assert.Equal(
+            [DeclarationClauseKind.Need, DeclarationClauseKind.Extern, DeclarationClauseKind.LinkLibrary, DeclarationClauseKind.LinkName],
+            function.Clauses.Select(static clause => clause.ClauseKind).ToArray());
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_rejects_post_body_clause()
+    {
+        var ctx = MakeNameFirstCtx(Ident("f"), "::", TypeId("Unit"), "->", TypeId("Unit"),
+            "{", "_", "=>", "(", ")", "}", "need", Ident("io"));
+        var parser = new DeclParser(ctx);
+
+        _ = Assert.IsType<FuncDef>(parser.ParseTopLevel());
+
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("before the body", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1152,7 +1358,7 @@ public sealed class DeclParserTests
         => new DebugNameToken(name, "identifier");
 
     private static Token TypeId(string name)
-        => new DebugNameToken(name, "typeIdentifier");
+        => new DebugNameToken(name, "identifier");
 
     private static Token Num(string text)
         => new DebugNameToken(text, "numberLiteral");
@@ -1169,7 +1375,6 @@ public sealed class DeclParserTests
     private static SyntaxKind DebugNameToKind(string debugName) => debugName switch
     {
         "identifier" => SyntaxKind.Identifier,
-        "typeIdentifier" => SyntaxKind.TypeIdentifier,
         "operatorIdentifier" => SyntaxKind.OperatorIdentifier,
         "numberLiteral" => SyntaxKind.NumberLiteral,
         "stringLiteral" => SyntaxKind.StringLiteral,

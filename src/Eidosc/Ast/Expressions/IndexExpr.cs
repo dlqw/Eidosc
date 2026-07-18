@@ -228,7 +228,7 @@ public record IndexExpr : Expression
     {
         if (term.Terminal == null) return false;
         var terminalName = term.Terminal.ToString();
-        return terminalName == WellKnownStrings.Terminals.TypeIdentifier;
+        return terminalName == WellKnownStrings.Terminals.Identifier;
     }
 
     /// <summary>

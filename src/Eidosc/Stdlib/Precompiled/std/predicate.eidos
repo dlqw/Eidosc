@@ -1,0 +1,40 @@
+Predicate :: module {
+    import Traits
+    import TraitInvoke
+
+    accept[A, E: effects] :: (A -> Bool need E) -> A -> Bool need E
+    {
+        predicate => value => predicate(value)
+    }
+
+    reject[A, E: effects] :: (A -> Bool need E) -> A -> Bool need E
+    {
+        predicate => value => !predicate(value)
+    }
+
+    is[A: Traits.Eq] :: A -> A -> Bool
+    {
+        expected => value => value == expected
+    }
+
+    is_not[A: Traits.Eq] :: A -> A -> Bool
+    {
+        expected => value => !(value == expected)
+    }
+
+    both[A: Traits.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
+    {
+        left => right => value => {
+            copied := TraitInvoke.clone_value(value);
+            if left(value) then { right(copied) } else { false }
+        }
+    }
+
+    either[A: Traits.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
+    {
+        left => right => value => {
+            copied := TraitInvoke.clone_value(value);
+            if left(value) then { true } else { right(copied) }
+        }
+    }
+}

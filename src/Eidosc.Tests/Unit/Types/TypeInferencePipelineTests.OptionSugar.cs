@@ -15,7 +15,7 @@ public partial class TypeInferencePipelineTests
     public void Types_OptionSuffix_DesugarsToStdOption()
     {
         const string source = """
-import Std.Option
+import std.Option
 
 fallback :: Int? -> Int
 {
@@ -59,7 +59,7 @@ bad :: Int -> Int
     public void Types_Coalesce_DesugarsToStdOptionUnwrapOrInHir()
     {
         const string source = """
-import Std.Option
+import std.Option
 
 fallback :: Int? -> Int
 {
@@ -80,7 +80,7 @@ fallback :: Int? -> Int
         var fallbackValue = Assert.IsType<HirLiteral>(unwrapCall.Arguments[1]);
 
         Assert.Equal(HirCallSurfaceSyntax.OperatorDesugaring, unwrapCall.SurfaceSyntax);
-        Assert.Equal("Std.Option.unwrap_or", unwrapFunction.Name);
+        Assert.Equal("std.Option.unwrap_or", unwrapFunction.Name);
         Assert.Equal("value", optionValue.Name);
         Assert.Equal(42, fallbackValue.Value);
     }

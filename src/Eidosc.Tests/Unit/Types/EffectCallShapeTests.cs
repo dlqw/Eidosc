@@ -12,9 +12,9 @@ public sealed class EffectCallShapeTests
     public void Authorize_ZeroArgumentEffectfulCall_UsesInstantiatedCallEffects()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-tick :: Unit -> Int need IO
+tick :: Unit -> Int need io
 {
     _ => 1
 }
@@ -36,9 +36,9 @@ caller :: Unit -> Int
     public void Authorize_OverloadSelectedEffectfulCall_UsesSelectedEffects()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-pick :: Int -> Int need IO
+pick :: Int -> Int need io
 {
     value => value
 }
@@ -65,9 +65,9 @@ caller :: Int -> Int
     public void Authorize_EffectfulMethodCall_UsesInstantiatedCallEffects()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }
@@ -89,9 +89,9 @@ caller :: Int -> Int
     public void Authorize_EffectfulInfixCall_UsesInstantiatedCallEffects()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-join :: Int -> Int -> Int need IO
+join :: Int -> Int -> Int need io
 {
     left => right => left + right
 }
@@ -113,9 +113,9 @@ caller :: Int -> Int
     public void Authorize_PartialApplication_DoesNotExecuteLatentEffects()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-join :: Int -> Int -> Int need IO
+join :: Int -> Int -> Int need io
 {
     left => right => left + right
 }
@@ -129,7 +129,7 @@ partial :: join(1);
         var call = Assert.Single(EnumerateNodes(result).OfType<CallExpr>());
         Assert.Null(call.InferredEffects);
         var resultType = Assert.IsType<TyFun>(call.InferredType);
-        Assert.True(resultType.Effects.ContainsName("IO"));
+        Assert.True(resultType.Effects.ContainsName("io"));
     }
 
     private static CompilationResult Run(string source) =>
@@ -154,7 +154,7 @@ partial :: join(1);
     private static void AssertIo(EffectRow? effects)
     {
         Assert.NotNull(effects);
-        Assert.True(effects.ContainsName("IO"), $"Expected IO effect, got {effects}");
+        Assert.True(effects.ContainsName("io"), $"Expected io effect, got {effects}");
     }
 
     private static string FormatDiagnostics(CompilationResult result) =>

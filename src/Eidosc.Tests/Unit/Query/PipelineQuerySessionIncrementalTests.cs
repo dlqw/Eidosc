@@ -178,7 +178,7 @@ public sealed class PipelineQuerySessionIncrementalTests
         using var workspace = TempWorkspace.Create();
         var session = new PipelineQuerySession();
         const string source = """
-import Std.GameMath
+import std.GameMath
 
 main :: Unit -> Int
 {
@@ -219,7 +219,7 @@ main :: Unit -> Int
     {
         using var workspace = TempWorkspace.Create();
         const string source = """
-import Std.GameMath
+import std.GameMath
 
 main :: Unit -> Int
 {

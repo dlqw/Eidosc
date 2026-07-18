@@ -282,6 +282,9 @@ public sealed class TailCallOptimization : IMirOptimizationPass
             case MirAssign assign when IsSamePlace(assign.Target, returnPlace):
                 source = assign.Source;
                 return true;
+            case MirCaseInject { Target: MirPlace target } injection when IsSamePlace(target, returnPlace):
+                source = injection.Operand;
+                return true;
             case MirCopy copy when IsSamePlace(copy.Target, returnPlace):
                 source = copy.Source;
                 return true;

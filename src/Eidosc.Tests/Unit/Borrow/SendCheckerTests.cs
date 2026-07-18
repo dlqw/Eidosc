@@ -544,7 +544,7 @@ make_pair :: Int -> Int -> (Int, Int)
     public void CompilationPipeline_OptionInt_PassesSendCheck()
     {
         const string source = """
-Option[T] :: type { Some(T) , None }
+Option[T] :: type { Some:: type(T) , None :: type {} }
 
 make_some :: Int -> Option[Int]
 {
@@ -569,7 +569,7 @@ make_some :: Int -> Option[Int]
     public void CompilationPipeline_RecordOfInts_PassesSendCheck()
     {
         const string source = """
-Point :: type { Point(Int, Int) }
+Point :: type { Point:: type(Int, Int) }
 
 origin :: Unit -> Point
 {

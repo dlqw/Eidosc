@@ -48,7 +48,7 @@ Main :: module {
     {
         var source = """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {

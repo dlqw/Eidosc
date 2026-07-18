@@ -260,7 +260,7 @@ test :: Int -> Int { x => id(x) }
     public void Parser_CtorCallWithLiteralArgument_PreservesPositionalArg()
     {
         const string source = """
-Foo :: type { A(Int) , B }
+Foo :: type { A:: type(Int) , B :: type {} }
 make :: Unit -> Foo { _ => A(1) }
 """;
 
@@ -268,17 +268,17 @@ make :: Unit -> Foo { _ => A(1) }
 
         Assert.True(result.Success);
         var value = GetFuncBodyValue(result, "make");
-        var ctor = Assert.IsType<CtorExpr>(value);
-        Assert.Single(ctor.PositionalArgs);
-        Assert.IsType<LiteralExpr>(ctor.PositionalArgs[0]);
+        var call = Assert.IsType<CallExpr>(value);
+        Assert.Equal("A", Assert.IsType<IdentifierExpr>(call.Function).Name);
+        Assert.IsType<LiteralExpr>(Assert.Single(call.PositionalArgs));
     }
 
     [Fact]
     public void Parser_CtorPatternWithIdentifierArguments_PreservesConstructorNameAndBindings()
     {
         const string source = """
-CToken :: type { TkInt(Int) , TkEof }
-CTokenList :: type { TokNil , TokCons(CToken, CTokenList) }
+CToken :: type { TkInt:: type(Int) , TkEof :: type {} }
+CTokenList :: type { TokNil :: type {} , TokCons:: type(CToken, CTokenList) }
 tokenCount :: CTokenList -> Int {
     TokNil => 0,
     TokCons(tok, tail) => 1
@@ -303,7 +303,7 @@ tokenCount :: CTokenList -> Int {
     public void Parser_CtorNamedShorthandPattern_ExpandsToBindingPattern()
     {
         const string source = """
-HttpResponse :: type { HttpResponse{ok: Bool} }
+HttpResponse :: type {ok:: Bool}
 ok :: HttpResponse -> Bool {
     HttpResponse{ok} => ok
 }
@@ -330,7 +330,7 @@ ok :: HttpResponse -> Bool {
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 """;
 
@@ -350,8 +350,8 @@ Pair :: type {
     {
         const string source = """
 Expr[T] :: type {
-    IntLit(Int) -> Expr[Int] ,
-    BoolLit(Bool) -> Expr[Bool]
+    IntLit:: type(Int) case Expr[Int] ,
+    BoolLit:: type(Bool) case Expr[Bool]
 }
 """;
 
@@ -372,12 +372,10 @@ Expr[T] :: type {
     }
 
     [Fact]
-    public void Parser_ConstructorNamedArgs_AreExtractedFromCtorArgs()
+    public void Parser_TypeBodyFields_AreExtractedFromProductType()
     {
         const string source = """
-Person :: type {
-    Person{name: Int, age: Int}
-}
+Person :: type {name:: Int, age:: Int}
 """;
 
         var result = RunPipeline(source, CompilationPhase.Parser);
@@ -385,22 +383,26 @@ Person :: type {
         Assert.True(result.Success);
         var module = Assert.IsType<ModuleDecl>(result.Ast);
         var adt = Assert.Single(module.Declarations.OfType<AdtDef>(), declaration => declaration.Name == "Person");
-        var ctor = Assert.Single(adt.Constructors, constructor => constructor.Name == "Person");
-
-        Assert.Equal(2, ctor.NamedArgs.Count);
-        Assert.Equal("name", ctor.NamedArgs[0].Name);
-        Assert.Equal("age", ctor.NamedArgs[1].Name);
-        Assert.NotNull(ctor.NamedArgs[0].Type);
-        Assert.NotNull(ctor.NamedArgs[1].Type);
+        Assert.Empty(adt.Constructors);
+        Assert.Collection(
+            adt.Fields,
+            field =>
+            {
+                Assert.Equal("name", field.Name);
+                Assert.NotNull(field.Type);
+            },
+            field =>
+            {
+                Assert.Equal("age", field.Name);
+                Assert.NotNull(field.Type);
+            });
     }
 
     [Fact]
     public void Parser_CtorExprNamedArgs_PreservesIdentifierFieldValues()
     {
         const string source = """
-Range :: type {
-    Range{start: Int, end: Int}
-}
+Range :: type {start:: Int, end:: Int}
 
 sample :: Range{start: start, end: end};
 """;

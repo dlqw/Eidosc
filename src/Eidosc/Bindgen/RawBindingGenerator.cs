@@ -55,15 +55,14 @@ public sealed class RawBindingGenerator
             if (st.Fields.Count == 0)
                 continue;
 
-            sb.AppendLine("    @cstruct");
-            sb.AppendLine($"    export {st.Name} :: type {{");
+            sb.AppendLine($"    export {st.Name} :: type repr c {{");
             foreach (var field in st.Fields)
             {
                 var mapping = _typeMapper.Map(field.Type);
                 if (mapping.Category == BindingTypeCategory.Unsupported)
                     continue;
 
-                sb.AppendLine($"        {BindingTypeMapper.ToEidosFunctionName(field.Name)}: {mapping.EidosType},");
+                sb.AppendLine($"        {BindingTypeMapper.ToEidosFunctionName(field.Name)} :: {mapping.EidosType},");
             }
 
             sb.AppendLine("    }");
@@ -87,8 +86,7 @@ public sealed class RawBindingGenerator
 
             var needsShim = NeedsShim(fn);
             var ffiName = needsShim ? $"eidos_shim_{fn.Name}" : fn.Name;
-            sb.AppendLine($"    @ffi(\"{ffiName}\")");
-            sb.AppendLine($"    export {eidosName} :: {FormatSignature(fn, needsShim)}");
+            sb.AppendLine($"    export {eidosName} :: {FormatSignature(fn, needsShim)} need ffi extern c link_name \"{ffiName}\";");
             sb.AppendLine();
         }
     }

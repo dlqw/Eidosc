@@ -55,6 +55,52 @@ public class SubstitutionTests
     }
 
     [Fact]
+    public void Unify_DistinctConcreteEffectGenericArguments_RejectsNominalMatch()
+    {
+        var substitution = new Substitution();
+        var io = new TyCon { Name = "io", Symbol = new SymbolId(101) };
+        var alloc = new TyCon { Name = "Alloc", Symbol = new SymbolId(102) };
+        var left = new TyCon
+        {
+            Name = "Envelope",
+            Symbol = new SymbolId(100),
+            EffectArgs = [new GenericEffectArgument(0, io)]
+        };
+        var right = left with
+        {
+            EffectArgs = [new GenericEffectArgument(0, alloc)]
+        };
+
+        Assert.Throws<TypeInferenceException>(() => substitution.Unify(left, right));
+    }
+
+    [Fact]
+    public void TypeShapePayload_RoundTripsEffectGenericIdentity()
+    {
+        var type = new TyCon
+        {
+            Name = "Envelope",
+            Symbol = new SymbolId(100),
+            EffectArgs =
+            [
+                new GenericEffectArgument(
+                    0,
+                    new TyCon { Name = "io", Symbol = new SymbolId(101), Id = new TypeId(201) })
+            ]
+        };
+
+        var payload = TypeShapePayload.Create(type);
+
+        Assert.True(payload.TryRestoreType(out var restored));
+        var restoredType = Assert.IsType<TyCon>(restored);
+        var effectArgument = Assert.Single(restoredType.EffectArgs);
+        Assert.Equal(0, effectArgument.ParameterIndex);
+        var restoredEffect = Assert.IsType<TyCon>(effectArgument.Argument);
+        Assert.Equal(new SymbolId(101), restoredEffect.Symbol);
+        Assert.Equal(new TypeId(201), restoredEffect.Id);
+    }
+
+    [Fact]
     public void TypeShapePayload_RoundTripsFreshValueVariableIdentity()
     {
         var type = CreateOpenValueGenericType("Buffer", BaseTypes.Int);

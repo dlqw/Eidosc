@@ -57,6 +57,8 @@ internal static class CliMessages
 
     public static string WerrorAllOptionDescription => Get(nameof(WerrorAllOptionDescription));
 
+    public static string DenyOptionDescription => Get(nameof(DenyOptionDescription));
+
     public static string InputResolutionFailedDetail => Get(nameof(InputResolutionFailedDetail));
 
     public static string SourceFileMissingDetail => Get(nameof(SourceFileMissingDetail));

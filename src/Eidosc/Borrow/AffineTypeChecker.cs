@@ -373,6 +373,11 @@ public sealed class AffineTypeChecker
                 CheckAssign(assign, blockId, index);
                 break;
 
+            case MirCaseInject injection:
+                CheckOperandUse(injection.Operand, blockId, index);
+                MarkInitialized(injection.Target);
+                break;
+
             case MirCall call:
                 CheckCall(call, blockId, index);
                 break;
@@ -524,6 +529,10 @@ public sealed class AffineTypeChecker
         {
             case MirAssign assign:
                 MarkInitialized(assign.Target);
+                break;
+
+            case MirCaseInject injection:
+                MarkInitialized(injection.Target);
                 break;
 
             case MirCall call:

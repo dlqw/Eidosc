@@ -2,6 +2,7 @@ using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
+using Eidosc.Ast.Types;
 using Eidosc.Symbols;
 using Eidosc.Utils;
 
@@ -14,28 +15,100 @@ internal sealed record ComptimeEvaluationContext(
     int CallDepth = 0,
     MetaComptimeContext? Meta = null,
     BuildComptimeContext? Build = null,
-    ComptimeResourceBudget? Budget = null)
+    ComptimeResourceBudget? Budget = null,
+    ComptimeEvaluationFrame? Frame = null)
 {
-    public ComptimeResourceBudget Resources { get; } =
-        Budget ?? Meta?.Resources ?? Build?.Resources ?? new ComptimeResourceBudget();
+    private readonly ComptimeEvaluationResources _resources = new(
+        Budget ?? Meta?.Resources ?? Build?.Resources ?? new ComptimeResourceBudget());
+
+    public ComptimeResourceBudget Resources => _resources.Budget;
+
+    public ComptimeValueArena ValuesArena => _resources.Arena;
+}
+
+internal sealed class ComptimeEvaluationResources(ComptimeResourceBudget budget)
+{
+    public ComptimeResourceBudget Budget { get; } = budget;
+
+    public ComptimeValueArena Arena { get; } = new(budget);
+}
+
+internal sealed class ComptimeValueArena(ComptimeResourceBudget resources)
+{
+    private readonly object _gate = new();
+    private readonly HashSet<string> _canonicalValues = new(StringComparer.Ordinal);
+    private long _allocatedBytes;
+
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _canonicalValues.Count;
+            }
+        }
+    }
+
+    public long AllocatedBytes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _allocatedBytes;
+            }
+        }
+    }
+
+    public bool TryAllocate(ComptimeValue value, out string reason)
+    {
+        var canonical = value.CanonicalText;
+        lock (_gate)
+        {
+            if (_canonicalValues.Contains(canonical))
+            {
+                reason = string.Empty;
+                return true;
+            }
+
+            if (!resources.TryReserveValue(value, out reason))
+            {
+                return false;
+            }
+
+            _canonicalValues.Add(canonical);
+            _allocatedBytes += System.Text.Encoding.UTF8.GetByteCount(canonical);
+            return true;
+        }
+    }
 }
 
 internal sealed class ComptimeResourceBudget(
     long fuel = ComptimeResourceBudget.DefaultFuel,
     long allocatedBytes = ComptimeResourceBudget.DefaultAllocatedBytes,
-    int diagnosticCount = ComptimeResourceBudget.DefaultDiagnosticCount)
+    int diagnosticCount = ComptimeResourceBudget.DefaultDiagnosticCount,
+    int queryCount = ComptimeResourceBudget.DefaultQueryCount,
+    long queryResultBytes = ComptimeResourceBudget.DefaultQueryResultBytes,
+    int syntaxNodeCount = ComptimeResourceBudget.DefaultSyntaxNodeCount)
 {
     public const long DefaultFuel = 100_000;
     public const long DefaultAllocatedBytes = 64 * 1024 * 1024;
     public const int DefaultDiagnosticCount = 128;
+    public const int DefaultQueryCount = 4_096;
+    public const long DefaultQueryResultBytes = 16 * 1024 * 1024;
+    public const int DefaultSyntaxNodeCount = 100_000;
 
     private long _remainingFuel = Math.Max(1, fuel);
     private long _remainingAllocatedBytes = Math.Max(1, allocatedBytes);
     private int _remainingDiagnosticCount = Math.Max(1, diagnosticCount);
+    private int _remainingQueryCount = Math.Max(1, queryCount);
+    private long _remainingQueryResultBytes = Math.Max(1, queryResultBytes);
+    private int _remainingSyntaxNodeCount = Math.Max(1, syntaxNodeCount);
 
     public bool TryConsumeInstruction(out string reason)
     {
-        if (_remainingFuel-- > 0)
+        if (Interlocked.Decrement(ref _remainingFuel) >= 0)
         {
             reason = string.Empty;
             return true;
@@ -47,8 +120,8 @@ internal sealed class ComptimeResourceBudget(
 
     public bool TryReserveValue(ComptimeValue value, out string reason)
     {
-        _remainingAllocatedBytes -= System.Text.Encoding.UTF8.GetByteCount(value.CanonicalText);
-        if (_remainingAllocatedBytes >= 0)
+        var byteCount = System.Text.Encoding.UTF8.GetByteCount(value.CanonicalText);
+        if (Interlocked.Add(ref _remainingAllocatedBytes, -byteCount) >= 0)
         {
             reason = string.Empty;
             return true;
@@ -60,7 +133,7 @@ internal sealed class ComptimeResourceBudget(
 
     public bool TryConsumeDiagnostic(out string reason)
     {
-        if (_remainingDiagnosticCount-- > 0)
+        if (Interlocked.Decrement(ref _remainingDiagnosticCount) >= 0)
         {
             reason = string.Empty;
             return true;
@@ -69,9 +142,40 @@ internal sealed class ComptimeResourceBudget(
         reason = "comptime diagnostic count budget exceeded";
         return false;
     }
+
+    public bool TryConsumeQuery(ComptimeValue result, out string reason)
+    {
+        if (Interlocked.Decrement(ref _remainingQueryCount) < 0)
+        {
+            reason = "comptime meta query count budget exceeded";
+            return false;
+        }
+
+        var byteCount = System.Text.Encoding.UTF8.GetByteCount(result.CanonicalText);
+        if (Interlocked.Add(ref _remainingQueryResultBytes, -byteCount) < 0)
+        {
+            reason = "comptime meta query-result byte budget exceeded";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    public bool TryConsumeSyntaxNodes(int count, out string reason)
+    {
+        if (Interlocked.Add(ref _remainingSyntaxNodeCount, -Math.Max(0, count)) >= 0)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = "comptime syntax-node budget exceeded";
+        return false;
+    }
 }
 
-internal static class ComptimeEvaluator
+internal static partial class ComptimeEvaluator
 {
     private const int MaxCallDepth = 32;
 
@@ -172,11 +276,11 @@ internal static class ComptimeEvaluator
         {
             value = value with
             {
-                StaticType = context.ResolveType?.Invoke(inferredType) ?? inferredType
+                StaticType = value.StaticType ?? context.ResolveType?.Invoke(inferredType) ?? inferredType
             };
         }
 
-        if (!context.Resources.TryReserveValue(value, out reason))
+        if (!context.ValuesArena.TryAllocate(value, out reason))
         {
             value = ComptimeUnitValue.Instance;
             return false;
@@ -205,26 +309,56 @@ internal static class ComptimeEvaluator
                 reason = "missing expression";
                 return false;
 
+            case IdentifierExpr { ReflectedType: TyCon, SymbolId.IsValid: true } reflectedIdentifier
+                when context.Meta?.SymbolTable.GetSymbol<AdtSymbol>(reflectedIdentifier.SymbolId) is
+                    { IsTypeAlias: true } reflectedAlias:
+                value = MetaComptimeIntrinsics.CreateTypeValue(reflectedAlias, context.Meta.SymbolTable);
+                return true;
+
+            case PathExpr { ReflectedType: TyCon, SymbolId.IsValid: true } reflectedPath
+                when context.Meta?.SymbolTable.GetSymbol<AdtSymbol>(reflectedPath.SymbolId) is
+                    { IsTypeAlias: true } reflectedPathAlias:
+                value = MetaComptimeIntrinsics.CreateTypeValue(reflectedPathAlias, context.Meta.SymbolTable);
+                return true;
+
+            case Expression { ReflectedType: TyCon reflectedType } when context.Meta != null:
+                value = MetaComptimeIntrinsics.CreateTypeValue(
+                    (TyCon)(context.ResolveType?.Invoke(reflectedType) ?? reflectedType),
+                    context.Meta.SymbolTable);
+                return true;
+
             case LiteralExpr { IsRecoveredError: false } literal:
                 if (ComptimeValue.TryFromLiteral(literal.Value, out value))
                 {
                     return true;
                 }
 
-                reason = $"literal value of type '{literal.Value?.GetType().Name ?? "Unit"}' is not supported by the comptime evaluator";
+                reason = $"literal value of kind '{GetLiteralKind(literal.Value)}' is not supported by the comptime evaluator";
+                return false;
+
+            case QuoteExpr quote:
+                return ComptimeSyntaxEvaluator.TryEvaluate(quote, context, out value, out reason);
+            case ExpandExpr { ExpandedExpression: { } expanded }:
+                return TryEvaluateNode(expanded, context, out value, out reason);
+            case ExpandExpr:
+                value = ComptimeUnitValue.Instance;
+                reason = "expression expand was not materialized before comptime evaluation";
                 return false;
 
             case IdentifierExpr identifier:
-                return TryEvaluateSymbolReference(identifier.SymbolId, identifier.Name, context, out value, out reason);
+                return TryEvaluateSymbolReference(identifier, identifier.SymbolId, identifier.Name, context, out value, out reason);
 
             case PathExpr path:
-                return TryEvaluateSymbolReference(path.SymbolId, string.Join("::", path.Path), context, out value, out reason);
+                return TryEvaluateSymbolReference(path, path.SymbolId, string.Join("::", path.Path), context, out value, out reason);
 
             case TupleExpr tuple:
                 return TryEvaluateTuple(tuple, context, out value, out reason);
 
             case ListExpr list:
                 return TryEvaluateList(list, context, out value, out reason);
+
+            case IndexExpr { IsTypeApplication: false } index:
+                return TryEvaluateIndex(index, context, out value, out reason);
 
             case UnaryExpr unary:
                 return TryEvaluateUnary(unary, context, out value, out reason);
@@ -241,17 +375,109 @@ internal static class ComptimeEvaluator
             case BlockExpr block:
                 return TryEvaluateBlock(block, context, out value, out reason);
 
+            case LoopExpr loop:
+                return TryEvaluateLoop(loop, context, out value, out reason);
+
+            case WhileLetExpr whileLet:
+                return TryEvaluateWhileLet(whileLet, context, out value, out reason);
+
+            case ReturnExpr returnExpression:
+                return TryCreateControlSignal(ComptimeControlKind.Return, returnExpression.Value, context, out value, out reason);
+
+            case BreakExpr breakExpression:
+                return TryCreateControlSignal(ComptimeControlKind.Break, breakExpression.Value, context, out value, out reason);
+
+            case ContinueExpr:
+                value = new ComptimeControlValue(ComptimeControlKind.Continue, ComptimeUnitValue.Instance);
+                return true;
+
+            case LambdaExpr lambda:
+                value = CreateLambdaValue(lambda, context, []);
+                return true;
+
+            case Assignment assignment:
+                return TryEvaluateAssignment(assignment, context, out value, out reason);
+
             case CallExpr call:
                 return TryEvaluateCall(call, context, out value, out reason);
 
             case CtorExpr constructor:
                 return TryEvaluateConstructor(constructor, context, out value, out reason);
 
+            case MethodCallExpr { ResolvedStaticExpression: not null } staticReference:
+                return TryEvaluate(staticReference.ResolvedStaticExpression, context, out value, out reason);
+
+            case MethodCallExpr { ResolvedAsStaticPath: true, HasExplicitCallSyntax: false } staticReference:
+                return TryEvaluateSymbolReference(
+                    staticReference,
+                    staticReference.SymbolId,
+                    staticReference.MethodName,
+                    context,
+                    out value,
+                    out reason);
+
             case MethodCallExpr { ResolvedAsFieldAccess: true } fieldAccess:
                 return TryEvaluateFieldAccess(fieldAccess, context, out value, out reason);
 
+            case MethodCallExpr { HasExplicitCallSyntax: true } methodCall:
+                return TryEvaluateCall(methodCall.ToDesugaredCall(), context, out value, out reason);
+
             default:
-                reason = $"{node.GetType().Name} is not supported by the phase-1 comptime evaluator";
+                reason = $"syntax kind '{GetSyntaxKind(node)}' is not supported by the comptime evaluator";
+                return false;
+        }
+    }
+
+    private static bool TryEvaluateIndex(
+        IndexExpr index,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        value = ComptimeUnitValue.Instance;
+        if (index.Object == null || index.Index == null)
+        {
+            reason = "comptime index expression is incomplete";
+            return false;
+        }
+
+        if (!TryEvaluate(index.Object, context, out var subject, out reason) ||
+            !TryEvaluate(index.Index, context, out var indexValue, out reason))
+        {
+            return false;
+        }
+
+        if (indexValue is not ComptimeIntegerValue integer)
+        {
+            reason = "comptime index must evaluate to Int";
+            return false;
+        }
+
+        if (integer.Value < 0 || integer.Value > int.MaxValue)
+        {
+            reason = $"comptime index {integer.Value} is outside the supported range";
+            return false;
+        }
+
+        var offset = (int)integer.Value;
+        switch (subject)
+        {
+            case ComptimeSequenceValue sequence when offset < sequence.Elements.Count:
+                value = sequence.Elements[offset];
+                reason = string.Empty;
+                return true;
+            case ComptimeSequenceValue sequence:
+                reason = $"comptime index {offset} is out of bounds for sequence of length {sequence.Elements.Count}";
+                return false;
+            case ComptimeStringValue text when offset < text.Value.Length:
+                value = new ComptimeCharValue(text.Value[offset]);
+                reason = string.Empty;
+                return true;
+            case ComptimeStringValue text:
+                reason = $"comptime index {offset} is out of bounds for string of length {text.Value.Length}";
+                return false;
+            default:
+                reason = $"comptime value kind '{GetValueKind(subject)}' is not indexable";
                 return false;
         }
     }
@@ -291,6 +517,7 @@ internal static class ComptimeEvaluator
     }
 
     private static bool TryEvaluateSymbolReference(
+        EidosAstNode reference,
         SymbolId symbolId,
         string displayName,
         ComptimeEvaluationContext context,
@@ -304,7 +531,8 @@ internal static class ComptimeEvaluator
             return false;
         }
 
-        if (context.Values.TryGetValue(symbolId, out var storedValue))
+        if (context.Frame?.TryGet(symbolId, out var storedValue) == true ||
+            context.Values.TryGetValue(symbolId, out storedValue))
         {
             value = storedValue;
             reason = "";
@@ -315,7 +543,13 @@ internal static class ComptimeEvaluator
         if (typeSymbol is AdtSymbol or TraitSymbol or
             TypeParamSymbol { ParameterKind: GenericParameterKind.Type })
         {
-            value = MetaComptimeIntrinsics.CreateTypeValue(typeSymbol, context.Meta!.SymbolTable);
+            var inferredType = reference.InferredType is not Type rawInferredType
+                ? null
+                : context.ResolveType?.Invoke(rawInferredType) ?? rawInferredType;
+            value = inferredType is TyCon inferredConstructor &&
+                    inferredConstructor.Symbol == symbolId
+                ? MetaComptimeIntrinsics.CreateTypeValue(inferredConstructor, context.Meta!.SymbolTable)
+                : MetaComptimeIntrinsics.CreateTypeValue(typeSymbol, context.Meta!.SymbolTable);
             reason = string.Empty;
             return true;
         }
@@ -523,7 +757,7 @@ internal static class ComptimeEvaluator
                 if (!ComptimeValue.TryFromLiteral(literal.Value, out var literalValue))
                 {
                     matches = false;
-                    reason = $"literal pattern value of type '{literal.Value?.GetType().Name ?? "Unit"}' is not supported by the comptime evaluator";
+                    reason = $"literal pattern value of kind '{GetLiteralKind(literal.Value)}' is not supported by the comptime evaluator";
                     return false;
                 }
 
@@ -534,7 +768,7 @@ internal static class ComptimeEvaluator
                 if (varPattern.BindingMode != PatternBindingMode.ByValue)
                 {
                     matches = false;
-                    reason = "borrow binding patterns are not supported by the phase-1 comptime match evaluator";
+                    reason = "borrow binding patterns are not supported by the comptime match evaluator";
                     return false;
                 }
 
@@ -582,7 +816,7 @@ internal static class ComptimeEvaluator
                     !TryGetInteger(endValue, out var end))
                 {
                     matches = false;
-                    reason = "only integer range patterns are supported by the phase-1 comptime evaluator";
+                    reason = "only integer range patterns are supported by the comptime evaluator";
                     return false;
                 }
 
@@ -623,7 +857,7 @@ internal static class ComptimeEvaluator
 
             default:
                 matches = false;
-                reason = $"{normalizedPattern.GetType().Name} is not supported by the phase-1 comptime match evaluator";
+                reason = $"pattern kind '{GetSyntaxKind(normalizedPattern)}' is not supported by the comptime match evaluator";
                 return false;
         }
     }
@@ -868,7 +1102,7 @@ internal static class ComptimeEvaluator
                 return true;
 
             case VarPattern { BindingMode: not PatternBindingMode.ByValue }:
-                reason = "borrow list rest binding patterns are not supported by the phase-1 comptime match evaluator";
+                reason = "borrow list rest binding patterns are not supported by the comptime match evaluator";
                 return false;
 
             case VarPattern varPattern:
@@ -876,7 +1110,7 @@ internal static class ComptimeEvaluator
                 return false;
 
             default:
-                reason = "only wildcard and by-value binding rest patterns are supported by the phase-1 comptime match evaluator";
+                reason = "only wildcard and by-value binding rest patterns are supported by the comptime match evaluator";
                 return false;
         }
     }
@@ -936,76 +1170,7 @@ internal static class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        if (block.ResultExpression == null)
-        {
-            value = ComptimeUnitValue.Instance;
-            reason = "comptime block must have a result expression";
-            return false;
-        }
-
-        var blockContext = context;
-        foreach (var statement in block.Statements)
-        {
-            if (ReferenceEquals(statement, block.ResultExpression))
-            {
-                continue;
-            }
-
-            if (statement is LetDecl binding)
-            {
-                if (binding.IsMutable)
-                {
-                    value = ComptimeUnitValue.Instance;
-                    reason = "mutable local bindings are not supported by the comptime evaluator";
-                    return false;
-                }
-
-                if (binding.Value == null || binding.Pattern == null)
-                {
-                    value = ComptimeUnitValue.Instance;
-                    reason = "comptime local binding must have a pattern and initializer";
-                    return false;
-                }
-
-                if (!TryEvaluate(binding.Value, blockContext, out var bindingValue, out reason))
-                {
-                    value = ComptimeUnitValue.Instance;
-                    return false;
-                }
-
-                if (!TryPatternMatches(
-                        binding.Pattern,
-                        bindingValue,
-                        out var matches,
-                        out var bindings,
-                        out reason))
-                {
-                    value = ComptimeUnitValue.Instance;
-                    return false;
-                }
-
-                if (!matches)
-                {
-                    value = ComptimeUnitValue.Instance;
-                    reason = "comptime local binding pattern did not match its initializer";
-                    return false;
-                }
-
-                blockContext = blockContext with
-                {
-                    Values = MergeValues(blockContext.Values, bindings)
-                };
-                continue;
-            }
-
-            if (!TryEvaluate(statement, blockContext, out _, out reason))
-            {
-                value = ComptimeUnitValue.Instance;
-                return false;
-            }
-        }
-
-        return TryEvaluate(block.ResultExpression, blockContext, out value, out reason);
+        return TryEvaluateControlFlowBlock(block, context, out value, out reason);
     }
 
     private static bool TryEvaluateConstructor(
@@ -1096,10 +1261,9 @@ internal static class ComptimeEvaluator
         out string reason)
     {
         value = ComptimeUnitValue.Instance;
-        if (call.NamedArgs.Count > 0)
+        if (TryCreateResolvedConstructorExpression(call, out var constructor))
         {
-            reason = "named arguments are not supported by the phase-1 comptime call evaluator";
-            return false;
+            return TryEvaluateConstructor(constructor, context, out value, out reason);
         }
 
         if (context.CallDepth >= MaxCallDepth)
@@ -1127,20 +1291,9 @@ internal static class ComptimeEvaluator
             return BuildComptimeIntrinsics.TryEvaluate(buildIntrinsicName, call, context, out value, out reason);
         }
 
-        if (!context.Functions.TryGetValue(calleeSymbolId, out var function) ||
-            !function.IsComptime)
-        {
-            reason = $"call target '{displayName}' is not a comptime-only function";
-            return false;
-        }
+        context.Functions.TryGetValue(calleeSymbolId, out var function);
 
-        if (FunctionRequiresRuntimeAbilities(function))
-        {
-            reason = $"comptime-only function '{function.Name}' requires runtime abilities";
-            return false;
-        }
-
-        var argValues = new List<ComptimeValue>(call.PositionalArgs.Count);
+        var argValues = new List<ComptimeValue>(call.PositionalArgs.Count + call.NamedArgs.Count);
         foreach (var arg in call.PositionalArgs)
         {
             if (!TryEvaluate(arg, context, out var argValue, out reason))
@@ -1151,13 +1304,76 @@ internal static class ComptimeEvaluator
             argValues.Add(argValue);
         }
 
-        if (function.Body.Count == 0)
+        foreach (var arg in call.NamedArgs)
         {
-            reason = $"comptime function '{function.Name}' has no body";
+            if (arg.Value == null)
+            {
+                reason = $"named comptime argument '{arg.Name}' is missing a value";
+                return false;
+            }
+            if (!TryEvaluate(arg.Value, context, out var argValue, out reason))
+            {
+                return false;
+            }
+            argValues.Add(argValue);
+        }
+
+        if (function == null && TryEvaluate(call.Function, context, out var callable, out _))
+        {
+            switch (callable)
+            {
+                case ComptimeLambdaValue lambdaValue:
+                    return TryApplyLambdaValue(lambdaValue, argValues, context, out value, out reason);
+                case ComptimeFunctionValue functionValue:
+                    return TryApplyFunctionValue(functionValue, argValues, context, out value, out reason);
+            }
+        }
+
+        if (function == null || function.Body.Count == 0)
+        {
+            if (!TryResolveComptimeTraitDispatch(calleeSymbolId, argValues, context, out function))
+            {
+                reason = $"call target '{displayName}' has no body available for comptime lowering";
+                return false;
+            }
+        }
+
+        if (FunctionRequiresRuntimeAbilities(function))
+        {
+            reason = $"function '{function.Name}' requires runtime abilities that are unavailable during comptime evaluation";
             return false;
         }
 
+        var callableArity = GetCallableArity(function.InferredType as Type);
+        var usesImplicitUnitArgument = argValues.Count == 0 && HasSingleUnitParameter(function.InferredType as Type);
+        if (callableArity > 0 && argValues.Count < callableArity && !usesImplicitUnitArgument)
+        {
+            value = new ComptimeFunctionValue(
+                function,
+                context.Frame?.Snapshot() ?? new Dictionary<SymbolId, ComptimeValue>(),
+                argValues.ToArray());
+            reason = string.Empty;
+            return true;
+        }
+
         return TryEvaluateFunctionBranches(function, argValues, context, out value, out reason);
+    }
+
+    private static bool HasSingleUnitParameter(Type? type)
+    {
+        return type is TyFun { Params: [var parameter] } && IsUnitComptimeType(parameter);
+    }
+
+    private static bool IsUnitComptimeType(Type type)
+    {
+        return type switch
+        {
+            TyVar { Instance: { } instance } => IsUnitComptimeType(instance),
+            TyCon constructor =>
+                constructor.Id.Value == BaseTypes.UnitId ||
+                constructor.Name is WellKnownStrings.BuiltinTypes.Unit or "()",
+            _ => false
+        };
     }
 
     private static bool TryEvaluateFunctionBranches(
@@ -1254,8 +1470,9 @@ internal static class ComptimeEvaluator
 
             var callContext = context with
             {
-                Values = MergeValues(context.Values, bindings)
+                Frame = new ComptimeEvaluationFrame(context.Frame)
             };
+            callContext.Frame.DefineRange(bindings);
 
             var guardMatches = true;
             if (branch.Guard != null &&
@@ -1296,13 +1513,38 @@ internal static class ComptimeEvaluator
     {
         if (remainingArgs.Count == 0)
         {
-            return TryEvaluate(expression, context, out value, out reason);
+            if (expression is LambdaExpr deferredLambda)
+            {
+                value = CreateLambdaValue(deferredLambda, context, []);
+                reason = string.Empty;
+                return true;
+            }
+
+            if (!TryEvaluate(expression, context, out value, out reason))
+            {
+                return false;
+            }
+
+            if (value is ComptimeControlValue { Kind: ComptimeControlKind.Return } returned)
+            {
+                value = returned.Value;
+                return true;
+            }
+
+            if (value is ComptimeControlValue control)
+            {
+                reason = $"'{control.Kind.ToString().ToLowerInvariant()}' escaped its enclosing comptime control-flow construct";
+                value = ComptimeUnitValue.Instance;
+                return false;
+            }
+
+            return true;
         }
 
         if (expression is not LambdaExpr lambda)
         {
             value = ComptimeUnitValue.Instance;
-            reason = $"{expression.GetType().Name} cannot accept remaining comptime call arguments";
+            reason = $"syntax kind '{GetSyntaxKind(expression)}' cannot accept remaining comptime call arguments";
             return false;
         }
 
@@ -1326,8 +1568,9 @@ internal static class ComptimeEvaluator
 
         if (argValues.Count < lambda.Parameters.Count)
         {
-            reason = "partial comptime function application is not supported by the phase-1 comptime call evaluator";
-            return false;
+            value = CreateLambdaValue(lambda, context, argValues);
+            reason = string.Empty;
+            return true;
         }
 
         var lambdaValues = context.Values;
@@ -1359,6 +1602,70 @@ internal static class ComptimeEvaluator
             context with { Values = lambdaValues },
             out value,
             out reason);
+    }
+
+    private static ComptimeLambdaValue CreateLambdaValue(
+        LambdaExpr lambda,
+        ComptimeEvaluationContext context,
+        IReadOnlyList<ComptimeValue> boundArguments) =>
+        new(
+            lambda,
+            context.Frame?.Snapshot() ?? new Dictionary<SymbolId, ComptimeValue>(),
+            boundArguments.ToArray());
+
+    private static bool TryApplyLambdaValue(
+        ComptimeLambdaValue lambdaValue,
+        IReadOnlyList<ComptimeValue> arguments,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        var frame = new ComptimeEvaluationFrame(context.Frame);
+        frame.DefineRange(lambdaValue.Captures);
+        return TryApplyLambda(
+            lambdaValue.Lambda,
+            lambdaValue.BoundArguments.Concat(arguments).ToArray(),
+            context with { Frame = frame },
+            out value,
+            out reason);
+    }
+
+    private static bool TryApplyFunctionValue(
+        ComptimeFunctionValue functionValue,
+        IReadOnlyList<ComptimeValue> arguments,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        var combinedArguments = functionValue.BoundArguments.Concat(arguments).ToArray();
+        var callableArity = GetCallableArity(functionValue.Function.InferredType as Type);
+        if (callableArity > 0 && combinedArguments.Length < callableArity)
+        {
+            value = functionValue with { BoundArguments = combinedArguments };
+            reason = string.Empty;
+            return true;
+        }
+
+        var frame = new ComptimeEvaluationFrame(context.Frame);
+        frame.DefineRange(functionValue.Captures);
+        return TryEvaluateFunctionBranches(
+            functionValue.Function,
+            combinedArguments,
+            context with { Frame = frame },
+            out value,
+            out reason);
+    }
+
+    private static int GetCallableArity(Type? type)
+    {
+        var arity = 0;
+        while (type is TyFun function)
+        {
+            arity += function.Params.Count;
+            type = function.Result;
+        }
+
+        return arity;
     }
 
     private static bool TryGetCallTargetSymbol(
@@ -1408,29 +1715,117 @@ internal static class ComptimeEvaluator
         return true;
     }
 
+    private static bool TryCreateResolvedConstructorExpression(CallExpr call, out CtorExpr constructor)
+    {
+        constructor = null!;
+        var application = call.Function as IndexExpr;
+        var target = application is { IsTypeApplication: true, Object: not null }
+            ? application.Object
+            : call.Function;
+
+        string name;
+        SymbolId symbolId;
+        TypePath? path = null;
+        switch (target)
+        {
+            case IdentifierExpr { IsConstructor: true } identifier:
+                name = identifier.Name;
+                symbolId = identifier.SymbolId;
+                break;
+            case PathExpr { IsConstructorPath: true } constructorPath:
+                name = constructorPath.Name;
+                symbolId = constructorPath.SymbolId;
+                path = new TypePath();
+                path.SetSpan(constructorPath.Span);
+                path.SetPackageAlias(constructorPath.PackageAlias);
+                path.ModulePath = [.. constructorPath.ModulePath];
+                path.SetTypeName(constructorPath.Name);
+                path.SetGenericArguments(constructorPath.GenericArguments);
+                break;
+            default:
+                return false;
+        }
+
+        if (application is { IsTypeApplication: true })
+        {
+            path ??= new TypePath();
+            path.SetSpan(application.Span);
+            path.SetTypeName(name);
+            path.SetGenericArguments(application.GenericArguments);
+        }
+
+        constructor = new CtorExpr();
+        constructor.SetSpan(call.Span);
+        constructor.SetConstructorName(name);
+        constructor.SymbolId = symbolId;
+        if (path != null)
+        {
+            path.SymbolId = symbolId;
+            constructor.SetConstructorPath(path);
+        }
+
+        foreach (var argument in call.PositionalArgs)
+        {
+            constructor.AddPositionalArg(argument);
+        }
+
+        foreach (var namedArgument in call.NamedArgs)
+        {
+            var field = new FieldInit();
+            field.SetSpan(namedArgument.Span);
+            field.SetFieldName(namedArgument.Name);
+            if (namedArgument.Value != null)
+            {
+                field.SetValue(namedArgument.Value);
+            }
+            constructor.AddNamedArg(field);
+        }
+
+        return true;
+    }
+
     private static bool TryEvaluateList(
         ListExpr list,
         ComptimeEvaluationContext context,
         out ComptimeValue value,
         out string reason)
     {
-        if (list.HasRest)
-        {
-            value = ComptimeUnitValue.Instance;
-            reason = "list spread is not supported by the phase-1 comptime evaluator";
-            return false;
-        }
-
         var elements = new List<ComptimeValue>(list.Elements.Count);
-        foreach (var element in list.Elements)
+        var elementCount = list.HasRest ? list.Elements.Count - 1 : list.Elements.Count;
+        for (var i = 0; i < elementCount; i++)
         {
-            if (!TryEvaluate(element, context, out var elementValue, out reason))
+            if (!TryEvaluate(list.Elements[i], context, out var elementValue, out reason))
             {
                 value = ComptimeUnitValue.Instance;
                 return false;
             }
 
             elements.Add(elementValue);
+        }
+
+        if (list.HasRest)
+        {
+            if (list.Elements.Count == 0)
+            {
+                value = ComptimeUnitValue.Instance;
+                reason = "comptime list spread is missing its tail expression";
+                return false;
+            }
+
+            if (!TryEvaluate(list.Elements[^1], context, out var tail, out reason))
+            {
+                value = ComptimeUnitValue.Instance;
+                return false;
+            }
+
+            if (tail is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } tailList)
+            {
+                value = ComptimeUnitValue.Instance;
+                reason = "comptime list spread tail must evaluate to a list";
+                return false;
+            }
+
+            elements.AddRange(tailList.Elements);
         }
 
         value = new ComptimeSequenceValue(ComptimeSequenceKind.List, elements);

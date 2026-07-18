@@ -32,121 +32,121 @@ public partial class LlvmPipelineIntegrationTests
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_get_response", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_get_response", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_get_bytes_response", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_get_bytes_response", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_get_text_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_get_text_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_get_bytes_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_get_bytes_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_get_text_opt", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_get_text_opt", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_get_bytes_opt", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_get_bytes_opt", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__send", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__send", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__send_bytes", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__send_bytes", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__send_with_bytes_body", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__send_with_bytes_body", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__send_bytes_with_bytes_body", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__send_bytes_with_bytes_body", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_query_param", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_query_param", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_header", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_header", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_accept", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_accept", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_user_agent", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_user_agent", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_json_content_type", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_json_content_type", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_method", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_method", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_url", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_url", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_body", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_body", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__request_method", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__request_method", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_connect_timeout", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_connect_timeout", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__with_total_timeout", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__with_total_timeout", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_post_text_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_post_text_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_post_bytes_text_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_post_bytes_text_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_post_bytes_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_post_bytes_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_post_json_opt", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_post_json_opt", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_put_text_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_put_text_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_put_bytes_text_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_put_bytes_text_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_put_bytes_result", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_put_bytes_result", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__http_delete_text_opt", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__http_delete_text_opt", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__url_encode_component", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__url_encode_component", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__headers", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__headers", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__header_value_opt", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__header_value_opt", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__effective_url", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__effective_url", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__content_type", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__content_type", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__connect_timeout_seconds", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__connect_timeout_seconds", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__total_timeout_seconds", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__total_timeout_seconds", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__is_redirect_code", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__is_redirect_code", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__is_error_status", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__is_error_status", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Network__bytes_is_error_status", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Network__bytes_is_error_status", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -163,12 +163,12 @@ public partial class LlvmPipelineIntegrationTests
         var escapedUrl = EscapeEidosStringLiteral(url);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         response := Network.http_get_response("{{escapedUrl}}");
@@ -354,12 +354,12 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         redirect := Network.http_get_response("{{baseUrl}}redirect");
@@ -420,12 +420,12 @@ main :: Unit -> Int need IO
         var missingUrl = EscapeEidosStringLiteral($"{server.BaseUrl}missing");
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         response := Network.http_get_response("{{missingUrl}}");
@@ -469,11 +469,11 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Result
-import Std.Text
+import std.Network
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         uploadBodyResponse := Network.http_post_bytes_response("{{baseUrl}}echo-binary")([9, 0, 255, 7]);
@@ -527,10 +527,10 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Text
+import std.Network
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         request := Network.with_header(
@@ -586,12 +586,12 @@ main :: Unit -> Int need IO
         var missingBinaryUrl = EscapeEidosStringLiteral($"{server.BaseUrl}missing-binary");
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         bodyResponse := Network.http_get_bytes_response("{{missingBinaryUrl}}");
@@ -648,10 +648,10 @@ main :: Unit -> Int need IO
         var slowUrl = EscapeEidosStringLiteral($"{server.BaseUrl}slow");
 
         var source = $$"""
-import Std.Network
-import Std.Text
+import std.Network
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         request := Network.with_total_timeout(Network.with_connect_timeout(Network.get_request("{{slowUrl}}"))(2))(1);
@@ -689,12 +689,12 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         request := Network.with_header(
@@ -781,11 +781,11 @@ main :: Unit -> Int need IO
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Text
+import std.Network
+import std.Option
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         response := Network.send(Network.request("HEAD")("{{baseUrl}}reply-header")("text.plain")(""));
@@ -832,9 +832,9 @@ main :: Unit -> Int need IO
         var okUrl = EscapeEidosStringLiteral($"{server.BaseUrl}ok");
 
         var source = $$"""
-import Std.Network
+import std.Network
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         response := Network.http_get_response("{{okUrl}}");
@@ -874,12 +874,12 @@ main :: Unit -> Int need IO
         var escapedUrl = EscapeEidosStringLiteral(url);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
-main :: Unit -> Int need IO
+main :: Unit -> Int need io
 {
     _ => {
         response := Network.http_get_response("{{escapedUrl}}");

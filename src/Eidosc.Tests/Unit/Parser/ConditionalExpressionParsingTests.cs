@@ -51,7 +51,7 @@ choose :: Bool -> Int -> Int -> Int {
     public void Parser_IfLetShortBranches_ParseAsExpressions()
     {
         const string source = """
-OptionI :: type { Some(Int) , None }
+OptionI :: type { Some:: type(Int) , None :: type {} }
 value_or :: OptionI -> Int {
     value => if let Some(n) = value then n else 0
 }

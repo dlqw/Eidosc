@@ -8,6 +8,24 @@ namespace Eidosc.Diagnostic;
 internal static partial class DiagnosticMessages
 {
 
+    public static string NamingStyleMismatch(string name, string category, string convention) =>
+        Format(nameof(NamingStyleMismatch), name, category, convention);
+
+    public static string NamingStyleExpectedName(string expected) =>
+        Format(nameof(NamingStyleExpectedName), expected);
+
+    public static string RenameSymbolSuggestion(string expected) =>
+        Format(nameof(RenameSymbolSuggestion), expected);
+
+    public static string NamingFqnRedundancy(string name, string moduleSegment) =>
+        Format(nameof(NamingFqnRedundancy), name, moduleSegment);
+
+    public static string NamingWeakPublicTypeName(string name) =>
+        Format(nameof(NamingWeakPublicTypeName), name);
+
+    public static string NamingModuleFileMismatch(string actual, string expected) =>
+        Format(nameof(NamingModuleFileMismatch), actual, expected);
+
 
     public static string MirSpecializationLoopDidNotConverge(int maxIterations) =>
         Format(nameof(MirSpecializationLoopDidNotConverge), maxIterations);

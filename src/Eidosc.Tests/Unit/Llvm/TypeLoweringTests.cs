@@ -13,8 +13,15 @@ public class TypeLoweringTests
     {
         var lowering = new TypeLowering();
 
-        Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.IntId)));
-        Assert.IsType<LlvmFloatType>(lowering.Lower(new TypeId(BaseTypes.FloatId)));
+        Assert.Equal(64, Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.IntId))).Bits);
+        Assert.Equal(64, Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.Int64Id))).Bits);
+        Assert.Equal(32, Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.Int32Id))).Bits);
+        Assert.Equal(16, Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.Int16Id))).Bits);
+        Assert.Equal(8, Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.Int8Id))).Bits);
+        Assert.Equal(64, Assert.IsType<LlvmFloatType>(lowering.Lower(new TypeId(BaseTypes.FloatId))).Bits);
+        Assert.Equal(64, Assert.IsType<LlvmFloatType>(lowering.Lower(new TypeId(BaseTypes.Float64Id))).Bits);
+        Assert.Equal(32, Assert.IsType<LlvmFloatType>(lowering.Lower(new TypeId(BaseTypes.Float32Id))).Bits);
+        Assert.Equal(16, Assert.IsType<LlvmFloatType>(lowering.Lower(new TypeId(BaseTypes.Float16Id))).Bits);
         Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.BoolId)));
         Assert.IsType<LlvmPointerType>(lowering.Lower(new TypeId(BaseTypes.StringId)));
         Assert.IsType<LlvmIntType>(lowering.Lower(new TypeId(BaseTypes.CharId)));

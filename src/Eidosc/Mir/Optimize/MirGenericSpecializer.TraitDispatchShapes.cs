@@ -8,9 +8,24 @@ public sealed partial class MirGenericSpecializer
 {
     private List<ImplSymbol> ResolveApplicableImplsForReceiverType(SymbolId ownerTrait, TypeId receiverTypeId)
     {
-        var requestedCanonicalShapes = EnumerateImplementingTypeCandidateShapes(ownerTrait, receiverTypeId)
-            .ToList();
         var lookupTypeId = ResolveImplLookupTypeId(receiverTypeId);
+        var requestedCanonicalShapes = EnumerateImplementingTypeCandidateShapes(ownerTrait, receiverTypeId).ToList();
+
+        return !lookupTypeId.IsValid || requestedCanonicalShapes.Count == 0
+            ? []
+            : ResolveApplicableImplsForReceiverCandidate(
+                ownerTrait,
+                receiverTypeId,
+                lookupTypeId,
+                requestedCanonicalShapes);
+    }
+
+    private List<ImplSymbol> ResolveApplicableImplsForReceiverCandidate(
+        SymbolId ownerTrait,
+        TypeId receiverTypeId,
+        TypeId lookupTypeId,
+        IReadOnlyList<ImplTypeShapeNode> requestedCanonicalShapes)
+    {
         var applicable = new Dictionary<SymbolId, ImplSymbol>();
         foreach (var impl in EnumerateTraitImpls(ownerTrait))
         {

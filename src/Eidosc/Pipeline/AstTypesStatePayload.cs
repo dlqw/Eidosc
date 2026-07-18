@@ -18,7 +18,7 @@ public sealed record AstTypesStatePayload(
     IReadOnlyList<AstTypesStateEntryPayload> Entries,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "ast-types-state-payload-v4";
+    public const string CurrentSchemaVersion = "ast-types-state-payload-v6";
 
     public static AstTypesStatePayload Create(
         ModuleDecl? ast,
@@ -125,6 +125,9 @@ public sealed record AstTypesStatePayload(
 public sealed record AstTypesStateEntryPayload(
     AstInferredTypeStableKeyPayload StableIdentity,
     int? ResolvedSymbolId,
+    bool? PathIsTypePath,
+    bool? PathIsConstructorPath,
+    bool? MethodResolvedAsStaticPath,
     int? SynthesizedUnitArgumentCount,
     bool? UsesFfiUnitArgumentElision,
     bool? ResolvedAsFieldAccess,
@@ -139,6 +142,7 @@ public sealed record AstTypesStateEntryPayload(
     TypeShapePayload? SuccessPayloadType,
     TypeShapePayload? FailurePayloadType,
     TypeShapePayload? ShortCircuitReturnType,
+    string? MethodAssociatedConstImplementationStableKey,
     string? AssociatedConstImplementationStableKey)
 {
     public static bool TryCreate(
@@ -150,6 +154,21 @@ public sealed record AstTypesStateEntryPayload(
     {
         unresolvedReference = false;
         string? implementationStableKey = null;
+        string? methodAssociatedConstImplementationStableKey = null;
+        if (node is MethodCallExpr
+            {
+                ResolvedStaticExpression: AssociatedConstExpr
+                {
+                    ImplementationValue: { } methodImplementation
+                }
+            } &&
+            !stableKeyByNode.TryGetValue(methodImplementation, out methodAssociatedConstImplementationStableKey))
+        {
+            entry = null!;
+            unresolvedReference = true;
+            return false;
+        }
+
         if (node is AssociatedConstExpr { ImplementationValue: { } implementation } &&
             !stableKeyByNode.TryGetValue(implementation, out implementationStableKey))
         {
@@ -168,7 +187,10 @@ public sealed record AstTypesStateEntryPayload(
 
         entry = new AstTypesStateEntryPayload(
             stableIdentity,
-            node is IdentifierExpr or PathExpr ? node.SymbolId.Value : null,
+            node is IdentifierExpr or PathExpr or MethodCallExpr ? node.SymbolId.Value : null,
+            node is PathExpr typePath ? typePath.IsTypePath : null,
+            node is PathExpr constructorPath ? constructorPath.IsConstructorPath : null,
+            node is MethodCallExpr staticMethod ? staticMethod.ResolvedAsStaticPath : null,
             node switch
             {
                 CallExpr call => call.SynthesizedUnitArgumentCount,
@@ -199,6 +221,7 @@ public sealed record AstTypesStateEntryPayload(
             node is LetQuestionDecl { ShortCircuitReturnType: Eidosc.Types.Type returnType }
                 ? TypeShapePayload.Create(returnType)
                 : null,
+            methodAssociatedConstImplementationStableKey,
             implementationStableKey);
         return true;
     }
@@ -317,6 +340,27 @@ public static class AstTypesStateRestorer
             return false;
         }
 
+        EidosAstNode? methodAssociatedConstImplementationValue = null;
+        if (entry.MethodAssociatedConstImplementationStableKey != null)
+        {
+            if (node is not MethodCallExpr
+                {
+                    ResolvedStaticExpression: AssociatedConstExpr
+                })
+            {
+                failure = $"missing resolved associated const projection: {entry.StableIdentity.StableKey}";
+                return false;
+            }
+
+            if (!nodesByKey.TryGetValue(
+                    entry.MethodAssociatedConstImplementationStableKey,
+                    out methodAssociatedConstImplementationValue))
+            {
+                failure = $"missing method associated const implementation node: {entry.MethodAssociatedConstImplementationStableKey}";
+                return false;
+            }
+        }
+
         LetQuestionBindingKind? bindingKind = null;
         if (entry.LetQuestionBindingKind != null)
         {
@@ -332,6 +376,9 @@ public static class AstTypesStateRestorer
         state = new PendingAstTypesState(
             node,
             resolvedSymbolId,
+            entry.PathIsTypePath,
+            entry.PathIsConstructorPath,
+            entry.MethodResolvedAsStaticPath,
             entry.SynthesizedUnitArgumentCount,
             entry.UsesFfiUnitArgumentElision,
             entry.ResolvedAsFieldAccess,
@@ -346,6 +393,7 @@ public static class AstTypesStateRestorer
             successPayloadType,
             failurePayloadType,
             shortCircuitReturnType,
+            methodAssociatedConstImplementationValue,
             implementationValue);
         return true;
     }
@@ -395,6 +443,12 @@ public static class AstTypesStateRestorer
             state.Node.SymbolId = state.ResolvedSymbolId.Value;
         }
 
+        if (state.Node is PathExpr path)
+        {
+            path.SetIsTypePath(state.PathIsTypePath == true);
+            path.SetIsConstructorPath(state.PathIsConstructorPath == true);
+        }
+
         if (state.Node is CallExpr call)
         {
             ApplyEmptyCallState(call, state.SynthesizedUnitArgumentCount, state.UsesFfiUnitArgumentElision);
@@ -402,6 +456,11 @@ public static class AstTypesStateRestorer
         else if (state.Node is MethodCallExpr method)
         {
             ApplyEmptyCallState(method, state.SynthesizedUnitArgumentCount, state.UsesFfiUnitArgumentElision);
+            if (state.MethodResolvedAsStaticPath == true)
+            {
+                method.MarkResolvedAsStaticPath();
+            }
+
             if (state.ResolvedAsFieldAccess == true && state.FieldSymbolId.HasValue)
             {
                 method.MarkResolvedAsFieldAccess(state.FieldSymbolId.Value);
@@ -410,6 +469,12 @@ public static class AstTypesStateRestorer
             if (state.CStructGetterName != null && state.CStructGetterSymbolId.HasValue)
             {
                 method.MarkResolvedAsCStructAccess(state.CStructGetterName, state.CStructGetterSymbolId.Value);
+            }
+
+            if (state.MethodAssociatedConstImplementationValue != null &&
+                method.ResolvedStaticExpression is AssociatedConstExpr associatedConst)
+            {
+                associatedConst.SetImplementationValue(state.MethodAssociatedConstImplementationValue);
             }
         }
         else if (state.Node is InfixCallExpr infix && state.InfixFunctionSymbolId.HasValue)
@@ -475,6 +540,9 @@ public static class AstTypesStateRestorer
     private sealed record PendingAstTypesState(
         EidosAstNode Node,
         SymbolId? ResolvedSymbolId,
+        bool? PathIsTypePath,
+        bool? PathIsConstructorPath,
+        bool? MethodResolvedAsStaticPath,
         int? SynthesizedUnitArgumentCount,
         bool? UsesFfiUnitArgumentElision,
         bool? ResolvedAsFieldAccess,
@@ -489,5 +557,6 @@ public static class AstTypesStateRestorer
         Eidosc.Types.Type? SuccessPayloadType,
         Eidosc.Types.Type? FailurePayloadType,
         Eidosc.Types.Type? ShortCircuitReturnType,
+        EidosAstNode? MethodAssociatedConstImplementationValue,
         EidosAstNode? AssociatedConstImplementationValue);
 }

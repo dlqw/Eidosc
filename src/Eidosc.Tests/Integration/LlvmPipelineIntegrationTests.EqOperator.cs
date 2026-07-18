@@ -18,11 +18,12 @@ Eq :: trait {
 }
 
 Direction :: type {
-    North , South , East , West
+    North :: type {} , South :: type {} , East :: type {} , West :: type {}
 }
 
-@impl(Eq)
+
 eq :: Direction -> Direction -> Bool
+ impl Eq
 {
     North() => North() => true,
     South() => South() => true,
@@ -33,7 +34,10 @@ eq :: Direction -> Direction -> Bool
 
 main :: Unit -> Int
 {
-    _ => if East() == East() then { 0 } else { 11 }
+    _ => {
+        east: Direction := East();
+        if east == east then { 0 } else { 11 }
+    }
 }
 """;
 
@@ -78,11 +82,12 @@ Eq :: trait {
 }
 
 Direction :: type {
-    North , South , East , West
+    North :: type {} , South :: type {} , East :: type {} , West :: type {}
 }
 
-@impl(Eq)
+
 eq :: Direction -> Direction -> Bool
+ impl Eq
 {
     North() => North() => true,
     South() => South() => true,
@@ -91,9 +96,7 @@ eq :: Direction -> Direction -> Bool
     _ => _ => false
 }
 
-Box :: type {
-    Box { dir: Direction }
-}
+Box :: type { dir:: Direction }
 
 keep :: Box -> Box
 {
@@ -103,8 +106,9 @@ keep :: Box -> Box
 main :: Unit -> Int
 {
     _ => {
-        direct := East() == East();
-        notEqual := East() != East();
+        east: Direction := East();
+        direct := east == east;
+        notEqual := east != east;
         boxed := keep(Box { dir: East() });
         match boxed {
             Box { dir: d } =>
@@ -129,27 +133,27 @@ main :: Unit -> Int
     public void SourceEqOperator_WithMultipleAdtImpls_NativeSmoke_UsesDistinctLlvmFunctions()
     {
         const string source = """
-import Std.Seq
-import Std.Trait
+import std.Seq
+import std.Traits
 
 Direction :: type {
-    North , East
+    North :: type {} , East :: type {}
 }
 
-@impl(Eq)
+
 eq :: Direction -> Direction -> Bool
+ impl Eq
 {
     North() => North() => true,
     East() => East() => true,
     _ => _ => false
 }
 
-Pos :: type {
-    Pos { x: Int, y: Int }
-}
+Pos :: type { x:: Int, y:: Int }
 
-@impl(Eq)
+
 eq :: Pos -> Pos -> Bool
+ impl Eq
 {
     Pos { x: ax, y: ay } => other => match other {
         Pos { x: bx, y: by } => ax == bx && ay == by
@@ -165,7 +169,8 @@ main :: Unit -> Int
 {
     _ => {
         snake := [Pos { x: 2, y: 1 }, Pos { x: 1, y: 1 }, Pos { x: 0, y: 1 }];
-        directionOk := North() == North();
+        north: Direction := North();
+        directionOk := north == north;
         hit := contains_pos(snake)(Pos { x: 1, y: 1 });
         miss := contains_pos(snake)(Pos { x: 3, y: 1 });
         if directionOk && hit && !miss then { 0 } else { 31 }
@@ -177,6 +182,45 @@ main :: Unit -> Int
             source,
             "native_multiple_adt_eq_impls.eidos",
             "native_multiple_adt_eq_impls");
+
+        Assert.Equal(0, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SourceEqOperator_ForExactCase_PrefersCaseImplOverParentImpl()
+    {
+        const string source = """
+Eq :: trait {
+    eq :: Self -> Self -> Bool
+}
+
+Anim :: type {
+    Dog :: type {},
+    Cat :: type {},
+}
+
+eq :: Anim -> Anim -> Bool
+ impl Eq
+{
+    _ => _ => false
+}
+
+eq :: Anim.Dog -> Anim.Dog -> Bool
+ impl Eq
+{
+    _ => _ => true
+}
+
+main :: Unit -> Int
+{
+    _ => if Dog() == Dog() then { 0 } else { 47 }
+}
+""";
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_exact_case_eq_impl_precedence.eidos",
+            "native_exact_case_eq_impl_precedence");
 
         Assert.Equal(0, execution.ExitCode);
     }

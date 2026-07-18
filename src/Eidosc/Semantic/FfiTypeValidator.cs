@@ -9,7 +9,7 @@ namespace Eidosc.Semantic;
 
 /// <summary>
 /// FFI 类型安全校验器。
-/// 在类型推断完成后运行，校验 @ffi 函数的参数和返回值类型为 FFI 安全类型。
+/// 在类型推断完成后运行，校验 extern 函数的参数和返回值类型为 FFI 安全类型。
 /// </summary>
 public sealed class FfiTypeValidator
 {
@@ -50,7 +50,7 @@ public sealed class FfiTypeValidator
     ];
 
     /// <summary>
-    /// 校验模块中所有 @ffi 函数的类型安全性和库引用合法性
+    /// 校验模块中所有 extern 函数的类型安全性和库引用合法性
     /// </summary>
     /// <param name=WellKnownStrings.Keywords.Module>AST 模块</param>
     /// <param name="linkLibraries">eidos.toml 配置的库名列表</param>
@@ -86,14 +86,14 @@ public sealed class FfiTypeValidator
                 continue;
             }
 
-            if (!HasFfiAttribute(decl))
+            if (!HasExternClause(decl))
             {
                 continue;
             }
 
             hasFfiFunctions = true;
 
-            // Validate library reference for @ffi("lib/symbol") syntax
+            // Validate the explicit extern linkage contract.
             if (decl is FuncDef or FuncDecl)
             {
                 ValidateFfiLibraryReference(decl, linkLibraries);
@@ -114,93 +114,58 @@ public sealed class FfiTypeValidator
         return hasFfiFunctions;
     }
 
-    /// <summary>
-    /// 校验 @ffi("lib/symbol") 语法中引用的库是否已通过 link 声明
-    /// </summary>
     private void ValidateFfiLibraryReference(Declaration decl, IReadOnlyList<string>? availableLibraries)
     {
-        foreach (var attr in decl.Attributes)
+        var library = GetClauseArgument(decl, DeclarationClauseKind.LinkLibrary);
+        if (string.IsNullOrWhiteSpace(library))
         {
-            if (attr.Name != WellKnownStrings.Keywords.Ffi ||
-                !TryGetFfiAttributeArgument(attr, out var raw))
-            {
-                continue;
-            }
+            return;
+        }
 
-            var slashIndex = raw.IndexOf('/');
-            if (slashIndex < 0)
-            {
-                continue; // No library prefix — backward compatible
-            }
-
-            var library = raw[..slashIndex];
-            var symbol = raw[(slashIndex + 1)..];
-
-            if (availableLibraries == null || !availableLibraries.Contains(library))
-            {
-                _diagnostics.Add(new Diagnostic.Diagnostic(
-                    Diagnostic.DiagnosticLevel.Error,
-                    DiagnosticMessages.FfiUndeclaredLibraryReference(library, symbol),
-                    "E3052"));
-            }
+        var symbol = GetClauseArgument(decl, DeclarationClauseKind.LinkName) ?? GetDeclarationName(decl);
+        if (availableLibraries == null || !availableLibraries.Contains(library))
+        {
+            _diagnostics.Add(new Diagnostic.Diagnostic(
+                Diagnostic.DiagnosticLevel.Error,
+                DiagnosticMessages.FfiUndeclaredLibraryReference(library, symbol),
+                "E3052"));
         }
     }
 
-    /// <summary>
-    /// 校验 @ffi("lib/symbol") 和 @ffi("symbol") 是否存在重复外部绑定。
-    /// 同一个外部符号当前没有 ABI 级 overload 证明时不能被多个 Eidos 声明共享。
-    /// </summary>
     private void ValidateDuplicateFfiBinding(Declaration decl, HashSet<string> seenBindings)
     {
-        foreach (var attr in decl.Attributes)
+        if (!HasExternClause(decl))
         {
-            if (attr.Name != WellKnownStrings.Keywords.Ffi ||
-                !TryGetFfiAttributeArgument(attr, out var raw))
-            {
-                continue;
-            }
+            return;
+        }
 
-            var slashIndex = raw.IndexOf('/');
-            var library = slashIndex < 0 ? "<default>" : raw[..slashIndex];
-            var symbol = slashIndex < 0 ? raw : raw[(slashIndex + 1)..];
-            var bindingKey = $"{library}/{symbol}";
-
-            if (!seenBindings.Add(bindingKey))
-            {
-                AddDuplicateFfiBindingError(decl.Span, library, symbol);
-            }
+        var library = GetClauseArgument(decl, DeclarationClauseKind.LinkLibrary) ?? "<default>";
+        var symbol = GetClauseArgument(decl, DeclarationClauseKind.LinkName) ?? GetDeclarationName(decl);
+        var bindingKey = $"{library}/{symbol}";
+        if (!seenBindings.Add(bindingKey))
+        {
+            AddDuplicateFfiBindingError(decl.Span, library, symbol);
         }
     }
 
-    private static bool HasFfiAttribute(Declaration decl)
+    private static bool HasExternClause(Declaration decl) =>
+        decl.Clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Extern);
+
+    private static string? GetClauseArgument(Declaration declaration, DeclarationClauseKind kind) =>
+        declaration.Clauses
+            .Where(clause => clause.ClauseKind == kind)
+            .SelectMany(static clause => clause.ArgumentTokens)
+            .Select(static argument => NormalizeClauseArgumentText(argument))
+            .FirstOrDefault(static argument => !string.IsNullOrWhiteSpace(argument));
+
+    private static string GetDeclarationName(Declaration declaration) => declaration switch
     {
-        foreach (var attr in decl.Attributes)
-        {
-            if (attr.Name == WellKnownStrings.Keywords.Ffi)
-            {
-                return true;
-            }
-        }
+        FuncDef function => function.Name,
+        FuncDecl function => function.Name,
+        _ => "<unknown>"
+    };
 
-        return false;
-    }
-
-    private static bool TryGetFfiAttributeArgument(Eidosc.Ast.Attribute attr, out string raw)
-    {
-        raw = string.Empty;
-        if (attr.Arguments.Count > 0 && attr.Arguments[0] is LiteralExpr literal)
-        {
-            raw = literal.Value?.ToString() ?? string.Empty;
-        }
-        else if (attr.ArgumentTexts.Count > 0)
-        {
-            raw = NormalizeAttributeArgumentText(attr.ArgumentTexts[0]);
-        }
-
-        return !string.IsNullOrWhiteSpace(raw);
-    }
-
-    private static string NormalizeAttributeArgumentText(string text)
+    private static string NormalizeClauseArgumentText(string text)
     {
         var trimmed = text.Trim();
         if (trimmed.Length >= 2 &&

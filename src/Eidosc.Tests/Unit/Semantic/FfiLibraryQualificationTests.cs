@@ -2,6 +2,7 @@ using System.Linq;
 using Eidosc.Diagnostic;
 using Eidosc;
 using Eidosc.Pipeline;
+using Eidosc.Symbols;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Semantic;
@@ -22,10 +23,52 @@ public class FfiLibraryQualificationTests
     }
 
     [Fact]
+    public void NeedFfiWrapper_RemainsAnOrdinaryFunction()
+    {
+        const string source = """
+            wrapper :: Int -> Int need ffi {
+                value => value
+            }
+            """;
+
+        var result = RunPipeline(source);
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var table = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var wrapper = Assert.Single(table.Symbols.Values.OfType<FuncSymbol>(), static symbol => symbol.Name == "wrapper");
+        Assert.False(wrapper.IsExternal);
+        Assert.Null(wrapper.ExternalSymbolName);
+        Assert.Null(wrapper.ExternalLibrary);
+    }
+
+    [Fact]
+    public void ExternBodylessFunction_UsesCanonicalLinkageMetadata()
+    {
+        const string source = """
+            native_call :: Int -> Int
+                need ffi
+                extern c
+                link_library "native"
+                link_name "native_call_v2";
+            """;
+
+        var result = RunPipeline(source, ["native"]);
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var table = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var function = Assert.Single(table.Symbols.Values.OfType<FuncSymbol>(), static symbol => symbol.Name == "native_call");
+        Assert.True(function.IsExternal);
+        Assert.Equal("native_call_v2", function.ExternalSymbolName);
+        Assert.Equal("native", function.ExternalLibrary);
+        Assert.Contains("ffi", function.ImplicitAbilities);
+    }
+
+    [Fact]
     public void FfiAttribute_WithLibraryPrefix_Succeeds()
     {
         const string source = """
-            @ffi("curl/curl_easy_init") easyInit :: Unit -> RawPtr
+             easyInit :: Unit -> RawPtr need ffi extern c link_library "curl" link_name "curl_easy_init";
+
             """;
 
         var result = RunPipeline(source, ["curl"]);
@@ -40,7 +83,8 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_WithoutLibraryPrefix_Succeeds()
     {
         const string source = """
-            @ffi("malloc") myMalloc :: Int -> RawPtr
+             myMalloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+
             """;
 
         var result = RunPipeline(source);
@@ -55,8 +99,9 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_WithFunctionBody_ProducesE3050()
     {
         const string source = """
-            @ffi("abs")
+
             abs :: Int -> Int
+             need ffi extern c link_name "abs"
             {
                 x => x
             }
@@ -65,13 +110,31 @@ public class FfiLibraryQualificationTests
         var result = RunPipeline(source);
 
         Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, d => d.Code == "E3050");
+        var diagnostic = Assert.Single(result.Diagnostics, d => d.Code == "E3050");
+        Assert.Contains("cannot have an Eidos function body", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompilerPrivateIntrinsicClause_CannotBeForgedAlongsideExtern()
+    {
+        const string source = """
+            native_call :: Int -> Int
+                need ffi
+                extern c
+                intrinsic "llvm.native_call";
+            """;
+
+        var result = RunPipeline(source);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("reserved for toolchain-owned source", StringComparison.Ordinal));
     }
 
     [Theory]
-    [InlineData("""@ffi("puts") puts :: String -> Int""")]
-    [InlineData("""@ffi("bad_tuple") badTuple :: (Int, Int) -> Int""")]
-    [InlineData("""@ffi("bad_ref") badRef :: Ref[Int] -> Int""")]
+    [InlineData("""puts :: String -> Int need ffi extern c link_name "puts";""")]
+    [InlineData("""bad_tuple :: (Int, Int) -> Int need ffi extern c link_name "bad_tuple";""")]
+    [InlineData("""bad_ref :: Ref[Int] -> Int need ffi extern c link_name "bad_ref";""")]
     public void FfiAttribute_WithNonFfiSafeAbiType_ProducesE3051(string source)
     {
         var result = RunPipeline(source);
@@ -88,7 +151,8 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_WithFunctionParameter_TreatsValueAsClosurePointer()
     {
         const string source = """
-            @ffi("accept_closure") acceptClosure :: (Unit -> RawPtr) -> Unit
+             acceptClosure :: (Unit -> RawPtr) -> Unit need ffi extern c link_name "accept_closure";
+
             """;
 
         var result = RunPipeline(source);
@@ -103,7 +167,8 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_UndeclaredLibrary_ProducesE3052()
     {
         const string source = """
-            @ffi("curl/curl_easy_init") easyInit :: Unit -> RawPtr
+             easyInit :: Unit -> RawPtr need ffi extern c link_library "curl" link_name "curl_easy_init";
+
             """;
 
         var result = RunPipeline(source);
@@ -116,8 +181,10 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_MultipleLibraries_Succeeds()
     {
         const string source = """
-            @ffi("A/init") initA :: Unit -> RawPtr
-            @ffi("B/init") initB :: Unit -> RawPtr
+             initA :: Unit -> RawPtr need ffi extern c link_library "A" link_name "init";
+
+             initB :: Unit -> RawPtr need ffi extern c link_library "B" link_name "init";
+
             """;
 
         var result = RunPipeline(source, ["A", "B"]);
@@ -148,8 +215,10 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_DuplicateLibrarySymbol_ProducesE3054()
     {
         const string source = """
-            @ffi("A/init") initA :: Unit -> RawPtr
-            @ffi("A/init") initB :: Unit -> RawPtr
+             initA :: Unit -> RawPtr need ffi extern c link_library "A" link_name "init";
+
+             initB :: Unit -> RawPtr need ffi extern c link_library "A" link_name "init";
+
             """;
 
         var result = RunPipeline(source, ["A"]);
@@ -162,11 +231,13 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_SameEidosNameWithDistinctExternalSymbols_Succeeds()
     {
         const string source = """
-            @ffi("abs_i")
-            abs :: Int -> Int
 
-            @ffi("abs_f")
-            abs :: Float -> Float
+            abs :: Int -> Int need ffi extern c link_name "abs_i";
+
+
+
+            abs :: Float -> Float need ffi extern c link_name "abs_f";
+
             """;
 
         var result = RunPipeline(source);
@@ -181,8 +252,10 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_DuplicateDefaultSymbol_ProducesE3054()
     {
         const string source = """
-            @ffi("native_parse") parseInt :: Int -> Int
-            @ffi("native_parse") parseFloat :: Float -> Float
+             parseInt :: Int -> Int need ffi extern c link_name "native_parse";
+
+             parseFloat :: Float -> Float need ffi extern c link_name "native_parse";
+
             """;
 
         var result = RunPipeline(source);
@@ -195,8 +268,10 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_OverloadGroupWithDuplicateExternalSymbol_ProducesE3054()
     {
         const string source = """
-            @ffi("native_parse") parse :: Int -> Int
-            @ffi("native_parse") parse :: Float -> Float
+             parse :: Int -> Int need ffi extern c link_name "native_parse";
+
+             parse :: Float -> Float need ffi extern c link_name "native_parse";
+
             """;
 
         var result = RunPipeline(source);
@@ -210,7 +285,8 @@ public class FfiLibraryQualificationTests
     {
         const string source = """
             Outer :: module {
-                @ffi("curl/curl_easy_init") curlInit :: Unit -> RawPtr
+                 curlInit :: Unit -> RawPtr need ffi extern c link_library "curl" link_name "curl_easy_init";
+
             }
             """;
 

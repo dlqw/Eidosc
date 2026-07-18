@@ -41,9 +41,9 @@ public sealed class ImplTypeShapeFactoryTests
     }
 
     [Fact]
-    public void BuildFromKey_BuildsVariableForTextOnlyVariableName()
+    public void BuildFromKey_BuildsVariableForExplicitVariableIdentity()
     {
-        var shape = ImplTypeShapeFactory.BuildFromKey(ImplTypeRefKey.FromCanonicalText("t"));
+        var shape = ImplTypeShapeFactory.BuildFromKey(ImplTypeRefKey.FromCanonicalText("var:t"));
 
         var variable = Assert.IsType<ImplVariableShapeNode>(shape);
         Assert.Equal("t", variable.Name);

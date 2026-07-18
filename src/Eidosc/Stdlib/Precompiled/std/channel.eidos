@@ -1,0 +1,230 @@
+Channel :: module {
+    import Ffi
+    import Option
+
+
+
+ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
+
+
+/// A runtime-backed channel handle.
+Channel[A] :: type {handle:: RawPtr}
+
+/// Non-blocking receive result for a runtime-backed raw-payload Channel.
+ReceiveStatus :: type {
+    ReceivePending :: type {} , ReceiveClosed :: type {} , ReceiveValue:: type(RawPtr)
+}
+
+
+
+new_runtime :: Int -> RawPtr internal need ffi extern c link_name "eidos_channel_new_raw_capacity";
+
+
+
+
+new_value_runtime :: Int -> RawPtr internal need ffi extern c link_name "eidos_channel_new_capacity";
+
+
+
+
+try_send_runtime :: RawPtr -> RawPtr -> Bool internal need ffi extern c link_name "eidos_channel_try_send";
+
+
+
+
+try_recv_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_channel_try_recv";
+
+
+
+
+close_runtime :: RawPtr -> Unit internal need ffi extern c link_name "eidos_channel_close";
+
+
+
+
+is_closed_value_runtime :: RawPtr -> Bool internal need ffi extern c link_name "eidos_channel_is_closed_value";
+
+
+/// Create a runtime-backed RawPtr payload channel with the requested buffer capacity.
+new[A] :: Int -> Channel[A] need ffi
+{
+    capacity => Channel{handle: Channel.new_runtime(capacity)}
+}
+
+/// Create a runtime-backed channel with zero buffer capacity.
+new_unbuffered[A] :: Unit -> Channel[A] need ffi
+{
+    _ => Channel.new(0)
+}
+
+/// Create a runtime-backed channel that owns boxed Eidos values.
+new_value[A] :: Int -> Channel[A] need ffi
+{
+    capacity => Channel{handle: Channel.new_value_runtime(capacity)}
+}
+
+/// Create a runtime-backed boxed-value channel with zero buffer capacity.
+new_value_unbuffered[A] :: Unit -> Channel[A] need ffi
+{
+    _ => Channel.new_value(0)
+}
+
+/// Close a runtime-backed Channel.
+close[A] :: Channel[A] -> Unit need ffi
+{
+    Channel{handle: handle} => Channel.close_runtime(handle)
+}
+
+/// Try to send a non-null raw pointer without suspending the caller.
+try_send_raw[A] :: Channel[A] -> RawPtr -> Bool need ffi
+{
+    Channel{handle: handle} => value => Channel.try_send_runtime(handle)(value)
+}
+
+/// Try to send a raw pointer only when the payload is non-null.
+try_send_raw_if_non_null[A] :: Channel[A] -> RawPtr -> Bool need ffi
+{
+    channel => value => if ptr_is_null(value) then {
+        false
+    } else {
+        Channel.try_send_raw(channel)(value)
+    }
+}
+
+/// Try to receive a non-null raw pointer without suspending the caller.
+try_recv_raw[A] :: Channel[A] -> Option[RawPtr] need ffi
+{
+    Channel{handle: handle} => {
+        value := Channel.try_recv_runtime(handle);
+        if ptr_is_null(value) || Channel.is_closed_value_runtime(value) then { None() } else { Some(value) }
+    }
+}
+
+/// Try to send an Eidos value by boxing it for the runtime Channel.
+try_send[A] :: Channel[A] -> A -> Bool need ffi
+{
+    Channel{handle: handle} => value => {
+        boxed := Ffi.box_value[A](value);
+        sent := Channel.try_send_runtime(handle)(boxed);
+        Ffi.free_boxed_value(boxed);
+        sent
+    }
+}
+
+/// Try to receive an Eidos value from a boxed-value Channel.
+try_recv[A] :: Channel[A] -> Option[A] need ffi
+{
+    Channel{handle: handle} => {
+        boxed := Channel.try_recv_runtime(handle);
+        if ptr_is_null(boxed) || Channel.is_closed_value_runtime(boxed) then {
+            None()
+        } else {
+            value := Ffi.unbox_value[A](boxed);
+            Ffi.free_boxed_value(boxed);
+            Some(value)
+        }
+    }
+}
+
+/// Try to receive a raw pointer while preserving pending/closed/value state.
+try_recv_raw_status[A] :: Channel[A] -> ReceiveStatus need ffi
+{
+    Channel{handle: handle} => {
+        value := Channel.try_recv_runtime(handle);
+        if ptr_is_null(value) then {
+            ReceivePending()
+        } else if Channel.is_closed_value_runtime(value) then {
+            ReceiveClosed()
+        } else {
+            ReceiveValue(value)
+        }
+    }
+}
+
+/// Return true when a receive status contains a payload value.
+receive_status_has_value :: ReceiveStatus -> Bool
+{
+    ReceivePending() => false,
+    ReceiveClosed() => false,
+    ReceiveValue(_) => true
+}
+
+/// Return true when a receive status represents an open channel with no ready value.
+receive_status_is_pending :: ReceiveStatus -> Bool
+{
+    ReceivePending() => true,
+    ReceiveClosed() => false,
+    ReceiveValue(_) => false
+}
+
+/// Return true when a receive status represents a closed and empty Channel.
+receive_status_is_closed :: ReceiveStatus -> Bool
+{
+    ReceivePending() => false,
+    ReceiveClosed() => true,
+    ReceiveValue(_) => false
+}
+
+/// Return the received payload or the fallback for pending/closed statuses.
+receive_status_value_or :: ReceiveStatus -> RawPtr -> RawPtr
+{
+    ReceivePending() => fallback => fallback,
+    ReceiveClosed() => fallback => fallback,
+    ReceiveValue(value) => _ => value
+}
+
+/// Return the received payload or evaluate the fallback for pending/closed statuses.
+receive_status_value_or_else[E: effects] :: ReceiveStatus -> (Unit -> RawPtr need E) -> RawPtr need E
+{
+    ReceivePending() => fallback => fallback(()),
+    ReceiveClosed() => fallback => fallback(()),
+    ReceiveValue(value) => _ => value
+}
+
+/// Fold a receive status into a value, mapping payloads when present.
+receive_status_fold[A, E: effects] :: ReceiveStatus -> A -> A -> (RawPtr -> A need E) -> A need E
+{
+    ReceivePending() => pending_value => _ => _ => pending_value,
+    ReceiveClosed() => _ => closed_value => _ => closed_value,
+    ReceiveValue(value) => _ => _ => map_value => map_value(value)
+}
+
+/// Lazily fold a receive status into a value, mapping payloads when present.
+receive_status_fold_else[A, E1: effects, E2: effects, E3: effects] :: ReceiveStatus -> (Unit -> A need E1) -> (Unit -> A need E2) -> (RawPtr -> A need E3) -> A need E1, E2, E3
+{
+    ReceivePending() => pending_value => _ => _ => pending_value(()),
+    ReceiveClosed() => _ => closed_value => _ => closed_value(()),
+    ReceiveValue(value) => _ => _ => map_value => map_value(value)
+}
+
+/// Try to receive a raw pointer, returning the fallback when no value is ready.
+try_recv_raw_or[A] :: Channel[A] -> RawPtr -> RawPtr need ffi
+{
+    channel => fallback => match Channel.try_recv_raw(channel) { Some(value) => value, None() => fallback }
+}
+
+/// Try to receive a raw pointer, evaluating the fallback only when no value is ready.
+try_recv_raw_or_else[A, E: effects] :: Channel[A] -> (Unit -> RawPtr need E) -> RawPtr need ffi, E
+{
+    channel => fallback => match Channel.try_recv_raw(channel) { Some(value) => value, None() => fallback(()) }
+}
+
+/// Try to receive an Eidos value, returning the fallback when no value is ready.
+try_recv_or[A] :: Channel[A] -> A -> A need ffi
+{
+    channel => fallback => match Channel.try_recv(channel) { Some(value) => value, None() => fallback }
+}
+
+/// Try to receive an Eidos value, evaluating the fallback only when no value is ready.
+try_recv_or_else[A, E: effects] :: Channel[A] -> (Unit -> A need E) -> A need ffi, E
+{
+    channel => fallback => match Channel.try_recv(channel) { Some(value) => value, None() => fallback(()) }
+}
+
+/// Check whether a raw receive payload is the runtime closed-channel sentinel.
+is_closed_raw :: RawPtr -> Bool need ffi
+{
+    value => Channel.is_closed_value_runtime(value)
+}
+
+}

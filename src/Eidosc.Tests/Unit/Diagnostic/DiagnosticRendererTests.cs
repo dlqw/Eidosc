@@ -96,40 +96,43 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 PersonAlias :: type = Person;
 
-@impl(Show)
+
 show :: Person -> String
+ impl Show
 {
     p => "person"
 }
 
-@impl(Show)
+
 show :: PersonAlias -> String
+ impl Show
 {
     p => "alias"
 }
 """;
 
         var source = new SourceStream(sourceText, 4);
-        var existingStart = sourceText.IndexOf("@impl(Show)", StringComparison.Ordinal);
-        var requestedStart = sourceText.IndexOf("@impl(Show)", existingStart + 1, StringComparison.Ordinal);
+        const string implClause = "impl Show";
+        var existingStart = sourceText.IndexOf(implClause, StringComparison.Ordinal);
+        var requestedStart = sourceText.IndexOf(implClause, existingStart + 1, StringComparison.Ordinal);
         Assert.True(existingStart >= 0);
         Assert.True(requestedStart >= 0);
 
         var diagnostic = Eidosc.Diagnostic.Diagnostic.Error("Ambiguous overlapping impl registration", "E3004")
-            .WithLabel(new SourceSpan(new SourceLocation(requestedStart, 10, 0), "@impl(Show)".Length), "overlapping impl requested here: @impl(Show) on PersonAlias")
-            .WithNote("requested impl head: @impl(Show) on PersonAlias")
-            .WithNote("existing impl head: @impl(Show) on Person")
-            .WithNote("requested canonical head: @impl(Show) on Person")
-            .WithNote("existing canonical head: @impl(Show) on Person")
+            .WithLabel(new SourceSpan(new SourceLocation(requestedStart, 10, 0), implClause.Length), "overlapping impl requested here: impl Show on PersonAlias")
+            .WithNote("requested impl head: impl Show on PersonAlias")
+            .WithNote("existing impl head: impl Show on Person")
+            .WithNote("requested canonical head: impl Show on Person")
+            .WithNote("existing canonical head: impl Show on Person")
             .WithHelp("Keep only one impl head per canonical trait/type shape.")
             .WithRelated(
                 Eidosc.Diagnostic.Diagnostic.Note("existing overlapping impl registered here")
-                    .WithLabel(new SourceSpan(new SourceLocation(existingStart, 10, 0), "@impl(Show)".Length), "@impl(Show) on Person"));
+                    .WithLabel(new SourceSpan(new SourceLocation(existingStart, 10, 0), implClause.Length), "impl Show on Person"));
 
         var writer = new StringWriter();
         DiagnosticRenderer.Render(
@@ -144,11 +147,11 @@ show :: PersonAlias -> String
 
         var text = writer.ToString();
         Assert.Contains("error[E3004]: Ambiguous overlapping impl registration", text);
-        Assert.Contains("note: requested impl head: @impl(Show) on PersonAlias", text);
-        Assert.Contains("note: existing canonical head: @impl(Show) on Person", text);
+        Assert.Contains("note: requested impl head: impl Show on PersonAlias", text);
+        Assert.Contains("note: existing canonical head: impl Show on Person", text);
         Assert.Contains("help: Keep only one impl head per canonical trait/type shape.", text);
         Assert.Contains("note: existing overlapping impl registered here", text);
-        Assert.Contains("@impl(Show) on Person", text);
+        Assert.Contains("impl Show on Person", text);
         Assert.Contains("--> impl_overlap.eidos:11:1", text);
     }
 }

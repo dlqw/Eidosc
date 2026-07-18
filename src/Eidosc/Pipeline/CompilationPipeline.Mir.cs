@@ -1,4 +1,5 @@
 using Eidosc.Diagnostic;
+using Eidosc.Ast.Declarations;
 using Eidosc.Mir;
 using Eidosc.Mir.Optimize;
 using Eidosc.Types;
@@ -266,6 +267,32 @@ public sealed partial class CompilationPipeline
                     }
                 }
             }
+        }
+
+        if (!hasMirErrors && _nameResolver != null)
+        {
+            var previousNamerDiagnosticCount = _nameResolver.Diagnostics.Count;
+            bool layoutStageSuccess;
+            using (MeasureSubphase(CompilationPhase.Mir, "meta_layout_stage"))
+            {
+                layoutStageSuccess = _nameResolver.ProcessDeferredMetaExpansionStage(_ast!, ClauseStage.Layout);
+            }
+            _diagnostics.AddRange(FilterTrustedPrecompiledDiagnostics(
+                _nameResolver.Diagnostics.Skip(previousNamerDiagnosticCount)));
+            hasMirErrors |= !layoutStageSuccess;
+        }
+
+        if (!hasMirErrors && _nameResolver != null)
+        {
+            var previousNamerDiagnosticCount = _nameResolver.Diagnostics.Count;
+            bool layoutExtensionSuccess;
+            using (MeasureSubphase(CompilationPhase.Mir, "package_meta_extensions_layout"))
+            {
+                layoutExtensionSuccess = _nameResolver.ProcessPackageMetaExtensions(_ast!, ClauseStage.Layout);
+            }
+            _diagnostics.AddRange(FilterTrustedPrecompiledDiagnostics(
+                _nameResolver.Diagnostics.Skip(previousNamerDiagnosticCount)));
+            hasMirErrors |= !layoutExtensionSuccess;
         }
 
         if (_debugContext.IsEnabled)

@@ -9,7 +9,7 @@ namespace Eidosc.Tests.Unit.Types;
 public sealed class EffectPolymorphismTests
 {
     private const string Prelude = """
-IO :: effect;
+io :: effect;
 Alloc :: effect;
 
 apply[A, B, E: effects] :: (A -> B need E) -> A -> B need E
@@ -17,7 +17,7 @@ apply[A, B, E: effects] :: (A -> B need E) -> A -> B need E
     callback => value => callback(value)
 }
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }
@@ -54,7 +54,7 @@ write :: Int -> Int need IO
     {
         const string caller = """
 
-caller :: Int -> Int need IO
+caller :: Int -> Int need io
 {
     value => apply(write, value)
 }
@@ -86,7 +86,7 @@ caller :: Int -> Int
     public void Infer_IndependentEffectRows_RemainDistinct()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 Alloc :: effect;
 
 compose[A, B, C, E: effects, F: effects] :: (B -> C need F) -> (A -> B need E) -> A -> C need E, F
@@ -111,9 +111,9 @@ compose[A, B, C, E: effects, F: effects] :: (B -> C need F) -> (A -> B need E) -
     public void Infer_DeclaredUpperBound_RemainsSeparateFromPureImplementation()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-declared_but_pure :: Int -> Int need IO
+declared_but_pure :: Int -> Int need io
 {
     value => value
 }
@@ -127,7 +127,7 @@ declared_but_pure :: Int -> Int need IO
 
         var function = Assert.Single(result.Ast!.Declarations.OfType<FuncDef>());
         Assert.True(inferer.FunctionSummaries.TryGetValue(function, out var summary));
-        Assert.True(summary.DeclaredUpperBound.ContainsName("IO"));
+        Assert.True(summary.DeclaredUpperBound.ContainsName("io"));
         Assert.True(summary.InferredEffects.IsPure);
     }
 
@@ -135,9 +135,9 @@ declared_but_pure :: Int -> Int need IO
     public void Infer_RecursiveCallGraph_PropagatesActualEffectsAcrossCycle()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }
@@ -163,22 +163,22 @@ second :: Int -> Int
         inferer.Infer(result.Ast!);
 
         var functions = result.Ast!.Declarations.OfType<FuncDef>().ToDictionary(static function => function.Name);
-        Assert.True(inferer.FunctionSummaries[functions["first"]].InferredEffects.ContainsName("IO"));
-        Assert.True(inferer.FunctionSummaries[functions["second"]].InferredEffects.ContainsName("IO"));
+        Assert.True(inferer.FunctionSummaries[functions["first"]].InferredEffects.ContainsName("io"));
+        Assert.True(inferer.FunctionSummaries[functions["second"]].InferredEffects.ContainsName("io"));
     }
 
     [Fact]
     public void Authorize_ReturnedEffectfulFunction_RequiresEffectOnlyWhenInvoked()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }
 
-make :: Unit -> (Int -> Int need IO)
+make :: Unit -> (Int -> Int need io)
 {
     _ => write
 }
@@ -209,7 +209,7 @@ caller :: Int -> Int
     public void Authorize_TraitMethodEffectRow_InstantiatesCallbackEffect()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
 Runner :: trait
 {
@@ -218,16 +218,17 @@ Runner :: trait
 
 Box :: type
 {
-    Box
+    Box :: type {}
 }
 
-@impl(Runner)
+
 run[A, B, E: effects] :: Box -> (A -> B need E) -> A -> B need E
+ impl Runner
 {
     _ => callback => value => callback(value)
 }
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }

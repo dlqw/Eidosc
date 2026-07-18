@@ -10,7 +10,7 @@ public static class SyntaxKindHelper
     // ---- 分类判断 ----
 
     public static bool IsKeyword(this SyntaxKind kind)
-        => kind >= SyntaxKind.KwModule && kind <= SyntaxKind.KwUnreachable;
+        => kind >= SyntaxKind.KwModule && kind <= SyntaxKind.KwQuote;
 
     public static bool IsLiteral(this SyntaxKind kind)
         => kind is SyntaxKind.NumberLiteral or SyntaxKind.StringLiteral
@@ -23,7 +23,7 @@ public static class SyntaxKindHelper
         => kind >= SyntaxKind.OpArrow && kind <= SyntaxKind.OpQuestion;
 
     public static bool IsAnyIdentifier(this SyntaxKind kind)
-        => kind is SyntaxKind.Identifier or SyntaxKind.TypeIdentifier or SyntaxKind.OperatorIdentifier;
+        => kind is SyntaxKind.Identifier or SyntaxKind.OperatorIdentifier;
 
     // ---- 文本 → SyntaxKind 反查 ----
 
@@ -59,6 +59,7 @@ public static class SyntaxKindHelper
         ["mref"] = SyntaxKind.KwMref,
         ["do"] = SyntaxKind.KwDo,
         ["unreachable"] = SyntaxKind.KwUnreachable,
+        ["quote"] = SyntaxKind.KwQuote,
 
         // 运算符
         ["->"] = SyntaxKind.OpArrow,

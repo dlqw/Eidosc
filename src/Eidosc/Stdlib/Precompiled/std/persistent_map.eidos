@@ -1,0 +1,349 @@
+PersistentMap :: module {
+    import Seq
+    import Option
+    import Ordering.{Ordering}
+    import Shared
+    import Traits
+    import TraitInvoke
+
+    Node[K, V] :: type {key:: K, value:: V, left:: Link[K, V], right:: Link[K, V], size:: Int, height:: Int}
+
+    Link[K, V] :: type {
+        Empty :: type {} , Link:: type(Shared.Shared[Node[K, V]])
+    }
+
+    PersistentMap[K, V] :: type {root:: Link[K, V]}
+
+    empty[K, V] :: Unit -> PersistentMap[K, V]
+    {
+        _ => PersistentMap{root: Empty()}
+    }
+
+
+    clone_link[K, V] :: Link[K, V] -> Link[K, V]
+     internal
+{
+        Empty() => Empty(),
+        Link(node) => Link(Shared.clone(node))
+    }
+
+
+    max_int :: Int -> Int -> Int
+     internal
+{
+        left => right => if left > right then { left } else { right }
+    }
+
+
+    len_link[K, V] :: Link[K, V] -> Int
+     internal
+{
+        Empty() => 0,
+        Link(node) => match *Shared.borrow(node) {
+            Node{key: _, value: _, left: _, right: _, size: size, height: _} => size
+        }
+    }
+
+
+    height_link[K, V] :: Link[K, V] -> Int
+     internal
+{
+        Empty() => 0,
+        Link(node) => match *Shared.borrow(node) {
+            Node{key: _, value: _, left: _, right: _, size: _, height: height} => height
+        }
+    }
+
+    len[K, V] :: PersistentMap[K, V] -> Int
+    {
+        PersistentMap{root: root} => PersistentMap.len_link(root)
+    }
+
+    is_empty[K, V] :: PersistentMap[K, V] -> Bool
+    {
+        map => PersistentMap.len(map) == 0
+    }
+
+
+    make_link[K, V] :: K -> V -> Link[K, V] -> Link[K, V] -> Link[K, V]
+     internal
+{
+        key => value => left => right => Link(Shared.new(Node{
+            key: key,
+            value: value,
+            left: left,
+            right: right,
+            size: 1 + PersistentMap.len_link(left) + PersistentMap.len_link(right),
+            height: 1 + PersistentMap.max_int(PersistentMap.height_link(left))(PersistentMap.height_link(right))
+        }))
+    }
+
+
+    balance_factor[K, V] :: Link[K, V] -> Int
+     internal
+{
+        Empty() => 0,
+        Link(node) => match *Shared.borrow(node) {
+            Node{key: _, value: _, left: left, right: right, size: _, height: _} =>
+                PersistentMap.height_link(left) - PersistentMap.height_link(right)
+        }
+    }
+
+
+    rotate_right[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V]
+     internal
+{
+        Link(node) => match *Shared.borrow(node) {
+            Node{
+                key: key,
+                value: value,
+                left: Link(left_node),
+                right: right,
+                size: _,
+                height: _
+            } => match *Shared.borrow(left_node) {
+                Node{key: left_key, value: left_value, left: left_left, right: left_right, size: _, height: _} =>
+                    PersistentMap.make_link(TraitInvoke.clone_value(left_key))(TraitInvoke.clone_value(left_value))(
+                        PersistentMap.clone_link(left_left))(
+                        PersistentMap.make_link(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(value))(
+                            PersistentMap.clone_link(left_right))(
+                            PersistentMap.clone_link(right)))
+            },
+            _ => Link(Shared.clone(node))
+        },
+        Empty() => Empty()
+    }
+
+
+    rotate_left[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V]
+     internal
+{
+        Link(node) => match *Shared.borrow(node) {
+            Node{
+                key: key,
+                value: value,
+                left: left,
+                right: Link(right_node),
+                size: _,
+                height: _
+            } => match *Shared.borrow(right_node) {
+                Node{key: right_key, value: right_value, left: right_left, right: right_right, size: _, height: _} =>
+                    PersistentMap.make_link(TraitInvoke.clone_value(right_key))(TraitInvoke.clone_value(right_value))(
+                        PersistentMap.make_link(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(value))(
+                            PersistentMap.clone_link(left))(
+                            PersistentMap.clone_link(right_left)))(
+                        PersistentMap.clone_link(right_right))
+            },
+            _ => Link(Shared.clone(node))
+        },
+        Empty() => Empty()
+    }
+
+
+    balance_node[K: Traits.Clone, V: Traits.Clone] :: K -> V -> Link[K, V] -> Link[K, V] -> Link[K, V]
+     internal
+{
+        key => value => left => right => {
+            balance := PersistentMap.height_link(left) - PersistentMap.height_link(right)
+            if balance > 1 then {
+                if PersistentMap.balance_factor(left) < 0 then {
+                    PersistentMap.rotate_right(PersistentMap.make_link(key)(value)(PersistentMap.rotate_left(left))(right))
+                } else {
+                    PersistentMap.rotate_right(PersistentMap.make_link(key)(value)(left)(right))
+                }
+            } else if balance < -1 then {
+                if PersistentMap.balance_factor(right) > 0 then {
+                    PersistentMap.rotate_left(PersistentMap.make_link(key)(value)(left)(PersistentMap.rotate_right(right)))
+                } else {
+                    PersistentMap.rotate_left(PersistentMap.make_link(key)(value)(left)(right))
+                }
+            } else {
+                PersistentMap.make_link(key)(value)(left)(right)
+            }
+        }
+    }
+
+
+    insert_link[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Link[K, V] -> K -> V -> Link[K, V]
+     internal
+{
+        Empty() => key => value => PersistentMap.make_link(key)(value)(Empty())(Empty()),
+        Link(node) => key => value => match *Shared.borrow(node) {
+            Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                match cmp {
+                    Less() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                        PersistentMap.insert_link(PersistentMap.clone_link(left))(key)(value))(
+                        PersistentMap.clone_link(right)),
+                    Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                        PersistentMap.clone_link(left))(
+                        PersistentMap.insert_link(PersistentMap.clone_link(right))(key)(value)),
+                    Equal() => PersistentMap.make_link(key)(value)(
+                        PersistentMap.clone_link(left))(
+                        PersistentMap.clone_link(right))
+                }
+            }
+        }
+    }
+
+    insert[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> V -> PersistentMap[K, V]
+    {
+        PersistentMap{root: root} => key => value => PersistentMap{root: PersistentMap.insert_link(root)(key)(value)}
+    }
+
+    singleton[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: K -> V -> PersistentMap[K, V]
+    {
+        key => value => PersistentMap.insert(PersistentMap.empty(()))(key)(value)
+    }
+
+    from_seq[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> PersistentMap[K, V]
+    {
+        entries => Seq.fold_left(entries)(PersistentMap.empty(()))(map => entry =>
+            match entry { (key, value) => PersistentMap.insert(map)(key)(value) })
+    }
+
+
+    get_link[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Link[K, V] -> K -> Option[V]
+     internal
+{
+        Empty() => _ => None(),
+        Link(node) => key => match *Shared.borrow(node) {
+            Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                match cmp {
+                    Less() => PersistentMap.get_link(PersistentMap.clone_link(left))(key),
+                    Greater() => PersistentMap.get_link(PersistentMap.clone_link(right))(key),
+                    Equal() => Some(TraitInvoke.clone_value(node_value))
+                }
+            }
+        }
+    }
+
+    get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> Option[V]
+    {
+        PersistentMap{root: root} => key => PersistentMap.get_link(root)(key)
+    }
+
+    get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> V -> V
+    {
+        map => key => fallback => Option.unwrap_or(PersistentMap.get(map)(key))(fallback)
+    }
+
+
+    contains_link[K: Traits.Ord + Traits.Clone, V] :: Link[K, V] -> K -> Bool
+     internal
+{
+        Empty() => _ => false,
+        Link(node) => key => match *Shared.borrow(node) {
+            Node{key: node_key, value: _, left: left, right: right, size: _, height: _} => {
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                match cmp {
+                    Less() => PersistentMap.contains_link(PersistentMap.clone_link(left))(key),
+                    Greater() => PersistentMap.contains_link(PersistentMap.clone_link(right))(key),
+                    Equal() => true
+                }
+            }
+        }
+    }
+
+    contains_key[K: Traits.Ord + Traits.Clone, V] :: PersistentMap[K, V] -> K -> Bool
+    {
+        PersistentMap{root: root} => key => PersistentMap.contains_link(root)(key)
+    }
+
+
+    min_entry[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Option[(K, V)]
+     internal
+{
+        Empty() => None(),
+        Link(node) => match *Shared.borrow(node) {
+            Node{key: key, value: value, left: Empty(), right: _, size: _, height: _} =>
+                Some((TraitInvoke.clone_value(key), TraitInvoke.clone_value(value))),
+            Node{key: _, value: _, left: left, right: _, size: _, height: _} =>
+                PersistentMap.min_entry(PersistentMap.clone_link(left))
+        }
+    }
+
+
+    remove_min[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V]
+     internal
+{
+        Empty() => Empty(),
+        Link(node) => match *Shared.borrow(node) {
+            Node{key: _, value: _, left: Empty(), right: right, size: _, height: _} =>
+                PersistentMap.clone_link(right),
+            Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
+                PersistentMap.balance_node(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(value))(
+                    PersistentMap.remove_min(PersistentMap.clone_link(left)))(
+                    PersistentMap.clone_link(right))
+        }
+    }
+
+
+    merge_children[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V] -> Link[K, V]
+     internal
+{
+        Empty() => right => PersistentMap.clone_link(right),
+        left => Empty() => PersistentMap.clone_link(left),
+        left => right => match PersistentMap.min_entry(PersistentMap.clone_link(right)) {
+            Some((key, value)) => PersistentMap.balance_node(key)(value)(
+                PersistentMap.clone_link(left))(
+                PersistentMap.remove_min(PersistentMap.clone_link(right))),
+            None() => PersistentMap.clone_link(left)
+        }
+    }
+
+
+    remove_link[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Link[K, V] -> K -> Link[K, V]
+     internal
+{
+        Empty() => _ => Empty(),
+        Link(node) => key => match *Shared.borrow(node) {
+            Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                match cmp {
+                    Less() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                        PersistentMap.remove_link(PersistentMap.clone_link(left))(key))(
+                        PersistentMap.clone_link(right)),
+                    Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                        PersistentMap.clone_link(left))(
+                        PersistentMap.remove_link(PersistentMap.clone_link(right))(key)),
+                    Equal() => PersistentMap.merge_children(left)(right)
+                }
+            }
+        }
+    }
+
+    remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> PersistentMap[K, V]
+    {
+        PersistentMap{root: root} => key => PersistentMap{root: PersistentMap.remove_link(root)(key)}
+    }
+
+
+    to_seq_link[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Seq[(K, V)]
+     internal
+{
+        Empty() => [],
+        Link(node) => match *Shared.borrow(node) {
+            Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
+                Seq.append(PersistentMap.to_seq_link(PersistentMap.clone_link(left)))(
+                    Seq.append([(TraitInvoke.clone_value(key), TraitInvoke.clone_value(value))])(
+                        PersistentMap.to_seq_link(PersistentMap.clone_link(right))))
+        }
+    }
+
+    to_seq[K: Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> Seq[(K, V)]
+    {
+        PersistentMap{root: root} => PersistentMap.to_seq_link(root)
+    }
+
+    keys[K: Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> Seq[K]
+    {
+        map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (key, _) => key })
+    }
+
+    values[K: Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> Seq[V]
+    {
+        map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (_, value) => value })
+    }
+}

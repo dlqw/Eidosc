@@ -345,7 +345,9 @@ public sealed partial class TypeInferer
                 binding.PositionalArgTypes[i],
                 typeVarEnv,
                 kindEnvByName);
-            UnifyExpectedType(expectedType, positionalArgTypes[i]);
+            UnifyExpectedType(
+                expectedType,
+                NormalizeInferredConstructorArgument(expectedType, positionalArgTypes[i]));
         }
 
         foreach (var (fieldName, actualType) in namedArgTypes)
@@ -359,7 +361,21 @@ public sealed partial class TypeInferer
                 fieldType,
                 typeVarEnv,
                 kindEnvByName);
-            UnifyExpectedType(expectedFieldType, actualType);
+            UnifyExpectedType(
+                expectedFieldType,
+                NormalizeInferredConstructorArgument(expectedFieldType, actualType));
         }
+    }
+
+    private Type NormalizeInferredConstructorArgument(Type expected, Type actual)
+    {
+        if (_substitution.Apply(expected) is TyVar &&
+            _substitution.Apply(actual) is TyCon actualConstructor &&
+            TryPromoteClosedCaseToRoot(actualConstructor, out var promotedActual))
+        {
+            return promotedActual;
+        }
+
+        return actual;
     }
 }

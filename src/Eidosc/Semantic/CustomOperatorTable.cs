@@ -24,6 +24,17 @@ public sealed class CustomOperatorTable
 
     public bool IsRegistered(string symbol) => _operators.ContainsKey(symbol);
 
+    internal void RemoveByFunctionName(string functionName)
+    {
+        foreach (var symbol in _operators
+                     .Where(entry => string.Equals(entry.Value.FunctionName, functionName, StringComparison.Ordinal))
+                     .Select(static entry => entry.Key)
+                     .ToArray())
+        {
+            _operators.Remove(symbol);
+        }
+    }
+
     /// <summary>
     /// 合并另一个操作符表（导入时使用）
     /// </summary>

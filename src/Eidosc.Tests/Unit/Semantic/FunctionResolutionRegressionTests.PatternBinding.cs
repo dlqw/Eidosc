@@ -37,7 +37,7 @@ classify :: Int -> Int
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 
 classify :: Pair -> Int
@@ -95,7 +95,7 @@ classify :: Int -> Int
     {
         const string source = """
 Tok :: type {
-    TokA(Int) , TokB(Int)
+    TokA:: type(Int) , TokB:: type(Int)
 }
 
 classify :: Tok -> Int
@@ -127,7 +127,7 @@ classify :: Tok -> Int
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 
 classify :: Pair -> Int
@@ -159,7 +159,7 @@ classify :: Pair -> Int
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 
 classify :: Pair -> Int
@@ -248,7 +248,7 @@ classify :: Int -> Int
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 
 classify :: Pair -> Int
@@ -429,9 +429,7 @@ classify :: Int -> Int
     public void CompilationPipeline_CtorPatternNamedFieldDuplicate_ReportsDiagnostic()
     {
         const string source = """
-Person :: type {
-    Person{name: Int, age: Int}
-}
+Person :: type {name:: Int, age:: Int}
 
 project :: Person -> Int
 {
@@ -462,7 +460,7 @@ project :: Person -> Int
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 
 project :: Pair -> Int
@@ -492,9 +490,7 @@ project :: Pair -> Int
     public void CompilationPipeline_CtorPatternUnknownNamedField_ReportsDiagnostic()
     {
         const string source = """
-Person :: type {
-    Person{name: Int, age: Int}
-}
+Person :: type {name:: Int, age:: Int}
 
 project :: Person -> Int
 {
@@ -523,9 +519,7 @@ project :: Person -> Int
     public void CompilationPipeline_CtorPatternNamedCtorWithPositionalPattern_ReportsDiagnostic()
     {
         const string source = """
-Person :: type {
-    Person{name: Int, age: Int}
-}
+Person :: type {name:: Int, age:: Int}
 
 project :: Person -> Int
 {
@@ -555,7 +549,7 @@ project :: Person -> Int
     {
         const string source = """
 Pair :: type {
-    Pair(Int, Int)
+    Pair:: type(Int, Int)
 }
 
 project :: Pair -> Int

@@ -282,6 +282,10 @@ public sealed class DropInsertionPass : IMirOptimizationPass
                 CollectOperand(assign.Source, result);
                 break;
 
+            case MirCaseInject injection:
+                CollectOperand(injection.Operand, result);
+                break;
+
             case MirCall call:
                 CollectOperand(call.Function, result);
                 foreach (var arg in call.Arguments)

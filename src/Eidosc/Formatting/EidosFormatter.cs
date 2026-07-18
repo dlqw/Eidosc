@@ -1,4 +1,5 @@
 using System.Text;
+using Eidosc.Ast.Declarations;
 using Eidosc.Debug;
 using Eidosc.Parsing.Lexer;
 using Eidosc.Pipeline;
@@ -396,6 +397,14 @@ public static class EidosFormatter
                 return false;
             }
 
+            if (ClauseSchema.TryGet(current, out _) ||
+                (current is not "(" &&
+                 ClauseSchema.TryGet(previous, out var previousClause) &&
+                 previousClause.Arguments != ClauseArgumentGrammar.None))
+            {
+                return true;
+            }
+
             if (current is "{" && previous is "(" or "[" or "@" or "::" or ".")
             {
                 return false;
@@ -461,7 +470,7 @@ public static class EidosFormatter
             }
 
             return _previousText is not null &&
-                   (IsLowerIdentifier(_previousText) || _previousText == "]") &&
+                   (IsIdentifier(_previousText) || _previousText == "]") &&
                    IsTypeLikeHead(nextText);
         }
 
@@ -472,17 +481,17 @@ public static class EidosFormatter
             return lastLineBreak < 0 ? text : text[(lastLineBreak + _newLine.Length)..];
         }
 
-        private static bool IsLowerIdentifier(string text)
+        private static bool IsIdentifier(string text)
         {
             return text.Length > 0 &&
-                   (char.IsLower(text[0]) || text[0] == '_') &&
+                   (char.IsLetter(text[0]) || text[0] == '_') &&
                    text.All(ch => char.IsLetterOrDigit(ch) || ch == '_');
         }
 
         private static bool IsTypeLikeHead(string text)
         {
             return text.Length > 0 &&
-                   (char.IsUpper(text[0]) || text[0] == '_' || text == "(") &&
+                   (char.IsLetter(text[0]) || text[0] == '_' || text == "(") &&
                    (text == "(" || text.All(ch => char.IsLetterOrDigit(ch) || ch == '_'));
         }
 

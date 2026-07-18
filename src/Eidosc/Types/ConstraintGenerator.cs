@@ -312,7 +312,7 @@ public sealed class ConstraintGenerator
 
     private void GenerateMethodCallConstraints(MethodCallExpr method)
     {
-        if (method.Receiver != null)
+        if (!method.ResolvedAsStaticPath && method.Receiver != null)
         {
             GenerateConstraints(method.Receiver);
         }

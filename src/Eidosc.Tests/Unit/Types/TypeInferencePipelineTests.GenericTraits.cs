@@ -108,16 +108,16 @@ id[T: Marker] :: T -> T
 
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Trait
-import Std.Ordering
-import Std.Text
+import std.Traits
+import std.Ordering
+import std.Text
 
-eq_self[T: Trait.Eq] :: T -> Bool
+eq_self[T: Traits.Eq] :: T -> Bool
 {
     x => x == x
 }
 
-ord_self[T: Trait.Ord] :: T -> Bool
+ord_self[T: Traits.Ord] :: T -> Bool
 {
     x => x <= x
 }
@@ -162,7 +162,7 @@ main :: Unit -> Int
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Result
+import std.Result
 
 inc :: Int -> Int
 {
@@ -200,7 +200,7 @@ main :: Unit -> Bool
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Option
+import std.Option
 
 inc :: Int -> Int
 {
@@ -240,11 +240,12 @@ Marker :: trait {
 }
 
 Box :: type {
-    Box(Int)
+    Box:: type(Int)
 }
 
-@impl(Marker)
+
 mark :: Box -> Bool
+ impl Marker
 {
     x => true
 }
@@ -275,11 +276,12 @@ Marker :: trait {
 }
 
 Box :: type {
-    Box(Int)
+    Box:: type(Int)
 }
 
-@impl(Marker)
+
 mark :: Box -> Bool
+ impl Marker
 {
     x => true
 }
@@ -308,7 +310,7 @@ good :: Box -> Box
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Functor[F: kind2] :: trait {
@@ -341,15 +343,16 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Functor[Box])
+
 fmap :: Person -> Box[Int]
+ impl Functor[Box]
 {
     p => Box(1)
 }
@@ -380,19 +383,20 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Bag[A] :: type {
-    Bag(A)
+    Bag:: type(A)
 }
 
-@impl(Functor[Bag])
+
 fmap :: Person -> Bag[Int]
+ impl Functor[Bag]
 {
     p => Bag(1)
 }
@@ -428,15 +432,16 @@ Core :: module {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Core.Functor[Box])
+
 fmap :: Person -> Box[Int]
+ impl Core . Functor[Box]
 {
     p => Box(1)
 }
@@ -469,19 +474,20 @@ Core :: module {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Bag[A] :: type {
-    Bag(A)
+    Bag:: type(A)
 }
 
-@impl(Core.Functor[Bag])
+
 fmap :: Person -> Bag[Int]
+ impl Core . Functor[Bag]
 {
     p => Bag(1)
 }
@@ -527,15 +533,16 @@ Core :: module {
 import Core
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Core.Functor[Box])
+
 fmap :: Person -> Box[Int]
+ impl Core . Functor[Box]
 {
     p => Box(1)
 }
@@ -593,19 +600,20 @@ Core :: module {
 import Core
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Bag[A] :: type {
-    Bag(A)
+    Bag:: type(A)
 }
 
-@impl(Core.Functor[Bag])
+
 fmap :: Person -> Bag[Int]
+ impl Core . Functor[Bag]
 {
     p => Bag(1)
 }
@@ -650,7 +658,7 @@ bad :: Person -> Person
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 bad :: Option -> Int
@@ -715,7 +723,7 @@ Marker :: trait {
 }
 
 Box[T: Marker] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 bad :: Int -> Box[Int]
@@ -742,7 +750,7 @@ Marker :: trait {
 }
 
 Box[T: Marker] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 bad :: Box[Int] -> Int
@@ -769,17 +777,18 @@ Marker :: trait {
 }
 
 Tagged :: type {
-    Tagged(Int)
+    Tagged:: type(Int)
 }
 
-@impl(Marker)
+
 mark :: Tagged -> Bool
+ impl Marker
 {
     x => true
 }
 
 Box[T: Marker] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 good :: Tagged -> Box[Tagged]
@@ -799,7 +808,7 @@ good :: Tagged -> Box[Tagged]
     {
         const string source = """
 Box[T] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 unbox[T] :: Box[T] -> T
@@ -831,7 +840,7 @@ mixed :: String -> Int
     {
         const string source = """
 Box :: type {
-    Box(Int)
+    Box:: type(Int)
 }
 
 double[T] :: T -> T

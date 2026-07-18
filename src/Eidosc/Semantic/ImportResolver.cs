@@ -120,13 +120,6 @@ public sealed class ImportResolver
         SymbolId currentModule)
     {
         var alias = import.Alias ?? import.ModulePath[^1];
-        if (import.Alias != null && !IsUppercaseLeadingIdentifier(import.Alias))
-        {
-            return ImportResolutionResult.Error(
-                DiagnosticMessages.ImportModuleAliasMustStartWithUppercase(import.Alias),
-                import.Span);
-        }
-
         var importedSymbols = new List<ImportedSymbol>
         {
             new()
@@ -185,16 +178,6 @@ public sealed class ImportResolver
             var localName = selective.Alias ?? selective.Name;
             foreach (var binding in bindings)
             {
-                if (selective.Alias != null && !ImportAliasMatchesSymbolTier(localName, binding.Kind))
-                {
-                    return ImportResolutionResult.Error(
-                        DiagnosticMessages.SelectiveImportAliasTierMismatch(
-                            localName,
-                            selective.Name,
-                            FormatAliasTier(binding.Kind)),
-                        import.Span);
-                }
-
                 importedSymbols.Add(new ImportedSymbol
                 {
                     Name = localName,
@@ -206,30 +189,6 @@ public sealed class ImportResolver
         }
 
         return ImportResolutionResult.Success(importedSymbols);
-    }
-
-    private static bool ImportAliasMatchesSymbolTier(string alias, ResolutionKind kind)
-    {
-        return kind == ResolutionKind.Value
-            ? IsLowercaseLeadingIdentifier(alias)
-            : IsUppercaseLeadingIdentifier(alias);
-    }
-
-    private static string FormatAliasTier(ResolutionKind kind)
-    {
-        return kind == ResolutionKind.Value
-            ? "runtime value (lowercase-leading)"
-            : "compile-time value (uppercase-leading)";
-    }
-
-    private static bool IsLowercaseLeadingIdentifier(string value)
-    {
-        return value.Length > 0 && char.IsLower(value[0]);
-    }
-
-    private static bool IsUppercaseLeadingIdentifier(string value)
-    {
-        return value.Length > 0 && char.IsUpper(value[0]);
     }
 
     /// <summary>
@@ -309,7 +268,7 @@ public sealed class ImportResolver
             return false;
         }
 
-        return string.Equals(module.PackageAlias, "Std", StringComparison.Ordinal) ||
+        return string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) ||
                module.Path[0] is "Core";
     }
 

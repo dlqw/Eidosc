@@ -169,8 +169,7 @@ public sealed partial class TypeInferer
             ? InferExpression(infixCall.Right)
             : null;
 
-        if (!infixCall.FunctionSymbolId.IsValid &&
-            (infixCall.FunctionCandidateSymbolIds.Count > 0 || IsLowerIdentifierName(infixCall.FunctionName)))
+        if (!infixCall.FunctionSymbolId.IsValid)
         {
             var argumentTypes = new[] { leftType!, rightType! };
             var candidates = GetTypeDirectedCallableCandidates(
@@ -346,9 +345,7 @@ public sealed partial class TypeInferer
 
         var leftType = SafeInferExpression(binary.Left);
         if (binary.Operator == BinaryOp.Pipe &&
-            binary.Right is IdentifierExpr pipeTarget &&
-            (pipeTarget.ValueCandidateSymbolIds.Count > 0 ||
-             (!pipeTarget.SymbolId.IsValid && IsLowerIdentifierName(pipeTarget.Name))))
+            binary.Right is IdentifierExpr pipeTarget)
         {
             leftType = TryInsertBinaryDeref(binary, isLeft: true, leftType);
             return InferPipeToCandidateIdentifier(leftType, pipeTarget, binary.Span);
@@ -674,10 +671,22 @@ public sealed partial class TypeInferer
         return true;
     }
 
-    private static bool TryGetUnaryContainerShape(Type type, out TyCon shape)
+    private bool TryGetUnaryContainerShape(Type type, out TyCon shape)
     {
         if (type is TyCon { Args.Count: > 0 } tyCon)
         {
+            if (TryPromoteClosedCaseToRoot(tyCon, out var rootType))
+            {
+                if (rootType.Args.Count == 0)
+                {
+                    shape = new TyCon();
+                    return false;
+                }
+
+                shape = rootType;
+                return true;
+            }
+
             shape = tyCon;
             return true;
         }
@@ -895,9 +904,12 @@ public sealed partial class TypeInferer
         return false;
     }
 
-    private Type InferCtor(CtorExpr ctor)
+    private Type InferCtor(CtorExpr ctor, Type? expectedResultType = null)
     {
-        var bindingFound = TryGetCtorTypeBinding(ctor.ConstructorPath?.SymbolId ?? SymbolId.None, ctor.ConstructorName, out var binding);
+        var constructorSymbolId = ctor.ConstructorPath?.SymbolId is { IsValid: true } pathSymbolId
+            ? pathSymbolId
+            : ctor.SymbolId;
+        var bindingFound = TryGetCtorTypeBinding(constructorSymbolId, ctor.ConstructorName, out var binding);
         Dictionary<string, Type>? typeVarEnv = null;
         var recordUpdateBaseIsValid = true;
         var hasRecovery = false;
@@ -907,6 +919,16 @@ public sealed partial class TypeInferer
             typeVarEnv = CreateCtorTypeVarEnv(binding);
             ApplyExplicitCtorTypeArgs(ctor, binding, typeVarEnv);
             recordUpdateBaseIsValid = ApplyRecordUpdateBase(ctor, binding, typeVarEnv);
+            if (expectedResultType != null)
+            {
+                var contextualResultType = CreateAdtTypeFromBinding(binding, typeVarEnv, ctor.Span);
+                var unifiedResultType = TryUnify(
+                    expectedResultType,
+                    contextualResultType,
+                    ctor.Span,
+                    DiagnosticMessages.PatternBranchResultTypeMismatch);
+                hasRecovery |= ContainsErrorRecoveryType(unifiedResultType);
+            }
         }
         else if (ctor.UpdateBase != null)
         {
@@ -948,7 +970,7 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
-        if (TryInferAdtTypeFromConstructor(ctor.ConstructorPath?.SymbolId ?? SymbolId.None, ctor.ConstructorName) is { } ctorType)
+        if (TryInferAdtTypeFromConstructor(constructorSymbolId, ctor.ConstructorName) is { } ctorType)
         {
             return ctorType;
         }
@@ -1030,7 +1052,7 @@ public sealed partial class TypeInferer
         }
 
         var binding = bindings[0];
-        var typeVarEnv = CreateCtorTypeVarEnv(binding, baseCon.Args, baseCon.ValueArgs);
+        var typeVarEnv = CreateCtorTypeVarEnv(binding, baseCon.Args, baseCon.ValueArgs, baseCon.EffectArgs);
         var ctor = CreateDesugaredRecordUpdateCtor(update, binding);
         var recordUpdateBaseIsValid = ApplyRecordUpdateBase(ctor, binding, typeVarEnv);
 
@@ -1083,7 +1105,8 @@ public sealed partial class TypeInferer
     {
         return _ctorTypeBindings.Values
             .Where(candidate =>
-                candidate.AdtId == adtId &&
+                (candidate.ResultAdtId == adtId ||
+                 candidate.AdtId == adtId && candidate.ResultAdtId != candidate.AdtId) &&
                 candidate.PositionalArgTypes.Count == 0 &&
                 candidate.NamedArgTypes.Count > 0)
             .ToList();
@@ -1133,7 +1156,8 @@ public sealed partial class TypeInferer
     private Dictionary<string, Type> CreateCtorTypeVarEnv(
         CtorTypeBinding binding,
         IReadOnlyList<Type> typeArgs,
-        IReadOnlyList<GenericValueArgument>? valueArgs = null)
+        IReadOnlyList<GenericValueArgument>? valueArgs = null,
+        IReadOnlyList<GenericEffectArgument>? effectArgs = null)
     {
         var env = CreateCtorTypeVarEnv(binding);
         var count = Math.Min(binding.AdtTypeParamNames.Count, typeArgs.Count);
@@ -1152,6 +1176,20 @@ public sealed partial class TypeInferer
                     valueArgumentsByParameterIndex.TryGetValue(parameterIndex, out var valueArgument))
                 {
                     scopedValueArguments[parameter.SymbolId] = valueArgument;
+                }
+            }
+        }
+
+        if (effectArgs != null)
+        {
+            var effectArgumentsByParameterIndex = effectArgs.ToDictionary(static argument => argument.ParameterIndex);
+            for (var parameterIndex = 0; parameterIndex < binding.AdtGenericParameters.Count; parameterIndex++)
+            {
+                var parameter = binding.AdtGenericParameters[parameterIndex];
+                if (parameter.ParameterKind == GenericParameterKind.EffectRow &&
+                    effectArgumentsByParameterIndex.TryGetValue(parameterIndex, out var effectArgument))
+                {
+                    env[parameter.Name] = effectArgument.Argument;
                 }
             }
         }
@@ -1392,6 +1430,7 @@ public sealed partial class TypeInferer
 
         var typeArgs = new List<Type>();
         var valueArgs = new List<GenericValueArgument>();
+        var effectArgs = new List<GenericEffectArgument>();
         for (var i = 0; i < adtSymbol.TypeParams.Count; i++)
         {
             if (_symbolTable.GetSymbol<TypeParamSymbol>(adtSymbol.TypeParams[i]) is not { } parameter)
@@ -1411,6 +1450,9 @@ public sealed partial class TypeInferer
                             new TyCon { Id = parameter.TypeId },
                             i)));
                     break;
+                case GenericParameterKind.EffectRow:
+                    effectArgs.Add(new GenericEffectArgument(i, _substitution.FreshTypeVariable()));
+                    break;
             }
         }
 
@@ -1419,7 +1461,8 @@ public sealed partial class TypeInferer
             Name = adtSymbol.Name,
             Symbol = adtSymbol.Id,
             Args = typeArgs,
-            ValueArgs = valueArgs
+            ValueArgs = valueArgs,
+            EffectArgs = effectArgs
         };
     }
 
@@ -1456,7 +1499,10 @@ public sealed partial class TypeInferer
         {
             if (!typeVarEnv.ContainsKey(name))
             {
-                typeVarEnv[name] = _substitution.FreshTypeVariable();
+                typeVarEnv[name] = _substitution.FreshTypeVariable() with
+                {
+                    IsGenericInstantiation = !rigidExistentialCtorParams
+                };
             }
         }
 
@@ -1468,6 +1514,7 @@ public sealed partial class TypeInferer
             if (!typeVarEnv.ContainsKey(name))
             {
                 var typeVariable = _substitution.FreshTypeVariable();
+                typeVariable.IsGenericInstantiation = !rigidExistentialCtorParams;
                 if (rigidExistentialCtorParams && !returnTypeLocalNames.Contains(name))
                 {
                     typeVariable.IsRigidExistential = true;
@@ -1479,6 +1526,8 @@ public sealed partial class TypeInferer
 
         PopulateValueGenericArgumentEnv(typeVarEnv, binding.AdtGenericParameters);
         PopulateValueGenericArgumentEnv(typeVarEnv, binding.CtorGenericParameters);
+        PopulateEffectGenericArgumentEnv(typeVarEnv, binding.AdtGenericParameters);
+        PopulateEffectGenericArgumentEnv(typeVarEnv, binding.CtorGenericParameters);
 
         return typeVarEnv;
     }
@@ -1505,6 +1554,22 @@ public sealed partial class TypeInferer
 
             valueArguments[parameter.SymbolId] = _substitution.FreshValueVariable(
                 CreateValueGenericArgumentTemplate(parameter.Name, valueType, parameterIndex));
+        }
+    }
+
+    private void PopulateEffectGenericArgumentEnv(
+        Dictionary<string, Type> typeVarEnv,
+        IReadOnlyList<Ast.Types.TypeParam> genericParameters)
+    {
+        foreach (var parameter in genericParameters)
+        {
+            if (parameter.ParameterKind != GenericParameterKind.EffectRow ||
+                string.IsNullOrWhiteSpace(parameter.Name))
+            {
+                continue;
+            }
+
+            typeVarEnv.TryAdd(parameter.Name, _substitution.FreshTypeVariable());
         }
     }
 
@@ -1624,6 +1689,19 @@ public sealed partial class TypeInferer
                 case (GenericParameterKind.Value, ValueGenericArgumentNode valueArgument):
                     ApplyExplicitCtorValueArgument(valueArgument, parameter, i, typeVarEnv, ctor.Span);
                     break;
+                case (GenericParameterKind.EffectRow, EffectGenericArgumentNode effectArgument):
+                {
+                    var explicitEffect = ConvertTypeInCurrentTypeParamContext(effectArgument.EffectRow);
+                    if (typeVarEnv.TryGetValue(parameter.Name, out var inferredEffect))
+                    {
+                        _substitution.Unify(inferredEffect, explicitEffect);
+                    }
+                    else
+                    {
+                        typeVarEnv[parameter.Name] = explicitEffect;
+                    }
+                    break;
+                }
                 default:
                     AddError(
                         explicitArguments[i].Span,
@@ -1707,6 +1785,13 @@ public sealed partial class TypeInferer
             if (value is ComptimeFloatValue)
             {
                 AddError(valueArgument.Span, "Floating-point values cannot be used as specialization keys.");
+                explicitArgument = null!;
+                return false;
+            }
+
+            if (!ComptimePhaseValueValidator.TryValidate(value, out reason))
+            {
+                AddError(valueArgument.Span, $"Value generic argument {parameterIndex + 1} cannot cross the comptime phase boundary: {reason}");
                 explicitArgument = null!;
                 return false;
             }
@@ -1869,116 +1954,6 @@ public sealed partial class TypeInferer
         }
 
         return finalized;
-    }
-
-    private Kind.KVar FreshKindVariable()
-    {
-        return new Kind.KVar { Id = _nextKindVarId++ };
-    }
-
-    private static Kind ResolveKind(Kind kind)
-    {
-        while (kind is Kind.KVar { Instance: not null } kindVar)
-        {
-            kind = kindVar.Instance;
-        }
-
-        return kind;
-    }
-
-    private Kind GetTypeParamExpectedKind(TypePath path)
-    {
-        if (_typeParamKindStack.Count > 0 &&
-            _typeParamKindStack.Peek().TryGetValue(path.TypeName, out var kind))
-        {
-            return kind;
-        }
-
-        if (path.SymbolId.IsValid &&
-            _symbolTable.GetSymbol(path.SymbolId) is TypeParamSymbol typeParamSymbol &&
-            !string.IsNullOrWhiteSpace(typeParamSymbol.KindAnnotation) &&
-            KindParser.TryParse(typeParamSymbol.KindAnnotation, out var parsedKind, out _))
-        {
-            return parsedKind;
-        }
-
-        return Kind.KStar.Instance;
-    }
-
-    private Kind GetTypeParamKindByVarIndex(int varIndex)
-    {
-        if (_typeParamVarKindStack.Count == 0)
-        {
-            return Kind.KStar.Instance;
-        }
-
-        return _typeParamVarKindStack.Peek().TryGetValue(varIndex, out var kind)
-            ? kind
-            : Kind.KStar.Instance;
-    }
-
-    private Kind InferTypeKind(Type type, SourceSpan span)
-    {
-        type = _substitution.Apply(type);
-        switch (type)
-        {
-            case TyVar typeVar:
-                return GetTypeParamKindByVarIndex(typeVar.Index);
-            case TyFun:
-            case TyTuple:
-                return Kind.KStar.Instance;
-            case TyCon typeCon:
-                return InferTyConKind(typeCon, span);
-            default:
-                return Kind.KStar.Instance;
-        }
-    }
-
-    private Kind InferTyConKind(TyCon typeCon, SourceSpan span)
-    {
-        Kind constructorKind;
-        if (typeCon.ConstructorVarIndex.HasValue)
-        {
-            constructorKind = GetTypeParamKindByVarIndex(typeCon.ConstructorVarIndex.Value);
-        }
-        else
-        {
-            constructorKind = GetTypeConstructorKind(typeCon.Symbol);
-        }
-
-        if (typeCon.Args.Count == 0)
-        {
-            return constructorKind;
-        }
-
-        var argumentKinds = typeCon.Args
-            .Select(arg => InferTypeKind(arg, span))
-            .ToList();
-
-        if (!KindParser.TryApply(constructorKind, argumentKinds, out var resultKind, out var kindError))
-        {
-            AddError(span, kindError ?? DiagnosticMessages.InvalidKindApplicationForType(typeCon));
-            return Kind.KStar.Instance;
-        }
-
-        return resultKind;
-    }
-
-    private Kind GetTypeConstructorKind(SymbolId symbolId)
-    {
-        var resolver = CreateTypeConstructorKindResolver();
-        return resolver.GetConstructorKind(symbolId);
-    }
-
-    private int GetTypeConstructorArity(SymbolId symbolId)
-    {
-        var resolver = CreateTypeConstructorKindResolver();
-        return resolver.GetExpectedParamCount(symbolId);
-    }
-
-    private TypeConstructorKindResolver CreateTypeConstructorKindResolver()
-    {
-        return new TypeConstructorKindResolver(_symbolTable, _typeConstructorKindsBySymbol);
     }
 
 }

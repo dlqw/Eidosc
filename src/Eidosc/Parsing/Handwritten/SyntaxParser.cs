@@ -9,15 +9,28 @@ public static class SyntaxParser
         Parse(
             IReadOnlyList<Token> tokens,
             string sourcePath,
-            string languageVersion = EidosLanguageVersions.Current)
+            string languageVersion = EidosLanguageVersions.Current,
+            IReadOnlyList<string>? namespaceRoots = null,
+            string? sourceText = null)
     {
-        var ctx = new ParserContext(tokens, sourcePath, languageVersion);
+        var ctx = new ParserContext(tokens, sourcePath, languageVersion, sourceText);
+        if (namespaceRoots != null)
+        {
+            foreach (var namespaceRoot in namespaceRoots)
+            {
+                ctx.RegisterNamespaceRoot(namespaceRoot);
+            }
+        }
+
         var declParser = new DeclParser(ctx);
         var nodes = declParser.ParseProgram();
 
         var module = new ModuleDecl();
         module.SetSpan(nodes.Count > 0 ? nodes[0].Span : Utils.SourceSpan.Empty);
-        module.SetPath([System.IO.Path.GetFileNameWithoutExtension(sourcePath)]);
+        module.SetPath([
+            ManifestNamingRules.NormalizeModulePathSegment(
+                System.IO.Path.GetFileNameWithoutExtension(sourcePath))
+        ]);
 
         var declarations = new List<Declaration>();
         foreach (var node in nodes)

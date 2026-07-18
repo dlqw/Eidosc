@@ -30,10 +30,10 @@ public partial class LlvmPipelineIntegrationTests
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Result
-import Std.Text
+import std.Network
+import std.Option
+import std.Result
+import std.Text
 
 main :: Unit -> Int
 {
@@ -192,9 +192,9 @@ main :: Unit -> Int
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Option
-import Std.Text
+import std.Network
+import std.Option
+import std.Text
 
 main :: Unit -> Int
 {
@@ -245,8 +245,8 @@ main :: Unit -> Int
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Result
+import std.Network
+import std.Result
 
 main :: Unit -> Int
 {
@@ -312,9 +312,9 @@ main :: Unit -> Int
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Result
-import Std.Text
+import std.Network
+import std.Result
+import std.Text
 
 main :: Unit -> Int
 {
@@ -380,7 +380,7 @@ main :: Unit -> Int
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
+import std.Network
 
 main :: Unit -> Int
 {
@@ -429,9 +429,9 @@ main :: Unit -> Int
         var baseUrl = EscapeEidosStringLiteral(server.BaseUrl);
 
         var source = $$"""
-import Std.Network
-import Std.Result
-import Std.Text
+import std.Network
+import std.Result
+import std.Text
 
 main :: Unit -> Int
 {

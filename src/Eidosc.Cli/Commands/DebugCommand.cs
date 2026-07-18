@@ -32,6 +32,7 @@ public static class DebugCommand
             MirOptimizationOptions.CreateDisableOption(),
             new Option<string[]>("--werror", CliMessages.WerrorOptionDescription),
             new Option<bool>("--werror-all", CliMessages.WerrorAllOptionDescription),
+            DenyOptionParser.Create(),
             importRootOption
         };
 
@@ -57,6 +58,7 @@ public static class DebugCommand
         public bool NoColor { get; set; }
         public string[] Werror { get; set; } = [];
         public bool WerrorAll { get; set; }
+        public string[] Deny { get; set; } = [];
         public string[] ImportRoot { get; set; } = [];
     }
 
@@ -142,6 +144,7 @@ public static class DebugCommand
             EmitStyleSuggestions = true,
             AllowVirtualInputFile = sourceInput.IsInMemorySource,
             TreatWarningsAsErrors = options.WerrorAll,
+            DenyStyle = DenyOptionParser.IncludesStyle(options.Deny),
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,

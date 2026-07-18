@@ -28,6 +28,12 @@ public record VarPattern : Pattern
     public bool IsMutableBinding { get; private set; }
 
     /// <summary>
+    /// True for a bare identifier parsed without an explicit binding marker.
+    /// Name resolution may replace it with a zero-field constructor pattern.
+    /// </summary>
+    public bool MayResolveToConstructor { get; private set; }
+
+    /// <summary>
     /// 设置位置
     /// </summary>
     internal void SetSpan(SourceSpan span) => Span = span;
@@ -43,6 +49,8 @@ public record VarPattern : Pattern
     internal void SetBindingMode(PatternBindingMode mode) => BindingMode = mode;
 
     internal void SetMutableBinding(bool isMutable) => IsMutableBinding = isMutable;
+
+    internal void SetMayResolveToConstructor(bool value) => MayResolveToConstructor = value;
 
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {
@@ -116,6 +124,10 @@ public record VarPattern : Pattern
         if (IsMutableBinding)
         {
             element.SetAttribute("mutable", "true");
+        }
+        if (MayResolveToConstructor)
+        {
+            element.SetAttribute("unresolvedName", "true");
         }
         return element;
     }

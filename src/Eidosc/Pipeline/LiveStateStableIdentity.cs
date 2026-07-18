@@ -316,7 +316,7 @@ public static class LiveStateStableIdentityBuilder
             moduleStableKey,
             symbol.Kind.ToString(),
             symbol.Name,
-            GetOverloadDiscriminator(symbol),
+            GetOverloadDiscriminator(symbolTable, symbol),
             GetSourceStableSpan(symbol));
         var symbolKey = new LiveStateSymbolStableKey(declKey, GetSymbolRole(symbolTable, symbol));
         return new LiveStateSymbolIdentity(
@@ -329,13 +329,40 @@ public static class LiveStateStableIdentityBuilder
 
     private static ModuleSymbol? ResolveModule(SymbolTable symbolTable, Symbol symbol)
     {
+        return ResolveModule(symbolTable, symbol, []);
+    }
+
+    private static ModuleSymbol? ResolveModule(
+        SymbolTable symbolTable,
+        Symbol symbol,
+        HashSet<SymbolId> visited)
+    {
+        if (!visited.Add(symbol.Id))
+        {
+            return null;
+        }
+
         if (symbol is ModuleSymbol moduleSymbol)
         {
             return moduleSymbol;
         }
 
-        return symbolTable.Modules.TryGetOwningModule(symbol.Id, out var owner)
-            ? owner
+        if (symbolTable.Modules.TryGetOwningModule(symbol.Id, out var indexedOwner))
+        {
+            return indexedOwner;
+        }
+
+        var listedOwner = symbolTable.Modules.Modules
+            .OrderBy(static entry => entry.Value.Identity.ToIdentityKey(), StringComparer.Ordinal)
+            .FirstOrDefault(entry => entry.Value.Members.Contains(symbol.Id));
+        if (listedOwner.Value != null)
+        {
+            return listedOwner.Value;
+        }
+
+        var semanticOwnerId = GetSemanticOwnerId(symbol);
+        return semanticOwnerId.IsValid && symbolTable.GetSymbol(semanticOwnerId) is { } semanticOwner
+            ? ResolveModule(symbolTable, semanticOwner, visited)
             : null;
     }
 
@@ -408,17 +435,57 @@ public static class LiveStateStableIdentityBuilder
         return $"{filePath}:{symbol.Span.Position}:{symbol.Span.Length}";
     }
 
-    private static string GetOverloadDiscriminator(Symbol symbol)
+    private static string GetOverloadDiscriminator(SymbolTable symbolTable, Symbol symbol)
     {
-        if (symbol is not FuncSymbol function)
+        var parts = new List<string>();
+        if (symbol is FuncSymbol function)
         {
-            return "";
+            var arity = function.Parameters.Count > 0
+                ? function.Parameters.Count
+                : function.ParamTypes.Count;
+            parts.Add($"arity:{arity}:typeParams:{function.TypeParams.Count}:hasBody:{function.HasBody}");
         }
 
-        var arity = function.Parameters.Count > 0
-            ? function.Parameters.Count
-            : function.ParamTypes.Count;
-        return $"arity:{arity}:typeParams:{function.TypeParams.Count}:hasBody:{function.HasBody}";
+        var ownerId = GetSemanticOwnerId(symbol);
+        if (ownerId.IsValid)
+        {
+            parts.Add($"owner:{BuildSemanticOwnerPath(symbolTable, ownerId, [])}");
+        }
+
+        return string.Join(";", parts);
+    }
+
+    private static SymbolId GetSemanticOwnerId(Symbol symbol) => symbol switch
+    {
+        AdtSymbol { ParentAdt.IsValid: true } adt => adt.ParentAdt,
+        CtorSymbol { OwnerAdt.IsValid: true } constructor => constructor.OwnerAdt,
+        FieldSymbol { OwnerType.IsValid: true } field => field.OwnerType,
+        FuncSymbol { OwnerTrait: { IsValid: true } ownerTrait } => ownerTrait,
+        AssociatedItemSymbol { OwnerImpl.IsValid: true } item => item.OwnerImpl,
+        AssociatedItemSymbol { OwnerTrait.IsValid: true } item => item.OwnerTrait,
+        _ => SymbolId.None
+    };
+
+    private static string BuildSemanticOwnerPath(
+        SymbolTable symbolTable,
+        SymbolId ownerId,
+        HashSet<SymbolId> visited)
+    {
+        if (!visited.Add(ownerId))
+        {
+            return "<owner-cycle>";
+        }
+
+        if (symbolTable.GetSymbol(ownerId) is not { } owner)
+        {
+            return "<missing-owner>";
+        }
+
+        var parentId = GetSemanticOwnerId(owner);
+        var current = $"{owner.Kind}:{owner.Name}";
+        return parentId.IsValid
+            ? $"{BuildSemanticOwnerPath(symbolTable, parentId, visited)}/{current}"
+            : current;
     }
 
     private static string GetSymbolRole(SymbolTable symbolTable, Symbol symbol)
@@ -439,6 +506,8 @@ public static class LiveStateStableIdentityBuilder
             VarSymbol { IsParameter: true } => "parameter",
             FieldSymbol => "field",
             FuncSymbol { OwnerTrait: { IsValid: true } } => "trait-method",
+            AssociatedTypeSymbol => "associated-type",
+            AssociatedConstSymbol => "associated-const",
             ImplSymbol => "impl",
             _ => "symbol"
         };

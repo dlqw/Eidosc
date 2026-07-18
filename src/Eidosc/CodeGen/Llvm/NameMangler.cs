@@ -257,7 +257,7 @@ public sealed class NameMangler
             Types.TyRef => "Ref",
             Types.TyMutRef => "MRef",
             Types.TyShared => "Shared",
-            Types.EffectRow abilitySet => $"{{{string.Join(",", abilitySet.Effects)}}}",
+            Types.EffectRow abilitySet => abilitySet.ToString(),
             Types.EffectTag abilityType => abilityType.ToString() ?? "unknown",
             _ => throw new System.Diagnostics.UnreachableException()
         };
@@ -265,13 +265,14 @@ public sealed class NameMangler
 
     private static string FormatTyCon(Types.TyCon con)
     {
-        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0 && con.EffectArgs.Count == 0)
         {
             return con.Name;
         }
 
         var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
-        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var effectArguments = con.EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count + con.EffectArgs.Count;
         var typeIndex = 0;
         var arguments = new List<string>(argumentCount);
         for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
@@ -281,6 +282,10 @@ public sealed class NameMangler
                 arguments.Add(valueArgument.ValueVariableIndex >= 0
                     ? $"vv:{valueArgument.ValueVariableIndex}"
                     : $"v:{valueArgument.CanonicalHash}");
+            }
+            else if (effectArguments.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                arguments.Add($"e:{TypeToString(effectArgument.Argument)}");
             }
             else if (typeIndex < con.Args.Count)
             {

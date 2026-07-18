@@ -7,6 +7,8 @@ using Eidosc.Ast.Types;
 using Eidosc.Mir;
 using Eidosc.Semantic;
 using Eidosc.Symbols;
+using Eidosc.Types;
+using Eidosc.Utils;
 
 public sealed record AstNamerStatePayload(
     string SchemaVersion,
@@ -18,7 +20,7 @@ public sealed record AstNamerStatePayload(
     IReadOnlyList<AstNamerStateEntryPayload> Entries,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "ast-namer-state-payload-v5";
+    public const string CurrentSchemaVersion = "ast-namer-state-payload-v8";
 
     public static AstNamerStatePayload Create(
         ModuleDecl? ast,
@@ -84,15 +86,20 @@ public sealed record AstNamerStateEntryPayload(
     bool? IsConstructor,
     IReadOnlyList<int>? IdentifierValueCandidateSymbolIds,
     IReadOnlyList<int>? PathValueCandidateSymbolIds,
+    bool? PathIsTypePath,
+    bool? PathIsConstructorPath,
     int? FunctionSymbolId,
     IReadOnlyList<int>? FunctionCandidateSymbolIds,
     int? EvidenceSymbolId,
     int? TargetSymbolId,
     int? ProofIntroSymbolId,
     IReadOnlyList<int>? MethodCandidateSymbolIds,
+    bool? MethodResolvedAsStaticPath,
     int? ResolvedModule,
     IReadOnlyList<AstImportedSymbolPayload>? ResolvedSymbols,
-    IReadOnlyList<int>? EffectSymbolIds)
+    IReadOnlyList<int>? EffectSymbolIds,
+    IReadOnlyList<GenericParameterKind>? GenericArgumentKinds,
+    DeclarationClauseStatePayload? DeclarationClauses)
 {
     public static AstNamerStateEntryPayload Create(
         EidosAstNode node,
@@ -107,6 +114,8 @@ public sealed record AstNamerStateEntryPayload(
             node is PathExpr pathCandidates
                 ? pathCandidates.ValueCandidateSymbolIds.Select(static id => id.Value).ToArray()
                 : null,
+            node is PathExpr typePath ? typePath.IsTypePath : null,
+            node is PathExpr constructorPath ? constructorPath.IsConstructorPath : null,
             node is InfixCallExpr infix ? infix.FunctionSymbolId.Value : null,
             node is InfixCallExpr infixCandidates
                 ? infixCandidates.FunctionCandidateSymbolIds.Select(static id => id.Value).ToArray()
@@ -117,12 +126,18 @@ public sealed record AstNamerStateEntryPayload(
             node is MethodCallExpr method
                 ? method.MethodCandidateSymbolIds.Select(static id => id.Value).ToArray()
                 : null,
+            node is MethodCallExpr staticMethod ? staticMethod.ResolvedAsStaticPath : null,
             node is ImportDecl import ? import.ResolvedModule.Value : null,
             node is ImportDecl imported
                 ? imported.ResolvedSymbols.Select(AstImportedSymbolPayload.Create).ToArray()
                 : null,
             node is EffectfulType effectful
                 ? effectful.EffectSymbolIds.Select(static id => id.Value).ToArray()
+                : null,
+            CaptureGenericArgumentKinds(node),
+            node is Declaration declaration &&
+            (declaration.BoundClauses.Count > 0 || declaration.MetaInvocations.Count > 0)
+                ? DeclarationClauseStatePayload.Create(declaration)
                 : null);
 
     internal AstNamerStateEntryPayload RemapSymbolIds(IReadOnlyDictionary<int, int> symbolIdMap) =>
@@ -149,15 +164,35 @@ public sealed record AstNamerStateEntryPayload(
         IsConstructor == true ||
         IdentifierValueCandidateSymbolIds is { Count: > 0 } ||
         PathValueCandidateSymbolIds is { Count: > 0 } ||
+        PathIsTypePath == true ||
+        PathIsConstructorPath == true ||
         FunctionSymbolId is > 0 ||
         FunctionCandidateSymbolIds is { Count: > 0 } ||
         EvidenceSymbolId is > 0 ||
         TargetSymbolId is > 0 ||
         ProofIntroSymbolId is > 0 ||
         MethodCandidateSymbolIds is { Count: > 0 } ||
+        MethodResolvedAsStaticPath == true ||
         ResolvedModule is > 0 ||
         ResolvedSymbols is { Count: > 0 } ||
-        EffectSymbolIds is { Count: > 0 };
+        EffectSymbolIds is { Count: > 0 } ||
+        GenericArgumentKinds is { Count: > 0 } ||
+        DeclarationClauses != null;
+
+    private static IReadOnlyList<GenericParameterKind>? CaptureGenericArgumentKinds(EidosAstNode node)
+    {
+        IReadOnlyList<GenericArgumentNode> arguments = node switch
+        {
+            IndexExpr application => application.GenericArguments,
+            TypePath path => path.GenericArguments,
+            AssociatedTypeProjection projection => projection.GenericArguments,
+            TraitRef trait => trait.GenericArguments,
+            _ => []
+        };
+        return arguments.Count > 0 && arguments.All(static argument => argument.ResolvedKind.HasValue)
+            ? arguments.Select(static argument => argument.ResolvedKind!.Value).ToArray()
+            : null;
+    }
 
     private static int Remap(int value, IReadOnlyDictionary<int, int> symbolIdMap) =>
         value < 0 ? value : symbolIdMap.GetValueOrDefault(value, value);
@@ -169,6 +204,152 @@ public sealed record AstNamerStateEntryPayload(
         IReadOnlyList<int>? values,
         IReadOnlyDictionary<int, int> symbolIdMap) =>
         values?.Select(value => Remap(value, symbolIdMap)).ToArray();
+}
+
+public sealed record DeclarationClauseStatePayload(
+    string SchemaVersion,
+    IReadOnlyList<ClauseIrStatePayload> Clauses,
+    IReadOnlyList<MetaInvocationIrStatePayload> MetaInvocations)
+{
+    public const string CurrentSchemaVersion = "declaration-clause-state-v1";
+
+    public static DeclarationClauseStatePayload Create(Declaration declaration) => new(
+        CurrentSchemaVersion,
+        declaration.BoundClauses.Select(ClauseIrStatePayload.Create).ToArray(),
+        declaration.MetaInvocations.Select(MetaInvocationIrStatePayload.Create).ToArray());
+
+    internal bool TryRestore(
+        Declaration declaration,
+        out IReadOnlyList<ClauseIR> clauses,
+        out IReadOnlyList<MetaInvocationIR> metaInvocations)
+    {
+        clauses = [];
+        metaInvocations = [];
+        if (!string.Equals(SchemaVersion, CurrentSchemaVersion, StringComparison.Ordinal) ||
+            Clauses.Any(static clause => !string.Equals(clause.SchemaVersion, ClauseSchema.Version, StringComparison.Ordinal)) ||
+            MetaInvocations.Any(static invocation => !string.Equals(invocation.SchemaVersion, ClauseSchema.Version, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        var restoredClauses = Clauses.Select(static clause => clause.Restore()).ToArray();
+        var restoredInvocations = new List<MetaInvocationIR>(MetaInvocations.Count);
+        foreach (var invocation in MetaInvocations)
+        {
+            if (invocation.ClauseIndex < 0 || invocation.ClauseIndex >= declaration.Clauses.Count)
+            {
+                return false;
+            }
+
+            var sourceClause = declaration.Clauses[invocation.ClauseIndex];
+            var explicitArguments = invocation.Owner == MetaInvocationOwner.UserExpand
+                ? sourceClause.MetaInvocation?.ExplicitArguments.ToArray()
+                : [];
+            if (explicitArguments == null ||
+                (invocation.Owner == MetaInvocationOwner.UserExpand && sourceClause.MetaInvocation == null))
+            {
+                return false;
+            }
+
+            restoredInvocations.Add(invocation.Restore(explicitArguments));
+        }
+
+        clauses = restoredClauses;
+        metaInvocations = restoredInvocations;
+        return true;
+    }
+}
+
+public sealed record ClauseIrStatePayload(
+    string SchemaVersion,
+    string DeclarationIdentity,
+    int ClauseIndex,
+    int ArgumentSubIndex,
+    DeclarationClauseKind Kind,
+    string Keyword,
+    ClauseStage Stage,
+    ClauseSourceOrderBehavior SourceOrderBehavior,
+    int SourceOrder,
+    IReadOnlyList<ClauseArgumentIrStatePayload> Arguments,
+    SourceSpanPayload Span,
+    bool HasCompilerOwnedSourceGrant)
+{
+    public static ClauseIrStatePayload Create(ClauseIR clause) => new(
+        clause.SchemaVersion,
+        clause.OccurrenceId.DeclarationIdentity,
+        clause.OccurrenceId.ClauseIndex,
+        clause.OccurrenceId.ArgumentSubIndex,
+        clause.Kind,
+        clause.Keyword,
+        clause.Stage,
+        clause.SourceOrderBehavior,
+        clause.SourceOrder,
+        clause.Arguments.Select(ClauseArgumentIrStatePayload.Create).ToArray(),
+        SourceSpanPayload.Create(clause.Span),
+        clause.HasCompilerOwnedSourceGrant);
+
+    internal ClauseIR Restore() => new(
+        SchemaVersion,
+        new ClauseOccurrenceId(DeclarationIdentity, ClauseIndex, ArgumentSubIndex),
+        Kind,
+        Keyword,
+        Stage,
+        SourceOrderBehavior,
+        SourceOrder,
+        Arguments.Select(static argument => argument.Restore()).ToArray(),
+        Span.ToSourceSpan(),
+        HasCompilerOwnedSourceGrant);
+}
+
+public sealed record ClauseArgumentIrStatePayload(
+    int Index,
+    ClauseCanonicalArgumentType Type,
+    string CanonicalText,
+    IReadOnlyList<string> Path)
+{
+    public static ClauseArgumentIrStatePayload Create(ClauseArgumentIR argument) => new(
+        argument.Index,
+        argument.Type,
+        argument.CanonicalText,
+        argument.Path.ToArray());
+
+    internal ClauseArgumentIR Restore() => new(Index, Type, CanonicalText, Path.ToArray());
+}
+
+public sealed record MetaInvocationIrStatePayload(
+    string SchemaVersion,
+    string DeclarationIdentity,
+    int ClauseIndex,
+    int ArgumentSubIndex,
+    MetaInvocationOwner Owner,
+    ClauseStage Stage,
+    int SourceOrder,
+    IReadOnlyList<string> GeneratorPath,
+    SourceSpanPayload Span,
+    bool HasCompilerGrant)
+{
+    public static MetaInvocationIrStatePayload Create(MetaInvocationIR invocation) => new(
+        invocation.SchemaVersion,
+        invocation.OccurrenceId.DeclarationIdentity,
+        invocation.OccurrenceId.ClauseIndex,
+        invocation.OccurrenceId.ArgumentSubIndex,
+        invocation.Owner,
+        invocation.Stage,
+        invocation.SourceOrder,
+        invocation.GeneratorPath.ToArray(),
+        SourceSpanPayload.Create(invocation.Span),
+        invocation.CompilerGrant != null);
+
+    internal MetaInvocationIR Restore(IReadOnlyList<EidosAstNode> explicitArguments) => new(
+        SchemaVersion,
+        new ClauseOccurrenceId(DeclarationIdentity, ClauseIndex, ArgumentSubIndex),
+        Owner,
+        Stage,
+        SourceOrder,
+        GeneratorPath.ToArray(),
+        explicitArguments,
+        Span.ToSourceSpan(),
+        HasCompilerGrant ? CompilerOwnedInvocationGrant.Create() : null);
 }
 
 public sealed record AstImportedSymbolPayload(
@@ -250,7 +431,13 @@ public static class AstNamerStateRestorer
             .ToArray();
 
         var failures = new List<string>();
+        NameResolver.RehydrateNamerStructuralRewrites(ast);
         var currentStableNodes = AstStableNodeTraversal.Enumerate(ast);
+        if (!TryRehydrateGenericApplications(entries, currentStableNodes, failures))
+        {
+            return new AstNamerStateRestoreResult(false, 0, failures);
+        }
+        currentStableNodes = AstStableNodeTraversal.Enumerate(ast);
         var currentNodes = BuildCurrentNodeLookup(currentStableNodes, failures);
         var payloadStructureKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var payload in payloads)
@@ -323,6 +510,42 @@ public static class AstNamerStateRestorer
         return new AstNamerStateRestoreResult(true, pending.Count, []);
     }
 
+    private static bool TryRehydrateGenericApplications(
+        IReadOnlyList<AstNamerStateEntryPayload> entries,
+        IReadOnlyList<AstStableNodeEntry> currentNodes,
+        List<string> failures)
+    {
+        var candidates = currentNodes
+            .Where(static entry => entry.Node is IndexExpr or TypePath or AssociatedTypeProjection or TraitRef)
+            .ToArray();
+        foreach (var entry in entries
+                     .Where(static entry => entry.GenericArgumentKinds is { Count: > 0 })
+                     .OrderByDescending(static entry => entry.StableIdentity.SiblingPath.Count))
+        {
+            var matches = candidates.Where(candidate =>
+                    string.Equals(
+                        candidate.StableIdentity.NodeKind,
+                        entry.StableIdentity.NodeKind,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        candidate.StableIdentity.ModuleIdentityKey,
+                        entry.StableIdentity.ModuleIdentityKey,
+                        StringComparison.Ordinal) &&
+                    candidate.StableIdentity.Span == entry.StableIdentity.Span &&
+                    candidate.StableIdentity.SiblingPath.SequenceEqual(entry.StableIdentity.SiblingPath))
+                .ToArray();
+            if (matches.Length != 1 ||
+                !NameResolver.TryRehydrateGenericArguments(
+                    matches[0].Node,
+                    entry.GenericArgumentKinds!))
+            {
+                failures.Add($"failed to rehydrate AST generic application: {entry.StableIdentity.StableKey}");
+            }
+        }
+
+        return failures.Count == 0;
+    }
+
     private static Dictionary<string, EidosAstNode> BuildCurrentNodeLookup(
         IReadOnlyList<AstStableNodeEntry> stableNodes,
         List<string> failures)
@@ -366,21 +589,38 @@ public static class AstNamerStateRestorer
             return false;
         }
 
+        IReadOnlyList<ClauseIR>? boundClauses = null;
+        IReadOnlyList<MetaInvocationIR>? metaInvocations = null;
+        if (entry.DeclarationClauses != null)
+        {
+            if (node is not Declaration declaration ||
+                !entry.DeclarationClauses.TryRestore(declaration, out boundClauses, out metaInvocations))
+            {
+                failure = $"failed to restore typed clause state: {entry.StableIdentity.StableKey}";
+                return false;
+            }
+        }
+
         mapped = new PendingAstNamerState(
             node,
             symbolId,
             entry.IsConstructor,
             identifierCandidates,
             pathCandidates,
+            entry.PathIsTypePath,
+            entry.PathIsConstructorPath,
             functionSymbolId,
             functionCandidates,
             evidenceSymbolId,
             targetSymbolId,
             proofIntroSymbolId,
             methodCandidates,
+            entry.MethodResolvedAsStaticPath,
             resolvedModule,
             importedSymbols,
-            effectSymbols);
+            effectSymbols,
+            boundClauses,
+            metaInvocations);
         return true;
     }
 
@@ -501,12 +741,17 @@ public static class AstNamerStateRestorer
             }
         }
 
-        if (state.Node is PathExpr path && state.PathValueCandidateSymbolIds != null)
+        if (state.Node is PathExpr path)
         {
-            path.ClearValueCandidates();
-            foreach (var candidate in state.PathValueCandidateSymbolIds)
+            path.SetIsTypePath(state.PathIsTypePath == true);
+            path.SetIsConstructorPath(state.PathIsConstructorPath == true);
+            if (state.PathValueCandidateSymbolIds != null)
             {
-                path.AddValueCandidate(candidate);
+                path.ClearValueCandidates();
+                foreach (var candidate in state.PathValueCandidateSymbolIds)
+                {
+                    path.AddValueCandidate(candidate);
+                }
             }
         }
 
@@ -544,6 +789,11 @@ public static class AstNamerStateRestorer
             }
         }
 
+        if (state.Node is MethodCallExpr staticMethod && state.MethodResolvedAsStaticPath == true)
+        {
+            staticMethod.MarkResolvedAsStaticPath();
+        }
+
         if (state.Node is ImportDecl import &&
             state.ResolvedModule.HasValue &&
             state.ResolvedSymbols != null)
@@ -556,6 +806,14 @@ public static class AstNamerStateRestorer
         {
             effectful.EffectSymbolIds = state.EffectSymbolIds.ToList();
         }
+
+
+        if (state.Node is Declaration declaration &&
+            state.BoundClauses != null &&
+            state.MetaInvocations != null)
+        {
+            declaration.SetBoundClauses(state.BoundClauses, state.MetaInvocations);
+        }
     }
 
     private sealed record PendingAstNamerState(
@@ -564,13 +822,18 @@ public static class AstNamerStateRestorer
         bool? IsConstructor,
         IReadOnlyList<SymbolId>? IdentifierValueCandidateSymbolIds,
         IReadOnlyList<SymbolId>? PathValueCandidateSymbolIds,
+        bool? PathIsTypePath,
+        bool? PathIsConstructorPath,
         SymbolId? FunctionSymbolId,
         IReadOnlyList<SymbolId>? FunctionCandidateSymbolIds,
         SymbolId? EvidenceSymbolId,
         SymbolId? TargetSymbolId,
         SymbolId? ProofIntroSymbolId,
         IReadOnlyList<SymbolId>? MethodCandidateSymbolIds,
+        bool? MethodResolvedAsStaticPath,
         SymbolId? ResolvedModule,
         IReadOnlyList<ImportedSymbol>? ResolvedSymbols,
-        IReadOnlyList<SymbolId>? EffectSymbolIds);
+        IReadOnlyList<SymbolId>? EffectSymbolIds,
+        IReadOnlyList<ClauseIR>? BoundClauses,
+        IReadOnlyList<MetaInvocationIR>? MetaInvocations);
 }

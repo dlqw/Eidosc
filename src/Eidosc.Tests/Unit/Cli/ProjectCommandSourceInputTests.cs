@@ -11,7 +11,7 @@ namespace Eidosc.Tests.Unit.Cli;
 public sealed class ProjectCommandSourceInputTests
 {
     private const string InlineSource = """
-Message :: type { Quit , Move(Int, Int) , Write(String) }
+Message :: type { Quit :: type {} , Move:: type(Int, Int) , Write:: type(String) }
 
 handle :: Message -> Int {
     Quit() => 0,
@@ -106,7 +106,7 @@ main :: Int -> Int {
                 sourceRoots = ["src"]
 
                 [language]
-                version = "0.6.0-alpha.1"
+                version = "0.7.0-alpha.1"
                 """);
             File.WriteAllText(
                 Path.Combine(tempDir, "src", "Main.eidos"),
@@ -152,7 +152,7 @@ main :: Int -> Int {
                 sourceRoots = ["src"]
 
                 [language]
-                version = "0.6.0-alpha.1"
+                version = "0.7.0-alpha.1"
                 """);
             File.WriteAllText(
                 Path.Combine(tempDir, "src", "Main.eidos"),
@@ -206,7 +206,7 @@ main :: Int -> Int {
                 sourceRoots = ["src"]
 
                 [language]
-                version = "0.6.0-alpha.1"
+                version = "0.7.0-alpha.1"
                 """);
             var mainPath = Path.Combine(tempDir, "src", "Main.eidos");
             File.WriteAllText(mainPath, "Main :: module { main :: Unit -> Int { _ => 0 } }");

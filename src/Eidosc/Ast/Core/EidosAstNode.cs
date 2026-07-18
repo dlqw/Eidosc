@@ -1,8 +1,24 @@
 using System.Xml;
 using Eidosc.Utilities;
 using Eidosc.Utils;
+using Eidosc.Symbols;
 
 namespace Eidosc.Ast;
+
+public enum SyntaxIdentityKind
+{
+    Hygiene,
+    Declaration,
+    Type,
+    Identifier
+}
+
+public sealed record SyntaxIdentity(
+    SyntaxIdentityKind Kind,
+    string StableIdentity,
+    SymbolId SymbolId,
+    TypeId TypeId,
+    string Category = "");
 
 /// <summary>
 /// Eidos 语言 AST 节点的抽象基类
@@ -20,6 +36,26 @@ public abstract record EidosAstNode : IXmlSerializable
     /// 解析后的符号 ID（名称解析阶段填充）
     /// </summary>
     public SymbolId SymbolId { get; set; } = SymbolId.None;
+
+    public SyntaxIdentity? AttachedSyntaxIdentity { get; private set; }
+
+    public IReadOnlyList<GeneratedDeclarationOrigin> GeneratedOriginChain { get; private set; } = [];
+
+    internal void AttachSyntaxIdentity(SyntaxIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        AttachedSyntaxIdentity = identity;
+        if (identity.SymbolId.IsValid)
+        {
+            SymbolId = identity.SymbolId;
+        }
+    }
+
+    internal void AttachGeneratedOriginChain(IEnumerable<GeneratedDeclarationOrigin> origins)
+    {
+        ArgumentNullException.ThrowIfNull(origins);
+        GeneratedOriginChain = origins.ToArray();
+    }
 
     /// <summary>
     /// 推断出的类型（类型推断阶段填充）
@@ -87,6 +123,29 @@ public abstract record EidosAstNode : IXmlSerializable
             element.SetAttribute(
                 WellKnownStrings.XmlAttributes.RecoveryReason,
                 RecoveryReason ?? AstRecoveryReasons.ParserRecoveredLiteral);
+        }
+        if (GeneratedOriginChain.Count > 0)
+        {
+            var chainElement = doc.CreateElement("GeneratedOriginChain");
+            foreach (var origin in GeneratedOriginChain)
+            {
+                var originElement = doc.CreateElement("Origin");
+                originElement.SetAttribute("identity", origin.StableIdentity);
+                originElement.SetAttribute("generator", origin.GeneratorIdentity);
+                originElement.SetAttribute("target", origin.TargetIdentity);
+                originElement.SetAttribute("generatorSymbolId", origin.GeneratorSymbolId.Value.ToString());
+                originElement.SetAttribute("targetSymbolId", origin.TargetSymbolId.Value.ToString());
+                originElement.SetAttribute("clauseOccurrenceIndex", origin.ClauseOccurrenceIndex.ToString());
+                originElement.SetAttribute("clause", origin.ClauseOccurrenceIdentity);
+                originElement.SetAttribute("clauseArgumentSubIndex", origin.ClauseArgumentSubIndex.ToString());
+                originElement.SetAttribute("outputIndex", origin.ExpansionOutputIndex.ToString());
+                originElement.SetAttribute("argumentsHash", origin.CanonicalArgumentsHash);
+                originElement.SetAttribute("metaSchemaVersion", origin.MetaSchemaVersion.ToString());
+                originElement.SetAttribute("clauseSpan", origin.ClauseSpan.ToString());
+                originElement.SetAttribute("virtualDocument", origin.VirtualDocumentPath);
+                chainElement.AppendChild(originElement);
+            }
+            element.AppendChild(chainElement);
         }
         return element;
     }

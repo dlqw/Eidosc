@@ -341,7 +341,7 @@ internal static class AnonymousLambdaTokenRewriter
         }
 
         return tokens[prefixIndex] is ContentToken contentToken &&
-               contentToken.Kind is SyntaxKind.Identifier or SyntaxKind.TypeIdentifier;
+               contentToken.Kind == SyntaxKind.Identifier;
     }
 
     private static bool TryFindMatchingCloseParen(IReadOnlyList<Token> tokens, int openParenIndex, out int closeParenIndex)

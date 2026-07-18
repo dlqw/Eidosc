@@ -149,7 +149,14 @@ public sealed partial class SymbolTable
         var builtinTypes = new (string Name, TypeId TypeId)[]
         {
             (WellKnownStrings.BuiltinTypes.Int, new TypeId(WellKnownTypeIds.IntId)),
+            (WellKnownStrings.BuiltinTypes.Int64, new TypeId(WellKnownTypeIds.Int64Id)),
+            (WellKnownStrings.BuiltinTypes.Int32, new TypeId(WellKnownTypeIds.Int32Id)),
+            (WellKnownStrings.BuiltinTypes.Int16, new TypeId(WellKnownTypeIds.Int16Id)),
+            (WellKnownStrings.BuiltinTypes.Int8, new TypeId(WellKnownTypeIds.Int8Id)),
             (WellKnownStrings.BuiltinTypes.Float, new TypeId(WellKnownTypeIds.FloatId)),
+            (WellKnownStrings.BuiltinTypes.Float64, new TypeId(WellKnownTypeIds.Float64Id)),
+            (WellKnownStrings.BuiltinTypes.Float32, new TypeId(WellKnownTypeIds.Float32Id)),
+            (WellKnownStrings.BuiltinTypes.Float16, new TypeId(WellKnownTypeIds.Float16Id)),
             (WellKnownStrings.BuiltinTypes.Bool, new TypeId(WellKnownTypeIds.BoolId)),
             (WellKnownStrings.BuiltinTypes.String, new TypeId(WellKnownTypeIds.StringId)),
             (WellKnownStrings.BuiltinTypes.Char, new TypeId(WellKnownTypeIds.CharId)),
@@ -735,6 +742,145 @@ public sealed partial class SymbolTable
     }
 
     /// <summary>
+    /// Declares an exact lexical case type without introducing an unqualified
+    /// type binding. It is reachable through its parent's namespace only.
+    /// </summary>
+    public SymbolId DeclareCaseType(
+        string name,
+        SourceSpan span,
+        SymbolId parentAdt,
+        IReadOnlyList<SymbolId>? typeParams = null,
+        bool isPublic = true)
+    {
+        var symbol = new AdtSymbol
+        {
+            Name = name,
+            Span = span,
+            IsModuleLevel = false,
+            IsPublic = isPublic,
+            TypeId = NewTypeId(),
+            TypeParams = typeParams?.ToList() ?? [],
+            ParentAdt = parentAdt
+        };
+
+        var id = RegisterSymbol(symbol);
+        if (GetSymbol<AdtSymbol>(parentAdt) is { } parent)
+        {
+            var directCases = parent.DirectCases.ToList();
+            directCases.Add(id);
+            UpdateSymbol(parent with { DirectCases = directCases });
+        }
+
+        return id;
+    }
+
+    /// <summary>
+    /// Declares a named field owned by a product or closed case type. Fields do
+    /// not introduce scope bindings; their identity is resolved through the
+    /// owning nominal type.
+    /// </summary>
+    public SymbolId DeclareField(
+        string name,
+        SourceSpan span,
+        SymbolId ownerType,
+        int index,
+        bool isPublic = true)
+    {
+        var id = RegisterSymbol(new FieldSymbol
+        {
+            Name = name,
+            Span = span,
+            IsModuleLevel = false,
+            IsPublic = isPublic,
+            OwnerType = ownerType,
+            Index = index
+        });
+
+        if (GetSymbol<AdtSymbol>(ownerType) is { } owner)
+        {
+            var fields = owner.Fields.ToList();
+            fields.Add(id);
+            UpdateSymbol(owner with { Fields = fields });
+        }
+
+        return id;
+    }
+
+    public SymbolId? LookupDirectCase(SymbolId parentAdt, string name)
+    {
+        if (GetSymbol<AdtSymbol>(parentAdt) is not { } parent)
+        {
+            return null;
+        }
+
+        foreach (var caseId in parent.DirectCases)
+        {
+            if (GetSymbol<AdtSymbol>(caseId) is { } caseType &&
+                string.Equals(caseType.Name, name, StringComparison.Ordinal))
+            {
+                return caseId;
+            }
+        }
+
+        return null;
+    }
+
+    public bool IsClosedCaseSubtype(SymbolId subtype, SymbolId supertype)
+    {
+        var current = subtype;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid && visited.Add(current))
+        {
+            if (current == supertype)
+            {
+                return true;
+            }
+
+            current = GetSymbol<AdtSymbol>(current)?.ParentAdt ?? SymbolId.None;
+        }
+
+        return false;
+    }
+
+    public SymbolId GetClosedCaseRoot(SymbolId type)
+    {
+        var current = type;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid &&
+               visited.Add(current) &&
+               GetSymbol<AdtSymbol>(current) is { ParentAdt.IsValid: true } caseType)
+        {
+            current = caseType.ParentAdt;
+        }
+
+        return current;
+    }
+
+    public SymbolId FindNearestClosedCommonAncestor(SymbolId left, SymbolId right)
+    {
+        var leftAncestors = new HashSet<SymbolId>();
+        var current = left;
+        while (current.IsValid && leftAncestors.Add(current))
+        {
+            current = GetSymbol<AdtSymbol>(current)?.ParentAdt ?? SymbolId.None;
+        }
+
+        current = right;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid && visited.Add(current))
+        {
+            if (leftAncestors.Contains(current))
+            {
+                return current;
+            }
+
+            current = GetSymbol<AdtSymbol>(current)?.ParentAdt ?? SymbolId.None;
+        }
+
+        return SymbolId.None;
+    }
+
+    /// <summary>
     /// 注册构造器
     /// </summary>
     public SymbolId DeclareConstructor(string name, SourceSpan span, SymbolId ownerAdt, bool isPublic = true)
@@ -800,6 +946,42 @@ public sealed partial class SymbolTable
         _globalTraits[name] = id;
         return id;
     }
+
+    public SymbolId DeclareAssociatedType(
+        string name,
+        SourceSpan span,
+        SymbolId definitionModuleId,
+        SymbolId ownerTrait,
+        SymbolId ownerImpl,
+        IReadOnlyList<SymbolId>? typeParams = null,
+        bool isPublic = true) =>
+        RegisterSymbol(new AssociatedTypeSymbol
+        {
+            Name = name,
+            Span = span,
+            IsPublic = isPublic,
+            DefinitionModuleId = definitionModuleId,
+            OwnerTrait = ownerTrait,
+            OwnerImpl = ownerImpl,
+            TypeParams = typeParams?.ToList() ?? []
+        });
+
+    public SymbolId DeclareAssociatedConst(
+        string name,
+        SourceSpan span,
+        SymbolId definitionModuleId,
+        SymbolId ownerTrait,
+        SymbolId ownerImpl,
+        bool isPublic = true) =>
+        RegisterSymbol(new AssociatedConstSymbol
+        {
+            Name = name,
+            Span = span,
+            IsPublic = isPublic,
+            DefinitionModuleId = definitionModuleId,
+            OwnerTrait = ownerTrait,
+            OwnerImpl = ownerImpl
+        });
 
     /// <summary>
     /// 注册模块
@@ -1107,6 +1289,34 @@ public sealed partial class SymbolTable
         }
     }
 
+    internal bool RemoveSymbol(SymbolId symbolId)
+    {
+        if (!_symbols.Remove(symbolId))
+        {
+            return false;
+        }
+
+        RemoveGlobalBinding(_globalTypes, symbolId);
+        RemoveGlobalBinding(_globalTraits, symbolId);
+        RemoveGlobalBinding(_globalConstructors, symbolId);
+        RemoveGlobalBinding(_globalAbilities, symbolId);
+        foreach (var scope in _scopeStack)
+        {
+            scope.RemoveSymbol(symbolId);
+        }
+        _modules.InvalidateAccessibleBindingCache();
+        InvalidateIndices();
+        return true;
+
+        static void RemoveGlobalBinding(Dictionary<string, SymbolId> bindings, SymbolId id)
+        {
+            foreach (var name in bindings.Where(entry => entry.Value == id).Select(static entry => entry.Key).ToArray())
+            {
+                bindings.Remove(name);
+            }
+        }
+    }
+
     public void RestoreNamerBindings(
         IReadOnlyList<RestoredScopeBinding> scopes,
         IReadOnlyDictionary<string, SymbolId> globalTypes,
@@ -1243,18 +1453,7 @@ public sealed partial class SymbolTable
                 continue;
             }
 
-            var key = new ImplLookupKey(
-                symbol.Trait,
-                symbol.ImplementingType,
-                NormalizeTraitTypeArgKeys(symbol.TraitTypeArgKeys, symbol.TraitTypeArgs));
-            if (!_impls.TryGetValue(key, out var impls))
-            {
-                impls = [];
-                _impls[key] = impls;
-            }
-
-            impls.Add(symbol);
-            AddImplToTraitIndex(symbol);
+            IndexImpl(symbol);
         }
     }
 
@@ -1287,7 +1486,9 @@ public sealed partial class SymbolTable
         IReadOnlyList<ImplTypeRefKey>? canonicalTraitTypeArgKeys = null,
         IReadOnlyList<ImplTypeArgTraitRequirement>? implementingTypeRequirements = null,
         ImplHeadShape? implHeadShape = null,
-        ImplTypeRefKey? implementingTypeKey = null)
+        ImplTypeRefKey? implementingTypeKey = null,
+        SymbolId? existingSymbolId = null,
+        string? declaredName = null)
     {
         if (!trait.IsValid || !implementingType.IsValid)
         {
@@ -1345,9 +1546,16 @@ public sealed partial class SymbolTable
         var traitArgsDisplay = normalizedTraitTypeArgs.Length == 0
             ? ""
             : $"[{string.Join(", ", normalizedTraitTypeArgs)}]";
+        var resolvedExistingSymbolId = existingSymbolId ?? SymbolId.None;
+        var pendingImpl = resolvedExistingSymbolId.IsValid
+            ? GetSymbol<ImplSymbol>(resolvedExistingSymbolId)
+            : null;
         var implSymbol = new ImplSymbol
         {
-            Name = $"impl {traitName}{traitArgsDisplay} for {typeName}",
+            Id = resolvedExistingSymbolId,
+            Name = string.IsNullOrWhiteSpace(declaredName)
+                ? $"impl {traitName}{traitArgsDisplay} for {typeName}"
+                : declaredName,
             Span = span,
             IsModuleLevel = CurrentScope?.Kind == ScopeKind.Module,
             Trait = trait,
@@ -1369,20 +1577,37 @@ public sealed partial class SymbolTable
                                         normalizedImplementingTypeKey,
                                         normalizedCanonicalImplementingType,
                                         implementingType),
-            ImplementingTypeRequirements = NormalizeImplementingTypeRequirements(implementingTypeRequirements)
+            ImplementingTypeRequirements = NormalizeImplementingTypeRequirements(implementingTypeRequirements),
+            IsPublic = pendingImpl?.IsPublic ?? true,
+            DefinitionModuleId = pendingImpl?.DefinitionModuleId ?? SymbolId.None,
+            GeneratedOrigin = pendingImpl?.GeneratedOrigin,
+            Methods = pendingImpl?.Methods.ToList() ?? [],
+            AssociatedTypes = pendingImpl?.AssociatedTypes.ToList() ?? [],
+            AssociatedConsts = pendingImpl?.AssociatedConsts.ToList() ?? []
         };
 
         var implId = RegisterSymbol(implSymbol);
-        if (!_impls.TryGetValue(key, out var impls))
+        foreach (var associatedItemId in implSymbol.AssociatedTypes.Concat(implSymbol.AssociatedConsts))
         {
-            impls = [];
-            _impls[key] = impls;
+            if (GetSymbol<AssociatedItemSymbol>(associatedItemId) is { } associatedItem)
+            {
+                UpdateSymbol(associatedItem with { OwnerTrait = trait, OwnerImpl = implId });
+            }
         }
-
-        impls.Add(implSymbol with { Id = implId });
-        AddImplToTraitIndex(implSymbol with { Id = implId });
+        IndexImpl(implSymbol with { Id = implId });
         return implId;
     }
+
+    public SymbolId DeclarePendingImpl(string name, SourceSpan span, bool isPublic = true) =>
+        RegisterSymbol(new ImplSymbol
+        {
+            Name = name,
+            Span = span,
+            IsModuleLevel = CurrentScope?.Kind == ScopeKind.Module,
+            IsPublic = isPublic,
+            Trait = SymbolId.None,
+            ImplementingType = TypeId.None
+        });
 
     public IReadOnlyList<ImplSymbol> GetImplsForTrait(SymbolId traitId)
     {
@@ -1458,25 +1683,68 @@ public sealed partial class SymbolTable
         _modules.InvalidateAccessibleBindingCache();
         InvalidateIndices();
 
+        IndexImpl(updatedImpl);
+    }
+
+    private void IndexImpl(ImplSymbol impl)
+    {
+        RemoveImplFromIndexes(impl.Id);
         var implKey = new ImplLookupKey(
-            updatedImpl.Trait,
-            updatedImpl.ImplementingType,
-            NormalizeTraitTypeArgKeys(updatedImpl.TraitTypeArgKeys, updatedImpl.TraitTypeArgs));
+            impl.Trait,
+            impl.ImplementingType,
+            NormalizeTraitTypeArgKeys(impl.TraitTypeArgKeys, impl.TraitTypeArgs));
         if (!_impls.TryGetValue(implKey, out var impls))
+        {
+            impls = [];
+            _impls[implKey] = impls;
+        }
+
+        impls.Add(impl);
+        AddImplToTraitIndex(impl);
+    }
+
+    private void RemoveImplFromIndexes(SymbolId implId)
+    {
+        if (!implId.IsValid)
         {
             return;
         }
 
-        for (var i = 0; i < impls.Count; i++)
+        List<ImplLookupKey>? emptyKeys = null;
+        foreach (var (key, impls) in _impls)
         {
-            if (impls[i].Id == updatedImpl.Id)
+            impls.RemoveAll(candidate => candidate.Id == implId);
+            if (impls.Count == 0)
             {
-                impls[i] = updatedImpl;
-                break;
+                (emptyKeys ??= []).Add(key);
             }
         }
 
-        UpdateImplTraitIndex(updatedImpl);
+        if (emptyKeys != null)
+        {
+            foreach (var key in emptyKeys)
+            {
+                _impls.Remove(key);
+            }
+        }
+
+        List<SymbolId>? emptyTraits = null;
+        foreach (var (traitId, impls) in _implsByTrait)
+        {
+            impls.RemoveAll(candidate => candidate.Id == implId);
+            if (impls.Count == 0)
+            {
+                (emptyTraits ??= []).Add(traitId);
+            }
+        }
+
+        if (emptyTraits != null)
+        {
+            foreach (var traitId in emptyTraits)
+            {
+                _implsByTrait.Remove(traitId);
+            }
+        }
     }
 
     private void AddImplToTraitIndex(ImplSymbol impl)
@@ -1488,26 +1756,6 @@ public sealed partial class SymbolTable
         }
 
         impls.Add(impl);
-    }
-
-    private void UpdateImplTraitIndex(ImplSymbol updatedImpl)
-    {
-        if (!_implsByTrait.TryGetValue(updatedImpl.Trait, out var impls))
-        {
-            AddImplToTraitIndex(updatedImpl);
-            return;
-        }
-
-        for (var i = 0; i < impls.Count; i++)
-        {
-            if (impls[i].Id == updatedImpl.Id)
-            {
-                impls[i] = updatedImpl;
-                return;
-            }
-        }
-
-        impls.Add(updatedImpl);
     }
 
     #endregion

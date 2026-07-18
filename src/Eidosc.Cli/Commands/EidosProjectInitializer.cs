@@ -60,7 +60,7 @@ internal static class EidosProjectInitializer
         var isExecutable = kind == "executable";
         var sourceRoots = NormalizeSourceRoots(options.SourceRoot);
         var primarySourceRoot = sourceRoots[0];
-        var entryFile = isExecutable ? $"{primarySourceRoot}/Main.eidos" : "";
+        var entryFile = isExecutable ? $"{primarySourceRoot}/main.eidos" : "";
         var usesDefaultExecutableInference = isExecutable &&
                                              sourceRoots.Length == 1 &&
                                              string.Equals(sourceRoots[0], "src", StringComparison.Ordinal);
@@ -109,12 +109,12 @@ internal static class EidosProjectInitializer
 
         if (isExecutable)
         {
-            var mainFile = Path.Combine(sourceRootPaths[0], "Main.eidos");
+            var mainFile = Path.Combine(sourceRootPaths[0], "main.eidos");
             if (!File.Exists(mainFile))
             {
                 File.WriteAllText(mainFile,
                     """
-                    Main :: module {
+                    main :: module {
                         main :: Unit -> Int { _ => 0 }
                     }
 
@@ -127,7 +127,7 @@ internal static class EidosProjectInitializer
         if (isExecutable)
         {
             Console.WriteLine(CliMessages.ProjectCreatedSourceFile(entryFile));
-            CliOutput.WriteArtifact(CliMessages.ArtifactKindSource, Path.Combine(sourceRootPaths[0], "Main.eidos"), useColors);
+            CliOutput.WriteArtifact(CliMessages.ArtifactKindSource, Path.Combine(sourceRootPaths[0], "main.eidos"), useColors);
         }
         foreach (var sourceRoot in sourceRoots)
         {

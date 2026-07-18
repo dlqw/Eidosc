@@ -5,7 +5,7 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private void DeclareNestedModules(ModuleDecl module)
+    private void DeclareNestedModules(ModuleDecl module, bool isGeneratedSource = false)
     {
         foreach (var decl in module.Declarations)
         {
@@ -14,11 +14,11 @@ public sealed partial class NameResolver
                 continue;
             }
 
-            DeclareModuleTree(childModule);
+            DeclareModuleTree(childModule, isGeneratedSource);
         }
     }
 
-    private void DeclareModuleTree(ModuleDecl module)
+    private void DeclareModuleTree(ModuleDecl module, bool isGeneratedSource = false)
     {
         var moduleName = module.Path.Count > 0 ? module.Path[^1] : WellKnownStrings.SpecialNames.Main;
         var modulePath = module.Path.Count > 0 ? module.Path : [moduleName];
@@ -31,13 +31,18 @@ public sealed partial class NameResolver
             packageInstanceKey: module.PackageInstanceKey);
         module.SymbolId = moduleId;
         _moduleDeclarations[moduleId] = module;
+        _declarationsBySymbol[moduleId] = module;
         _symbolTable.AddMemberToModule(_currentModule, moduleId);
 
         using var currentModuleScope = PushCurrentModuleScope(moduleId);
-        DeclareNestedModules(module);
+        CollectDeclaration(module, isGeneratedSource);
+        DeclareNestedModules(module, isGeneratedSource);
     }
 
-    private void CollectModuleDeclarationsRecursive(ModuleDecl module, SymbolId moduleId)
+    private void CollectModuleDeclarationsRecursive(
+        ModuleDecl module,
+        SymbolId moduleId,
+        bool isGeneratedSource = false)
     {
         var previousModule = _currentModule;
         using var moduleScope = PushCollectionModuleScope(previousModule, moduleId);
@@ -52,7 +57,7 @@ public sealed partial class NameResolver
                 continue;
             }
 
-            CollectDeclaration(decl);
+            CollectDeclaration(decl, isGeneratedSource);
 
             if (decl.SymbolId.IsValid)
             {
@@ -76,7 +81,7 @@ public sealed partial class NameResolver
         {
             if (childModule.SymbolId.IsValid)
             {
-                CollectModuleDeclarationsRecursive(childModule, childModule.SymbolId);
+                CollectModuleDeclarationsRecursive(childModule, childModule.SymbolId, isGeneratedSource);
             }
         }
     }
@@ -93,6 +98,30 @@ public sealed partial class NameResolver
             if (childModule.SymbolId.IsValid)
             {
                 ResolveModuleReferencesRecursive(childModule, childModule.SymbolId);
+            }
+        }
+    }
+
+    private void ResolveModuleSemanticShapeReferencesRecursive(ModuleDecl module, SymbolId moduleId)
+    {
+        using var moduleScope = PushResolutionModuleScope(moduleId);
+        using var currentModuleScope = PushCurrentModuleScope(moduleId);
+
+        for (var index = 0; index < module.Declarations.Count; index++)
+        {
+            var declaration = module.Declarations[index];
+            ResolveDeclarationSemanticShapeReferences(declaration);
+            if (declaration is ExpandDeclaration)
+            {
+                break;
+            }
+        }
+
+        foreach (var childModule in module.Declarations.OfType<ModuleDecl>())
+        {
+            if (childModule.SymbolId.IsValid)
+            {
+                ResolveModuleSemanticShapeReferencesRecursive(childModule, childModule.SymbolId);
             }
         }
     }
@@ -156,8 +185,9 @@ public sealed partial class NameResolver
 
     private void ResolveModuleReferences(ModuleDecl module)
     {
-        foreach (var decl in module.Declarations)
+        for (var index = 0; index < module.Declarations.Count; index++)
         {
+            var decl = module.Declarations[index];
             if (decl.SymbolId.IsValid &&
                 _metaResolvedComptimeSymbols.Contains(decl.SymbolId))
             {
@@ -165,6 +195,10 @@ public sealed partial class NameResolver
             }
 
             ResolveDeclarationReferences(decl);
+            if (decl is ExpandDeclaration)
+            {
+                return;
+            }
         }
     }
 }

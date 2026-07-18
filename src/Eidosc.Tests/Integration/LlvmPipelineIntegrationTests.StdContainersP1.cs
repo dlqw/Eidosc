@@ -15,11 +15,11 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Deque
-import Std.Seq
-import Std.Option
-import Std.Queue
-import Std.Stack
+import std.Deque
+import std.Seq
+import std.Option
+import std.Queue
+import std.Stack
 
 check_deque :: Unit -> Int
 {

@@ -185,7 +185,7 @@ main :: Unit -> Int
     public void Types_CurriedFunctionBodyPatternBranch_WithFourCtorSegments_TypeChecks()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) , NoneInt }
+OptionInt :: type { SomeInt:: type(Int) , NoneInt :: type {} }
 
 quad_sum :: OptionInt -> OptionInt -> OptionInt -> OptionInt -> Int
 {
@@ -214,9 +214,9 @@ main :: Unit -> Int
     public void Types_CurriedFunctionBody_WithNestedMatchInRemainingLambda_TypeChecks()
     {
         const string source = """
-Token :: type { Ident(String) , Punct(String) , End }
-Tokens :: type { Cons(Token, Tokens) , Nil }
-ParseResult :: type { ParseOk(Int, Tokens) , ParseError(String) }
+Token :: type { Ident:: type(String) , Punct:: type(String) , End :: type {} }
+Tokens :: type { Cons:: type(Token, Tokens) , Nil :: type {} }
+ParseResult :: type { ParseOk:: type(Int, Tokens) , ParseError:: type(String) }
 
 helper :: String -> ParseResult
 {
@@ -263,12 +263,12 @@ main :: Unit -> ParseResult
     public void Types_CurriedFunctionBody_WithEccStyleSixArgumentTailParser_TypeChecks()
     {
         const string source = """
-Token :: type { Punct(String) , Text(String) , End }
-Tokens :: type { Cons(Token, Tokens) , Nil }
-CType :: type { TyInt , TyPtr(CType) }
-Stmt :: type { StmtDecl(String, CType) , StmtInit(String, CType, String) }
-Stmts :: type { StmtCons(Stmt, Stmts) , StmtNil }
-DeclItemListResult :: type { DeclItemListOk(Stmts, Tokens) , DeclItemListError(String) }
+Token :: type { Punct:: type(String) , Text:: type(String) , End :: type {} }
+Tokens :: type { Cons:: type(Token, Tokens) , Nil :: type {} }
+CType :: type { TyInt :: type {} , TyPtr:: type(CType) }
+Stmt :: type { StmtDecl:: type(String, CType) , StmtInit:: type(String, CType, String) }
+Stmts :: type { StmtCons:: type(Stmt, Stmts) , StmtNil :: type {} }
+DeclItemListResult :: type { DeclItemListOk:: type(Stmts, Tokens) , DeclItemListError:: type(String) }
 
 push_stmt :: Stmt -> Stmts -> Stmts
 {
@@ -671,12 +671,12 @@ read :: Unit -> Bool
     {
         const string source = """
 Main :: module {
-    is_key :: Int -> Unit -> Bool need FFI
+    is_key :: Int -> Unit -> Bool need ffi
     {
         key => _ => key == 81
     }
 
-    read :: Unit -> Bool need FFI
+    read :: Unit -> Bool need ffi
     {
         _ => match ()
         {
@@ -809,7 +809,7 @@ classify :: Int -> Int
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 bad :: Unit -> Option[Int]
@@ -833,7 +833,7 @@ bad :: Unit -> Option[Int]
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 bad :: Option[Int] -> Int
@@ -861,7 +861,7 @@ bad :: Option[Int] -> Int
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 plus_one :: Option[Int] -> Int
@@ -884,9 +884,7 @@ plus_one :: Option[Int] -> Int
     public void Types_NamedCtorPatternShorthand_WithFunctionNameCollision_Succeeds()
     {
         const string source = """
-HttpResponse :: type {
-    HttpResponse{ok: Bool}
-}
+HttpResponse :: type {ok:: Bool}
 
 ok :: HttpResponse -> Bool
 {

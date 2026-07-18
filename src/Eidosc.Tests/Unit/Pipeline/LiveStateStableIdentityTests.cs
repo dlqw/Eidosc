@@ -203,7 +203,7 @@ Main :: module {
         var result = RunToNamer("""
 Main :: module {
     Pair :: type {
-        Pair(Int, Int)
+        Pair:: type(Int, Int)
     }
 
     id :: Int -> Int
@@ -240,12 +240,59 @@ Main :: module {
     }
 
     [Fact]
+    public void SymbolTableStateBuilder_RestoresAssociatedItemOwnershipAndDefinitionModules()
+    {
+        var result = RunToNamer("""
+Main :: module {
+    Container[T] :: trait {
+        Item :: type
+        LIMIT :: T
+    }
+
+    ContainerInt :: instance Container[Int] {
+        Item :: type = Int
+        LIMIT :: Int = 1
+    }
+}
+""");
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var original = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var memberIndex = Assert.IsType<ProjectModuleMemberIndexSnapshot>(result.ModuleMemberIndexSnapshot);
+        var payload = ModuleNamerStatePayload.Create("Main", original, memberIndex, result.ModuleGraphSnapshot);
+
+        var restored = SymbolTableStateBuilder.BuildFromNamerPayload(payload);
+
+        Assert.True(restored.IsApplied, string.Join(Environment.NewLine, restored.Failures));
+        var table = Assert.IsType<SymbolTable>(restored.SymbolTable);
+        var restoredTraitId = table.LookupTrait("Container");
+        Assert.True(restoredTraitId.HasValue);
+        var traitId = restoredTraitId.Value;
+        var trait = Assert.IsType<TraitSymbol>(table.GetSymbol(traitId));
+        var impl = Assert.Single(table.GetImplsForTrait(traitId));
+        Assert.True(trait.DefinitionModuleId.IsValid);
+        Assert.Equal(trait.DefinitionModuleId, impl.DefinitionModuleId);
+        var traitType = Assert.IsType<AssociatedTypeSymbol>(table.GetSymbol(Assert.Single(trait.AssociatedTypes)));
+        var traitConst = Assert.IsType<AssociatedConstSymbol>(table.GetSymbol(Assert.Single(trait.AssociatedConsts)));
+        var implType = Assert.IsType<AssociatedTypeSymbol>(table.GetSymbol(Assert.Single(impl.AssociatedTypes)));
+        var implConst = Assert.IsType<AssociatedConstSymbol>(table.GetSymbol(Assert.Single(impl.AssociatedConsts)));
+        Assert.Equal(traitId, traitType.OwnerTrait);
+        Assert.Equal(traitId, traitConst.OwnerTrait);
+        Assert.Equal(traitId, implType.OwnerTrait);
+        Assert.Equal(traitId, implConst.OwnerTrait);
+        Assert.Equal(impl.Id, implType.OwnerImpl);
+        Assert.Equal(impl.Id, implConst.OwnerImpl);
+        Assert.All(new AssociatedItemSymbol[] { traitType, traitConst, implType, implConst }, item =>
+            Assert.Equal(trait.DefinitionModuleId, item.DefinitionModuleId));
+    }
+
+    [Fact]
     public void SymbolTableStateBuilder_RestoresOverloadsAndImplIndexes()
     {
         var result = RunToNamer("""
 Main :: module {
     Box :: type {
-        Box(Int)
+        Box:: type(Int)
     }
 
     ShowBox :: trait {
@@ -262,9 +309,10 @@ Main :: module {
         value => 1
     }
 
-    @impl(ShowBox)
+
     show :: Box -> Int
-    {
+     impl ShowBox
+{
         value => 2
     }
 }
@@ -337,8 +385,8 @@ Lib :: module {
         Assert.NotNull(restored.SymbolTable);
         Assert.Equal(payloads.Count, restored.AppliedModules);
         Assert.Equal(
-            CanonicalModuleSurface(result.SymbolTable, "stable_identity"),
-            CanonicalModuleSurface(restored.SymbolTable!, "stable_identity"));
+            CanonicalModuleSurface(result.SymbolTable, "StableIdentity"),
+            CanonicalModuleSurface(restored.SymbolTable!, "StableIdentity"));
         Assert.Equal(
             CanonicalModuleSurface(result.SymbolTable, "Lib"),
             CanonicalModuleSurface(restored.SymbolTable!, "Lib"));
@@ -351,7 +399,7 @@ Lib :: module {
         var source = """
 Main :: module {
     Pair :: type {
-        Pair(Int, Int)
+        Pair:: type(Int, Int)
     }
 
     id :: Int -> Int
@@ -486,8 +534,8 @@ Lib :: module {
         Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault(
             "Build.moduleStage.Namer.compiledModules"));
         Assert.Equal(
-            CanonicalModuleSurface(first.SymbolTable, "stable_identity"),
-            CanonicalModuleSurface(second.SymbolTable, "stable_identity"));
+            CanonicalModuleSurface(first.SymbolTable, "StableIdentity"),
+            CanonicalModuleSurface(second.SymbolTable, "StableIdentity"));
         Assert.Equal(
             CanonicalModuleSurface(first.SymbolTable, "Lib"),
             CanonicalModuleSurface(second.SymbolTable, "Lib"));
@@ -537,7 +585,9 @@ Main :: module {
         }).Run();
 
         Assert.True(second.Success, FormatDiagnostics(second));
-        Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.applied"));
+        Assert.True(
+            second.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.applied") == 1,
+            FormatCounters(second));
         var hir = Assert.IsType<Eidosc.Hir.HirModule>(second.HirModule);
         Assert.Contains("native_test", hir.LinkLibraries, StringComparer.Ordinal);
     }
@@ -551,7 +601,7 @@ Main :: module {
     import Helper
 
     Pair :: type {
-        Pair(Int, Int)
+        Pair:: type(Int, Int)
     }
 
     main :: Int -> Int
@@ -665,8 +715,8 @@ Helper :: module {
         {
             Directory.CreateDirectory(tempDir);
             var entryFile = Path.Combine(tempDir, "Main.eidos");
-            var libFile = Path.Combine(tempDir, "Lib.eidos");
-            var helperFile = Path.Combine(tempDir, "Helper.eidos");
+            var libFile = Path.Combine(tempDir, "lib.eidos");
+            var helperFile = Path.Combine(tempDir, "helper.eidos");
             File.WriteAllText(entryFile, """
 Main :: module {
     import Lib
@@ -736,10 +786,10 @@ Lib :: module {
                 "Build.moduleStage.Namer.restoredModules") > 0);
             Assert.True(second.ProfilingCounters.GetValueOrDefault(
                 "Build.moduleStage.Namer.maxObservedParallelism") > 1);
-            AssertFunctionArity(second.SymbolTable, "main", 1);
-            AssertFunctionArity(second.SymbolTable, "id", 1);
-            AssertFunctionArity(second.SymbolTable, "keep", 1);
-            AssertFunctionArity(second.SymbolTable, "plusOne", 1);
+            AssertFunctionArity(second.SymbolTable, "main", 1, "Main");
+            AssertFunctionArity(second.SymbolTable, "id", 1, "Lib");
+            AssertFunctionArity(second.SymbolTable, "keep", 1, "Helper");
+            AssertFunctionArity(second.SymbolTable, "plusOne", 1, "Lib");
             AssertNamerPayloadFunctionParameterClosure(second.ModuleNamerStatePayloads);
 
             var cold = RunFileToNamer(entryFile, source, static _ => { });
@@ -894,8 +944,14 @@ Helper :: module {
         Assert.NotNull(merge.BuildResult?.SymbolTable);
         var restoredScopes = CanonicalScopeBindings(merge.BuildResult.SymbolTable)
             .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-        Assert.Single(restoredScopes, scope => scope.Contains("id:[Function:id]", StringComparison.Ordinal));
-        Assert.Single(restoredScopes, scope => scope.Contains("keep:[Function:keep]", StringComparison.Ordinal));
+        var idScopes = restoredScopes
+            .Where(scope => scope.StartsWith("Module|v=id:Function:id|o=id:[Function:id]|", StringComparison.Ordinal))
+            .ToArray();
+        var keepScopes = restoredScopes
+            .Where(scope => scope.StartsWith("Module|v=keep:Function:keep|o=keep:[Function:keep]|", StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(idScopes.Length == 1, string.Join(Environment.NewLine, idScopes));
+        Assert.True(keepScopes.Length == 1, string.Join(Environment.NewLine, keepScopes));
     }
 
     [Fact]
@@ -1080,10 +1136,29 @@ Main :: module {
         return symbol == null ? "missing" : $"{symbol.Kind}:{symbol.Name}";
     }
 
-    private static void AssertFunctionArity(SymbolTable symbolTable, string name, int arity)
+    private static void AssertFunctionArity(
+        SymbolTable symbolTable,
+        string name,
+        int arity,
+        string? moduleDisplayKey = null)
     {
-        var function = Assert.Single(symbolTable.Symbols.Values.OfType<FuncSymbol>(), candidate =>
-            string.Equals(candidate.Name, name, StringComparison.Ordinal));
+        var matches = symbolTable.Symbols.Values.OfType<FuncSymbol>()
+            .Where(candidate => string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            .Where(candidate => moduleDisplayKey == null || symbolTable.Modules
+                .GetOwningModuleIds(candidate.Id)
+                .Select(symbolTable.Modules.GetModule)
+                .Any(module => string.Equals(
+                    module?.Identity.ToDisplayKey(),
+                    moduleDisplayKey,
+                    StringComparison.Ordinal)))
+            .ToArray();
+        Assert.True(
+            matches.Length == 1,
+            $"expected one function named '{name}', found:{Environment.NewLine}" +
+            string.Join(Environment.NewLine, matches.Select(function =>
+                $"{function.Id.Value} {function.Span} " +
+                $"owners=[{string.Join(',', symbolTable.Modules.GetOwningModuleIds(function.Id).Select(id => symbolTable.Modules.GetModule(id)?.Identity.ToIdentityKey()))}]")));
+        var function = matches[0];
         Assert.Equal(arity, function.Parameters.Count);
         Assert.Equal(arity, function.ParamTypes.Count);
         Assert.All(function.Parameters.Where(static parameterId => parameterId.IsValid), parameterId =>

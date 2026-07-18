@@ -20,7 +20,7 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Shared
+import std.Shared
 
 main :: Unit -> Int
 {

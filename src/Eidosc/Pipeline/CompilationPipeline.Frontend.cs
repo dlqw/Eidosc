@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Eidosc.Ast.Declarations;
 using Eidosc.Symbols;
 using Eidosc.ProjectSystem;
 using Eidosc.Parsing.Handwritten;
@@ -33,8 +34,12 @@ public sealed partial class CompilationPipeline
             _nameResolver = new NameResolver(_symbolTable, _sourceCode, _options.ImportSearchRoots)
             {
                 ComptimeExecution = _comptimeExecution,
+                CompilerOwnedSourceGrant = CompilerOwnedSourceGrant.Create(_compilerOwnedSourcePaths),
+                LanguageVersion = _options.LanguageVersion,
+                MetaTargetTriple = _options.LlvmTargetTriple ?? string.Empty,
                 UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly(),
-                PreviousImplOverlapCheckSnapshot = _options.PreviousImplOverlapCheckSnapshot
+                PreviousImplOverlapCheckSnapshot = _options.PreviousImplOverlapCheckSnapshot,
+                PackageMetaConfiguration = _options.MetaConfiguration
             };
         }
 
@@ -85,7 +90,11 @@ public sealed partial class CompilationPipeline
 
     private bool RunHandwrittenParser()
     {
-        var (ast, diagnostics) = SyntaxParser.Parse(_tokens!, GetPrimarySourceName(), _options.LanguageVersion);
+        var (ast, diagnostics) = SyntaxParser.Parse(
+            _tokens!,
+            GetPrimarySourceName(),
+            _options.LanguageVersion,
+            sourceText: _sourceCode);
         _diagnostics.AddRange(diagnostics);
 
         if (ast == null) return false;
@@ -304,9 +313,34 @@ public sealed partial class CompilationPipeline
         _nameResolver = new NameResolver(_symbolTable, _sourceCode, _options.ImportSearchRoots)
         {
             ComptimeExecution = _comptimeExecution,
+            CompilerOwnedSourceGrant = CompilerOwnedSourceGrant.Create(_compilerOwnedSourcePaths),
+            LanguageVersion = _options.LanguageVersion,
+            MetaTargetTriple = _options.LlvmTargetTriple ?? string.Empty,
             UsePrecompiledImportSignatureOnly = ShouldUsePrecompiledImportSignaturesOnly(),
-            PreviousImplOverlapCheckSnapshot = _options.PreviousImplOverlapCheckSnapshot
+            PreviousImplOverlapCheckSnapshot = _options.PreviousImplOverlapCheckSnapshot,
+            PackageMetaConfiguration = _options.MetaConfiguration
         };
+        if (!_nameResolver.TryRehydrateDeferredMetaExpansionState(_ast))
+        {
+            SetNamerModuleRestoreFallbackCounters(_moduleArtifactRestoreExecution);
+            SetProfilingCounter("Namer.moduleRestore.fallbackSchedulerRehydration", 1);
+            SetProfilingCounter(
+                $"Namer.moduleRestore.fallbackSchedulerRehydration.{_nameResolver.SchedulerRehydrationFailure}",
+                1);
+            return false;
+        }
+        SetProfilingCounter(
+            "Namer.moduleRestore.rehydratedMetaInvocations",
+            _nameResolver.RehydratedMetaInvocationCount);
+        SetProfilingCounter(
+            "Namer.moduleRestore.rehydratedCompletedMetaInvocations",
+            _nameResolver.RehydratedCompletedMetaInvocationCount);
+        foreach (var stage in Enum.GetValues<ClauseStage>())
+        {
+            SetProfilingCounter(
+                $"Namer.moduleRestore.rehydratedMetaInvocations.{stage}",
+                _nameResolver.GetRehydratedMetaInvocationCount(stage));
+        }
         if (_options.ConfigFfiLibraries.Length > 0)
         {
             _nameResolver.AddConfigLinkLibraries(_options.ConfigFfiLibraries);
@@ -319,6 +353,7 @@ public sealed partial class CompilationPipeline
         SetProfilingCounter("Namer.moduleRestore.payloadModules", restoredPayloads.Count);
         SetProfilingCounter("Namer.moduleRestore.restoredAstNodes", astRestore.RestoredNodes);
         SetProfilingCounter("Namer.moduleRestore.fallbackFullResolve", 0);
+        SetProfilingCounter("Namer.moduleRestore.fallbackSchedulerRehydration", 0);
         SetModuleStageExecutionCounters(
             "Namer",
             _moduleArtifactRestoreExecution,

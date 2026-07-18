@@ -36,12 +36,8 @@ public static class LexerTableBuilder
         //  Identifiers (NoPrefix — go into fallback table)
         // ──────────────────────────────────────────────────────────────
         AddRule(
-            new UnicodeIdentifierRule(0, IdentifierHead.Lower, SyntaxKind.Identifier),
+            new UnicodeIdentifierRule(0, SyntaxKind.Identifier),
             "identifier", TerminalFlag.None, priority: 0, isNoPrefix: true);
-
-        AddRule(
-            new UnicodeIdentifierRule(0, IdentifierHead.Upper, SyntaxKind.TypeIdentifier),
-            "typeIdentifier", TerminalFlag.None, priority: 0, isNoPrefix: true);
 
         AddRule(
             new SymbolOperatorRule(0, SyntaxKind.OperatorIdentifier),
@@ -91,6 +87,7 @@ public static class LexerTableBuilder
         AddKeyword("mref");     // KwMref
         AddKeyword("do");       // KwDo
         AddKeyword("unreachable"); // KwUnreachable
+        AddKeyword("quote");    // KwQuote
 
         // ──────────────────────────────────────────────────────────────
         //  Operators (priority 0, no special flags)

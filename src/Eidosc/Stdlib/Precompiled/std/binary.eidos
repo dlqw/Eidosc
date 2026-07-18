@@ -1,0 +1,391 @@
+Binary :: module {
+    import Option
+    import Seq
+
+
+
+    string_length :: String -> Int internal intrinsic "string_length";
+
+
+
+
+    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
+
+
+
+
+    string_from_char :: Int -> String internal intrinsic "string_from_char";
+
+
+
+    uint_mod :: Int -> Int -> Int
+     internal
+{
+        value => modulus => {
+            modded := value % modulus;
+            if modded < 0 then { modded + modulus } else { modded }
+        }
+    }
+
+
+    byte :: Int -> Int
+     internal
+{
+        value => Binary.uint_mod(value)(256)
+    }
+
+
+    u16 :: Int -> Int
+     internal
+{
+        value => Binary.uint_mod(value)(65536)
+    }
+
+
+    u32 :: Int -> Int
+     internal
+{
+        value => Binary.uint_mod(value)(65536 * 65536)
+    }
+
+
+    empty :: Unit -> Seq[Int]
+     internal
+{
+        _ => []
+    }
+
+
+    append :: Seq[Int] -> Seq[Int] -> Seq[Int]
+     internal
+{
+        left => right => [x | xs <- [left, right], x <- xs]
+    }
+
+
+    push :: Seq[Int] -> Int -> Seq[Int]
+     internal
+{
+        bytes => value => Binary.append(bytes)([Binary.byte(value)])
+    }
+
+
+    concat :: Seq[Seq[Int]] -> Seq[Int]
+     internal
+{
+        parts => [x | xs <- parts, x <- xs]
+    }
+
+    is_byte :: Int -> Bool
+    {
+        value => value >= 0 && value <= 255
+    }
+
+    all_bytes :: Seq[Int] -> Bool
+    {
+        [] => true,
+        [head, ..tail] => Binary.is_byte(head) && Binary.all_bytes(tail)
+    }
+
+    normalize_bytes :: Seq[Int] -> Seq[Int]
+    {
+        [] => [],
+        [head, ..tail] => Seq.append([Binary.byte(head)])(Binary.normalize_bytes(tail))
+    }
+
+    checksum8 :: Seq[Int] -> Int
+    {
+        [] => 0,
+        [head, ..tail] => Binary.byte(Binary.byte(head) + Binary.checksum8(tail))
+    }
+
+    encode_bool :: Bool -> Seq[Int]
+    {
+        true => [1],
+        false => [0]
+    }
+
+    decode_bool :: Seq[Int] -> Option[Bool]
+    {
+        [1] => Some(true),
+        [0] => Some(false),
+        _ => None()
+    }
+
+    decode_bool_or_false :: Seq[Int] -> Bool
+    {
+        bytes => Option.unwrap_or(Binary.decode_bool(bytes))(false)
+    }
+
+    encode_u8 :: Int -> Seq[Int]
+    {
+        value => [Binary.byte(value)]
+    }
+
+    decode_u8 :: Seq[Int] -> Option[Int]
+    {
+        [b0] => Some(Binary.byte(b0)),
+        _ => None()
+    }
+
+    decode_u8_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_u8(bytes))(0)
+    }
+
+    encode_u16_le :: Int -> Seq[Int]
+    {
+        value => {
+            normalized := Binary.u16(value);
+            [
+                Binary.byte(normalized),
+                Binary.byte(normalized / 256)
+            ]
+        }
+    }
+
+    decode_u16_le :: Seq[Int] -> Option[Int]
+    {
+        [b0, b1] => Some(Binary.byte(b0) + Binary.byte(b1) * 256),
+        _ => None()
+    }
+
+    decode_u16_le_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_u16_le(bytes))(0)
+    }
+
+    encode_u16_be :: Int -> Seq[Int]
+    {
+        value => {
+            normalized := Binary.u16(value);
+            [
+                Binary.byte(normalized / 256),
+                Binary.byte(normalized)
+            ]
+        }
+    }
+
+    decode_u16_be :: Seq[Int] -> Option[Int]
+    {
+        [b0, b1] => Some(Binary.byte(b0) * 256 + Binary.byte(b1)),
+        _ => None()
+    }
+
+    decode_u16_be_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_u16_be(bytes))(0)
+    }
+
+    encode_u32_le :: Int -> Seq[Int]
+    {
+        value => {
+            normalized := Binary.u32(value);
+            [
+                Binary.byte(normalized),
+                Binary.byte(normalized / 256),
+                Binary.byte(normalized / 65536),
+                Binary.byte(normalized / 16777216)
+            ]
+        }
+    }
+
+    decode_u32_le :: Seq[Int] -> Option[Int]
+    {
+        [b0, b1, b2, b3] => Some(Binary.byte(b0) + Binary.byte(b1) * 256 + Binary.byte(b2) * 65536 + Binary.byte(b3) * 16777216),
+        _ => None()
+    }
+
+    decode_u32_le_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_u32_le(bytes))(0)
+    }
+
+    encode_u32_be :: Int -> Seq[Int]
+    {
+        value => {
+            normalized := Binary.u32(value);
+            [
+                Binary.byte(normalized / 16777216),
+                Binary.byte(normalized / 65536),
+                Binary.byte(normalized / 256),
+                Binary.byte(normalized)
+            ]
+        }
+    }
+
+    decode_u32_be :: Seq[Int] -> Option[Int]
+    {
+        [b0, b1, b2, b3] => Some(Binary.byte(b0) * 16777216 + Binary.byte(b1) * 65536 + Binary.byte(b2) * 256 + Binary.byte(b3)),
+        _ => None()
+    }
+
+    decode_u32_be_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_u32_be(bytes))(0)
+    }
+
+    encode_i8 :: Int -> Seq[Int]
+    {
+        value => Binary.encode_u8(value)
+    }
+
+    decode_i8 :: Seq[Int] -> Option[Int]
+    {
+        bytes => match Binary.decode_u8(bytes)
+        {
+            Some(unsigned) => if unsigned >= 128 then { Some(unsigned - 256) } else { Some(unsigned) },
+            None() => None()
+        }
+    }
+
+    decode_i8_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_i8(bytes))(0)
+    }
+
+    encode_i16_le :: Int -> Seq[Int]
+    {
+        value => Binary.encode_u16_le(value)
+    }
+
+    decode_i16_le :: Seq[Int] -> Option[Int]
+    {
+        bytes => match Binary.decode_u16_le(bytes)
+        {
+            Some(unsigned) => if unsigned >= 32768 then { Some(unsigned - 65536) } else { Some(unsigned) },
+            None() => None()
+        }
+    }
+
+    decode_i16_le_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_i16_le(bytes))(0)
+    }
+
+    encode_i16_be :: Int -> Seq[Int]
+    {
+        value => Binary.encode_u16_be(value)
+    }
+
+    decode_i16_be :: Seq[Int] -> Option[Int]
+    {
+        bytes => match Binary.decode_u16_be(bytes)
+        {
+            Some(unsigned) => if unsigned >= 32768 then { Some(unsigned - 65536) } else { Some(unsigned) },
+            None() => None()
+        }
+    }
+
+    decode_i16_be_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_i16_be(bytes))(0)
+    }
+
+    encode_i32_le :: Int -> Seq[Int]
+    {
+        value => Binary.encode_u32_le(value)
+    }
+
+    decode_i32_le :: Seq[Int] -> Option[Int]
+    {
+        bytes => match Binary.decode_u32_le(bytes)
+        {
+            Some(unsigned) => if unsigned >= 32768 * 65536 then { Some(unsigned - 65536 * 65536) } else { Some(unsigned) },
+            None() => None()
+        }
+    }
+
+    decode_i32_le_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_i32_le(bytes))(0)
+    }
+
+    encode_i32_be :: Int -> Seq[Int]
+    {
+        value => Binary.encode_u32_be(value)
+    }
+
+    decode_i32_be :: Seq[Int] -> Option[Int]
+    {
+        bytes => match Binary.decode_u32_be(bytes)
+        {
+            Some(unsigned) => if unsigned >= 32768 * 65536 then { Some(unsigned - 65536 * 65536) } else { Some(unsigned) },
+            None() => None()
+        }
+    }
+
+    decode_i32_be_or_zero :: Seq[Int] -> Int
+    {
+        bytes => Option.unwrap_or(Binary.decode_i32_be(bytes))(0)
+    }
+
+
+    string_to_bytes_loop :: String -> Int -> Seq[Int]
+     internal
+{
+        src => index =>
+            if index >= string_length(src) then { [] }
+            else { Binary.append([string_char_at(src, index)])(Binary.string_to_bytes_loop(src)(index + 1)) }
+    }
+
+    string_to_bytes :: String -> Seq[Int]
+    {
+        src => Binary.string_to_bytes_loop(src)(0)
+    }
+
+    bytes_to_string :: Seq[Int] -> String
+    {
+        [] => "",
+        [head, ..tail] => string_from_char(Binary.byte(head)) ++ Binary.bytes_to_string(tail)
+    }
+
+
+    bytes_to_string_exact :: Seq[Int] -> Int -> Option[String]
+     internal
+{
+        bytes => remaining =>
+            if remaining < 0 then { None() }
+            else {
+                match bytes
+                {
+                    [] => if remaining == 0 then { Some("") } else { None() },
+                    [head, ..tail] =>
+                        if remaining > 0 then {
+                            match Binary.bytes_to_string_exact(tail)(remaining - 1)
+                            {
+                                Some(rest) => Some(string_from_char(Binary.byte(head)) ++ rest),
+                                None() => None()
+                            }
+                        } else { None() }
+                }
+            }
+    }
+
+    decode_string :: Seq[Int] -> Option[String]
+    {
+        [b0, ..tail0] => match tail0
+        {
+            [b1, ..tail1] => match tail1
+            {
+                [b2, ..tail2] => match tail2
+                {
+                    [b3, ..body] => match Binary.decode_u32_le([b0, b1, b2, b3])
+                    {
+                        Some(length) => Binary.bytes_to_string_exact(body)(length),
+                        None() => None()
+                    },
+                    _ => None()
+                },
+                _ => None()
+            },
+            _ => None()
+        },
+        _ => None()
+    }
+
+    encode_string :: String -> Seq[Int]
+    {
+        src => Binary.append(Binary.encode_u32_le(string_length(src)))(Binary.string_to_bytes(src))
+    }
+}

@@ -93,6 +93,7 @@ public enum SuggestionKind
     AddTraitImpl,
     FixBorrow,
     RenameVariable,
+    RenameSymbol,
     GenericParameter,
     TypeCast,
     StyleRewrite

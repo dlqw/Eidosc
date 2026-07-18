@@ -31,17 +31,17 @@ public static class TypeSemantics
 
     /// <summary>
     /// 判断 MirFunctionRef 是否为 ADT 构造器调用。
-    /// 优先使用结构化 SymbolKind 判断，SymbolId 无效时 fallback 到名称启发式。
+    /// 只使用结构化 SymbolKind / FunctionId.Kind 判断。
     /// </summary>
     public static bool IsAdtConstructorCall(MirFunctionRef func)
     {
-        return func.SymbolId.IsValid switch
+        if (func.SymbolKind == SymbolKind.Constructor ||
+            func.FunctionId.Kind == SymbolKind.Constructor)
         {
-            true when func.SymbolKind == SymbolKind.Constructor => true,
-            // Fallback: SymbolId 无效时使用名称启发式
-            false => IsLikelyAdtConstructorByName(func.Name),
-            _ => false
-        };
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -72,40 +72,4 @@ public static class TypeSemantics
         return true;
     }
 
-    /// <summary>
-    /// 名称启发式判断是否为 ADT 构造器。
-    /// 仅在 SymbolId 无效时作为 fallback 使用。
-    /// 适用于后端（LLVM 层）构造的合成 MirFunctionRef。
-    /// </summary>
-    public static bool IsLikelyAdtConstructorByName(string? functionName)
-    {
-        if (string.IsNullOrWhiteSpace(functionName))
-            return false;
-
-        // Module-qualified names (containing WellKnownStrings.Separators.Path, i.e. "::") are regular function calls.
-        if (functionName.Contains(WellKnownStrings.Separators.Path, StringComparison.Ordinal))
-            return false;
-
-        // ADT constructor names are simple identifiers starting with uppercase
-        return char.IsUpper(functionName[0]);
-    }
-
-    /// <summary>
-    /// 判断 mangled 符号名是否可能为 ADT 构造器（LLVM 层 fallback）。
-    /// 仅在后端 TryCreateAdtConstructorStub 等场景使用，
-    /// 此时只有 mangled 名称，没有 MirFunctionRef 可用。
-    ///
-    /// 注意：此方法故意宽松（不检查 "__"），因为 LLVM 后端需要为
-    /// 某些无法解析的函数生成合成 stub 以避免链接错误。
-    /// 精确的 ADT 检测应使用 IsAdtConstructorCall(MirFunctionRef)。
-    /// </summary>
-    public static bool IsLikelyAdtConstructorByMangledName(string symbolName)
-    {
-        const string prefix = WellKnownStrings.Mangling.Prefix;
-        if (!symbolName.StartsWith(prefix, StringComparison.Ordinal))
-            return false;
-
-        var rawName = symbolName[prefix.Length..];
-        return rawName.Length > 0 && char.IsUpper(rawName[0]);
-    }
 }

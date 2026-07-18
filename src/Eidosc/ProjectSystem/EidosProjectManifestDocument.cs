@@ -21,6 +21,7 @@ public sealed class EidosProjectManifestDocument
     public bool? NoImplicitStdlib { get; set; }
     public EidosProjectBuildManifestDocument? Build { get; set; }
     public EidosProjectFfiManifestDocument? Ffi { get; set; }
+    public EidosProjectMetaManifestDocument? Meta { get; set; }
 
     public static EidosProjectManifestDocument Load(string path)
     {
@@ -285,6 +286,7 @@ public sealed class EidosProjectManifestDocument
             WriteDependencies();
             WriteBuild();
             WriteFfi();
+            WriteMeta();
 
             var text = _builder.ToString().TrimEnd();
             return text.Length == 0 ? string.Empty : text + Environment.NewLine;
@@ -420,6 +422,8 @@ public sealed class EidosProjectManifestDocument
             AppendOptionalProperty("program", build.Program);
             AppendOptionalProperty("fileInputs", build.FileInputs);
             AppendOptionalProperty("environment", build.Environment);
+            AppendOptionalProperty("networkInputs", build.NetworkInputs);
+            AppendOptionalProperty("volatileCapabilities", build.VolatileCapabilities);
             AppendOptionalProperty("outputRoots", build.OutputRoots);
             AppendBlankLine();
 
@@ -428,6 +432,7 @@ public sealed class EidosProjectManifestDocument
                 AppendSection("[build.tools]");
                 AppendOptionalProperty("name", tool.Name);
                 AppendOptionalProperty("path", tool.Path);
+                AppendOptionalProperty("execution", tool.Execution);
                 AppendBlankLine();
             }
         }
@@ -474,6 +479,34 @@ public sealed class EidosProjectManifestDocument
 
             if (wroteFfi)
             {
+                AppendBlankLine();
+            }
+        }
+
+        private void WriteMeta()
+        {
+            var meta = manifest.Meta;
+            if (meta == null)
+            {
+                return;
+            }
+
+            if (meta.Checks != null)
+            {
+                AppendSection("meta");
+                AppendOptionalProperty("checks", meta.Checks);
+                AppendBlankLine();
+            }
+
+            foreach (var extension in meta.Extensions ?? [])
+            {
+                AppendSection("[meta.extensions]");
+                AppendOptionalProperty("name", extension.Name);
+                AppendOptionalProperty("entry", extension.Entry);
+                AppendOptionalProperty("stage", extension.Stage);
+                AppendOptionalProperty("scope", extension.Scope);
+                AppendOptionalProperty("inputs", extension.Inputs);
+                AppendOptionalProperty("capabilities", extension.Capabilities);
                 AppendBlankLine();
             }
         }
@@ -594,7 +627,7 @@ public sealed class EidosProjectManifestDocument
         private static bool IsDefaultInferredTarget(EidosProjectTargetManifestDocument target)
         {
             return string.Equals(target.Name, "main", StringComparison.Ordinal) &&
-                   string.Equals(target.Entry, "src/Main.eidos", StringComparison.Ordinal) &&
+                   string.Equals(target.Entry, "src/main.eidos", StringComparison.Ordinal) &&
                    IsDefaultExecutableKind(target.Kind) &&
                    (target.Dependencies is not { Length: > 0 }) &&
                    (target.ProjectDependencies is not { Length: > 0 });
@@ -683,6 +716,8 @@ public sealed class EidosProjectBuildManifestDocument
     public string? Program { get; set; }
     public string[]? FileInputs { get; set; }
     public string[]? Environment { get; set; }
+    public string[]? NetworkInputs { get; set; }
+    public string[]? VolatileCapabilities { get; set; }
     public string[]? OutputRoots { get; set; }
     public EidosProjectBuildToolManifestDocument[]? Tools { get; set; }
 }
@@ -691,4 +726,21 @@ public sealed class EidosProjectBuildToolManifestDocument
 {
     public string? Name { get; set; }
     public string? Path { get; set; }
+    public string? Execution { get; set; }
+}
+
+public sealed class EidosProjectMetaManifestDocument
+{
+    public string[]? Checks { get; set; }
+    public EidosProjectMetaExtensionManifestDocument[]? Extensions { get; set; }
+}
+
+public sealed class EidosProjectMetaExtensionManifestDocument
+{
+    public string? Name { get; set; }
+    public string? Entry { get; set; }
+    public string? Stage { get; set; }
+    public string? Scope { get; set; }
+    public string[]? Inputs { get; set; }
+    public string[]? Capabilities { get; set; }
 }

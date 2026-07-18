@@ -206,9 +206,9 @@ main :: Unit -> Unit need Writer
         WriteNameFirstManifest(tempDir);
 
         const string source = """
-import Std.FFI
+import std.Ffi
 
-int_compare :: RawPtr -> RawPtr -> Int need FFI
+int_compare :: RawPtr -> RawPtr -> Int need ffi
 {
     a => b => {
         va := ptr_load_as[Int](a);
@@ -217,7 +217,7 @@ int_compare :: RawPtr -> RawPtr -> Int need FFI
     }
 }
 
-main :: Unit -> Int need FFI
+main :: Unit -> Int need ffi
 {
     _ => {
         cmp := cfn_from(int_compare);
@@ -257,21 +257,21 @@ main :: Unit -> Int need FFI
         WriteNameFirstManifest(tempDir);
 
         const string source = """
-import Std.FFI
-import Std.Task
+import std.Ffi
+import std.Task
 
-store_result :: RawPtr -> RawPtr -> Unit need FFI
+store_result :: RawPtr -> RawPtr -> Unit need ffi
 {
     slot => value => ptr_store_as[RawPtr](slot, value)
 }
 
-main :: Unit -> Unit need FFI
+main :: Unit -> Unit need ffi
 {
     _ => {
         payload := ptr_null();
-        task := Task.completed_raw[RawPtr](payload);
+        pending_task := Task.completed_raw[RawPtr](payload);
         slot := ptr_null();
-        awaited := task.await_raw(store_result(slot));
+        awaited := pending_task.await_raw(store_result(slot));
         ()
     }
 }
@@ -362,7 +362,7 @@ main :: Unit -> Int
             manifestSchema = 3
             sourceRoots = ["."]
             [language]
-            version = "0.6.0-alpha.1"
+            version = "0.7.0-alpha.1"
             """);
     }
 

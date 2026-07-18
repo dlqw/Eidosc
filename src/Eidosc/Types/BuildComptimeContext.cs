@@ -19,7 +19,10 @@ internal sealed record BuildEnvironmentCapability(
 internal sealed record BuildToolCapability(
     string Name,
     string FullPath,
-    string Sha256);
+    string Sha256,
+    string ExecutionPlatform);
+
+internal sealed record BuildNetworkCapability(string Url);
 
 internal sealed record BuildCapabilityAccess(
     long Sequence,
@@ -33,6 +36,7 @@ internal sealed class BuildComptimeContext
     private readonly Dictionary<string, BuildFileCapability> _files;
     private readonly Dictionary<string, BuildEnvironmentCapability> _environment;
     private readonly Dictionary<string, BuildToolCapability> _tools;
+    private readonly Dictionary<string, BuildNetworkCapability> _network;
     private readonly List<BuildCapabilityAccess> _accesses = [];
     private readonly object _accessGate = new();
     private long _nextAccessSequence;
@@ -45,6 +49,8 @@ internal sealed class BuildComptimeContext
         IReadOnlyList<BuildFileCapability> files,
         IReadOnlyList<BuildEnvironmentCapability> environment,
         IReadOnlyList<BuildToolCapability> tools,
+        IReadOnlyList<BuildNetworkCapability> network,
+        IReadOnlyList<string> volatileCapabilities,
         IReadOnlyList<string> outputRoots,
         ComptimeResourceBudget resourceBudget,
         ComptimeTraceCollector? trace = null,
@@ -69,6 +75,8 @@ internal sealed class BuildComptimeContext
         _files = files.ToDictionary(static file => file.FullPath, pathComparer);
         _environment = environment.ToDictionary(static variable => variable.Name, environmentComparer);
         _tools = tools.ToDictionary(static tool => tool.Name, StringComparer.Ordinal);
+        _network = network.ToDictionary(static capability => capability.Url, StringComparer.Ordinal);
+        VolatileCapabilities = volatileCapabilities.Order(StringComparer.Ordinal).ToArray();
     }
 
     public string ProjectDirectory { get; }
@@ -77,6 +85,8 @@ internal sealed class BuildComptimeContext
     public string CapabilityIdentity { get; }
     public StringComparer PathComparer { get; }
     public IReadOnlyList<string> OutputRoots { get; }
+    public IReadOnlyList<string> VolatileCapabilities { get; }
+    public bool IsReproducible => VolatileCapabilities.Count == 0;
     public IReadOnlyList<BuildFileCapability> DeclaredFiles => _files.Values
         .OrderBy(static file => file.RelativePath, StringComparer.Ordinal)
         .ToArray();
@@ -85,6 +95,9 @@ internal sealed class BuildComptimeContext
         .ToArray();
     public IReadOnlyList<BuildToolCapability> ToolCapabilities => _tools.Values
         .OrderBy(static tool => tool.Name, StringComparer.Ordinal)
+        .ToArray();
+    public IReadOnlyList<BuildNetworkCapability> NetworkCapabilities => _network.Values
+        .OrderBy(static capability => capability.Url, StringComparer.Ordinal)
         .ToArray();
     public ComptimeResourceBudget Resources { get; }
     public ComptimeTraceCollector? Trace { get; }
@@ -191,6 +204,42 @@ internal sealed class BuildComptimeContext
         return true;
     }
 
+    public bool TryGetHostTool(string name, out BuildToolCapability tool, out string reason)
+    {
+        if (!TryGetTool(name, out tool, out reason))
+        {
+            return false;
+        }
+
+        if (!string.Equals(tool.ExecutionPlatform, "host", StringComparison.Ordinal))
+        {
+            reason = $"BuildProcess cannot execute target tool '{name}' on host '{HostTriple}'";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    public bool TryAuthorizeNetworkFetch(string url, string sha256, out string reason)
+    {
+        if (!_network.ContainsKey(url))
+        {
+            reason = $"BuildNetwork denied undeclared URL '{url}'";
+            return false;
+        }
+
+        if (!IsSha256(sha256))
+        {
+            reason = "BuildNetwork fetch requires a lowercase 64-hex SHA-256 digest";
+            return false;
+        }
+
+        RecordAccess("network", url, HashText($"{url}\0{sha256}"));
+        reason = string.Empty;
+        return true;
+    }
+
     public bool TryResolveProjectPath(string path, out string fullPath, out string reason)
     {
         fullPath = string.Empty;
@@ -248,6 +297,9 @@ internal sealed class BuildComptimeContext
     }
 
     private static string NormalizeDisplayPath(string path) => path.Replace('\\', '/');
+
+    private static bool IsSha256(string value) =>
+        value.Length == 64 && value.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     private bool TryValidatePhysicalContainment(string fullPath, out string reason)
     {

@@ -6,6 +6,7 @@ using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
 using Eidosc.Semantic;
+using Eidosc.Syntax;
 using Eidosc.Utils;
 
 namespace Eidosc.Types;
@@ -30,9 +31,21 @@ public sealed partial class TypeInferer
     /// </summary>
     public Type InferExpression(EidosAstNode expr)
     {
+        if (_allowComptimeFunctionReferences &&
+            expr is Expression reflectedExpression &&
+            TryBuildReflectedTypeSyntax(expr, out var reflectedSyntax))
+        {
+            var reflectedType = _substitution.Apply(ConvertTypeInCurrentTypeParamContext(reflectedSyntax));
+            reflectedExpression.ReflectedType = reflectedType;
+            expr.InferredType = BaseTypes.TypeValue;
+            return BaseTypes.TypeValue;
+        }
+
         var type = expr switch
         {
             LiteralExpr lit => InferLiteral(lit),
+            QuoteExpr quote => InferQuote(quote),
+            ExpandExpr expansion => InferExpandedExpression(expansion),
             IdentifierExpr ident => InferIdentifier(ident),
             PathExpr path => InferPath(path),
             BlockExpr block => InferBlock(block),
@@ -71,6 +84,87 @@ public sealed partial class TypeInferer
         expr.InferredType = appliedType;
         return appliedType;
     }
+
+    private Type InferExpandedExpression(ExpandExpr expansion)
+    {
+        if (expansion.ExpandedExpression == null)
+        {
+            AddError(expansion.Span, "expression expand was not materialized before type checking");
+            return CreateErrorRecoveryType();
+        }
+
+        return SafeInferExpression(expansion.ExpandedExpression);
+    }
+
+    private bool TryBuildReflectedTypeSyntax(EidosAstNode expression, out TypeNode syntax)
+    {
+        switch (expression)
+        {
+            case IdentifierExpr { SymbolId.IsValid: true } identifier
+                when IsReflectedTypeSymbol(identifier.SymbolId):
+            {
+                var path = new TypePath();
+                path.SetSpan(identifier.Span);
+                path.SetTypeName(identifier.Name);
+                path.SymbolId = identifier.SymbolId;
+                syntax = path;
+                return true;
+            }
+            case PathExpr { SymbolId.IsValid: true } expressionPath
+                when IsReflectedTypeSymbol(expressionPath.SymbolId):
+            {
+                var path = new TypePath();
+                path.SetSpan(expressionPath.Span);
+                path.SetPackageAlias(expressionPath.PackageAlias);
+                path.ModulePath = [.. expressionPath.ModulePath];
+                path.SetTypeName(expressionPath.Name);
+                path.SymbolId = expressionPath.SymbolId;
+                path.SetGenericArguments(expressionPath.GenericArguments);
+                syntax = path;
+                return true;
+            }
+            case IndexExpr { IsTypeApplication: true, Object: not null } application
+                when TryBuildReflectedTypeSyntax(application.Object, out var appliedSyntax):
+                switch (appliedSyntax)
+                {
+                    case TypePath path:
+                        path.SetGenericArguments(application.GenericArguments);
+                        syntax = path;
+                        return true;
+                    case AssociatedTypeProjection projection:
+                        projection.SetGenericArguments(application.GenericArguments);
+                        syntax = projection;
+                        return true;
+                    default:
+                        syntax = null!;
+                        return false;
+                }
+            case MethodCallExpr
+            {
+                HasExplicitCallSyntax: false,
+                SymbolId.IsValid: true,
+                Receiver: not null,
+                PositionalArgs.Count: 0,
+                NamedArgs.Count: 0
+            } member when TryBuildReflectedTypeSyntax(member.Receiver, out var target):
+            {
+                var projection = new AssociatedTypeProjection();
+                projection.SetSpan(member.Span);
+                projection.SetTarget(target);
+                projection.SetMemberName(member.MethodName);
+                projection.SymbolId = member.SymbolId;
+                syntax = projection;
+                return true;
+            }
+            default:
+                syntax = null!;
+                return false;
+        }
+    }
+
+    private bool IsReflectedTypeSymbol(SymbolId symbolId) =>
+        _symbolTable.GetSymbol(symbolId) is AdtSymbol or TraitSymbol or
+            TypeParamSymbol { ParameterKind: GenericParameterKind.Type or GenericParameterKind.EffectRow };
 
     private Type InferDoExpr(DoExpr doExpr)
     {
@@ -281,6 +375,17 @@ public sealed partial class TypeInferer
                 }
 
                 AddError(ident.Span, $"Cannot resolve the declared value type of generic parameter '{ident.Name}'.");
+                return CreateErrorRecoveryType();
+            }
+
+            if (symbol is AdtSymbol { TypeParams.Count: > 0 } genericType)
+            {
+                AddError(
+                    ident.Span,
+                    DiagnosticMessages.TypeExpectsTypeArguments(
+                        genericType.Name,
+                        genericType.TypeParams.Count,
+                        0));
                 return CreateErrorRecoveryType();
             }
 
@@ -646,7 +751,13 @@ public sealed partial class TypeInferer
             ? SafeInferExpression(ifExpr.ElseBranch)
             : BaseTypes.Unit;
 
-        var branchResult = JoinControlFlowTypes(thenType, elseType, ifExpr.Span, DiagnosticMessages.IfBranchTypeMismatch);
+        var branchResult = JoinControlFlowTypes(
+            thenType,
+            elseType,
+            ifExpr.Span,
+            DiagnosticMessages.IfBranchTypeMismatch,
+            ifExpr.ThenBranch == null ? [] : [ifExpr.ThenBranch.Span],
+            ifExpr.ElseBranch?.Span);
         return conditionHasRecovery || ContainsErrorRecoveryType(branchResult)
             ? CreateErrorRecoveryType()
             : branchResult;
@@ -723,7 +834,13 @@ public sealed partial class TypeInferer
             ? SafeInferExpression(ifLetExpr.ElseBranch)
             : BaseTypes.Unit;
 
-        var branchResult = JoinControlFlowTypes(thenType, elseType, ifLetExpr.Span, DiagnosticMessages.IfLetBranchTypeMismatch);
+        var branchResult = JoinControlFlowTypes(
+            thenType,
+            elseType,
+            ifLetExpr.Span,
+            DiagnosticMessages.IfLetBranchTypeMismatch,
+            ifLetExpr.ThenBranch == null ? [] : [ifLetExpr.ThenBranch.Span],
+            ifLetExpr.ElseBranch?.Span);
         return hasRecovery || ContainsErrorRecoveryType(branchResult)
             ? CreateErrorRecoveryType()
             : branchResult;
@@ -794,6 +911,7 @@ public sealed partial class TypeInferer
     private Type InferMatch(MatchExpr match)
     {
         Type? resultType = null;
+        var resultExpressionSpans = new List<SourceSpan>();
         var scrutineeType = match.MatchedExpression != null
             ? SafeInferExpression(match.MatchedExpression)
             : CreateMissingScrutineeRecovery(match.Span, "Match");
@@ -806,7 +924,7 @@ public sealed partial class TypeInferer
 
         foreach (var branch in match.Branches)
         {
-            var expectedBranchResultType = resultType ?? _substitution.FreshTypeVariable();
+            var expectedBranchResultType = _substitution.FreshTypeVariable();
             var branchSignature = new TyFun
             {
                 Params = [scrutineeType],
@@ -820,7 +938,18 @@ public sealed partial class TypeInferer
             }
             else
             {
-                resultType = JoinControlFlowTypes(resultType, branchType, branch.Span, DiagnosticMessages.MatchBranchTypeMismatch);
+                resultType = JoinControlFlowTypes(
+                    resultType,
+                    branchType,
+                    branch.Span,
+                    DiagnosticMessages.MatchBranchTypeMismatch,
+                    resultExpressionSpans,
+                    branch.Expression?.Span);
+            }
+
+            if (branch.Expression != null)
+            {
+                resultExpressionSpans.Add(branch.Expression.Span);
             }
 
             hasRecovery |= ContainsErrorRecoveryType(branchType) ||
@@ -986,6 +1115,8 @@ public sealed partial class TypeInferer
     {
         return pattern switch
         {
+            ExpandPattern { ExpandedPattern: not null } expansion =>
+                IsIrrefutablePattern(expansion.ExpandedPattern),
             VarPattern => true,
             WildcardPattern => true,
             TuplePattern tuplePattern => tuplePattern.Elements.All(IsIrrefutablePattern),
@@ -1230,6 +1361,36 @@ public sealed partial class TypeInferer
             return InferContextualRecordLiteral(contextualRecord, resolvedExpected);
         }
 
+        if (expr is CtorExpr constructor)
+        {
+            var constructorType = _substitution.Apply(InferCtor(constructor, resolvedExpected));
+            constructor.InferredType = constructorType;
+            return constructorType;
+        }
+
+        if (expr is QuoteExpr quote)
+        {
+            var quoteType = InferQuote(quote, resolvedExpected);
+            return TryUnify(resolvedExpected, quoteType, expr.Span, DiagnosticMessages.CallArgumentTypeMismatch);
+        }
+
+        if (expr is ListExpr list &&
+            resolvedExpected is TyCon
+            {
+                Name: WellKnownStrings.BuiltinTypes.Seq,
+                Args.Count: 1
+            } expectedListType)
+        {
+            return InferListWithExpectedType(list, expectedListType);
+        }
+
+        if (expr is CallExpr call)
+        {
+            var callType = _substitution.Apply(InferCall(call, resolvedExpected));
+            call.InferredType = callType;
+            return callType;
+        }
+
         return SafeInferExpression(expr);
     }
 
@@ -1416,7 +1577,7 @@ public sealed partial class TypeInferer
     /// <summary>
     /// 推断函数调用的类型
     /// </summary>
-    private Type InferCall(CallExpr call)
+    private Type InferCall(CallExpr call, Type? expectedResultType = null)
     {
         call.InferredEffects = null;
 
@@ -1477,11 +1638,30 @@ public sealed partial class TypeInferer
             return rejectedResultType;
         }
 
+        if (TryInferConstructorCall(call, expectedResultType, out var constructorResultType))
+        {
+            return constructorResultType;
+        }
+
         // 推断函数类型
         if (call.Function is IdentifierExpr { ValueCandidateSymbolIds.Count: > 0 } candidateIdentifier &&
             !candidateIdentifier.SymbolId.IsValid)
         {
             return InferCandidateIdentifierCall(call, candidateIdentifier);
+        }
+
+        if (call.Function is IdentifierExpr
+            {
+                SymbolId.IsValid: false,
+                AttachedSyntaxIdentity.Kind: SyntaxIdentityKind.Hygiene
+            })
+        {
+            foreach (var argument in call.PositionalArgs)
+            {
+                SafeInferExpression(argument);
+            }
+            InferNamedArgumentValues(call.NamedArgs);
+            return CreateErrorRecoveryType();
         }
 
         if (call.Function is PathExpr { ValueCandidateSymbolIds.Count: > 0 } candidatePath &&
@@ -1490,8 +1670,7 @@ public sealed partial class TypeInferer
             return InferCandidatePathCall(call, candidatePath);
         }
 
-        if (call.Function is IdentifierExpr { SymbolId.IsValid: false, ValueCandidateSymbolIds.Count: 0 } unresolvedIdentifier &&
-            IsLowerIdentifierName(unresolvedIdentifier.Name))
+        if (call.Function is IdentifierExpr { SymbolId.IsValid: false, ValueCandidateSymbolIds.Count: 0 } unresolvedIdentifier)
         {
             return InferUnresolvedIdentifierCall(call, unresolvedIdentifier);
         }
@@ -1518,6 +1697,47 @@ public sealed partial class TypeInferer
         foreach (var arg in call.NamedArgs)
         {
             AddNamedArgument(arg, argumentExprs, argSpans);
+        }
+
+        Type projectedResultType;
+        bool hasProjectedResult;
+        if (argumentExprs.Count == 0)
+        {
+            hasProjectedResult = TryResolveEmptyCall(
+                funcType,
+                call.Function,
+                _substitution,
+                out var projectedEmptyCall);
+            projectedResultType = hasProjectedResult
+                ? projectedEmptyCall.ResultType
+                : CreateErrorRecoveryType();
+        }
+        else
+        {
+            hasProjectedResult = TryProjectCallResultType(
+                funcType,
+                argumentExprs.Count,
+                out projectedResultType);
+        }
+        if (expectedResultType != null && hasProjectedResult)
+        {
+            var constrainedProjectedResult = projectedResultType;
+            if (_substitution.Apply(expectedResultType) is TyVar &&
+                _substitution.Apply(projectedResultType) is TyCon projectedConstructor &&
+                TryPromoteClosedCaseToRoot(projectedConstructor, out var projectedRoot))
+            {
+                constrainedProjectedResult = projectedRoot;
+            }
+
+            var constrained = TryUnify(
+                expectedResultType,
+                constrainedProjectedResult,
+                call.Span,
+                DiagnosticMessages.PatternBranchResultTypeMismatch);
+            if (ContainsErrorRecoveryType(constrained))
+            {
+                return constrained;
+            }
         }
 
         // 逐参数应用，统一支持：
@@ -1583,91 +1803,132 @@ public sealed partial class TypeInferer
 
         ResolveAccumulatedCallEffects(call);
         ValidateResolvedValueGenericArguments(call.Function, call.Span);
-        return _substitution.Apply(currentType);
+        var resolvedResult = _substitution.Apply(currentType);
+        return TryResolveShapeOfResultType(call, out var shapeResult)
+            ? shapeResult
+            : resolvedResult;
     }
 
-    private bool TryResolveEmptyCall(
-        Type functionType,
-        EidosAstNode? callee,
-        Substitution substitution,
-        out EmptyCallResolution resolution)
+    private bool TryResolveShapeOfResultType(CallExpr call, out Type result)
     {
-        var resolvedType = substitution.Apply(functionType);
-        if (resolvedType is not TyFun function)
+        result = null!;
+        if (call.PositionalArgs.Count != 1)
         {
-            resolution = default;
             return false;
         }
 
-        if (function.Params.Count == 0)
+        var functionId = call.Function switch
         {
-            resolution = new EmptyCallResolution(
-                EmptyCallResolutionKind.ZeroArgument,
-                substitution.Apply(function.Result),
-                SynthesizedUnitArgumentCount: 0);
-            return true;
-        }
-
-        var firstParam = substitution.Apply(function.Params[0]);
-        if (!IsUnitType(firstParam))
+            IdentifierExpr identifier => identifier.SymbolId,
+            PathExpr path => path.SymbolId,
+            _ => SymbolId.None
+        };
+        if (_symbolTable.GetSymbol<FuncSymbol>(functionId) is not { } function ||
+            !MetaSchemaRegistry.IsMetaIntrinsic(function, out var intrinsic) ||
+            !string.Equals(intrinsic, "shape_of", StringComparison.Ordinal) ||
+            call.PositionalArgs[0].InferredType is not Type argumentType)
         {
-            resolution = default;
             return false;
         }
 
-        var resultType = function.Params.Count == 1
-            ? function.Result
-            : new TyFun
-            {
-                Params = CopyParamsFrom(function.Params, 1),
-                Result = function.Result,
-                Effects = function.Effects
-            };
-
-        var kind = IsExternalFfiCallee(callee)
-            ? EmptyCallResolutionKind.FfiUnitElision
-            : EmptyCallResolutionKind.UnitSugar;
-        resolution = new EmptyCallResolution(
-            kind,
-            substitution.Apply(resultType),
-            kind == EmptyCallResolutionKind.UnitSugar ? 1 : 0);
+        var resolvedArgument = _substitution.Apply(argumentType);
+        result = resolvedArgument is TyCon { Id.Value: WellKnownTypeIds.MetaDeclarationId }
+            ? MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.DeclarationShape,
+                WellKnownTypeIds.MetaDeclarationShapeId)
+            : MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.TypeShape,
+                WellKnownTypeIds.MetaTypeShapeId);
         return true;
     }
 
-    private static List<Type> CopyParamsFrom(IReadOnlyList<Type> parameters, int startIndex)
+    private bool TryInferConstructorCall(
+        CallExpr call,
+        Type? expectedResultType,
+        out Type resultType)
     {
-        if (startIndex >= parameters.Count)
+        var application = call.Function as IndexExpr;
+        var constructorTarget = application is { IsTypeApplication: true, Object: not null }
+            ? application.Object
+            : call.Function;
+        var symbolId = constructorTarget switch
         {
-            return [];
+            IdentifierExpr identifier => identifier.SymbolId,
+            PathExpr path => path.SymbolId,
+            _ => SymbolId.None
+        };
+        if (!symbolId.IsValid || _symbolTable.GetSymbol<CtorSymbol>(symbolId) is not { } constructor)
+        {
+            resultType = null!;
+            return false;
         }
 
-        var result = new List<Type>(parameters.Count - startIndex);
-        for (var i = startIndex; i < parameters.Count; i++)
+        var expression = new CtorExpr();
+        expression.SetSpan(call.Span);
+        expression.SetConstructorName(constructor.Name);
+        expression.SymbolId = symbolId;
+        if (application is { IsTypeApplication: true } genericApplication)
         {
-            result.Add(parameters[i]);
+            var constructorPath = new TypePath();
+            constructorPath.SetSpan(genericApplication.Span);
+            constructorPath.SetTypeName(constructor.Name);
+            constructorPath.SymbolId = symbolId;
+            constructorPath.SetGenericArguments(genericApplication.GenericArguments);
+            expression.SetConstructorPath(constructorPath);
+        }
+        foreach (var argument in call.PositionalArgs)
+        {
+            expression.AddPositionalArg(argument);
         }
 
-        return result;
+        foreach (var namedArgument in call.NamedArgs)
+        {
+            var field = new FieldInit();
+            field.SetSpan(namedArgument.Span);
+            field.SetFieldName(namedArgument.Name);
+            if (namedArgument.Value != null)
+            {
+                field.SetValue(namedArgument.Value);
+            }
+            expression.AddNamedArg(field);
+        }
+
+        resultType = InferCtor(expression, expectedResultType);
+        if (expectedResultType != null && !ContainsErrorRecoveryType(resultType))
+        {
+            resultType = TryUnify(
+                expectedResultType,
+                resultType,
+                call.Span,
+                DiagnosticMessages.PatternBranchResultTypeMismatch);
+        }
+
+        return true;
     }
 
-    private static List<Type> CopyParamsFrom(IReadOnlyList<Type> parameters, int startIndex, int count)
+    private bool TryProjectCallResultType(Type functionType, int argumentCount, out Type resultType)
     {
-        if (count <= 0 || startIndex >= parameters.Count)
+        resultType = _substitution.Apply(functionType);
+        for (var index = 0; index < argumentCount; index++)
         {
-            return [];
+            if (_substitution.Apply(resultType) is not TyFun { Params.Count: > 0 } function)
+            {
+                resultType = CreateErrorRecoveryType();
+                return false;
+            }
+
+            resultType = function.Params.Count == 1
+                ? function.Result
+                : new TyFun
+                {
+                    Params = function.Params.Skip(1).ToList(),
+                    Result = function.Result,
+                    Effects = function.Effects
+                };
         }
 
-        var endExclusive = Math.Min(parameters.Count, startIndex + count);
-        var result = new List<Type>(endExclusive - startIndex);
-        for (var i = startIndex; i < endExclusive; i++)
-        {
-            result.Add(parameters[i]);
-        }
-
-        return result;
+        resultType = _substitution.Apply(resultType);
+        return true;
     }
 
-    /// <summary>
-    /// 推断元组的类型
-    /// </summary>
 }

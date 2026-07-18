@@ -14,7 +14,7 @@ public partial class IdeSemanticSnapshotTests
         var appDir = Path.Combine(tempDir, "app");
         var packageRoot = Path.Combine(tempDir, "pkg", "src");
         var entryFile = Path.Combine(appDir, "Main.eidos");
-        var featureFile = Path.Combine(packageRoot, "Feature.eidos");
+        var featureFile = Path.Combine(packageRoot, "feature.eidos");
 
         Directory.CreateDirectory(appDir);
         Directory.CreateDirectory(packageRoot);

@@ -171,7 +171,15 @@ public static partial class IdeSemanticSnapshotBuilder
                 return;
             }
 
-            if (node.SymbolId.IsValid && IdeSpan.TryFrom(node.Span, out var span))
+            var occurrenceSpan = node.Span;
+            if (node.SymbolId.IsValid &&
+                symbolMap.TryGetValue(node.SymbolId.Value, out var occurrenceSymbol) &&
+                SourceIdentifierSpanFinder.TryFind(sourceText, node.Span, occurrenceSymbol.Name, out var identifierSpan))
+            {
+                occurrenceSpan = identifierSpan;
+            }
+
+            if (node.SymbolId.IsValid && IdeSpan.TryFrom(occurrenceSpan, out var span))
             {
                 if (IsDefinitionNode(node) &&
                     symbolTable?.GetSymbol(node.SymbolId)?.GeneratedOrigin is { } generatedOrigin)
@@ -566,29 +574,6 @@ public static partial class IdeSemanticSnapshotBuilder
                 VisibilitySpan = null,
                 IsBuiltin = false,
                 SortText = $"2_{keyword}"
-            });
-        }
-
-        foreach (var attribute in AttributeCompletions)
-        {
-            var key = $"attribute:{attribute}";
-            if (!seen.Add(key))
-            {
-                continue;
-            }
-
-            result.Add(new IdeCompletionEntry
-            {
-                Label = attribute,
-                Kind = "keyword",
-                Detail = DiagnosticMessages.IdeAttributeDetail,
-                Documentation = DiagnosticMessages.IdeAttributeDocumentation,
-                TypeText = null,
-                BindingMode = null,
-                Span = null,
-                VisibilitySpan = null,
-                IsBuiltin = false,
-                SortText = $"2a_{attribute}"
             });
         }
 
@@ -1000,6 +985,8 @@ public static partial class IdeSemanticSnapshotBuilder
             SymbolKind.TypeParameter => DiagnosticMessages.IdeTypeParameterDocumentation(symbol.Name),
             SymbolKind.Module => DiagnosticMessages.IdeModuleDocumentation(symbol.Name),
             SymbolKind.Field => DiagnosticMessages.IdeFieldDocumentation(symbol.Name),
+            SymbolKind.AssociatedType => DiagnosticMessages.IdeSymbolDocumentation("associated type", symbol.Name),
+            SymbolKind.AssociatedConst => DiagnosticMessages.IdeSymbolDocumentation("associated const", symbol.Name),
             SymbolKind.Proof => DiagnosticMessages.IdeProofDocumentation(symbol.Name),
             SymbolKind.Impl => DiagnosticMessages.IdeTraitImplementationDocumentation(symbol.Name),
             _ => DiagnosticMessages.IdeSymbolDocumentation(symbol.Kind.ToString(), symbol.Name)
@@ -1106,6 +1093,8 @@ public static partial class IdeSemanticSnapshotBuilder
             SymbolKind.Trait => WellKnownStrings.Keywords.Trait,
             SymbolKind.Module => WellKnownStrings.Keywords.Module,
             SymbolKind.Field => "field",
+            SymbolKind.AssociatedType => "associatedType",
+            SymbolKind.AssociatedConst => "associatedConst",
             SymbolKind.Proof => WellKnownStrings.Keywords.Proof,
             SymbolKind.Impl => "impl",
             _ => "symbol"

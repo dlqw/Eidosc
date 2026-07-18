@@ -31,14 +31,15 @@ public sealed partial class TypeInferer
             : string.IsNullOrWhiteSpace(qualifiedName)
                 ? $"name:{constructor.Name}"
                 : $"symbol:{qualifiedName}";
-        if (constructor.Args.Count == 0 && constructor.ValueArgs.Count == 0)
+        if (constructor.Args.Count == 0 && constructor.ValueArgs.Count == 0 && constructor.EffectArgs.Count == 0)
         {
             return head;
         }
 
         var valueArguments = constructor.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var effectArguments = constructor.EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
         var typeArgumentIndex = 0;
-        var argumentCount = constructor.Args.Count + constructor.ValueArgs.Count;
+        var argumentCount = constructor.Args.Count + constructor.ValueArgs.Count + constructor.EffectArgs.Count;
         var arguments = new List<string>(argumentCount);
         for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
         {
@@ -49,6 +50,10 @@ public sealed partial class TypeInferer
                     : valueArgument.ReferencedParameterIndex >= 0
                         ? $"value-param:{valueArgument.ReferencedParameterIndex}:{valueArgument.CanonicalHash}:{valueArgument.TypeId.Value}"
                         : $"value:{valueArgument.CanonicalText}");
+            }
+            else if (effectArguments.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                arguments.Add($"effect:{CreateCallableResolutionArgumentTypeKey(effectArgument.Argument)}");
             }
             else if (typeArgumentIndex < constructor.Args.Count)
             {
@@ -82,9 +87,11 @@ public sealed partial class TypeInferer
     {
         return abilities == null
             ? "abilities()"
-            : $"abilities({string.Join(",", abilities.Effects
+            : $"abilities(tags={string.Join(",", abilities.Effects
                 .Select(CreateCallableResolutionEffectKey)
-                .Order(StringComparer.Ordinal))})";
+                .Order(StringComparer.Ordinal))};vars={string.Join(",", abilities.Variables
+                .Select(static variable => variable.Id)
+                .Order())})";
     }
 
     private string CreateCallableResolutionRequestKey(RequestType request)
@@ -109,6 +116,7 @@ public sealed partial class TypeInferer
             TyVar => true,
             TyCon constructor => constructor.ConstructorVarIndex.HasValue ||
                                  constructor.ValueArgs.Any(static argument => !argument.IsConcrete) ||
+                                 constructor.EffectArgs.Any(static argument => !argument.IsConcrete) ||
                                  constructor.Args.Any(ContainsTypeVariable),
             TyFun function => function.Params.Any(ContainsTypeVariable) ||
                               ContainsTypeVariable(function.Result) ||

@@ -172,15 +172,6 @@ public sealed partial class NameResolver
             return new ImplVariableShapeNode(typeParam.Name);
         }
 
-        if (typePath.ModulePath.Count == 0 &&
-            typePath.GenericArguments.Count == 0 &&
-            typePath.TypeArgs.Count == 0 &&
-            !string.IsNullOrWhiteSpace(typePath.TypeName) &&
-            ImplTypeShapeFactory.IsVariableLikeName(typePath.TypeName))
-        {
-            return new ImplVariableShapeNode(typePath.TypeName);
-        }
-
         var name = typePath.ModulePath.Count > 0
             ? string.Join(WellKnownStrings.Separators.Path, typePath.ModulePath) + WellKnownStrings.Separators.Path + typePath.TypeName
             : typePath.TypeName;
@@ -229,18 +220,7 @@ public sealed partial class NameResolver
             return ImplWildcardShapeNode.Instance;
         }
 
-        var bracketIndex = trimmed.IndexOf('[');
-        if (bracketIndex <= 0 || !trimmed.EndsWith("]", StringComparison.Ordinal))
-        {
-            return ImplTypeShapeFactory.IsVariableLikeName(trimmed)
-                ? new ImplVariableShapeNode(trimmed)
-                : new ImplConstructorShapeNode(trimmed, []);
-        }
-
-        var name = trimmed[..bracketIndex];
-        var payload = trimmed.Substring(bracketIndex + 1, trimmed.Length - bracketIndex - 2);
-        var parts = SplitTopLevelCommaSeparated(payload);
-        return new ImplConstructorShapeNode(name, parts.Select(ParseCanonicalShapeOrFallback).ToList());
+        return ImplSpecializationComparer.ParseCanonicalShape(trimmed);
     }
 
     private static List<string> SplitTopLevelCommaSeparated(string text)

@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
+using Eidosc.Ast.Declarations;
 using Eidosc.Symbols;
 using Eidosc.Debug;
 using Eidosc.ProjectSystem;
 using Eidosc.Semantic;
 using Eidosc.Types;
+using Eidosc.Utils;
 
 namespace Eidosc.Pipeline;
 
@@ -32,6 +34,47 @@ public sealed partial class CompilationPipeline
         using (MeasureSubphase(CompilationPhase.Types, "infer"))
         {
             inferSuccess = _typeInferer.Infer(_ast!);
+        }
+        if (inferSuccess && _nameResolver != null)
+        {
+            var previousNamerDiagnosticCount = _nameResolver.Diagnostics.Count;
+            bool bodyStageSuccess;
+            using (MeasureSubphase(CompilationPhase.Types, "meta_body_stage"))
+            {
+                bodyStageSuccess = _nameResolver.ProcessDeferredMetaExpansionStage(_ast!, ClauseStage.Body);
+            }
+
+            _diagnostics.AddRange(FilterTrustedPrecompiledDiagnostics(
+                _nameResolver.Diagnostics.Skip(previousNamerDiagnosticCount)));
+            inferSuccess &= bodyStageSuccess;
+            if (bodyStageSuccess && _nameResolver.LastMetaExpansionChanged)
+            {
+                CaptureTypesEntrySymbolState();
+                using (MeasureSubphase(CompilationPhase.Types, "infer_after_meta_body"))
+                {
+                    inferSuccess = _typeInferer.Infer(_ast!);
+                }
+            }
+        }
+        if (inferSuccess && _nameResolver != null)
+        {
+            var previousNamerDiagnosticCount = _nameResolver.Diagnostics.Count;
+            using (MeasureSubphase(CompilationPhase.Types, "package_meta_extensions_body"))
+            {
+                inferSuccess &= _nameResolver.ProcessPackageMetaExtensions(_ast!, ClauseStage.Body);
+            }
+            _diagnostics.AddRange(FilterTrustedPrecompiledDiagnostics(
+                _nameResolver.Diagnostics.Skip(previousNamerDiagnosticCount)));
+        }
+        if (inferSuccess && _nameResolver != null)
+        {
+            var previousNamerDiagnosticCount = _nameResolver.Diagnostics.Count;
+            using (MeasureSubphase(CompilationPhase.Types, "package_meta_analyzers"))
+            {
+                inferSuccess &= _nameResolver.ProcessPackageMetaAnalyzers(_ast!);
+            }
+            _diagnostics.AddRange(FilterTrustedPrecompiledDiagnostics(
+                _nameResolver.Diagnostics.Skip(previousNamerDiagnosticCount)));
         }
         AddProfilingCounters(_typeInferer.GetProfilingCounters());
         _typeDirectedCallableResolutionSnapshot = _typeInferer.CreateTypeDirectedCallableResolutionSnapshot();
@@ -344,7 +387,10 @@ public sealed partial class CompilationPipeline
         var mergedFunctionTypeParameters = new Dictionary<SymbolId, IReadOnlyList<Eidosc.Types.Type>>();
         var mergedComptimeValues = new Dictionary<SymbolId, ComptimeValue>();
         var mergedConstraints = new List<TypeConstraint>();
+        var mergedClosedCaseInjections = new Dictionary<SourceSpan, TypeInferer.ClosedCaseInjectionFact>();
         var mergedFunctionEffectSummaries = new Dictionary<SymbolId, FunctionEffectSummary>();
+        var mergedMetaQueryCacheEntries = new List<MetaQueryCacheEntry>();
+        var mergedMetaQueryDependencies = new List<MetaQueryDependency>();
         var restoredInferredTypes = 0;
         var restoredSymbolIds = 0;
         var restoredTypeEnvBindings = 0;
@@ -394,6 +440,27 @@ public sealed partial class CompilationPipeline
             }
 
             mergedConstraints.AddRange(constraints);
+            if (!payload.MetaQueries.TryRestoreState(
+                    context.Remapper,
+                    out var metaQueryCacheEntries,
+                    out var metaQueryDependencies,
+                    out _))
+            {
+                SetTypesModuleRestoreFallbackCounters(_moduleTypedArtifactRestoreExecution);
+                SetProfilingCounter("Types.moduleRestore.fallbackMetaQueryState", 1);
+                return false;
+            }
+            mergedMetaQueryCacheEntries.AddRange(metaQueryCacheEntries);
+            mergedMetaQueryDependencies.AddRange(metaQueryDependencies);
+            if (!payload.ClosedCaseInjections.TryRestore(context.Remapper, out var closedCaseInjections))
+            {
+                SetTypesModuleRestoreFallbackCounters(_moduleTypedArtifactRestoreExecution);
+                return false;
+            }
+            foreach (var injection in closedCaseInjections)
+            {
+                mergedClosedCaseInjections[injection.Key] = injection.Value;
+            }
             if (!payload.FunctionEffects.TryRestore(context.Remapper, out var functionEffects))
             {
                 SetTypesModuleRestoreFallbackCounters(_moduleTypedArtifactRestoreExecution);
@@ -424,6 +491,16 @@ public sealed partial class CompilationPipeline
             mergedFunctionTypeParameters,
             mergedComptimeValues,
             mergedConstraints);
+        if (!MetaQueryState.For(_symbolTable).TryRestoreState(
+                mergedMetaQueryCacheEntries,
+                mergedMetaQueryDependencies,
+                out _))
+        {
+            SetTypesModuleRestoreFallbackCounters(_moduleTypedArtifactRestoreExecution);
+            SetProfilingCounter("Types.moduleRestore.fallbackMetaQueryConflict", 1);
+            return false;
+        }
+        _typeInferer.RestoreClosedCaseInjections(mergedClosedCaseInjections);
         _abilityInferer = new EffectInferer(_symbolTable);
         _abilityInferer.Restore(_ast, mergedFunctionEffectSummaries);
         _symbolTable.EnsureIdCountersAtLeast(
@@ -465,6 +542,18 @@ public sealed partial class CompilationPipeline
         SetProfilingCounter("Types.moduleRestore.restoredFunctionTypeParameterBindings", restoredFunctionTypeParameterBindings);
         SetProfilingCounter("Types.moduleRestore.restoredComptimeValues", restoredComptimeValues);
         SetProfilingCounter("Types.moduleRestore.restoredConstraints", restoredConstraints);
+        SetProfilingCounter(
+            "Types.moduleRestore.restoredMetaQueryCacheEntries",
+            mergedMetaQueryCacheEntries.Select(static entry => entry.Key).Distinct(StringComparer.Ordinal).Count());
+        SetProfilingCounter(
+            "Types.moduleRestore.restoredMetaQueryDependencies",
+            mergedMetaQueryDependencies
+                .DistinctBy(static dependency => (
+                    dependency.Key,
+                    dependency.ResultHash,
+                    dependency.CacheHit,
+                    dependency.ResultBytes))
+                .Count());
         SetProfilingCounter("Types.moduleRestore.restoredSymbolStates", restoredSymbolStates);
         SetProfilingCounter("Types.moduleRestore.remapIdentity", restoreContexts.All(static context => context.IsIdentity) ? 1 : 0);
         SetProfilingCounter("Types.moduleRestore.fallbackFullInfer", 0);

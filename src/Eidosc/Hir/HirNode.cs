@@ -1,4 +1,5 @@
 using Eidosc.Utils;
+using Eidosc.Symbols;
 
 namespace Eidosc.Hir;
 
@@ -48,6 +49,8 @@ public abstract record HirNode
     /// 符号 ID（可选，用于引用已解析的符号）
     /// </summary>
     public SymbolId SymbolId { get; init; } = SymbolId.None;
+
+    public IReadOnlyList<GeneratedDeclarationOrigin> GeneratedOriginChain { get; internal set; } = [];
 
     protected HirNode(HirKind kind)
     {

@@ -228,6 +228,11 @@ public sealed partial class LoanConstraintVerifier
                 ValidateReadOperand(assign.Source, assign.Span, blockId, instructionIndex, state, results);
                 break;
 
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target } injection:
+                PrepareWrite(target.Local, injection.Span, blockId, instructionIndex, state, results);
+                ValidateReadOperand(injection.Operand, injection.Span, blockId, instructionIndex, state, results);
+                break;
+
             case MirBinOp binOp when binOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var targetLocal }:
                 PrepareWrite(targetLocal, binOp.Span, blockId, instructionIndex, state, results);
                 ValidateReadOperand(binOp.Left, binOp.Span, blockId, instructionIndex, state, results);

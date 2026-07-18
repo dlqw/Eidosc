@@ -200,6 +200,38 @@ public sealed class Substitution
         return resolved ?? original;
     }
 
+    private List<GenericEffectArgument> ApplyEffectArgumentList(
+        List<GenericEffectArgument> original,
+        HashSet<int> activeTypeVariables)
+    {
+        if (original.Count == 0)
+        {
+            return original;
+        }
+
+        List<GenericEffectArgument>? resolved = null;
+        for (var index = 0; index < original.Count; index++)
+        {
+            var current = original[index];
+            var appliedType = Apply(current.Argument, activeTypeVariables);
+            var applied = ReferenceEquals(appliedType, current.Argument) || appliedType == current.Argument
+                ? current
+                : current with { Argument = appliedType };
+            if (resolved == null && applied != current)
+            {
+                resolved = new List<GenericEffectArgument>(original.Count);
+                for (var previousIndex = 0; previousIndex < index; previousIndex++)
+                {
+                    resolved.Add(original[previousIndex]);
+                }
+            }
+
+            resolved?.Add(applied);
+        }
+
+        return resolved ?? original;
+    }
+
     private GenericValueArgument ApplyValueArgument(
         GenericValueArgument argument,
         HashSet<int> activeValueVariables)
@@ -418,11 +450,13 @@ public sealed class Substitution
             ? boundArgs!
             : ApplyTypeList(con.Args, activeTypeVariables);
         var resolvedValueArgs = ApplyValueArgumentList(con.ValueArgs);
+        var resolvedEffectArgs = ApplyEffectArgumentList(con.EffectArgs, activeTypeVariables);
 
-        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0 && con.EffectArgs.Count == 0)
         {
             if (resolvedArgs.Count == 0 &&
                 resolvedValueArgs.Count == 0 &&
+                resolvedEffectArgs.Count == 0 &&
                 resolvedName == con.Name &&
                 resolvedSymbol == con.Symbol &&
                 resolvedConstructorVar == con.ConstructorVarIndex)
@@ -435,13 +469,16 @@ public sealed class Substitution
                 Name = resolvedName,
                 Symbol = resolvedSymbol,
                 ConstructorVarIndex = resolvedConstructorVar,
+                IsGenericInstantiationConstructor = con.IsGenericInstantiationConstructor,
                 Args = resolvedArgs,
-                ValueArgs = resolvedValueArgs
+                ValueArgs = resolvedValueArgs,
+                EffectArgs = resolvedEffectArgs
             };
         }
 
         if (TypesUnchanged(resolvedArgs, con.Args) &&
             ReferenceEquals(resolvedValueArgs, con.ValueArgs) &&
+            ReferenceEquals(resolvedEffectArgs, con.EffectArgs) &&
             resolvedName == con.Name &&
             resolvedSymbol == con.Symbol &&
             resolvedConstructorVar == con.ConstructorVarIndex)
@@ -455,6 +492,7 @@ public sealed class Substitution
             Symbol = resolvedSymbol,
             Args = resolvedArgs,
             ValueArgs = resolvedValueArgs,
+            EffectArgs = resolvedEffectArgs,
             ConstructorVarIndex = resolvedConstructorVar
         };
     }
@@ -736,7 +774,8 @@ public sealed class Substitution
 
         return type switch
         {
-            TyVar var => var.Index != varIndex && var.Instance != null && OccursIn(varIndex, var.Instance),
+            TyVar var => var.Index == varIndex ||
+                         (var.Instance != null && OccursIn(varIndex, var.Instance)),
             TyCon con => (con.ConstructorVarIndex.HasValue &&
                           FindConstructorRoot(con.ConstructorVarIndex.Value) == varIndex) ||
                          AnyOccursIn(con.Args, varIndex) ||
@@ -825,6 +864,23 @@ public sealed class Substitution
         for (var index = 0; index < left.ValueArgs.Count; index++)
         {
             UnifyValueArgument(left.ValueArgs[index], right.ValueArgs[index], left, right);
+        }
+
+        if (left.EffectArgs.Count != right.EffectArgs.Count)
+        {
+            throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypes(left, right));
+        }
+
+        for (var index = 0; index < left.EffectArgs.Count; index++)
+        {
+            var leftArgument = left.EffectArgs[index];
+            var rightArgument = right.EffectArgs[index];
+            if (leftArgument.ParameterIndex != rightArgument.ParameterIndex)
+            {
+                throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypes(left, right));
+            }
+
+            Unify(leftArgument.Argument, rightArgument.Argument);
         }
 
         for (int i = 0; i < left.Args.Count; i++)
@@ -994,6 +1050,7 @@ public sealed class Substitution
         }
 
         return AreValueArgumentsAlreadyEqual(left.ValueArgs, right.ValueArgs) &&
+               AreEffectArgumentsAlreadyEqual(left.EffectArgs, right.EffectArgs) &&
                left.Args.Count == right.Args.Count &&
                left.Args.Zip(right.Args, AreTypesAlreadyEqual).All(static equal => equal);
     }
@@ -1038,6 +1095,27 @@ public sealed class Substitution
         return true;
     }
 
+    private bool AreEffectArgumentsAlreadyEqual(
+        IReadOnlyList<GenericEffectArgument> left,
+        IReadOnlyList<GenericEffectArgument> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (left[index].ParameterIndex != right[index].ParameterIndex ||
+                !AreTypesAlreadyEqual(left[index].Argument, right[index].Argument))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private bool TryUnifyConstructorHeads(TyCon left, TyCon right)
     {
         if (left.ConstructorVarIndex.HasValue)
@@ -1062,6 +1140,16 @@ public sealed class Substitution
         if (normalizedLeft.ConstructorVarIndex.HasValue || normalizedRight.ConstructorVarIndex.HasValue)
         {
             return true;
+        }
+
+        if (normalizedLeft.Symbol.IsValid && normalizedRight.Symbol.IsValid)
+        {
+            return normalizedLeft.Symbol == normalizedRight.Symbol;
+        }
+
+        if (normalizedLeft.Id.IsValid && normalizedRight.Id.IsValid)
+        {
+            return normalizedLeft.Id == normalizedRight.Id;
         }
 
         // WellKnownStrings.BuiltinTypes.Unit and "()" are the same type
@@ -1473,7 +1561,7 @@ public sealed class Substitution
 
         foreach (var varIndex in scheme.ForAll)
         {
-            varMap[varIndex] = FreshTypeVariable();
+            varMap[varIndex] = FreshTypeVariable() with { IsGenericInstantiation = true };
         }
 
         return new InstantiatedTypeScheme
@@ -1528,6 +1616,7 @@ public sealed class Substitution
         var constructorVarIndex = con.ConstructorVarIndex;
         var constructorName = con.Name;
         var constructorSymbol = con.Symbol;
+        var isGenericInstantiationConstructor = con.IsGenericInstantiationConstructor;
         List<Type>? capturedPrefixArgs = null;
         if (constructorVarIndex.HasValue &&
             varMap.TryGetValue(constructorVarIndex.Value, out var constructorReplacement))
@@ -1536,6 +1625,7 @@ public sealed class Substitution
             {
                 case TyVar replacementVar:
                     constructorVarIndex = replacementVar.Index;
+                    isGenericInstantiationConstructor = replacementVar.IsGenericInstantiation;
                     break;
                 case TyCon replacementCon:
                     constructorVarIndex = replacementCon.ConstructorVarIndex;
@@ -1550,10 +1640,19 @@ public sealed class Substitution
         }
 
         var newValueArgs = InstantiateValueArgumentList(con.ValueArgs, valueVarMap);
+        var newEffectArgs = con.EffectArgs.Count == 0
+            ? con.EffectArgs
+            : con.EffectArgs
+                .Select(argument => argument with
+                {
+                    Argument = InstantiateType(argument.Argument, varMap, valueVarMap)
+                })
+                .ToList();
         if (con.Args.Count == 0)
         {
             if ((capturedPrefixArgs == null || capturedPrefixArgs.Count == 0) &&
                 ReferenceEquals(newValueArgs, con.ValueArgs) &&
+                newEffectArgs.SequenceEqual(con.EffectArgs) &&
                 constructorVarIndex == con.ConstructorVarIndex &&
                 constructorName == con.Name &&
                 constructorSymbol == con.Symbol)
@@ -1566,8 +1665,10 @@ public sealed class Substitution
                 ConstructorVarIndex = constructorVarIndex,
                 Name = constructorName,
                 Symbol = constructorSymbol,
+                IsGenericInstantiationConstructor = isGenericInstantiationConstructor,
                 Args = capturedPrefixArgs ?? [],
-                ValueArgs = newValueArgs
+                ValueArgs = newValueArgs,
+                EffectArgs = newEffectArgs
             };
         }
 
@@ -1588,6 +1689,7 @@ public sealed class Substitution
 
         if (ReferenceEquals(newArgs, con.Args) &&
             ReferenceEquals(newValueArgs, con.ValueArgs) &&
+            newEffectArgs.SequenceEqual(con.EffectArgs) &&
             constructorVarIndex == con.ConstructorVarIndex &&
             constructorName == con.Name &&
             constructorSymbol == con.Symbol)
@@ -1600,8 +1702,10 @@ public sealed class Substitution
             ConstructorVarIndex = constructorVarIndex,
             Name = constructorName,
             Symbol = constructorSymbol,
+            IsGenericInstantiationConstructor = isGenericInstantiationConstructor,
             Args = newArgs,
-            ValueArgs = newValueArgs
+            ValueArgs = newValueArgs,
+            EffectArgs = newEffectArgs
         };
     }
 

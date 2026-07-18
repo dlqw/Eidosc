@@ -171,6 +171,7 @@ public static partial class BuildCommand
             _emitLlvmOption,
             new Option<string[]>("--werror", CliMessages.WerrorOptionDescription),
             new Option<bool>("--werror-all", CliMessages.WerrorAllOptionDescription),
+            DenyOptionParser.Create(),
             new Option<int?>("-O", CliMessages.BuildOptimizationLevelOptionDescription),
             new Option<bool>("--lto", CliMessages.BuildLtoOptionDescription),
             new Option<BuildMode>("--build-mode", () => BuildMode.Release, "Select build defaults: Dev favors compile speed; Release favors optimized output."),
@@ -260,6 +261,7 @@ public static partial class BuildCommand
         public bool EmitLlvm { get; set; }
         public string[] Werror { get; set; } = [];
         public bool WerrorAll { get; set; }
+        public string[] Deny { get; set; } = [];
         public int? O { get; set; }
         public bool Lto { get; set; }
         public BuildMode BuildMode { get; set; } = BuildMode.Release;
@@ -408,6 +410,7 @@ public static partial class BuildCommand
                                      new Dictionary<string, string[]>(StringComparer.Ordinal),
                 NoImplicitPrelude = projectConfig.NoImplicitStdlib,
                 UseCache = !options.NoCache,
+                ReleaseProfile = options.BuildMode == BuildMode.Release,
                 TraceBuild = options.TraceBuild
             });
 
@@ -472,6 +475,7 @@ public static partial class BuildCommand
             LlvmTargetTriple = targetInfo?.Triple ?? options.TargetTriple,
             BuildHostFingerprint = buildHostResult?.CacheFingerprint,
             BuildGraphFingerprint = buildHostResult?.Graph?.CanonicalHash,
+            GeneratedSourceUriMap = buildHostResult?.GeneratedSourceUris ?? new Dictionary<string, string>(),
             NativeLinkMode = effectiveNativeLinkMode,
             LlvmOptimizationLevel = optimizationLevel,
             LlvmEnableLto = options.Lto,
@@ -480,6 +484,7 @@ public static partial class BuildCommand
                                       !IsObjectGroupsCodegenMode(options.CodegenMode)),
             AllowNativeObjectGroupRestore = options.Target == CompileTarget.Native && IsObjectGroupsCodegenMode(options.CodegenMode),
             TreatWarningsAsErrors = options.WerrorAll,
+            DenyStyle = DenyOptionParser.IncludesStyle(options.Deny),
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = (inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                  inputResolution.ImportResolution.EffectiveSearchRoots)
@@ -491,7 +496,8 @@ public static partial class BuildCommand
             ConfigFfiLibraryPaths = ffiConfig?.LibraryPaths ?? [],
             ConfigFfiIncludePaths = ffiConfig?.IncludePaths ?? [],
             ConfigFfiNativeSources = ffiConfig?.NativeSources ?? [],
-            ConfigFfiLinkerFlags = ffiConfig?.LinkerFlags ?? []
+            ConfigFfiLinkerFlags = ffiConfig?.LinkerFlags ?? [],
+            MetaConfiguration = projectConfig?.Meta
         };
 
         CliOutput.WriteAction(

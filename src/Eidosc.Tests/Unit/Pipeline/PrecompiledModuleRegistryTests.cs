@@ -12,7 +12,51 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public class PrecompiledModuleRegistryTests
 {
     [Fact]
-    public void AuditEmbeddedStdlib_BodylessRuntimeFunctionsAreDeclaredWithAttributes()
+    public void SignatureSource_KeepsSelectiveImportUsedByPublicSignature()
+    {
+        const string source = """
+sample :: module {
+    import ordering.{Ordering}
+
+    compare :: Int -> Int -> Ordering
+    {
+        left => right => ordering.compare_int(left)(right)
+    }
+}
+""";
+
+        var result = PrecompiledModuleCache.GetOrCreateSignatureSource(
+            $"selective-signature-{Guid.NewGuid():N}",
+            source);
+
+        Assert.Contains("import ordering.{Ordering}", result.Source, StringComparison.Ordinal);
+        Assert.Equal(0, result.ImportRemovalCount);
+    }
+
+    [Fact]
+    public void SignatureSource_RemovesSelectiveImportUnusedByPublicSignature()
+    {
+        const string source = """
+sample :: module {
+    import ordering.{Ordering}
+
+    compare :: Int -> Int -> Int
+    {
+        left => right => ordering.to_int(ordering.compare_int(left)(right))
+    }
+}
+""";
+
+        var result = PrecompiledModuleCache.GetOrCreateSignatureSource(
+            $"unused-selective-signature-{Guid.NewGuid():N}",
+            source);
+
+        Assert.DoesNotContain("import ordering.{Ordering}", result.Source, StringComparison.Ordinal);
+        Assert.Equal(1, result.ImportRemovalCount);
+    }
+
+    [Fact]
+    public void AuditEmbeddedStdlib_BodylessRuntimeFunctionsUseImplementationClauses()
     {
         var issues = PrecompiledStdlibDeclarationAuditor.AuditEmbeddedStdlib();
 
@@ -73,7 +117,7 @@ public class PrecompiledModuleRegistryTests
     }
 
     [Fact]
-    public void AuditSourceForTest_BodylessTopLevelFunctionWithoutFfiAttribute_IsReported()
+    public void AuditSourceForTest_BodylessTopLevelFunctionWithoutImplementationClause_IsReported()
     {
         const string source = """
 Test :: module {
@@ -81,11 +125,11 @@ Test :: module {
 }
 """;
 
-        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "Std/Test"));
+        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "std/test"));
 
-        Assert.Equal("Std/Test", issue.ModulePath);
+        Assert.Equal("std/test", issue.ModulePath);
         Assert.Equal("runtime_helper", issue.FunctionName);
-        Assert.Contains("@ffi", issue.Message, StringComparison.Ordinal);
+        Assert.Contains("extern or intrinsic", issue.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -93,12 +137,13 @@ Test :: module {
     {
         const string source = """
 Test :: module {
-    @intrinsic("value_box")
-    value_box[A] :: A -> RawPtr
+
+    value_box[A] :: A -> RawPtr intrinsic "value_box";
+
 }
 """;
 
-        var issues = PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "Std/Test");
+        var issues = PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "std/test");
 
         Assert.Empty(issues);
     }
@@ -115,9 +160,9 @@ Test :: module {
 }
 """;
 
-        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "Std/Test"));
+        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "std/test"));
 
-        Assert.Equal("Std/Test", issue.ModulePath);
+        Assert.Equal("std/test", issue.ModulePath);
         Assert.Equal("string_length", issue.FunctionName);
         Assert.Contains("without a local", issue.Message, StringComparison.Ordinal);
     }
@@ -127,15 +172,16 @@ Test :: module {
     {
         const string source = """
 Test :: module {
-    @ffi("runtime_helper")
+
     runtime_helper :: Int -> Int
-    {
+     need ffi extern c link_name "runtime_helper"
+{
         value => value
     }
 }
 """;
 
-        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "Std/Test"));
+        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "std/test"));
 
         Assert.Equal("runtime_helper", issue.FunctionName);
         Assert.Contains("must not provide", issue.Message, StringComparison.Ordinal);
@@ -146,34 +192,41 @@ Test :: module {
     {
         const string source = """
 Test :: module {
-    @intrinsic("value_box")
+
     value_box :: RawPtr -> RawPtr
-    {
+     intrinsic "value_box"
+{
         value => value
     }
 }
 """;
 
-        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "Std/Test"));
+        var issue = Assert.Single(PrecompiledStdlibDeclarationAuditor.AuditSourceForTest(source, "std/test"));
 
         Assert.Equal("value_box", issue.FunctionName);
-        Assert.Contains("@intrinsic", issue.Message, StringComparison.Ordinal);
+        Assert.Contains("intrinsic", issue.Message, StringComparison.Ordinal);
         Assert.Contains("must not provide", issue.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Pipeline_IntrinsicDeclaration_CarriesBuiltinMirIdentity()
+    public void Pipeline_ToolchainIntrinsicDeclaration_CarriesBuiltinMirIdentity()
     {
         const string source = """
-@intrinsic("value_box")
-value_box[A] :: A -> RawPtr
+
+value_box[A] :: A -> RawPtr intrinsic "value_box";
+
 
 ptr :: value_box[Int](1);
 """;
 
+        var inputFile = Path.Combine(
+            PrecompiledModuleRegistry.GetStdlibRoot(),
+            "std",
+            "precompiled_intrinsic_identity.eidos");
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = "precompiled_intrinsic_identity.eidos",
+            InputFile = inputFile,
+            ToolchainOwnedSourcePaths = [inputFile],
             StopAtPhase = CompilationPhase.Mir,
             UseColors = false
         }).Run();
@@ -194,9 +247,10 @@ ptr :: value_box[Int](1);
     {
         const string source = """
 Runtime :: module {
-    @internal
-    @intrinsic("string_length")
-    hidden_len :: String -> Int
+
+
+    hidden_len :: String -> Int internal intrinsic "string_length";
+
 }
 
 App :: module {
@@ -233,37 +287,37 @@ App :: module {
     {
         var modules = PrecompiledModuleRegistry.GetAvailableModulePaths();
 
-        Assert.Contains("Std/Fn", modules);
-        Assert.Contains("Std/Applicative", modules);
-        Assert.Contains("Std/Foldable", modules);
-        Assert.Contains("Std/Functor", modules);
-        Assert.Contains("Std/Monad", modules);
-        Assert.Contains("Std/Traversable", modules);
-        Assert.Contains("Std/Ordering", modules);
-        Assert.Contains("Std/Option", modules);
-        Assert.Contains("Std/Result", modules);
-        Assert.Contains("Std/Range", modules);
-        Assert.Contains("Std/Prelude", modules);
-        Assert.Contains("Std/RuntimeArray", modules);
-        Assert.Contains("Std/Seq", modules);
-        Assert.Contains("Std/SeqBuilder", modules);
-        Assert.Contains("Std/Trait", modules);
-        Assert.Contains("Std/TraitInvoke", modules);
-        Assert.Contains("Std/Text", modules);
-        Assert.Contains("Std/Math", modules);
-        Assert.Contains("Std/FloatMath", modules);
-        Assert.Contains("Std/GameMath", modules);
-        Assert.Contains("Std/Console", modules);
-        Assert.Contains("Std/File", modules);
-        Assert.Contains("Std/Network", modules);
-        Assert.Contains("Std/Binary", modules);
-        Assert.Contains("Std/Json", modules);
+        Assert.Contains("std/Functions", modules);
+        Assert.Contains("std/Applicative", modules);
+        Assert.Contains("std/Foldable", modules);
+        Assert.Contains("std/Functor", modules);
+        Assert.Contains("std/Monad", modules);
+        Assert.Contains("std/Traversable", modules);
+        Assert.Contains("std/Ordering", modules);
+        Assert.Contains("std/Option", modules);
+        Assert.Contains("std/Result", modules);
+        Assert.Contains("std/Range", modules);
+        Assert.Contains("std/Prelude", modules);
+        Assert.Contains("std/RuntimeArray", modules);
+        Assert.Contains("std/Seq", modules);
+        Assert.Contains("std/SeqBuilder", modules);
+        Assert.Contains("std/Traits", modules);
+        Assert.Contains("std/TraitInvoke", modules);
+        Assert.Contains("std/Text", modules);
+        Assert.Contains("std/Math", modules);
+        Assert.Contains("std/FloatMath", modules);
+        Assert.Contains("std/GameMath", modules);
+        Assert.Contains("std/Console", modules);
+        Assert.Contains("std/File", modules);
+        Assert.Contains("std/Network", modules);
+        Assert.Contains("std/Binary", modules);
+        Assert.Contains("std/Json", modules);
     }
 
     [Fact]
     public void Registry_StdSeqSource_CanBeLoadedFromEmbeddedResource()
     {
-        var loaded = PrecompiledModuleRegistry.TryGetSource("Std/Seq", out var source);
+        var loaded = PrecompiledModuleRegistry.TryGetSource("std/Seq", out var source);
 
         Assert.True(loaded);
         Assert.Contains("Seq :: module", source, StringComparison.Ordinal);
@@ -273,7 +327,7 @@ App :: module {
     [Fact]
     public void Registry_StdRuntimeArrayExports_ContainRuntimeArrayPrimitives()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/RuntimeArray");
+        var exports = PrecompiledModuleRegistry.GetExports("std/RuntimeArray");
 
         Assert.Contains("len", exports.Functions);
         Assert.Contains("with_capacity", exports.Functions);
@@ -294,7 +348,7 @@ App :: module {
     [Fact]
     public void Registry_StdSeqExports_ContainSafeCombinators()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Seq");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Seq");
 
         Assert.Contains("len", exports.Functions);
         Assert.Contains("empty", exports.Functions);
@@ -337,8 +391,8 @@ App :: module {
     [Fact]
     public void Registry_StdSeqBuilderAndPriorityQueueExports_ContainGraphErgonomics()
     {
-        var vec = PrecompiledModuleRegistry.GetExports("Std/SeqBuilder");
-        var queue = PrecompiledModuleRegistry.GetExports("Std/PriorityQueue");
+        var vec = PrecompiledModuleRegistry.GetExports("std/SeqBuilder");
+        var queue = PrecompiledModuleRegistry.GetExports("std/PriorityQueue");
 
         Assert.Contains("filled", vec.Functions);
         Assert.Contains("pop_last", vec.Functions);
@@ -355,7 +409,7 @@ App :: module {
     [Fact]
     public void Registry_StdPreludeExportedFunctions_ContainsApplyAndFlip()
     {
-        var functionNames = PrecompiledModuleRegistry.GetExportedFunctionNames("Std/Fn");
+        var functionNames = PrecompiledModuleRegistry.GetExportedFunctionNames("std/Functions");
 
         Assert.Contains("apply", functionNames);
         Assert.Contains("flip", functionNames);
@@ -365,7 +419,7 @@ App :: module {
     public void Registry_StdPreludeExportedFunctions_ContainPreludeSpecificHelpersOnly()
     {
         // Verify the real embedded Prelude source re-exports correctly
-        var sourceLoaded = PrecompiledModuleRegistry.TryGetSource("Std/Prelude", out var preludeSource);
+        var sourceLoaded = PrecompiledModuleRegistry.TryGetSource("std/Prelude", out var preludeSource);
         Assert.True(sourceLoaded, "Prelude source should be loadable");
         Assert.Contains("export import", preludeSource, StringComparison.Ordinal);
         Assert.Contains("export id[T] :: T -> T", preludeSource, StringComparison.Ordinal);
@@ -379,7 +433,7 @@ App :: module {
             });
 
         var exports = PrecompiledModuleRegistry.ExtractExportsForTest(
-            preludeSource, "Std/Prelude", moduleSources);
+            preludeSource, "std/Prelude", moduleSources);
 
         // Direct utility functions defined in Prelude
         Assert.Contains("id", exports.Functions);
@@ -439,10 +493,10 @@ App :: module {
             """;
         var moduleSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["Std/Text"] = "Text :: module { starts_with :: String -> String -> Bool { s => p => true } }"
+            ["std/Text"] = "Text :: module { starts_with :: String -> String -> Bool { s => p => true } }"
         };
         var exports = PrecompiledModuleRegistry.ExtractExportsForTest(
-            exportImportSource, "Std/Prelude", moduleSources);
+            exportImportSource, "std/Prelude", moduleSources);
         Assert.Contains("id", exports.Functions);
         Assert.Contains("starts_with", exports.Functions);
     }
@@ -450,7 +504,7 @@ App :: module {
     [Fact]
     public void Registry_StdOptionExports_ContainOptionTypeConstructorsAndFunctions()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Option");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Option");
 
         Assert.Contains("Option", exports.Types);
         Assert.Contains("Some", exports.Constructors);
@@ -460,8 +514,8 @@ App :: module {
         Assert.Contains("map", exports.Functions);
         Assert.Contains("map_or", exports.Functions);
         Assert.Contains("and_then", exports.Functions);
-        Assert.Contains("and_", exports.Functions);
-        Assert.Contains("or_", exports.Functions);
+        Assert.Contains("and", exports.Functions);
+        Assert.Contains("or", exports.Functions);
         Assert.Contains("xor", exports.Functions);
         Assert.Contains("unwrap_or", exports.Functions);
         Assert.Contains("zip", exports.Functions);
@@ -478,10 +532,10 @@ App :: module {
     [Fact]
     public void Registry_StdResultExports_ContainResultTypeConstructorsAndFunctions()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Result");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Result");
 
         Assert.Contains("Result", exports.Types);
-        Assert.Contains("ResultWith", exports.Types);
+        Assert.Contains("With", exports.Types);
         Assert.Contains("Ok", exports.Constructors);
         Assert.Contains("Err", exports.Constructors);
         Assert.Contains("is_ok", exports.Functions);
@@ -506,7 +560,7 @@ App :: module {
     [Fact]
     public void Registry_StdRangeExports_ContainRecordTypeAndHelpers()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Range");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Range");
 
         Assert.Contains("Range", exports.Types);
         Assert.Contains("Range", exports.Constructors);
@@ -527,7 +581,7 @@ App :: module {
     [Fact]
     public void Registry_StdTextExports_ContainSafeStringHelpers()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Text");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Text");
 
         Assert.Contains("len", exports.Functions);
         Assert.Contains("empty", exports.Functions);
@@ -562,7 +616,7 @@ App :: module {
     [Fact]
     public void Registry_StdTraitExports_ContainCoreTraits()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Trait");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Traits");
 
         Assert.Contains("Eq", exports.Traits);
         Assert.Contains("Ord", exports.Traits);
@@ -572,12 +626,12 @@ App :: module {
     [Fact]
     public void Registry_FunctionalSupportModules_ContainExpectedTraitsAndHelpers()
     {
-        var functor = PrecompiledModuleRegistry.GetExports("Std/Functor");
-        var applicative = PrecompiledModuleRegistry.GetExports("Std/Applicative");
-        var foldable = PrecompiledModuleRegistry.GetExports("Std/Foldable");
-        var monad = PrecompiledModuleRegistry.GetExports("Std/Monad");
-        var traversable = PrecompiledModuleRegistry.GetExports("Std/Traversable");
-        var traitInvoke = PrecompiledModuleRegistry.GetExports("Std/TraitInvoke");
+        var functor = PrecompiledModuleRegistry.GetExports("std/Functor");
+        var applicative = PrecompiledModuleRegistry.GetExports("std/Applicative");
+        var foldable = PrecompiledModuleRegistry.GetExports("std/Foldable");
+        var monad = PrecompiledModuleRegistry.GetExports("std/Monad");
+        var traversable = PrecompiledModuleRegistry.GetExports("std/Traversable");
+        var traitInvoke = PrecompiledModuleRegistry.GetExports("std/TraitInvoke");
 
         Assert.Contains("Functor", functor.Traits);
         Assert.Contains("Applicative", applicative.Traits);
@@ -592,7 +646,7 @@ App :: module {
     [Fact]
     public void Registry_StdOrderingExports_ContainOrderingConstructorsAndFunctions()
     {
-        var exports = PrecompiledModuleRegistry.GetExports("Std/Ordering");
+        var exports = PrecompiledModuleRegistry.GetExports("std/Ordering");
 
         Assert.Contains("Ordering", exports.Types);
         Assert.Contains("Less", exports.Constructors);
@@ -617,14 +671,14 @@ App :: module {
     [Fact]
     public void Registry_NewCapabilityModules_ContainExpectedExports()
     {
-        var math = PrecompiledModuleRegistry.GetExports("Std/Math");
-        var floatMath = PrecompiledModuleRegistry.GetExports("Std/FloatMath");
-        var gameMath = PrecompiledModuleRegistry.GetExports("Std/GameMath");
-        var console = PrecompiledModuleRegistry.GetExports("Std/Console");
-        var file = PrecompiledModuleRegistry.GetExports("Std/File");
-        var network = PrecompiledModuleRegistry.GetExports("Std/Network");
-        var binary = PrecompiledModuleRegistry.GetExports("Std/Binary");
-        var json = PrecompiledModuleRegistry.GetExports("Std/Json");
+        var math = PrecompiledModuleRegistry.GetExports("std/Math");
+        var floatMath = PrecompiledModuleRegistry.GetExports("std/FloatMath");
+        var gameMath = PrecompiledModuleRegistry.GetExports("std/GameMath");
+        var console = PrecompiledModuleRegistry.GetExports("std/Console");
+        var file = PrecompiledModuleRegistry.GetExports("std/File");
+        var network = PrecompiledModuleRegistry.GetExports("std/Network");
+        var binary = PrecompiledModuleRegistry.GetExports("std/Binary");
+        var json = PrecompiledModuleRegistry.GetExports("std/Json");
 
         Assert.Contains("pow", math.Functions);
         Assert.Contains("gcd", math.Functions);
@@ -781,7 +835,7 @@ Test :: module {
 
     Logger :: effect;
 
-    Option[T] :: type { Some(T) , None }
+    Option[T] :: type { Some:: type(T) , None :: type {} }
     UserId :: type = Int;
 
     map[T, U] :: Option[T] -> (T -> U) -> Option[U]
@@ -802,13 +856,14 @@ Test :: module {
     }
 
     [Fact]
-    public void ExtractExportsForTest_SkipsInternalAttributedFunctions()
+    public void ExtractExportsForTest_SkipsFunctionsWithInternalClause()
     {
         const string source = """
 Test :: module {
-    @internal
+
     helper :: Int -> Int
-    {
+     internal
+{
         x => x
     }
 
@@ -847,8 +902,8 @@ Demo.Api :: module {
 
     Hidden :: effect;
 
-    export Maybe[T] :: type { Some(T) , None }
-    HiddenMaybe[T] :: type { HiddenSome(T) , HiddenNone }
+    export Maybe[T] :: type { Some:: type(T) , None :: type {} }
+    HiddenMaybe[T] :: type { HiddenSome:: type(T) , HiddenNone :: type {} }
 }
 """;
 
@@ -920,7 +975,7 @@ Core.Io :: module {
 """,
             ["Core/Option"] = """
 Core.Option :: module {
-    export Option[T] :: type { Some(T) , None }
+    export Option[T] :: type { Some:: type(T) , None :: type {} }
 }
 """,
             ["Demo/Facade"] = """

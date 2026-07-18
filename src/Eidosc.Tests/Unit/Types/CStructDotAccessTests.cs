@@ -15,13 +15,15 @@ public class CStructDotAccessTests
     public void CStructDotAccess_SingleMatch_ResolvesToGetterCall()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+
+
+
+Point :: type  repr c
+{
+    x:: Float,
+    y:: Float
 }
 
 main :: Int -> Int
@@ -43,19 +45,22 @@ main :: Int -> Int
     public void CStructDotAccess_MultipleCStructsDistinctFields_ResolvesCorrectly()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+
+
+
+Point :: type  repr c
+{
+    x:: Float,
+    y:: Float
 }
 
-@cstruct
-Header :: type {
-    magic: Int,
-    version: Int
+
+Header :: type  repr c
+{
+    magic:: Int,
+    version:: Int
 }
 
 main :: Int -> Int
@@ -79,21 +84,24 @@ main :: Int -> Int
     public void CStructDotAccess_AmbiguousField_ProducesError()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+
+
+
+Point :: type  repr c
+{
+    x:: Float,
+    y:: Float
 }
 
-@cstruct
-Rect :: type {
-    x: Float,
-    y: Float,
-    w: Float,
-    h: Float
+
+Rect :: type  repr c
+{
+    x:: Float,
+    y:: Float,
+    w:: Float,
+    h:: Float
 }
 
 main :: Int -> Int
@@ -120,13 +128,15 @@ main :: Int -> Int
     public void CStructDotAccess_NoMatchingField_ProducesOriginalError()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+
+
+
+Point :: type  repr c
+{
+    x:: Float,
+    y:: Float
 }
 
 main :: Int -> Int
@@ -176,12 +186,14 @@ main :: Int -> Int
     public void CStructDotAccess_ExplicitCallSyntax_NotResolvedAsCStructField()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float
+malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+
+
+
+Point :: type  repr c
+{
+    x:: Float
 }
 
 main :: Int -> Int

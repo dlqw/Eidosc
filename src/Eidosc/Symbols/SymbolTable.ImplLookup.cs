@@ -62,7 +62,14 @@ public sealed partial class SymbolTable
         return typeId.Value switch
         {
             WellKnownTypeIds.IntId => WellKnownStrings.BuiltinTypes.Int,
+            WellKnownTypeIds.Int64Id => WellKnownStrings.BuiltinTypes.Int64,
+            WellKnownTypeIds.Int32Id => WellKnownStrings.BuiltinTypes.Int32,
+            WellKnownTypeIds.Int16Id => WellKnownStrings.BuiltinTypes.Int16,
+            WellKnownTypeIds.Int8Id => WellKnownStrings.BuiltinTypes.Int8,
             WellKnownTypeIds.FloatId => WellKnownStrings.BuiltinTypes.Float,
+            WellKnownTypeIds.Float64Id => WellKnownStrings.BuiltinTypes.Float64,
+            WellKnownTypeIds.Float32Id => WellKnownStrings.BuiltinTypes.Float32,
+            WellKnownTypeIds.Float16Id => WellKnownStrings.BuiltinTypes.Float16,
             WellKnownTypeIds.BoolId => WellKnownStrings.BuiltinTypes.Bool,
             WellKnownTypeIds.StringId => WellKnownStrings.BuiltinTypes.String,
             WellKnownTypeIds.CharId => WellKnownStrings.BuiltinTypes.Char,
@@ -561,14 +568,7 @@ public sealed partial class SymbolTable
             candidates = LookupImplCandidatesForTrait(type, trait, []);
         }
 
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
-
-        return candidates.Count == 1
-            ? candidates[0]
-            : null;
+        return candidates.Count == 1 ? candidates[0] : null;
     }
 
     /// <summary>
@@ -587,14 +587,12 @@ public sealed partial class SymbolTable
         }
 
         var candidates = LookupImplCandidatesForTraitByKeys(type, trait, traitTypeArgKeys);
-        if (candidates.Count == 0)
+        return candidates.Count switch
         {
-            return null;
-        }
-
-        return candidates.Count == 1
-            ? candidates[0]
-            : TryChooseMostSpecificImpl(candidates);
+            0 => null,
+            1 => candidates[0],
+            _ => TryChooseMostSpecificImpl(candidates)
+        };
     }
 
     /// <summary>
@@ -613,11 +611,6 @@ public sealed partial class SymbolTable
 
         var requestedTraitTypeArgKeys = NormalizeTraitTypeArgKeys(traitTypeArgKeys, fallbackTraitTypeArgs: null);
         var candidates = LookupImplCandidatesForTraitByKeys(type, trait, requestedTraitTypeArgKeys);
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
-
         var applicable = new List<ImplSymbol>(candidates.Count);
         foreach (var candidate in candidates)
         {
@@ -651,14 +644,12 @@ public sealed partial class SymbolTable
             }
         }
 
-        if (applicable.Count == 0)
+        return applicable.Count switch
         {
-            return null;
-        }
-
-        return applicable.Count == 1
-            ? applicable[0]
-            : TryChooseMostSpecificImpl(applicable);
+            0 => null,
+            1 => applicable[0],
+            _ => TryChooseMostSpecificImpl(applicable)
+        };
     }
 
     private static bool CandidateCanSatisfyStructuredRequest(

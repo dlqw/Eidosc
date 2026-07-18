@@ -68,7 +68,7 @@ internal static class DeclarationTypeAnnotationExtractor
         foreach (var child in node.Children)
         {
             if (child is TerminalCstNode terminal &&
-                string.Equals(terminal.Terminal?.ToString(), WellKnownStrings.Terminals.TypeIdentifier, StringComparison.Ordinal))
+                string.Equals(terminal.Terminal?.ToString(), WellKnownStrings.Terminals.Identifier, StringComparison.Ordinal))
             {
                 return true;
             }

@@ -6,20 +6,27 @@ using Eidosc.Ast.Types;
 using Eidosc.Symbols;
 using Eidosc.Types;
 using Eidosc.Utils;
-using AstAttribute = Eidosc.Ast.Attribute;
+using Eidosc.Ide;
+using Eidosc.Parsing.Handwritten;
+using Eidosc.Pipeline;
+using Eidosc.Syntax;
 
 namespace Eidosc.Semantic;
 
-internal sealed record MaterializedMetaDeclaration(
-    Declaration Declaration,
+internal sealed record MaterializedMetaNode(
+    EidosAstNode Node,
     int OutputIndex,
-    int NestedIndex = 0);
+    int NestedIndex = 0,
+    MetaDeclarationPlacement Placement = MetaDeclarationPlacement.AfterTarget,
+    string? GenerationSlotIdentity = null);
 
-internal sealed record MetaAttributeAttachment(
-    ComptimeDeclValue Target,
-    string Name,
-    IReadOnlyList<string> Arguments,
-    int OutputIndex);
+internal enum MetaDeclarationPlacement
+{
+    BeforeTarget,
+    AfterTarget,
+    Member,
+    ReplaceTarget
+}
 
 internal sealed record MetaExpansionDiagnostic(
     string Level,
@@ -28,135 +35,548 @@ internal sealed record MetaExpansionDiagnostic(
     int OutputIndex);
 
 internal sealed record MetaExpansionMaterializationResult(
-    IReadOnlyList<MaterializedMetaDeclaration> Declarations,
-    IReadOnlyList<MetaAttributeAttachment> Attachments,
-    IReadOnlyList<MetaExpansionDiagnostic> Diagnostics);
+    IReadOnlyList<MaterializedMetaNode> Nodes,
+    IReadOnlyList<MetaExpansionDiagnostic> Diagnostics,
+    bool RemovesTarget = false);
 
 internal sealed class MetaExpansionMaterializer(
     SymbolTable symbolTable,
-    AdtDef target,
+    Declaration target,
     SymbolId targetModuleId,
-    SourceSpan attributeSpan)
+    SourceSpan invocationSpan,
+    IReadOnlyList<string>? targetPath = null)
 {
     private readonly SymbolTable _symbolTable = symbolTable;
-    private readonly AdtDef _target = target;
+    private readonly Declaration _target = target;
     private readonly SymbolId _targetModuleId = targetModuleId;
-    private readonly SourceSpan _attributeSpan = attributeSpan;
+    private readonly SourceSpan _invocationSpan = invocationSpan;
+    private readonly IReadOnlyList<string>? _targetPath = targetPath;
+    private readonly HashSet<string> _explicitGenerationSlots = new(StringComparer.Ordinal);
 
     public bool TryMaterialize(
         ComptimeValue expansionValue,
         out MetaExpansionMaterializationResult result,
         out string reason)
     {
-        result = new MetaExpansionMaterializationResult([], [], []);
+        result = new MetaExpansionMaterializationResult([], []);
         reason = string.Empty;
-        if (expansionValue is not ComptimeMetaObjectValue { SchemaKind: "expansion" } expansion ||
-            !expansion.TryGet("declarations", out var declarationValues) ||
-            declarationValues is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } declarationList)
+        _explicitGenerationSlots.Clear();
+        if (expansionValue is not ComptimeMetaObjectValue { SchemaKind: "transformation" } transformation ||
+            !transformation.TryGet("edits", out var editValues) ||
+            editValues is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } edits)
         {
-            reason = "derive generator must return Meta.Expansion created by Meta.expansion";
+            reason = "target generator must return an opaque meta.Transformation created by meta transformation helpers";
             return false;
         }
 
-        var declarations = new List<MaterializedMetaDeclaration>();
-        var attachments = new List<MetaAttributeAttachment>();
+        var nodes = new List<MaterializedMetaNode>();
         var diagnostics = new List<MetaExpansionDiagnostic>();
-        for (var outputIndex = 0; outputIndex < declarationList.Elements.Count; outputIndex++)
+        var outputIndex = 0;
+        var hasTargetMutation = false;
+        var removesTarget = false;
+        for (var editIndex = 0; editIndex < edits.Elements.Count; editIndex++)
         {
-            if (declarationList.Elements[outputIndex] is not ComptimeMetaObjectValue declaration)
+            if (edits.Elements[editIndex] is not ComptimeMetaObjectValue { SchemaKind: "transformation-edit" } edit ||
+                !TryGetString(edit, "kind", out var editKind, out reason))
             {
-                reason = $"expansion output {outputIndex} is not a structured Meta.Declaration";
+                reason = $"transformation edit {editIndex} is not a valid opaque edit";
                 return false;
             }
 
-            if (!TryMaterializeDeclaration(
-                    declaration,
-                    outputIndex,
-                    declarations,
-                    attachments,
-                    diagnostics,
-                    out reason))
+            if (editKind == "report-diagnostic")
             {
+                if (!TryGetSequence(edit, "diagnostics", out var diagnosticValues, out reason))
+                {
+                    return false;
+                }
+
+                foreach (var diagnosticValue in diagnosticValues)
+                {
+                    if (diagnosticValue is not ComptimeMetaObjectValue { SchemaKind: "diagnostic" } diagnosticObject ||
+                        !TryReadDiagnostic(diagnosticObject, outputIndex++, out var diagnostic, out reason))
+                    {
+                        reason = string.IsNullOrWhiteSpace(reason)
+                            ? $"transformation diagnostic {editIndex} is invalid"
+                            : reason;
+                        return false;
+                    }
+                    diagnostics.Add(diagnostic);
+                }
+                continue;
+            }
+
+            if (editKind == "replace-target")
+            {
+                if (hasTargetMutation ||
+                    !TryValidateTarget(edit, out reason) ||
+                    !TryGetValue(edit, "syntax", out var replacement, out reason))
+                {
+                    reason = string.IsNullOrWhiteSpace(reason)
+                        ? "a transformation cannot contain conflicting target mutations"
+                        : reason;
+                    return false;
+                }
+
+                var nodeStart = nodes.Count;
+                if (!TryMaterializeDeclaration(
+                        replacement,
+                        outputIndex++,
+                        nodes,
+                        diagnostics,
+                        MetaDeclarationPlacement.ReplaceTarget,
+                        out reason) ||
+                    nodes.Count != nodeStart + 1)
+                {
+                    reason = string.IsNullOrWhiteSpace(reason)
+                        ? "meta.replace_target requires exactly one declaration syntax value"
+                        : reason;
+                    return false;
+                }
+
+                hasTargetMutation = true;
+                continue;
+            }
+
+            if (editKind == "remove-target")
+            {
+                if (hasTargetMutation || !TryValidateTarget(edit, out reason))
+                {
+                    reason = string.IsNullOrWhiteSpace(reason)
+                        ? "a transformation cannot contain conflicting target mutations"
+                        : reason;
+                    return false;
+                }
+
+                removesTarget = true;
+                hasTargetMutation = true;
+                continue;
+            }
+
+            if (editKind is not ("insert-before" or "insert-after" or "add-members") ||
+                !TryValidateTarget(edit, out reason) ||
+                !TryGetSequence(edit, "syntax", out var syntaxValues, out reason))
+            {
+                reason = string.IsNullOrWhiteSpace(reason)
+                    ? $"unsupported transformation edit '{editKind}'"
+                    : reason;
                 return false;
+            }
+
+            var placement = editKind switch
+            {
+                "insert-before" => MetaDeclarationPlacement.BeforeTarget,
+                "insert-after" => MetaDeclarationPlacement.AfterTarget,
+                _ => MetaDeclarationPlacement.Member
+            };
+            foreach (var syntaxValue in syntaxValues)
+            {
+                if (!TryMaterializeDeclaration(
+                        syntaxValue,
+                        outputIndex++,
+                        nodes,
+                        diagnostics,
+                        placement,
+                        out reason))
+                {
+                    return false;
+                }
             }
         }
 
-        result = new MetaExpansionMaterializationResult(declarations, attachments, diagnostics);
+        result = new MetaExpansionMaterializationResult(nodes, diagnostics, removesTarget);
+        return true;
+    }
+
+    private bool TryValidateTarget(ComptimeMetaObjectValue edit, out string reason)
+    {
+        reason = string.Empty;
+        if (!TryGetObject(edit, "target", out var target, out reason) ||
+            target.SchemaKind != "target" ||
+            !target.TryGet("targetDecl", out var targetDeclaration) ||
+            targetDeclaration is not ComptimeDeclValue declaration ||
+            declaration.SymbolId != _target.SymbolId)
+        {
+            reason = "transformation edit target is outside the authorized meta.Target";
+            return false;
+        }
+
         return true;
     }
 
     private bool TryMaterializeDeclaration(
-        ComptimeMetaObjectValue declaration,
+        ComptimeValue declaration,
         int outputIndex,
-        List<MaterializedMetaDeclaration> declarations,
-        List<MetaAttributeAttachment> attachments,
+        List<MaterializedMetaNode> nodes,
         List<MetaExpansionDiagnostic> diagnostics,
-        out string reason)
+        MetaDeclarationPlacement placement,
+        out string reason,
+        string? generationSlotIdentity = null)
     {
         reason = string.Empty;
-        switch (declaration.SchemaKind)
+        if (declaration is ComptimeMetaObjectValue { SchemaKind: "slotted-output" } slotted)
+        {
+            if (generationSlotIdentity != null)
+            {
+                reason = $"transformation output {outputIndex} cannot nest meta.with_slot wrappers";
+                return false;
+            }
+            if (!slotted.TryGet("output", out declaration) ||
+                !slotted.TryGet("slot", out var slotValue) ||
+                slotValue is not ComptimeMetaObjectValue { SchemaKind: "generation-slot" } slot ||
+                !TryGetString(slot, "identity", out generationSlotIdentity, out reason))
+            {
+                reason = string.IsNullOrWhiteSpace(reason)
+                    ? $"transformation output {outputIndex} has an invalid generation slot"
+                    : reason;
+                return false;
+            }
+            if (!_explicitGenerationSlots.Add(generationSlotIdentity))
+            {
+                reason = $"transformation contains duplicate generation slot '{generationSlotIdentity}'";
+                return false;
+            }
+        }
+
+        if (declaration is ComptimeSyntaxValue syntax)
+        {
+            return TryMaterializeQuotedNodes(
+                syntax,
+                outputIndex,
+                placement,
+                nodes,
+                out reason,
+                generationSlotIdentity);
+        }
+
+        if (declaration is not ComptimeMetaObjectValue structured)
+        {
+            reason = $"transformation output {outputIndex} is not typed meta.Syntax";
+            return false;
+        }
+
+        switch (structured.SchemaKind)
         {
             case "declaration.function":
-                if (!TryCreateFunction(declaration, implTrait: null, out var function, out reason))
+                if (!TryCreateFunction(structured, implTrait: null, out var function, out reason))
                 {
                     return false;
                 }
 
-                declarations.Add(new MaterializedMetaDeclaration(function, outputIndex));
+                nodes.Add(new MaterializedMetaNode(
+                    function,
+                    outputIndex,
+                    Placement: placement,
+                    GenerationSlotIdentity: generationSlotIdentity));
                 return true;
 
             case "declaration.implementation":
-                return TryCreateImplementation(declaration, outputIndex, declarations, out reason);
+                return TryCreateImplementation(
+                    structured,
+                    outputIndex,
+                    placement,
+                    nodes,
+                    out reason,
+                    generationSlotIdentity);
 
             case "declaration.comptime-value":
-                if (!TryCreateComptimeValue(declaration, out var comptimeValue, out reason))
+                if (!TryCreateComptimeValue(structured, out var comptimeValue, out reason))
                 {
                     return false;
                 }
 
-                declarations.Add(new MaterializedMetaDeclaration(comptimeValue, outputIndex));
-                return true;
-
-            case "declaration.attribute":
-                if (!TryCreateAttributeAttachment(declaration, outputIndex, out var attachment, out reason))
-                {
-                    return false;
-                }
-
-                attachments.Add(attachment);
+                nodes.Add(new MaterializedMetaNode(
+                    comptimeValue,
+                    outputIndex,
+                    Placement: placement,
+                    GenerationSlotIdentity: generationSlotIdentity));
                 return true;
 
             case "declaration.test":
-                if (!TryCreateTest(declaration, out var test, out reason))
+                if (!TryCreateTest(structured, out var test, out reason))
                 {
                     return false;
                 }
 
-                declarations.Add(new MaterializedMetaDeclaration(test, outputIndex));
+                nodes.Add(new MaterializedMetaNode(
+                    test,
+                    outputIndex,
+                    Placement: placement,
+                    GenerationSlotIdentity: generationSlotIdentity));
                 return true;
 
             case "declaration.module-member":
-                if (!TryGetObject(declaration, "declaration", out var nested, out reason))
+                if (!TryGetValue(structured, "declaration", out var nested, out reason))
                 {
                     return false;
                 }
 
-                return TryMaterializeDeclaration(nested, outputIndex, declarations, attachments, diagnostics, out reason);
-
-            case "declaration.diagnostic":
-                if (!TryReadDiagnostic(declaration, outputIndex, out var diagnostic, out reason))
-                {
-                    return false;
-                }
-
-                diagnostics.Add(diagnostic);
-                return true;
+                return TryMaterializeDeclaration(
+                    nested,
+                    outputIndex,
+                    nodes,
+                    diagnostics,
+                    placement,
+                    out reason,
+                    generationSlotIdentity);
 
             default:
-                reason = $"unsupported structured declaration kind '{declaration.SchemaKind}'";
+                reason = $"unsupported structured declaration kind '{structured.SchemaKind}'";
                 return false;
         }
     }
+
+    private bool TryMaterializeQuotedNodes(
+        ComptimeSyntaxValue syntax,
+        int outputIndex,
+        MetaDeclarationPlacement placement,
+        List<MaterializedMetaNode> nodes,
+        out string reason,
+        string? generationSlotIdentity)
+    {
+        reason = string.Empty;
+        var expectedCategory = placement == MetaDeclarationPlacement.Member
+            ? SyntaxCategory.Member
+            : _target is CaseTypeDef && placement == MetaDeclarationPlacement.ReplaceTarget
+                ? SyntaxCategory.Member
+                : SyntaxCategory.Item;
+        if (syntax.Category != expectedCategory)
+        {
+            reason = $"{placement} on {_target.GetType().Name} requires meta.Syntax[{expectedCategory}], " +
+                     $"not meta.Syntax[{syntax.Category}]";
+            return false;
+        }
+
+        var memberGrammar = SyntaxMemberGrammar.Any;
+        if (syntax.Category == SyntaxCategory.Member && !TryGetMemberGrammar(out memberGrammar, out reason))
+        {
+            return false;
+        }
+
+        if (!TryMaterializeSyntax(
+                syntax,
+                expectedCategory,
+                memberGrammar,
+                out var materializedNodes,
+                out reason))
+        {
+            return false;
+        }
+
+        if (syntax.Category == SyntaxCategory.Item && materializedNodes.Any(static node => node is not Declaration))
+        {
+            reason = "quoted item syntax produced a non-declaration AST node";
+            return false;
+        }
+
+        for (var index = 0; index < materializedNodes.Count; index++)
+        {
+            nodes.Add(new MaterializedMetaNode(
+                materializedNodes[index],
+                outputIndex,
+                index,
+                placement,
+                generationSlotIdentity));
+        }
+
+        return true;
+    }
+
+    internal bool TryMaterializeSyntax(
+        ComptimeSyntaxValue syntax,
+        SyntaxCategory expectedCategory,
+        SyntaxMemberGrammar memberGrammar,
+        out IReadOnlyList<EidosAstNode> nodes,
+        out string reason)
+    {
+        nodes = [];
+        if (syntax.Category != expectedCategory)
+        {
+            reason = $"syntax site requires meta.Syntax[{expectedCategory}], not meta.Syntax[{syntax.Category}]";
+            return false;
+        }
+
+        var sourceName = string.IsNullOrWhiteSpace(syntax.Origin.SourceUri)
+            ? $"eidos-generated://quote/{expectedCategory.ToString().ToLowerInvariant()}.eidos"
+            : syntax.Origin.SourceUri;
+        var schema = SyntaxSchema.All.Single(entry =>
+            entry.Category == syntax.Category &&
+            entry.Cardinality == SyntaxCardinality.Singular);
+        if (!ComptimeSyntaxEvaluator.TryParseFragments(
+                schema,
+                syntax.Tokens,
+                syntax.TrailingTrivia,
+                sourceName,
+                out _,
+                out var artifacts,
+                out reason,
+                memberGrammar) ||
+            !TryApplySyntaxIdentities(artifacts, syntax.Tokens, out reason))
+        {
+            return false;
+        }
+
+        nodes = artifacts.Nodes;
+        return true;
+    }
+
+    private bool TryGetMemberGrammar(out SyntaxMemberGrammar grammar, out string reason)
+    {
+        grammar = _target switch
+        {
+            AdtDef or CaseTypeDef => SyntaxMemberGrammar.Type,
+            TraitDef => SyntaxMemberGrammar.Trait,
+            InstanceDecl => SyntaxMemberGrammar.Instance,
+            ModuleDecl => SyntaxMemberGrammar.Module,
+            _ => SyntaxMemberGrammar.Any
+        };
+        if (grammar != SyntaxMemberGrammar.Any)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = $"{_target.GetType().Name} does not own a member grammar";
+        return false;
+    }
+
+    private bool TryApplySyntaxIdentities(
+        ComptimeSyntaxParseArtifacts artifacts,
+        IReadOnlyList<ComptimeSyntaxToken> syntaxTokens,
+        out string reason)
+    {
+        foreach (var root in artifacts.Nodes)
+        {
+            var pending = new Stack<EidosAstNode>();
+            var visited = new HashSet<EidosAstNode>(ReferenceEqualityComparer.Instance);
+            pending.Push(root);
+            while (pending.Count > 0)
+            {
+                var node = pending.Pop();
+                if (!visited.Add(node))
+                {
+                    continue;
+                }
+
+                if (TryFindSyntaxIdentity(node, artifacts.TokenPositions, syntaxTokens, out var identity))
+                {
+                    if (identity.SymbolId.IsValid && _symbolTable.GetSymbol(identity.SymbolId) == null)
+                    {
+                        reason = $"syntax identity '{identity.StableIdentity}' refers to an unavailable symbol";
+                        return false;
+                    }
+
+                    if (identity.Kind == ComptimeSyntaxIdentityKind.Identifier &&
+                        !IsIdentifierCategoryValidForNode(identity.Category, node))
+                    {
+                        reason = $"meta.Identifier category {identity.Category} cannot name {node.GetType().Name}";
+                        return false;
+                    }
+
+                    var attached = new SyntaxIdentity(
+                        identity.Kind switch
+                        {
+                            ComptimeSyntaxIdentityKind.Declaration => SyntaxIdentityKind.Declaration,
+                            ComptimeSyntaxIdentityKind.Type => SyntaxIdentityKind.Type,
+                            ComptimeSyntaxIdentityKind.Identifier => SyntaxIdentityKind.Identifier,
+                            _ => SyntaxIdentityKind.Hygiene
+                        },
+                        identity.StableIdentity,
+                        identity.SymbolId,
+                        identity.TypeId,
+                        identity.Category);
+                    node.AttachSyntaxIdentity(attached);
+                    if (node is CtorExpr { ConstructorPath: { } constructorPath })
+                    {
+                        constructorPath.AttachSyntaxIdentity(attached);
+                    }
+                }
+
+                foreach (var child in AstStableNodeTraversal.GetStructuralChildren(node))
+                {
+                    pending.Push(child);
+                }
+            }
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool TryFindSyntaxIdentity(
+        EidosAstNode node,
+        IReadOnlyList<ComptimeSyntaxEvaluator.SyntaxTokenPosition> positions,
+        IReadOnlyList<ComptimeSyntaxToken> syntaxTokens,
+        out ComptimeSyntaxIdentity identity)
+    {
+        var span = node is MethodCallExpr { MemberNameSpan.Length: > 0 } methodCall
+            ? methodCall.MemberNameSpan
+            : node.Span;
+        if (node is not (Declaration or Field or Constructor or TypeParam or IdentifierExpr or PathExpr or
+            TypePath or CtorExpr or CtorPattern or VarPattern or AsPattern or FieldPattern or MethodCallExpr))
+        {
+            identity = null!;
+            return false;
+        }
+
+        var candidates = positions
+            .Where(position => position.Start >= span.Position && position.End <= span.EndPosition)
+            .Select(position => syntaxTokens[position.Index].Identity)
+            .OfType<ComptimeSyntaxIdentity>()
+            .ToArray();
+        if (candidates.Length == 0)
+        {
+            identity = null!;
+            return false;
+        }
+
+        var pathTerminalName = node switch
+        {
+            PathExpr path => path.Name,
+            TypePath path => path.TypeName,
+            CtorExpr constructor => constructor.ConstructorName,
+            CtorPattern constructor => constructor.ConstructorName,
+            _ => string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(pathTerminalName))
+        {
+            var terminalCandidate = positions
+                .Where(position => position.Start >= span.Position && position.End <= span.EndPosition)
+                .Where(position => string.Equals(
+                    syntaxTokens[position.Index].Spelling,
+                    pathTerminalName,
+                    StringComparison.Ordinal))
+                .OrderBy(static position => position.Start)
+                .Select(position => syntaxTokens[position.Index].Identity)
+                .OfType<ComptimeSyntaxIdentity>()
+                .FirstOrDefault();
+            identity = terminalCandidate!;
+            return terminalCandidate != null;
+        }
+
+        var startCandidate = positions
+            .Where(position => position.Start == span.Position)
+            .Select(position => syntaxTokens[position.Index].Identity)
+            .OfType<ComptimeSyntaxIdentity>()
+            .FirstOrDefault();
+        identity = startCandidate ?? (candidates.Length == 1 ? candidates[0] : null!);
+        return identity != null;
+    }
+
+    private static bool IsIdentifierCategoryValidForNode(string category, EidosAstNode node) => category switch
+    {
+        "Item" => node is Declaration,
+        "Member" => node is Field or Constructor or CaseTypeDef or FuncDef or FuncDecl,
+        "Value" => node is LetDecl or IdentifierExpr or PathExpr,
+        "Type" => node is AdtDef or CaseTypeDef or TypePath,
+        "Function" => node is FuncDef or FuncDecl or IdentifierExpr or PathExpr or MethodCallExpr,
+        "Field" => node is Field or IdentifierExpr or MethodCallExpr,
+        "Constructor" => node is Constructor or CtorExpr or CtorPattern or TypePath,
+        "Parameter" or "Local" => node is VarPattern or AsPattern or FieldPattern or IdentifierExpr,
+        "Module" => node is ModuleDecl or PathExpr,
+        "AssociatedType" => node is AssociatedTypeDecl or TypePath,
+        "AssociatedConst" => node is AssociatedConstDecl or IdentifierExpr or PathExpr,
+        _ => false
+    };
 
     private bool TryCreateFunction(
         ComptimeMetaObjectValue declaration,
@@ -199,7 +619,7 @@ internal sealed class MetaExpansionMaterializer(
             }
 
             var pattern = new VarPattern();
-            pattern.SetSpan(_attributeSpan);
+            pattern.SetSpan(_invocationSpan);
             pattern.SetName(hygienicName);
             parameterPatterns.Add(pattern);
             parameterTypes.Add(CreateTypeNode(parameterType));
@@ -217,18 +637,18 @@ internal sealed class MetaExpansionMaterializer(
             _ => CreateTuplePattern(parameterPatterns)
         };
         var branch = new PatternBranch();
-        branch.SetSpan(_attributeSpan);
+        branch.SetSpan(_invocationSpan);
         branch.SetPattern(entryPattern);
         branch.SetExpression(body);
 
-        function.SetSpan(_attributeSpan);
+        function.SetSpan(_invocationSpan);
         function.SetName(name);
         function.SetTypeParams(CloneTargetTypeParameters());
         function.SetSignature(CreateFunctionType(parameterTypes, CreateTypeNode(resultType)));
         function.SetBody([branch]);
         if (implTrait != null)
         {
-            function.SetAttributes([CreateImplAttribute(implTrait)]);
+            function.SetClauses([CreateImplClause(implTrait)]);
         }
 
         return true;
@@ -237,10 +657,18 @@ internal sealed class MetaExpansionMaterializer(
     private bool TryCreateImplementation(
         ComptimeMetaObjectValue declaration,
         int outputIndex,
-        List<MaterializedMetaDeclaration> declarations,
-        out string reason)
+        MetaDeclarationPlacement placement,
+        List<MaterializedMetaNode> nodes,
+        out string reason,
+        string? generationSlotIdentity)
     {
         reason = string.Empty;
+        if (_target is not (AdtDef or CaseTypeDef))
+        {
+            reason = "Meta.implementation can only target a type or case-type declaration";
+            return false;
+        }
+
         if (!TryGetDecl(declaration, "trait", out var trait, out reason) ||
             _symbolTable.GetSymbol<TraitSymbol>(trait.SymbolId) == null)
         {
@@ -253,7 +681,7 @@ internal sealed class MetaExpansionMaterializer(
         if (!TryGetType(declaration, "target", out var implementationTarget, out reason) ||
             !string.Equals(
                 implementationTarget.TypeRef.StableIdentity,
-                MetaComptimeIntrinsics.CreateAdtTargetTypeValue(_target, _symbolTable).TypeRef.StableIdentity,
+                MetaComptimeIntrinsics.CreateTypeTargetValue(_target, _symbolTable, _targetPath).TypeRef.StableIdentity,
                 StringComparison.Ordinal))
         {
             reason = "Meta.implementation target must be the current derive target";
@@ -276,7 +704,12 @@ internal sealed class MetaExpansionMaterializer(
                 return false;
             }
 
-            declarations.Add(new MaterializedMetaDeclaration(method, outputIndex, methodIndex));
+            nodes.Add(new MaterializedMetaNode(
+                method,
+                outputIndex,
+                methodIndex,
+                placement,
+                generationSlotIdentity));
         }
 
         return true;
@@ -289,8 +722,8 @@ internal sealed class MetaExpansionMaterializer(
     {
         let = new LetDecl();
         if (!TryGetString(declaration, "name", out var name, out reason) ||
-            !ValidateGeneratedComptimeName(name, out reason) ||
             !TryGetType(declaration, "type", out var type, out reason) ||
+            !ValidateGeneratedComptimeName(name, type, out reason) ||
             !TryGetObject(declaration, "value", out var valueObject, out reason) ||
             !TryCreateExpression(valueObject, new Dictionary<string, string>(StringComparer.Ordinal), out var expression, out reason))
         {
@@ -298,49 +731,13 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var pattern = new VarPattern();
-        pattern.SetSpan(_attributeSpan);
+        pattern.SetSpan(_invocationSpan);
         pattern.SetName(name);
-        let.SetSpan(_attributeSpan);
+        let.SetSpan(_invocationSpan);
         let.SetPattern(pattern);
         let.SetTypeAnnotation(CreateTypeNode(type));
         let.SetComptime(true);
         let.SetValue(expression);
-        return true;
-    }
-
-    private bool TryCreateAttributeAttachment(
-        ComptimeMetaObjectValue declaration,
-        int outputIndex,
-        out MetaAttributeAttachment attachment,
-        out string reason)
-    {
-        attachment = null!;
-        if (!TryGetDecl(declaration, "target", out var target, out reason) ||
-            !TryGetString(declaration, "name", out var name, out reason) ||
-            !TryGetSequence(declaration, "arguments", out var argumentValues, out reason))
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(name) || name.StartsWith("__", StringComparison.Ordinal))
-        {
-            reason = $"invalid generated attribute name '{name}'";
-            return false;
-        }
-
-        var arguments = new List<string>(argumentValues.Count);
-        foreach (var argument in argumentValues)
-        {
-            if (argument is not ComptimeStringValue stringValue)
-            {
-                reason = "generated attribute arguments must be strings";
-                return false;
-            }
-
-            arguments.Add(stringValue.Value);
-        }
-
-        attachment = new MetaAttributeAttachment(target, name, arguments, outputIndex);
         return true;
     }
 
@@ -352,6 +749,7 @@ internal sealed class MetaExpansionMaterializer(
         test = new FuncDef();
         if (!TryGetString(declaration, "name", out var name, out reason) ||
             !ValidateGeneratedValueName(name, out reason) ||
+            !ValidateGeneratedTestName(name, out reason) ||
             !TryGetObject(declaration, "body", out var bodyObject, out reason) ||
             !TryCreateExpression(bodyObject, new Dictionary<string, string>(StringComparer.Ordinal), out var body, out reason))
         {
@@ -359,17 +757,13 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var branch = new PatternBranch();
-        branch.SetSpan(_attributeSpan);
+        branch.SetSpan(_invocationSpan);
         branch.SetPattern(CreateWildcardPattern());
         branch.SetExpression(body);
-        var testAttribute = new AstAttribute();
-        testAttribute.SetSpan(_attributeSpan);
-        testAttribute.SetName("test");
-        test.SetSpan(_attributeSpan);
+        test.SetSpan(_invocationSpan);
         test.SetName(name);
         test.SetSignature(CreateFunctionType([CreateSimpleTypePath("Unit")], CreateSimpleTypePath("Unit")));
         test.SetBody([branch]);
-        test.SetAttributes([testAttribute]);
         return true;
     }
 
@@ -472,7 +866,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var identifier = new IdentifierExpr();
-        identifier.SetSpan(_attributeSpan);
+        identifier.SetSpan(_invocationSpan);
         identifier.SetName(name);
         result = identifier;
         return true;
@@ -512,7 +906,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var call = new CallExpr();
-        call.SetSpan(_attributeSpan);
+        call.SetSpan(_invocationSpan);
         call.SetFunction(callee);
         foreach (var argumentValue in argumentValues)
         {
@@ -548,7 +942,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var ctor = new CtorExpr();
-        ctor.SetSpan(_attributeSpan);
+        ctor.SetSpan(_invocationSpan);
         ctor.SetConstructorPath(CreateDeclarationTypePath(constructor));
         if (!named)
         {
@@ -579,7 +973,7 @@ internal sealed class MetaExpansionMaterializer(
                 }
 
                 var fieldInit = new FieldInit();
-                fieldInit.SetSpan(_attributeSpan);
+                fieldInit.SetSpan(_invocationSpan);
                 fieldInit.SetFieldName(fieldName);
                 fieldInit.SetValue(fieldValue);
                 ctor.AddNamedArg(fieldInit);
@@ -606,7 +1000,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var access = new MethodCallExpr();
-        access.SetSpan(_attributeSpan);
+        access.SetSpan(_invocationSpan);
         access.SetReceiver(subject);
         access.SetMethodName(fieldName);
         result = access;
@@ -632,7 +1026,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var binary = new BinaryExpr();
-        binary.SetSpan(_attributeSpan);
+        binary.SetSpan(_invocationSpan);
         binary.SetOperator(op);
         binary.SetLeft(left);
         binary.SetRight(right);
@@ -673,7 +1067,7 @@ internal sealed class MetaExpansionMaterializer(
         else
         {
             var list = new ListExpr();
-            list.SetSpan(_attributeSpan);
+            list.SetSpan(_invocationSpan);
             foreach (var element in elements)
             {
                 list.AddElement(element);
@@ -700,7 +1094,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var match = new MatchExpr();
-        match.SetSpan(_attributeSpan);
+        match.SetSpan(_invocationSpan);
         match.SetMatchedExpression(subject);
         foreach (var branchValue in branchValues)
         {
@@ -720,7 +1114,7 @@ internal sealed class MetaExpansionMaterializer(
             }
 
             var branch = new PatternBranch();
-            branch.SetSpan(_attributeSpan);
+            branch.SetSpan(_invocationSpan);
             branch.SetPattern(pattern);
             branch.SetExpression(branchExpression);
             match.AddBranch(branch);
@@ -759,7 +1153,7 @@ internal sealed class MetaExpansionMaterializer(
                 }
 
                 var variable = new VarPattern();
-                variable.SetSpan(_attributeSpan);
+                variable.SetSpan(_invocationSpan);
                 variable.SetName(name);
                 pattern = variable;
                 return true;
@@ -790,7 +1184,7 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         var ctorPattern = new CtorPattern();
-        ctorPattern.SetSpan(_attributeSpan);
+        ctorPattern.SetSpan(_invocationSpan);
         ApplyDeclarationPath(ctorPattern, constructor);
         if (!named)
         {
@@ -821,7 +1215,7 @@ internal sealed class MetaExpansionMaterializer(
                 }
 
                 var fieldPattern = new FieldPattern();
-                fieldPattern.SetSpan(_attributeSpan);
+                fieldPattern.SetSpan(_invocationSpan);
                 fieldPattern.SetFieldName(fieldName);
                 fieldPattern.SetPattern(childPattern);
                 ctorPattern.AddNamedPattern(fieldPattern);
@@ -839,14 +1233,14 @@ internal sealed class MetaExpansionMaterializer(
             !module.Path.SequenceEqual(_symbolTable.Modules.GetModule(_targetModuleId)?.Path ?? []))
         {
             var path = new PathExpr();
-            path.SetSpan(_attributeSpan);
+            path.SetSpan(_invocationSpan);
             path.SetModulePath(module.Path);
             path.SetName(declaration.Name);
             return path;
         }
 
         var identifier = new IdentifierExpr();
-        identifier.SetSpan(_attributeSpan);
+        identifier.SetSpan(_invocationSpan);
         identifier.SetName(declaration.Name);
         return identifier;
     }
@@ -854,7 +1248,7 @@ internal sealed class MetaExpansionMaterializer(
     private TypePath CreateDeclarationTypePath(ComptimeDeclValue declaration)
     {
         var path = new TypePath();
-        path.SetSpan(_attributeSpan);
+        path.SetSpan(_invocationSpan);
         path.SetTypeName(declaration.Name);
         if (_symbolTable.Modules.TryGetOwningModule(declaration.SymbolId, out var module))
         {
@@ -873,14 +1267,14 @@ internal sealed class MetaExpansionMaterializer(
         }
     }
 
-    private AstAttribute CreateImplAttribute(ComptimeDeclValue trait)
+    private DeclarationClause CreateImplClause(ComptimeDeclValue trait)
     {
-        var attribute = new AstAttribute();
-        attribute.SetSpan(_attributeSpan);
-        attribute.SetName("impl");
+        var clause = new DeclarationClause();
+        clause.SetSpan(_invocationSpan);
+        clause.SetKind(DeclarationClauseKind.Impl, "impl");
         var display = FormatDeclarationPath(trait);
-        attribute.AddArgumentText(display);
-        return attribute;
+        clause.AddArgument(display);
+        return clause;
     }
 
     private string FormatDeclarationPath(ComptimeDeclValue declaration)
@@ -892,7 +1286,12 @@ internal sealed class MetaExpansionMaterializer(
 
     private List<TypeParam> CloneTargetTypeParameters()
     {
-        return _target.TypeParams.Select(CloneTypeParameter).ToList();
+        return _target switch
+        {
+            AdtDef adt => adt.TypeParams.Select(CloneTypeParameter).ToList(),
+            CaseTypeDef caseType => caseType.TypeParams.Select(CloneTypeParameter).ToList(),
+            _ => []
+        };
     }
 
     private TypeParam CloneTypeParameter(TypeParam parameter)
@@ -967,7 +1366,7 @@ internal sealed class MetaExpansionMaterializer(
         return type switch
         {
             TypePath path => CloneTypePath(path),
-            TupleType tuple => new TupleType { Elements = tuple.Elements.Select(CloneTypeNode).ToList(), Span = _attributeSpan },
+            TupleType tuple => new TupleType { Elements = tuple.Elements.Select(CloneTypeNode).ToList(), Span = _invocationSpan },
             ArrowType arrow => CreateArrowType(CloneTypeNode(arrow.ParamType), CloneTypeNode(arrow.ReturnType)),
             EffectfulType effectful => new EffectfulType
             {
@@ -976,7 +1375,7 @@ internal sealed class MetaExpansionMaterializer(
                 EffectPath = [.. effectful.EffectPath],
                 EffectPaths = effectful.EffectPaths.Select(static path => path.ToList()).ToList(),
                 EffectPathSpans = [.. effectful.EffectPathSpans],
-                Span = _attributeSpan
+                Span = _invocationSpan
             },
             _ => type
         };
@@ -991,7 +1390,7 @@ internal sealed class MetaExpansionMaterializer(
         };
         clone.SetPackageAlias(path.PackageAlias);
         clone.SetTypeName(path.TypeName);
-        clone.SetSpan(_attributeSpan);
+        clone.SetSpan(_invocationSpan);
         clone.SymbolId = path.SymbolId;
         if (path.GenericArguments.Count > 0)
         {
@@ -1006,23 +1405,23 @@ internal sealed class MetaExpansionMaterializer(
         TypeGenericArgumentNode typeArgument => new TypeGenericArgumentNode
         {
             Type = CloneTypeNode(typeArgument.Type),
-            Span = _attributeSpan
+            Span = _invocationSpan
         },
         ValueGenericArgumentNode valueArgument => new ValueGenericArgumentNode
         {
             Expression = CloneGenericValueExpression(valueArgument.Expression),
-            Span = _attributeSpan
+            Span = _invocationSpan
         },
         EffectGenericArgumentNode effectArgument => new EffectGenericArgumentNode
         {
             EffectRow = CloneTypeNode(effectArgument.EffectRow),
-            Span = _attributeSpan
+            Span = _invocationSpan
         },
         UnresolvedGenericArgumentNode unresolved => new UnresolvedGenericArgumentNode
         {
             TypeCandidate = unresolved.TypeCandidate == null ? null : CloneTypeNode(unresolved.TypeCandidate),
             ValueCandidate = unresolved.ValueCandidate == null ? null : CloneGenericValueExpression(unresolved.ValueCandidate),
-            Span = _attributeSpan
+            Span = _invocationSpan
         },
         _ => argument
     };
@@ -1034,22 +1433,22 @@ internal sealed class MetaExpansionMaterializer(
             "type" when argument.Type != null => new TypeGenericArgumentNode
             {
                 Type = CreateTypeNode(new ComptimeTypeValue(argument.Type)),
-                Span = _attributeSpan
+                Span = _invocationSpan
             },
             "effect-row" when argument.Type != null => new EffectGenericArgumentNode
             {
                 EffectRow = CreateTypeNode(new ComptimeTypeValue(argument.Type)),
-                Span = _attributeSpan
+                Span = _invocationSpan
             },
             "value" => new ValueGenericArgumentNode
             {
                 Expression = CreateGenericValueExpression(argument),
-                Span = _attributeSpan
+                Span = _invocationSpan
             },
             _ => new UnresolvedGenericArgumentNode
             {
                 ValueCandidate = CreateGenericValueExpression(argument),
-                Span = _attributeSpan
+                Span = _invocationSpan
             }
         };
     }
@@ -1059,7 +1458,7 @@ internal sealed class MetaExpansionMaterializer(
         if (argument.SymbolId.IsValid)
         {
             var identifier = new IdentifierExpr();
-            identifier.SetSpan(_attributeSpan);
+            identifier.SetSpan(_invocationSpan);
             identifier.SetName(argument.Display);
             identifier.SymbolId = argument.SymbolId;
             return identifier;
@@ -1076,13 +1475,13 @@ internal sealed class MetaExpansionMaterializer(
                 return CreateLiteral(literal.RawText);
             case IdentifierExpr identifier:
                 var identifierClone = new IdentifierExpr();
-                identifierClone.SetSpan(_attributeSpan);
+                identifierClone.SetSpan(_invocationSpan);
                 identifierClone.SetName(identifier.Name);
                 identifierClone.SymbolId = identifier.SymbolId;
                 return identifierClone;
             case PathExpr path:
                 var pathClone = new PathExpr();
-                pathClone.SetSpan(_attributeSpan);
+                pathClone.SetSpan(_invocationSpan);
                 pathClone.SetPackageAlias(path.PackageAlias);
                 pathClone.SetModulePath(path.ModulePath);
                 pathClone.SetName(path.Name);
@@ -1092,20 +1491,20 @@ internal sealed class MetaExpansionMaterializer(
                 return pathClone;
             case UnaryExpr unary when unary.Operand != null:
                 var unaryClone = new UnaryExpr();
-                unaryClone.SetSpan(_attributeSpan);
+                unaryClone.SetSpan(_invocationSpan);
                 unaryClone.SetOperator(unary.Operator);
                 unaryClone.SetOperand(CloneGenericValueExpression(unary.Operand));
                 return unaryClone;
             case BinaryExpr binary when binary.Left != null && binary.Right != null:
                 var binaryClone = new BinaryExpr();
-                binaryClone.SetSpan(_attributeSpan);
+                binaryClone.SetSpan(_invocationSpan);
                 binaryClone.SetOperator(binary.Operator);
                 binaryClone.SetLeft(CloneGenericValueExpression(binary.Left));
                 binaryClone.SetRight(CloneGenericValueExpression(binary.Right));
                 return binaryClone;
             case CallExpr call when call.Function != null:
                 var callClone = new CallExpr();
-                callClone.SetSpan(_attributeSpan);
+                callClone.SetSpan(_invocationSpan);
                 callClone.SetFunction(CloneGenericValueExpression(call.Function));
                 foreach (var argument in call.PositionalArgs)
                 {
@@ -1117,11 +1516,11 @@ internal sealed class MetaExpansionMaterializer(
                 return new TupleExpr
                 {
                     Elements = tuple.Elements.Select(CloneGenericValueExpression).ToList(),
-                    Span = _attributeSpan
+                    Span = _invocationSpan
                 };
             case ListExpr list:
                 var listClone = new ListExpr();
-                listClone.SetSpan(_attributeSpan);
+                listClone.SetSpan(_invocationSpan);
                 foreach (var element in list.Elements)
                 {
                     listClone.AddElement(CloneGenericValueExpression(element));
@@ -1129,7 +1528,7 @@ internal sealed class MetaExpansionMaterializer(
 
                 return listClone;
             default:
-                return expression with { Span = _attributeSpan };
+                return expression with { Span = _invocationSpan };
         }
     }
 
@@ -1144,7 +1543,7 @@ internal sealed class MetaExpansionMaterializer(
     private TypePath CreateSimpleTypePath(string name)
     {
         var path = new TypePath();
-        path.SetSpan(_attributeSpan);
+        path.SetSpan(_invocationSpan);
         path.SetTypeName(name);
         return path;
     }
@@ -1164,7 +1563,7 @@ internal sealed class MetaExpansionMaterializer(
     private ArrowType CreateArrowType(TypeNode parameter, TypeNode result)
     {
         var arrow = new ArrowType();
-        arrow.SetSpan(_attributeSpan);
+        arrow.SetSpan(_invocationSpan);
         arrow.SetParamType(parameter);
         arrow.SetReturnType(result);
         return arrow;
@@ -1203,14 +1602,14 @@ internal sealed class MetaExpansionMaterializer(
     private WildcardPattern CreateWildcardPattern()
     {
         var pattern = new WildcardPattern();
-        pattern.SetSpan(_attributeSpan);
+        pattern.SetSpan(_invocationSpan);
         return pattern;
     }
 
     private TuplePattern CreateTuplePattern(IEnumerable<Pattern> patterns)
     {
         var tuple = new TuplePattern();
-        tuple.SetSpan(_attributeSpan);
+        tuple.SetSpan(_invocationSpan);
         foreach (var pattern in patterns)
         {
             tuple.AddElement(pattern);
@@ -1241,12 +1640,17 @@ internal sealed class MetaExpansionMaterializer(
     private static bool ValidateGeneratedValueName(string name, out string reason)
     {
         if (string.IsNullOrWhiteSpace(name) ||
-            !char.IsLower(name[0]) ||
             name.StartsWith("__", StringComparison.Ordinal) ||
             name.Contains("__spec_", StringComparison.Ordinal) ||
-            name.Any(static ch => !(char.IsLetterOrDigit(ch) || ch == '_')))
+            name.Any(static ch => !(char.IsLetterOrDigit(ch) || ch == '_')) ||
+            !string.Equals(
+                name,
+                NamingStyleDiagnosticBuilder.Normalize(
+                    name,
+                    NamingStyleDiagnosticBuilder.NamingConvention.LowerSnakeCase),
+                StringComparison.Ordinal))
         {
-            reason = $"generated value declaration name '{name}' must be a valid lower-case Eidos identifier outside the reserved namespace";
+            reason = $"generated value declaration name '{name}' must use lower_snake_case outside the reserved namespace";
             return false;
         }
 
@@ -1254,15 +1658,56 @@ internal sealed class MetaExpansionMaterializer(
         return true;
     }
 
-    private static bool ValidateGeneratedComptimeName(string name, out string reason)
+    private static bool ValidateGeneratedComptimeName(
+        string name,
+        ComptimeTypeValue declaredType,
+        out string reason)
     {
+        var convention = declaredType.TypeRef.TypeId == new TypeId(BaseTypes.TypeValueId) ||
+                         string.Equals(declaredType.TypeRef.Name, WellKnownStrings.BuiltinTypes.Type, StringComparison.Ordinal)
+            ? NamingStyleDiagnosticBuilder.NamingConvention.UpperCamelCase
+            : NamingStyleDiagnosticBuilder.NamingConvention.ScreamingSnakeCase;
         if (string.IsNullOrWhiteSpace(name) ||
-            !char.IsUpper(name[0]) ||
             name.StartsWith("__", StringComparison.Ordinal) ||
             name.Contains("__spec_", StringComparison.Ordinal) ||
-            name.Any(static ch => !(char.IsLetterOrDigit(ch) || ch == '_')))
+            name.Any(static ch => !(char.IsLetterOrDigit(ch) || ch == '_')) ||
+            !string.Equals(
+                name,
+                NamingStyleDiagnosticBuilder.Normalize(name, convention),
+                StringComparison.Ordinal))
         {
-            reason = $"generated comptime declaration name '{name}' must be a valid upper-case Eidos identifier outside the reserved namespace";
+            var expectedConvention = convention == NamingStyleDiagnosticBuilder.NamingConvention.UpperCamelCase
+                ? "UpperCamelCase"
+                : "SCREAMING_SNAKE_CASE";
+            reason = $"generated comptime declaration name '{name}' must use {expectedConvention} outside the reserved namespace";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool ValidateGeneratedTestName(string name, out string reason)
+    {
+        if (!name.StartsWith("test_", StringComparison.Ordinal) || name.Length == "test_".Length)
+        {
+            reason = $"generated test declaration name '{name}' must start with 'test_'";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static bool TryGetValue(
+        ComptimeMetaObjectValue value,
+        string property,
+        out ComptimeValue result,
+        out string reason)
+    {
+        if (!value.TryGet(property, out result))
+        {
+            reason = $"{value.SchemaKind} requires property '{property}'";
             return false;
         }
 

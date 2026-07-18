@@ -239,7 +239,7 @@ Lib :: module {
 sourceRoots = ["src"]
 
 [language]
-version = "0.6.0-alpha.1"
+version = "0.7.0-alpha.1"
 
 [package]
 name = "types-payload-gate"
@@ -318,7 +318,7 @@ char_val :: 'a';
 sourceRoots = ["src"]
 
 [language]
-version = "0.6.0-alpha.1"
+version = "0.7.0-alpha.1"
 
 [package]
 name = "mir-payload-gate"
@@ -331,7 +331,7 @@ entry = "src/Main.eidos"
             var mainPath = Path.Combine(tempDir, "src", "Main.eidos");
             await File.WriteAllTextAsync(mainPath, """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     main :: Int -> Int
     {
@@ -404,7 +404,7 @@ Main :: module {
 sourceRoots = ["src"]
 
 [language]
-version = "0.6.0-alpha.1"
+version = "0.7.0-alpha.1"
 
 [package]
 name = "mir-payload-llvm-gate"
@@ -417,7 +417,7 @@ entry = "src/Main.eidos"
             var mainPath = Path.Combine(tempDir, "src", "Main.eidos");
             await File.WriteAllTextAsync(mainPath, """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     main :: Int -> Int
     {
