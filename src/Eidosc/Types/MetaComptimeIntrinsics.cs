@@ -525,7 +525,7 @@ internal static partial class MetaComptimeIntrinsics
                 ? $"effect:{display}"
                 : CreateStableIdentity(effect, meta.SymbolTable);
             return (ComptimeValue)new ComptimeTypeValue(new MetaTypeRef(
-                "effect",
+                MetaTypeKind.Effect,
                 display,
                 identity,
                 effect?.Id ?? SymbolId.None,
@@ -730,7 +730,7 @@ internal static partial class MetaComptimeIntrinsics
             .Select(parameter => CreateGenericParameterRef(parameter!, meta.SymbolTable));
         var genericArguments = parentArguments.Concat(localArguments).ToArray();
         var typeArguments = genericArguments
-            .Where(static argument => argument.Domain == "type" && argument.Type != null)
+            .Where(static argument => argument.Domain == MetaGenericArgumentDomain.Type && argument.Type != null)
             .Select(static argument => argument.Type!)
             .ToArray();
         var baseType = CreateTypeValue(caseType, meta.SymbolTable).TypeRef;
@@ -787,7 +787,7 @@ internal static partial class MetaComptimeIntrinsics
     {
         if (argument.SymbolId.IsValid &&
             bindings.TryGetValue(argument.SymbolId, out var bound) &&
-            string.Equals(argument.Domain, bound.Domain, StringComparison.Ordinal))
+            argument.Domain == bound.Domain)
         {
             return bound;
         }
@@ -814,7 +814,7 @@ internal static partial class MetaComptimeIntrinsics
         IReadOnlyDictionary<SymbolId, MetaGenericArgumentRef> bindings,
         SymbolTable symbolTable)
     {
-        if (type.Kind == "type-parameter" &&
+        if (type.Kind == MetaTypeKind.TypeParameter &&
             type.SymbolId.IsValid &&
             bindings.TryGetValue(type.SymbolId, out var bound) &&
             bound.Type != null)
@@ -838,8 +838,8 @@ internal static partial class MetaComptimeIntrinsics
         var symbol = type.SymbolId.IsValid ? symbolTable.GetSymbol(type.SymbolId) : null;
         var stableIdentity = type.Kind switch
         {
-            "tuple" => $"tuple:{string.Join(",", arguments.Select(static argument => argument.StableIdentity))}",
-            "function" when arguments.Length >= 2 =>
+            MetaTypeKind.Tuple => $"tuple:{string.Join(",", arguments.Select(static argument => argument.StableIdentity))}",
+            MetaTypeKind.Function when arguments.Length >= 2 =>
                 $"function:{arguments[0].StableIdentity}->{arguments[^1].StableIdentity}",
             _ when genericArguments.Length > 0 =>
                 $"{(symbol == null ? type.StableIdentity.Split('[', 2)[0] : CreateStableIdentity(symbol, symbolTable))}" +
@@ -848,7 +848,7 @@ internal static partial class MetaComptimeIntrinsics
         };
         var name = type.Kind switch
         {
-            "tuple" => $"({string.Join(", ", arguments.Select(static argument => argument.Name))})",
+            MetaTypeKind.Tuple => $"({string.Join(", ", arguments.Select(static argument => argument.Name))})",
             _ when genericArguments.Length > 0 =>
                 $"{symbol?.Name ?? type.Name.Split(['[', '<'], 2)[0]}" +
                 $"[{string.Join(", ", genericArguments.Select(static argument => argument.Display))}]",
@@ -1002,7 +1002,7 @@ internal static partial class MetaComptimeIntrinsics
 
         var genericArguments = sourceArguments.Take(parameterCount).ToArray();
         var typeArguments = genericArguments
-            .Where(static argument => argument.Domain == "type" && argument.Type != null)
+            .Where(static argument => argument.Domain == MetaGenericArgumentDomain.Type && argument.Type != null)
             .Select(static argument => argument.Type!)
             .ToArray();
         var baseType = CreateTypeValue(target, symbolTable).TypeRef;
@@ -1133,7 +1133,7 @@ internal static partial class MetaComptimeIntrinsics
         }
 
         value = new ComptimeTypeValue(field.Type == null
-            ? new MetaTypeRef("unknown", "Unknown", "unknown", SymbolId.None, TypeId.None, [])
+            ? new MetaTypeRef(MetaTypeKind.Unknown, "Unknown", "unknown", SymbolId.None, TypeId.None, [])
             : CreateTypeRef(field.Type, meta.SymbolTable, owner));
         return true;
     }
@@ -1289,7 +1289,7 @@ internal static partial class MetaComptimeIntrinsics
         ComptimeTypeValue? receiverType = null)
     {
         var fieldType = type == null
-            ? new ComptimeTypeValue(new MetaTypeRef("unknown", "Unknown", "unknown", SymbolId.None, TypeId.None, []))
+            ? new ComptimeTypeValue(new MetaTypeRef(MetaTypeKind.Unknown, "Unknown", "unknown", SymbolId.None, TypeId.None, []))
             : new ComptimeTypeValue(CreateTypeRef(type, meta.SymbolTable, owner));
         var fieldSymbol = symbolId.IsValid ? meta.SymbolTable.GetSymbol(symbolId) : null;
         var declaration = fieldSymbol == null
@@ -1469,21 +1469,21 @@ internal static partial class MetaComptimeIntrinsics
     {
         var kind = symbol switch
         {
-            TypeParamSymbol => "type-parameter",
-            TraitSymbol => "trait",
-            AdtSymbol { Name: "Ref" } => "reference",
-            AdtSymbol { Name: "MRef" or "MutRef" } => "mutable-reference",
-            AdtSymbol { Name: "Shared" } => "shared-reference",
-            AdtSymbol { Name: "RawPtr" or "Ptr" } => "raw-pointer",
-            AdtSymbol { Name: "Cfn" } => "foreign-function",
-            AdtSymbol { IsTypeAlias: true } => "alias",
-            AdtSymbol when BaseTypes.IsBuiltIn(symbol.TypeId) => "primitive",
-            AdtSymbol { IsCaseType: true } => "case",
-            AdtSymbol { IsClosedSum: true } => "closed-sum",
-            AdtSymbol { IsCStruct: true } => "foreign-nominal",
-            AdtSymbol => "nominal",
-            EffectSymbol => "effect",
-            _ => "nominal"
+            TypeParamSymbol => MetaTypeKind.TypeParameter,
+            TraitSymbol => MetaTypeKind.Trait,
+            AdtSymbol { Name: "Ref" } => MetaTypeKind.Reference,
+            AdtSymbol { Name: "MRef" or "MutRef" } => MetaTypeKind.MutableReference,
+            AdtSymbol { Name: "Shared" } => MetaTypeKind.SharedReference,
+            AdtSymbol { Name: "RawPtr" or "Ptr" } => MetaTypeKind.RawPointer,
+            AdtSymbol { Name: "Cfn" } => MetaTypeKind.ForeignFunction,
+            AdtSymbol { IsTypeAlias: true } => MetaTypeKind.Alias,
+            AdtSymbol when BaseTypes.IsBuiltIn(symbol.TypeId) => MetaTypeKind.Primitive,
+            AdtSymbol { IsCaseType: true } => MetaTypeKind.Case,
+            AdtSymbol { IsClosedSum: true } => MetaTypeKind.ClosedSum,
+            AdtSymbol { IsCStruct: true } => MetaTypeKind.ForeignNominal,
+            AdtSymbol => MetaTypeKind.Nominal,
+            EffectSymbol => MetaTypeKind.Effect,
+            _ => MetaTypeKind.Nominal
         };
         var parameters = symbol is AdtSymbol adt && adt.TypeParams.Count > 0
             ? adt.TypeParams
@@ -1532,7 +1532,7 @@ internal static partial class MetaComptimeIntrinsics
                 if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
                 {
                     unresolvedGenericArguments.Add(new MetaGenericArgumentRef(
-                        "value",
+                        MetaGenericArgumentDomain.Value,
                         valueArgument.DisplayText,
                         valueArgument.CanonicalHash,
                         SymbolId.None,
@@ -1542,7 +1542,7 @@ internal static partial class MetaComptimeIntrinsics
                 {
                     var effectRef = CreateSemanticTypeRef(effectArgument.Argument, symbolTable);
                     unresolvedGenericArguments.Add(new MetaGenericArgumentRef(
-                        "effect-row",
+                        MetaGenericArgumentDomain.EffectRow,
                         effectRef.Name,
                         effectRef.StableIdentity,
                         SymbolId.None,
@@ -1552,7 +1552,7 @@ internal static partial class MetaComptimeIntrinsics
                 {
                     var argument = unresolvedTypeArguments[unresolvedTypeArgumentIndex++];
                     unresolvedGenericArguments.Add(new MetaGenericArgumentRef(
-                        "type",
+                        MetaGenericArgumentDomain.Type,
                         argument.Name,
                         argument.StableIdentity,
                         argument.SymbolId,
@@ -1561,21 +1561,21 @@ internal static partial class MetaComptimeIntrinsics
             }
 
             var kind = type.ConstructorVarIndex.HasValue
-                ? "higher-kinded"
+                ? MetaTypeKind.HigherKinded
                 : BaseTypes.IsBuiltIn(type.Id)
-                    ? "primitive"
+                    ? MetaTypeKind.Primitive
                     : type.Name switch
                     {
-                        "Ref" => "reference",
-                        "MRef" or "MutRef" => "mutable-reference",
-                        "Shared" => "shared-reference",
-                        "RawPtr" or "Ptr" => "raw-pointer",
-                        "Cfn" => "foreign-function",
-                        _ => "nominal"
+                        "Ref" => MetaTypeKind.Reference,
+                        "MRef" or "MutRef" => MetaTypeKind.MutableReference,
+                        "Shared" => MetaTypeKind.SharedReference,
+                        "RawPtr" or "Ptr" => MetaTypeKind.RawPointer,
+                        "Cfn" => MetaTypeKind.ForeignFunction,
+                        _ => MetaTypeKind.Nominal
                     };
             var headIdentity = type.ConstructorVarIndex.HasValue
                 ? $"higher-kinded-parameter:{type.ConstructorVarIndex.Value}"
-                : $"{kind}:{type.Name}";
+                : $"{kind.ToToken()}:{type.Name}";
             var unresolvedStableIdentity = unresolvedGenericArguments.Count == 0
                 ? headIdentity
                 : $"{headIdentity}[{string.Join(";", unresolvedGenericArguments.Select(static argument => argument.CanonicalText))}]";
@@ -1609,7 +1609,7 @@ internal static partial class MetaComptimeIntrinsics
                 {
                     var argument = CreateSemanticTypeRef(type.Args[typeArgumentIndex++], symbolTable);
                     genericArguments.Add(new MetaGenericArgumentRef(
-                        "type",
+                        MetaGenericArgumentDomain.Type,
                         argument.Name,
                         argument.StableIdentity,
                         argument.SymbolId,
@@ -1622,7 +1622,7 @@ internal static partial class MetaComptimeIntrinsics
                     if (argument != null)
                     {
                         genericArguments.Add(new MetaGenericArgumentRef(
-                            "value",
+                            MetaGenericArgumentDomain.Value,
                             argument.DisplayText,
                             argument.CanonicalHash,
                             SymbolId.None,
@@ -1637,7 +1637,7 @@ internal static partial class MetaComptimeIntrinsics
                     {
                         var effectType = CreateSemanticTypeRef(argument.Argument, symbolTable);
                         genericArguments.Add(new MetaGenericArgumentRef(
-                            "effect-row",
+                            MetaGenericArgumentDomain.EffectRow,
                             effectType.Name,
                             effectType.StableIdentity,
                             effectType.SymbolId,
@@ -1652,7 +1652,7 @@ internal static partial class MetaComptimeIntrinsics
         {
             var argument = CreateSemanticTypeRef(type.Args[typeArgumentIndex++], symbolTable);
             genericArguments.Add(new MetaGenericArgumentRef(
-                "type",
+                MetaGenericArgumentDomain.Type,
                 argument.Name,
                 argument.StableIdentity,
                 argument.SymbolId,
@@ -1660,7 +1660,7 @@ internal static partial class MetaComptimeIntrinsics
         }
 
         var typeArguments = genericArguments
-            .Where(static argument => argument.Domain == "type" && argument.Type != null)
+            .Where(static argument => argument.Domain == MetaGenericArgumentDomain.Type && argument.Type != null)
             .Select(static argument => argument.Type!)
             .ToArray();
         var baseIdentity = CreateStableIdentity(symbol, symbolTable);
@@ -1670,21 +1670,21 @@ internal static partial class MetaComptimeIntrinsics
         return new ComptimeTypeValue(new MetaTypeRef(
             symbol switch
             {
-                AdtSymbol { Name: "Ref" } => "reference",
-                AdtSymbol { Name: "MRef" or "MutRef" } => "mutable-reference",
-                AdtSymbol { Name: "Shared" } => "shared-reference",
-                AdtSymbol { Name: "RawPtr" or "Ptr" } => "raw-pointer",
-                AdtSymbol { Name: "Cfn" } => "foreign-function",
-                AdtSymbol { IsTypeAlias: true } => "alias",
-                AdtSymbol when BaseTypes.IsBuiltIn(symbol.TypeId) => "primitive",
-                AdtSymbol { IsCaseType: true } => "case",
-                AdtSymbol { IsClosedSum: true } => "closed-sum",
-                AdtSymbol { IsCStruct: true } => "foreign-nominal",
-                AdtSymbol => "nominal",
-                TraitSymbol => "trait",
-                EffectSymbol => "effect",
-                TypeParamSymbol => "type-parameter",
-                _ => "nominal"
+                AdtSymbol { Name: "Ref" } => MetaTypeKind.Reference,
+                AdtSymbol { Name: "MRef" or "MutRef" } => MetaTypeKind.MutableReference,
+                AdtSymbol { Name: "Shared" } => MetaTypeKind.SharedReference,
+                AdtSymbol { Name: "RawPtr" or "Ptr" } => MetaTypeKind.RawPointer,
+                AdtSymbol { Name: "Cfn" } => MetaTypeKind.ForeignFunction,
+                AdtSymbol { IsTypeAlias: true } => MetaTypeKind.Alias,
+                AdtSymbol when BaseTypes.IsBuiltIn(symbol.TypeId) => MetaTypeKind.Primitive,
+                AdtSymbol { IsCaseType: true } => MetaTypeKind.Case,
+                AdtSymbol { IsClosedSum: true } => MetaTypeKind.ClosedSum,
+                AdtSymbol { IsCStruct: true } => MetaTypeKind.ForeignNominal,
+                AdtSymbol => MetaTypeKind.Nominal,
+                TraitSymbol => MetaTypeKind.Trait,
+                EffectSymbol => MetaTypeKind.Effect,
+                TypeParamSymbol => MetaTypeKind.TypeParameter,
+                _ => MetaTypeKind.Nominal
             },
             type.ToString(),
             stableIdentity,
@@ -1700,19 +1700,19 @@ internal static partial class MetaComptimeIntrinsics
         {
             TyCon constructor => CreateTypeValue(constructor, symbolTable).TypeRef,
             TyTuple tuple => new MetaTypeRef(
-                "tuple",
+                MetaTypeKind.Tuple,
                 tuple.ToString(),
                 $"tuple:{string.Join(",", tuple.Elements.Select(element => CreateSemanticTypeRef(element, symbolTable).StableIdentity))}",
                 SymbolId.None,
                 tuple.Id,
                 tuple.Elements.Select(element => CreateSemanticTypeRef(element, symbolTable)).ToArray()),
             TyFun function => CreateFunctionTypeRef(function, symbolTable),
-            TyRef reference => CreateReferenceTypeRef("ref", reference.Inner, reference.Id, symbolTable),
-            TyMutRef reference => CreateReferenceTypeRef("mref", reference.Inner, reference.Id, symbolTable),
-            TyShared shared => CreateReferenceTypeRef("shared", shared.Inner, shared.Id, symbolTable),
+            TyRef reference => CreateReferenceTypeRef(MetaTypeKind.Reference, "ref", reference.Inner, reference.Id, symbolTable),
+            TyMutRef reference => CreateReferenceTypeRef(MetaTypeKind.MutableReference, "mref", reference.Inner, reference.Id, symbolTable),
+            TyShared shared => CreateReferenceTypeRef(MetaTypeKind.SharedReference, "shared", shared.Inner, shared.Id, symbolTable),
             TyVar { Instance: { } instance } => CreateSemanticTypeRef(instance, symbolTable),
             TyVar variable => new MetaTypeRef(
-                variable.IsErrorRecovery ? "error" : "type-parameter",
+                variable.IsErrorRecovery ? MetaTypeKind.Error : MetaTypeKind.TypeParameter,
                 variable.IsErrorRecovery ? "<error>" : variable.ToString(),
                 variable.IsErrorRecovery ? "error:recovery" : $"type-parameter:{variable.Index}",
                 SymbolId.None,
@@ -1725,10 +1725,21 @@ internal static partial class MetaComptimeIntrinsics
             _ => throw new InvalidOperationException($"Meta schema {WellKnownStrings.Meta.SchemaVersion} has no semantic type mapping for the supplied compiler type.")
         };
 
-        static MetaTypeRef CreateReferenceTypeRef(string kind, Type inner, TypeId id, SymbolTable table)
+        static MetaTypeRef CreateReferenceTypeRef(
+            MetaTypeKind kind,
+            string spelling,
+            Type inner,
+            TypeId id,
+            SymbolTable table)
         {
             var referent = CreateSemanticTypeRef(inner, table);
-            return new MetaTypeRef(kind, $"{kind}[{referent.Name}]", $"{kind}:{referent.StableIdentity}", SymbolId.None, id, [referent]);
+            return new MetaTypeRef(
+                kind,
+                $"{spelling}[{referent.Name}]",
+                $"{spelling}:{referent.StableIdentity}",
+                SymbolId.None,
+                id,
+                [referent]);
         }
 
         static MetaTypeRef CreateFunctionTypeRef(TyFun function, SymbolTable table)
@@ -1737,7 +1748,7 @@ internal static partial class MetaComptimeIntrinsics
             var result = CreateSemanticTypeRef(function.Result, table);
             var effects = CreateEffectRowRef(function.Effects, table);
             return new MetaTypeRef(
-                "function",
+                MetaTypeKind.Function,
                 function.ToString(),
                 $"function:{string.Join(";", parameters.Select(static parameter => parameter.CanonicalText))}" +
                 $"->{result.CanonicalText}:{effects.CanonicalText}",
@@ -1747,7 +1758,7 @@ internal static partial class MetaComptimeIntrinsics
                 GenericArguments:
                 [
                     new MetaGenericArgumentRef(
-                        "effect-row",
+                        MetaGenericArgumentDomain.EffectRow,
                         effects.Name,
                         effects.StableIdentity,
                         SymbolId.None,
@@ -1766,7 +1777,7 @@ internal static partial class MetaComptimeIntrinsics
             {
                 identity += $"[{string.Join(";", arguments.Select(static argument => argument.CanonicalText))}]";
             }
-            return new MetaTypeRef("effect", effect.ToString(), identity, effect.Symbol, effect.Id, arguments);
+            return new MetaTypeRef(MetaTypeKind.Effect, effect.ToString(), identity, effect.Symbol, effect.Id, arguments);
         }
 
         static MetaTypeRef CreateEffectRowRef(EffectRow effects, SymbolTable table)
@@ -1781,7 +1792,7 @@ internal static partial class MetaComptimeIntrinsics
                 .ToArray();
             var identity = $"effect-row:effects[{string.Join(";", arguments.Select(static argument => argument.CanonicalText))}]" +
                            $":variables[{string.Join(";", variables.Select(ComptimeValue.EncodeText))}]";
-            return new MetaTypeRef("effect-row", effects.ToString(), identity, SymbolId.None, effects.Id, arguments);
+            return new MetaTypeRef(MetaTypeKind.EffectRow, effects.ToString(), identity, SymbolId.None, effects.Id, arguments);
         }
 
         static MetaTypeRef CreateRequestTypeRef(RequestType request, SymbolTable table)
@@ -1800,7 +1811,7 @@ internal static partial class MetaComptimeIntrinsics
                 arguments.Add(CreateSemanticTypeRef(request.ResumeArg, table));
             }
             return new MetaTypeRef(
-                "effect-request",
+                MetaTypeKind.EffectRequest,
                 request.ToString(),
                 $"effect-request:[{string.Join(";", arguments.Select(static argument => argument.CanonicalText))}]",
                 SymbolId.None,
@@ -1812,7 +1823,7 @@ internal static partial class MetaComptimeIntrinsics
         {
             var witness = proof.WitnessType == null ? null : CreateSemanticTypeRef(proof.WitnessType, table);
             return new MetaTypeRef(
-                "proof",
+                MetaTypeKind.Proof,
                 WellKnownStrings.Keywords.ReflConstructor,
                 witness == null ? "proof:refl" : $"proof:refl:{witness.CanonicalText}",
                 SymbolId.None,
@@ -1828,21 +1839,21 @@ internal static partial class MetaComptimeIntrinsics
     {
         var (name, typeParams, symbolId, span, kind, isTypeTarget) = target switch
         {
-            AdtDef adt => (adt.Name, adt.TypeParams, adt.SymbolId, adt.Span, "adt", true),
-            CaseTypeDef caseType => (caseType.Name, caseType.TypeParams, caseType.SymbolId, caseType.Span, "case-type", true),
-            FuncDef function => (function.Name, function.TypeParams, function.SymbolId, function.Span, "declaration-function", false),
-            FuncDecl function => (function.Name, function.TypeParams, function.SymbolId, function.Span, "declaration-function", false),
-            TraitDef trait => (trait.Name, trait.TypeParams, trait.SymbolId, trait.Span, "declaration-trait", false),
-            InstanceDecl instance => (instance.Name, instance.TypeParams, instance.SymbolId, instance.Span, "declaration-instance", false),
-            EffectDef effect => (effect.Name, new List<TypeParam>(), effect.SymbolId, effect.Span, "declaration-effect", false),
-            ModuleDecl module => (string.Join(WellKnownStrings.Separators.Path, module.Path), new List<TypeParam>(), module.SymbolId, module.Span, "declaration-module", false),
-            LetDecl { Pattern: VarPattern variable } binding => (variable.Name, new List<TypeParam>(), binding.SymbolId, binding.Span, "declaration-value", false),
-            ProofDecl proof => (proof.Name, proof.TypeParams, proof.SymbolId, proof.Span, "declaration-proof", false),
-            OperatorDecl op => (op.OperatorSymbol, new List<TypeParam>(), op.SymbolId, op.Span, "declaration-operator", false),
-            ImportDecl import => (string.Join(WellKnownStrings.Separators.Path, import.ToQualifiedModulePath()), new List<TypeParam>(), import.SymbolId, import.Span, "declaration-import", false),
-            LetQuestionDecl => ("let?", new List<TypeParam>(), target.SymbolId, target.Span, "declaration-binding", false),
-            Assignment assignment => (assignment.Target, new List<TypeParam>(), assignment.SymbolId, assignment.Span, "declaration-assignment", false),
-            _ => ("declaration", new List<TypeParam>(), target.SymbolId, target.Span, "declaration", false)
+            AdtDef adt => (adt.Name, adt.TypeParams, adt.SymbolId, adt.Span, MetaTypeKind.TargetAdt, true),
+            CaseTypeDef caseType => (caseType.Name, caseType.TypeParams, caseType.SymbolId, caseType.Span, MetaTypeKind.TargetCaseType, true),
+            FuncDef function => (function.Name, function.TypeParams, function.SymbolId, function.Span, MetaTypeKind.TargetFunction, false),
+            FuncDecl function => (function.Name, function.TypeParams, function.SymbolId, function.Span, MetaTypeKind.TargetFunction, false),
+            TraitDef trait => (trait.Name, trait.TypeParams, trait.SymbolId, trait.Span, MetaTypeKind.TargetTrait, false),
+            InstanceDecl instance => (instance.Name, instance.TypeParams, instance.SymbolId, instance.Span, MetaTypeKind.TargetInstance, false),
+            EffectDef effect => (effect.Name, new List<TypeParam>(), effect.SymbolId, effect.Span, MetaTypeKind.TargetEffect, false),
+            ModuleDecl module => (string.Join(WellKnownStrings.Separators.Path, module.Path), new List<TypeParam>(), module.SymbolId, module.Span, MetaTypeKind.TargetModule, false),
+            LetDecl { Pattern: VarPattern variable } binding => (variable.Name, new List<TypeParam>(), binding.SymbolId, binding.Span, MetaTypeKind.TargetValue, false),
+            ProofDecl proof => (proof.Name, proof.TypeParams, proof.SymbolId, proof.Span, MetaTypeKind.TargetProof, false),
+            OperatorDecl op => (op.OperatorSymbol, new List<TypeParam>(), op.SymbolId, op.Span, MetaTypeKind.TargetOperator, false),
+            ImportDecl import => (string.Join(WellKnownStrings.Separators.Path, import.ToQualifiedModulePath()), new List<TypeParam>(), import.SymbolId, import.Span, MetaTypeKind.TargetImport, false),
+            LetQuestionDecl => ("let?", new List<TypeParam>(), target.SymbolId, target.Span, MetaTypeKind.TargetBinding, false),
+            Assignment assignment => (assignment.Target, new List<TypeParam>(), assignment.SymbolId, assignment.Span, MetaTypeKind.TargetAssignment, false),
+            _ => ("declaration", new List<TypeParam>(), target.SymbolId, target.Span, MetaTypeKind.TargetDeclaration, false)
         };
         var arguments = typeParams
             .Where(static parameter => parameter.ParameterKind == GenericParameterKind.Type)
@@ -1896,7 +1907,7 @@ internal static partial class MetaComptimeIntrinsics
         return new ComptimeTypeValue(new MetaTypeRef(
             kind,
             name,
-            symbolValue == null ? $"{kind}:{name}" : CreateStableIdentity(symbolValue, symbolTable),
+            symbolValue == null ? $"{kind.ToToken()}:{name}" : CreateStableIdentity(symbolValue, symbolTable),
             symbolId,
             symbolValue?.TypeId ?? TypeId.None,
             arguments,
@@ -1996,7 +2007,7 @@ internal static partial class MetaComptimeIntrinsics
         {
             TypePath path => CreateTypePathRef(path, symbolTable),
             TupleType tuple => new MetaTypeRef(
-                "tuple",
+                MetaTypeKind.Tuple,
                 tuple.ToString(),
                 $"tuple:{string.Join(",", tuple.Elements.Select(element => CreateTypeRef(element, symbolTable, owner).StableIdentity))}",
                 SymbolId.None,
@@ -2004,7 +2015,7 @@ internal static partial class MetaComptimeIntrinsics
                 tuple.Elements.Select(element => CreateTypeRef(element, symbolTable, owner)).ToArray(),
                 tuple),
             ArrowType arrow => new MetaTypeRef(
-                "function",
+                MetaTypeKind.Function,
                 arrow.ToString(),
                 $"function:{CreateTypeRef(arrow.ParamType, symbolTable, owner).StableIdentity}->{CreateTypeRef(arrow.ReturnType, symbolTable, owner).StableIdentity}",
                 SymbolId.None,
@@ -2013,7 +2024,7 @@ internal static partial class MetaComptimeIntrinsics
                 arrow),
             EffectfulType effectful when effectful.OutputType != null => CreateEffectfulTypeRef(effectful, symbolTable, owner),
             AssociatedTypeProjection projection => CreateAssociatedProjectionRef(projection, symbolTable, owner),
-            WildcardType wildcard => new MetaTypeRef("error", "_", "error:wildcard-type", SymbolId.None, TypeId.None, [], wildcard),
+            WildcardType wildcard => new MetaTypeRef(MetaTypeKind.Error, "_", "error:wildcard-type", SymbolId.None, TypeId.None, [], wildcard),
             _ => throw new InvalidOperationException($"Meta schema {WellKnownStrings.Meta.SchemaVersion} has no syntax type mapping for the supplied type node.")
         };
 
@@ -2026,10 +2037,10 @@ internal static partial class MetaComptimeIntrinsics
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             var effectArguments = effectNames
-                .Select(name => new MetaGenericArgumentRef("effect-row", name, $"effect:{name}", SymbolId.None, null))
+                .Select(name => new MetaGenericArgumentRef(MetaGenericArgumentDomain.EffectRow, name, $"effect:{name}", SymbolId.None, null))
                 .ToArray();
             return new MetaTypeRef(
-                "function",
+                MetaTypeKind.Function,
                 effectful.ToString(),
                 $"function:{input.CanonicalText}->{output.CanonicalText}:effects[{string.Join(";", effectNames.Select(ComptimeValue.EncodeText))}]",
                 SymbolId.None,
@@ -2053,7 +2064,7 @@ internal static partial class MetaComptimeIntrinsics
             var identity = $"associated-projection:{target?.CanonicalText ?? "none"}:{ComptimeValue.EncodeText(projection.MemberName)}" +
                            $"[{string.Join(";", arguments.Select(static argument => argument.CanonicalText))}]";
             return new MetaTypeRef(
-                "associated-projection",
+                MetaTypeKind.AssociatedProjection,
                 projection.ToString(),
                 identity,
                 SymbolId.None,
@@ -2073,26 +2084,26 @@ internal static partial class MetaComptimeIntrinsics
             : $"{qualifiedName}[{string.Join(", ", genericArguments.Select(static argument => argument.Display))}]";
         var kind = path.TypeName switch
         {
-            "Ref" => "reference",
-            "MRef" or "MutRef" => "mutable-reference",
-            "Shared" => "shared-reference",
-            "RawPtr" or "Ptr" => "raw-pointer",
-            "Cfn" => "foreign-function",
+            "Ref" => MetaTypeKind.Reference,
+            "MRef" or "MutRef" => MetaTypeKind.MutableReference,
+            "Shared" => MetaTypeKind.SharedReference,
+            "RawPtr" or "Ptr" => MetaTypeKind.RawPointer,
+            "Cfn" => MetaTypeKind.ForeignFunction,
             _ => symbol switch
             {
-                TypeParamSymbol => "type-parameter",
-                TraitSymbol => "trait",
-                AdtSymbol { IsTypeAlias: true } => "alias",
-                AdtSymbol when BaseTypes.IsBuiltIn(symbol.TypeId) => "primitive",
-                AdtSymbol { IsCaseType: true } => "case",
-                AdtSymbol { IsClosedSum: true } => "closed-sum",
-                AdtSymbol { IsCStruct: true } => "foreign-nominal",
-                AdtSymbol => "nominal",
-                EffectSymbol => "effect",
-                _ => "nominal"
+                TypeParamSymbol => MetaTypeKind.TypeParameter,
+                TraitSymbol => MetaTypeKind.Trait,
+                AdtSymbol { IsTypeAlias: true } => MetaTypeKind.Alias,
+                AdtSymbol when BaseTypes.IsBuiltIn(symbol.TypeId) => MetaTypeKind.Primitive,
+                AdtSymbol { IsCaseType: true } => MetaTypeKind.Case,
+                AdtSymbol { IsClosedSum: true } => MetaTypeKind.ClosedSum,
+                AdtSymbol { IsCStruct: true } => MetaTypeKind.ForeignNominal,
+                AdtSymbol => MetaTypeKind.Nominal,
+                EffectSymbol => MetaTypeKind.Effect,
+                _ => MetaTypeKind.Nominal
             }
         };
-        var baseIdentity = symbol == null ? $"{kind}:{name}" : CreateStableIdentity(symbol, symbolTable);
+        var baseIdentity = symbol == null ? $"{kind.ToToken()}:{name}" : CreateStableIdentity(symbol, symbolTable);
         var stableIdentity = genericArguments.Count == 0
             ? baseIdentity
             : $"{baseIdentity}[{string.Join(";", genericArguments.Select(static argument => argument.CanonicalText))}]";
@@ -2108,7 +2119,7 @@ internal static partial class MetaComptimeIntrinsics
     }
 
     private static MetaTypeRef CreateTypeParameterRef(TypeParamSymbol parameter, SymbolTable symbolTable) => new(
-        "type-parameter",
+        MetaTypeKind.TypeParameter,
         parameter.Name,
         CreateStableIdentity(parameter, symbolTable),
         parameter.Id,
@@ -2120,7 +2131,7 @@ internal static partial class MetaComptimeIntrinsics
     {
         var symbol = parameter.SymbolId.IsValid ? symbolTable.GetSymbol<TypeParamSymbol>(parameter.SymbolId) : null;
         return new MetaTypeRef(
-            "type-parameter",
+            MetaTypeKind.TypeParameter,
             parameter.Name,
             symbol == null ? $"type-parameter:{parameter.Name}" : CreateStableIdentity(symbol, symbolTable),
             parameter.SymbolId,
@@ -2133,10 +2144,10 @@ internal static partial class MetaComptimeIntrinsics
     {
         var domain = parameter.ParameterKind switch
         {
-            GenericParameterKind.Type => "type",
-            GenericParameterKind.Value => "value",
-            GenericParameterKind.EffectRow => "effect-row",
-            _ => "unknown"
+            GenericParameterKind.Type => MetaGenericArgumentDomain.Type,
+            GenericParameterKind.Value => MetaGenericArgumentDomain.Value,
+            GenericParameterKind.EffectRow => MetaGenericArgumentDomain.EffectRow,
+            _ => throw new ArgumentOutOfRangeException(nameof(parameter.ParameterKind))
         };
         var type = parameter.ParameterKind == GenericParameterKind.Type
             ? CreateTypeParameterRef(parameter, symbolTable)
@@ -2154,13 +2165,13 @@ internal static partial class MetaComptimeIntrinsics
         var symbol = parameter.SymbolId.IsValid ? symbolTable.GetSymbol<TypeParamSymbol>(parameter.SymbolId) : null;
         var domain = parameter.ParameterKind switch
         {
-            GenericParameterKind.Type => "type",
-            GenericParameterKind.Value => "value",
-            GenericParameterKind.EffectRow => "effect-row",
-            _ => "unknown"
+            GenericParameterKind.Type => MetaGenericArgumentDomain.Type,
+            GenericParameterKind.Value => MetaGenericArgumentDomain.Value,
+            GenericParameterKind.EffectRow => MetaGenericArgumentDomain.EffectRow,
+            _ => throw new ArgumentOutOfRangeException(nameof(parameter.ParameterKind))
         };
         var stableIdentity = symbol == null
-            ? $"{domain}-parameter:{parameter.Name}"
+            ? $"{domain.ToToken()}-parameter:{parameter.Name}"
             : CreateStableIdentity(symbol, symbolTable);
         return new MetaGenericArgumentRef(
             domain,
@@ -2180,7 +2191,7 @@ internal static partial class MetaComptimeIntrinsics
         {
             return path.TypeArgs
                 .Select(argument => CreateTypeRef(argument, symbolTable))
-                .Select(type => new MetaGenericArgumentRef("type", type.Name, type.StableIdentity, type.SymbolId, type))
+                .Select(type => new MetaGenericArgumentRef(MetaGenericArgumentDomain.Type, type.Name, type.StableIdentity, type.SymbolId, type))
                 .ToArray();
         }
 
@@ -2198,13 +2209,13 @@ internal static partial class MetaComptimeIntrinsics
     private static MetaGenericArgumentRef CreateTypeGenericArgumentRef(TypeNode type, SymbolTable symbolTable)
     {
         var typeRef = CreateTypeRef(type, symbolTable);
-        return new MetaGenericArgumentRef("type", typeRef.Name, typeRef.StableIdentity, typeRef.SymbolId, typeRef);
+        return new MetaGenericArgumentRef(MetaGenericArgumentDomain.Type, typeRef.Name, typeRef.StableIdentity, typeRef.SymbolId, typeRef);
     }
 
     private static MetaGenericArgumentRef CreateEffectGenericArgumentRef(TypeNode type, SymbolTable symbolTable)
     {
         var typeRef = CreateTypeRef(type, symbolTable);
-        return new MetaGenericArgumentRef("effect-row", typeRef.Name, typeRef.StableIdentity, typeRef.SymbolId, typeRef);
+        return new MetaGenericArgumentRef(MetaGenericArgumentDomain.EffectRow, typeRef.Name, typeRef.StableIdentity, typeRef.SymbolId, typeRef);
     }
 
     private static MetaGenericArgumentRef CreateValueGenericArgumentRef(EidosAstNode expression, SymbolTable symbolTable)
@@ -2227,7 +2238,7 @@ internal static partial class MetaComptimeIntrinsics
             : expression is LiteralExpr literalExpression && ComptimeValue.TryFromLiteral(literalExpression.Value, out var literalValue)
                 ? literalValue.CanonicalText
                 : $"value-expression:{GetCanonicalNodeKind(expression)}:{expression.Span.Position}:{expression.Span.Length}:{Hash(display)}";
-        return new MetaGenericArgumentRef("value", display, stableIdentity, symbolId, null);
+        return new MetaGenericArgumentRef(MetaGenericArgumentDomain.Value, display, stableIdentity, symbolId, null);
     }
 
     private static TypePath CreateTypePath(string name, SymbolId symbolId, SourceSpan span)

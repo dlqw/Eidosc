@@ -259,8 +259,169 @@ internal sealed record ComptimeAdtValue(
     }
 }
 
+internal enum MetaTypeKind
+{
+    Unknown,
+    Primitive,
+    Nominal,
+    ForeignNominal,
+    Alias,
+    TypeParameter,
+    Tuple,
+    Function,
+    Reference,
+    MutableReference,
+    SharedReference,
+    RawPointer,
+    ForeignFunction,
+    Trait,
+    ClosedSum,
+    Case,
+    Effect,
+    EffectRow,
+    EffectRequest,
+    Proof,
+    AssociatedProjection,
+    HigherKinded,
+    TargetAdt,
+    TargetCaseType,
+    TargetFunction,
+    TargetTrait,
+    TargetInstance,
+    TargetEffect,
+    TargetModule,
+    TargetValue,
+    TargetProof,
+    TargetOperator,
+    TargetImport,
+    TargetBinding,
+    TargetAssignment,
+    TargetDeclaration,
+    Error
+}
+
+internal enum MetaGenericArgumentDomain
+{
+    Type,
+    Value,
+    EffectRow
+}
+
+internal static class MetaSchemaToken
+{
+    public static string ToToken(this MetaTypeKind kind) => kind switch
+    {
+        MetaTypeKind.Unknown => "unknown",
+        MetaTypeKind.Primitive => "primitive",
+        MetaTypeKind.Nominal => "nominal",
+        MetaTypeKind.ForeignNominal => "foreign-nominal",
+        MetaTypeKind.Alias => "alias",
+        MetaTypeKind.TypeParameter => "type-parameter",
+        MetaTypeKind.Tuple => "tuple",
+        MetaTypeKind.Function => "function",
+        MetaTypeKind.Reference => "reference",
+        MetaTypeKind.MutableReference => "mutable-reference",
+        MetaTypeKind.SharedReference => "shared-reference",
+        MetaTypeKind.RawPointer => "raw-pointer",
+        MetaTypeKind.ForeignFunction => "foreign-function",
+        MetaTypeKind.Trait => "trait",
+        MetaTypeKind.ClosedSum => "closed-sum",
+        MetaTypeKind.Case => "case",
+        MetaTypeKind.Effect => "effect",
+        MetaTypeKind.EffectRow => "effect-row",
+        MetaTypeKind.EffectRequest => "effect-request",
+        MetaTypeKind.Proof => "proof",
+        MetaTypeKind.AssociatedProjection => "associated-projection",
+        MetaTypeKind.HigherKinded => "higher-kinded",
+        MetaTypeKind.TargetAdt => "adt",
+        MetaTypeKind.TargetCaseType => "case-type",
+        MetaTypeKind.TargetFunction => "declaration-function",
+        MetaTypeKind.TargetTrait => "declaration-trait",
+        MetaTypeKind.TargetInstance => "declaration-instance",
+        MetaTypeKind.TargetEffect => "declaration-effect",
+        MetaTypeKind.TargetModule => "declaration-module",
+        MetaTypeKind.TargetValue => "declaration-value",
+        MetaTypeKind.TargetProof => "declaration-proof",
+        MetaTypeKind.TargetOperator => "declaration-operator",
+        MetaTypeKind.TargetImport => "declaration-import",
+        MetaTypeKind.TargetBinding => "declaration-binding",
+        MetaTypeKind.TargetAssignment => "declaration-assignment",
+        MetaTypeKind.TargetDeclaration => "declaration",
+        MetaTypeKind.Error => "error",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+    };
+
+    public static bool TryParseTypeKind(string token, out MetaTypeKind kind)
+    {
+        MetaTypeKind? parsed = token switch
+        {
+            "unknown" => MetaTypeKind.Unknown,
+            "primitive" => MetaTypeKind.Primitive,
+            "nominal" => MetaTypeKind.Nominal,
+            "foreign-nominal" => MetaTypeKind.ForeignNominal,
+            "alias" => MetaTypeKind.Alias,
+            "type-parameter" => MetaTypeKind.TypeParameter,
+            "tuple" => MetaTypeKind.Tuple,
+            "function" => MetaTypeKind.Function,
+            "reference" => MetaTypeKind.Reference,
+            "mutable-reference" => MetaTypeKind.MutableReference,
+            "shared-reference" => MetaTypeKind.SharedReference,
+            "raw-pointer" => MetaTypeKind.RawPointer,
+            "foreign-function" => MetaTypeKind.ForeignFunction,
+            "trait" => MetaTypeKind.Trait,
+            "closed-sum" => MetaTypeKind.ClosedSum,
+            "case" => MetaTypeKind.Case,
+            "effect" => MetaTypeKind.Effect,
+            "effect-row" => MetaTypeKind.EffectRow,
+            "effect-request" => MetaTypeKind.EffectRequest,
+            "proof" => MetaTypeKind.Proof,
+            "associated-projection" => MetaTypeKind.AssociatedProjection,
+            "higher-kinded" => MetaTypeKind.HigherKinded,
+            "adt" => MetaTypeKind.TargetAdt,
+            "case-type" => MetaTypeKind.TargetCaseType,
+            "declaration-function" => MetaTypeKind.TargetFunction,
+            "declaration-trait" => MetaTypeKind.TargetTrait,
+            "declaration-instance" => MetaTypeKind.TargetInstance,
+            "declaration-effect" => MetaTypeKind.TargetEffect,
+            "declaration-module" => MetaTypeKind.TargetModule,
+            "declaration-value" => MetaTypeKind.TargetValue,
+            "declaration-proof" => MetaTypeKind.TargetProof,
+            "declaration-operator" => MetaTypeKind.TargetOperator,
+            "declaration-import" => MetaTypeKind.TargetImport,
+            "declaration-binding" => MetaTypeKind.TargetBinding,
+            "declaration-assignment" => MetaTypeKind.TargetAssignment,
+            "declaration" => MetaTypeKind.TargetDeclaration,
+            "error" => MetaTypeKind.Error,
+            _ => null
+        };
+        kind = parsed.GetValueOrDefault();
+        return parsed.HasValue;
+    }
+
+    public static string ToToken(this MetaGenericArgumentDomain domain) => domain switch
+    {
+        MetaGenericArgumentDomain.Type => "type",
+        MetaGenericArgumentDomain.Value => "value",
+        MetaGenericArgumentDomain.EffectRow => "effect-row",
+        _ => throw new ArgumentOutOfRangeException(nameof(domain), domain, null)
+    };
+
+    public static bool TryParseGenericArgumentDomain(string token, out MetaGenericArgumentDomain domain)
+    {
+        MetaGenericArgumentDomain? parsed = token switch
+        {
+            "type" => MetaGenericArgumentDomain.Type,
+            "value" => MetaGenericArgumentDomain.Value,
+            "effect-row" => MetaGenericArgumentDomain.EffectRow,
+            _ => null
+        };
+        domain = parsed.GetValueOrDefault();
+        return parsed.HasValue;
+    }
+}
+
 internal sealed record MetaTypeRef(
-    string Kind,
+    MetaTypeKind Kind,
     string Name,
     string StableIdentity,
     SymbolId SymbolId,
@@ -270,20 +431,20 @@ internal sealed record MetaTypeRef(
     IReadOnlyList<MetaGenericArgumentRef>? GenericArguments = null)
 {
     public string CanonicalText =>
-        $"{Kind}:{ComptimeValue.EncodeText(Name)}:{ComptimeValue.EncodeText(StableIdentity)}" +
+        $"{Kind.ToToken()}:{ComptimeValue.EncodeText(Name)}:{ComptimeValue.EncodeText(StableIdentity)}" +
         $"[{string.Join(";", Arguments.Select(static argument => argument.CanonicalText))}]" +
         $"<[{string.Join(";", (GenericArguments ?? []).Select(static argument => argument.CanonicalText))}]>";
 }
 
 internal sealed record MetaGenericArgumentRef(
-    string Domain,
+    MetaGenericArgumentDomain Domain,
     string Display,
     string StableIdentity,
     SymbolId SymbolId,
     MetaTypeRef? Type)
 {
     public string CanonicalText =>
-        $"{Domain}:{ComptimeValue.EncodeText(Display)}:{ComptimeValue.EncodeText(StableIdentity)}:" +
+        $"{Domain.ToToken()}:{ComptimeValue.EncodeText(Display)}:{ComptimeValue.EncodeText(StableIdentity)}:" +
         (Type == null ? "none" : Type.CanonicalText);
 }
 

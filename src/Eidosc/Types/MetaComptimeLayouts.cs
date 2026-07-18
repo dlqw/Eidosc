@@ -94,7 +94,8 @@ internal static partial class MetaComptimeIntrinsics
 
     private static MetaLayoutFact GetScalarLayout(MetaTypeRef type, int pointerSize)
     {
-        if (type.Kind is "reference" or "mutable-reference" or "shared-reference" or "raw-pointer" or "foreign-function" ||
+        if (type.Kind is MetaTypeKind.Reference or MetaTypeKind.MutableReference or MetaTypeKind.SharedReference or
+            MetaTypeKind.RawPointer or MetaTypeKind.ForeignFunction ||
             type.Name is "RawPtr" or "Ptr" or "Cfn")
         {
             return new MetaLayoutFact(pointerSize, pointerSize, [], true);
@@ -262,7 +263,8 @@ internal static partial class MetaComptimeIntrinsics
             return new MetaLayoutFact(cLayout.TotalSize, cLayout.Alignment, [], true);
         }
 
-        return type.Kind is "nominal" or "alias" or "closed-sum" or "case" or "foreign-nominal"
+        return type.Kind is MetaTypeKind.Nominal or MetaTypeKind.Alias or MetaTypeKind.ClosedSum or MetaTypeKind.Case or
+            MetaTypeKind.ForeignNominal
             ? new MetaLayoutFact(pointerSize, pointerSize, [], true)
             : new MetaLayoutFact(0, 0, [], false);
     }

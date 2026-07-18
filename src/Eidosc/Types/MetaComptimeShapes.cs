@@ -51,13 +51,13 @@ internal static partial class MetaComptimeIntrinsics
             ("functionResult", ComptimeUnitValue.Instance),
             ("functionEffects", List([])),
             ("callingConvention", new ComptimeStringValue(caseName == "ForeignFunction" ? "c" : "eidos")),
-            ("referenceMutable", new ComptimeBoolValue(type.Kind == "mutable-reference")),
+            ("referenceMutable", new ComptimeBoolValue(type.Kind == MetaTypeKind.MutableReference)),
             ("referenceKind", new ComptimeStringValue(GetReferenceKind(type.Kind))),
             ("referenceReferent", type.Arguments.Count > 0
                 ? new ComptimeTypeValue(type.Arguments[0])
                 : ComptimeUnitValue.Instance),
             ("borrowConstraints", List([])),
-            ("higherKind", new ComptimeStringValue(type.Kind == "higher-kinded" ? type.Name : "kind1")),
+            ("higherKind", new ComptimeStringValue(type.Kind == MetaTypeKind.HigherKinded ? type.Name : "kind1")),
             ("associatedItems", List([])),
             ("constraints", List([])),
             ("clauses", List([])),
@@ -91,7 +91,7 @@ internal static partial class MetaComptimeIntrinsics
         MetaComptimeContext meta,
         List<(string Name, ComptimeValue Value)> properties)
     {
-        if (type.Kind is "function" or "foreign-function" && type.Arguments.Count > 0)
+        if (type.Kind is MetaTypeKind.Function or MetaTypeKind.ForeignFunction && type.Arguments.Count > 0)
         {
             properties.Replace(
                 "functionParameters",
@@ -101,7 +101,7 @@ internal static partial class MetaComptimeIntrinsics
             properties.Replace(
                 "functionEffects",
                 List((type.GenericArguments ?? [])
-                    .Where(static argument => argument.Domain == "effect-row")
+                    .Where(static argument => argument.Domain == MetaGenericArgumentDomain.EffectRow)
                     .SelectMany(static argument => argument.Type?.Arguments ?? [])
                     .Select(static effect => (ComptimeValue)new ComptimeTypeValue(effect))));
         }
@@ -312,18 +312,18 @@ internal static partial class MetaComptimeIntrinsics
     {
         var structuralCase = type.Kind switch
         {
-            "tuple" => "Tuple",
-            "function" => "Function",
-            "foreign-function" => "ForeignFunction",
-            "reference" or "mutable-reference" or "shared-reference" => "Reference",
-            "raw-pointer" => "RawPointer",
-            "type-parameter" => "TypeParameter",
-            "higher-kinded" => "HigherKinded",
-            "associated-projection" => "AssociatedProjection",
-            "effect-row" => "EffectRow",
-            "effect-request" => "EffectRequest",
-            "proof" => "Opaque",
-            "error" => "Error",
+            MetaTypeKind.Tuple => "Tuple",
+            MetaTypeKind.Function => "Function",
+            MetaTypeKind.ForeignFunction => "ForeignFunction",
+            MetaTypeKind.Reference or MetaTypeKind.MutableReference or MetaTypeKind.SharedReference => "Reference",
+            MetaTypeKind.RawPointer => "RawPointer",
+            MetaTypeKind.TypeParameter => "TypeParameter",
+            MetaTypeKind.HigherKinded => "HigherKinded",
+            MetaTypeKind.AssociatedProjection => "AssociatedProjection",
+            MetaTypeKind.EffectRow => "EffectRow",
+            MetaTypeKind.EffectRequest => "EffectRequest",
+            MetaTypeKind.Proof => "Opaque",
+            MetaTypeKind.Error => "Error",
             _ => null
         };
         if (structuralCase != null) return structuralCase;
@@ -342,13 +342,14 @@ internal static partial class MetaComptimeIntrinsics
         if (symbol is EffectSymbol) return "Effect";
         return type.Kind switch
         {
-            "primitive" => "Primitive",
-            "nominal" or "foreign-nominal" => type.Kind == "foreign-nominal" ? "Foreign" : "Nominal",
-            "closed-sum" => "ClosedSum",
-            "case" => "Case",
-            "alias" => "Alias",
-            "trait" => "Trait",
-            "effect" => "Effect",
+            MetaTypeKind.Primitive => "Primitive",
+            MetaTypeKind.Nominal => "Nominal",
+            MetaTypeKind.ForeignNominal => "Foreign",
+            MetaTypeKind.ClosedSum => "ClosedSum",
+            MetaTypeKind.Case => "Case",
+            MetaTypeKind.Alias => "Alias",
+            MetaTypeKind.Trait => "Trait",
+            MetaTypeKind.Effect => "Effect",
             _ => throw new InvalidOperationException(
                 $"Meta schema {WellKnownStrings.Meta.SchemaVersion} has no TypeShape case for semantic kind '{type.Kind}'.")
         };
@@ -416,7 +417,7 @@ internal static partial class MetaComptimeIntrinsics
             WellKnownStrings.Meta.Types.GenericArgument,
             WellKnownTypeIds.MetaGenericArgumentId,
             [
-                ("domain", new ComptimeStringValue(argument.Domain)),
+                ("domain", new ComptimeStringValue(argument.Domain.ToToken())),
                 ("display", new ComptimeStringValue(argument.Display)),
                 ("identity", new ComptimeStringValue(argument.StableIdentity)),
                 ("type", argument.Type == null
@@ -446,7 +447,7 @@ internal static partial class MetaComptimeIntrinsics
         };
         var genericArguments = List(typeParameters.Select(parameter =>
             (ComptimeValue)CreateGenericArgumentShape(new MetaGenericArgumentRef(
-                "type",
+                MetaGenericArgumentDomain.Type,
                 parameter.Name,
                 Hash($"{ownerIdentity}|{caseName}|{name}|generic|{parameter.Name}"),
                 SymbolId.None,
@@ -508,12 +509,12 @@ internal static partial class MetaComptimeIntrinsics
         };
     }
 
-    private static string GetReferenceKind(string kind) => kind switch
+    private static string GetReferenceKind(MetaTypeKind kind) => kind switch
     {
-        "reference" => "shared-borrow",
-        "mutable-reference" => "mutable-borrow",
-        "shared-reference" => "shared-owner",
-        "raw-pointer" => "raw-pointer",
+        MetaTypeKind.Reference => "shared-borrow",
+        MetaTypeKind.MutableReference => "mutable-borrow",
+        MetaTypeKind.SharedReference => "shared-owner",
+        MetaTypeKind.RawPointer => "raw-pointer",
         _ => "none"
     };
 

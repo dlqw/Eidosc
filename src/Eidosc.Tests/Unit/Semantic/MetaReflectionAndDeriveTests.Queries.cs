@@ -470,7 +470,7 @@ MagnitudeValue :: comptime read_magnitude(Sample(value = 37));
         Assert.Contains("Ref", referenceReason, StringComparison.Ordinal);
 
         var reflectedReferenceType = new ComptimeTypeValue(new MetaTypeRef(
-            "reference",
+            MetaTypeKind.Reference,
             "Ref[Int]",
             "reference:builtin:Int",
             SymbolId.None,

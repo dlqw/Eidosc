@@ -843,7 +843,9 @@ BadSubtype :: comptime meta.is_subtype(
         var join = Assert.IsType<ComptimeTypeValue>(GetComptimeValue("Join", symbolTable, inferer));
         Assert.Equal("Branch<io, Alloc>", parent.TypeRef.Name);
         Assert.Equal(parent.TypeRef.StableIdentity, join.TypeRef.StableIdentity);
-        Assert.Equal(["effect-row", "effect-row"], parent.TypeRef.GenericArguments!.Select(static argument => argument.Domain));
+        Assert.Equal(
+            [MetaGenericArgumentDomain.EffectRow, MetaGenericArgumentDomain.EffectRow],
+            parent.TypeRef.GenericArguments!.Select(static argument => argument.Domain));
         Assert.Equal(["io", "Alloc"], parent.TypeRef.GenericArguments!.Select(static argument => argument.Display));
         Assert.True(Assert.IsType<ComptimeBoolValue>(GetComptimeValue("GoodSubtype", symbolTable, inferer)).Value);
         Assert.False(Assert.IsType<ComptimeBoolValue>(GetComptimeValue("BadSubtype", symbolTable, inferer)).Value);
@@ -881,7 +883,12 @@ BadSubtype :: comptime meta.is_subtype(
         var join = Assert.IsType<ComptimeTypeValue>(GetComptimeValue("Join", symbolTable, inferer));
         Assert.Equal(parent.TypeRef.StableIdentity, join.TypeRef.StableIdentity);
         Assert.Equal(
-            ["type", "value", "type", "value"],
+            [
+                MetaGenericArgumentDomain.Type,
+                MetaGenericArgumentDomain.Value,
+                MetaGenericArgumentDomain.Type,
+                MetaGenericArgumentDomain.Value
+            ],
             parent.TypeRef.GenericArguments!.Select(static argument => argument.Domain));
         Assert.Equal(
             ["String", "1", "String", "2"],
@@ -1268,7 +1275,7 @@ Subject :: type expand deriveBad { value:: Int }
         target.SetName("Subject");
 
         var typeValue = new ComptimeTypeValue(new MetaTypeRef(
-            "primitive",
+            MetaTypeKind.Primitive,
             WellKnownStrings.BuiltinTypes.Type,
             "builtin:Type",
             SymbolId.None,

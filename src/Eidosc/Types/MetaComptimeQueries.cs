@@ -252,13 +252,13 @@ internal static partial class MetaComptimeIntrinsics
         {
             var genericArguments = typeValue.TypeRef.GenericArguments ??
                 typeValue.TypeRef.Arguments.Select(static type => new MetaGenericArgumentRef(
-                    "type", type.Name, type.StableIdentity, type.SymbolId, type)).ToArray();
+                    MetaGenericArgumentDomain.Type, type.Name, type.StableIdentity, type.SymbolId, type)).ToArray();
             value = List(genericArguments.Select(argument => (ComptimeValue)TypedObject(
                 "generic-argument",
                 WellKnownStrings.Meta.Types.GenericArgument,
                 WellKnownTypeIds.MetaGenericArgumentId,
                 [
-                    ("domain", new ComptimeStringValue(argument.Domain)),
+                    ("domain", new ComptimeStringValue(argument.Domain.ToToken())),
                     ("identity", new ComptimeStringValue(argument.StableIdentity)),
                     ("type", argument.Type == null ? ComptimeUnitValue.Instance : new ComptimeTypeValue(argument.Type))
                 ])));

@@ -12,6 +12,61 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public sealed class ModuleTypesStatePayloadTests
 {
     [Fact]
+    public void MetaTypePayload_RoundTripsTypedKindAndGenericDomainWithStableTokens()
+    {
+        var effectArgument = new MetaGenericArgumentRef(
+            MetaGenericArgumentDomain.EffectRow,
+            "io",
+            "effect:io",
+            SymbolId.None,
+            null);
+        var original = new MetaTypeRef(
+            MetaTypeKind.TypeParameter,
+            "T",
+            "type-parameter:0",
+            new SymbolId(41),
+            new TypeId(42),
+            [],
+            GenericArguments: [effectArgument]);
+
+        var payload = MetaTypeRefPayload.Create(original);
+
+        Assert.Equal("type-parameter", payload.Kind);
+        Assert.Equal("effect-row", Assert.Single(payload.GenericArguments!).Domain);
+        Assert.True(payload.TryRestore(remapper: null, out var restored));
+        Assert.Equal(MetaTypeKind.TypeParameter, restored.Kind);
+        Assert.Equal(MetaGenericArgumentDomain.EffectRow, Assert.Single(restored.GenericArguments!).Domain);
+        Assert.Equal(original.CanonicalText, restored.CanonicalText);
+        Assert.StartsWith("type-parameter:", restored.CanonicalText, StringComparison.Ordinal);
+        Assert.Contains("<[effect-row:", restored.CanonicalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(MetaTypeKind.TypeParameter), restored.CanonicalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(MetaGenericArgumentDomain.EffectRow), restored.CanonicalText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MetaTypePayload_RejectsUnknownKindAndGenericDomainTokens()
+    {
+        var unknownKind = new MetaTypeRefPayload(
+            "future-kind",
+            "T",
+            "future:T",
+            0,
+            0,
+            []);
+        var unknownDomain = new MetaTypeRefPayload(
+            "nominal",
+            "Box",
+            "nominal:Box",
+            0,
+            0,
+            [],
+            [new MetaGenericArgumentRefPayload("future-domain", "T", "type:T", 0, null)]);
+
+        Assert.False(unknownKind.TryRestore(remapper: null, out _));
+        Assert.False(unknownDomain.TryRestore(remapper: null, out _));
+    }
+
+    [Fact]
     public void AstTypesStatePayload_RestoresNonStructuralTypesAttachments()
     {
         var implementation = new LiteralExpr();

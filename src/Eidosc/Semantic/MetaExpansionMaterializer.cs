@@ -1430,17 +1430,17 @@ internal sealed class MetaExpansionMaterializer(
     {
         return argument.Domain switch
         {
-            "type" when argument.Type != null => new TypeGenericArgumentNode
+            MetaGenericArgumentDomain.Type when argument.Type != null => new TypeGenericArgumentNode
             {
                 Type = CreateTypeNode(new ComptimeTypeValue(argument.Type)),
                 Span = _invocationSpan
             },
-            "effect-row" when argument.Type != null => new EffectGenericArgumentNode
+            MetaGenericArgumentDomain.EffectRow when argument.Type != null => new EffectGenericArgumentNode
             {
                 EffectRow = CreateTypeNode(new ComptimeTypeValue(argument.Type)),
                 Span = _invocationSpan
             },
-            "value" => new ValueGenericArgumentNode
+            MetaGenericArgumentDomain.Value => new ValueGenericArgumentNode
             {
                 Expression = CreateGenericValueExpression(argument),
                 Span = _invocationSpan

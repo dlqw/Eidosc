@@ -1143,7 +1143,7 @@ public sealed record MetaTypeRefPayload(
     IReadOnlyList<MetaGenericArgumentRefPayload>? GenericArguments = null)
 {
     internal static MetaTypeRefPayload Create(MetaTypeRef type) => new(
-        type.Kind,
+        type.Kind.ToToken(),
         type.Name,
         type.StableIdentity,
         type.SymbolId.Value,
@@ -1153,6 +1153,12 @@ public sealed record MetaTypeRefPayload(
 
     internal bool TryRestore(LiveStateIdRemapper? remapper, out MetaTypeRef type)
     {
+        if (!MetaSchemaToken.TryParseTypeKind(Kind, out var kind))
+        {
+            type = null!;
+            return false;
+        }
+
         var arguments = new MetaTypeRef[Arguments.Count];
         for (var i = 0; i < Arguments.Count; i++)
         {
@@ -1178,7 +1184,7 @@ public sealed record MetaTypeRefPayload(
         }
 
         type = new MetaTypeRef(
-            Kind,
+            kind,
             Name,
             StableIdentity,
             new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
@@ -1197,7 +1203,7 @@ public sealed record MetaGenericArgumentRefPayload(
     MetaTypeRefPayload? Type)
 {
     internal static MetaGenericArgumentRefPayload Create(MetaGenericArgumentRef argument) => new(
-        argument.Domain,
+        argument.Domain.ToToken(),
         argument.Display,
         argument.StableIdentity,
         argument.SymbolId.Value,
@@ -1205,6 +1211,12 @@ public sealed record MetaGenericArgumentRefPayload(
 
     internal bool TryRestore(LiveStateIdRemapper? remapper, out MetaGenericArgumentRef argument)
     {
+        if (!MetaSchemaToken.TryParseGenericArgumentDomain(Domain, out var domain))
+        {
+            argument = null!;
+            return false;
+        }
+
         MetaTypeRef? type = null;
         if (Type != null && !Type.TryRestore(remapper, out type))
         {
@@ -1213,7 +1225,7 @@ public sealed record MetaGenericArgumentRefPayload(
         }
 
         argument = new MetaGenericArgumentRef(
-            Domain,
+            domain,
             Display,
             StableIdentity,
             new SymbolId(remapper?.RemapSymbol(SymbolId) ?? SymbolId),
