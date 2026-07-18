@@ -103,9 +103,9 @@ PersistentMap :: module {
                 height: _
             } => match *Shared.borrow(left_node) {
                 Node{key: left_key, value: left_value, left: left_left, right: left_right, size: _, height: _} =>
-                    PersistentMap.make_link(TraitInvoke.clone_value(left_key))(TraitInvoke.clone_value(left_value))(
+                    PersistentMap.make_link(TraitInvoke.clone_value(ref left_key))(TraitInvoke.clone_value(ref left_value))(
                         PersistentMap.clone_link(left_left))(
-                        PersistentMap.make_link(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(value))(
+                        PersistentMap.make_link(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
                             PersistentMap.clone_link(left_right))(
                             PersistentMap.clone_link(right)))
             },
@@ -128,8 +128,8 @@ PersistentMap :: module {
                 height: _
             } => match *Shared.borrow(right_node) {
                 Node{key: right_key, value: right_value, left: right_left, right: right_right, size: _, height: _} =>
-                    PersistentMap.make_link(TraitInvoke.clone_value(right_key))(TraitInvoke.clone_value(right_value))(
-                        PersistentMap.make_link(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(value))(
+                    PersistentMap.make_link(TraitInvoke.clone_value(ref right_key))(TraitInvoke.clone_value(ref right_value))(
+                        PersistentMap.make_link(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
                             PersistentMap.clone_link(left))(
                             PersistentMap.clone_link(right_left)))(
                         PersistentMap.clone_link(right_right))
@@ -170,12 +170,12 @@ PersistentMap :: module {
         Empty() => key => value => PersistentMap.make_link(key)(value)(Empty())(Empty()),
         Link(node) => key => value => match *Shared.borrow(node) {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
-                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
-                    Less() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                    Less() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
                         PersistentMap.insert_link(PersistentMap.clone_link(left))(key)(value))(
                         PersistentMap.clone_link(right)),
-                    Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                    Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
                         PersistentMap.clone_link(left))(
                         PersistentMap.insert_link(PersistentMap.clone_link(right))(key)(value)),
                     Equal() => PersistentMap.make_link(key)(value)(
@@ -209,11 +209,11 @@ PersistentMap :: module {
         Empty() => _ => None(),
         Link(node) => key => match *Shared.borrow(node) {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
-                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
                     Less() => PersistentMap.get_link(PersistentMap.clone_link(left))(key),
                     Greater() => PersistentMap.get_link(PersistentMap.clone_link(right))(key),
-                    Equal() => Some(TraitInvoke.clone_value(node_value))
+                    Equal() => Some(TraitInvoke.clone_value(ref node_value))
                 }
             }
         }
@@ -236,7 +236,7 @@ PersistentMap :: module {
         Empty() => _ => false,
         Link(node) => key => match *Shared.borrow(node) {
             Node{key: node_key, value: _, left: left, right: right, size: _, height: _} => {
-                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
                     Less() => PersistentMap.contains_link(PersistentMap.clone_link(left))(key),
                     Greater() => PersistentMap.contains_link(PersistentMap.clone_link(right))(key),
@@ -258,7 +258,7 @@ PersistentMap :: module {
         Empty() => None(),
         Link(node) => match *Shared.borrow(node) {
             Node{key: key, value: value, left: Empty(), right: _, size: _, height: _} =>
-                Some((TraitInvoke.clone_value(key), TraitInvoke.clone_value(value))),
+                Some((TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))),
             Node{key: _, value: _, left: left, right: _, size: _, height: _} =>
                 PersistentMap.min_entry(PersistentMap.clone_link(left))
         }
@@ -273,7 +273,7 @@ PersistentMap :: module {
             Node{key: _, value: _, left: Empty(), right: right, size: _, height: _} =>
                 PersistentMap.clone_link(right),
             Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
-                PersistentMap.balance_node(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(value))(
+                PersistentMap.balance_node(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
                     PersistentMap.remove_min(PersistentMap.clone_link(left)))(
                     PersistentMap.clone_link(right))
         }
@@ -300,12 +300,12 @@ PersistentMap :: module {
         Empty() => _ => Empty(),
         Link(node) => key => match *Shared.borrow(node) {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
-                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+                cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
-                    Less() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                    Less() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
                         PersistentMap.remove_link(PersistentMap.clone_link(left))(key))(
                         PersistentMap.clone_link(right)),
-                    Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(node_key))(TraitInvoke.clone_value(node_value))(
+                    Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
                         PersistentMap.clone_link(left))(
                         PersistentMap.remove_link(PersistentMap.clone_link(right))(key)),
                     Equal() => PersistentMap.merge_children(left)(right)
@@ -327,7 +327,7 @@ PersistentMap :: module {
         Link(node) => match *Shared.borrow(node) {
             Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
                 Seq.append(PersistentMap.to_seq_link(PersistentMap.clone_link(left)))(
-                    Seq.append([(TraitInvoke.clone_value(key), TraitInvoke.clone_value(value))])(
+                    Seq.append([(TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))])(
                         PersistentMap.to_seq_link(PersistentMap.clone_link(right))))
         }
     }

@@ -1,5 +1,6 @@
 Regex :: module {
     import Option
+    import Text
 
 
 
@@ -94,8 +95,8 @@ Regex :: module {
     find :: RawPtr -> String -> Option[String] need ffi
     {
         regex => text => {
-            if Regex.is_match(regex)(text) then {
-                Some(regex_find_string(regex)(string_to_cstr(text)))
+            if Regex.is_match(regex)(Text.clone(ref text)) then {
+                Some(regex_find_string(regex)(string_to_cstr(Text.clone(ref text))))
             } else { None() }
         }
     }

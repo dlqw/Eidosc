@@ -107,29 +107,29 @@ File :: module {
     last_separator_index :: String -> Int
     {
         path => {
-            slash := Text.last_index_of_or(path)("/")(-1);
-            backslash := Text.last_index_of_or(path)("\\")(-1);
+            slash := Text.last_index_of_or(Text.clone(ref path))("/")(-1);
+            backslash := Text.last_index_of_or(Text.clone(ref path))("\\")(-1);
             if slash > backslash then { slash } else { backslash }
         }
     }
 
     has_trailing_separator :: String -> Bool
     {
-        path => Text.ends_with(path)("/") || Text.ends_with(path)("\\")
+        path => Text.ends_with(Text.clone(ref path))("/") || Text.ends_with(Text.clone(ref path))("\\")
     }
 
     has_leading_separator :: String -> Bool
     {
-        path => Text.starts_with(path)("/") || Text.starts_with(path)("\\")
+        path => Text.starts_with(Text.clone(ref path))("/") || Text.starts_with(Text.clone(ref path))("\\")
     }
 
     join_path :: String -> String -> String
     {
         left => right =>
-            if Text.empty(left) then { Text.clone(right) }
-            else if Text.empty(right) then { Text.clone(left) }
-            else if File.has_trailing_separator(left) || File.has_leading_separator(right) then { left ++ right }
-            else { left ++ "/" ++ right }
+            if Text.empty(Text.clone(ref left)) then { Text.clone(ref right) }
+            else if Text.empty(Text.clone(ref right)) then { Text.clone(ref left) }
+            else if File.has_trailing_separator(Text.clone(ref left)) || File.has_leading_separator(Text.clone(ref right)) then { Text.clone(ref left) ++ Text.clone(ref right) }
+            else { Text.clone(ref left) ++ "/" ++ Text.clone(ref right) }
     }
 
     join_paths :: Seq[String] -> String
@@ -141,68 +141,68 @@ File :: module {
 
     normalize_separators :: String -> String
     {
-        path => Text.replace_all(path)("\\")("/")
+        path => Text.replace_all(Text.clone(ref path))("\\")("/")
     }
 
     ensure_trailing_separator :: String -> String
     {
         path =>
-            if Text.empty(path) || File.has_trailing_separator(path) then { Text.clone(path) }
-            else { path ++ "/" }
+            if Text.empty(Text.clone(ref path)) || File.has_trailing_separator(Text.clone(ref path)) then { Text.clone(ref path) }
+            else { Text.clone(ref path) ++ "/" }
     }
 
     trim_trailing_separator :: String -> String
     {
         path =>
-            if string_length(path) <= 1 then { Text.clone(path) }
-            else if File.has_trailing_separator(path) then { File.trim_trailing_separator(Text.drop_last(path)(1)) }
-            else { Text.clone(path) }
+            if string_length(Text.clone(ref path)) <= 1 then { Text.clone(ref path) }
+            else if File.has_trailing_separator(Text.clone(ref path)) then { File.trim_trailing_separator(Text.drop_last(Text.clone(ref path))(1)) }
+            else { Text.clone(ref path) }
     }
 
     name :: String -> String
     {
         path => {
-            separator := File.last_separator_index(path);
-            if separator < 0 then { Text.clone(path) }
-            else { Text.drop(path)(separator + 1) }
+            separator := File.last_separator_index(Text.clone(ref path));
+            if separator < 0 then { Text.clone(ref path) }
+            else { Text.drop(Text.clone(ref path))(separator + 1) }
         }
     }
 
     directory_name :: String -> String
     {
         path => {
-            separator := File.last_separator_index(path);
+            separator := File.last_separator_index(Text.clone(ref path));
             if separator < 0 then { "" }
-            else { Text.take(path)(separator) }
+            else { Text.take(Text.clone(ref path))(separator) }
         }
     }
 
     extension :: String -> String
     {
         path => {
-            name := File.name(path);
-            dot := Text.last_index_of_or(name)(".")(-1);
+            name := File.name(Text.clone(ref path));
+            dot := Text.last_index_of_or(Text.clone(ref name))(".")(-1);
             if dot <= 0 then { "" }
-            else { Text.drop(name)(dot) }
+            else { Text.drop(Text.clone(ref name))(dot) }
         }
     }
 
     extension_without_dot :: String -> String
     {
         path => {
-            ext := File.extension(path);
-            if Text.empty(ext) then { "" }
-            else { Text.drop(ext)(1) }
+            ext := File.extension(Text.clone(ref path));
+            if Text.empty(Text.clone(ref ext)) then { "" }
+            else { Text.drop(Text.clone(ref ext))(1) }
         }
     }
 
     stem :: String -> String
     {
         path => {
-            name := File.name(path);
-            dot := Text.last_index_of_or(name)(".")(-1);
-            if dot <= 0 then { Text.clone(name) }
-            else { Text.take(name)(dot) }
+            name := File.name(Text.clone(ref path));
+            dot := Text.last_index_of_or(Text.clone(ref name))(".")(-1);
+            if dot <= 0 then { Text.clone(ref name) }
+            else { Text.take(Text.clone(ref name))(dot) }
         }
     }
 
@@ -214,22 +214,22 @@ File :: module {
     normalize_extension :: String -> String
     {
         ext =>
-            if Text.empty(ext) then { "" }
-            else if Text.starts_with(ext)(".") then { Text.clone(ext) }
-            else { "." ++ ext }
+            if Text.empty(Text.clone(ref ext)) then { "" }
+            else if Text.starts_with(Text.clone(ref ext))(".") then { Text.clone(ref ext) }
+            else { "." ++ Text.clone(ref ext) }
     }
 
     has_extension :: String -> String -> Bool
     {
-        path => ext => File.extension(path) == File.normalize_extension(ext)
+        path => ext => File.extension(Text.clone(ref path)) == File.normalize_extension(Text.clone(ref ext))
     }
 
     change_extension :: String -> String -> String
     {
         path => ext => {
-            dir := File.directory_name(path);
-            changed := File.stem(path) ++ File.normalize_extension(ext);
-            if Text.empty(dir) then { changed } else { File.join_path(dir)(changed) }
+            dir := File.directory_name(Text.clone(ref path));
+            changed := File.stem(Text.clone(ref path)) ++ File.normalize_extension(Text.clone(ref ext));
+            if Text.empty(Text.clone(ref dir)) then { changed } else { File.join_path(Text.clone(ref dir))(Text.clone(ref changed)) }
         }
     }
 

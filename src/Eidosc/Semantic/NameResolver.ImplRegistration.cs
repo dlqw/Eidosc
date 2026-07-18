@@ -41,7 +41,11 @@ public sealed partial class NameResolver
                 continue;
             }
 
-            if (!TryGetImplTargetType(func, out var implementingTypePath, out var targetTypeId))
+            if (!TryGetImplTargetType(
+                    func,
+                    out var implementingTypePath,
+                    out var targetTypeId,
+                    cloneReceiver: string.Equals(traitName, "Clone", StringComparison.Ordinal)))
             {
                 AddError(clause.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
                 continue;

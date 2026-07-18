@@ -19,6 +19,11 @@ import std.Result
 import std.Seq
 import std.Text
 
+clone_text :: String -> String
+{
+    value => Text.clone(ref value)
+}
+
 inc :: Int -> Int
 {
     x => x + 1
@@ -33,7 +38,7 @@ main :: Unit -> Int
         viaOption := Option.unwrap_or(Option.map(Some(1))(inc))(0);
         viaResult := Result.unwrap_or(Result.map(resultBase)(inc))(0);
         viaList := Seq.len(Seq.map(xs)(inc));
-        viaText := Text.len(Text.clone("ab"));
+        viaText := Text.len(clone_text("ab"));
 
         viaOption + viaResult + viaList + viaText
     }
@@ -60,6 +65,11 @@ main :: Unit -> Int
 import std.Traits
 import std.Text
 
+clone_text :: String -> String
+{
+    value => Text.clone(ref value)
+}
+
 render[T: Traits.Show] :: T -> String
 {
     value => show(value)
@@ -67,7 +77,7 @@ render[T: Traits.Show] :: T -> String
 
 main :: Unit -> String
 {
-    _ => render(Text.clone("ok"))
+    _ => render(clone_text("ok"))
 }
 """;
 

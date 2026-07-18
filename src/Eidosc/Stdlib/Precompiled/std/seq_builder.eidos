@@ -46,7 +46,7 @@ SeqBuilder :: module {
             mut index := 0
             loop {
                 if index >= count then { break } else {
-                    values = SeqBuilder.push(values)(TraitInvoke.clone_value(value))
+                    values = SeqBuilder.push(values)(TraitInvoke.clone_value(ref value))
                     index = index + 1
                 }
             }

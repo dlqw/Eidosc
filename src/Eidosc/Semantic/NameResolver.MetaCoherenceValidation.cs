@@ -338,7 +338,11 @@ public sealed partial class NameResolver
                 reason = "the referenced impl trait is unavailable";
                 return false;
             }
-            if (!TryGetImplTargetType(function, out var implementingType, out var implementingTypeId))
+            if (!TryGetImplTargetType(
+                    function,
+                    out var implementingType,
+                    out var implementingTypeId,
+                    cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
             {
                 reason = $"function '{function.Name}' has no concrete implementation target type";
                 return false;
@@ -460,7 +464,11 @@ public sealed partial class NameResolver
             implementingTypeId = TypeId.None;
             foreach (var method in instance.Methods)
             {
-                if (!TryGetImplTargetType(method, out var methodType, out var methodTypeId))
+                if (!TryGetImplTargetType(
+                        method,
+                        out var methodType,
+                        out var methodTypeId,
+                        cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
                 {
                     reason = $"method '{method.Name}' has no concrete implementation target type";
                     return false;

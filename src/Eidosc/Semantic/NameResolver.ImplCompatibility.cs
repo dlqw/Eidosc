@@ -196,10 +196,25 @@ public sealed partial class NameResolver
         return resolution.IsSuccess ? resolution.SymbolId : SymbolId.None;
     }
 
-    private bool TryGetImplTargetType(FuncDef func, out TypePath implementingTypePath, out TypeId typeId)
+    private bool TryGetImplTargetType(
+        FuncDef func,
+        out TypePath implementingTypePath,
+        out TypeId typeId,
+        bool cloneReceiver = false)
     {
         implementingTypePath = null!;
         typeId = TypeId.None;
+
+        if (cloneReceiver &&
+            GetFirstParameterType(func) is TypePath
+            {
+                TypeName: "Ref",
+                TypeArgs: [TypePath innerType]
+            } &&
+            TryResolveImplTargetTypeNode(innerType, out implementingTypePath, out typeId))
+        {
+            return true;
+        }
 
         if (TryResolveImplTargetTypeNode(GetFirstParameterType(func), out implementingTypePath, out typeId)
             && typeId != BaseTypes.UnitId)

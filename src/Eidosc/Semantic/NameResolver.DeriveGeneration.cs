@@ -257,7 +257,10 @@ public sealed partial class NameResolver
 
         if (returnType != null)
         {
-            var paramTypes = new List<TypeNode> { CreateAdtSelfType(adt, span, targetPath) };
+            var receiverType = traitName == "Clone"
+                ? CreateRefType(CreateAdtSelfType(adt, span, targetPath), span)
+                : CreateAdtSelfType(adt, span, targetPath);
+            var paramTypes = new List<TypeNode> { receiverType };
             if (traitName is "Eq" or "Ord")
             {
                 paramTypes.Add(CreateAdtSelfType(adt, span, targetPath));
@@ -495,14 +498,19 @@ public sealed partial class NameResolver
             for (var i = 0; i < vars.Count; i++)
             {
                 clonedFields.Add(
-                    MakeTraitInvokeCall("clone_value", MakeIdent(vars[i].Name, span), span));
+                    MakeTraitInvokeCall("clone_value", MakeRefExpr(MakeIdent(vars[i].Name, span)), span));
             }
 
             var expr = MakeCtorExpr(ctor, clonedFields, span);
             branches.Add(MakeBranch(pat, expr, span));
         }
 
-        return branches;
+        var receiverPattern = new VarPattern();
+        receiverPattern.SetName("value");
+        return [MakeBranch(
+            receiverPattern,
+            MakeMatchExpr(MakeDerefExpr(MakeIdent("value", span)), branches, span),
+            span)];
     }
 
     #endregion
@@ -701,7 +709,7 @@ public sealed partial class NameResolver
         return id;
     }
 
-    private static CallExpr MakeTraitInvokeCall(string method, IdentifierExpr firstArg, SourceSpan span)
+    private static CallExpr MakeTraitInvokeCall(string method, EidosAstNode firstArg, SourceSpan span)
     {
         var path = new PathExpr();
         SetPrivate(path, "ModulePath", new List<string> { "TraitInvoke" });
@@ -713,7 +721,7 @@ public sealed partial class NameResolver
         return call;
     }
 
-    private static CallExpr MakeTraitInvokeCall(string method, IdentifierExpr firstArg, IdentifierExpr secondArg, SourceSpan span)
+    private static CallExpr MakeTraitInvokeCall(string method, EidosAstNode firstArg, EidosAstNode secondArg, SourceSpan span)
     {
         var innerPath = new PathExpr();
         SetPrivate(innerPath, "ModulePath", new List<string> { "TraitInvoke" });
@@ -727,6 +735,33 @@ public sealed partial class NameResolver
         outerCall.SetFunction(innerCall);
         outerCall.AddPositionalArg(secondArg);
         return outerCall;
+    }
+
+    private static UnaryExpr MakeRefExpr(EidosAstNode operand)
+    {
+        var expression = new UnaryExpr();
+        expression.SetOperator(UnaryOp.Ref);
+        expression.SetOperand(operand);
+        return expression;
+    }
+
+    private static UnaryExpr MakeDerefExpr(EidosAstNode operand)
+    {
+        var expression = new UnaryExpr();
+        expression.SetOperator(UnaryOp.Deref);
+        expression.SetOperand(operand);
+        return expression;
+    }
+
+    private static MatchExpr MakeMatchExpr(
+        EidosAstNode matchedExpression,
+        IReadOnlyList<PatternBranch> branches,
+        SourceSpan span)
+    {
+        var match = new MatchExpr { Span = span };
+        SetPrivate(match, "MatchedExpression", matchedExpression);
+        match.Branches.AddRange(branches);
+        return match;
     }
 
     private static CallExpr MakePathCall(string qualifiedPath, List<EidosAstNode> args, SourceSpan span)
@@ -776,6 +811,14 @@ public sealed partial class NameResolver
         var tp = new TypePath();
         tp.SetTypeName(typeName);
         return tp;
+    }
+
+    private static TypePath CreateRefType(TypeNode innerType, SourceSpan span)
+    {
+        var reference = CreateTypePath("Ref");
+        reference.SetSpan(span);
+        reference.TypeArgs.Add(innerType);
+        return reference;
     }
 
     private static TypePath CreateAdtSelfType(

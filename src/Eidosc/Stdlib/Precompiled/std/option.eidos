@@ -13,10 +13,12 @@ Option :: module {
     Option[T] :: type { Some:: type(T) , None :: type {} }
 
     CloneOptionT :: instance Traits.Clone {
-        clone[T: Traits.Clone] :: Option[T] -> Option[T]
+        clone[T: Traits.Clone] :: Ref[Option[T]] -> Option[T]
             {
-                Some(value) => Some(TraitInvoke.clone_value(value)),
-                None() => None()
+                value => match *value {
+                    Some(item) => Some(TraitInvoke.clone_value(ref item)),
+                    None() => None()
+                }
             }
     }
 

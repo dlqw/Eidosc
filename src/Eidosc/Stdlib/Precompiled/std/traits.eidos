@@ -18,7 +18,7 @@ Traits :: module {
     }
 
     Clone :: trait {
-        clone :: Self -> Self
+        clone :: Ref[Self] -> Self
     }
 
     Copy :: trait {

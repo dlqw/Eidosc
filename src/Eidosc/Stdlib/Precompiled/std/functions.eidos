@@ -28,28 +28,28 @@ Functions :: module {
     and_pred[A: Traits.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
     {
         left => right => value => {
-            copied := TraitInvoke.clone_value(value);
+            copied := TraitInvoke.clone_value(ref value);
             if left(value) then { right(copied) } else { false }
         }
     }
     or_pred[A: Traits.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
     {
         left => right => value => {
-            copied := TraitInvoke.clone_value(value);
+            copied := TraitInvoke.clone_value(ref value);
             if left(value) then { true } else { right(copied) }
         }
     }
     juxt[A: Traits.Clone, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (A -> C need E2) -> A -> (B, C) need E1, E2
     {
         left => right => value => {
-            copied := TraitInvoke.clone_value(value);
+            copied := TraitInvoke.clone_value(ref value);
             (left(value), right(copied))
         }
     }
     converge[A: Traits.Clone, B, C, D, E1: effects, E2: effects, E3: effects] :: (B -> C -> D need E1) -> (A -> B need E2) -> (A -> C need E3) -> A -> D need E1, E2, E3
     {
         combine => left => right => value => {
-            copied := TraitInvoke.clone_value(value);
+            copied := TraitInvoke.clone_value(ref value);
             combine(left(value))(right(copied))
         }
     }

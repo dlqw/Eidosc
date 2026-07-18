@@ -202,10 +202,10 @@ Network :: module {
         text => index =>
             if index + 1 >= Text.len(text) then { None() }
             else {
-                match Network.hex_digit_value(Text.char_code_at(Text.clone(text))(index))
+                match Network.hex_digit_value(Text.char_code_at(Text.clone(ref text))(index))
                 {
                     Some(high) => {
-                        match Network.hex_digit_value(Text.char_code_at(Text.clone(text))(index + 1))
+                        match Network.hex_digit_value(Text.char_code_at(Text.clone(ref text))(index + 1))
                         {
                             Some(low) => Some(high * 16 + low),
                             None() => None()
@@ -223,7 +223,7 @@ Network :: module {
         text => index =>
             if index >= Text.len(text) then { Some([]) }
             else {
-                match Network.decode_hex_byte_from(Text.clone(text))(index)
+                match Network.decode_hex_byte_from(Text.clone(ref text))(index)
                 {
                     Some(value) => {
                         match Network.decode_hex_bytes_from_opt(text)(index + 2)
@@ -242,7 +242,7 @@ Network :: module {
      internal
 {
         message =>
-            if Text.len(Text.clone(message)) > 0
+            if Text.len(Text.clone(ref message)) > 0
                 then { message }
                 else { "failed to decode http binary body" }
     }
@@ -861,12 +861,12 @@ Network :: module {
         text => prefix => start =>
             if start >= Text.len(text) then { None() }
             else {
-                line_end := Network.find_line_end(Text.clone(text))(start);
-                line := Text.slice(Text.clone(text))(start)(line_end - start);
-                prefix_len := Text.len(Text.clone(prefix));
+                line_end := Network.find_line_end(Text.clone(ref text))(start);
+                line := Text.slice(Text.clone(ref text))(start)(line_end - start);
+                prefix_len := Text.len(Text.clone(ref prefix));
                 matched := Text.starts_with(
-                    Network.normalize_header_name(Text.clone(line)))(
-                    Network.normalize_header_name(Text.clone(prefix)));
+                    Network.normalize_header_name(Text.clone(ref line)))(
+                    Network.normalize_header_name(Text.clone(ref prefix)));
                 if matched
                     then { Some(Network.drop_header_value_padding(line)(prefix_len)) }
                     else { Network.find_header_value_from(text)(prefix)(line_end + 1) }

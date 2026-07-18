@@ -112,6 +112,11 @@ import std.Traits
 import std.Ordering
 import std.Text
 
+clone_text :: String -> String
+{
+    value => Text.clone(ref value)
+}
+
 eq_self[T: Traits.Eq] :: T -> Bool
 {
     x => x == x
@@ -126,7 +131,7 @@ main :: Unit -> Int
 {
     _ => {
         lessLabel := Ordering.show(Ordering.compare_int(1)(2));
-        echo := Text.show(Text.clone("ok"));
+        echo := Text.show(clone_text("ok"));
 
         if eq_self(41) &&
            ord_self('a') &&

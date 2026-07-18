@@ -43,8 +43,8 @@ TraitInvoke :: module {
     min_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
     {
         left => right => {
-            left_for_compare := TraitInvoke.clone_value(left);
-            right_for_compare := TraitInvoke.clone_value(right);
+            left_for_compare := TraitInvoke.clone_value(ref left);
+            right_for_compare := TraitInvoke.clone_value(ref right);
             if TraitInvoke.le_value(left_for_compare)(right_for_compare) then { left } else { right }
         }
     }
@@ -52,8 +52,8 @@ TraitInvoke :: module {
     max_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
     {
         left => right => {
-            left_for_compare := TraitInvoke.clone_value(left);
-            right_for_compare := TraitInvoke.clone_value(right);
+            left_for_compare := TraitInvoke.clone_value(ref left);
+            right_for_compare := TraitInvoke.clone_value(ref right);
             if TraitInvoke.ge_value(left_for_compare)(right_for_compare) then { left } else { right }
         }
     }
@@ -61,12 +61,12 @@ TraitInvoke :: module {
     clamp_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> T
     {
         value => low => high => {
-            value_for_low := TraitInvoke.clone_value(value);
-            low_for_compare := TraitInvoke.clone_value(low);
+            value_for_low := TraitInvoke.clone_value(ref value);
+            low_for_compare := TraitInvoke.clone_value(ref low);
             if TraitInvoke.lt_value(value_for_low)(low_for_compare) then { low }
             else {
-                value_for_high := TraitInvoke.clone_value(value);
-                high_for_compare := TraitInvoke.clone_value(high);
+                value_for_high := TraitInvoke.clone_value(ref value);
+                high_for_compare := TraitInvoke.clone_value(ref high);
                 if TraitInvoke.gt_value(value_for_high)(high_for_compare) then { high } else { value }
             }
         }
@@ -75,10 +75,10 @@ TraitInvoke :: module {
     between_inclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
     {
         value => low => high => {
-            value_for_low := TraitInvoke.clone_value(value);
-            low_for_compare := TraitInvoke.clone_value(low);
-            value_for_high := TraitInvoke.clone_value(value);
-            high_for_compare := TraitInvoke.clone_value(high);
+            value_for_low := TraitInvoke.clone_value(ref value);
+            low_for_compare := TraitInvoke.clone_value(ref low);
+            value_for_high := TraitInvoke.clone_value(ref value);
+            high_for_compare := TraitInvoke.clone_value(ref high);
             TraitInvoke.ge_value(value_for_low)(low_for_compare) && TraitInvoke.le_value(value_for_high)(high_for_compare)
         }
     }
@@ -86,10 +86,10 @@ TraitInvoke :: module {
     between_exclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
     {
         value => low => high => {
-            value_for_low := TraitInvoke.clone_value(value);
-            low_for_compare := TraitInvoke.clone_value(low);
-            value_for_high := TraitInvoke.clone_value(value);
-            high_for_compare := TraitInvoke.clone_value(high);
+            value_for_low := TraitInvoke.clone_value(ref value);
+            low_for_compare := TraitInvoke.clone_value(ref low);
+            value_for_high := TraitInvoke.clone_value(ref value);
+            high_for_compare := TraitInvoke.clone_value(ref high);
             TraitInvoke.gt_value(value_for_low)(low_for_compare) && TraitInvoke.lt_value(value_for_high)(high_for_compare)
         }
     }
@@ -115,7 +115,7 @@ TraitInvoke :: module {
             }
     }
 
-    clone_value[T: Traits.Clone] :: T -> T
+    clone_value[T: Traits.Clone] :: Ref[T] -> T
     {
         value => clone(value)
     }

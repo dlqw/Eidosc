@@ -441,15 +441,16 @@ Seq :: module {
     }
 
     CloneSeqT :: instance Traits.Clone {
-        clone[T: Traits.Clone] :: Seq[T] -> Seq[T]
+        clone[T: Traits.Clone] :: Ref[Seq[T]] -> Seq[T]
             {
                 xs => {
-                    len := Seq.len(xs)
+                    seq := *xs
+                    len := Seq.len(seq)
                     mut acc: Seq[T] := []
                     mut index := 0
                     loop {
                         if index >= len then { break } else {
-                            acc = RuntimeArray.push(acc)(TraitInvoke.clone_value(xs[index]))
+                            acc = RuntimeArray.push(acc)(TraitInvoke.clone_value(ref seq[index]))
                             index = index + 1
                         }
                     }

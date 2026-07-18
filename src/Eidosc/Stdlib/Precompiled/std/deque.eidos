@@ -105,11 +105,13 @@ Deque :: module {
     }
 
     CloneDequeT :: instance Traits.Clone {
-        clone[T: Traits.Clone] :: Deque[T] -> Deque[T]
+        clone[T: Traits.Clone] :: Ref[Deque[T]] -> Deque[T]
             {
-                Deque{front: f, back: b} => Deque{
-                    front: TraitInvoke.clone_value(f),
-                    back: TraitInvoke.clone_value(b)
+                value => match *value {
+                    Deque{front: f, back: b} => Deque{
+                        front: TraitInvoke.clone_value(ref f),
+                        back: TraitInvoke.clone_value(ref b)
+                    }
                 }
             }
     }

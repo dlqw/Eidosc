@@ -127,8 +127,8 @@ TreeMap :: module {
 {
         Empty() => Empty(),
         Node{key: key, value: value, left: left, right: right, size: size, height: height} => Node{
-            key: TraitInvoke.clone_value(key),
-            value: TraitInvoke.clone_value(value),
+            key: TraitInvoke.clone_value(ref key),
+            value: TraitInvoke.clone_value(ref value),
             left: TreeMap.clone_tree_map(left),
             right: TreeMap.clone_tree_map(right),
             size: size,
@@ -136,15 +136,15 @@ TreeMap :: module {
         }
     }
 
-    clone[K: Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> TreeMap[K, V]
+    clone[K: Traits.Clone, V: Traits.Clone] :: Ref[TreeMap[K, V]] -> TreeMap[K, V]
     {
-        map => TreeMap.clone_tree_map(map)
+        map => TreeMap.clone_tree_map(*map)
     }
 
     CloneTreeMapKv :: instance Traits.Clone {
-        clone[K: Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> TreeMap[K, V]
+        clone[K: Traits.Clone, V: Traits.Clone] :: Ref[TreeMap[K, V]] -> TreeMap[K, V]
         {
-            map => TreeMap.clone_tree_map(map)
+            map => TreeMap.clone_tree_map(*map)
         }
     }
 
@@ -152,7 +152,7 @@ TreeMap :: module {
     {
         Empty() => key => value => TreeMap.singleton(key)(value),
         Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => key => value => {
-            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
             match cmp {
                 Less() => TreeMap.balance_node(node_key)(node_value)(TreeMap.insert(left)(key)(value))(right),
                 Greater() => TreeMap.balance_node(node_key)(node_value)(left)(TreeMap.insert(right)(key)(value)),
@@ -171,11 +171,11 @@ TreeMap :: module {
     {
         Empty() => _ => None(),
         Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => key => {
-            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
             match cmp {
                 Less() => TreeMap.get(left)(key),
                 Greater() => TreeMap.get(right)(key),
-                Equal() => Some(TraitInvoke.clone_value(node_value))
+                Equal() => Some(TraitInvoke.clone_value(ref node_value))
             }
         }
     }
@@ -189,7 +189,7 @@ TreeMap :: module {
     {
         Empty() => _ => false,
         Node{key: node_key, value: _, left: left, right: right, size: _, height: _} => key => {
-            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
             match cmp {
                 Less() => TreeMap.contains_key(left)(key),
                 Greater() => TreeMap.contains_key(right)(key),
@@ -204,7 +204,7 @@ TreeMap :: module {
 {
         Empty() => None(),
         Node{key: key, value: value, left: Empty(), right: _, size: _, height: _} =>
-            Some((TraitInvoke.clone_value(key), TraitInvoke.clone_value(value))),
+            Some((TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))),
         Node{key: _, value: _, left: left, right: _, size: _, height: _} => TreeMap.min_entry(left)
     }
 
@@ -224,7 +224,7 @@ TreeMap :: module {
 {
         Empty() => right => right,
         left => Empty() => left,
-        left => right => match TreeMap.min_entry(TraitInvoke.clone_value(right)) {
+        left => right => match TreeMap.min_entry(TraitInvoke.clone_value(ref right)) {
             Some((key, value)) => TreeMap.balance_node(key)(value)(left)(TreeMap.remove_min(right)),
             None() => left
         }
@@ -234,7 +234,7 @@ TreeMap :: module {
     {
         Empty() => _ => Empty(),
         Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => key => {
-            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(key))(TraitInvoke.clone_value(node_key))
+            cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
             match cmp {
                 Less() => TreeMap.balance_node(node_key)(node_value)(TreeMap.remove(left)(key))(right),
                 Greater() => TreeMap.balance_node(node_key)(node_value)(left)(TreeMap.remove(right)(key)),

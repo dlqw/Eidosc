@@ -33,9 +33,11 @@ BinaryHeap :: module {
     }
 
     CloneBinaryHeapT :: instance Traits.Clone {
-        clone[T: Traits.Clone] :: BinaryHeap[T] -> BinaryHeap[T]
+        clone[T: Traits.Clone] :: Ref[BinaryHeap[T]] -> BinaryHeap[T]
             {
-                BinaryHeap{items: items} => BinaryHeap{items: TraitInvoke.clone_value(items)}
+                value => match *value {
+                    BinaryHeap{items: items} => BinaryHeap{items: TraitInvoke.clone_value(ref items)}
+                }
             }
     }
 
@@ -149,7 +151,7 @@ BinaryHeap :: module {
     {
         BinaryHeap{items: items} =>
             if Seq.len(items) == 0 then { None() }
-            else { Some(TraitInvoke.clone_value(items[0])) }
+            else { Some(TraitInvoke.clone_value(ref items[0])) }
     }
 
     pop[T: Traits.Ord + Traits.Clone] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
@@ -158,7 +160,7 @@ BinaryHeap :: module {
             len := Seq.len(items)
             if len == 0 then { None() }
             else {
-                top := TraitInvoke.clone_value(items[0])
+                top := TraitInvoke.clone_value(ref items[0])
                 if len == 1 then {
                 Some((top, BinaryHeap.empty(())))
                 } else {

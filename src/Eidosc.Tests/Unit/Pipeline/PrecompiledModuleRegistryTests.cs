@@ -111,7 +111,7 @@ sample :: module {
         var overloads = IntrinsicRegistry.GetOverloads("shared_clone");
 
         var overload = Assert.Single(overloads);
-        Assert.Equal("arity=1;Shared[T]->Shared[T]", overload.SignatureKey);
+        Assert.Equal("arity=1;Ref[Shared[T]]->Shared[T]", overload.SignatureKey);
         Assert.True(IntrinsicRegistry.TryGet("shared_clone", overload.SignatureKey, out var selected));
         Assert.Equal(overload.SignatureKey, selected.SignatureKey);
     }

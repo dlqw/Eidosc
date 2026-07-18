@@ -92,6 +92,29 @@ Box :: type  derive Clone
     }
 
     [Fact]
+    public void DeriveClone_GeneratesSharedReferenceReceiver()
+    {
+        const string source = """
+
+Box :: type  derive Clone
+{
+    Box:: type(String)
+}
+""";
+        var result = Compile("derive_clone_receiver.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var generated = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.FuncDef>(),
+            function => function.Name == "clone" &&
+                        function.Clauses.Any(clause => clause.ClauseKind == Eidosc.Ast.Declarations.DeclarationClauseKind.Impl));
+        var signature = Assert.IsType<Eidosc.Ast.Types.ArrowType>(generated.Signature.Single());
+        var receiver = Assert.IsType<Eidosc.Ast.Types.TypePath>(signature.ParamType);
+        Assert.Equal("Ref", receiver.TypeName);
+        Assert.Single(receiver.TypeArgs);
+    }
+
+    [Fact]
     public void DeriveEq_SingleConstructor_Compiles()
     {
         const string source = """

@@ -492,7 +492,11 @@ public sealed partial class NameResolver
 
         foreach (var method in instance.Methods)
         {
-            if (!TryGetImplTargetType(method, out var implementingTypePath, out var targetTypeId))
+            if (!TryGetImplTargetType(
+                    method,
+                    out var implementingTypePath,
+                    out var targetTypeId,
+                    cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
             {
                 AddError(method.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
                 continue;

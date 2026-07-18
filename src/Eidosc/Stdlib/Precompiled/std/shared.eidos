@@ -13,12 +13,12 @@ Shared :: module {
 
 
 
-    clone[T] :: Shared[T] -> Shared[T] intrinsic "shared_clone";
+    clone[T] :: Ref[Shared[T]] -> Shared[T] intrinsic "shared_clone";
 
 
     CloneSharedT :: instance Traits.Clone {
 
-        clone[T] :: Shared[T] -> Shared[T] intrinsic "shared_clone";
+        clone[T] :: Ref[Shared[T]] -> Shared[T] intrinsic "shared_clone";
 
     }
 

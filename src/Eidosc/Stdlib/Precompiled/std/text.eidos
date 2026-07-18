@@ -9,15 +9,21 @@ Text :: module {
 
     string_length :: String -> Int internal intrinsic "string_length";
 
+    string_length_ref :: Ref[String] -> Int internal intrinsic "string_length";
+
 
 
 
     string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
 
+    string_char_at_ref :: Ref[String] -> Int -> Int internal intrinsic "string_char_at";
+
 
 
 
     string_slice :: String -> Int -> Int -> String internal intrinsic "string_slice";
+
+    string_slice_ref :: Ref[String] -> Int -> Int -> String internal intrinsic "string_slice";
 
 
 
@@ -52,9 +58,9 @@ Text :: module {
         false => "false"
     }
 
-    clone :: String -> String
+    clone :: Ref[String] -> String
     {
-        s => string_slice(s, 0, string_length(s))
+        s => string_slice_ref(s, 0, string_length_ref(s))
     }
 
     from_code :: Int -> String { code => string_from_char(code) }
@@ -102,13 +108,13 @@ Text :: module {
     }
 
 
-    trim_start_index :: String -> Int -> Int
+    trim_start_index :: Ref[String] -> Int -> Int
      internal
 {
         s => index => {
-            text_len := string_length(s);
+            text_len := string_length_ref(s);
             if index >= text_len then { index }
-            else if Text.is_ascii_space_code(Text.char_code_at(s)(index)) then
+            else if Text.is_ascii_space_code(string_char_at_ref(s)(index)) then
             {
                 Text.trim_start_index(s)(index + 1)
             }
@@ -117,12 +123,12 @@ Text :: module {
     }
 
 
-    trim_end_count :: String -> Int -> Int
+    trim_end_count :: Ref[String] -> Int -> Int
      internal
 {
         s => count => {
             if count <= 0 then { 0 }
-            else if Text.is_ascii_space_code(Text.char_code_at(s)(count - 1)) then
+            else if Text.is_ascii_space_code(string_char_at_ref(s)(count - 1)) then
             {
                 Text.trim_end_count(s)(count - 1)
             }
@@ -134,8 +140,8 @@ Text :: module {
     {
         s => {
             text_len := string_length(s);
-            start := Text.trim_start_index(s)(0);
-            if start <= 0 then { Text.clone(s) }
+            start := Text.trim_start_index(ref s)(0);
+            if start <= 0 then { Text.clone(ref s) }
             else if start >= text_len then { "" }
             else { string_slice(s, start, text_len - start) }
         }
@@ -144,9 +150,9 @@ Text :: module {
     trim_end :: String -> String
     {
         s => {
-            count := Text.trim_end_count(s)(string_length(s));
+            count := Text.trim_end_count(ref s)(string_length(s));
             if count <= 0 then { "" }
-            else if count >= string_length(s) then { Text.clone(s) }
+            else if count >= string_length(s) then { Text.clone(ref s) }
             else { string_slice(s, 0, count) }
         }
     }
@@ -190,7 +196,7 @@ Text :: module {
         s => count => {
             text_len := string_length(s);
             if count <= 0 then { "" }
-            else if count >= text_len then { Text.clone(s) }
+            else if count >= text_len then { Text.clone(ref s) }
             else { string_slice(s, 0, count) }
         }
     }
@@ -199,7 +205,7 @@ Text :: module {
     {
         s => count => {
             text_len := string_length(s);
-            if count <= 0 then { Text.clone(s) }
+            if count <= 0 then { Text.clone(ref s) }
             else if count >= text_len then { "" }
             else { string_slice(s, count, text_len - count) }
         }
@@ -210,7 +216,7 @@ Text :: module {
         s => count => {
             text_len := string_length(s);
             if count <= 0 then { "" }
-            else if count >= text_len then { Text.clone(s) }
+            else if count >= text_len then { Text.clone(ref s) }
             else { string_slice(s, text_len - count, count) }
         }
     }
@@ -219,7 +225,7 @@ Text :: module {
     {
         s => count => {
             text_len := string_length(s);
-            if count <= 0 then { Text.clone(s) }
+            if count <= 0 then { Text.clone(ref s) }
             else if count >= text_len then { "" }
             else { string_slice(s, 0, text_len - count) }
         }
@@ -245,39 +251,39 @@ Text :: module {
     }
 
 
-    contains_from :: String -> String -> Int -> Bool
+    contains_from :: Ref[String] -> String -> Int -> Bool
      internal
 {
         s => needle => index => {
             needle_len := string_length(needle);
-            text_len := string_length(s);
+            text_len := string_length_ref(s);
             if index + needle_len > text_len then { false }
-            else if string_equals(string_slice(s, index, needle_len), needle) then { true }
+            else if string_equals(string_slice_ref(s, index, needle_len), needle) then { true }
             else { Text.contains_from(s)(needle)(index + 1) }
         }
     }
 
     contains :: String -> String -> Bool
     {
-        s => needle => if string_length(needle) == 0 then { true } else { Text.contains_from(s)(needle)(0) }
+        s => needle => if string_length(needle) == 0 then { true } else { Text.contains_from(ref s)(needle)(0) }
     }
 
 
-    index_of_from_opt :: String -> String -> Int -> Option[Int]
+    index_of_from_opt :: Ref[String] -> String -> Int -> Option[Int]
      internal
 {
         s => needle => index => {
             needle_len := string_length(needle);
-            text_len := string_length(s);
+            text_len := string_length_ref(s);
             if index + needle_len > text_len then { None() }
-            else if string_equals(string_slice(s, index, needle_len), needle) then { Some(index) }
+            else if string_equals(string_slice_ref(s, index, needle_len), needle) then { Some(index) }
             else { Text.index_of_from_opt(s)(needle)(index + 1) }
         }
     }
 
     index_of_opt :: String -> String -> Option[Int]
     {
-        s => needle => if string_length(needle) == 0 then { Some(0) } else { Text.index_of_from_opt(s)(needle)(0) }
+        s => needle => if string_length(needle) == 0 then { Some(0) } else { Text.index_of_from_opt(ref s)(needle)(0) }
     }
 
     index_of_or :: String -> String -> Int -> Int
@@ -286,13 +292,13 @@ Text :: module {
     }
 
 
-    last_index_of_from_opt :: String -> String -> Int -> Option[Int]
+    last_index_of_from_opt :: Ref[String] -> String -> Int -> Option[Int]
      internal
 {
         s => needle => index => {
             needle_len := string_length(needle);
             if index < 0 then { None() }
-            else if string_equals(string_slice(s, index, needle_len), needle) then { Some(index) }
+            else if string_equals(string_slice_ref(s, index, needle_len), needle) then { Some(index) }
             else { Text.last_index_of_from_opt(s)(needle)(index - 1) }
         }
     }
@@ -304,7 +310,7 @@ Text :: module {
             text_len := string_length(s);
             if needle_len == 0 then { Some(text_len) }
             else if needle_len > text_len then { None() }
-            else { Text.last_index_of_from_opt(s)(needle)(text_len - needle_len) }
+            else { Text.last_index_of_from_opt(ref s)(needle)(text_len - needle_len) }
         }
     }
 
@@ -314,14 +320,14 @@ Text :: module {
     }
 
 
-    count_from :: String -> String -> Int -> Int
+    count_from :: Ref[String] -> String -> Int -> Int
      internal
 {
         s => needle => index => {
             needle_len := string_length(needle);
-            text_len := string_length(s);
+            text_len := string_length_ref(s);
             if index + needle_len > text_len then { 0 }
-            else if string_equals(string_slice(s, index, needle_len), needle) then
+            else if string_equals(string_slice_ref(s, index, needle_len), needle) then
             {
                 1 + Text.count_from(s)(needle)(index + 1)
             }
@@ -331,29 +337,29 @@ Text :: module {
 
     count :: String -> String -> Int
     {
-        s => needle => if string_length(needle) == 0 then { 0 } else { Text.count_from(s)(needle)(0) }
+        s => needle => if string_length(needle) == 0 then { 0 } else { Text.count_from(ref s)(needle)(0) }
     }
 
     repeat :: String -> Int -> String
     {
-        s => times => if times <= 0 then { "" } else { s ++ Text.repeat(s)(times - 1) }
+        s => times => if times <= 0 then { "" } else { Text.clone(ref s) ++ Text.repeat(Text.clone(ref s))(times - 1) }
     }
 
     replace_all :: String -> String -> String -> String
     {
         s => needle => replacement => {
             needle_len := string_length(needle);
-            if needle_len == 0 then { Text.clone(s) }
+            if needle_len == 0 then { Text.clone(ref s) }
             else {
-                match Text.index_of_opt(s)(needle)
+                match Text.index_of_opt(Text.clone(ref s))(Text.clone(ref needle))
                 {
                     Some(index) => {
                         prefix := string_slice(s, 0, index);
                         rest_start := index + needle_len;
                         rest := string_slice(s, rest_start, string_length(s) - rest_start);
-                        prefix ++ replacement ++ Text.replace_all(rest)(needle)(replacement)
+                        prefix ++ Text.clone(ref replacement) ++ Text.replace_all(rest)(Text.clone(ref needle))(Text.clone(ref replacement))
                     },
-                    None() => Text.clone(s)
+                    None() => Text.clone(ref s)
                 }
             }
         }
@@ -365,7 +371,7 @@ Text :: module {
             separator_len := string_length(separator);
             if separator_len == 0 then { None() }
             else {
-                match Text.index_of_opt(s)(separator)
+                match Text.index_of_opt(Text.clone(ref s))(Text.clone(ref separator))
                 {
                     Some(index) => {
                         right_start := index + separator_len;
@@ -379,7 +385,7 @@ Text :: module {
 
     before_or :: String -> String -> String -> String
     {
-        s => separator => fallback => match Text.split_once(s)(separator)
+        s => separator => fallback => match Text.split_once(Text.clone(ref s))(Text.clone(ref separator))
         {
             Some((before, _)) => before,
             None() => fallback
@@ -388,7 +394,7 @@ Text :: module {
 
     after_or :: String -> String -> String -> String
     {
-        s => separator => fallback => match Text.split_once(s)(separator)
+        s => separator => fallback => match Text.split_once(Text.clone(ref s))(Text.clone(ref separator))
         {
             Some((_, after)) => after,
             None() => fallback
@@ -399,12 +405,12 @@ Text :: module {
     {
         s => separator => {
             separator_len := string_length(separator);
-            if separator_len == 0 then { [Text.clone(s)] }
+            if separator_len == 0 then { [Text.clone(ref s)] }
             else {
-                match Text.split_once(s)(separator)
+                match Text.split_once(Text.clone(ref s))(Text.clone(ref separator))
                 {
-                    Some((before, after)) => [before, ..Text.split(after)(separator)],
-                    None() => [Text.clone(s)]
+                    Some((before, after)) => [before, ..Text.split(after)(Text.clone(ref separator))],
+                    None() => [Text.clone(ref s)]
                 }
             }
         }
@@ -444,8 +450,8 @@ Text :: module {
             if count <= 0 || string_length(fill) == 0 then { "" }
             else {
                 fill_len := string_length(fill);
-                if fill_len >= count then { Text.take(fill)(count) }
-                else { fill ++ Text.repeat_to_length(fill)(count - fill_len) }
+                if fill_len >= count then { Text.take(Text.clone(ref fill))(count) }
+                else { Text.clone(ref fill) ++ Text.repeat_to_length(Text.clone(ref fill))(count - fill_len) }
             }
         }
     }
@@ -454,7 +460,7 @@ Text :: module {
     {
         s => width => fill => {
             text_len := string_length(s);
-            if string_length(fill) == 0 || text_len >= width then { Text.clone(s) }
+            if string_length(fill) == 0 || text_len >= width then { Text.clone(ref s) }
             else { Text.repeat_to_length(fill)(width - text_len) ++ s }
         }
     }
@@ -463,7 +469,7 @@ Text :: module {
     {
         s => width => fill => {
             text_len := string_length(s);
-            if string_length(fill) == 0 || text_len >= width then { Text.clone(s) }
+            if string_length(fill) == 0 || text_len >= width then { Text.clone(ref s) }
             else { s ++ Text.repeat_to_length(fill)(width - text_len) }
         }
     }
@@ -510,11 +516,11 @@ Text :: module {
     }
 
     ShowString :: instance Traits.Show {
-        show :: String -> String { s => Text.clone(s) }
+        show :: String -> String { s => Text.clone(ref s) }
     }
 
     CloneString :: instance Traits.Clone {
-        clone :: String -> String { s => Text.clone(s) }
+        clone :: Ref[String] -> String { s => Text.clone(s) }
     }
 
     append :: String -> String -> String { left => right => left ++ right }

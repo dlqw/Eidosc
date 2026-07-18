@@ -14,7 +14,11 @@ public sealed partial class NameResolver
     /// </summary>
     private void TryRegisterTraitImplByConvention(FuncDef func)
     {
-        if (!TryGetImplTargetType(func, out var implementingTypePath, out var targetTypeId))
+        if (!TryGetImplTargetType(
+                func,
+                out var implementingTypePath,
+                out var targetTypeId,
+                cloneReceiver: string.Equals(func.Name, "clone", StringComparison.Ordinal)))
         {
             return;
         }

@@ -15,9 +15,11 @@ PriorityQueue :: module {
     MinPriorityQueue[V] :: type {heap:: BinaryHeap[MinPriorityEntry[V]]}
 
     CloneMinPriorityEntryV :: instance Traits.Clone {
-        clone[V: Traits.Clone] :: MinPriorityEntry[V] -> MinPriorityEntry[V]
+        clone[V: Traits.Clone] :: Ref[MinPriorityEntry[V]] -> MinPriorityEntry[V]
             {
-                MinPriorityEntry(priority, value) => MinPriorityEntry(priority, TraitInvoke.clone_value(value))
+                value => match *value {
+                    MinPriorityEntry(priority, item) => MinPriorityEntry(priority, TraitInvoke.clone_value(ref item))
+                }
             }
     }
 

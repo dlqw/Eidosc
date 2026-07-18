@@ -221,18 +221,20 @@ Ordering :: module {
     }
 
     CloneOrdering :: instance Traits.Clone {
-        clone :: Ordering -> Ordering
+        clone :: Ref[Ordering] -> Ordering
             {
-                Less() => Less(),
-                Equal() => Equal(),
-                Greater() => Greater()
+                value => match *value {
+                    Less() => Less(),
+                    Equal() => Equal(),
+                    Greater() => Greater()
+                }
             }
     }
 
     CloneBool :: instance Traits.Clone {
-        clone :: Bool -> Bool
+        clone :: Ref[Bool] -> Bool
             {
-                value => value
+                value => *value
             }
     }
 }

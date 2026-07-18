@@ -26,7 +26,7 @@ main :: Unit -> Int
 {
     _ => {
         first := Shared.new((40, 2))
-        second := Shared.clone(first)
+        second := Shared.clone(ref first)
         same := Shared.ptr_eq(first)(second)
         borrowed := Shared.borrow(second)
         match *borrowed {
