@@ -3,10 +3,10 @@ GameMath :: module {
     import Math
     import Traits
 
-    IVec2 :: type {x:: Int, y:: Int}
-    Vec2 :: type {x:: Float, y:: Float}
-    IRect :: type {x:: Int, y:: Int, width:: Int, height:: Int}
-    Rect :: type {x:: Float, y:: Float, width:: Float, height:: Float}
+    IVec2 :: type derive Copy {x:: Int, y:: Int}
+    Vec2 :: type derive Copy {x:: Float, y:: Float}
+    IRect :: type derive Copy {x:: Int, y:: Int, width:: Int, height:: Int}
+    Rect :: type derive Copy {x:: Float, y:: Float, width:: Float, height:: Float}
 
     zero_i :: IVec2 = IVec2{x: 0, y: 0};
     unit_x_i :: IVec2 = IVec2{x: 1, y: 0};
@@ -571,30 +571,31 @@ GameMath :: module {
     }
 
     CloneIVec2 :: instance Traits.Clone {
-        clone :: IVec2 -> IVec2
+        clone :: Ref[IVec2] -> IVec2
         {
-            value => value
+            value => *value
         }
     }
 
     CloneVec2 :: instance Traits.Clone {
-        clone :: Vec2 -> Vec2
+        clone :: Ref[Vec2] -> Vec2
         {
-            value => value
+            value => *value
         }
     }
 
     CloneIRect :: instance Traits.Clone {
-        clone :: IRect -> IRect
+        clone :: Ref[IRect] -> IRect
         {
-            value => value
+            value => *value
         }
     }
 
     CloneRect :: instance Traits.Clone {
-        clone :: Rect -> Rect
+        clone :: Ref[Rect] -> Rect
         {
-            value => value
+            value => *value
         }
     }
+
 }
