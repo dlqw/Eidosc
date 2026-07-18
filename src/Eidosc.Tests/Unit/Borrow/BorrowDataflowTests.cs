@@ -15,6 +15,127 @@ namespace Eidosc.Tests.Unit.Borrow;
 public partial class BorrowDataflowTests
 {
     [Fact]
+    public void AffineChecker_MoveFieldThenReadAggregate_ReportsPartialMove()
+    {
+        var aggregateType = new TypeId(9000);
+        var fieldType = new TypeId(BaseTypes.StringId);
+        var value = new LocalId { Value = 1 };
+        var movedField = new LocalId { Value = 2 };
+        var readBack = new LocalId { Value = 3 };
+        var field = new MirPlace
+        {
+            Kind = PlaceKind.Field,
+            Base = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = aggregateType },
+            FieldName = "name",
+            TypeId = fieldType
+        };
+
+        var function = new MirFunc
+        {
+            Name = "partial_move",
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = value, Name = "value", TypeId = aggregateType, IsParameter = true },
+                new MirLocal { Id = movedField, Name = "moved_field", TypeId = fieldType },
+                new MirLocal { Id = readBack, Name = "read_back", TypeId = aggregateType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirMove
+                        {
+                            Source = field,
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = movedField, TypeId = fieldType }
+                        },
+                        new MirLoad
+                        {
+                            Source = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = aggregateType },
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = readBack, TypeId = aggregateType }
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        var usage = new VariableUsageAnalyzer(function);
+        usage.Analyze();
+        var checker = new AffineTypeChecker(function, usage);
+        checker.Check();
+
+        Assert.Contains(checker.Diagnostics, diagnostic => diagnostic.Kind == AffineErrorKind.UseAfterPartialMove);
+    }
+
+    [Fact]
+    public void AffineChecker_ReinitializeMovedField_AllowsAggregateRead()
+    {
+        var aggregateType = new TypeId(9001);
+        var fieldType = new TypeId(BaseTypes.StringId);
+        var value = new LocalId { Value = 1 };
+        var movedField = new LocalId { Value = 2 };
+        var readBack = new LocalId { Value = 3 };
+        var field = new MirPlace
+        {
+            Kind = PlaceKind.Field,
+            Base = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = aggregateType },
+            FieldName = "name",
+            TypeId = fieldType
+        };
+
+        var function = new MirFunc
+        {
+            Name = "reinitialize_partial_move",
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = value, Name = "value", TypeId = aggregateType, IsParameter = true },
+                new MirLocal { Id = movedField, Name = "moved_field", TypeId = fieldType },
+                new MirLocal { Id = readBack, Name = "read_back", TypeId = aggregateType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirMove
+                        {
+                            Source = field,
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = movedField, TypeId = fieldType }
+                        },
+                        new MirStore
+                        {
+                            Target = field,
+                            Value = new MirPlace { Kind = PlaceKind.Local, Local = movedField, TypeId = fieldType }
+                        },
+                        new MirLoad
+                        {
+                            Source = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = aggregateType },
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = readBack, TypeId = aggregateType }
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        var usage = new VariableUsageAnalyzer(function);
+        usage.Analyze();
+        var checker = new AffineTypeChecker(function, usage);
+        checker.Check();
+
+        Assert.DoesNotContain(checker.Diagnostics, diagnostic => diagnostic.Kind == AffineErrorKind.UseAfterPartialMove);
+    }
+
+    [Fact]
     public void AffineChecker_MoveInPredecessor_ReportsUseAfterMoveInSuccessor()
     {
         var intType = new TypeId(BaseTypes.IntId);

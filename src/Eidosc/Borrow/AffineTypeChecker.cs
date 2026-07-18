@@ -68,6 +68,7 @@ public sealed class AffineTypeChecker
     /// </summary>
     private readonly SourceSpan[] _moveSpans;
     private readonly bool[] _hasMoveInfo;
+    private readonly Dictionary<string, (BlockId Block, int Index, SourceSpan Span)> _movedPlaces = [];
 
     /// <summary>
     /// 诊断信息
@@ -114,6 +115,7 @@ public sealed class AffineTypeChecker
         Array.Clear(_moveLocations);
         Array.Clear(_moveSpans);
         Array.Clear(_hasMoveInfo);
+        _movedPlaces.Clear();
 
         var initialStates = CreateInitialVariableStates();
         var cfg = _precomputedCfg ?? new ControlFlowGraph(_function);
@@ -651,6 +653,11 @@ public sealed class AffineTypeChecker
                 blockId,
                 index,
                 ResolveSpan((load.Source as MirPlace)?.Span ?? SourceSpan.Empty, load.Source.Span, load.Span));
+            CheckPartialMoveUse(
+                BorrowTarget.ForLocal(binding.Source),
+                blockId,
+                index,
+                ResolveSpan((load.Source as MirPlace)?.Span ?? SourceSpan.Empty, load.Source.Span, load.Span));
             SetState(binding.Target, VariableState.Initialized);
             return;
         }
@@ -671,7 +678,7 @@ public sealed class AffineTypeChecker
 
         if (store.Target is not null)
         {
-            CheckOperandUse(store.Target, blockId, index);
+            ClearMovedPlace(store.Target);
         }
     }
 
@@ -694,10 +701,7 @@ public sealed class AffineTypeChecker
         }
 
         // Copy 不改变源变量状态
-        if (copy.Source?.Kind == PlaceKind.Local)
-        {
-            CheckVariableUse(copy.Source.Local, blockId, index, ResolveSpan(copy.Source.Span, copy.Span));
-        }
+        CheckOperandUse(copy.Source, blockId, index);
 
         MarkInitialized(copy.Target);
     }
@@ -712,9 +716,15 @@ public sealed class AffineTypeChecker
         }
 
         // Move 将源标记为已移动
-        if (move.Source?.Kind == PlaceKind.Local)
+        if (move.Source is MirPlace sourcePlace && sourcePlace.Kind == PlaceKind.Local)
         {
-            CheckMoveSource(move.Source.Local, ResolveSpan(move.Source.Span, move.Span), blockId, index);
+            CheckMoveSource(sourcePlace.Local, ResolveSpan(move.Source.Span, move.Span), blockId, index);
+            ClearMovedDescendants(sourcePlace);
+        }
+        else if (move.Source is MirPlace projectedSource)
+        {
+            CheckOperandUse(projectedSource, blockId, index);
+            MarkMovedPlace(projectedSource, blockId, index, ResolveSpan(move.Source.Span, move.Span));
         }
 
         // 标记目标为已初始化
@@ -776,10 +786,105 @@ public sealed class AffineTypeChecker
 
     private void CheckOperandUse(MirOperand? operand, BlockId blockId, int index)
     {
-        if (operand is MirPlace place && place.Kind == PlaceKind.Local)
+        if (operand is not MirPlace place)
         {
-            CheckVariableUse(place.Local, blockId, index, ResolveSpan(place.Span, operand.Span));
+            return;
         }
+
+        if (place.Kind == PlaceKind.Local)
+        {
+            var useSpan = ResolveSpan(place.Span, operand.Span);
+            CheckVariableUse(place.Local, blockId, index, useSpan);
+            CheckPartialMoveUse(BorrowTarget.ForLocal(place.Local), blockId, index, useSpan);
+            return;
+        }
+
+        if (!BorrowTarget.TryResolve(place, out var target))
+        {
+            return;
+        }
+
+        CheckPartialMoveUse(target, blockId, index, ResolveSpan(place.Span, operand.Span));
+    }
+
+    private void CheckPartialMoveUse(BorrowTarget target, BlockId blockId, int index, SourceSpan span)
+    {
+        if (!TryGetMovedPlace(target, out var moved))
+        {
+            return;
+        }
+
+        AddDiagnostic(new AffineDiagnostic
+        {
+            Kind = AffineErrorKind.UseAfterPartialMove,
+            Variable = target.BaseLocal,
+            FirstLocation = (moved.Block, moved.Index),
+            SecondLocation = (blockId, index),
+            Span = span,
+            RelatedSpan = moved.Span,
+            Message = "value is used after one of its places was moved"
+        });
+    }
+
+    private void MarkMovedPlace(MirPlace place, BlockId blockId, int index, SourceSpan span)
+    {
+        if (BorrowTarget.TryResolve(place, out var target))
+        {
+            _movedPlaces[target.StableKey] = (blockId, index, span);
+        }
+    }
+
+    private bool TryGetMovedPlace(BorrowTarget target, out (BlockId Block, int Index, SourceSpan Span) moved)
+    {
+        foreach (var (key, location) in _movedPlaces)
+        {
+            if (!key.StartsWith($"{target.BaseLocal.Value}:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var separator = key.IndexOf(':');
+            var movedTarget = new BorrowTarget
+            {
+                BaseLocal = target.BaseLocal,
+                PathKey = separator >= 0 ? key[(separator + 1)..] : "root"
+            };
+            if (movedTarget.OverlapsWith(target))
+            {
+                moved = location;
+                return true;
+            }
+        }
+
+        moved = default;
+        return false;
+    }
+
+    private void ClearMovedPlace(MirOperand operand)
+    {
+        if (operand is not MirPlace place || !BorrowTarget.TryResolve(place, out var target))
+        {
+            return;
+        }
+
+        foreach (var key in _movedPlaces.Keys.ToArray())
+        {
+            var separator = key.IndexOf(':');
+            var movedTarget = new BorrowTarget
+            {
+                BaseLocal = target.BaseLocal,
+                PathKey = separator >= 0 ? key[(separator + 1)..] : "root"
+            };
+            if (movedTarget.OverlapsWith(target))
+            {
+                _movedPlaces.Remove(key);
+            }
+        }
+    }
+
+    private void ClearMovedDescendants(MirPlace place)
+    {
+        ClearMovedPlace(place);
     }
 
     private void CheckVariableUse(LocalId localId, BlockId blockId, int index, SourceSpan useSpan)
@@ -924,6 +1029,11 @@ public enum AffineErrorKind
     /// 移动后使用
     /// </summary>
     UseAfterMove,
+
+    /// <summary>
+    /// 部分移动后使用
+    /// </summary>
+    UseAfterPartialMove,
 
     /// <summary>
     /// 重复移动

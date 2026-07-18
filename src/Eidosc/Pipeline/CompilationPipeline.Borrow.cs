@@ -1427,6 +1427,7 @@ public sealed partial class CompilationPipeline
     private static readonly FrozenDictionary<AffineErrorKind, string> AffineCodeMapping = new Dictionary<AffineErrorKind, string>
     {
         [AffineErrorKind.UseAfterMove] = "E1001",
+        [AffineErrorKind.UseAfterPartialMove] = "E1001",
         [AffineErrorKind.DoubleMove] = "E1001",
         [AffineErrorKind.AffineReuse] = "E1001",
     }.ToFrozenDictionary();
