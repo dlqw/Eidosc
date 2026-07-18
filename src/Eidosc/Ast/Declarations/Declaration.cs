@@ -29,6 +29,11 @@ public abstract record Declaration : EidosAstNode
     public IReadOnlyList<MetaInvocationIR> MetaInvocations { get; private set; } = [];
 
     /// <summary>
+    /// Unified versioned attachment consumed by semantic and meta phases.
+    /// </summary>
+    public DeclarationAttachmentIR Attachment { get; private set; } = DeclarationAttachmentIR.Empty;
+
+    /// <summary>
     /// 是否显式标记为 export。
     /// </summary>
     public bool IsExported { get; protected set; }
@@ -87,6 +92,7 @@ public abstract record Declaration : EidosAstNode
     {
         BoundClauses = clauses;
         MetaInvocations = invocations;
+        Attachment = new DeclarationAttachmentIR(ClauseSchema.Version, clauses, invocations);
     }
     internal void SetExported(bool exported) => IsExported = exported;
 
