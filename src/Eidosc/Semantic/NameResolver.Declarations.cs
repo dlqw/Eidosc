@@ -601,7 +601,7 @@ public sealed partial class NameResolver
         var leaves = new List<CaseTypeDef>();
         foreach (var caseType in adt.Cases)
         {
-            CollectCaseTypeTree(caseType, rootAdtId, isPublic, leaves);
+            CollectCaseTypeTree(caseType, rootAdtId, rootAdtId, isPublic, leaves);
         }
 
         if (leaves.Count != adt.Constructors.Count)
@@ -666,6 +666,7 @@ public sealed partial class NameResolver
 
     private void CollectCaseTypeTree(
         CaseTypeDef caseType,
+        SymbolId rootAdtId,
         SymbolId parentAdtId,
         bool isPublic,
         List<CaseTypeDef> leaves)
@@ -675,6 +676,16 @@ public sealed partial class NameResolver
         foreach (var diagnostic in clauseBinding.Diagnostics)
         {
             AddError(diagnostic.Span, diagnostic.Message, diagnostic.Code);
+        }
+
+        if (isPublic && clauseBinding.Clauses.Any(static clause =>
+                clause.Kind == DeclarationClauseKind.Internal && clause.HasCompilerOwnedSourceGrant))
+        {
+            var rootName = _symbolTable.GetSymbol<AdtSymbol>(rootAdtId)?.Name ?? "<closed-root>";
+            AddError(
+                caseType.Span,
+                DiagnosticMessages.PublicClosedCaseRootCannotContainInternalDescendant(rootName, caseType.Name),
+                nameof(ErrorCode.E3061_PublicClosedCaseContainsInternalDescendant));
         }
 
         if (TryReportReservedInternalNameDeclaration(caseType.Name, caseType.Span, "case type"))
@@ -705,7 +716,7 @@ public sealed partial class NameResolver
 
         foreach (var child in caseType.Cases)
         {
-            CollectCaseTypeTree(child, caseType.SymbolId, isPublic, leaves);
+            CollectCaseTypeTree(child, rootAdtId, caseType.SymbolId, isPublic, leaves);
         }
     }
 

@@ -1,4 +1,5 @@
 using Eidosc.Pipeline;
+using Eidosc.Symbols;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Semantic;
@@ -270,6 +271,41 @@ run :: box -> box
         var style = Assert.Single(result.Diagnostics, diagnostic =>
             diagnostic.Code == "S1102" && diagnostic.Message.Contains("'box'", StringComparison.Ordinal));
         Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "Box");
+    }
+
+    [Fact]
+    public void Run_ExportedClosedCaseRoot_ExportsCompleteHierarchyForExhaustiveMatching()
+    {
+        var result = RunWorkspaceCompilationAtPhase(
+            CompilationPhase.Types,
+            "main.eidos",
+            ("Lib/Domain.eidos", """
+Lib.Domain :: module {
+    export Message :: type {
+        Text :: type { value :: String },
+        Control :: type { code :: Int },
+    }
+}
+"""),
+            ("main.eidos", """
+import Lib.Domain.*
+
+classify :: Message -> Int {
+    Text { value: _ } => 1,
+    Control { code: _ } => 2
+}
+"""));
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var root = Assert.Single(result.SymbolTable!.Symbols.Values.OfType<AdtSymbol>(), static symbol =>
+            !symbol.IsCaseType && string.Equals(symbol.Name, "Message", StringComparison.Ordinal));
+        var descendants = result.SymbolTable.GetClosedCaseLeafCases(root.Id);
+        Assert.Equal(2, descendants.Count);
+        Assert.All(descendants, caseId => Assert.True(result.SymbolTable.GetSymbol<AdtSymbol>(caseId)!.IsPublic));
+        Assert.All(descendants, caseId =>
+            Assert.True(result.SymbolTable.GetSymbol<CtorSymbol>(
+                result.SymbolTable.GetSymbol<AdtSymbol>(caseId)!.CaseConstructor)!.IsPublic));
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Code == "W4200");
     }
 
     [Fact]

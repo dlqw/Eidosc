@@ -2802,4 +2802,7 @@
   <data name="NamingModuleFileMismatch" xml:space="preserve">
     <value>Module file '{0}' should use lower_snake_case as '{1}'.</value>
   </data>
+  <data name="PublicClosedCaseRootCannotContainInternalDescendant" xml:space="preserve">
+    <value>Public closed case root '{0}' cannot contain internal descendant '{1}'; a closed hierarchy has one atomic visibility.</value>
+  </data>
 </root>

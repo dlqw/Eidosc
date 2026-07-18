@@ -65,6 +65,7 @@ public enum ErrorCode
     E3058_SupertraitTypeArgumentCountMismatch,
     E3059_SelfReferentialSupertrait,
     E3060_DuplicateSupertrait,
+    E3061_PublicClosedCaseContainsInternalDescendant,
 }
 
 public class DiagnosticLabel(SourceSpan span, string message = "")

@@ -386,6 +386,61 @@ choose_leaf :: Bool -> Tree
     }
 
     [Fact]
+    public void Namer_PublicClosedCaseRoot_RejectsInternalDescendant()
+    {
+        const string source = """
+Message :: type {
+    Text :: type { value :: String },
+
+    InternalControl :: type
+        internal
+    {
+        code :: Int,
+    },
+}
+""";
+
+        var result = RunPipelineWithTemporaryInput(
+            source,
+            CompilationPhase.Namer,
+            static options => options.ToolchainOwnedSourcePaths = [options.InputFile]);
+
+        Assert.False(result.Success);
+        var diagnostic = Assert.Single(result.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3061_PublicClosedCaseContainsInternalDescendant");
+        Assert.Contains("InternalControl", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("Message", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Namer_InternalClosedCaseRoot_KeepsEntireHierarchyPrivate()
+    {
+        const string source = """
+Message :: type
+    internal
+{
+    InternalControl :: type {
+        code :: Int,
+    },
+}
+""";
+
+        var result = RunPipelineWithTemporaryInput(
+            source,
+            CompilationPhase.Namer,
+            static options => options.ToolchainOwnedSourcePaths = [options.InputFile]);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var symbolTable = result.SymbolTable!;
+        var root = Assert.Single(symbolTable.Symbols.Values.OfType<AdtSymbol>(), static symbol =>
+            !symbol.IsCaseType && string.Equals(symbol.Name, "Message", StringComparison.Ordinal));
+        var caseType = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(Assert.Single(root.DirectCases)));
+        var constructor = Assert.IsType<CtorSymbol>(symbolTable.GetSymbol(caseType.CaseConstructor));
+        var field = Assert.IsType<FieldSymbol>(symbolTable.GetSymbol(Assert.Single(caseType.Fields)));
+        Assert.All<Symbol>([root, caseType, constructor, field], static symbol => Assert.False(symbol.IsPublic));
+    }
+
+    [Fact]
     public void Types_NestedClosedCaseGenericIdentity_CapturesRootAndEveryCasePathArgument()
     {
         const string source = """

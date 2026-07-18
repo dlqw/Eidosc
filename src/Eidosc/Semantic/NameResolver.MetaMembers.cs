@@ -439,7 +439,7 @@ public sealed partial class NameResolver
                 updatedConstructors.InsertRange(constructorIndex, projectedConstructors);
                 root.SetConstructors(updatedConstructors);
                 var leaves = new List<CaseTypeDef>();
-                CollectCaseTypeTree(caseType, ownerId, isPublic, leaves);
+                CollectCaseTypeTree(caseType, root.SymbolId, ownerId, isPublic, leaves);
                 if (leaves.Count != projectedConstructors.Count)
                 {
                     reason = $"generated case projection mismatch for '{caseType.Name}'";
