@@ -78,6 +78,31 @@ Point :: type  derive Copy
     }
 
     [Fact]
+    public void DeriveCopy_PhantomGeneric_DoesNotRequireUnusedTypeParameter()
+    {
+        const string source = """
+Handle[A] :: type derive Copy { handle :: RawPtr }
+""";
+
+        var result = Compile("derive_copy_phantom_generic.eidos", source);
+        Assert.True(result.Success, FormatDiagnostics(result));
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var handleId = Assert.IsType<SymbolId>(symbolTable.LookupType("Handle"));
+        var handle = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(handleId));
+        var specialized = new TypeId(9001);
+        var descriptors = new Dictionary<int, Eidosc.Types.TypeDescriptor>
+        {
+            [specialized.Value] = new Eidosc.Types.TypeDescriptor.TyCon(
+                Eidosc.Types.TypeConstructorKey.FromSymbol(handleId),
+                [new TypeId(Eidosc.Types.BaseTypes.StringId)])
+        };
+        var resolver = Eidosc.Types.CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable, descriptors);
+
+        Assert.True(resolver(specialized));
+    }
+
+    [Fact]
     public void DeriveClone_SingleConstructor_Compiles()
     {
         const string source = """

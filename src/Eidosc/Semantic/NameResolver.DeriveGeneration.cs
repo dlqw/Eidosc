@@ -234,7 +234,11 @@ public sealed partial class NameResolver
         var requiredConstraint = GetDeriveRequiredConstraint(traitName);
         foreach (var tp in adt.TypeParams)
         {
-            var derivedTp = CreateDerivedTypeParam(tp, requiredConstraint, span);
+            var derivedTp = CreateDerivedTypeParam(
+                tp,
+                requiredConstraint,
+                traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
+                span);
             funcDef.TypeParams.Add(derivedTp);
         }
 
@@ -293,7 +297,11 @@ public sealed partial class NameResolver
         };
     }
 
-    private static TypeParam CreateDerivedTypeParam(TypeParam original, string? requiredConstraint, SourceSpan span)
+    private static TypeParam CreateDerivedTypeParam(
+        TypeParam original,
+        string? requiredConstraint,
+        bool addRequiredConstraint,
+        SourceSpan span)
     {
         var derived = new TypeParam();
         SetPrivate(derived, "Name", original.Name);
@@ -305,7 +313,8 @@ public sealed partial class NameResolver
         foreach (var constraint in original.TraitConstraints)
             derived.TraitConstraints.Add(constraint);
 
-        if (requiredConstraint != null &&
+        if (addRequiredConstraint &&
+            requiredConstraint != null &&
             !derived.TraitConstraints.Any(c =>
                 string.Equals(c.TraitName, requiredConstraint, StringComparison.Ordinal)))
         {
@@ -316,6 +325,50 @@ public sealed partial class NameResolver
         }
 
         return derived;
+    }
+
+    private static bool AdtUsesTypeParameter(AdtDef adt, string typeParameterName)
+    {
+        foreach (var field in adt.Fields)
+        {
+            if (TypeUsesTypeParameter(field.Type, typeParameterName))
+            {
+                return true;
+            }
+        }
+
+        foreach (var constructor in adt.Constructors)
+        {
+            if (constructor.PositionalArgs.Any(type => TypeUsesTypeParameter(type, typeParameterName)) ||
+                constructor.NamedArgs.Any(field => TypeUsesTypeParameter(field.Type, typeParameterName)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TypeUsesTypeParameter(TypeNode? type, string typeParameterName)
+    {
+        return type switch
+        {
+            null => false,
+            TypePath path => string.Equals(path.TypeName, typeParameterName, StringComparison.Ordinal) ||
+                             path.TypeArgs.Any(argument => TypeUsesTypeParameter(argument, typeParameterName)) ||
+                             path.GenericArguments.Any(argument => argument switch
+                             {
+                                 TypeGenericArgumentNode typed => TypeUsesTypeParameter(typed.Type, typeParameterName),
+                                 UnresolvedGenericArgumentNode unresolved => TypeUsesTypeParameter(unresolved.TypeCandidate, typeParameterName),
+                                 _ => false
+                             }),
+            TupleType tuple => tuple.Elements.Any(element => TypeUsesTypeParameter(element, typeParameterName)),
+            ArrowType arrow => TypeUsesTypeParameter(arrow.ParamType, typeParameterName) ||
+                               TypeUsesTypeParameter(arrow.ReturnType, typeParameterName),
+            EffectfulType effectful => TypeUsesTypeParameter(effectful.InputType, typeParameterName) ||
+                                       TypeUsesTypeParameter(effectful.OutputType, typeParameterName),
+            _ => false
+        };
     }
 
     private List<PatternBranch> GenerateDerivedBranches(AdtDef adt, string traitName, SourceSpan span)

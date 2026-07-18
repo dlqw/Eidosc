@@ -5,7 +5,7 @@ TaskGroup :: module {
     import Task
 
 /// A group of related tasks (structured concurrency).
-TaskGroup :: type {handle:: RawPtr}
+TaskGroup :: type derive Copy {handle:: RawPtr}
 
 /// Snapshot of a task group's observable runtime state.
 Status :: type {

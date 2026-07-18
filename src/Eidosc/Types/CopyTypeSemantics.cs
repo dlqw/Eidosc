@@ -256,11 +256,36 @@ public static class CopyTypeSemantics
             return false;
         }
 
-        return symbolTable.LookupImplForTraitByKeys(
+        var matched = symbolTable.LookupImplForTraitByKeys(
             lookupTypeId,
             copyTrait,
             implementingTypeKey,
             traitTypeArgKeys: null) != null;
+        if (!matched && implementingTypeKey.TypeArguments.IsDefaultOrEmpty)
+        {
+            matched = symbolTable.LookupImplForTrait(
+                lookupTypeId,
+                copyTrait,
+                implementingTypeKey.Text,
+                traitTypeArgs: null) != null;
+            if (!matched && typeDescriptors?.TryGetValue(typeId.Value, out var descriptor) == true &&
+                descriptor is TypeDescriptor.TyCon { Constructor.Kind: TypeConstructorKeyKind.Symbol } tyCon &&
+                symbolTable.GetSymbol(tyCon.Constructor.SymbolId) is { } constructorSymbol)
+            {
+                matched = symbolTable.LookupImplForTrait(
+                    lookupTypeId,
+                    copyTrait,
+                    constructorSymbol.Name,
+                    traitTypeArgs: null) != null;
+                if (!matched)
+                {
+                    matched = symbolTable.GetImplsForTrait(copyTrait)
+                        .Any(impl => impl.ImplementingType == lookupTypeId &&
+                                    impl.ImplementingTypeKey.SymbolId == tyCon.Constructor.SymbolId);
+                }
+            }
+        }
+        return matched;
     }
 
     private static bool TryBuildCopyImplLookup(

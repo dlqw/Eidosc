@@ -8,7 +8,7 @@ ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
 
 
 /// A runtime-backed channel handle.
-Channel[A] :: type {handle:: RawPtr}
+Channel[A] :: type derive Copy {handle:: RawPtr}
 
 /// Non-blocking receive result for a runtime-backed raw-payload Channel.
 ReceiveStatus :: type {

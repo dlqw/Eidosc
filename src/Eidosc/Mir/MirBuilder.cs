@@ -156,6 +156,7 @@ public sealed partial class MirBuilder
         _constructorLayouts = constructorLayouts != null
             ? new Dictionary<int, List<ConstructorTypeLayout>>(constructorLayouts)
             : [];
+        AddClosedDeclaredCopyLayoutsForDynamicTypes();
 
         if (extraCopyLikeTypeIds == null)
         {
@@ -850,6 +851,39 @@ public sealed partial class MirBuilder
             HirIndexAccess indexAccess => ConvertIndexAccess(indexAccess),
             _ => ReportUnsupportedExpr(node)
         };
+    }
+
+    private void AddClosedDeclaredCopyLayoutsForDynamicTypes()
+    {
+        if (_symbolTable == null || _constructorLayouts.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (typeIdValue, descriptor) in _typeDescriptorsById.ToArray())
+        {
+            if (descriptor is not TypeDescriptor.TyCon
+                {
+                    Constructor.Kind: TypeConstructorKeyKind.Symbol
+                } tyCon ||
+                _constructorLayouts.ContainsKey(typeIdValue) ||
+                _symbolTable.GetSymbol(tyCon.Constructor.SymbolId) is not { TypeId.IsValid: true } constructorSymbol ||
+                !_constructorLayouts.TryGetValue(constructorSymbol.TypeId.Value, out var declaredLayouts) ||
+                declaredLayouts.Count == 0 ||
+                declaredLayouts.Any(layout => layout.FieldTypeIds.Any(IsOpenCopyLayoutField)))
+            {
+                continue;
+            }
+
+            _constructorLayouts[typeIdValue] = declaredLayouts;
+        }
+    }
+
+    private bool IsOpenCopyLayoutField(TypeId fieldTypeId)
+    {
+        return (_typeDescriptorsById.TryGetValue(fieldTypeId.Value, out var descriptor) &&
+                descriptor is TypeDescriptor.TypeVar) ||
+               _symbolTable?.GetSymbol(new SymbolId(fieldTypeId.Value)) is TypeParamSymbol;
     }
 
     private MirOperand ConvertCaseInject(HirCaseInject injection)

@@ -1,6 +1,7 @@
 RwLock :: module {
     import Ffi
     import Option
+    import Traits
 
 
 
@@ -8,10 +9,10 @@ ptr_null :: Unit -> RawPtr internal intrinsic "ptr_null";
 
 
 /// A reader-writer lock allowing concurrent reads or exclusive writes.
-RwLock[A] :: type {handle:: RawPtr}
+RwLock[A] :: type derive Copy {handle:: RawPtr}
 
 /// Observable non-blocking reader-writer lock state.
-Status :: type {
+Status :: type derive Copy {
     RwLockIdle :: type {} , RwLockReadable :: type {} , RwLockBlocked :: type {}
 }
 

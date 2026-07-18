@@ -8,7 +8,7 @@ ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
 
 
 /// A write-once promise that can be awaited by multiple readers.
-Promise[A] :: type {promise:: RawPtr}
+Promise[A] :: type derive Copy {promise:: RawPtr}
 
 /// Observable state of a runtime-backed Promise.
 Status :: type {

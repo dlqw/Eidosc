@@ -1,6 +1,7 @@
 Mutex :: module {
     import Ffi
     import Option
+    import Traits
 
 
 
@@ -8,10 +9,10 @@ ptr_null :: Unit -> RawPtr internal intrinsic "ptr_null";
 
 
 /// A mutual exclusion lock for protecting shared state.
-Mutex[A] :: type {handle:: RawPtr}
+Mutex[A] :: type derive Copy {handle:: RawPtr}
 
 /// Observable non-blocking mutex state.
-Status :: type {
+Status :: type derive Copy {
     MutexAvailable :: type {} , MutexLocked :: type {}
 }
 

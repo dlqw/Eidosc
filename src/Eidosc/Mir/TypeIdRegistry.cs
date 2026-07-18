@@ -19,6 +19,7 @@ internal sealed class TypeIdRegistry
 {
     private readonly SymbolTable _symbolTable;
     private readonly TypeInferer? _typeInferer;
+    private readonly Func<TypeId, bool> _copyImplResolver;
 
     private readonly Dictionary<string, TypeId> _typeIdCache = new();
     private readonly Dictionary<TypeDescriptor, TypeId> _typeIdByDescriptor = new(TypeDescriptorStructuralComparer.Instance);
@@ -39,6 +40,7 @@ internal sealed class TypeIdRegistry
     {
         _symbolTable = symbolTable;
         _typeInferer = typeInferer;
+        _copyImplResolver = CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable, _typeDescriptorById);
         _nextDynamicTypeId = ComputeInitialDynamicTypeId(symbolTable);
     }
 
@@ -507,12 +509,31 @@ internal sealed class TypeIdRegistry
 
     private void RegisterCopyLikeTypeId(DrivenType type, TypeId typeId)
     {
-        if (!typeId.IsValid || !IsCopyLikeGenericType(type))
+        if (!typeId.IsValid)
         {
             return;
         }
 
-        _copyLikeTypeIds.Add(typeId);
+        if (IsCopyLikeGenericType(type) ||
+            (_copyImplResolver(typeId) && HasClosedCopyLayout(typeId)) ||
+            CopyTypeSemantics.IsCopyType(
+                typeId,
+                _copyImplResolver,
+                _typeDescriptorById,
+                null,
+                _constructorLayouts))
+        {
+            _copyLikeTypeIds.Add(typeId);
+        }
+    }
+
+    private bool HasClosedCopyLayout(TypeId typeId)
+    {
+        return _constructorLayouts.TryGetValue(typeId.Value, out var layouts) &&
+               layouts.Count > 0 &&
+               layouts.All(layout => layout.FieldTypeIds.All(fieldTypeId =>
+                   CopyTypeSemantics.IsIntrinsicCopyType(fieldTypeId) ||
+                   _copyLikeTypeIds.Contains(fieldTypeId)));
     }
 
     private bool IsCopyLikeGenericType(DrivenType type)
@@ -572,8 +593,15 @@ internal sealed class TypeIdRegistry
         var declaredAdtTypeId = ResolveDeclaredTypeId(adtSymbol.Id);
         if (declaredAdtTypeId.IsValid &&
             declaredAdtTypeId != adtTypeId &&
-            _constructorLayouts.ContainsKey(declaredAdtTypeId.Value))
+            _constructorLayouts.TryGetValue(declaredAdtTypeId.Value, out var declaredLayouts))
         {
+            if (declaredLayouts.All(layout => layout.FieldTypeIds.All(fieldTypeId =>
+                    _symbolTable.GetSymbol(new SymbolId(fieldTypeId.Value)) is not TypeParamSymbol &&
+                    (!_typeDescriptorById.TryGetValue(fieldTypeId.Value, out var descriptor) ||
+                     descriptor is not TypeDescriptor.TypeVar))))
+            {
+                _constructorLayouts[adtTypeId.Value] = declaredLayouts;
+            }
             return;
         }
 

@@ -8,7 +8,7 @@ ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
 
 
 /// A concurrent task that produces a value.
-Task[A] :: type {handle:: RawPtr}
+Task[A] :: type derive Copy {handle:: RawPtr}
 
 /// Observable state of a runtime-backed Task.
 Status :: type {
