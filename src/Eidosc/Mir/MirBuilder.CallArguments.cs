@@ -54,6 +54,11 @@ public sealed partial class MirBuilder
                 return CreatePoisonOperand(TypeId.None, span, DiagnosticMessages.MissingMirTypeForCallArgumentReason);
             }
 
+            if (IsFirstClassReferenceType(typeId))
+            {
+                return place with { TypeId = typeId };
+            }
+
             var temp = NewTemp(typeId);
 
             if (ShouldCopyLocalValue(place.Local, typeId))
@@ -100,6 +105,11 @@ public sealed partial class MirBuilder
                     TypeId.None,
                     span,
                     DiagnosticMessages.MissingMirTypeForForcedCopyCallArgumentReason);
+            }
+
+            if (IsFirstClassReferenceType(typeId))
+            {
+                return place with { TypeId = typeId };
             }
 
             var temp = NewTemp(typeId);
