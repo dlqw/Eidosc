@@ -1,6 +1,7 @@
 Promise :: module {
     import Ffi
     import Option
+    import Traits
 
 
 
@@ -11,7 +12,7 @@ ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
 Promise[A] :: type derive Copy {promise:: RawPtr}
 
 /// Observable state of a runtime-backed Promise.
-Status :: type {
+Status :: type derive Copy {
     PromisePending :: type {} , PromiseFulfilled :: type {}
 }
 

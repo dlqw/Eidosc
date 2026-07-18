@@ -3,12 +3,13 @@ TaskGroup :: module {
     import Seq
     import Option
     import Task
+    import Traits
 
 /// A group of related tasks (structured concurrency).
 TaskGroup :: type derive Copy {handle:: RawPtr}
 
 /// Snapshot of a task group's observable runtime state.
-Status :: type {
+Status :: type derive Copy {
     TaskGroupIdle :: type {} , TaskGroupPending:: type(Int) , TaskGroupCancelled:: type(Int)
 }
 

@@ -1,10 +1,11 @@
 Barrier :: module {
+    import Traits
 
 /// A barrier that synchronizes a fixed number of tasks.
 Barrier :: type derive Copy {handle:: RawPtr}
 
 /// Result of a non-blocking barrier arrival.
-Arrival :: type {
+Arrival :: type derive Copy {
     ArrivalPending :: type {} , ArrivalTripped :: type {}
 }
 

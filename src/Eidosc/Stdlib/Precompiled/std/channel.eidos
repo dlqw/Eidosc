@@ -1,6 +1,7 @@
 Channel :: module {
     import Ffi
     import Option
+    import Traits
 
 
 
@@ -11,7 +12,7 @@ ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
 Channel[A] :: type derive Copy {handle:: RawPtr}
 
 /// Non-blocking receive result for a runtime-backed raw-payload Channel.
-ReceiveStatus :: type {
+ReceiveStatus :: type derive Copy {
     ReceivePending :: type {} , ReceiveClosed :: type {} , ReceiveValue:: type(RawPtr)
 }
 
