@@ -519,7 +519,12 @@ public sealed partial class QueryDrivenPipeline
 
         foreach (var func in borrowModule.Functions)
         {
-            var inferer = new LoanSignatureInferer(func, signatureCache, nameRes.SymbolTable, borrowModule.DynamicTypeKeys);
+            var inferer = new LoanSignatureInferer(
+                func,
+                signatureCache,
+                nameRes.SymbolTable,
+                borrowModule.DynamicTypeKeys,
+                typeDescriptors: borrowModule.TypeDescriptors);
             infererByFunc[func] = inferer;
             inferer.Infer(includeCallConstraints: false, force: true);
         }

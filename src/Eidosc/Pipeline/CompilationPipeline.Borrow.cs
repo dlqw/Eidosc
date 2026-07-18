@@ -69,7 +69,13 @@ public sealed partial class CompilationPipeline
             {
                 var cfg = new ControlFlowGraph(func);
                 cfgByFunc[func] = cfg;
-                var inferer = new LoanSignatureInferer(func, signatureCache, _symbolTable!, borrowModule.DynamicTypeKeys, cfg);
+                var inferer = new LoanSignatureInferer(
+                    func,
+                    signatureCache,
+                    _symbolTable!,
+                    borrowModule.DynamicTypeKeys,
+                    cfg,
+                    borrowModule.TypeDescriptors);
                 inferers.Add((func, inferer));
                 infererByFunc[func] = inferer;
                 inferer.Infer(includeCallConstraints: false, force: true);

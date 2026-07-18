@@ -1,4 +1,5 @@
 using Eidosc.Utils;
+using Eidosc.Types;
 
 namespace Eidosc.Borrow;
 
@@ -173,6 +174,8 @@ public sealed class LifetimeParam
 /// </summary>
 public sealed class LoanSignature
 {
+    internal OwnershipContract OwnershipContract { get; init; } = OwnershipContract.Empty;
+
     /// <summary>
     /// 函数名
     /// </summary>
