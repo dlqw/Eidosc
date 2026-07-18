@@ -69,6 +69,7 @@ public sealed class AffineTypeChecker
     private readonly SourceSpan[] _moveSpans;
     private readonly bool[] _hasMoveInfo;
     private readonly Dictionary<string, (BlockId Block, int Index, SourceSpan Span)> _movedPlaces = [];
+    private readonly Dictionary<int, Dictionary<string, (BlockId Block, int Index, SourceSpan Span)>> _blockOutMovedPlaces = [];
 
     /// <summary>
     /// 诊断信息
@@ -116,6 +117,7 @@ public sealed class AffineTypeChecker
         Array.Clear(_moveSpans);
         Array.Clear(_hasMoveInfo);
         _movedPlaces.Clear();
+        _blockOutMovedPlaces.Clear();
 
         var initialStates = CreateInitialVariableStates();
         var cfg = _precomputedCfg ?? new ControlFlowGraph(_function);
@@ -127,6 +129,8 @@ public sealed class AffineTypeChecker
         for (int blockIndex = 0; blockIndex < _blocks.Length; blockIndex++)
         {
             var block = _blocks[blockIndex];
+
+            SetIncomingMovedPlaces(blockIndex, predecessorIndices);
 
             // 检查是否达到错误限制
             if (_recoveryContext.HasReachedLimit)
@@ -462,6 +466,7 @@ public sealed class AffineTypeChecker
         int[][] predecessorIndices,
         int[][] successorIndices)
     {
+        _blockOutMovedPlaces.Clear();
         var blockOutStates = new VariableState[_blocks.Length][];
         var pendingBlocks = new Queue<int>(_blocks.Length);
         var queuedBlocks = new bool[_blocks.Length];
@@ -481,15 +486,23 @@ public sealed class AffineTypeChecker
             {
                 continue;
             }
-            foreach (var instr in block.Instructions)
+            SetIncomingMovedPlaces(blockIndex, predecessorIndices);
+            for (var instructionIndex = 0; instructionIndex < block.Instructions.Count; instructionIndex++)
             {
-                SimulateInstruction(instr);
+                SimulateInstruction(block.Instructions[instructionIndex], block.Id, instructionIndex);
             }
 
             var existingState = blockOutStates[blockIndex];
-            if (existingState == null || !StatesEqual(existingState, _variableStates))
+            var existingPlaces = _blockOutMovedPlaces.TryGetValue(blockIndex, out var savedPlaces)
+                ? savedPlaces
+                : null;
+            if (existingState == null ||
+                !StatesEqual(existingState, _variableStates) ||
+                existingPlaces == null ||
+                !MovedPlacesEqual(existingPlaces, _movedPlaces))
             {
                 blockOutStates[blockIndex] = CloneStates(_variableStates);
+                _blockOutMovedPlaces[blockIndex] = CloneMovedPlaces(_movedPlaces);
                 foreach (var successorIndex in successorIndices[blockIndex])
                 {
                     if (!queuedBlocks[successorIndex])
@@ -502,6 +515,46 @@ public sealed class AffineTypeChecker
         }
 
         return blockOutStates;
+    }
+
+    private void SetIncomingMovedPlaces(int blockIndex, int[][] predecessorIndices)
+    {
+        _movedPlaces.Clear();
+        if (_blocks[blockIndex].Id.Equals(_function.EntryBlockId))
+        {
+            return;
+        }
+
+        foreach (var predecessorIndex in predecessorIndices[blockIndex])
+        {
+            if (!_blockOutMovedPlaces.TryGetValue(predecessorIndex, out var predecessorPlaces))
+            {
+                continue;
+            }
+
+            foreach (var (key, location) in predecessorPlaces)
+            {
+                _movedPlaces.TryAdd(key, location);
+            }
+        }
+    }
+
+    private static Dictionary<string, (BlockId Block, int Index, SourceSpan Span)> CloneMovedPlaces(
+        IReadOnlyDictionary<string, (BlockId Block, int Index, SourceSpan Span)> places)
+    {
+        return places.ToDictionary(static entry => entry.Key, static entry => entry.Value, StringComparer.Ordinal);
+    }
+
+    private static bool MovedPlacesEqual(
+        IReadOnlyDictionary<string, (BlockId Block, int Index, SourceSpan Span)> left,
+        IReadOnlyDictionary<string, (BlockId Block, int Index, SourceSpan Span)> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        return left.Keys.All(right.ContainsKey);
     }
 
     private int[][] BuildEdgeIndexArray(Func<BlockId, IReadOnlySet<BlockId>> edgeProvider)
@@ -525,7 +578,7 @@ public sealed class AffineTypeChecker
         return edges;
     }
 
-    private void SimulateInstruction(MirInstruction instr)
+    private void SimulateInstruction(MirInstruction instr, BlockId blockId, int instructionIndex)
     {
         switch (instr)
         {
@@ -578,12 +631,18 @@ public sealed class AffineTypeChecker
                 {
                     SetState(moveBinding.Source, VariableState.Moved);
                     SetState(moveBinding.Target, VariableState.Initialized);
+                    ClearMovedDescendants(new MirPlace { Kind = PlaceKind.Local, Local = moveBinding.Source });
                 }
                 else
                 {
-                    if (move.Source?.Kind == PlaceKind.Local)
+                    if (move.Source is MirPlace { Kind: PlaceKind.Local, Local: var sourceLocal })
                     {
-                        SetState(move.Source.Local, VariableState.Moved);
+                        SetState(sourceLocal, VariableState.Moved);
+                        ClearMovedDescendants(move.Source);
+                    }
+                    else if (move.Source is MirPlace projectedSource)
+                    {
+                        MarkMovedPlace(projectedSource, blockId, instructionIndex, move.Span);
                     }
 
                     MarkInitialized(move.Target);
@@ -595,6 +654,10 @@ public sealed class AffineTypeChecker
                 if (store.Target is { Kind: PlaceKind.Local, Local: var storeTarget })
                 {
                     SetState(storeTarget, VariableState.Initialized);
+                }
+                else if (store.Target != null)
+                {
+                    ClearMovedPlace(store.Target);
                 }
 
                 break;
