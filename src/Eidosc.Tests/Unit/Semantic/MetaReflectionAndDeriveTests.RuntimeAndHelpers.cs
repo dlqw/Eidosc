@@ -17,6 +17,7 @@ public sealed partial class MetaReflectionAndDeriveTests
     {
         const string primitiveSource = """
 IntLayout :: comptime meta.layout_of(Int, "x86_64-pc-windows-msvc");
+AliasLayout :: comptime meta.layout_of(Int, "linux-x64");
 """;
         var primitiveResult = Compile("meta_layout_primitive.eidos", primitiveSource);
         Assert.True(primitiveResult.Success, FormatDiagnostics(primitiveResult));
@@ -25,6 +26,9 @@ IntLayout :: comptime meta.layout_of(Int, "x86_64-pc-windows-msvc");
         var layout = Assert.IsType<ComptimeMetaObjectValue>(GetComptimeValue("IntLayout", symbolTable, inferer));
         Assert.True(layout.TryGet("size", out var size));
         Assert.Equal(8, Assert.IsType<ComptimeIntegerValue>(size).Value);
+        var aliasLayout = Assert.IsType<ComptimeMetaObjectValue>(GetComptimeValue("AliasLayout", symbolTable, inferer));
+        Assert.True(aliasLayout.TryGet("target", out var aliasTarget));
+        Assert.Equal("x86_64-pc-linux-gnu", Assert.IsType<ComptimeStringValue>(aliasTarget).Value);
 
         const string incompleteSource = """
 Payload :: type {
@@ -119,10 +123,10 @@ Subject :: type  expand deriveBudget
     public void LayoutReflection_RejectsUnsupportedExplicitTarget()
     {
         const string source = """
-Layout :: comptime meta.layout_of(Int, "unknown-target");
+Layout :: comptime meta.layout_of(Int, "unknown64-target");
 """;
 
-        var result = Compile("meta_layout_unknown_target.eidos", source);
+        var result = Compile("meta_layout_unknown64_target.eidos", source);
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, static diagnostic =>

@@ -1,5 +1,6 @@
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Types;
+using Eidosc.CodeGen;
 using Eidosc.Symbols;
 
 namespace Eidosc.Types;
@@ -26,11 +27,12 @@ internal static partial class MetaComptimeIntrinsics
             return Fail("meta.layout_of expects (Type, non-empty target triple)", out value, out reason);
         }
 
-        var pointerSize = GetTargetPointerSize(target.Value);
-        if (pointerSize == 0)
+        if (!TargetInfo.TryParse(target.Value, out var targetInfo))
         {
             return Fail($"unsupported explicit layout target '{target.Value}'", out value, out reason);
         }
+
+        var pointerSize = targetInfo.PointerWidth / 8;
 
         var layout = GetLayout(typeValue.TypeRef, pointerSize, meta);
         if (!layout.Complete)
@@ -43,7 +45,7 @@ internal static partial class MetaComptimeIntrinsics
 
         value = Obj(
             "layout-info",
-            ("target", new ComptimeStringValue(target.Value)),
+            ("target", new ComptimeStringValue(targetInfo.Triple)),
             ("size", new ComptimeIntegerValue(layout.Size)),
             ("alignment", new ComptimeIntegerValue(layout.Alignment)),
             ("fieldOffsets", List(layout.Offsets.Select(static offset =>
@@ -51,15 +53,6 @@ internal static partial class MetaComptimeIntrinsics
         reason = string.Empty;
         return true;
     }
-
-    private static int GetTargetPointerSize(string target) =>
-        target.Contains("64", StringComparison.Ordinal) ||
-        target.Contains("aarch64", StringComparison.OrdinalIgnoreCase)
-            ? 8
-            : target.Contains("32", StringComparison.Ordinal) ||
-              target.Contains("wasm32", StringComparison.OrdinalIgnoreCase)
-                ? 4
-                : 0;
 
     private static MetaLayoutFact GetLayout(MetaTypeRef type, int pointerSize, MetaComptimeContext meta)
     {

@@ -662,6 +662,45 @@ Probe :: type expand inspect_nested_closed_case_layout {}
     }
 
     [Fact]
+    public void LayoutStageGenerator_ClosedCaseLayoutAcceptsSupportedCrossTargetQueries()
+    {
+        const string source = """
+inspect_cross_target_layout :: comptime meta.Target[meta.Stage.Layout] -> meta.Transformation {
+    input => {
+        root_type := meta.target_type_of(input);
+        cases := meta.cases_of(root_type);
+        linux_layout := meta.layout_of(cases[0], "x86_64-pc-linux-gnu");
+        arm_layout := meta.layout_of(cases[0], "aarch64-pc-windows-msvc");
+        if meta.layout_size(linux_layout) == 8 && meta.layout_size(arm_layout) == 8 then {
+            meta.keep()
+        } else {
+            meta.report([
+                meta.diagnostic(
+                    "error",
+                    meta.span_of(input),
+                    "closed case layout must use the selected supported target"
+                )
+            ])
+        }
+    }
+}
+
+Subject :: type expand inspect_cross_target_layout {
+    Present :: type(Ref[Int]),
+    Missing :: type {},
+}
+""";
+
+        var result = Compile("meta_closed_case_cross_target_layout.eidos", source, static options =>
+        {
+            options.StopAtPhase = CompilationPhase.Mir;
+            options.LlvmTargetTriple = "x86_64-pc-linux-gnu";
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
     public void LayoutStageGenerator_CanAddOnlyLateConstantsAndTests()
     {
         const string source = """
