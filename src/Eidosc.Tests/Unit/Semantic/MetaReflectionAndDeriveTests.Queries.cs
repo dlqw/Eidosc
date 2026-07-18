@@ -536,6 +536,45 @@ Subject :: type expand inspect_layout { value :: Int }
     }
 
     [Fact]
+    public void LayoutStageGenerator_ClosedCasePositionalPayloadContributesToRootAndExactCaseLayout()
+    {
+        const string source = """
+inspect_closed_case_layout :: comptime meta.Target[meta.Stage.Layout] -> meta.Transformation {
+    input => {
+        root_type := meta.target_type_of(input);
+        root_layout := meta.layout_of(root_type, "x86_64-pc-linux-gnu");
+        cases := meta.cases_of(root_type);
+        exact_layout := meta.layout_of(cases[0], "x86_64-pc-linux-gnu");
+        if meta.layout_size(root_layout) == 8 && meta.layout_size(exact_layout) == 8 then {
+            meta.keep()
+        } else {
+            meta.report([
+                meta.diagnostic(
+                    "error",
+                    meta.span_of(input),
+                    "closed case positional payload must contribute to layout"
+                )
+            ])
+        }
+    }
+}
+
+Expr[T] :: type expand inspect_closed_case_layout {
+    IntLit :: type(Int) case Expr[Int],
+    BoolLit :: type(Bool) case Expr[Bool],
+}
+""";
+
+        var result = Compile("meta_closed_case_positional_layout.eidos", source, static options =>
+        {
+            options.StopAtPhase = CompilationPhase.Mir;
+            options.LlvmTargetTriple = "x86_64-pc-linux-gnu";
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
     public void LayoutStageGenerator_CanAddOnlyLateConstantsAndTests()
     {
         const string source = """

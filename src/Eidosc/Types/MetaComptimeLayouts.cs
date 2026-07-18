@@ -183,7 +183,7 @@ internal static partial class MetaComptimeIntrinsics
 
         if (casePath.Count > 0)
         {
-            return [inherited];
+            return [BuildClosedCaseLeafLayoutVariant(casePath[^1], inherited)];
         }
 
         if (root.Constructors.Count > 0)
@@ -213,7 +213,7 @@ internal static partial class MetaComptimeIntrinsics
             .Select(static field => field.Type!));
         if (current.Cases.Count == 0)
         {
-            variants.Add(effective);
+            variants.Add(BuildClosedCaseLeafLayoutVariant(current, effective));
             return;
         }
 
@@ -221,6 +221,16 @@ internal static partial class MetaComptimeIntrinsics
         {
             CollectCaseLayoutVariants(child, effective, variants);
         }
+    }
+
+    private static List<TypeNode> BuildClosedCaseLeafLayoutVariant(
+        CaseTypeDef leaf,
+        IReadOnlyList<TypeNode> effectiveNamedFields)
+    {
+        var variant = new List<TypeNode>(leaf.PositionalFields.Count + effectiveNamedFields.Count);
+        variant.AddRange(leaf.PositionalFields);
+        variant.AddRange(effectiveNamedFields);
+        return variant;
     }
 
     private static MetaLayoutFact GetFieldStorageLayout(
