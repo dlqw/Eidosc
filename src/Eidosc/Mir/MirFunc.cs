@@ -441,6 +441,11 @@ public sealed class MirFunc
     public FunctionId FunctionId { get; init; } = new();
 
     /// <summary>
+    /// Signature-derived ownership authority consumed by borrow and call lowering.
+    /// </summary>
+    internal OwnershipContract OwnershipContract { get; set; } = OwnershipContract.Empty;
+
+    /// <summary>
     /// Whether this function is the executable entry selected by the project or source target.
     /// </summary>
     public bool IsEntry { get; init; }

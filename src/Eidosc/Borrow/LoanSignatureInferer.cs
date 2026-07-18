@@ -127,6 +127,7 @@ public sealed class LoanSignatureInferer
             _function.ReturnType,
             _typeDescriptors,
             _symbolTable);
+        _function.OwnershipContract = _ownershipContract;
 
         // 1. 推断参数借用要求
         ParamRequirements = InferParamRequirements();
