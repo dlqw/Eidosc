@@ -575,6 +575,93 @@ Expr[T] :: type expand inspect_closed_case_layout {
     }
 
     [Fact]
+    public void LayoutStageGenerator_ConcreteGenericClosedCaseSubstitutesRootTypeParameters()
+    {
+        const string source = """
+Envelope[T] :: type {
+    Value :: type {
+        item :: T,
+    },
+}
+
+inspect_generic_closed_case_layout :: comptime meta.Target[meta.Stage.Layout] -> meta.Transformation {
+    input => {
+        root_layout := meta.layout_of(Envelope[Int], "x86_64-pc-linux-gnu");
+        exact_layout := meta.layout_of(Envelope[Int].Value, "x86_64-pc-linux-gnu");
+        if meta.layout_size(root_layout) == 8 && meta.layout_size(exact_layout) == 8 then {
+            meta.keep()
+        } else {
+            meta.report([
+                meta.diagnostic(
+                    "error",
+                    meta.span_of(input),
+                    "concrete closed case type arguments must determine field layout"
+                )
+            ])
+        }
+    }
+}
+
+Probe :: type expand inspect_generic_closed_case_layout {}
+""";
+
+        var result = Compile("meta_generic_closed_case_layout.eidos", source, static options =>
+        {
+            options.StopAtPhase = CompilationPhase.Mir;
+            options.LlvmTargetTriple = "x86_64-pc-linux-gnu";
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
+    public void LayoutStageGenerator_NestedClosedCaseMapsEffectiveTypeParametersAcrossValueArguments()
+    {
+        const string source = """
+Envelope[T, comptime N: Int] :: type {
+    root :: T,
+
+    Branch[A] :: type {
+        Value :: type {
+            item :: A,
+        },
+    },
+}
+
+inspect_nested_closed_case_layout :: comptime meta.Target[meta.Stage.Layout] -> meta.Transformation {
+    input => {
+        layout := meta.layout_of(
+            Envelope[Int, 1].Branch[Int32].Value,
+            "x86_64-pc-linux-gnu"
+        );
+        offsets := meta.layout_field_offsets(layout);
+        if meta.layout_size(layout) == 16 && offsets[0] == 0 && offsets[1] == 8 then {
+            meta.keep()
+        } else {
+            meta.report([
+                meta.diagnostic(
+                    "error",
+                    meta.span_of(input),
+                    "nested closed case layout must map every effective type parameter"
+                )
+            ])
+        }
+    }
+}
+
+Probe :: type expand inspect_nested_closed_case_layout {}
+""";
+
+        var result = Compile("meta_nested_generic_closed_case_layout.eidos", source, static options =>
+        {
+            options.StopAtPhase = CompilationPhase.Mir;
+            options.LlvmTargetTriple = "x86_64-pc-linux-gnu";
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
     public void LayoutStageGenerator_CanAddOnlyLateConstantsAndTests()
     {
         const string source = """

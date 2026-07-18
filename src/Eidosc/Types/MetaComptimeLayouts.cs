@@ -86,7 +86,7 @@ internal static partial class MetaComptimeIntrinsics
 
         if (type.SymbolId.IsValid && TryGetAdtAndCase(type.SymbolId, meta, out var root, out var casePath))
         {
-            return GetAdtPayloadLayout(root, casePath, pointerSize, meta);
+            return GetAdtPayloadLayout(type, root, casePath, pointerSize, meta);
         }
 
         return new MetaLayoutFact(0, 0, [], false);
@@ -112,12 +112,14 @@ internal static partial class MetaComptimeIntrinsics
     }
 
     private static MetaLayoutFact GetAdtPayloadLayout(
+        MetaTypeRef queriedType,
         AdtDef root,
         IReadOnlyList<CaseTypeDef> casePath,
         int pointerSize,
         MetaComptimeContext meta)
     {
         var variants = BuildAdtLayoutVariants(root, casePath);
+        var typeArguments = BuildLayoutTypeArgumentMap(queriedType, meta.SymbolTable);
         if (variants.Count == 0)
         {
             return new MetaLayoutFact(0, 1, [], true);
@@ -129,7 +131,7 @@ internal static partial class MetaComptimeIntrinsics
         {
             var candidates = variants
                 .Where(fields => slot < fields.Count)
-                .Select(fields => GetFieldStorageLayout(fields[slot], pointerSize, meta))
+                .Select(fields => GetFieldStorageLayout(fields[slot], pointerSize, meta, typeArguments))
                 .ToArray();
             if (candidates.Length == 0 || candidates.Any(static layout => !layout.Complete))
             {
@@ -236,9 +238,18 @@ internal static partial class MetaComptimeIntrinsics
     private static MetaLayoutFact GetFieldStorageLayout(
         TypeNode fieldType,
         int pointerSize,
-        MetaComptimeContext meta)
+        MetaComptimeContext meta,
+        IReadOnlyDictionary<SymbolId, MetaTypeRef> typeArguments)
     {
         var type = CreateTypeRef(fieldType, meta.SymbolTable);
+        if (type.SymbolId.IsValid &&
+            meta.SymbolTable.GetSymbol<TypeParamSymbol>(type.SymbolId) is
+                { ParameterKind: GenericParameterKind.Type } &&
+            typeArguments.TryGetValue(type.SymbolId, out var concreteType))
+        {
+            type = concreteType;
+        }
+
         var scalar = GetScalarLayout(type, pointerSize);
         if (scalar.Complete)
         {
@@ -254,6 +265,31 @@ internal static partial class MetaComptimeIntrinsics
         return type.Kind is "nominal" or "alias" or "closed-sum" or "case" or "foreign-nominal"
             ? new MetaLayoutFact(pointerSize, pointerSize, [], true)
             : new MetaLayoutFact(0, 0, [], false);
+    }
+
+    private static IReadOnlyDictionary<SymbolId, MetaTypeRef> BuildLayoutTypeArgumentMap(
+        MetaTypeRef queriedType,
+        SymbolTable symbolTable)
+    {
+        if (!queriedType.SymbolId.IsValid || queriedType.GenericArguments is not { Count: > 0 } arguments)
+        {
+            return new Dictionary<SymbolId, MetaTypeRef>();
+        }
+
+        var parameterIds = symbolTable.GetClosedCaseEffectiveGenericParameterIds(queriedType.SymbolId);
+        var mapped = new Dictionary<SymbolId, MetaTypeRef>();
+        for (var index = 0; index < parameterIds.Count && index < arguments.Count; index++)
+        {
+            var parameterId = parameterIds[index];
+            var argument = arguments[index];
+            if (symbolTable.GetSymbol<TypeParamSymbol>(parameterId) is { ParameterKind: GenericParameterKind.Type } &&
+                argument.Type is not null)
+            {
+                mapped[parameterId] = argument.Type;
+            }
+        }
+
+        return mapped;
     }
 
     private static long AlignUp(long offset, long alignment) =>
