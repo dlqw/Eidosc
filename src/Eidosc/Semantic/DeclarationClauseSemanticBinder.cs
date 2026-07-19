@@ -9,17 +9,11 @@ internal sealed record FfiBindingInfo(string SymbolName, string? LibraryName);
 
 internal sealed record IntrinsicBindingInfo(string Name, IReadOnlyList<string> Effects);
 
-internal sealed record OperatorBindingInfo(
-    CustomOperatorFixity Fixity,
-    int Precedence,
-    SourceSpan Span);
-
 internal sealed record ClauseSemanticDiagnostic(SourceSpan Span, string Message);
 
 internal sealed record DeclarationClauseSemanticBindingResult(
     FfiBindingInfo? Ffi,
     IntrinsicBindingInfo? Intrinsic,
-    IReadOnlyList<OperatorBindingInfo> Operators,
     IReadOnlyList<string> Effects,
     IReadOnlyList<ClauseSemanticDiagnostic> Diagnostics);
 
@@ -45,17 +39,9 @@ internal sealed class DeclarationClauseSemanticBinder
         }
 
         IntrinsicBindingInfo? intrinsic = null;
-        var operators = new List<OperatorBindingInfo>();
         foreach (var clause in declaration.Clauses)
         {
-            if (clause.ClauseKind == DeclarationClauseKind.Operator)
-            {
-                if (BindOperatorClause(clause, diagnostics) is { } operatorInfo)
-                {
-                    operators.Add(operatorInfo);
-                }
-            }
-            else if (clause.ClauseKind == DeclarationClauseKind.Intrinsic)
+            if (clause.ClauseKind == DeclarationClauseKind.Intrinsic)
             {
                 var intrinsicName = clause.ArgumentTokens
                     .Select(static argument => NormalizeClauseArgumentText(argument))
@@ -64,53 +50,7 @@ internal sealed class DeclarationClauseSemanticBinder
             }
         }
 
-        return new DeclarationClauseSemanticBindingResult(ffi, intrinsic, operators, effects, diagnostics);
-    }
-
-    private static OperatorBindingInfo? BindOperatorClause(
-        DeclarationClause clause,
-        List<ClauseSemanticDiagnostic> diagnostics)
-    {
-        if (clause.ArgumentTokens.Count < 2)
-        {
-            return null;
-        }
-
-        var fixityText = clause.ArgumentTokens[0].Trim();
-        var fixity = fixityText switch
-        {
-            "infixl" => CustomOperatorFixity.InfixL,
-            "infixr" => CustomOperatorFixity.InfixR,
-            "prefix" => CustomOperatorFixity.Prefix,
-            "postfix" => CustomOperatorFixity.Postfix,
-            _ => (CustomOperatorFixity?)null
-        };
-
-        if (fixity == null)
-        {
-            diagnostics.Add(new ClauseSemanticDiagnostic(
-                clause.Span,
-                DiagnosticMessages.OperatorUnsupportedFixity(fixityText)));
-            return null;
-        }
-
-        if (!int.TryParse(clause.ArgumentTokens[1].Trim(), out var precedence))
-        {
-            diagnostics.Add(new ClauseSemanticDiagnostic(
-                clause.Span,
-                DiagnosticMessages.OperatorPrecedenceMustBeInteger(clause.ArgumentTokens[1])));
-            return null;
-        }
-
-        if (precedence is < 0 or > 9)
-        {
-            diagnostics.Add(new ClauseSemanticDiagnostic(
-                clause.Span,
-                DiagnosticMessages.OperatorPrecedenceOutOfRange(precedence)));
-            return null;
-        }
-
-        return new OperatorBindingInfo(fixity.Value, precedence, clause.Span);
+        return new DeclarationClauseSemanticBindingResult(ffi, intrinsic, effects, diagnostics);
     }
 
     private static string NormalizeClauseArgumentText(string text)

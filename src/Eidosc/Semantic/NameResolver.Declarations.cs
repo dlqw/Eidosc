@@ -286,11 +286,6 @@ public sealed partial class NameResolver
             "Namer.collect.funcDef.applyMetadata.allocatedBytes",
             GC.GetAllocatedBytesForCurrentThread() - metadataAllocatedBytesBefore);
 
-        var operatorClausesAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
-        RegisterOperatorClauses(func, clauseSemantics.Operators);
-        AddAllocationCounter(
-            "Namer.collect.funcDef.registerOperatorClauses.allocatedBytes",
-            GC.GetAllocatedBytesForCurrentThread() - operatorClausesAllocatedBytesBefore);
     }
 
     private void AddClauseSemanticDiagnostics(DeclarationClauseSemanticBindingResult clauses)
@@ -298,21 +293,6 @@ public sealed partial class NameResolver
         foreach (var diagnostic in clauses.Diagnostics)
         {
             AddError(diagnostic.Span, diagnostic.Message);
-        }
-    }
-
-    private void RegisterOperatorClauses(FuncDef func, IReadOnlyList<OperatorBindingInfo> operators)
-    {
-        foreach (var operatorInfo in operators)
-        {
-            var symbol = func.Name;
-            if (_customOperators.IsRegistered(symbol))
-            {
-                AddError(operatorInfo.Span, DiagnosticMessages.OperatorAlreadyDeclared(symbol));
-                continue;
-            }
-
-            _customOperators.Register(symbol, operatorInfo.Fixity, operatorInfo.Precedence, func.Name);
         }
     }
 

@@ -345,6 +345,29 @@ malloc :: Int -> RawPtr need ffi;
     }
 
     [Fact]
+    public void Parser_rejects_operator_function_clauses_and_accepts_symbolic_declarations()
+    {
+        const string source = """
+(|+|) :: Int -> Int -> Int { left => right => left + right }
+legacy :: Int -> Int -> Int operator infixl 4 { left => right => left + right }
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        Assert.Contains(module.Declarations.OfType<FuncDef>(), static function => function.Name == "|+|");
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """

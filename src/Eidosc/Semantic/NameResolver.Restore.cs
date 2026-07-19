@@ -248,9 +248,6 @@ public sealed partial class NameResolver
                         function.Span,
                         function.SymbolId);
                 }
-                RegisterOperatorClauses(
-                    function,
-                    _clauseSemanticBinder.Bind(function, function.Name).Operators);
                 break;
             case FuncDecl function:
                 RegisterGenericParameterKinds(function.SymbolId, function.TypeParams);

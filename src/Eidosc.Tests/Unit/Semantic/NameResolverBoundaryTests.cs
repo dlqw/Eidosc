@@ -32,21 +32,6 @@ public sealed class NameResolverBoundaryTests
     }
 
     [Fact]
-    public void ClauseBinder_BindsOperatorMetadata()
-    {
-        var func = CreateFunction(
-            "append",
-            CreateClause(DeclarationClauseKind.Operator, "operator", "infixr", "5"));
-
-        var result = new DeclarationClauseSemanticBinder().Bind(func, func.Name);
-
-        var operatorInfo = Assert.Single(result.Operators);
-        Assert.Equal(CustomOperatorFixity.InfixR, operatorInfo.Fixity);
-        Assert.Equal(5, operatorInfo.Precedence);
-        Assert.Empty(result.Diagnostics);
-    }
-
-    [Fact]
     public void NameLookupService_PrefersLocalValue()
     {
         var symbolTable = new SymbolTable();

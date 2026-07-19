@@ -914,10 +914,29 @@ public sealed class DeclParser(ParserContext ctx)
                 continue;
             }
 
+            if (ctx.Check("operator"))
+            {
+                ctx.Error("function-level operator clauses were removed; declare the symbolic function name directly");
+                SkipRemovedFunctionClause();
+                continue;
+            }
+
             break;
         }
 
         return requiredAbilities;
+    }
+
+    private void SkipRemovedFunctionClause()
+    {
+        ctx.Advance();
+        while (!ctx.IsEof &&
+               !ctx.Check("{") &&
+               !ctx.Check(";") &&
+               !ClauseSchema.TryGetKind(ctx.GetText(), out _))
+        {
+            ctx.Advance();
+        }
     }
 
     private List<DeclarationClause> ParseDeclarationClauseZone(IReadOnlyList<TypeParam> typeParams)
