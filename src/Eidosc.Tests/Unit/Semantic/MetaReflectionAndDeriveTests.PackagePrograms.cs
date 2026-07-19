@@ -493,6 +493,7 @@ enforce_calls :: comptime meta.Query[meta.ScopeKind.Package] -> Seq[meta.Diagnos
             "replace direct target call",
             meta.fix(span, "replacement"))]
     }
+
 }
 """;
 
@@ -514,6 +515,24 @@ enforce_calls :: comptime meta.Query[meta.ScopeKind.Package] -> Seq[meta.Diagnos
         Assert.Contains(result.ComptimeTrace, static entry =>
             entry.Kind == "query-cache" &&
             entry.Operation == "meta.references_to");
+    }
+
+    [Fact]
+    public void Package_analyzer_accepts_the_compiler_managed_package_protocol()
+    {
+        const string source = """
+check_package :: comptime meta.Package -> Seq[meta.Diagnostic] { _ => [] }
+""";
+
+        var result = Compile("meta_package_analyzer_protocol.eidos", source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Checks = ["check_package"]
+            };
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
     }
 
     [Fact]

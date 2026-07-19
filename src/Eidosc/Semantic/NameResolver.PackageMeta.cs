@@ -167,7 +167,7 @@ public sealed partial class NameResolver
         result = ComptimeUnitValue.Instance;
         pendingUserDiagnostics = [];
         trace = $"package meta program {entry} at {stage}";
-        if (!TryResolvePackageMetaFunction(entry, functions, expectedTransformation, out var generator, out var symbol, out reason))
+        if (!TryResolvePackageMetaFunction(entry, functions, expectedTransformation, out var generator, out var symbol, out var protocol, out reason))
         {
             return false;
         }
@@ -193,14 +193,28 @@ public sealed partial class NameResolver
             Declarations: _declarationsBySymbol,
             QueryAccess: access,
             DefinitionSiteResolver: CreateDefinitionSiteSyntaxResolver(generatorModuleId));
-        if (!TryCreatePackageQuery(root, stage, capabilities, resources, context, out var query, out reason))
+        ComptimeValue input;
+        if (protocol.Kind == CompilerMetaProtocolKind.Analyzer)
         {
-            return false;
+            if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
+            {
+                reason = "package analyzer requires a root module";
+                return false;
+            }
+            input = MetaComptimeIntrinsics.CreatePackageHandle(rootModule);
+        }
+        else
+        {
+            if (!TryCreatePackageQuery(root, stage, capabilities, resources, context, out var query, out reason))
+            {
+                return false;
+            }
+            input = query;
         }
 
         if (!ComptimeEvaluator.TryInvoke(
                 generator,
-                [query],
+                [input],
                 comptimeValues,
                 functions,
                 context,
@@ -227,10 +241,12 @@ public sealed partial class NameResolver
         bool expectedTransformation,
         out FuncDef generator,
         out FuncSymbol symbol,
+        out CompilerMetaProtocolMatch protocol,
         out string reason)
     {
         generator = null!;
         symbol = null!;
+        protocol = null!;
         var path = entry.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         SymbolId symbolId;
         if (path.Length == 1)
@@ -251,6 +267,20 @@ public sealed partial class NameResolver
             return false;
         }
 
+        if (CompilerMetaProtocolRegistry.TryClassify(
+                generator,
+                0,
+                _symbolTable,
+                out protocol,
+                out _) &&
+            ((!expectedTransformation && protocol.Kind == CompilerMetaProtocolKind.Analyzer) ||
+             (expectedTransformation && protocol.Kind is CompilerMetaProtocolKind.ExtensionItems or CompilerMetaProtocolKind.ExtensionModules)))
+        {
+            symbol = resolved;
+            reason = string.Empty;
+            return true;
+        }
+
         if (generator.Signature.Count != 1 ||
             generator.Signature[0] is not ArrowType arrow ||
             !IsPackageQueryType(arrow.ParamType) ||
@@ -265,6 +295,9 @@ public sealed partial class NameResolver
         }
 
         symbol = resolved;
+        protocol = new CompilerMetaProtocolMatch(
+            CompilerMetaProtocolKind.LegacyTransformation,
+            ClauseStage.Semantic);
         reason = string.Empty;
         return true;
     }
