@@ -118,6 +118,11 @@ public sealed partial class NameResolver
                     $"package extension '{extension.Name}' failed: {reason}",
                     "E3631");
                 success = false;
+                    continue;
+            }
+
+            if (transformation is ComptimeSequenceValue { Kind: ComptimeSequenceKind.List })
+            {
                 continue;
             }
 
@@ -194,7 +199,9 @@ public sealed partial class NameResolver
             QueryAccess: access,
             DefinitionSiteResolver: CreateDefinitionSiteSyntaxResolver(generatorModuleId));
         ComptimeValue input;
-        if (protocol.Kind == CompilerMetaProtocolKind.Analyzer)
+        if (protocol.Kind is CompilerMetaProtocolKind.Analyzer or
+            CompilerMetaProtocolKind.ExtensionItems or
+            CompilerMetaProtocolKind.ExtensionModules)
         {
             if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
             {

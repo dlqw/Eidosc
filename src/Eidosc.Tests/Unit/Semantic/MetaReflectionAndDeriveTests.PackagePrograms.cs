@@ -536,6 +536,33 @@ check_package :: comptime meta.Package -> Seq[meta.Diagnostic] { _ => [] }
     }
 
     [Fact]
+    public void Package_extension_accepts_the_compiler_managed_items_protocol()
+    {
+        const string source = """
+emit_items :: comptime meta.Package -> meta.Items { _ => [] }
+""";
+
+        var result = Compile("meta_package_extension_protocol.eidos", source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Extensions =
+                [
+                    new EidosMetaExtensionConfiguration
+                    {
+                        Name = "items",
+                        Entry = "emit_items",
+                        Stage = "semantic",
+                        Scope = "package"
+                    }
+                ]
+            };
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
     public void Package_extension_capabilities_reject_undeclared_resource_and_module_access()
     {
         const string source = """
