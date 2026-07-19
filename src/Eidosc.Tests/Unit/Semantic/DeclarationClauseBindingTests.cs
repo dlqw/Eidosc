@@ -80,7 +80,41 @@ public sealed class DeclarationClauseBindingTests
             Assert.True(Enum.IsDefined(spec.Stage));
             Assert.True(Enum.IsDefined(spec.SourceOrder));
             Assert.True(Enum.IsDefined(spec.Privilege));
+            Assert.True(Enum.IsDefined(spec.Adapter));
         }
+    }
+
+    [Fact]
+    public void Attachment_groups_bound_entries_by_language_responsibility()
+    {
+        var declaration = CreateFunction(
+            Clause(DeclarationClauseKind.Need, "need", "ffi"),
+            Clause(DeclarationClauseKind.Extern, "extern", "c"),
+            Clause(DeclarationClauseKind.Transparent, "transparent"),
+            Clause(DeclarationClauseKind.Internal, "internal"));
+
+        var result = Bind(declaration, CompilerOwnedSourceGrant.Create([SourcePath]));
+        declaration.SetBoundClauses(result.Clauses, result.MetaInvocations);
+
+        Assert.Empty(result.Diagnostics);
+        Assert.Equal(
+            [DeclarationClauseKind.Need],
+            declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.SignatureComponent)
+                .Select(static clause => clause.Kind));
+        Assert.Equal(
+            [DeclarationClauseKind.Transparent],
+            declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.TypedTag)
+                .Select(static clause => clause.Kind));
+        Assert.Equal(
+            [DeclarationClauseKind.Extern],
+            declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.ForeignContract)
+                .Select(static clause => clause.Kind));
+        Assert.Equal(
+            [DeclarationClauseKind.Internal],
+            declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.CompilerDirective)
+                .Select(static clause => clause.Kind));
+        Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.DedicatedDeclaration));
+        Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.RemovedSurface));
     }
 
     [Fact]
