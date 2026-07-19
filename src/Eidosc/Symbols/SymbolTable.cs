@@ -48,7 +48,6 @@ public sealed partial class SymbolTable
     /// 路径解析器
     /// </summary>
     private readonly PathResolver _pathResolver;
-    private readonly bool _allowLegacyMetaSurface;
 
     /// <summary>
     /// 当前作用域
@@ -130,9 +129,8 @@ public sealed partial class SymbolTable
     /// <summary>
     /// 默认构造函数
     /// </summary>
-    public SymbolTable(bool allowLegacyMetaSurface = false)
+    public SymbolTable()
     {
-        _allowLegacyMetaSurface = allowLegacyMetaSurface;
         _modules = new ModuleRegistry(this);
         _pathResolver = new PathResolver(this, _modules);
         _scopeStack.Add(new Scope { Kind = ScopeKind.Module });
@@ -265,7 +263,7 @@ public sealed partial class SymbolTable
         RegisterBuiltinEffect(WellKnownStrings.BuiltinAbilities.FFI);
         RegisterBuiltinEffect(WellKnownStrings.BuiltinAbilities.IO);
 
-        MetaSchemaRegistry.Register(this, _allowLegacyMetaSurface);
+        MetaSchemaRegistry.Register(this);
         BuildSchemaRegistry.Register(this);
     }
 

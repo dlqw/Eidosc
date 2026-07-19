@@ -21,13 +21,11 @@ public sealed record SymbolTableStateBuildResult(
 public static class SymbolTableStateBuilder
 {
     public static SymbolTableStateBuildResult BuildFromNamerPayload(
-        ModuleNamerStatePayload payload,
-        bool allowLegacyMetaSurface = false) =>
-        BuildFromNamerPayloads([payload], allowLegacyMetaSurface);
+        ModuleNamerStatePayload payload) =>
+        BuildFromNamerPayloads([payload]);
 
     public static SymbolTableStateBuildResult BuildFromNamerPayloads(
-        IReadOnlyList<ModuleNamerStatePayload> payloads,
-        bool allowLegacyMetaSurface = false)
+        IReadOnlyList<ModuleNamerStatePayload> payloads)
     {
         if (payloads.Count == 0)
         {
@@ -41,7 +39,7 @@ public static class SymbolTableStateBuilder
         var orderedPayloads = HaveCoherentSourceIds(sourcePayloads)
             ? sourcePayloads
             : NormalizePayloadIds(sourcePayloads);
-        var symbolTable = new SymbolTable(allowLegacyMetaSurface);
+        var symbolTable = new SymbolTable();
         var failures = new List<string>();
         ValidateCompatiblePayloads(orderedPayloads, failures);
         var previousIdentities = BuildUniqueSymbolIdentities(orderedPayloads, failures);

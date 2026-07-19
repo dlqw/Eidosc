@@ -59,7 +59,6 @@ public sealed class CompilationOptions
     /// Internal migration-fixture switch. It is not a language compatibility mode and must not
     /// be enabled by normal compiler clients.
     /// </summary>
-    internal bool AllowLegacyMetaSurface { get; set; }
 
     internal Types.BuildComptimeContext? BuildComptimeContext { get; set; }
 

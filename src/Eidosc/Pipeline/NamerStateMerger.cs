@@ -13,8 +13,7 @@ public sealed record NamerStateMergeResult(
 public static class NamerStateMerger
 {
     public static NamerStateMergeResult Merge(
-        IReadOnlyList<ModuleNamerStatePayload> payloads,
-        bool allowLegacyMetaSurface = false)
+        IReadOnlyList<ModuleNamerStatePayload> payloads)
     {
         if (payloads.Count == 0)
         {
@@ -55,7 +54,7 @@ public static class NamerStateMerger
             .OrderBy(static payload => payload.ModuleKey, StringComparer.Ordinal)
             .ThenBy(static payload => payload.ModuleIdentityKey, StringComparer.Ordinal)
             .ToArray();
-        var build = SymbolTableStateBuilder.BuildFromNamerPayloads(orderedPayloads, allowLegacyMetaSurface);
+        var build = SymbolTableStateBuilder.BuildFromNamerPayloads(orderedPayloads);
         return new NamerStateMergeResult(
             build.IsApplied,
             build,

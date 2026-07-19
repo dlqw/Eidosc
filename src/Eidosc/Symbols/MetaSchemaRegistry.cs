@@ -207,7 +207,7 @@ internal static class MetaSchemaRegistry
         new("parse_expr", 2)
     ];
 
-    public static void Register(SymbolTable symbolTable, bool allowLegacySurface = false)
+    public static void Register(SymbolTable symbolTable)
     {
         if (symbolTable.Modules.LookupRootModule(WellKnownStrings.Meta.Module) is { IsValid: true })
         {
@@ -227,7 +227,7 @@ internal static class MetaSchemaRegistry
         var identifierCategoryId = SymbolId.None;
         var parseFailureId = SymbolId.None;
         var resolveFailureId = SymbolId.None;
-        foreach (var typeSpec in s_types.Where(typeSpec => allowLegacySurface || !IsLegacyType(typeSpec.Name)))
+        foreach (var typeSpec in s_types.Where(static typeSpec => !IsLegacyType(typeSpec.Name)))
         {
             var registeredTypeId = typeSpec.Name == WellKnownStrings.Meta.Types.Items
                 ? symbolTable.GetSymbol(symbolTable.LookupType(WellKnownStrings.BuiltinTypes.Seq) ?? SymbolId.None)?.TypeId.Value ?? typeSpec.TypeId
@@ -360,7 +360,7 @@ internal static class MetaSchemaRegistry
             RegisterMetaCase(symbolTable, resolveFailureId, "Ambiguous", WellKnownTypeIds.StringId);
         }
 
-        foreach (var functionSpec in s_functions.Where(functionSpec => allowLegacySurface || !IsLegacyFunction(functionSpec.Name)))
+        foreach (var functionSpec in s_functions.Where(static functionSpec => !IsLegacyFunction(functionSpec.Name)))
         {
             var functionId = symbolTable.RegisterSymbol(new FuncSymbol
             {
