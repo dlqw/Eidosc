@@ -74,6 +74,26 @@ Subject :: type {
     }
 
     [Fact]
+    public void Typed_derive_materializes_structured_generated_items()
+    {
+        const string source = """
+derive_answer :: comptime meta.Type -> meta.Items {
+    _ => [meta.function("answer", [], Int, meta.expr_int(42))]
+}
+
+@[expand(derive_answer)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.Contains(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            function => function.Name == "answer");
+    }
+
+    [Fact]
     public void Typed_body_expand_tag_uses_meta_function_protocol()
     {
         const string source = """
