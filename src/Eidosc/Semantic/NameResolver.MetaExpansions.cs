@@ -1487,20 +1487,10 @@ public sealed partial class NameResolver
                 out reason) ||
             protocol.Kind == CompilerMetaProtocolKind.PureComptime)
         {
-            if (!TryGetTargetTransformationStage(
-                    generator,
-                    invocation.Invocation.ExplicitArguments.Count,
-                    out var legacyStage))
-            {
-                reason = string.IsNullOrWhiteSpace(reason)
-                    ? $"'{generator.Name}' is a pure comptime function, not a compiler generator protocol"
-                    : $"generator '{generator.Name}' has an invalid protocol: {reason}";
-                return false;
-            }
-
-            protocol = new CompilerMetaProtocolMatch(
-                CompilerMetaProtocolKind.LegacyTransformation,
-                legacyStage);
+            reason = string.IsNullOrWhiteSpace(reason)
+                ? $"'{generator.Name}' is a pure comptime function, not a compiler generator protocol"
+                : $"generator '{generator.Name}' has an invalid protocol: {reason}";
+            return false;
         }
 
         if (invocation.Invocation.Owner == MetaInvocationOwner.CompilerDerive &&
@@ -1514,7 +1504,6 @@ public sealed partial class NameResolver
         {
             CompilerMetaProtocolKind.Derive => invocation.Target is AdtDef or CaseTypeDef,
             CompilerMetaProtocolKind.BodyTransform => invocation.Target is FuncDef,
-            CompilerMetaProtocolKind.LegacyTransformation => true,
             _ => false
         };
         if (!targetMatches)
@@ -1525,46 +1514,6 @@ public sealed partial class NameResolver
 
         generatorSymbol = symbol;
         return true;
-    }
-
-    private bool TryGetTargetTransformationStage(
-        FuncDef generator,
-        int explicitArgumentCount,
-        out ClauseStage stage)
-    {
-        stage = default;
-        if (generator.Signature.Count != 1)
-        {
-            return false;
-        }
-
-        var parameters = new List<TypeNode>();
-        var result = generator.Signature[0];
-        while (result is ArrowType arrow)
-        {
-            parameters.Add(arrow.ParamType);
-            result = arrow.ReturnType;
-        }
-
-        if (parameters.Count != explicitArgumentCount + 1 ||
-            parameters[^1] is not TypePath targetPath ||
-            !IsMetaType(targetPath, WellKnownTypeIds.MetaTargetId) ||
-            !IsMetaType(result, WellKnownTypeIds.MetaTransformationId) ||
-            targetPath.TypeArgs.Count != 1 ||
-            targetPath.TypeArgs[0] is not TypePath stagePath)
-        {
-            return false;
-        }
-
-        stage = stagePath.TypeName switch
-        {
-            "Syntax" => ClauseStage.Syntax,
-            "Semantic" => ClauseStage.Semantic,
-            "Body" => ClauseStage.Body,
-            "Layout" => ClauseStage.Layout,
-            _ => (ClauseStage)(-1)
-        };
-        return Enum.IsDefined(stage);
     }
 
     private bool IsMetaType(TypeNode type, int typeId)

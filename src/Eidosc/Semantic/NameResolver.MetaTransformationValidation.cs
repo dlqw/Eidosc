@@ -503,11 +503,14 @@ public sealed partial class NameResolver
             .SelectMany(EnumerateDeclarations)
             .OfType<FuncDef>()
             .FirstOrDefault(function => function.SymbolId == symbolId);
-        return generator != null && TryGetTargetTransformationStage(
-            generator,
-            invocation.ExplicitArguments.Count,
-            out var resolvedStage)
-            ? resolvedStage
+        return generator != null &&
+               CompilerMetaProtocolRegistry.TryClassify(
+                   generator,
+                   invocation.ExplicitArguments.Count,
+                   _symbolTable,
+                   out var protocol,
+                   out _)
+            ? protocol.EarliestStage
             : invocation.Stage;
     }
 

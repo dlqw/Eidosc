@@ -274,60 +274,21 @@ public sealed partial class NameResolver
             return false;
         }
 
-        if (CompilerMetaProtocolRegistry.TryClassify(
-                generator,
-                0,
-                _symbolTable,
-                out protocol,
-                out _) &&
-            ((!expectedTransformation && protocol.Kind == CompilerMetaProtocolKind.Analyzer) ||
-             (expectedTransformation && protocol.Kind is CompilerMetaProtocolKind.ExtensionItems or CompilerMetaProtocolKind.ExtensionModules)))
-        {
-            symbol = resolved;
-            reason = string.Empty;
-            return true;
-        }
-
-        if (generator.Signature.Count != 1 ||
-            generator.Signature[0] is not ArrowType arrow ||
-            !IsPackageQueryType(arrow.ParamType) ||
+        if (!CompilerMetaProtocolRegistry.TryClassify(generator, 0, _symbolTable, out protocol, out var protocolReason) ||
             (expectedTransformation
-                ? !IsMetaType(arrow.ReturnType, WellKnownTypeIds.MetaTransformationId)
-                : !IsMetaDiagnosticSequence(arrow.ReturnType)))
+                ? protocol.Kind is not (CompilerMetaProtocolKind.ExtensionItems or CompilerMetaProtocolKind.ExtensionModules)
+                : protocol.Kind != CompilerMetaProtocolKind.Analyzer))
         {
-            reason = expectedTransformation
-                ? $"entry '{entry}' must have type meta.Query[meta.ScopeKind.Package] -> meta.Transformation"
-                : $"entry '{entry}' must have type meta.Query[meta.ScopeKind.Package] -> Seq[meta.Diagnostic]";
+            reason = string.IsNullOrWhiteSpace(protocolReason)
+                ? $"entry '{entry}' does not match the compiler-managed package protocol"
+                : protocolReason;
             return false;
         }
 
         symbol = resolved;
-        protocol = new CompilerMetaProtocolMatch(
-            CompilerMetaProtocolKind.LegacyTransformation,
-            ClauseStage.Semantic);
         reason = string.Empty;
         return true;
     }
-
-    private bool IsPackageQueryType(TypeNode node)
-    {
-        if (node is not TypePath { TypeArgs.Count: 1 } query ||
-            !IsMetaType(query, WellKnownTypeIds.MetaQueryId) ||
-            query.TypeArgs[0] is not TypePath marker)
-        {
-            return false;
-        }
-
-        return string.Equals(marker.TypeName, "Package", StringComparison.Ordinal) &&
-               (marker.ModulePath.Contains(WellKnownStrings.Meta.Types.ScopeKind, StringComparer.Ordinal) ||
-                _symbolTable.GetSymbol<AdtSymbol>(marker.SymbolId) is { ParentAdt.IsValid: true } package &&
-                _symbolTable.GetSymbol<AdtSymbol>(package.ParentAdt)?.TypeId.Value == WellKnownTypeIds.MetaScopeKindId);
-    }
-
-    private bool IsMetaDiagnosticSequence(TypeNode node) =>
-        node is TypePath { TypeArgs.Count: 1 } sequence &&
-        string.Equals(sequence.TypeName, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal) &&
-        IsMetaType(sequence.TypeArgs[0], WellKnownTypeIds.MetaDiagnosticId);
 
     private Dictionary<SymbolId, FuncDef> CreatePackageMetaFunctionMap() =>
         _moduleDeclarations.Values

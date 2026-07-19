@@ -13,8 +13,7 @@ internal enum CompilerMetaProtocolKind
     Analyzer,
     ExtensionItems,
     ExtensionModules,
-    BuildHost,
-    LegacyTransformation
+    BuildHost
 }
 
 internal sealed record CompilerMetaProtocolMatch(
