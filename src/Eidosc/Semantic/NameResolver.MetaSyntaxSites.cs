@@ -810,11 +810,20 @@ public sealed partial class NameResolver
 
         if (usesTypedProtocol)
         {
-            invocationArguments.Add(ComptimeSyntaxCapture.CreatePlaceholder(
-                occurrence.Category,
-                occurrence.SiteNode.Span,
-                _symbolTable,
-                trace));
+            if (!ComptimeSyntaxCapture.TryCapture(
+                    occurrence.SiteNode,
+                    occurrence.Category,
+                    _sourceText,
+                    _symbolTable,
+                    trace,
+                    out var siteSyntax,
+                    out reason))
+            {
+                reason = $"{siteKind} syntax capture failed: {reason}";
+                return false;
+            }
+
+            invocationArguments.Add(siteSyntax);
         }
         else
         {
