@@ -85,7 +85,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-             malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+             malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
             ;
             allocate :: comptime Int -> RawPtr { size => malloc(size) }
             main :: Unit -> Int { _ => 0 }

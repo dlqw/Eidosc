@@ -779,20 +779,22 @@ public static partial class SyntaxMigrationPlanner
         if (specs.Any(static spec => spec.Migration!.RuleId.StartsWith("attribute-ffi", StringComparison.Ordinal)))
         {
             yield return "need ffi";
-            yield return "extern c";
             if (arguments.FirstOrDefault() is { Length: > 0 } ffiArgument)
             {
                 var raw = ffiArgument.Trim('"', '\'');
                 var slash = raw.IndexOf('/');
                 if (slash >= 0)
                 {
-                    yield return $"link_library \"{raw[..slash]}\"";
-                    yield return $"link_name \"{raw[(slash + 1)..]}\"";
+                    yield return $"extern(c, library: \"{raw[..slash]}\", name: \"{raw[(slash + 1)..]}\")";
                 }
                 else
                 {
-                    yield return $"link_name \"{raw}\"";
+                    yield return $"extern(c, name: \"{raw}\")";
                 }
+            }
+            else
+            {
+                yield return "extern(c)";
             }
             yield break;
         }

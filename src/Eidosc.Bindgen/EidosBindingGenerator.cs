@@ -147,7 +147,7 @@ public sealed class EidosBindingGenerator
             sb.Append(retMapping.EidosType);
         }
 
-        sb.AppendLine($" need ffi extern c link_name \"{fn.Name}\";");
+        sb.AppendLine($" need ffi extern(c, name: \"{fn.Name}\");");
     }
 
     private void GenerateShimmedFunction(StringBuilder sb, CFunctionInfo fn)
@@ -175,7 +175,7 @@ public sealed class EidosBindingGenerator
             sb.Append(retMapping.EidosType);
         }
 
-        sb.AppendLine($" need ffi extern c link_name \"eidos_shim_{fn.Name}\";");
+        sb.AppendLine($" need ffi extern(c, name: \"eidos_shim_{fn.Name}\");");
     }
 
     private static (bool canBind, string reason) CanBindFunction(CFunctionInfo fn)

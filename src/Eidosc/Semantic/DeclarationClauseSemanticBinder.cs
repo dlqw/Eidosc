@@ -37,11 +37,11 @@ internal sealed class DeclarationClauseSemanticBinder
             .ToArray();
 
         FfiBindingInfo? ffi = null;
-        if (declaration.Clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Extern))
+        if (ForeignContractIR.FromDeclaration(declaration) is { } foreignContract)
         {
             ffi = new FfiBindingInfo(
-                GetClauseArgument(declaration, DeclarationClauseKind.LinkName) ?? declarationName,
-                GetClauseArgument(declaration, DeclarationClauseKind.LinkLibrary));
+                foreignContract.Name ?? declarationName,
+                foreignContract.Library);
         }
 
         IntrinsicBindingInfo? intrinsic = null;
@@ -65,15 +65,6 @@ internal sealed class DeclarationClauseSemanticBinder
         }
 
         return new DeclarationClauseSemanticBindingResult(ffi, intrinsic, operators, effects, diagnostics);
-    }
-
-    private static string? GetClauseArgument(Declaration declaration, DeclarationClauseKind kind)
-    {
-        return declaration.Clauses
-            .Where(clause => clause.ClauseKind == kind)
-            .SelectMany(static clause => clause.ArgumentTokens)
-            .Select(static argument => NormalizeClauseArgumentText(argument))
-            .FirstOrDefault(static argument => !string.IsNullOrWhiteSpace(argument));
     }
 
     private static OperatorBindingInfo? BindOperatorClause(

@@ -2,17 +2,17 @@ AsyncRuntime :: module {
 
 
 
-start_runtime :: Int -> Unit internal need ffi extern c link_name "eidos_scheduler_init";
+start_runtime :: Int -> Unit internal need ffi extern(c, name: "eidos_scheduler_init");
 
 
 
 
-shutdown_runtime :: Unit -> Unit internal need ffi extern c link_name "eidos_scheduler_shutdown";
+shutdown_runtime :: Unit -> Unit internal need ffi extern(c, name: "eidos_scheduler_shutdown");
 
 
 
 
-worker_index_runtime :: Unit -> Int internal need ffi extern c link_name "eidos_worker_index";
+worker_index_runtime :: Unit -> Int internal need ffi extern(c, name: "eidos_worker_index");
 
 
 /// Run a thunk synchronously. Async operation handling remains ability-level until spawn/await integration lands.

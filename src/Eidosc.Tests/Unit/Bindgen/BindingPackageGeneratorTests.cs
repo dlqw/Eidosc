@@ -84,7 +84,7 @@ public sealed class BindingPackageGeneratorTests
 
         var rawPath = Path.Combine(tempDir, "src", "raw.eidos");
         var raw = File.ReadAllText(rawPath);
-        Assert.Contains("""export demo_init :: Int32 -> Int32 -> Unit need ffi extern c link_name "demo_init";""", raw, StringComparison.Ordinal);
+        Assert.Contains("""export demo_init :: Int32 -> Int32 -> Unit need ffi extern(c, name: "demo_init");""", raw, StringComparison.Ordinal);
         Assert.Contains("export demo_a :: Int = 1;", raw, StringComparison.Ordinal);
         Assert.Contains("repr c", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("link \"demo\"", raw, StringComparison.Ordinal);
@@ -141,7 +141,7 @@ public sealed class BindingPackageGeneratorTests
 
         Assert.True(result.Success, string.Join("; ", result.Diagnostics));
         var raw = File.ReadAllText(Path.Combine(tempDir, "src", "raw.eidos"));
-        Assert.Contains("export ssl_ctx_new :: Unit -> Unit need ffi extern c link_name \"SSL_CTX_new\";", raw, StringComparison.Ordinal);
+        Assert.Contains("export ssl_ctx_new :: Unit -> Unit need ffi extern(c, name: \"SSL_CTX_new\");", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("SSL_CTX_new ::", raw, StringComparison.Ordinal);
     }
 

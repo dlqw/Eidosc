@@ -18,37 +18,37 @@ Status :: type derive Copy {
 
 
 
-new_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_rwlock_new";
+new_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_rwlock_new");
 
 
 
 
-try_read_runtime :: RawPtr -> Bool internal need ffi extern c link_name "eidos_rwlock_try_read";
+try_read_runtime :: RawPtr -> Bool internal need ffi extern(c, name: "eidos_rwlock_try_read");
 
 
 
 
-try_write_runtime :: RawPtr -> Bool internal need ffi extern c link_name "eidos_rwlock_try_write";
+try_write_runtime :: RawPtr -> Bool internal need ffi extern(c, name: "eidos_rwlock_try_write");
 
 
 
 
-unlock_read_runtime :: RawPtr -> Unit internal need ffi extern c link_name "eidos_rwlock_read_release";
+unlock_read_runtime :: RawPtr -> Unit internal need ffi extern(c, name: "eidos_rwlock_read_release");
 
 
 
 
-unlock_write_runtime :: RawPtr -> Unit internal need ffi extern c link_name "eidos_rwlock_write_release";
+unlock_write_runtime :: RawPtr -> Unit internal need ffi extern(c, name: "eidos_rwlock_write_release");
 
 
 
 
-get_inner_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_rwlock_get_inner";
+get_inner_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_rwlock_get_inner");
 
 
 
 
-replace_inner_runtime :: RawPtr -> RawPtr -> Unit internal need ffi extern c link_name "eidos_rwlock_replace_inner";
+replace_inner_runtime :: RawPtr -> RawPtr -> Unit internal need ffi extern(c, name: "eidos_rwlock_replace_inner");
 
 
 /// Create a runtime-backed reader-writer lock handle.

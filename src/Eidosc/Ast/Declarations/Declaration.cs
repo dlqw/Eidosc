@@ -111,7 +111,7 @@ public abstract record Declaration : EidosAstNode
     {
         BoundClauses = clauses;
         MetaInvocations = invocations;
-        Attachment = DeclarationAttachmentIR.Create(clauses, invocations);
+        Attachment = DeclarationAttachmentIR.Create(clauses, invocations, Clauses);
     }
     internal void SetExported(bool exported) => IsExported = exported;
 

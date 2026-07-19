@@ -202,7 +202,7 @@ public class EidosProjectGraphResolverTests
         File.WriteAllText(Path.Combine(bindingProjectDir, "src", "Raw.eidos"), """
             Raw :: module {
 
-                demo_init :: Unit -> Unit need ffi extern c link_name "demo_init";
+                demo_init :: Unit -> Unit need ffi extern(c, name: "demo_init");
 
             }
             """);

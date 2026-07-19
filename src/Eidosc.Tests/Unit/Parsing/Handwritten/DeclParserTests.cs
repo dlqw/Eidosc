@@ -1282,17 +1282,22 @@ public sealed class DeclParserTests
     {
         var ctx = MakeNameFirstCtx(Ident("puts"), "::", TypeId("String"), "->", TypeId("Int"),
             "need", Ident("ffi"),
-            "extern", Ident("c"),
-            "link_library", Str("libc"),
-            "link_name", Str("puts"), ";");
+            "extern", "(", Ident("c"), ",",
+            Ident("library"), ":", Str("libc"), ",",
+            Ident("name"), ":", Str("puts"), ")", ";");
         var parser = new DeclParser(ctx);
 
         var function = Assert.IsType<FuncDecl>(parser.ParseTopLevel());
 
-        Assert.Equal(4, function.Clauses.Count);
+        Assert.Equal(2, function.Clauses.Count);
         Assert.Equal(
-            [DeclarationClauseKind.Need, DeclarationClauseKind.Extern, DeclarationClauseKind.LinkLibrary, DeclarationClauseKind.LinkName],
+            [DeclarationClauseKind.Need, DeclarationClauseKind.Extern],
             function.Clauses.Select(static clause => clause.ClauseKind).ToArray());
+        Assert.True(ForeignContractIR.TryCreate(function.Clauses[1], out var contract, out var errors));
+        Assert.Empty(errors);
+        Assert.Equal("c", contract.Abi);
+        Assert.Equal("libc", contract.Library);
+        Assert.Equal("puts", contract.Name);
         Assert.Empty(ctx.Diagnostics);
     }
 

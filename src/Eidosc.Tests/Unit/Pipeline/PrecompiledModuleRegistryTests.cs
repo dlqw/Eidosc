@@ -174,7 +174,7 @@ Test :: module {
 Test :: module {
 
     runtime_helper :: Int -> Int
-     need ffi extern c link_name "runtime_helper"
+     need ffi extern(c, name: "runtime_helper")
 {
         value => value
     }

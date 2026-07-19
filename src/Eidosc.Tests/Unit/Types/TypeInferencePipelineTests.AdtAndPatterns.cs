@@ -222,14 +222,14 @@ choose :: Bool -> Anim
     public void Namer_ClauseSchemaRejectsWrongTargetDuplicateAndMissingDependency()
     {
         const string source = """
-WrongTarget :: type extern c {}
+WrongTarget :: type extern(c) {}
 
 DuplicateRepr :: type repr c repr c {
     value :: Int,
 }
 
-bad_link :: Unit -> Unit
-    link_name "bad";
+bad_contract :: Unit -> Unit need ffi
+    extern(c, unknown: "bad");
 """;
 
         var result = RunPipeline(source, CompilationPhase.Namer);
@@ -237,7 +237,7 @@ bad_link :: Unit -> Unit
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("not valid on type", StringComparison.Ordinal));
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("cannot be repeated", StringComparison.Ordinal));
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("requires clause 'extern'", StringComparison.Ordinal));
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("unknown extern field", StringComparison.Ordinal));
     }
 
     [Fact]

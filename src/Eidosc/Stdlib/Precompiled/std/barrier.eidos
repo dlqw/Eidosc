@@ -11,17 +11,17 @@ Arrival :: type derive Copy {
 
 
 
-new_runtime :: Int -> RawPtr internal need ffi extern c link_name "eidos_barrier_new";
+new_runtime :: Int -> RawPtr internal need ffi extern(c, name: "eidos_barrier_new");
 
 
 
 
-arrive_runtime :: RawPtr -> Bool internal need ffi extern c link_name "eidos_barrier_arrive";
+arrive_runtime :: RawPtr -> Bool internal need ffi extern(c, name: "eidos_barrier_arrive");
 
 
 
 
-wait_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E internal need ffi extern c link_name "eidos_barrier_wait_closure_raw";
+wait_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E internal need ffi extern(c, name: "eidos_barrier_wait_closure_raw");
 
 
 /// Create a runtime-backed barrier handle with the requested participant count.

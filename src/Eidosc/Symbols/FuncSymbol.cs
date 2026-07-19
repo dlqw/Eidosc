@@ -139,7 +139,7 @@ public sealed record FuncSymbol : Symbol
 
     /// <summary>
     /// 隐式能力需求。
-    /// <c>extern c need ffi</c> functions carry the declared <c>ffi</c> effect.
+    /// <c>extern(c) need ffi</c> functions carry the declared <c>ffi</c> effect.
     /// 运行时内置函数在 RegisterBuiltinFunctions() 中设置。
     /// 普通函数为空。
     /// </summary>

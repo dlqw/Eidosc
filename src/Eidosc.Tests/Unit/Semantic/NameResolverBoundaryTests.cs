@@ -16,9 +16,12 @@ public sealed class NameResolverBoundaryTests
         var func = CreateFunction(
             "easyInit",
             CreateClause(DeclarationClauseKind.Need, "need", "ffi"),
-            CreateClause(DeclarationClauseKind.Extern, "extern", "c"),
-            CreateClause(DeclarationClauseKind.LinkLibrary, "link_library", "\"curl\""),
-            CreateClause(DeclarationClauseKind.LinkName, "link_name", "\"curl_easy_init\""));
+            CreateClause(
+                DeclarationClauseKind.Extern,
+                "extern",
+                "c",
+                "library: \"curl\"",
+                "name: \"curl_easy_init\""));
 
         var result = new DeclarationClauseSemanticBinder().Bind(func, func.Name);
 

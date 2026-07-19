@@ -498,7 +498,7 @@ public sealed class DeclParser(ParserContext ctx)
         int depth = 0;
         while (!ctx.IsEof)
         {
-            var text = ctx.GetText();
+            var text = ctx.GetLiteralRawText();
             if (depth == 0 && (text == "," || text == ")"))
                 break;
             if (text == "(" || text == "[" || text == "{")
@@ -686,7 +686,7 @@ public sealed class DeclParser(ParserContext ctx)
                 return true;
             }
 
-            if (text is "where" or "need" or "ffi" or "link_name" or "calling_convention" or
+            if (text is "where" or "need" or "ffi" or "extern" or "calling_convention" or
                 "unwind" or "expand" or "internal" or "intrinsic" or "external")
             {
                 return true;
@@ -945,6 +945,36 @@ public sealed class DeclParser(ParserContext ctx)
         ctx.Advance();
         var clause = CreateClause(kind, keyword, start);
         _ = ClauseSchema.TryGet(keyword, out var spec);
+
+        if (kind == DeclarationClauseKind.Extern)
+        {
+            if (!ctx.Match("("))
+            {
+                ctx.Error("extern uses the structured form 'extern(c, library: Library, name: \"symbol\")'");
+                if (!IsClauseBoundary())
+                {
+                    clause.AddArgument(ReadClauseArgument());
+                }
+                clause.SetSpan(ctx.SpanFrom(start));
+                return clause;
+            }
+
+            if (!ctx.Check(")"))
+            {
+                clause.AddArgument(ReadAttributeArg());
+                while (ctx.Match(","))
+                {
+                    if (ctx.Check(")"))
+                    {
+                        break;
+                    }
+                    clause.AddArgument(ReadAttributeArg());
+                }
+            }
+            ctx.Expect(")");
+            clause.SetSpan(ctx.SpanFrom(start));
+            return clause;
+        }
 
         if (spec.Arguments == ClauseArgumentGrammar.None)
         {

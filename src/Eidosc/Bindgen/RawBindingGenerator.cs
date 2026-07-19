@@ -86,7 +86,7 @@ public sealed class RawBindingGenerator
 
             var needsShim = NeedsShim(fn);
             var ffiName = needsShim ? $"eidos_shim_{fn.Name}" : fn.Name;
-            sb.AppendLine($"    export {eidosName} :: {FormatSignature(fn, needsShim)} need ffi extern c link_name \"{ffiName}\";");
+            sb.AppendLine($"    export {eidosName} :: {FormatSignature(fn, needsShim)} need ffi extern(c, name: \"{ffiName}\");");
             sb.AppendLine();
         }
     }

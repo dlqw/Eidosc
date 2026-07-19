@@ -111,27 +111,27 @@ Ffi :: module {
 
 
 
-    malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+    malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
 
 
-    free :: RawPtr -> Unit need ffi extern c link_name "free";
+    free :: RawPtr -> Unit need ffi extern(c, name: "free");
 
 
 
-    calloc :: Int -> Int -> RawPtr need ffi extern c link_name "calloc";
+    calloc :: Int -> Int -> RawPtr need ffi extern(c, name: "calloc");
 
 
 
-    realloc :: RawPtr -> Int -> RawPtr need ffi extern c link_name "realloc";
+    realloc :: RawPtr -> Int -> RawPtr need ffi extern(c, name: "realloc");
 
 
 
-    memcpy :: RawPtr -> RawPtr -> Int -> RawPtr need ffi extern c link_name "memcpy";
+    memcpy :: RawPtr -> RawPtr -> Int -> RawPtr need ffi extern(c, name: "memcpy");
 
 
 
-    memset :: RawPtr -> Int -> Int -> RawPtr need ffi extern c link_name "memset";
+    memset :: RawPtr -> Int -> Int -> RawPtr need ffi extern(c, name: "memset");
 
 
 

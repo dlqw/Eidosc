@@ -18,22 +18,22 @@ Status :: type derive Copy {
 
 
 
-new_runtime :: Unit -> RawPtr internal need ffi extern c link_name "eidos_promise_new_raw_single";
+new_runtime :: Unit -> RawPtr internal need ffi extern(c, name: "eidos_promise_new_raw_single");
 
 
 
 
-new_value_runtime :: Unit -> RawPtr internal need ffi extern c link_name "eidos_promise_new_single";
+new_value_runtime :: Unit -> RawPtr internal need ffi extern(c, name: "eidos_promise_new_single");
 
 
 
 
-fulfill_runtime :: RawPtr -> RawPtr -> Bool internal need ffi extern c link_name "eidos_promise_fulfill_raw";
+fulfill_runtime :: RawPtr -> RawPtr -> Bool internal need ffi extern(c, name: "eidos_promise_fulfill_raw");
 
 
 
 
-try_get_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_promise_try_get_raw";
+try_get_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_promise_try_get_raw");
 
 
 /// Create a runtime-backed RawPtr payload Promise.

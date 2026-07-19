@@ -16,7 +16,7 @@ public class CStructDotAccessTests
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
 
 
@@ -46,7 +46,7 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
 
 
@@ -85,7 +85,7 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
 
 
@@ -129,7 +129,7 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
 
 
@@ -187,7 +187,7 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
 
 

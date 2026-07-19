@@ -253,9 +253,9 @@ Api :: module {
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("need ffi", rewritten, StringComparison.Ordinal);
-        Assert.Contains("extern c", rewritten, StringComparison.Ordinal);
-        Assert.Contains("link_library \"native\"", rewritten, StringComparison.Ordinal);
-        Assert.Contains("link_name \"allocate\"", rewritten, StringComparison.Ordinal);
+        Assert.Contains("extern(c, library: \"native\", name: \"allocate\")", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("link_library", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("link_name", rewritten, StringComparison.Ordinal);
         Assert.Contains("repr c", rewritten, StringComparison.Ordinal);
         Assert.Contains("derive Eq", rewritten, StringComparison.Ordinal);
         Assert.Contains("expand codec", rewritten, StringComparison.Ordinal);

@@ -82,7 +82,7 @@ Option :: type {}
     public void CompilationPipeline_FfiNamingContract_SeparatesBindingFromExternalLinkName()
     {
         const string source = """
-curlEasyInit :: Unit -> RawPtr need ffi extern c link_name "SSL_CTX_new";
+curlEasyInit :: Unit -> RawPtr need ffi extern(c, name: "SSL_CTX_new");
 """;
 
         var result = RunTypes(source, "ffi_naming_contract.eidos");

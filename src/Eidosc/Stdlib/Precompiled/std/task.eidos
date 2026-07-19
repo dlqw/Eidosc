@@ -18,47 +18,47 @@ Status :: type derive Copy {
 
 
 
-completed_raw_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_new_completed_raw";
+completed_raw_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_task_new_completed_raw");
 
 
 
 
-completed_value_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_new_completed_value";
+completed_value_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_task_new_completed_value");
 
 
 
 
-is_completed_runtime :: RawPtr -> Bool internal need ffi extern c link_name "eidos_task_is_completed";
+is_completed_runtime :: RawPtr -> Bool internal need ffi extern(c, name: "eidos_task_is_completed");
 
 
 
 
-try_get_raw_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_try_get_raw";
+try_get_raw_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_task_try_get_raw");
 
 
 
 
-try_get_value_runtime :: RawPtr -> RawPtr internal need ffi extern c link_name "eidos_task_try_get_value";
+try_get_value_runtime :: RawPtr -> RawPtr internal need ffi extern(c, name: "eidos_task_try_get_value");
 
 
 
 
-spawn_closure_raw_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern c link_name "eidos_task_spawn_closure_raw";
+spawn_closure_raw_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern(c, name: "eidos_task_spawn_closure_raw");
 
 
 
 
-spawn_closure_value_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern c link_name "eidos_task_spawn_closure_value";
+spawn_closure_value_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern(c, name: "eidos_task_spawn_closure_value");
 
 
 
 
-await_closure_raw_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E internal need ffi extern c link_name "eidos_task_await_closure_raw";
+await_closure_raw_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E internal need ffi extern(c, name: "eidos_task_await_closure_raw");
 
 
 
 
-await_closure_value_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E internal need ffi extern c link_name "eidos_task_await_closure_value";
+await_closure_value_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E internal need ffi extern(c, name: "eidos_task_await_closure_value");
 
 
 /// Create an already-completed runtime-backed task with a non-null raw pointer payload.

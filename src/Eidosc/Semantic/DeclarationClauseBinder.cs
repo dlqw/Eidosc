@@ -267,7 +267,12 @@ internal static class DeclarationClauseBinder
         }
 
         var externClause = externClauses[0];
-        if (!externClause.ArgumentTokens.Any(static argument => string.Equals(argument.Trim(), "c", StringComparison.Ordinal)))
+        if (!ForeignContractIR.TryCreate(externClause, out var contract, out var contractErrors))
+        {
+            diagnostics.AddRange(contractErrors.Select(error => new ClauseBindingDiagnostic(externClause.Span, error, "E3057")));
+        }
+
+        if (!string.Equals(contract.Abi, "c", StringComparison.Ordinal))
         {
             diagnostics.Add(new ClauseBindingDiagnostic(externClause.Span, "extern currently requires ABI 'c'", "E3057"));
         }

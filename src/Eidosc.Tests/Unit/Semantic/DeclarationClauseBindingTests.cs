@@ -113,6 +113,7 @@ public sealed class DeclarationClauseBindingTests
             [DeclarationClauseKind.Internal],
             declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.CompilerDirective)
                 .Select(static clause => clause.Kind));
+        Assert.Equal("c", Assert.IsType<ForeignContractIR>(declaration.Attachment.ForeignContract).Abi);
         Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.DedicatedDeclaration));
         Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.RemovedSurface));
     }
@@ -178,18 +179,20 @@ public sealed class DeclarationClauseBindingTests
     }
 
     [Fact]
-    public void Linkage_clauses_require_extern_and_extern_conflicts_with_intrinsic()
+    public void Foreign_contract_rejects_unknown_fields_and_conflicts_with_intrinsic()
     {
-        var linkageOnly = CreateFunction(Clause(DeclarationClauseKind.LinkName, "link_name", "\"native\""));
+        var malformed = CreateFunction(
+            Clause(DeclarationClauseKind.Need, "need", "ffi"),
+            Clause(DeclarationClauseKind.Extern, "extern", "c", "unknown: \"native\""));
         var conflicting = CreateFunction(
             Clause(DeclarationClauseKind.Need, "need", "ffi"),
             Clause(DeclarationClauseKind.Extern, "extern", "c"),
             Clause(DeclarationClauseKind.Intrinsic, "intrinsic", "\"llvm.foo\""));
 
-        var linkageResult = Bind(linkageOnly);
+        var malformedResult = Bind(malformed);
         var conflictResult = Bind(conflicting, CompilerOwnedSourceGrant.Create([SourcePath]));
 
-        Assert.Contains(linkageResult.Diagnostics, diagnostic => diagnostic.Message.Contains("requires clause 'extern'", StringComparison.Ordinal));
+        Assert.Contains(malformedResult.Diagnostics, diagnostic => diagnostic.Message.Contains("unknown extern field", StringComparison.Ordinal));
         Assert.Contains(conflictResult.Diagnostics, diagnostic => diagnostic.Message.Contains("conflicts with clause", StringComparison.Ordinal));
     }
 
@@ -323,6 +326,25 @@ malloc :: Int -> RawPtr need ffi;
     }
 
     [Fact]
+    public void Parser_rejects_flat_foreign_contract_syntax()
+    {
+        const string source = "malloc :: Int -> RawPtr need ffi extern c link_name \"malloc\";";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("extern uses the structured form", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """
@@ -399,7 +421,6 @@ ANSWER :: comptime
 
     [Theory]
     [InlineData(DeclarationClauseKind.Repr, "repr", "\"c\"")]
-    [InlineData(DeclarationClauseKind.LinkLibrary, "link_library", "native")]
     [InlineData(DeclarationClauseKind.ProofUnfold, "proof_unfold", "1invalid")]
     public void Clause_argument_grammar_rejects_wrong_token_categories(
         DeclarationClauseKind kind,

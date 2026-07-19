@@ -47,9 +47,7 @@ public class FfiLibraryQualificationTests
         const string source = """
             native_call :: Int -> Int
                 need ffi
-                extern c
-                link_library "native"
-                link_name "native_call_v2";
+                extern(c, library: "native", name: "native_call_v2");
             """;
 
         var result = RunPipeline(source, ["native"]);
@@ -67,7 +65,7 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_WithLibraryPrefix_Succeeds()
     {
         const string source = """
-             easyInit :: Unit -> RawPtr need ffi extern c link_library "curl" link_name "curl_easy_init";
+             easyInit :: Unit -> RawPtr need ffi extern(c, library: "curl", name: "curl_easy_init");
 
             """;
 
@@ -83,7 +81,7 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_WithoutLibraryPrefix_Succeeds()
     {
         const string source = """
-             myMalloc :: Int -> RawPtr need ffi extern c link_name "malloc";
+             myMalloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
 
             """;
 
@@ -101,7 +99,7 @@ public class FfiLibraryQualificationTests
         const string source = """
 
             abs :: Int -> Int
-             need ffi extern c link_name "abs"
+             need ffi extern(c, name: "abs")
             {
                 x => x
             }
@@ -120,7 +118,7 @@ public class FfiLibraryQualificationTests
         const string source = """
             native_call :: Int -> Int
                 need ffi
-                extern c
+                extern(c)
                 intrinsic "llvm.native_call";
             """;
 
@@ -132,9 +130,9 @@ public class FfiLibraryQualificationTests
     }
 
     [Theory]
-    [InlineData("""puts :: String -> Int need ffi extern c link_name "puts";""")]
-    [InlineData("""bad_tuple :: (Int, Int) -> Int need ffi extern c link_name "bad_tuple";""")]
-    [InlineData("""bad_ref :: Ref[Int] -> Int need ffi extern c link_name "bad_ref";""")]
+    [InlineData("""puts :: String -> Int need ffi extern(c, name: "puts");""")]
+    [InlineData("""bad_tuple :: (Int, Int) -> Int need ffi extern(c, name: "bad_tuple");""")]
+    [InlineData("""bad_ref :: Ref[Int] -> Int need ffi extern(c, name: "bad_ref");""")]
     public void FfiAttribute_WithNonFfiSafeAbiType_ProducesE3051(string source)
     {
         var result = RunPipeline(source);
@@ -151,7 +149,7 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_WithFunctionParameter_TreatsValueAsClosurePointer()
     {
         const string source = """
-             acceptClosure :: (Unit -> RawPtr) -> Unit need ffi extern c link_name "accept_closure";
+             acceptClosure :: (Unit -> RawPtr) -> Unit need ffi extern(c, name: "accept_closure");
 
             """;
 
@@ -167,7 +165,7 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_UndeclaredLibrary_ProducesE3052()
     {
         const string source = """
-             easyInit :: Unit -> RawPtr need ffi extern c link_library "curl" link_name "curl_easy_init";
+             easyInit :: Unit -> RawPtr need ffi extern(c, library: "curl", name: "curl_easy_init");
 
             """;
 
@@ -181,9 +179,9 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_MultipleLibraries_Succeeds()
     {
         const string source = """
-             initA :: Unit -> RawPtr need ffi extern c link_library "A" link_name "init";
+             initA :: Unit -> RawPtr need ffi extern(c, library: "A", name: "init");
 
-             initB :: Unit -> RawPtr need ffi extern c link_library "B" link_name "init";
+             initB :: Unit -> RawPtr need ffi extern(c, library: "B", name: "init");
 
             """;
 
@@ -215,9 +213,9 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_DuplicateLibrarySymbol_ProducesE3054()
     {
         const string source = """
-             initA :: Unit -> RawPtr need ffi extern c link_library "A" link_name "init";
+             initA :: Unit -> RawPtr need ffi extern(c, library: "A", name: "init");
 
-             initB :: Unit -> RawPtr need ffi extern c link_library "A" link_name "init";
+             initB :: Unit -> RawPtr need ffi extern(c, library: "A", name: "init");
 
             """;
 
@@ -232,11 +230,11 @@ public class FfiLibraryQualificationTests
     {
         const string source = """
 
-            abs :: Int -> Int need ffi extern c link_name "abs_i";
+            abs :: Int -> Int need ffi extern(c, name: "abs_i");
 
 
 
-            abs :: Float -> Float need ffi extern c link_name "abs_f";
+            abs :: Float -> Float need ffi extern(c, name: "abs_f");
 
             """;
 
@@ -252,9 +250,9 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_DuplicateDefaultSymbol_ProducesE3054()
     {
         const string source = """
-             parseInt :: Int -> Int need ffi extern c link_name "native_parse";
+             parseInt :: Int -> Int need ffi extern(c, name: "native_parse");
 
-             parseFloat :: Float -> Float need ffi extern c link_name "native_parse";
+             parseFloat :: Float -> Float need ffi extern(c, name: "native_parse");
 
             """;
 
@@ -268,9 +266,9 @@ public class FfiLibraryQualificationTests
     public void FfiAttribute_OverloadGroupWithDuplicateExternalSymbol_ProducesE3054()
     {
         const string source = """
-             parse :: Int -> Int need ffi extern c link_name "native_parse";
+             parse :: Int -> Int need ffi extern(c, name: "native_parse");
 
-             parse :: Float -> Float need ffi extern c link_name "native_parse";
+             parse :: Float -> Float need ffi extern(c, name: "native_parse");
 
             """;
 
@@ -285,7 +283,7 @@ public class FfiLibraryQualificationTests
     {
         const string source = """
             Outer :: module {
-                 curlInit :: Unit -> RawPtr need ffi extern c link_library "curl" link_name "curl_easy_init";
+                 curlInit :: Unit -> RawPtr need ffi extern(c, library: "curl", name: "curl_easy_init");
 
             }
             """;

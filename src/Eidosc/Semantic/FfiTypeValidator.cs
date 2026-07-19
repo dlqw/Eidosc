@@ -116,13 +116,14 @@ public sealed class FfiTypeValidator
 
     private void ValidateFfiLibraryReference(Declaration decl, IReadOnlyList<string>? availableLibraries)
     {
-        var library = GetClauseArgument(decl, DeclarationClauseKind.LinkLibrary);
+        var contract = ForeignContractIR.FromDeclaration(decl);
+        var library = contract?.Library;
         if (string.IsNullOrWhiteSpace(library))
         {
             return;
         }
 
-        var symbol = GetClauseArgument(decl, DeclarationClauseKind.LinkName) ?? GetDeclarationName(decl);
+        var symbol = contract?.Name ?? GetDeclarationName(decl);
         if (availableLibraries == null || !availableLibraries.Contains(library))
         {
             _diagnostics.Add(new Diagnostic.Diagnostic(
@@ -139,8 +140,9 @@ public sealed class FfiTypeValidator
             return;
         }
 
-        var library = GetClauseArgument(decl, DeclarationClauseKind.LinkLibrary) ?? "<default>";
-        var symbol = GetClauseArgument(decl, DeclarationClauseKind.LinkName) ?? GetDeclarationName(decl);
+        var contract = ForeignContractIR.FromDeclaration(decl);
+        var library = contract?.Library ?? "<default>";
+        var symbol = contract?.Name ?? GetDeclarationName(decl);
         var bindingKey = $"{library}/{symbol}";
         if (!seenBindings.Add(bindingKey))
         {
@@ -151,32 +153,12 @@ public sealed class FfiTypeValidator
     private static bool HasExternClause(Declaration decl) =>
         decl.Clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Extern);
 
-    private static string? GetClauseArgument(Declaration declaration, DeclarationClauseKind kind) =>
-        declaration.Clauses
-            .Where(clause => clause.ClauseKind == kind)
-            .SelectMany(static clause => clause.ArgumentTokens)
-            .Select(static argument => NormalizeClauseArgumentText(argument))
-            .FirstOrDefault(static argument => !string.IsNullOrWhiteSpace(argument));
-
     private static string GetDeclarationName(Declaration declaration) => declaration switch
     {
         FuncDef function => function.Name,
         FuncDecl function => function.Name,
         _ => "<unknown>"
     };
-
-    private static string NormalizeClauseArgumentText(string text)
-    {
-        var trimmed = text.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
-        {
-            return trimmed[1..^1];
-        }
-
-        return trimmed;
-    }
 
     private void ValidateFfiFunction(object? inferredType, string funcName, SourceSpan span)
     {
