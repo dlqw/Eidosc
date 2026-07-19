@@ -781,6 +781,40 @@ public class MirOptimizerTests
     }
 
     [Fact]
+    public void DropInsertion_PreservesOwnershipContract()
+    {
+        var ownershipContract = new OwnershipContract
+        {
+            CallableName = "consume",
+            CanonicalIdentity = "ownership-contract-v1|callable:name:consume"
+        };
+        var block = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Terminator = new MirReturn()
+        };
+        var module = new MirModule
+        {
+            Name = "Main",
+            Functions =
+            [
+                new MirFunc
+                {
+                    Name = "consume",
+                    EntryBlockId = block.Id,
+                    BasicBlocks = [block],
+                    OwnershipContract = ownershipContract
+                }
+            ]
+        };
+
+        var optimized = new DropInsertionPass().Run(module);
+
+        Assert.Same(ownershipContract, Assert.Single(optimized.Functions).OwnershipContract);
+    }
+
+    [Fact]
     public void DropInsertion_LastUse_InsertsDropAfterInstruction()
     {
         var local = new MirLocal

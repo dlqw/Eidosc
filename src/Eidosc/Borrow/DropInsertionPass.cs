@@ -119,6 +119,7 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             Span = func.Span,
             SymbolId = func.SymbolId,
             FunctionId = func.FunctionId,
+            OwnershipContract = func.OwnershipContract,
             TraitInvokeHelper = func.TraitInvokeHelper,
             TraitInvokeHelperTraitId = func.TraitInvokeHelperTraitId,
             IsEntry = func.IsEntry,
