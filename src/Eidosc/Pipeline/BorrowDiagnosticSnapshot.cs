@@ -9,7 +9,7 @@ public sealed record BorrowDiagnosticSnapshot(
     string BorrowDependencyHash,
     IReadOnlyList<BorrowDiagnosticFunctionSnapshot> Functions)
 {
-    public const string CurrentSchemaVersion = "borrow-diagnostic-snapshot-v2";
+    public const string CurrentSchemaVersion = "borrow-diagnostic-snapshot-v3";
 
     public static BorrowDiagnosticSnapshot Create(
         MirFunctionFingerprintSnapshot mirFingerprints,
@@ -36,6 +36,23 @@ public sealed record BorrowDiagnosticSnapshot(
             borrowDependencyHash,
             functions);
     }
+
+    public ModuleBorrowCheckResult ToBorrowCheckResult()
+    {
+        var result = new ModuleBorrowCheckResult();
+        foreach (var function in Functions)
+        {
+            var summary = function.LoanSummary?.Restore();
+            result.AddResult(new BorrowCheckResult
+            {
+                FunctionName = summary?.FunctionName ?? function.FunctionKey,
+                FunctionSymbolId = summary?.FunctionSymbol ?? SymbolId.None,
+                LoanSignature = summary
+            });
+        }
+
+        return result;
+    }
 }
 
 public sealed record BorrowDiagnosticFunctionSnapshot(
@@ -48,6 +65,8 @@ public sealed record BorrowDiagnosticFunctionSnapshot(
     int LoanConstraintFailures,
     IReadOnlyList<BorrowDiagnosticEntrySnapshot> Diagnostics)
 {
+    public LoanSummarySnapshot? LoanSummary { get; init; }
+
     public static BorrowDiagnosticFunctionSnapshot FromResult(
         string functionKey,
         string bodyHash,
@@ -80,8 +99,154 @@ public sealed record BorrowDiagnosticFunctionSnapshot(
             0,
             result.LoanConstraintVerifier?.Diagnostics.Count ?? 0,
             result.LoanConstraintResults.Count(static loan => !loan.IsValid),
-            entries);
+            entries)
+        {
+            LoanSummary = result.LoanSignature == null
+                ? null
+                : LoanSummarySnapshot.FromSignature(result.LoanSignature)
+        };
     }
+}
+
+public sealed record LoanSummarySnapshot(
+    string SchemaVersion,
+    string FunctionName,
+    int FunctionSymbolId,
+    MirStateOwnershipContractPayload OwnershipContract,
+    IReadOnlyList<LoanLifetimeParamSnapshot> LifetimeParams,
+    IReadOnlyList<LoanParameterRequirementSnapshot> Parameters,
+    LoanReturnConstraintSnapshot ReturnConstraint,
+    IReadOnlyList<LoanLifetimeConstraintSnapshot> LifetimeConstraints,
+    SourceSpanPayload Span)
+{
+    public const string CurrentSchemaVersion = "loan-summary-v1";
+
+    public static LoanSummarySnapshot FromSignature(LoanSignature signature) =>
+        new(
+            CurrentSchemaVersion,
+            signature.FunctionName,
+            signature.FunctionSymbol.Value,
+            MirStateOwnershipContractPayload.Create(signature.OwnershipContract),
+            signature.LifetimeParams.Select(LoanLifetimeParamSnapshot.FromParam).ToArray(),
+            signature.ParamRequirements.Select(LoanParameterRequirementSnapshot.FromRequirement).ToArray(),
+            LoanReturnConstraintSnapshot.FromConstraint(signature.ReturnConstraint),
+            signature.LifetimeConstraints.Select(LoanLifetimeConstraintSnapshot.FromConstraint).ToArray(),
+            SourceSpanPayload.Create(signature.Span));
+
+    public LoanSignature Restore()
+    {
+        if (!string.Equals(SchemaVersion, CurrentSchemaVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Unsupported loan summary schema '{SchemaVersion}'.");
+        }
+
+        return new LoanSignature
+        {
+            OwnershipContract = OwnershipContract.Restore(),
+            FunctionName = FunctionName,
+            FunctionSymbol = new SymbolId(FunctionSymbolId),
+            LifetimeParams = LifetimeParams.Select(static parameter => parameter.Restore()).ToList(),
+            ParamRequirements = Parameters.Select(static parameter => parameter.Restore()).ToList(),
+            ReturnConstraint = ReturnConstraint.Restore(),
+            LifetimeConstraints = LifetimeConstraints.Select(static constraint => constraint.Restore()).ToList(),
+            Span = Span.ToSourceSpan()
+        };
+    }
+}
+
+public sealed record LoanLifetimeParamSnapshot(
+    int Id,
+    string Name,
+    IReadOnlyList<int> Outlives,
+    SourceSpanPayload Span)
+{
+    public static LoanLifetimeParamSnapshot FromParam(LifetimeParam parameter) =>
+        new(
+            parameter.Id.Value,
+            parameter.Name,
+            parameter.Outlives.Select(static lifetime => lifetime.Value).ToArray(),
+            SourceSpanPayload.Create(parameter.Span));
+
+    public LifetimeParam Restore() =>
+        new()
+        {
+            Id = new LifetimeId { Value = Id },
+            Name = Name,
+            Outlives = Outlives.Select(static lifetime => new LifetimeId { Value = lifetime }).ToList(),
+            Span = Span.ToSourceSpan()
+        };
+}
+
+public sealed record LoanParameterRequirementSnapshot(
+    int ParamIndex,
+    string Name,
+    string Mode,
+    int Lifetime,
+    SourceSpanPayload Span)
+{
+    public static LoanParameterRequirementSnapshot FromRequirement(ParamBorrowRequirement requirement) =>
+        new(
+            requirement.ParamIndex,
+            requirement.Name,
+            requirement.Mode.ToString(),
+            requirement.Lifetime.Value,
+            SourceSpanPayload.Create(requirement.Span));
+
+    public ParamBorrowRequirement Restore() =>
+        new()
+        {
+            ParamIndex = ParamIndex,
+            Name = Name,
+            Mode = Enum.Parse<ParamBorrowMode>(Mode),
+            Lifetime = new LifetimeId { Value = Lifetime },
+            Span = Span.ToSourceSpan()
+        };
+}
+
+public sealed record LoanReturnConstraintSnapshot(
+    bool IsBorrow,
+    bool IsMutable,
+    int Lifetime,
+    IReadOnlyList<int> BoundToParams,
+    string Confidence,
+    IReadOnlyList<string> InternalNotes,
+    SourceSpanPayload Span)
+{
+    public static LoanReturnConstraintSnapshot FromConstraint(ReturnBorrowConstraint constraint) =>
+        new(
+            constraint.IsBorrow,
+            constraint.IsMutable,
+            constraint.Lifetime.Value,
+            constraint.BoundToParams.ToArray(),
+            constraint.Confidence.ToString(),
+            constraint.InternalNotes.ToArray(),
+            SourceSpanPayload.Create(constraint.Span));
+
+    public ReturnBorrowConstraint Restore() =>
+        new()
+        {
+            IsBorrow = IsBorrow,
+            IsMutable = IsMutable,
+            Lifetime = new LifetimeId { Value = Lifetime },
+            BoundToParams = BoundToParams.ToList(),
+            Confidence = Enum.Parse<LoanInferenceConfidence>(Confidence),
+            InternalNotes = InternalNotes.ToList(),
+            Span = Span.ToSourceSpan()
+        };
+}
+
+public sealed record LoanLifetimeConstraintSnapshot(int Sub, int Sup, SourceSpanPayload Span)
+{
+    public static LoanLifetimeConstraintSnapshot FromConstraint(LifetimeConstraint constraint) =>
+        new(constraint.Sub.Value, constraint.Sup.Value, SourceSpanPayload.Create(constraint.Span));
+
+    public LifetimeConstraint Restore() =>
+        new()
+        {
+            Sub = new LifetimeId { Value = Sub },
+            Sup = new LifetimeId { Value = Sup },
+            Span = Span.ToSourceSpan()
+        };
 }
 
 public sealed record BorrowDiagnosticEntrySnapshot(

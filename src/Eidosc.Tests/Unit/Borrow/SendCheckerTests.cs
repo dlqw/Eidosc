@@ -57,7 +57,7 @@ add :: Int -> Int -> Int
     public void CompilationPipeline_BorrowPhase_EmitsBorrowDiagnosticSnapshot()
     {
         const string source = """
-identity :: Int -> Int
+identity :: Ref[Int] -> Ref[Int]
 {
     x => x
 }
@@ -81,7 +81,7 @@ identity :: Int -> Int
     public void CompilationPipeline_BorrowPhase_RestoresCleanPreviousBorrowDiagnosticSnapshot()
     {
         const string source = """
-identity :: Int -> Int
+identity :: Ref[Int] -> Ref[Int]
 {
     x => x
 }
@@ -108,6 +108,10 @@ identity :: Int -> Int
         Assert.NotNull(first.BorrowDiagnosticSnapshot);
         Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault("Borrow.previous_build.diagnostic_restore_hits"));
         Assert.True(second.ProfilingCounters.GetValueOrDefault("Borrow.previous_build.diagnostic_restore_functions") > 0);
+        var restored = Assert.Single(second.BorrowCheckResult!.ResultsByFunctionKey.Values);
+        Assert.NotNull(restored.LoanSignature);
+        Assert.True(restored.LoanSignature!.ReturnBoundToParam(0));
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, restored.LoanSignature.OwnershipContract.Result.Projection.Kind);
     }
 
     [Fact]

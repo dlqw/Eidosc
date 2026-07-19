@@ -409,6 +409,7 @@ public sealed partial class CompilationPipeline
 
         using (MeasureSubphase(CompilationPhase.Borrow, "restore_borrow_diagnostics_from_previous_snapshot"))
         {
+            _borrowCheckResult = previous.ToBorrowCheckResult();
             _borrowDiagnosticSnapshot = previous;
         }
 
@@ -575,9 +576,13 @@ public sealed partial class CompilationPipeline
                 ? new BorrowCheckResult
                 {
                     FunctionName = func.Name,
-                    FunctionSymbolId = func.SymbolId
+                    FunctionSymbolId = func.SymbolId,
+                    LoanSignature = previous.LoanSummary?.Restore()
                 }
-                : previousHints.ToBorrowCheckResult(func.Name, func.SymbolId);
+                : previousHints.ToBorrowCheckResult(
+                    func.Name,
+                    func.SymbolId,
+                    previous.LoanSummary?.Restore());
         }
 
         if (previousHints != null)
@@ -671,7 +676,7 @@ public sealed partial class CompilationPipeline
 
         using (MeasureSubphase(CompilationPhase.Borrow, "restore_borrow_codegen_hints_from_previous_snapshot"))
         {
-            _borrowCheckResult = hints.ToBorrowCheckResult();
+            _borrowCheckResult = hints.ToBorrowCheckResult(diagnostics);
             _borrowDiagnosticSnapshot = diagnostics;
             _borrowCodegenHintsSnapshot = hints;
         }
