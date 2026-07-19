@@ -456,7 +456,7 @@ public sealed record ComptimeValuesPayload(
     int UnsupportedValues,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "comptime-values-payload-v6";
+    public const string CurrentSchemaVersion = "comptime-values-payload-v7";
 
     public static ComptimeValuesPayload Create(
         TypeInferer? typeInferer,

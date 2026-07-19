@@ -10,7 +10,7 @@ public sealed record MetaQueryStatePayload(
     IReadOnlyList<MetaQueryDependencyPayload> Dependencies,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "meta-query-state-payload-v2";
+    public const string CurrentSchemaVersion = "meta-query-state-payload-v3";
 
     internal static MetaQueryStatePayload Create(SymbolTable? symbolTable)
     {
