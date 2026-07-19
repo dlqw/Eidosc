@@ -1304,6 +1304,58 @@ SecondName :: comptime meta.name_of(WorkDecl);
     }
 
     [Fact]
+    public void TypedReflectionValues_RoundTripThroughCanonicalPayloadWithStableMetaTypes()
+    {
+        var ownership = new ComptimeMetaObjectValue(
+            "ownership-slot",
+            [
+                new ComptimeNamedValue("schemaVersion", new ComptimeIntegerValue(WellKnownStrings.Meta.SchemaVersion)),
+                new ComptimeNamedValue("role", new ComptimeStringValue("parameter")),
+                new ComptimeNamedValue("ordinal", new ComptimeIntegerValue(0)),
+                new ComptimeNamedValue("kind", new ComptimeStringValue("byValue")),
+                new ComptimeNamedValue("type", new ComptimeTypeValue(new MetaTypeRef(
+                    MetaTypeKind.Primitive,
+                    "Int",
+                    "builtin:Int",
+                    SymbolId.None,
+                    new TypeId(BaseTypes.IntId),
+                    []))),
+                new ComptimeNamedValue("deferred", new ComptimeBoolValue(false)),
+                new ComptimeNamedValue("copy", new ComptimeBoolValue(true)),
+                new ComptimeNamedValue("clone", new ComptimeBoolValue(true)),
+                new ComptimeNamedValue("drop", new ComptimeStringValue("dropOnce"))
+            ])
+        {
+            StaticType = MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.Ownership,
+                WellKnownTypeIds.MetaOwnershipId)
+        };
+        var handle = new ComptimeMetaObjectValue(
+            "function-handle",
+            [
+                new ComptimeNamedValue("identity", new ComptimeStringValue("function:work")),
+                new ComptimeNamedValue("ownership", new ComptimeSequenceValue(ComptimeSequenceKind.List, [ownership]))
+            ])
+        {
+            StaticType = MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.Function,
+                WellKnownTypeIds.MetaFunctionId)
+        };
+
+        Assert.True(ComptimeValuePayload.TryCreate(handle, out var payload));
+        Assert.True(payload.TryRestoreValue(null, out var restored));
+        Assert.True(handle.StructuralEquals(restored));
+        var restoredHandle = Assert.IsType<ComptimeMetaObjectValue>(restored);
+        Assert.Equal(WellKnownTypeIds.MetaFunctionId, Assert.IsType<TyCon>(restoredHandle.StaticType).Id.Value);
+        Assert.True(restoredHandle.TryGet("ownership", out var restoredOwnershipValue));
+        var restoredOwnership = Assert.IsType<ComptimeMetaObjectValue>(
+            Assert.Single(Assert.IsType<ComptimeSequenceValue>(restoredOwnershipValue).Elements));
+        Assert.Equal(WellKnownTypeIds.MetaOwnershipId, Assert.IsType<TyCon>(restoredOwnership.StaticType).Id.Value);
+        Assert.True(restoredOwnership.TryGet("copy", out var restoredCopy));
+        Assert.True(Assert.IsType<ComptimeBoolValue>(restoredCopy).Value);
+    }
+
+    [Fact]
     public void QueryCache_ModuleTypesRestore_RehydratesCacheAndCanonicalDependencyHistory()
     {
         const string source = """
