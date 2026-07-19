@@ -13,7 +13,7 @@ public sealed record ModuleMirStateArtifactPayload(
     ModuleMirStatePayload MirState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v10";
+    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v11";
 
     public static ModuleMirStateArtifactPayload Create(
         string moduleKey,
@@ -197,7 +197,7 @@ public sealed record ModuleMirStatePayload(
     IReadOnlyList<MirFunctionFingerprint> FunctionFingerprints,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-payload-v10";
+    public const string CurrentSchemaVersion = "module-mir-state-payload-v11";
 
     public bool IsRestorable => Module != null &&
                                 UnsupportedNodeCount == 0 &&
@@ -413,10 +413,14 @@ public sealed record MirStateFunctionPayload(
         {
             GenericParameters = function.GenericParameters
                 .Select(MirStateGenericParameterPayload.Create)
-                .ToArray()
+                .ToArray(),
+            OwnershipContract = MirStateOwnershipContractPayload.Create(function.OwnershipContract)
         };
 
     public IReadOnlyList<MirStateGenericParameterPayload> GenericParameters { get; init; } = [];
+
+    public MirStateOwnershipContractPayload OwnershipContract { get; init; } =
+        MirStateOwnershipContractPayload.Empty;
 
     public MirFunc Restore() =>
         new()
@@ -439,10 +443,68 @@ public sealed record MirStateFunctionPayload(
             Span = Span.ToSourceSpan(),
             SymbolId = new SymbolId(SymbolId),
             FunctionId = FunctionId.Restore(),
+            OwnershipContract = OwnershipContract.Restore(),
             IsEntry = IsEntry,
             TraitInvokeHelper = Enum.Parse<TraitInvokeHelperKind>(TraitInvokeHelper),
             TraitInvokeHelperTraitId = new SymbolId(TraitInvokeHelperTraitId)
         };
+}
+
+public sealed record MirStateOwnershipContractPayload(
+    string SchemaVersion,
+    int CallableSymbol,
+    string CallableName,
+    IReadOnlyList<MirStateOwnershipSlotPayload> Parameters,
+    MirStateOwnershipSlotPayload Result,
+    string CanonicalIdentity)
+{
+    public static MirStateOwnershipContractPayload Empty { get; } = Create(OwnershipContract.Empty);
+
+    internal static MirStateOwnershipContractPayload Create(OwnershipContract contract) =>
+        new(
+            contract.SchemaVersion,
+            contract.CallableSymbol.Value,
+            contract.CallableName,
+            contract.Parameters.Select(MirStateOwnershipSlotPayload.Create).ToArray(),
+            MirStateOwnershipSlotPayload.Create(contract.Result),
+            contract.CanonicalIdentity);
+
+    internal OwnershipContract Restore() =>
+        new()
+        {
+            SchemaVersion = SchemaVersion,
+            CallableSymbol = new SymbolId(CallableSymbol),
+            CallableName = CallableName,
+            Parameters = Parameters.Select(static parameter => parameter.Restore()).ToArray(),
+            Result = Result.Restore(),
+            CanonicalIdentity = CanonicalIdentity
+        };
+}
+
+public sealed record MirStateOwnershipSlotPayload(
+    int Ordinal,
+    string Name,
+    int TypeId,
+    string PassingKind,
+    bool IsDeferred,
+    string TypeIdentity)
+{
+    internal static MirStateOwnershipSlotPayload Create(OwnershipSlot slot) =>
+        new(
+            slot.Ordinal,
+            slot.Name,
+            slot.TypeId.Value,
+            slot.Projection.Kind.ToString(),
+            slot.Projection.IsDeferred,
+            slot.TypeIdentity);
+
+    internal OwnershipSlot Restore() =>
+        new(
+            Ordinal,
+            Name,
+            new TypeId(TypeId),
+            new OwnershipProjection(Enum.Parse<OwnershipPassingKind>(PassingKind), IsDeferred),
+            TypeIdentity);
 }
 
 public sealed record MirStateGenericParameterPayload(

@@ -56,6 +56,58 @@ public sealed class ModuleMirStatePayloadTests
     }
 
     [Fact]
+    public void Create_RestoresStructuredOwnershipContract()
+    {
+        var valueType = new TypeId(BaseTypes.StringId);
+        var sharedType = new TypeId(9001);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [valueType.Value] = new TypeDescriptor.Builtin(valueType.Value),
+            [sharedType.Value] = new TypeDescriptor.Ref(valueType)
+        };
+        var contract = OwnershipContract.Create(
+            new SymbolId(41),
+            "borrow_text",
+            [("value", valueType)],
+            sharedType,
+            descriptors);
+        var block = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Terminator = new MirReturn()
+        };
+        var module = new MirModule
+        {
+            Name = "ownership_contract_restore",
+            TypeDescriptors = descriptors,
+            Functions =
+            [
+                new MirFunc
+                {
+                    Name = "borrow_text",
+                    SymbolId = new SymbolId(41),
+                    EntryBlockId = block.Id,
+                    BasicBlocks = [block],
+                    OwnershipContract = contract
+                }
+            ]
+        };
+
+        var payload = ModuleMirStatePayload.Create(module);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = JsonSerializer.Deserialize<ModuleMirStatePayload>(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped!.TryRestore(out var restored));
+        var restoredContract = Assert.Single(restored.Functions).OwnershipContract;
+        Assert.Equal(contract.SchemaVersion, restoredContract.SchemaVersion);
+        Assert.Equal(contract.CanonicalIdentity, restoredContract.CanonicalIdentity);
+        Assert.Equal(OwnershipPassingKind.ByValue, restoredContract.GetParameter(0).Projection.Kind);
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, restoredContract.Result.Projection.Kind);
+    }
+
+    [Fact]
     public void Create_FromCompiledMir_RestoresEquivalentFingerprints()
     {
         var result = new CompilationPipeline("""
