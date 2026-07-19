@@ -1135,8 +1135,8 @@ answer :: expand make_expression() = 42;
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, static diagnostic =>
-            diagnostic.Message.Contains("meta.Site[meta.TypeSyntax]", StringComparison.Ordinal) &&
-            diagnostic.Message.Contains("meta.Syntax[meta.TypeSyntax]", StringComparison.Ordinal));
+            diagnostic.Code == "E3620" &&
+            diagnostic.Message.Contains("make_expression", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1154,8 +1154,8 @@ answer :: Int = expand make_expression(42);
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, static diagnostic =>
-            diagnostic.Message.Contains("followed by meta.Site[meta.Expr]", StringComparison.Ordinal) &&
-            diagnostic.Message.Contains("return meta.Syntax[meta.Expr]", StringComparison.Ordinal));
+            diagnostic.Code == "E3620" &&
+            diagnostic.Message.Contains("make_expression", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1173,8 +1173,8 @@ answer :: Int = expand make_pattern();
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, static diagnostic =>
-            diagnostic.Message.Contains("meta.Site[meta.Expr]", StringComparison.Ordinal) &&
-            diagnostic.Message.Contains("return meta.Syntax[meta.Expr]", StringComparison.Ordinal));
+            diagnostic.Code == "E3620" &&
+            diagnostic.Message.Contains("make_pattern", StringComparison.Ordinal));
     }
 
     [Fact]
