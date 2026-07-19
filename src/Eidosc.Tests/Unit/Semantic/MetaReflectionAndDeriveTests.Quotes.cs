@@ -990,6 +990,24 @@ ReflectedParameter :: comptime reflect_parameter(42);
     }
 
     [Fact]
+    public void Meta_parameter_builder_returns_a_typed_parameter_value()
+    {
+        const string source = """
+ParameterValue :: comptime meta.parameter("value", Int);
+""";
+
+        var result = Compile("meta_parameter_builder_typed.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var table = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var inferer = Assert.IsType<TypeInferer>(result.TypeInferer);
+        var parameter = Assert.IsType<ComptimeMetaObjectValue>(GetComptimeValue("ParameterValue", table, inferer));
+        Assert.Equal(
+            WellKnownTypeIds.MetaParameterId,
+            Assert.IsType<TyCon>(parameter.StaticType).Id.Value);
+    }
+
+    [Fact]
     public void Expression_expand_captures_typed_syntax_and_materializes_a_hygienic_expression()
     {
         const string source = """
