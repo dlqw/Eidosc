@@ -14,6 +14,7 @@ public enum LoanConstraintViolation
     LifetimeTooShort,
     ReturnBorrowOutlivesBorrowee,
     UseAfterMove,
+    DoubleMove,
     MutateWhileBorrowed,
     MultipleMutableBorrows,
     SharedBorrowWhileMutable,
@@ -220,7 +221,7 @@ public sealed partial class LoanConstraintVerifier
                 break;
 
             case MirDrop drop:
-                VerifyDrop(drop, blockId, instructionIndex, state);
+                VerifyDrop(drop, blockId, instructionIndex, state, results);
                 break;
 
             case MirAssign assign when assign.Target.Kind == PlaceKind.Local:
@@ -1194,11 +1195,30 @@ public sealed partial class LoanConstraintVerifier
         MirDrop drop,
         BlockId blockId,
         int instructionIndex,
-        LoanVerifierState state)
+        LoanVerifierState state,
+        List<LoanConstraintResult> results)
     {
         if (drop.Value is not MirPlace dropPlace ||
             !BorrowTarget.TryResolve(dropPlace, out var dropTarget))
         {
+            return;
+        }
+
+        if (dropPlace.Kind == PlaceKind.Local && state.MovedVars.Contains(dropPlace.Local))
+        {
+            AddDiagnostic(new BorrowDiagnostic
+            {
+                Kind = BorrowErrorKind.DoubleMove,
+                Message = DiagnosticMessages.BorrowValueAlreadyConsumedCannotDrop,
+                Span = drop.Span,
+                Location = (blockId, instructionIndex),
+                Hint = DiagnosticMessages.BorrowDropExactlyOnceHint
+            });
+            results.Add(LoanConstraintResult.Failure(
+                LoanConstraintViolation.DoubleMove,
+                DiagnosticMessages.BorrowValueAlreadyConsumedCannotDrop,
+                drop.Span,
+                hint: DiagnosticMessages.BorrowDropExactlyOnceHint));
             return;
         }
 

@@ -1452,6 +1452,12 @@
   <data name="BorrowUseAfterMoveCannotRead" xml:space="preserve">
     <value>变量已被移动，无法再次读取</value>
   </data>
+  <data name="BorrowValueAlreadyConsumedCannotDrop" xml:space="preserve">
+    <value>值已被移动或释放，无法再次释放</value>
+  </data>
+  <data name="BorrowDropExactlyOnceHint" xml:space="preserve">
+    <value>每条控制流路径只能消费一次所有权；请删除重复释放或改为释放移动后的目标值</value>
+  </data>
   <data name="BorrowCannotMoveBorrowedValue" xml:space="preserve">
     <value>无法移动被借用的值</value>
   </data>
