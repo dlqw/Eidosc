@@ -76,24 +76,12 @@ internal static partial class MetaComptimeIntrinsics
             "error" => TryReportDiagnostic(arguments, MetaDiagnosticLevel.Error, context.Meta, context.Resources, out value, out reason),
             "warning" => TryReportDiagnostic(arguments, MetaDiagnosticLevel.Warning, context.Meta, context.Resources, out value, out reason),
             "with_body" => TryReplaceFunctionBody(arguments, out value, out reason),
-            "slot_from" => TryCreateGenerationSlot(arguments, out value, out reason),
-            "with_slot" => TryBindGenerationSlot(arguments, out value, out reason),
             "identifier" => TryCreateIdentifier(arguments, call.Span, context.Meta, out value, out reason),
             "site_of" => TryCreateSite(arguments, context.Meta, out value, out reason),
             "resolve_at" => TryResolveAt(arguments, context.Meta, out value, out reason),
             "origin_of" => TryCreateOrigin(arguments, context.Meta, out value, out reason),
             "parse_items" => TryParseTextSyntax(arguments, QuoteKind.Items, context, out value, out reason),
             "parse_expr" => TryParseTextSyntax(arguments, QuoteKind.Expression, context, out value, out reason),
-            "keep" => TryKeepTransformation(arguments, out value, out reason),
-            "add_before" => TryTargetSyntaxEdit("insert-before", arguments, out value, out reason),
-            "add_after" => TryTargetSyntaxEdit("insert-after", arguments, out value, out reason),
-            "add_members" => TryTargetSyntaxEdit("add-members", arguments, out value, out reason),
-            "replace_target" => TryReplaceTarget(arguments, out value, out reason),
-            "remove_target" => TryRemoveTarget(arguments, out value, out reason),
-            "report" => TryReportTransformation(arguments, out value, out reason),
-            "add_items" => TryAddItemsTransformation(arguments, out value, out reason),
-            "add_module" => TryAddModuleTransformation(arguments, out value, out reason),
-            "combine" => TryCombineTransformations(arguments, out value, out reason),
             "function" => TryObject("declaration.function", arguments, ["name", "parameters", "result", "body"], out value, out reason),
             "implementation" => TryObject("declaration.implementation", arguments, ["trait", "target", "methods"], out value, out reason),
             "comptime_value" => TryObject("declaration.comptime-value", arguments, ["name", "type", "value"], out value, out reason),
@@ -159,106 +147,6 @@ internal static partial class MetaComptimeIntrinsics
         return true;
     }
 
-    private static bool TryCreateGenerationSlot(
-        IReadOnlyList<ComptimeValue> arguments,
-        out ComptimeValue value,
-        out string reason)
-    {
-        if (arguments.Count != 1)
-        {
-            return Fail("meta.slot_from expects exactly one stable handle or canonical scalar key", out value, out reason);
-        }
-
-        if (!TryCreateGenerationSlotKey(arguments[0], out var key, out reason))
-        {
-            value = ComptimeUnitValue.Instance;
-            return false;
-        }
-
-        value = Obj(
-            "generation-slot",
-            ("identity", new ComptimeStringValue(Hash($"generation-slot|{key}")))) with
-        {
-            StaticType = MetaSchemaRegistry.MetaType(
-                WellKnownStrings.Meta.Types.GenerationSlot,
-                WellKnownTypeIds.MetaGenerationSlotId)
-        };
-        return true;
-    }
-
-    private static bool TryCreateGenerationSlotKey(
-        ComptimeValue source,
-        out string key,
-        out string reason)
-    {
-        switch (source)
-        {
-            case ComptimeDeclValue declaration:
-                key = $"declaration:{declaration.StableIdentity}";
-                reason = string.Empty;
-                return true;
-            case ComptimeTypeValue type:
-                key = $"type:{type.TypeRef.StableIdentity}";
-                reason = string.Empty;
-                return true;
-            case ComptimeMetaObjectValue handle
-                when TryGetStableDeclarationHandle(handle, out var handleIdentity):
-                key = $"handle:{handle.SchemaKind}:{handleIdentity}";
-                reason = string.Empty;
-                return true;
-            case ComptimeBoolValue or ComptimeIntegerValue or ComptimeFloatValue or
-                ComptimeCharValue or ComptimeStringValue:
-                key = $"scalar:{source.CanonicalText}";
-                reason = string.Empty;
-                return true;
-            default:
-                key = string.Empty;
-                reason = "meta.slot_from accepts declaration/type/field/constructor handles or canonical user scalar keys; Unit, aggregate values, and opaque objects are unstable slot sources";
-                return false;
-        }
-    }
-
-    private static bool TryGetStableDeclarationHandle(
-        ComptimeMetaObjectValue handle,
-        out string stableIdentity)
-    {
-        foreach (var propertyName in new[] { "decl", "targetDecl" })
-        {
-            if (handle.TryGet(propertyName, out var value) && value is ComptimeDeclValue declaration)
-            {
-                stableIdentity = declaration.StableIdentity;
-                return true;
-            }
-        }
-
-        stableIdentity = string.Empty;
-        return false;
-    }
-
-    private static bool TryBindGenerationSlot(
-        IReadOnlyList<ComptimeValue> arguments,
-        out ComptimeValue value,
-        out string reason)
-    {
-        if (arguments.Count != 2 ||
-            arguments[1] is not ComptimeMetaObjectValue { SchemaKind: "generation-slot" } slot ||
-            !slot.TryGet("identity", out var identity) ||
-            identity is not ComptimeStringValue)
-        {
-            return Fail("meta.with_slot expects an output and a meta.GenerationSlot created by meta.slot_from", out value, out reason);
-        }
-
-        value = Obj(
-            "slotted-output",
-            ("output", arguments[0]),
-            ("slot", slot)) with
-        {
-            StaticType = arguments[0].StaticType
-        };
-        reason = string.Empty;
-        return true;
-    }
-
     private static string ClassifyTraceKind(string name)
     {
         return name switch
@@ -267,25 +155,21 @@ internal static partial class MetaComptimeIntrinsics
             "parameters_of" or "constructors_of" or "fields_of" or "declared_fields_of" or
             "type_of" or "result_type_of" or "effects_of" or "mutability_of" or
              "referent_of" or "items_of" or "constraints_of" or "clauses_of" or "span_of" or
-             "clause_keyword_of" or "clause_kind_of" or "clause_stage_of" or
+             "clause_keyword_of" or "clause_kind_of" or
              "clause_arguments_of" or "clause_occurrence_of" or "clause_source_order_of" or
              "clause_argument_type_of" or "clause_argument_text_of" or
              "clause_argument_path_of" or "clause_argument_index_of" or
              "clause_argument_occurrence_of" or
-            "target_type_of" or "target_declaration_of" or "layout_of" or "layout_size" or
+            "layout_of" or "layout_size" or
             "layout_alignment" or "layout_field_offsets" or "cases_of" or "leaf_cases_of" or
             "parent_type_of" or "case_type_of" or "constructor_of" or "is_subtype" or
             "join_type_of" or "syntax_of" or "arguments_of" or "module_of" or "package_of" or
             "workspace_of" or "modules_of" or "imports_of" or "exports_of" or "body_of" or
             "nodes_of" or "value_of" or "references_to" or "calls_from" or "callers_of" or
-            "implementations_of" or "target_scope" or "module_scope" or "package_scope" or
-            "dependencies_scope" or "workspace_scope" or "declaration_of" => "query",
-            "resources_of" => "query",
+            "implementations_of" or "declaration_of" => "query",
             "resource_path_of" or "resource_content_of" or "resource_exists" or "resource_hash_of" => "query",
             "error" or "warning" or "diagnostic" => "diagnostic",
             "identifier" or "site_of" or "resolve_at" or "origin_of" or "parse_items" or "parse_expr" => "syntax",
-            "keep" or "add_before" or "add_after" or "add_members" or "replace_target" or
-                "remove_target" or "report" or "add_items" or "add_module" or "combine" => "transformation",
             _ => "builder"
         };
     }
