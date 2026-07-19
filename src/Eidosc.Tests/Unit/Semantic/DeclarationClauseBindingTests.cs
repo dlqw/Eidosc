@@ -451,6 +451,33 @@ runtime_pass :: Int -> Bool { _ => true }
     }
 
     [Fact]
+    public void User_derive_uses_meta_type_to_items_protocol_without_target_surface()
+    {
+        const string source = """
+derive_empty :: comptime meta.Type -> meta.Items { _ => [] }
+
+Subject :: type expand derive_empty {
+    value :: Int
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("Target", StringComparison.Ordinal) ||
+            diagnostic.Message.Contains("Transformation", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """

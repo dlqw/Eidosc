@@ -839,6 +839,16 @@ public sealed class Substitution
         var left = (TyCon)ApplyCon(con1);
         var right = (TyCon)ApplyCon(con2);
 
+        // `meta.Items` is the compiler-owned typed list domain. Its runtime
+        // representation is the ordinary `Seq[T]` constructor, so list
+        // literals and sequence-producing helpers can satisfy the protocol
+        // without exposing an implementation-specific wrapper type.
+        if (IsMetaItems(left) && IsBuiltinSequence(right) ||
+            IsMetaItems(right) && IsBuiltinSequence(left))
+        {
+            return;
+        }
+
         if (!TryUnifyConstructorHeads(left, right))
         {
             throw new TypeInferenceException(DiagnosticMessages.CannotUnifyTypeConstructors(left, right));
@@ -888,6 +898,13 @@ public sealed class Substitution
             Unify(left.Args[i], right.Args[i]);
         }
     }
+
+    private static bool IsMetaItems(TyCon type) =>
+        type.Id == new TypeId(WellKnownTypeIds.MetaItemsId) ||
+        string.Equals(type.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal);
+
+    private static bool IsBuiltinSequence(TyCon type) =>
+        string.Equals(type.Name, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal);
 
     public GenericValueArgument Apply(GenericValueArgument argument) =>
         ApplyValueArgument(argument, []);

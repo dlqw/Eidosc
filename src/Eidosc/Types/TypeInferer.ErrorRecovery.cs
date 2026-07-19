@@ -200,19 +200,26 @@ public sealed partial class TypeInferer
         var resolvedActual = _substitution.Apply(actual);
         if (resolvedExpected is TyCon expectedConstructor &&
             resolvedActual is TyCon actualConstructor &&
-            expectedConstructor.Args.Count == actualConstructor.Args.Count &&
-            HaveSameTypeConstructorIdentity(expectedConstructor, actualConstructor))
+            IsMetaItemsSequence(expectedConstructor, actualConstructor))
         {
-            var unifiedArguments = new List<Type>(expectedConstructor.Args.Count);
-            for (var index = 0; index < expectedConstructor.Args.Count; index++)
+            return true;
+        }
+
+        if (resolvedExpected is TyCon expectedCon &&
+            resolvedActual is TyCon actualCon &&
+            expectedCon.Args.Count == actualCon.Args.Count &&
+            HaveSameTypeConstructorIdentity(expectedCon, actualCon))
+        {
+            var unifiedArguments = new List<Type>(expectedCon.Args.Count);
+            for (var index = 0; index < expectedCon.Args.Count; index++)
             {
-                _substitution.Unify(expectedConstructor.Args[index], actualConstructor.Args[index]);
-                unifiedArguments.Add(_substitution.Apply(expectedConstructor.Args[index]));
+                _substitution.Unify(expectedCon.Args[index], actualCon.Args[index]);
+                unifiedArguments.Add(_substitution.Apply(expectedCon.Args[index]));
             }
 
             _substitution.Unify(
-                expectedConstructor with { Args = unifiedArguments },
-                actualConstructor with { Args = unifiedArguments });
+                expectedCon with { Args = unifiedArguments },
+                actualCon with { Args = unifiedArguments });
             return true;
         }
 
@@ -235,6 +242,14 @@ public sealed partial class TypeInferer
 
         return false;
     }
+
+    private static bool IsMetaItemsSequence(TyCon left, TyCon right) =>
+        ((left.Id == new TypeId(WellKnownTypeIds.MetaItemsId) ||
+          string.Equals(left.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal)) &&
+         string.Equals(right.Name, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal)) ||
+        ((right.Id == new TypeId(WellKnownTypeIds.MetaItemsId) ||
+          string.Equals(right.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal)) &&
+         string.Equals(left.Name, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal));
 
     private static bool HaveSameTypeConstructorIdentity(TyCon left, TyCon right)
     {

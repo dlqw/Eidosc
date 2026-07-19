@@ -108,5 +108,7 @@ internal static class CompilerMetaProtocolRegistry
 
     private static bool IsType(TypeNode node, int typeId, SymbolTable symbolTable) =>
         node is TypePath { SymbolId.IsValid: true } path &&
-        symbolTable.GetSymbol(path.SymbolId)?.TypeId == new TypeId(typeId);
+        (symbolTable.GetSymbol(path.SymbolId)?.TypeId == new TypeId(typeId) ||
+         typeId == WellKnownTypeIds.MetaItemsId &&
+         string.Equals(symbolTable.GetSymbol(path.SymbolId)?.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal));
 }

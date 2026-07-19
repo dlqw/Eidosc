@@ -227,13 +227,16 @@ internal static class MetaSchemaRegistry
         var resolveFailureId = SymbolId.None;
         foreach (var typeSpec in s_types.Where(typeSpec => allowLegacySurface || !IsLegacyType(typeSpec.Name)))
         {
+            var registeredTypeId = typeSpec.Name == WellKnownStrings.Meta.Types.Items
+                ? symbolTable.GetSymbol(symbolTable.LookupType(WellKnownStrings.BuiltinTypes.Seq) ?? SymbolId.None)?.TypeId.Value ?? typeSpec.TypeId
+                : typeSpec.TypeId;
             var typeId = symbolTable.RegisterSymbol(new AdtSymbol
             {
                 Name = typeSpec.Name,
                 Span = SourceSpan.Empty,
                 IsModuleLevel = true,
                 IsPublic = true,
-                TypeId = new TypeId(typeSpec.TypeId),
+                TypeId = new TypeId(registeredTypeId),
                 TypeParams = Enumerable.Repeat(SymbolId.None, typeSpec.Arity).ToList()
             });
             symbolTable.AddMemberToModule(moduleId, typeId);
