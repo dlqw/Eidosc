@@ -1,5 +1,6 @@
 using Eidosc.Ast.Declarations;
 using Eidosc.Symbols;
+using System.Collections.Immutable;
 
 namespace Eidosc.Types;
 
@@ -110,7 +111,8 @@ internal static partial class MetaComptimeIntrinsics
                     .Select((argument, index) => CreateOwnershipProjection(
                         argument,
                         index == type.Arguments.Count - 1 ? "result" : "parameter",
-                        index == type.Arguments.Count - 1 ? -1 : index))));
+                        index == type.Arguments.Count - 1 ? -1 : index,
+                        meta))));
         }
 
         if (symbol is AdtSymbol adtSymbol &&
@@ -156,19 +158,117 @@ internal static partial class MetaComptimeIntrinsics
     private static ComptimeValue CreateOwnershipProjection(
         MetaTypeRef type,
         string role,
-        int ordinal) =>
-        Obj(
+        int ordinal,
+        MetaComptimeContext meta)
+    {
+        var kind = type.Kind switch
+        {
+            MetaTypeKind.Reference => "sharedBorrow",
+            MetaTypeKind.MutableReference => "mutableBorrow",
+            _ => "byValue"
+        };
+        var borrowed = type.Kind is MetaTypeKind.Reference or MetaTypeKind.MutableReference;
+        return TypedShapeObject(
             "ownership-slot",
-            ("role", new ComptimeStringValue(role)),
-            ("ordinal", new ComptimeIntegerValue(ordinal)),
-            ("kind", new ComptimeStringValue(type.Kind switch
-            {
-                MetaTypeKind.Reference => "sharedBorrow",
-                MetaTypeKind.MutableReference => "mutableBorrow",
-                _ => "byValue"
-            })),
-            ("type", new ComptimeTypeValue(type)),
-            ("deferred", new ComptimeBoolValue(type.Kind == MetaTypeKind.TypeParameter)));
+            WellKnownStrings.Meta.Types.Ownership,
+            WellKnownTypeIds.MetaOwnershipId,
+            [
+                ("schemaVersion", new ComptimeIntegerValue(WellKnownStrings.Meta.SchemaVersion)),
+                ("role", new ComptimeStringValue(role)),
+                ("ordinal", new ComptimeIntegerValue(ordinal)),
+                ("kind", new ComptimeStringValue(kind)),
+                ("type", new ComptimeTypeValue(type)),
+                ("deferred", new ComptimeBoolValue(type.Kind == MetaTypeKind.TypeParameter)),
+                ("copy", new ComptimeBoolValue(HasOwnershipTraitFact(type, BuiltinTraits.TraitNames.Copy, meta))),
+                ("clone", new ComptimeBoolValue(HasOwnershipTraitFact(type, BuiltinTraits.TraitNames.Clone, meta))),
+                ("drop", new ComptimeStringValue(borrowed ? "borrowed" : "dropOnce")),
+                ("borrowed", new ComptimeBoolValue(borrowed)),
+                ("mutable", new ComptimeBoolValue(type.Kind == MetaTypeKind.MutableReference))
+            ]);
+    }
+
+    private static bool HasOwnershipTraitFact(
+        MetaTypeRef type,
+        string traitName,
+        MetaComptimeContext meta)
+    {
+        if (type.Kind == MetaTypeKind.Reference)
+        {
+            return true;
+        }
+
+        if (type.Kind == MetaTypeKind.MutableReference)
+        {
+            return false;
+        }
+
+        if (type.Kind == MetaTypeKind.SharedReference)
+        {
+            return string.Equals(traitName, BuiltinTraits.TraitNames.Clone, StringComparison.Ordinal);
+        }
+
+        if (type.Kind is MetaTypeKind.RawPointer or MetaTypeKind.Function or MetaTypeKind.ForeignFunction)
+        {
+            return true;
+        }
+
+        if (type.Kind == MetaTypeKind.Tuple)
+        {
+            return type.Arguments.All(argument => HasOwnershipTraitFact(argument, traitName, meta));
+        }
+
+        var traitId = meta.SymbolTable.LookupType(traitName);
+        if (type.Kind == MetaTypeKind.TypeParameter &&
+            traitId is { IsValid: true } requiredTrait &&
+            type.SymbolId.IsValid &&
+            meta.SymbolTable.GetSymbol<TypeParamSymbol>(type.SymbolId) is { } parameter)
+        {
+            return parameter.TraitConstraints.Contains(requiredTrait);
+        }
+
+        var typeName = type.SymbolId.IsValid
+            ? meta.SymbolTable.GetSymbol(type.SymbolId)?.Name ?? type.Name
+            : type.Name;
+        if (BuiltinTraits.HasTrait(typeName, traitName))
+        {
+            return true;
+        }
+
+        if (traitId is not { IsValid: true } resolvedTrait || !type.TypeId.IsValid)
+        {
+            return false;
+        }
+
+        var implementingTypeKey = CreateOwnershipImplTypeKey(type);
+        return !implementingTypeKey.IsEmpty &&
+               meta.SymbolTable.LookupImplForTraitByKeys(
+                   type.TypeId,
+                   resolvedTrait,
+                   implementingTypeKey,
+                   traitTypeArgKeys: null) != null;
+    }
+
+    private static ImplTypeRefKey CreateOwnershipImplTypeKey(MetaTypeRef type)
+    {
+        var typeArguments = (type.GenericArguments ?? [])
+            .Where(static argument => argument.Domain == MetaGenericArgumentDomain.Type && argument.Type != null)
+            .Select(static argument => CreateOwnershipImplTypeKey(argument.Type!))
+            .Where(static key => !key.IsEmpty)
+            .ToImmutableArray();
+        if (typeArguments.IsDefaultOrEmpty && type.Arguments.Count > 0)
+        {
+            typeArguments = type.Arguments
+                .Select(CreateOwnershipImplTypeKey)
+                .Where(static key => !key.IsEmpty)
+                .ToImmutableArray();
+        }
+
+        return new ImplTypeRefKey(
+            type.SymbolId,
+            type.TypeId,
+            type.SymbolId.IsValid ? type.Name.Split('[', 2)[0] : type.Name,
+            typeArguments);
+    }
 
     private static void PopulateAdtShape(
         ComptimeTypeValue typeValue,

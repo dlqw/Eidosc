@@ -100,4 +100,5 @@ public static class WellKnownTypeIds
     public const int MetaFunctionId = 93;
     public const int MetaModulesId = 94;
     public const int BuildInputsId = 95;
+    public const int MetaOwnershipId = 96;
 }

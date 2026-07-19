@@ -279,6 +279,33 @@ main :: Unit -> String {
     private static ComptimeMetaObjectValue ReadShapePayload(ComptimeAdtValue shape) =>
         Assert.IsType<ComptimeMetaObjectValue>(Assert.Single(shape.PositionalValues));
 
+    private static ComptimeMetaObjectValue[] ReadOwnershipSlots(
+        string name,
+        SymbolTable symbolTable,
+        TypeInferer inferer)
+    {
+        var shape = Assert.IsType<ComptimeAdtValue>(GetComptimeValue(name, symbolTable, inferer));
+        var payload = ReadShapePayload(shape);
+        Assert.True(payload.TryGet("borrowConstraints", out var ownershipValue));
+        return Assert.IsType<ComptimeSequenceValue>(ownershipValue).Elements
+            .Select(Assert.IsType<ComptimeMetaObjectValue>)
+            .ToArray();
+    }
+
+    private static void AssertOwnershipFacts(
+        ComptimeMetaObjectValue ownership,
+        bool copy,
+        bool clone,
+        string drop)
+    {
+        Assert.True(ownership.TryGet("copy", out var copyValue));
+        Assert.Equal(copy, Assert.IsType<ComptimeBoolValue>(copyValue).Value);
+        Assert.True(ownership.TryGet("clone", out var cloneValue));
+        Assert.Equal(clone, Assert.IsType<ComptimeBoolValue>(cloneValue).Value);
+        Assert.True(ownership.TryGet("drop", out var dropValue));
+        Assert.Equal(drop, Assert.IsType<ComptimeStringValue>(dropValue).Value);
+    }
+
     private static string[] ReadTypeNames(string name, SymbolTable symbolTable, TypeInferer inferer) =>
         Assert.IsType<ComptimeSequenceValue>(GetComptimeValue(name, symbolTable, inferer))
             .Elements

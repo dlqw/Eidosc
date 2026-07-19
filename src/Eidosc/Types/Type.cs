@@ -533,7 +533,9 @@ public static class BaseTypes
             Float64Id or Float32Id or Float16Id;
 
     public static bool IsCompilerMeta(TypeId id) =>
-        id.Value is >= WellKnownTypeIds.MetaTypeShapeId and <= WellKnownTypeIds.MetaGenericArgumentId;
+        id.Value is >= WellKnownTypeIds.MetaTypeShapeId and <= WellKnownTypeIds.MetaResolveFailureId or
+            >= WellKnownTypeIds.MetaTypeId and <= WellKnownTypeIds.MetaModulesId or
+            WellKnownTypeIds.MetaOwnershipId;
 
     public static bool IsReservedCompilerType(TypeId id) => IsBuiltIn(id) || IsCompilerMeta(id);
 

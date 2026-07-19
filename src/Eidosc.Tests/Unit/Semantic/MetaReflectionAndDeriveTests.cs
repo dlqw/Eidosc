@@ -600,8 +600,14 @@ TraitInfo :: comptime meta.shape_of(Marker);
     public void TypeInfo_FunctionShapeExposesReadOnlyOwnershipProjections()
     {
         const string source = """
+Packet :: type derive Copy derive Clone {
+    value:: Int
+}
+
 Holder :: type {
-    callback:: Ref[Int] -> MRef[String]
+    borrowed:: Ref[Int] -> MRef[String],
+    builtin:: Int -> String,
+    nominal:: Packet -> Packet
 }
 
 find_field_type :: comptime Option[meta.Field] -> Type {
@@ -609,8 +615,12 @@ find_field_type :: comptime Option[meta.Field] -> Type {
     None => Unit
 }
 
-CallbackType :: comptime find_field_type(meta.find_field(Holder, "callback"));
-FunctionInfo :: comptime meta.shape_of(CallbackType);
+BorrowedType :: comptime find_field_type(meta.find_field(Holder, "borrowed"));
+BuiltinType :: comptime find_field_type(meta.find_field(Holder, "builtin"));
+NominalType :: comptime find_field_type(meta.find_field(Holder, "nominal"));
+BorrowedInfo :: comptime meta.shape_of(BorrowedType);
+BuiltinInfo :: comptime meta.shape_of(BuiltinType);
+NominalInfo :: comptime meta.shape_of(NominalType);
 """;
 
         var result = Compile("meta_function_ownership.eidos", source);
@@ -618,7 +628,7 @@ FunctionInfo :: comptime meta.shape_of(CallbackType);
         Assert.True(result.Success, FormatDiagnostics(result));
         var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
         var inferer = Assert.IsType<TypeInferer>(result.TypeInferer);
-        var functionShape = Assert.IsType<ComptimeAdtValue>(GetComptimeValue("FunctionInfo", symbolTable, inferer));
+        var functionShape = Assert.IsType<ComptimeAdtValue>(GetComptimeValue("BorrowedInfo", symbolTable, inferer));
         var functionInfo = ReadShapePayload(functionShape);
         Assert.True(functionInfo.TryGet("borrowConstraints", out var ownershipValue));
         var ownership = Assert.IsType<ComptimeSequenceValue>(ownershipValue).Elements
@@ -629,18 +639,38 @@ FunctionInfo :: comptime meta.shape_of(CallbackType);
             ownership,
             parameter =>
             {
+                Assert.Equal(
+                    WellKnownTypeIds.MetaOwnershipId,
+                    Assert.IsType<TyCon>(parameter.StaticType).Id.Value);
                 Assert.True(parameter.TryGet("role", out var role));
                 Assert.Equal("parameter", Assert.IsType<ComptimeStringValue>(role).Value);
                 Assert.True(parameter.TryGet("kind", out var kind));
                 Assert.Equal("sharedBorrow", Assert.IsType<ComptimeStringValue>(kind).Value);
+                AssertOwnershipFacts(parameter, copy: true, clone: true, drop: "borrowed");
             },
             resultSlot =>
             {
+                Assert.Equal(
+                    WellKnownTypeIds.MetaOwnershipId,
+                    Assert.IsType<TyCon>(resultSlot.StaticType).Id.Value);
                 Assert.True(resultSlot.TryGet("role", out var role));
                 Assert.Equal("result", Assert.IsType<ComptimeStringValue>(role).Value);
                 Assert.True(resultSlot.TryGet("kind", out var kind));
                 Assert.Equal("mutableBorrow", Assert.IsType<ComptimeStringValue>(kind).Value);
+                AssertOwnershipFacts(resultSlot, copy: false, clone: false, drop: "borrowed");
             });
+
+        var builtinOwnership = ReadOwnershipSlots("BuiltinInfo", symbolTable, inferer);
+        AssertOwnershipFacts(builtinOwnership[0], copy: true, clone: true, drop: "dropOnce");
+        AssertOwnershipFacts(builtinOwnership[1], copy: false, clone: true, drop: "dropOnce");
+
+        var nominalOwnership = ReadOwnershipSlots("NominalInfo", symbolTable, inferer);
+        Assert.All(nominalOwnership, slot =>
+            AssertOwnershipFacts(slot, copy: true, clone: true, drop: "dropOnce"));
+
+        Assert.True(BaseTypes.IsCompilerMeta(new TypeId(WellKnownTypeIds.MetaOwnershipId)));
+        Assert.True(BaseTypes.IsCompilerMeta(new TypeId(WellKnownTypeIds.MetaFunctionId)));
+        Assert.False(BaseTypes.IsCompilerMeta(new TypeId(WellKnownTypeIds.BuildInputsId)));
     }
 
     [Fact]

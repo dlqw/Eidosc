@@ -78,7 +78,8 @@ internal static class MetaSchemaRegistry
         new(WellKnownStrings.Meta.Types.Type, WellKnownTypeIds.MetaTypeId),
         new(WellKnownStrings.Meta.Types.Items, WellKnownTypeIds.MetaItemsId),
         new(WellKnownStrings.Meta.Types.Function, WellKnownTypeIds.MetaFunctionId),
-        new(WellKnownStrings.Meta.Types.Modules, WellKnownTypeIds.MetaModulesId)
+        new(WellKnownStrings.Meta.Types.Modules, WellKnownTypeIds.MetaModulesId),
+        new(WellKnownStrings.Meta.Types.Ownership, WellKnownTypeIds.MetaOwnershipId)
     ];
 
     private static readonly MetaFunctionSpec[] s_functions =

@@ -55,7 +55,7 @@ public static class WellKnownStrings
     public static class Meta
     {
         public const string Module = "meta";
-        public const int SchemaVersion = 5;
+        public const int SchemaVersion = 6;
 
         public static class Types
         {
@@ -124,6 +124,7 @@ public static class WellKnownStrings
             public const string Items = "Items";
             public const string Function = "Function";
             public const string Modules = "Modules";
+            public const string Ownership = "Ownership";
         }
     }
 
