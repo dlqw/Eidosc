@@ -1208,8 +1208,10 @@ internal static partial class ComptimeEvaluator
                 return false;
             }
 
+            var constructorName = BuildConstructorDisplayName(constructor);
+            var constructorIdentity = ResolveConstructorIdentity(constructor, context, constructorName);
             if (baseValue is not ComptimeAdtValue baseAdt ||
-                !baseAdt.HasSameConstructor(constructor.SymbolId, BuildConstructorDisplayName(constructor)))
+                !baseAdt.HasSameConstructor(constructor.SymbolId, constructorName, constructorIdentity))
             {
                 reason = "comptime constructor update base must have the same constructor";
                 return false;
@@ -1245,19 +1247,37 @@ internal static partial class ComptimeEvaluator
             }
         }
 
+        var displayName = BuildConstructorDisplayName(constructor);
         value = new ComptimeAdtValue(
             constructor.SymbolId,
-            BuildConstructorDisplayName(constructor),
+            displayName,
             positionalValues,
-            namedValues);
+            namedValues)
+        {
+            ConstructorIdentity = ResolveConstructorIdentity(constructor, context, displayName)
+        };
         return true;
+    }
+
+    private static string ResolveConstructorIdentity(
+        CtorExpr constructor,
+        ComptimeEvaluationContext context,
+        string fallback)
+    {
+        if (constructor.SymbolId.IsValid &&
+            context.Meta?.SymbolTable.GetSymbol(constructor.SymbolId) is { } symbol)
+        {
+            return MetaComptimeIntrinsics.CreateStableIdentity(symbol, context.Meta.SymbolTable);
+        }
+
+        return fallback;
     }
 
     private static string BuildConstructorDisplayName(CtorExpr constructor)
     {
         var parts = constructor.ConstructorPath?.ToQualifiedPathParts() ?? [];
         return parts.Count > 0
-            ? string.Join("::", parts)
+            ? string.Join(WellKnownStrings.Separators.Path, parts)
             : constructor.ConstructorName;
     }
 
@@ -1879,8 +1899,37 @@ internal static partial class ComptimeEvaluator
         out ComptimeValue value,
         out string reason)
     {
-        if (!TryEvaluate(binary.Left, context, out var left, out reason) ||
-            !TryEvaluate(binary.Right, context, out var right, out reason))
+        if (!TryEvaluate(binary.Left, context, out var left, out reason))
+        {
+            value = ComptimeUnitValue.Instance;
+            return false;
+        }
+
+        if (binary.Operator is BinaryOp.And or BinaryOp.Or)
+        {
+            if (left is not ComptimeBoolValue { Value: var leftBool })
+            {
+                value = ComptimeUnitValue.Instance;
+                reason = $"logical operator '{binary.Operator.ToSymbol()}' requires Bool operands";
+                return false;
+            }
+
+            if (binary.Operator == BinaryOp.And && !leftBool)
+            {
+                value = new ComptimeBoolValue(false);
+                reason = string.Empty;
+                return true;
+            }
+
+            if (binary.Operator == BinaryOp.Or && leftBool)
+            {
+                value = new ComptimeBoolValue(true);
+                reason = string.Empty;
+                return true;
+            }
+        }
+
+        if (!TryEvaluate(binary.Right, context, out var right, out reason))
         {
             value = ComptimeUnitValue.Instance;
             return false;

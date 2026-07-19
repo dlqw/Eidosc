@@ -646,7 +646,13 @@ internal static partial class MetaComptimeIntrinsics
             constructorId,
             constructorName,
             isSome ? [payload] : [],
-            []);
+            [])
+        {
+            ConstructorIdentity = constructorId.IsValid &&
+                                  symbolTable.GetSymbol(constructorId) is { } constructor
+                ? CreateStableIdentity(constructor, symbolTable)
+                : $"builtin:Option.{constructorName}"
+        };
     }
 
     private static bool TryFieldsOf(
@@ -1451,6 +1457,9 @@ internal static partial class MetaComptimeIntrinsics
             [],
             [])
         {
+            ConstructorIdentity = constructor == null
+                ? $"meta:Stage.{stageName}"
+                : CreateStableIdentity(constructor, symbolTable),
             StaticType = MetaSchemaRegistry.MetaType(
                 WellKnownStrings.Meta.Types.Stage,
                 WellKnownTypeIds.MetaStageId)

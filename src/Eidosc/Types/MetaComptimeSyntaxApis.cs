@@ -710,11 +710,14 @@ internal static partial class MetaComptimeIntrinsics
         SymbolId.None,
         "Err",
         [new ComptimeAdtValue(
-            SymbolId.None,
-            failureKind,
-            [new ComptimeStringValue(message)],
-            []) with
-        {
+             SymbolId.None,
+             failureKind,
+             [new ComptimeStringValue(message)],
+             [])
+         {
+             ConstructorIdentity = $"meta:{failureType}.{failureKind}"
+         } with
+         {
             StaticType = MetaSchemaRegistry.MetaType(
                 failureType,
                 failureType == WellKnownStrings.Meta.Types.ParseFailure

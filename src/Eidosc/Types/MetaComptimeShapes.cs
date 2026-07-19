@@ -529,6 +529,9 @@ internal static partial class MetaComptimeIntrinsics
             .FirstOrDefault(symbol => symbol != null && string.Equals(symbol.Name, caseName, StringComparison.Ordinal));
         return new ComptimeAdtValue(caseSymbol?.Id ?? SymbolId.None, caseName, [payload], [])
         {
+            ConstructorIdentity = caseSymbol == null
+                ? $"meta:{ownerTypeName}.{caseName}"
+                : CreateStableIdentity(caseSymbol, symbolTable),
             StaticType = MetaSchemaRegistry.MetaType(ownerTypeName, ownerTypeId)
         };
     }

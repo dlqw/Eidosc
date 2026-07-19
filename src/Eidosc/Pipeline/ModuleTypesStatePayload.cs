@@ -456,7 +456,7 @@ public sealed record ComptimeValuesPayload(
     int UnsupportedValues,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "comptime-values-payload-v5";
+    public const string CurrentSchemaVersion = "comptime-values-payload-v6";
 
     public static ComptimeValuesPayload Create(
         TypeInferer? typeInferer,
@@ -535,6 +535,7 @@ public sealed record ComptimeValuePayload(
     IReadOnlyList<ComptimeValuePayload>? Elements = null,
     int? ConstructorSymbolId = null,
     string? ConstructorName = null,
+    string? ConstructorIdentity = null,
     IReadOnlyList<ComptimeNamedValuePayload>? NamedValues = null,
     TypeShapePayload? StaticType = null,
     MetaTypeRefPayload? MetaType = null,
@@ -664,6 +665,9 @@ public sealed record ComptimeValuePayload(
                     Elements: positionalValues,
                     ConstructorSymbolId: adt.ConstructorId.Value,
                     ConstructorName: adt.ConstructorName,
+                    ConstructorIdentity: string.IsNullOrWhiteSpace(adt.ConstructorIdentity)
+                        ? adt.ConstructorName
+                        : adt.ConstructorIdentity,
                     NamedValues: namedValues));
                 return true;
             case ComptimeTypeValue typeValue:
@@ -860,7 +864,12 @@ public sealed record ComptimeValuePayload(
                     new SymbolId(remapper?.RemapSymbol(ConstructorSymbolId.Value) ?? ConstructorSymbolId.Value),
                     ConstructorName,
                     positionalValues,
-                    namedValues);
+                    namedValues)
+                {
+                    ConstructorIdentity = string.IsNullOrWhiteSpace(ConstructorIdentity)
+                        ? ConstructorName
+                        : ConstructorIdentity
+                };
                 return true;
 
             case MetaTypeKindName:

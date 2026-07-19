@@ -244,12 +244,24 @@ internal sealed record ComptimeAdtValue(
     IReadOnlyList<ComptimeValue> PositionalValues,
     IReadOnlyList<ComptimeNamedValue> NamedValues) : ComptimeValue
 {
+    public string ConstructorIdentity { get; init; } = string.Empty;
+
     protected override string UntypedCanonicalText =>
-        $"adt:{EncodeText(ConstructorName)}:pos[{string.Join(";", PositionalValues.Select(static value => value.CanonicalText))}]" +
+        $"adt:{EncodeText(string.IsNullOrWhiteSpace(ConstructorIdentity) ? ConstructorName : ConstructorIdentity)}" +
+        $":name:{EncodeText(ConstructorName)}:pos[{string.Join(";", PositionalValues.Select(static value => value.CanonicalText))}]" +
         $":named[{string.Join(";", NamedValues.Select(static value => value.CanonicalText))}]";
 
-    public bool HasSameConstructor(SymbolId constructorId, string constructorName)
+    public bool HasSameConstructor(
+        SymbolId constructorId,
+        string constructorName,
+        string? constructorIdentity = null)
     {
+        if (!string.IsNullOrWhiteSpace(ConstructorIdentity) &&
+            !string.IsNullOrWhiteSpace(constructorIdentity))
+        {
+            return string.Equals(ConstructorIdentity, constructorIdentity, StringComparison.Ordinal);
+        }
+
         if (ConstructorId.IsValid && constructorId.IsValid)
         {
             return ConstructorId == constructorId;
