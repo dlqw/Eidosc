@@ -13,7 +13,7 @@ public sealed record ModuleHirStateArtifactPayload(
     ModuleHirStatePayload HirState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-hir-state-artifact-payload-v1";
+    public const string CurrentSchemaVersion = "module-hir-state-artifact-payload-v2";
 
     public static ModuleHirStateArtifactPayload Create(
         string moduleKey,

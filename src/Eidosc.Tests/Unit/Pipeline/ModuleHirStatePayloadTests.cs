@@ -53,6 +53,49 @@ public sealed class ModuleHirStatePayloadTests
     }
 
     [Fact]
+    public void Create_RestoresFunctionOwnershipContractThroughJson()
+    {
+        var valueType = Tid(BaseTypes.StringId);
+        var sharedType = Tid(9001);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [valueType.Value] = new TypeDescriptor.Builtin(valueType.Value),
+            [sharedType.Value] = new TypeDescriptor.Ref(valueType)
+        };
+        var contract = OwnershipContract.Create(
+            Sid(41),
+            "borrow_text",
+            [("value", valueType)],
+            sharedType,
+            descriptors);
+        var module = new HirModule
+        {
+            Name = "ownership_contract_restore",
+            Declarations =
+            [
+                new HirFunc
+                {
+                    Name = "borrow_text",
+                    SymbolId = Sid(41),
+                    Parameters = [new HirParam { Name = "value", TypeId = valueType }],
+                    ReturnType = sharedType,
+                    OwnershipContract = contract
+                }
+            ]
+        };
+
+        var payload = ModuleHirStatePayload.Create(module);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = JsonSerializer.Deserialize<ModuleHirStatePayload>(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped!.TryRestore(out var restored));
+        var restoredContract = Assert.IsType<HirFunc>(Assert.Single(restored.Declarations)).OwnershipContract;
+        Assert.Equal(contract.CanonicalIdentity, restoredContract.CanonicalIdentity);
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, restoredContract.Result.Projection.Kind);
+    }
+
+    [Fact]
     public void Create_RoundTripsAttachedHirStateThroughJson()
     {
         var parameterEffects = new ParameterEffectMap();

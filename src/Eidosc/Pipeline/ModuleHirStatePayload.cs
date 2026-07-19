@@ -17,7 +17,7 @@ public sealed record ModuleHirStatePayload(
     IReadOnlyList<string> UnsupportedNodeKinds,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-hir-state-payload-v9";
+    public const string CurrentSchemaVersion = "module-hir-state-payload-v10";
 
     public bool IsRestorable => Module != null &&
                                 AttachedState.HasValidHash() &&
@@ -191,6 +191,9 @@ public sealed record HirStateDeclPayload(
     HirStateImplPayload? ImplMetadata,
     int TargetType)
 {
+    public MirStateOwnershipContractPayload OwnershipContract { get; init; } =
+        MirStateOwnershipContractPayload.Empty;
+
     public const string FuncKind = nameof(HirFunc);
     public const string ValKind = nameof(HirVal);
     public const string VarKind = nameof(HirVarDecl);
@@ -211,6 +214,7 @@ public sealed record HirStateDeclPayload(
                 TypeParams = func.TypeParams.Select(HirStateTypeParamPayload.Create).ToArray(),
                 Parameters = func.Parameters.Select(HirStateParamPayload.Create).ToArray(),
                 ReturnType = func.ReturnType.Value,
+                OwnershipContract = MirStateOwnershipContractPayload.Create(func.OwnershipContract),
                 Body = func.Body == null ? null : HirStateNodePayload.Create(func.Body, context),
                 RequiredAbilities = func.RequiredAbilities.Select(static id => id.Value).ToArray(),
                 IsComptime = func.IsComptime,
@@ -383,6 +387,7 @@ public sealed record HirStateDeclPayload(
             TypeParams = TypeParams.Select(static parameter => parameter.Restore()).ToList(),
             Parameters = Parameters.Select(static parameter => parameter.Restore()).ToList(),
             ReturnType = new TypeId(ReturnType),
+            OwnershipContract = OwnershipContract.Restore(),
             Body = body,
             RequiredAbilities = RequiredAbilities.Select(static id => new SymbolId(id)).ToList(),
             IsComptime = IsComptime,
