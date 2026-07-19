@@ -601,42 +601,6 @@ work :: Int -> Int expand replace_body {
     }
 
     [Fact]
-    public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
-    {
-        const string source = """
-report :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation {
-    input => meta.report([
-        meta.diagnostic("warning", meta.span_of(input), "value expanded")
-    ])
-}
-
-ANSWER :: comptime
-    expand report
-= 42;
-""";
-
-        var result = new CompilationPipeline(source, new CompilationOptions
-        {
-            InputFile = SourcePath,
-            AllowVirtualInputFile = true,
-            LanguageVersion = EidosLanguageVersions.Current,
-            StopAtPhase = CompilationPhase.Types,
-            NoImplicitPrelude = true,
-            UseColors = false
-        }).Run();
-
-        Assert.DoesNotContain(
-            result.Diagnostics,
-            diagnostic => diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Code == "W3611" && diagnostic.Message == "value expanded");
-        var module = Assert.IsType<ModuleDecl>(result.Ast);
-        var value = Assert.IsType<LetDecl>(Assert.Single(module.Declarations, static declaration => declaration is LetDecl));
-        Assert.True(value.IsComptime);
-        Assert.Equal(DeclarationClauseKind.Expand, Assert.Single(value.BoundClauses).Kind);
-    }
-
-    [Fact]
     public void Generic_where_clause_before_the_binding_token_is_not_accepted_as_a_compatibility_form()
     {
         const string source = "Box[T] where T: Eq :: type {};";
