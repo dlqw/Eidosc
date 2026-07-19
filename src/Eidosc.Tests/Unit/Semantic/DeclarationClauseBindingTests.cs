@@ -272,6 +272,57 @@ Tree[T] :: type
     }
 
     [Fact]
+    public void Parser_lowers_typed_tag_groups_into_attachment_clauses()
+    {
+        const string source = """
+@[repr(c), derive(Eq, Show), expand(trace)]
+User :: type {}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var user = Assert.IsType<AdtDef>(Assert.Single(module.Declarations));
+        Assert.Empty(user.Attributes);
+        Assert.Equal(
+            [DeclarationClauseKind.Repr, DeclarationClauseKind.Derive, DeclarationClauseKind.Expand],
+            user.Clauses.Select(static clause => clause.ClauseKind));
+        Assert.Equal(["Eq", "Show"], user.Clauses[1].ArgumentTokens);
+        Assert.Equal(["trace"], Assert.IsType<MetaInvocationSyntax>(user.Clauses[2].MetaInvocation).GeneratorPath);
+    }
+
+    [Fact]
+    public void Parser_rejects_non_tag_adapters_inside_typed_tag_groups()
+    {
+        const string source = """
+@[extern(c)]
+malloc :: Int -> RawPtr need ffi;
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("is not a typed declaration tag", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """

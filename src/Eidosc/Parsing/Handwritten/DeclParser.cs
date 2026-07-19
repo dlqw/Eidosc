@@ -361,10 +361,16 @@ public sealed class DeclParser(ParserContext ctx)
         var attrs = new List<AstAttribute>();
         while (ctx.Check("@"))
         {
+            if (ctx.SupportsTypedClauses && ctx.CheckPeek(1, "["))
+            {
+                attrs.AddRange(ParseTypedTagGroup());
+                continue;
+            }
+
             var startToken = ctx.Current;
             if (ctx.SupportsTypedClauses)
             {
-                ctx.Error("'@attribute' syntax was removed; run 'eidosc migrate clauses --to 0.7.0-alpha.1'");
+                ctx.Error("standalone '@attribute' syntax was removed; use '@[...]' typed declaration tags");
             }
             ctx.Advance(); // consume "@"
             var name = ctx.GetText();
@@ -395,6 +401,95 @@ public sealed class DeclParser(ParserContext ctx)
             }
         }
         return attrs;
+    }
+
+    private IReadOnlyList<AstAttribute> ParseTypedTagGroup()
+    {
+        var tags = new List<AstAttribute>();
+        ctx.Advance(); // consume "@"
+        ctx.Expect("[");
+        while (!ctx.Check("]") && !ctx.IsEof)
+        {
+            var start = ctx.Current;
+            var keyword = ctx.GetText();
+            if (!ClauseSchema.TryGet(keyword, out var spec) ||
+                spec.Adapter != DeclarationAttachmentAdapterKind.TypedTag)
+            {
+                ctx.Error($"'{keyword}' is not a typed declaration tag");
+                SkipTypedTag();
+            }
+            else
+            {
+                ctx.Advance();
+                var clause = CreateClause(spec.Kind, keyword, start);
+                var attribute = new AstAttribute();
+                attribute.SetName(keyword);
+
+                if (ctx.Match("("))
+                {
+                    if (spec.Arguments == ClauseArgumentGrammar.MetaInvocation)
+                    {
+                        var invocation = ParseMetaInvocationSyntax();
+                        clause.SetMetaInvocation(invocation);
+                        clause.AddArgument(invocation.GeneratorDisplayName);
+                        attribute.AddArgumentText(invocation.GeneratorDisplayName);
+                    }
+                    else if (!ctx.Check(")"))
+                    {
+                        AddTagArgument();
+                        while (ctx.Match(","))
+                        {
+                            if (ctx.Check(")"))
+                            {
+                                break;
+                            }
+                            AddTagArgument();
+                        }
+                    }
+                    ctx.Expect(")");
+                }
+
+                clause.SetSpan(ctx.SpanFrom(start));
+                attribute.SetSpan(clause.Span);
+                attribute.SetTypedClause(clause);
+                tags.Add(attribute);
+
+                void AddTagArgument()
+                {
+                    var argument = ReadAttributeArg();
+                    clause.AddArgument(argument);
+                    attribute.AddArgumentText(argument);
+                }
+            }
+
+            if (!ctx.Match(","))
+            {
+                break;
+            }
+        }
+        ctx.Expect("]");
+        return tags;
+
+        void SkipTypedTag()
+        {
+            ctx.Advance();
+            if (!ctx.Match("("))
+            {
+                return;
+            }
+
+            var depth = 1;
+            while (!ctx.IsEof && depth > 0)
+            {
+                depth += ctx.GetText() switch
+                {
+                    "(" => 1,
+                    ")" => -1,
+                    _ => 0
+                };
+                ctx.Advance();
+            }
+        }
     }
 
     private string ReadAttributeArg()

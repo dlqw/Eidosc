@@ -7,6 +7,9 @@ namespace Eidosc.Ast.Declarations;
 /// </summary>
 public abstract record Declaration : EidosAstNode
 {
+    private List<DeclarationClause> _typedTagClauses = [];
+    private List<DeclarationClause> _sourceClauses = [];
+
     /// <summary>
     /// 属性列表
     /// </summary>
@@ -84,8 +87,24 @@ public abstract record Declaration : EidosAstNode
     }
 
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
-    internal void SetAttributes(List<Attribute> attrs) => Attributes = attrs;
-    internal void SetClauses(List<DeclarationClause> clauses) => Clauses = clauses;
+    internal void SetAttributes(List<Attribute> attrs)
+    {
+        Attributes = attrs.Where(static attribute => attribute.TypedClause == null).ToList();
+        _typedTagClauses = attrs
+            .Select(static attribute => attribute.TypedClause)
+            .Where(static clause => clause != null)
+            .Cast<DeclarationClause>()
+            .ToList();
+        RebuildSourceAttachments();
+    }
+
+    internal void SetClauses(List<DeclarationClause> clauses)
+    {
+        _sourceClauses = clauses;
+        RebuildSourceAttachments();
+    }
+
+    private void RebuildSourceAttachments() => Clauses = [.. _typedTagClauses, .. _sourceClauses];
     internal void SetBoundClauses(
         IReadOnlyList<ClauseIR> clauses,
         IReadOnlyList<MetaInvocationIR> invocations)

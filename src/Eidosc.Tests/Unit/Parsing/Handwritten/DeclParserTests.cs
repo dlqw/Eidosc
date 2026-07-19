@@ -1244,7 +1244,7 @@ public sealed class DeclParserTests
         var func = Assert.IsType<FuncDef>(result);
         Assert.Empty(func.Attributes);
         Assert.Contains(ctx.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("eidosc migrate clauses --to 0.7.0-alpha.1", StringComparison.Ordinal));
+            diagnostic.Message.Contains("use '@[...]' typed declaration tags", StringComparison.Ordinal));
     }
 
     [Fact]
