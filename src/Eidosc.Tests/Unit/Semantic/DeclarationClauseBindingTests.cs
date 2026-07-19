@@ -4,6 +4,7 @@ using Eidosc.Parsing.Handwritten;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Semantic;
+using Eidosc.Symbols;
 using Eidosc.Utils;
 using Xunit;
 
@@ -385,6 +386,56 @@ legacy :: Int -> Int -> Int operator infixl 4 { left => right => left + right }
 
         Assert.Contains(result.Diagnostics, diagnostic =>
             diagnostic.Message.Contains("structured compiler(...) directive", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Compiler_protocol_registry_classifies_resolved_type_shapes_without_name_matching()
+    {
+        const string source = """
+syntax_pass :: comptime meta.Syntax[meta.Item] -> meta.Syntax[meta.Item] { value => value }
+derive_pass :: comptime meta.Type -> meta.Items { _ => [] }
+body_pass :: comptime meta.Function -> meta.Function { value => value }
+analyze_pass :: comptime meta.Package -> Seq[meta.Diagnostic] { _ => [] }
+extend_items :: comptime meta.Package -> meta.Items { _ => [] }
+extend_modules :: comptime meta.Package -> meta.Modules { _ => [] }
+build_pass :: comptime build.Inputs -> build.Graph { _ => build.graph(build.emit(build.session()), [], []) }
+pure_pass :: comptime Int -> Bool { _ => true }
+legacy_pass :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation { _ => meta.keep() }
+runtime_pass :: Int -> Bool { _ => true }
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Namer,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        AssertProtocol("syntax_pass", CompilerMetaProtocolKind.SyntaxExpansion);
+        AssertProtocol("derive_pass", CompilerMetaProtocolKind.Derive);
+        AssertProtocol("body_pass", CompilerMetaProtocolKind.BodyTransform);
+        AssertProtocol("analyze_pass", CompilerMetaProtocolKind.Analyzer);
+        AssertProtocol("extend_items", CompilerMetaProtocolKind.ExtensionItems);
+        AssertProtocol("extend_modules", CompilerMetaProtocolKind.ExtensionModules);
+        AssertProtocol("build_pass", CompilerMetaProtocolKind.BuildHost);
+        AssertProtocol("pure_pass", CompilerMetaProtocolKind.PureComptime);
+        AssertProtocol("legacy_pass", CompilerMetaProtocolKind.PureComptime);
+
+        var runtime = Assert.Single(module.Declarations.OfType<FuncDef>(), static function => function.Name == "runtime_pass");
+        Assert.False(CompilerMetaProtocolRegistry.TryClassify(runtime, 0, symbolTable, out _, out _));
+
+        void AssertProtocol(string name, CompilerMetaProtocolKind expected)
+        {
+            var function = Assert.Single(module.Declarations.OfType<FuncDef>(), function => function.Name == name);
+            Assert.True(CompilerMetaProtocolRegistry.TryClassify(function, 0, symbolTable, out var protocol, out var reason), reason);
+            Assert.Equal(expected, protocol.Kind);
+        }
     }
 
     [Fact]

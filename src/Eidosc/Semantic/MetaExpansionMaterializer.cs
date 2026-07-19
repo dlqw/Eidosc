@@ -187,6 +187,51 @@ internal sealed class MetaExpansionMaterializer(
         return true;
     }
 
+    public bool TryMaterializeItems(
+        ComptimeValue itemsValue,
+        out MetaExpansionMaterializationResult result,
+        out string reason)
+    {
+        result = new MetaExpansionMaterializationResult([], []);
+        reason = string.Empty;
+        _explicitGenerationSlots.Clear();
+        if (itemsValue is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } items)
+        {
+            reason = "derive generator must return meta.Items as a typed list";
+            return false;
+        }
+
+        var nodes = new List<MaterializedMetaNode>();
+        var diagnostics = new List<MetaExpansionDiagnostic>();
+        for (var outputIndex = 0; outputIndex < items.Elements.Count; outputIndex++)
+        {
+            var item = items.Elements[outputIndex];
+            if (item is ComptimeMetaObjectValue { SchemaKind: "diagnostic" } diagnosticObject)
+            {
+                if (!TryReadDiagnostic(diagnosticObject, outputIndex, out var diagnostic, out reason))
+                {
+                    return false;
+                }
+                diagnostics.Add(diagnostic);
+                continue;
+            }
+
+            if (!TryMaterializeDeclaration(
+                    item,
+                    outputIndex,
+                    nodes,
+                    diagnostics,
+                    MetaDeclarationPlacement.AfterTarget,
+                    out reason))
+            {
+                return false;
+            }
+        }
+
+        result = new MetaExpansionMaterializationResult(nodes, diagnostics);
+        return true;
+    }
+
     private bool TryValidateTarget(ComptimeMetaObjectValue edit, out string reason)
     {
         reason = string.Empty;

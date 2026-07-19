@@ -95,4 +95,9 @@ public static class WellKnownTypeIds
     public const int MetaResolveFailureId = 88;
     public const int BuildNetworkId = 89;
     public const int BuildSha256Id = 90;
+    public const int MetaTypeId = 91;
+    public const int MetaItemsId = 92;
+    public const int MetaFunctionId = 93;
+    public const int MetaModulesId = 94;
+    public const int BuildInputsId = 95;
 }

@@ -22,7 +22,8 @@ internal static class BuildSchemaRegistry
         new(WellKnownStrings.Build.Types.Sha256, WellKnownTypeIds.BuildSha256Id),
         new(WellKnownStrings.Build.Types.Graph, WellKnownTypeIds.BuildGraphId),
         new(WellKnownStrings.Build.Types.Step, WellKnownTypeIds.BuildStepId),
-        new(WellKnownStrings.Build.Types.Artifact, WellKnownTypeIds.BuildArtifactId)
+        new(WellKnownStrings.Build.Types.Artifact, WellKnownTypeIds.BuildArtifactId),
+        new(WellKnownStrings.Build.Types.Inputs, WellKnownTypeIds.BuildInputsId)
     ];
 
     private static readonly BuildFunctionSpec[] s_functions =

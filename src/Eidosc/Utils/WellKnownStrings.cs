@@ -120,6 +120,10 @@ public static class WellKnownStrings
             public const string ClosedSumShape = "ClosedSumShape";
             public const string CaseShape = "CaseShape";
             public const string GenericArgument = "GenericArgument";
+            public const string Type = "Type";
+            public const string Items = "Items";
+            public const string Function = "Function";
+            public const string Modules = "Modules";
         }
     }
 
@@ -140,6 +144,7 @@ public static class WellKnownStrings
             public const string Graph = "Graph";
             public const string Step = "Step";
             public const string Artifact = "Artifact";
+            public const string Inputs = "Inputs";
         }
     }
 

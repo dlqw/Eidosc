@@ -151,8 +151,7 @@ Subject :: type  expand invalid
         Assert.False(invalid.Success);
         Assert.Contains(invalid.Diagnostics, static diagnostic =>
             diagnostic.Code == "E3600" &&
-            diagnostic.Message.Contains("followed by meta.Target[meta.Stage", StringComparison.Ordinal) &&
-            diagnostic.Message.Contains("return meta.Transformation", StringComparison.Ordinal));
+            diagnostic.Message.Contains("not a compiler generator protocol", StringComparison.Ordinal));
 
         const string fixedPointSource = """
 deriveFirst :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation {

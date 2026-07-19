@@ -177,7 +177,12 @@ public sealed partial class NameResolver
                 continue;
             }
 
-            if (!TryResolveMetaGenerator(invocation, out var generator, out var generatorSymbol, out var reason))
+            if (!TryResolveMetaGenerator(
+                    invocation,
+                    out var generator,
+                    out var generatorSymbol,
+                    out var protocol,
+                    out var reason))
             {
                 AddMetaExpansionDiagnostic(invocation.Clause.Span, reason, "E3600");
                 continue;
@@ -302,7 +307,10 @@ public sealed partial class NameResolver
                 invocation.ModuleId,
                 invocation.Clause.Span,
                 invocation.TargetPath);
-            if (!materializer.TryMaterialize(expansionValue, out var materialization, out reason))
+            var materializedSuccessfully = protocol.Kind == CompilerMetaProtocolKind.Derive
+                ? materializer.TryMaterializeItems(expansionValue, out var materialization, out reason)
+                : materializer.TryMaterialize(expansionValue, out materialization, out reason);
+            if (!materializedSuccessfully)
             {
                 AddMetaExpansionDiagnostic(
                     invocation.Clause.Span,
@@ -1365,8 +1373,24 @@ public sealed partial class NameResolver
         out FuncSymbol generatorSymbol,
         out string reason)
     {
+        return TryResolveMetaGenerator(
+            invocation,
+            out generator,
+            out generatorSymbol,
+            out _,
+            out reason);
+    }
+
+    private bool TryResolveMetaGenerator(
+        MetaInvocationOccurrence invocation,
+        out FuncDef generator,
+        out FuncSymbol generatorSymbol,
+        out CompilerMetaProtocolMatch protocol,
+        out string reason)
+    {
         generator = null!;
         generatorSymbol = null!;
+        protocol = null!;
         reason = string.Empty;
         SymbolId symbolId = SymbolId.None;
         var generatorText = string.Join(WellKnownStrings.Separators.Path, invocation.Invocation.GeneratorPath);
@@ -1408,12 +1432,47 @@ public sealed partial class NameResolver
             ResolveFuncDefReferences(generator);
         }
 
-        if (!TryGetTargetTransformationStage(
+        if (!CompilerMetaProtocolRegistry.TryClassify(
                 generator,
                 invocation.Invocation.ExplicitArguments.Count,
-                out _))
+                _symbolTable,
+                out protocol,
+                out reason) ||
+            protocol.Kind == CompilerMetaProtocolKind.PureComptime)
         {
-            reason = $"target generator '{generator.Name}' must accept {invocation.Invocation.ExplicitArguments.Count} explicit argument(s), followed by meta.Target[meta.Stage.Syntax|Semantic|Body|Layout], and return meta.Transformation";
+            if (!TryGetTargetTransformationStage(
+                    generator,
+                    invocation.Invocation.ExplicitArguments.Count,
+                    out var legacyStage))
+            {
+                reason = string.IsNullOrWhiteSpace(reason)
+                    ? $"'{generator.Name}' is a pure comptime function, not a compiler generator protocol"
+                    : $"generator '{generator.Name}' has an invalid protocol: {reason}";
+                return false;
+            }
+
+            protocol = new CompilerMetaProtocolMatch(
+                CompilerMetaProtocolKind.LegacyTransformation,
+                legacyStage);
+        }
+
+        if (invocation.Invocation.Owner == MetaInvocationOwner.CompilerDerive &&
+            protocol.Kind != CompilerMetaProtocolKind.Derive)
+        {
+            reason = $"derive generator '{generator.Name}' must have type meta.Type -> meta.Items";
+            return false;
+        }
+
+        var targetMatches = protocol.Kind switch
+        {
+            CompilerMetaProtocolKind.Derive => invocation.Target is AdtDef or CaseTypeDef,
+            CompilerMetaProtocolKind.BodyTransform => invocation.Target is FuncDef,
+            CompilerMetaProtocolKind.LegacyTransformation => true,
+            _ => false
+        };
+        if (!targetMatches)
+        {
+            reason = $"generator protocol '{protocol.Kind}' cannot attach to {invocation.Target.GetType().Name}";
             return false;
         }
 
@@ -1665,13 +1724,14 @@ public sealed partial class NameResolver
             {
                 using var moduleScope = PushResolutionModuleScope(occurrence.ModuleId);
                 using var currentModuleScope = PushCurrentModuleScope(occurrence.ModuleId);
-                if (TryResolveMetaGenerator(occurrence, out var generator, out _, out _) &&
-                    TryGetTargetTransformationStage(
-                        generator,
-                        occurrence.Invocation.ExplicitArguments.Count,
-                        out var resolvedStage))
+                if (TryResolveMetaGenerator(
+                        occurrence,
+                        out _,
+                        out _,
+                        out var protocol,
+                        out _))
                 {
-                    stage = resolvedStage;
+                    stage = protocol.EarliestStage;
                 }
             }
 

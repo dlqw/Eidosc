@@ -74,7 +74,11 @@ internal static class MetaSchemaRegistry
         new(WellKnownStrings.Meta.Types.TupleShape, WellKnownTypeIds.MetaTupleShapeId),
         new(WellKnownStrings.Meta.Types.ClosedSumShape, WellKnownTypeIds.MetaClosedSumShapeId),
         new(WellKnownStrings.Meta.Types.CaseShape, WellKnownTypeIds.MetaCaseShapeId),
-        new(WellKnownStrings.Meta.Types.GenericArgument, WellKnownTypeIds.MetaGenericArgumentId)
+        new(WellKnownStrings.Meta.Types.GenericArgument, WellKnownTypeIds.MetaGenericArgumentId),
+        new(WellKnownStrings.Meta.Types.Type, WellKnownTypeIds.MetaTypeId),
+        new(WellKnownStrings.Meta.Types.Items, WellKnownTypeIds.MetaItemsId),
+        new(WellKnownStrings.Meta.Types.Function, WellKnownTypeIds.MetaFunctionId),
+        new(WellKnownStrings.Meta.Types.Modules, WellKnownTypeIds.MetaModulesId)
     ];
 
     private static readonly MetaFunctionSpec[] s_functions =
