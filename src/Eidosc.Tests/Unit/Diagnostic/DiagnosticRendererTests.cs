@@ -102,37 +102,37 @@ Person :: type {
 PersonAlias :: type = Person;
 
 
-show :: Person -> String
- impl Show
-{
-    p => "person"
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
 
-show :: PersonAlias -> String
- impl Show
-{
-    p => "alias"
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
 
         var source = new SourceStream(sourceText, 4);
-        const string implClause = "impl Show";
-        var existingStart = sourceText.IndexOf(implClause, StringComparison.Ordinal);
-        var requestedStart = sourceText.IndexOf(implClause, existingStart + 1, StringComparison.Ordinal);
+        const string instanceHead = "instance Show";
+        var existingStart = sourceText.IndexOf(instanceHead, StringComparison.Ordinal);
+        var requestedStart = sourceText.IndexOf(instanceHead, existingStart + 1, StringComparison.Ordinal);
         Assert.True(existingStart >= 0);
         Assert.True(requestedStart >= 0);
 
-        var diagnostic = Eidosc.Diagnostic.Diagnostic.Error("Ambiguous overlapping impl registration", "E3004")
-            .WithLabel(new SourceSpan(new SourceLocation(requestedStart, 10, 0), implClause.Length), "overlapping impl requested here: impl Show on PersonAlias")
-            .WithNote("requested impl head: impl Show on PersonAlias")
-            .WithNote("existing impl head: impl Show on Person")
-            .WithNote("requested canonical head: impl Show on Person")
-            .WithNote("existing canonical head: impl Show on Person")
-            .WithHelp("Keep only one impl head per canonical trait/type shape.")
+        var diagnostic = Eidosc.Diagnostic.Diagnostic.Error("Ambiguous overlapping instance registration", "E3004")
+            .WithLabel(new SourceSpan(new SourceLocation(requestedStart, 10, 0), instanceHead.Length), "overlapping instance requested here: instance Show for PersonAlias")
+            .WithNote("requested instance head: instance Show for PersonAlias")
+            .WithNote("existing instance head: instance Show for Person")
+            .WithNote("requested canonical head: instance Show for Person")
+            .WithNote("existing canonical head: instance Show for Person")
+            .WithHelp("Keep only one instance head per canonical trait/type shape.")
             .WithRelated(
-                Eidosc.Diagnostic.Diagnostic.Note("existing overlapping impl registered here")
-                    .WithLabel(new SourceSpan(new SourceLocation(existingStart, 10, 0), implClause.Length), "impl Show on Person"));
+                Eidosc.Diagnostic.Diagnostic.Note("existing overlapping instance registered here")
+                    .WithLabel(new SourceSpan(new SourceLocation(existingStart, 10, 0), instanceHead.Length), "instance Show for Person"));
 
         var writer = new StringWriter();
         DiagnosticRenderer.Render(
@@ -146,12 +146,12 @@ show :: PersonAlias -> String
             });
 
         var text = writer.ToString();
-        Assert.Contains("error[E3004]: Ambiguous overlapping impl registration", text);
-        Assert.Contains("note: requested impl head: impl Show on PersonAlias", text);
-        Assert.Contains("note: existing canonical head: impl Show on Person", text);
-        Assert.Contains("help: Keep only one impl head per canonical trait/type shape.", text);
-        Assert.Contains("note: existing overlapping impl registered here", text);
-        Assert.Contains("impl Show on Person", text);
+        Assert.Contains("error[E3004]: Ambiguous overlapping instance registration", text);
+        Assert.Contains("note: requested instance head: instance Show for PersonAlias", text);
+        Assert.Contains("note: existing canonical head: instance Show for Person", text);
+        Assert.Contains("help: Keep only one instance head per canonical trait/type shape.", text);
+        Assert.Contains("note: existing overlapping instance registered here", text);
+        Assert.Contains("instance Show for Person", text);
         Assert.Contains("--> impl_overlap.eidos:11:1", text);
     }
 }

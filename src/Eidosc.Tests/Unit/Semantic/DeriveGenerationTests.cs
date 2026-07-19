@@ -23,10 +23,10 @@ Choice :: type {
         var result = Compile("derive_exact_case.eidos", source);
 
         Assert.True(result.Success, FormatDiagnostics(result));
-        var generated = Assert.Single(
-            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.FuncDef>(),
-            function => function.Name == "eq" &&
-                        function.Clauses.Any(clause => clause.ClauseKind == Eidosc.Ast.Declarations.DeclarationClauseKind.Impl));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Eq");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "eq");
         var signature = Assert.IsType<Eidosc.Ast.Types.ArrowType>(generated.Signature.Single());
         var firstParameter = Assert.IsType<Eidosc.Ast.Types.TypePath>(signature.ParamType);
         Assert.Equal("Selected", firstParameter.TypeName);
@@ -49,10 +49,10 @@ Choice :: type {
         var result = Compile("derive_intermediate_case.eidos", source);
 
         Assert.True(result.Success, FormatDiagnostics(result));
-        var generated = Assert.Single(
-            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.FuncDef>(),
-            function => function.Name == "show" &&
-                        function.Clauses.Any(clause => clause.ClauseKind == Eidosc.Ast.Declarations.DeclarationClauseKind.Impl));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Show");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "show");
         Assert.Equal(2, generated.Body.Count);
     }
 
@@ -129,10 +129,10 @@ Box :: type  derive Clone
         var result = Compile("derive_clone_receiver.eidos", source);
 
         Assert.True(result.Success, FormatDiagnostics(result));
-        var generated = Assert.Single(
-            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.FuncDef>(),
-            function => function.Name == "clone" &&
-                        function.Clauses.Any(clause => clause.ClauseKind == Eidosc.Ast.Declarations.DeclarationClauseKind.Impl));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Clone");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "clone");
         var signature = Assert.IsType<Eidosc.Ast.Types.ArrowType>(generated.Signature.Single());
         var receiver = Assert.IsType<Eidosc.Ast.Types.TypePath>(signature.ParamType);
         Assert.Equal("Ref", receiver.TypeName);
@@ -506,16 +506,15 @@ Empty :: type  derive Eq
         var result = Compile("derive_empty_type.eidos", source);
 
         Assert.True(result.Success, FormatDiagnostics(result));
-        var generated = Assert.Single(
-            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.FuncDef>(),
-            function => function.Name == "eq" &&
-                        function.Clauses.Any(clause =>
-                            clause.ClauseKind == Eidosc.Ast.Declarations.DeclarationClauseKind.Impl));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Eq");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "eq");
         Assert.Single(generated.Body);
     }
 
     [Fact]
-    public void DeriveCopy_GeneratesCopyMarkerFunction()
+    public void DeriveCopy_GeneratesCopyMarkerInstance()
     {
         const string source = """
 
@@ -524,8 +523,7 @@ Unit2 :: type  derive Copy
     Unit2 :: type {}
 }
 """;
-        // Derive-generated @impl(Copy) functions are resolved during type inference,
-        // so we compile through to that phase. The compilation must succeed.
+        // Derive-generated Copy evidence is a method-free named instance.
         var result = CompileThroughTypeInference("derive_copy_impl.eidos", source);
         Assert.True(result.Success, FormatDiagnostics(result));
     }
@@ -543,10 +541,11 @@ Wrapper[T] :: type {
 }
 
 
-my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
- impl MyClone
-{
-    Wrap(v) => Wrap(my_clone(v))
+MyCloneWrapper :: instance MyClone {
+    my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
+    {
+        Wrap(v) => Wrap(my_clone(v))
+    }
 }
 """;
         var result = CompileThroughTypeInference("impl_generic_constraint.eidos", source);

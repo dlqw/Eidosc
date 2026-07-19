@@ -95,7 +95,7 @@ public record FuncDef : Declaration
         var nodeName = node.NonTerminal.ToString();
         if (nodeName is WellKnownStrings.Keywords.Attribute or WellKnownStrings.Keywords.AttributeArgs or WellKnownStrings.Keywords.Signature)
         {
-            // 忽略函数属性子树，避免将 @impl(...) 的类型路径误收集到函数签名。
+            // 忽略函数属性子树，避免将 attribute 参数中的类型路径误收集到函数签名。
             return;
         }
 

@@ -432,10 +432,10 @@ Magnitude :: trait {
 
 Sample :: type { value :: Int }
 
-magnitude :: Sample -> Int
-    impl Magnitude
-{
-    sample => sample.value
+MagnitudeSample :: instance Magnitude {
+    magnitude :: Sample -> Int {
+        sample => sample.value
+    }
 }
 
 read_magnitude[T: Magnitude] :: T -> Int {

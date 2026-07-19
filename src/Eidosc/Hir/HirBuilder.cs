@@ -105,7 +105,7 @@ public sealed partial class HirBuilder
         // 递归展平模块声明，确保导入/预编译模块中的函数定义可进入后续 MIR/LLVM 阶段。
         AppendModuleDeclarations(moduleDecl, hirModule.Declarations, isRootModule: true);
 
-        // 从符号表收集 @impl 属性注册的 trait 实现，生成 HirImpl 节点。
+        // 从符号表收集 named instance 注册的 trait 实现，生成 HirImpl 节点。
         // impl 方法（FuncDef）已在 AppendModuleDeclarations 中作为 HirFunc 转换，
         // 这里根据 ImplSymbol 的语义信息将它们关联到对应的 HirImpl。
         CollectImplDeclarations(hirModule);

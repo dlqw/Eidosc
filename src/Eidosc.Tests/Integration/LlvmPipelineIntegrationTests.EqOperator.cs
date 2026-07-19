@@ -22,14 +22,14 @@ Direction :: type {
 }
 
 
-eq :: Direction -> Direction -> Bool
- impl Eq
-{
-    North() => North() => true,
-    South() => South() => true,
-    East() => East() => true,
-    West() => West() => true,
-    _ => _ => false
+EqDirection :: instance Eq {
+    eq :: Direction -> Direction -> Bool {
+        North() => North() => true,
+        South() => South() => true,
+        East() => East() => true,
+        West() => West() => true,
+        _ => _ => false
+    }
 }
 
 main :: Unit -> Int
@@ -86,14 +86,14 @@ Direction :: type {
 }
 
 
-eq :: Direction -> Direction -> Bool
- impl Eq
-{
-    North() => North() => true,
-    South() => South() => true,
-    East() => East() => true,
-    West() => West() => true,
-    _ => _ => false
+EqDirection :: instance Eq {
+    eq :: Direction -> Direction -> Bool {
+        North() => North() => true,
+        South() => South() => true,
+        East() => East() => true,
+        West() => West() => true,
+        _ => _ => false
+    }
 }
 
 Box :: type { dir:: Direction }
@@ -141,22 +141,22 @@ Direction :: type {
 }
 
 
-eq :: Direction -> Direction -> Bool
- impl Eq
-{
-    North() => North() => true,
-    East() => East() => true,
-    _ => _ => false
+EqDirection :: instance Eq {
+    eq :: Direction -> Direction -> Bool {
+        North() => North() => true,
+        East() => East() => true,
+        _ => _ => false
+    }
 }
 
 Pos :: type { x:: Int, y:: Int }
 
 
-eq :: Pos -> Pos -> Bool
- impl Eq
-{
-    Pos { x: ax, y: ay } => other => match other {
-        Pos { x: bx, y: by } => ax == bx && ay == by
+EqPos :: instance Eq {
+    eq :: Pos -> Pos -> Bool {
+        Pos { x: ax, y: ay } => other => match other {
+            Pos { x: bx, y: by } => ax == bx && ay == by
+        }
     }
 }
 
@@ -168,11 +168,12 @@ contains_pos :: Seq[Pos] -> Pos -> Bool
 main :: Unit -> Int
 {
     _ => {
-        snake := [Pos { x: 2, y: 1 }, Pos { x: 1, y: 1 }, Pos { x: 0, y: 1 }];
+        snake_for_hit := [Pos { x: 2, y: 1 }, Pos { x: 1, y: 1 }, Pos { x: 0, y: 1 }];
+        snake_for_miss := [Pos { x: 2, y: 1 }, Pos { x: 1, y: 1 }, Pos { x: 0, y: 1 }];
         north: Direction := North();
         directionOk := north == north;
-        hit := contains_pos(snake)(Pos { x: 1, y: 1 });
-        miss := contains_pos(snake)(Pos { x: 3, y: 1 });
+        hit := contains_pos(snake_for_hit)(Pos { x: 1, y: 1 });
+        miss := contains_pos(snake_for_miss)(Pos { x: 3, y: 1 });
         if directionOk && hit && !miss then { 0 } else { 31 }
     }
 }
@@ -199,16 +200,16 @@ Anim :: type {
     Cat :: type {},
 }
 
-eq :: Anim -> Anim -> Bool
- impl Eq
-{
-    _ => _ => false
+EqAnim :: instance Eq {
+    eq :: Anim -> Anim -> Bool {
+        _ => _ => false
+    }
 }
 
-eq :: Anim.Dog -> Anim.Dog -> Bool
- impl Eq
-{
-    _ => _ => true
+EqDog :: instance Eq {
+    eq :: Anim.Dog -> Anim.Dog -> Bool {
+        _ => _ => true
+    }
 }
 
 main :: Unit -> Int

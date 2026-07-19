@@ -338,7 +338,8 @@ public static partial class SyntaxMigrationPlanner
 
         if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
             string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal) &&
-            !string.Equals(fromSyntax, toSyntax, StringComparison.Ordinal))
+            !string.Equals(fromSyntax, toSyntax, StringComparison.Ordinal) &&
+            !tokens.Any(static token => string.Equals(GetTokenText(token), "impl", StringComparison.Ordinal)))
         {
             var (currentAst, currentDiagnostics) = SyntaxParser.Parse(tokens, sourcePath, toSyntax);
             if (currentAst != null && currentDiagnostics.Count == 0)
@@ -399,6 +400,7 @@ public static partial class SyntaxMigrationPlanner
         if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
             string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal))
         {
+            AddImplInstanceMigrationEdits(source, tokens, ast, edits);
             AddVersion07Edits(source, tokens, ast, edits);
             AddVersion07NamingEdits(tokens, edits);
             var version07Edits = NormalizeEdits(edits);
@@ -1146,11 +1148,7 @@ public static partial class SyntaxMigrationPlanner
             .OfType<FuncDef>()
             .Select(func => new ImplFunctionMigrationInfo(
                 func,
-                GetImplAttributes(func)
-                    .Select(attr => ExtractAttributeArgumentText(source, attr))
-                    .Where(static text => !string.IsNullOrWhiteSpace(text))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray()))
+                GetImplTraitReferences(source, func)))
             .Where(static info => info.TraitRefs.Length > 0)
             .OrderBy(static info => info.Function.Span.Position)
             .ToArray();
@@ -1198,7 +1196,10 @@ public static partial class SyntaxMigrationPlanner
             return;
         }
 
-        var indent = source[start..run[0].Function.Attributes.Min(static attr => attr.Span.Position)];
+        var declarationStart = run[0].Function.Attributes.Count > 0
+            ? run[0].Function.Attributes.Min(static attr => attr.Span.Position)
+            : run[0].Function.Span.Position;
+        var indent = source[start..declarationStart];
         var blocks = new List<string>();
         foreach (var traitRef in run.SelectMany(static info => info.TraitRefs).Distinct(StringComparer.Ordinal))
         {
@@ -1236,7 +1237,7 @@ public static partial class SyntaxMigrationPlanner
             end - start,
             string.Join(Environment.NewLine + Environment.NewLine, blocks),
             "trait-impl-instance",
-            "Rewrite legacy @impl function declarations to named instance evidence blocks."));
+            "Rewrite legacy function implementations to named instance evidence blocks."));
         migratedRanges.Add(new SourceSpan(new SourceLocation(start, 0, 0), end - start));
     }
 
@@ -1246,6 +1247,17 @@ public static partial class SyntaxMigrationPlanner
             .Where(static attr => string.Equals(attr.Name, "impl", StringComparison.Ordinal))
             .ToList();
     }
+
+    private static string[] GetImplTraitReferences(string source, FuncDef funcDef) =>
+        GetImplAttributes(funcDef)
+            .Select(attribute => ExtractAttributeArgumentText(source, attribute))
+            .Concat(funcDef.Clauses
+                .Where(static clause => clause.ClauseKind == DeclarationClauseKind.LegacyImpl)
+                .SelectMany(static clause => clause.ArgumentTokens))
+            .Where(static text => !string.IsNullOrWhiteSpace(text))
+            .Select(static text => text.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
     private static string ExtractAttributeArgumentText(string source, AstAttribute attribute)
     {
@@ -1289,22 +1301,20 @@ public static partial class SyntaxMigrationPlanner
     private static string BuildNameFirstMethodText(string source, IReadOnlyList<Token> tokens, FuncDef funcDef)
     {
         var funcIndex = FindTokenIndex(tokens, funcDef.Span, "func");
-        if (funcIndex < 0)
-        {
-            return "";
-        }
-
-        var nameIndex = NextContentTokenIndex(tokens, funcIndex + 1, funcDef.Span);
-        var colonIndex = FindTopLevelTokenIndex(tokens, funcDef.Span, ":");
-        if (nameIndex < 0 || colonIndex < 0 || colonIndex <= nameIndex)
-        {
-            return "";
-        }
-
-        var start = tokens[funcIndex].Location.Position;
+        var start = funcIndex >= 0 ? tokens[funcIndex].Location.Position : funcDef.Span.Position;
         var end = funcDef.Span.EndPosition;
         var methodText = source[start..end];
         var bodyEdits = new List<SyntaxMigrationEdit>();
+        foreach (var clause in funcDef.Clauses.Where(static clause =>
+                     clause.ClauseKind == DeclarationClauseKind.LegacyImpl))
+        {
+            bodyEdits.Add(new SyntaxMigrationEdit(
+                clause.Span.Position,
+                clause.Span.Length,
+                "",
+                "trait-impl-clause",
+                "Remove the legacy function-level impl clause after creating a named instance."));
+        }
         foreach (var child in EnumerateAst(funcDef).Skip(1))
         {
             switch (child)
@@ -1330,6 +1340,18 @@ public static partial class SyntaxMigrationPlanner
             methodText = methodText
                 .Remove(relativeStart, edit.Length)
                 .Insert(relativeStart, edit.Replacement);
+        }
+
+        if (funcIndex < 0)
+        {
+            return methodText;
+        }
+
+        var nameIndex = NextContentTokenIndex(tokens, funcIndex + 1, funcDef.Span);
+        var colonIndex = FindTopLevelTokenIndex(tokens, funcDef.Span, ":");
+        if (nameIndex < 0 || colonIndex < 0 || colonIndex <= nameIndex)
+        {
+            return "";
         }
 
         var header = source[tokens[nameIndex].Location.Position..tokens[colonIndex].Location.Position].Trim();

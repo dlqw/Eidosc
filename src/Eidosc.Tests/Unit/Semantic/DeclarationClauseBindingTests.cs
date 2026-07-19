@@ -66,7 +66,7 @@ public sealed class DeclarationClauseBindingTests
     [Fact]
     public void Schema_entries_define_the_complete_versioned_contract()
     {
-        Assert.Equal("clause-schema-v1", ClauseSchema.Version);
+        Assert.Equal("clause-schema-v2", ClauseSchema.Version);
         Assert.NotEmpty(ClauseSchema.Entries);
         Assert.Equal(ClauseSchema.Entries.Count, ClauseSchema.Entries.Values.Select(static spec => spec.Kind).Distinct().Count());
 
@@ -115,7 +115,6 @@ public sealed class DeclarationClauseBindingTests
                 .Select(static clause => clause.Kind));
         Assert.Equal("c", Assert.IsType<ForeignContractIR>(declaration.Attachment.ForeignContract).Abi);
         Assert.True(Assert.IsType<CompilerDirectiveIR>(declaration.Attachment.CompilerDirective).IsInternal);
-        Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.DedicatedDeclaration));
         Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.RemovedSurface));
     }
 

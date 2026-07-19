@@ -249,10 +249,10 @@ Box :: type {
 }
 
 
-mark :: Box -> Bool
- impl Marker
-{
-    x => true
+MarkerBox :: instance Marker {
+    mark :: Box -> Bool {
+        x => true
+    }
 }
 
 id[T: Marker] :: T -> T
@@ -285,10 +285,10 @@ Box :: type {
 }
 
 
-mark :: Box -> Bool
- impl Marker
-{
-    x => true
+MarkerBox :: instance Marker {
+    mark :: Box -> Bool {
+        x => true
+    }
 }
 
 id[T] :: T -> T where T: Marker
@@ -356,10 +356,10 @@ Box[A] :: type {
 }
 
 
-fmap :: Person -> Box[Int]
- impl Functor[Box]
-{
-    p => Box(1)
+FunctorPersonBox :: instance Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 
 id[T: Functor[Box]] :: T -> T
@@ -400,10 +400,10 @@ Bag[A] :: type {
 }
 
 
-fmap :: Person -> Bag[Int]
- impl Functor[Bag]
-{
-    p => Bag(1)
+FunctorPersonBag :: instance Functor[Bag] {
+    fmap :: Person -> Bag[Int] {
+        p => Bag(1)
+    }
 }
 
 id[T: Functor[Box]] :: T -> T
@@ -445,10 +445,10 @@ Box[A] :: type {
 }
 
 
-fmap :: Person -> Box[Int]
- impl Core . Functor[Box]
-{
-    p => Box(1)
+FunctorPersonBox :: instance Core.Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -491,10 +491,10 @@ Bag[A] :: type {
 }
 
 
-fmap :: Person -> Bag[Int]
- impl Core . Functor[Bag]
-{
-    p => Bag(1)
+FunctorPersonBag :: instance Core.Functor[Bag] {
+    fmap :: Person -> Bag[Int] {
+        p => Bag(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -546,10 +546,10 @@ Box[A] :: type {
 }
 
 
-fmap :: Person -> Box[Int]
- impl Core . Functor[Box]
-{
-    p => Box(1)
+FunctorPersonBox :: instance Core.Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -617,10 +617,10 @@ Bag[A] :: type {
 }
 
 
-fmap :: Person -> Bag[Int]
- impl Core . Functor[Bag]
-{
-    p => Bag(1)
+FunctorPersonBag :: instance Core.Functor[Bag] {
+    fmap :: Person -> Bag[Int] {
+        p => Bag(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -786,10 +786,10 @@ Tagged :: type {
 }
 
 
-mark :: Tagged -> Bool
- impl Marker
-{
-    x => true
+MarkerTagged :: instance Marker {
+    mark :: Tagged -> Bool {
+        x => true
+    }
 }
 
 Box[T: Marker] :: type {

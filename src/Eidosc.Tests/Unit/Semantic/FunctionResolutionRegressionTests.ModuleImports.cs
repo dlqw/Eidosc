@@ -821,17 +821,17 @@ Demo.Append :: module
     }
 
 
-    append :: Int -> Int -> Int
-     impl Append
-{
-        left => right => left + right
+    AppendInt :: instance Append {
+        append :: Int -> Int -> Int {
+            left => right => left + right
+        }
     }
 
 
-    append :: String -> String -> String
-     impl Append
-{
-        left => right => left
+    AppendString :: instance Append {
+        append :: String -> String -> String {
+            left => right => left
+        }
     }
 }
 """;
@@ -869,17 +869,17 @@ Lib.Semigroup :: module
     }
 
 
-    append :: Int -> Int -> Int
-     impl Semigroup
-{
-        left => right => left + right
+    SemigroupInt :: instance Semigroup {
+        append :: Int -> Int -> Int {
+            left => right => left + right
+        }
     }
 
 
-    append :: String -> String -> String
-     impl Semigroup
-{
-        left => right => left
+    SemigroupString :: instance Semigroup {
+        append :: String -> String -> String {
+            left => right => left
+        }
     }
 }
 

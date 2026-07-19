@@ -460,6 +460,11 @@ public sealed partial class NameResolver
 
     private void RegisterNamedInstanceImpl(InstanceDecl instance, SymbolId traitId, ImplTraitReference traitRef)
     {
+        if (!_processedNamedInstanceDeclarations.Add(instance))
+        {
+            return;
+        }
+
         SymbolId implId = SymbolId.None;
         TypePath? registeredImplementingTypePath = null;
         TypeId registeredTargetTypeId = TypeId.None;
@@ -467,7 +472,22 @@ public sealed partial class NameResolver
 
         if (instance.Methods.Count == 0)
         {
-            if (TryGetImplTargetTypeFromTraitRef(instance.Trait, out var implementingTypePath, out var targetTypeId))
+            TypePath implementingTypePath = null!;
+            var targetTypeId = TypeId.None;
+            var hasTarget = instance.TargetType != null &&
+                            TryResolveImplTargetTypeNode(
+                                instance.TargetType,
+                                out implementingTypePath,
+                                out targetTypeId);
+            if (!hasTarget)
+            {
+                hasTarget = TryGetImplTargetTypeFromTraitRef(
+                    instance.Trait,
+                    out implementingTypePath,
+                    out targetTypeId);
+            }
+
+            if (hasTarget)
             {
                 implId = TryDeclareNamedInstanceImpl(
                     instance,
@@ -726,7 +746,7 @@ public sealed partial class NameResolver
         string? requirementError = null;
         if (implementingTypeRequirements == null &&
             TryBuildImplTypeRequirements(
-                instance.Methods.FirstOrDefault() ?? new FuncDef(),
+                instance.TypeParams.Concat(instance.Methods.FirstOrDefault()?.TypeParams ?? []),
                 implementingTypePath,
                 out var builtRequirements,
                 out requirementError))

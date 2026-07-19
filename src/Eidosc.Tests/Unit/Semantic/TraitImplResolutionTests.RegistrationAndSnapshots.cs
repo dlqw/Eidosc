@@ -86,7 +86,7 @@ ApplicativeResultWithE[E] :: instance Applicative[ResultWith[E]] {
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_RegistersTraitImplementation()
+    public void CompilationPipeline_FunctionLevelImplClause_IsRejected()
     {
         const string source = """
 Show :: trait {
@@ -112,21 +112,10 @@ show :: Person -> String
             UseColors = false
         }).Run();
 
-        Assert.True(result.Success);
-
-        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
-        var traitId = symbolTable.LookupType("Show");
-        var personId = symbolTable.LookupType("Person");
-        Assert.True(traitId.HasValue);
-        Assert.True(personId.HasValue);
-
-        var personSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(personId.Value));
-        var impl = symbolTable.LookupImplForTrait(personSymbol.TypeId, traitId.Value);
-
-        Assert.NotNull(impl);
-        var implementingShape = Assert.IsType<ImplConstructorShapeNode>(impl!.ImplementingTypeShape);
-        Assert.Equal("Person", implementingShape.Name);
-        Assert.Empty(impl.TraitTypeArgShapes);
+        Assert.False(result.Success);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("impl", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -321,10 +310,10 @@ Box :: type
 }
 
 
-eq :: Box -> Box -> Bool
- impl Eq
-{
-    _ => _ => true
+EqBox :: instance Eq {
+    eq :: Box -> Box -> Bool {
+        _ => _ => true
+    }
 }
 
 requires_eq[T: Eq] :: T -> T -> Bool
@@ -379,10 +368,10 @@ Box :: type
 }
 
 
-eq :: Box -> Box -> Bool
- impl Eq
-{
-    _ => _ => true
+EqBox :: instance Eq {
+    eq :: Box -> Box -> Bool {
+        _ => _ => true
+    }
 }
 """;
         var first = new CompilationPipeline(source, new CompilationOptions
@@ -427,17 +416,17 @@ Person :: type {
 PersonAlias :: type = Person;
 
 
-show :: Person -> String
- impl Show
-{
-    p => "person"
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
 
-show :: PersonAlias -> String
- impl Show
-{
-    p => "alias"
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
         var first = new CompilationPipeline(source, new CompilationOptions
@@ -473,9 +462,9 @@ show :: PersonAlias -> String
         var diagnostic = Assert.Single(
             second.Diagnostics,
             item => item.Code == "E3004" &&
-                    item.Message.Contains("Ambiguous overlapping impl registration", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested impl head: @impl(Show) on PersonAlias", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing impl head: @impl(Show) on Person", StringComparison.Ordinal));
+                    item.Message.Contains("Ambiguous overlapping instance registration", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested instance head: instance Show for PersonAlias", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing instance head: instance Show for Person", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -493,17 +482,17 @@ Person :: type {
 PersonAlias :: type = Person;
 
 
-show :: Person -> String
- impl Show
-{
-    p => "person"
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
 
-show :: PersonAlias -> String
- impl Show
-{
-    p => "alias"
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
 
@@ -521,17 +510,17 @@ Person :: type {
 PersonAlias :: type = Person;
 
 
-show :: Person -> String
- impl Show
-{
-    p => "person"
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
 
-show :: PersonAlias -> String
- impl Show
-{
-    p => "alias"
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
 

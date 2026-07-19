@@ -500,17 +500,17 @@ Option[T] :: type {
 }
 
 
-show[T] :: Option[T] -> Int
- impl Show
-{
-    _ => 0
+ShowOption[T] :: instance Show {
+    show :: Option[T] -> Int {
+        _ => 0
+    }
 }
 
 
-show :: Option[Int] -> Int
- impl Show
-{
-    _ => 1
+ShowOptionInt :: instance Show {
+    show :: Option[Int] -> Int {
+        _ => 1
+    }
 }
 
 render[T: Show] :: T -> Int
@@ -541,7 +541,7 @@ main :: Unit -> Int
         Assert.NotNull(specializedImpl);
         var specializedMethodId = Assert.Single(specializedImpl!.Methods);
 
-        var selectedShow = Assert.Single(mirModule.Functions, function => function.Name == "show");
+        var selectedShow = Assert.Single(mirModule.Functions, function => function.SymbolId == specializedMethodId);
         var selectedShowReturn = Assert.IsType<MirReturn>(selectedShow.BasicBlocks.Single().Terminator);
         var selectedShowValue = Assert.IsType<MirConstant>(selectedShowReturn.Value);
         var selectedShowInt = Assert.IsType<MirConstantValue.IntValue>(selectedShowValue.Value);
@@ -746,17 +746,17 @@ Option[T] :: type {
 }
 
 
-show[T] :: Option[T] -> Int
- impl Show
-{
-    _ => 0
+ShowOption[T] :: instance Show {
+    show :: Option[T] -> Int {
+        _ => 0
+    }
 }
 
 
-show :: Option[Int] -> Int
- impl Show
-{
-    _ => 1
+ShowOptionInt :: instance Show {
+    show :: Option[Int] -> Int {
+        _ => 1
+    }
 }
 
 render[T: Show] :: T -> Int
@@ -793,17 +793,17 @@ Result[T, E] :: type {
 ResultWith[E, T] :: type = Result[T, E];
 
 
-pure[A, E] :: A -> ResultWith[E, A]
- impl Applicative[ResultWith[E]]
-{
-    value => Ok(value)
+ApplicativeResultWithE[E] :: instance Applicative[ResultWith[E]] {
+    pure[A] :: A -> ResultWith[E, A] {
+        value => Ok(value)
+    }
 }
 
 
-pure[A] :: A -> ResultWith[String, A]
- impl Applicative[ResultWith[String]]
-{
-    value => Ok(value)
+ApplicativeResultWithString :: instance Applicative[ResultWith[String]] {
+    pure[A] :: A -> ResultWith[String, A] {
+        value => Ok(value)
+    }
 }
 
 make :: Unit -> Result[Int, String]
@@ -831,7 +831,7 @@ make :: Unit -> Result[Int, String]
             impl => impl.Trait == applicativeTraitId &&
                     impl.TraitTypeArgs.Any(arg => arg.Contains("ResultWith[String]", StringComparison.Ordinal)));
 
-        Assert.StartsWith("pure", makeTarget.Name, StringComparison.Ordinal);
+        Assert.Contains("__pure", makeTarget.Name, StringComparison.Ordinal);
         Assert.True(makeTarget.SymbolId.IsValid);
         Assert.NotEqual(traitMethodId, makeTarget.SymbolId);
         Assert.DoesNotContain(
@@ -858,17 +858,17 @@ Result[T, E] :: type {
 ResultWith[E, T] :: type = Result[T, E];
 
 
-pure[A, E] :: A -> ResultWith[E, A]
- impl Applicative[ResultWith[E]]
-{
-    value => Ok(value)
+ApplicativeResultWithE[E] :: instance Applicative[ResultWith[E]] {
+    pure[A] :: A -> ResultWith[E, A] {
+        value => Ok(value)
+    }
 }
 
 
-pure[A] :: A -> ResultWith[String, A]
- impl Applicative[ResultWith[String]]
-{
-    value => Ok(value)
+ApplicativeResultWithString :: instance Applicative[ResultWith[String]] {
+    pure[A] :: A -> ResultWith[String, A] {
+        value => Ok(value)
+    }
 }
 
 lift[A, G: kind2 : Applicative[G]] :: A -> G[A]
@@ -910,7 +910,7 @@ make :: Unit -> Result[Int, String]
             impl => impl.Trait == applicativeTraitId &&
                     impl.TraitTypeArgs.Any(arg => arg.Contains("ResultWith[String]", StringComparison.Ordinal)));
 
-        Assert.StartsWith("pure", specializedLiftTarget.Name, StringComparison.Ordinal);
+        Assert.Contains("__pure", specializedLiftTarget.Name, StringComparison.Ordinal);
         Assert.True(specializedLiftTarget.SymbolId.IsValid);
         Assert.NotEqual(traitMethodId, specializedLiftTarget.SymbolId);
     }
@@ -930,10 +930,10 @@ Result[T, E] :: type {
 ResultWith[E, T] :: type = Result[T, E];
 
 
-pure[A] :: A -> ResultWith[String, A]
- impl Applicative[ResultWith[String]]
-{
-    value => Ok(value)
+ApplicativeResultWithString :: instance Applicative[ResultWith[String]] {
+    pure[A] :: A -> ResultWith[String, A] {
+        value => Ok(value)
+    }
 }
 
 lift[A, G: kind2 : Applicative[G]] :: A -> G[A]
@@ -992,10 +992,10 @@ main :: Unit -> Int
                         }
 
 
-                        score :: Box -> Int
-                         impl Score
-                    {
-                            Box(value) => value
+                        ScoreBox :: instance Score {
+                            score :: Box -> Int {
+                                Box(value) => value
+                            }
                         }
 
                         render[T: Score] :: T -> Int
@@ -1035,10 +1035,10 @@ Triple[A, B, C] :: type {
 KeepEdges[L, R, X] :: type = Triple[L, X, R];
 
 
-pure[A] :: A -> KeepEdges[String, Bool, A]
- impl Applicative[KeepEdges[String, Bool]]
-{
-    value => Triple("ctx", value, true)
+ApplicativeKeepEdgesStringBool :: instance Applicative[KeepEdges[String, Bool]] {
+    pure[A] :: A -> KeepEdges[String, Bool, A] {
+        value => Triple("ctx", value, true)
+    }
 }
 
 make :: Unit -> Triple[String, Int, Bool]
@@ -1067,7 +1067,7 @@ make :: Unit -> Triple[String, Int, Bool]
             impl => impl.Trait == applicativeTraitId &&
                     impl.TraitTypeArgs.Any(arg => arg.Contains("KeepEdges[String,Bool]", StringComparison.Ordinal)));
 
-        Assert.StartsWith("pure", makeTarget.Name, StringComparison.Ordinal);
+        Assert.Contains("__pure", makeTarget.Name, StringComparison.Ordinal);
         Assert.True(makeTarget.SymbolId.IsValid);
         Assert.NotEqual(traitMethodId, makeTarget.SymbolId);
     }
@@ -1087,10 +1087,10 @@ Triple[A, B, C] :: type {
 KeepEdges[L, R, X] :: type = Triple[L, X, R];
 
 
-pure[A] :: A -> KeepEdges[String, Bool, A]
- impl Applicative[KeepEdges[String, Bool]]
-{
-    value => Triple("ctx", value, true)
+ApplicativeKeepEdgesStringBool :: instance Applicative[KeepEdges[String, Bool]] {
+    pure[A] :: A -> KeepEdges[String, Bool, A] {
+        value => Triple("ctx", value, true)
+    }
 }
 
 lift[A, G: kind2 : Applicative[G]] :: A -> G[A]
@@ -1133,7 +1133,7 @@ make :: Unit -> Triple[String, Int, Bool]
             impl => impl.Trait == applicativeTraitId &&
                     impl.TraitTypeArgs.Any(arg => arg.Contains("KeepEdges[String,Bool]", StringComparison.Ordinal)));
 
-        Assert.StartsWith("pure__spec_", specializedLiftTarget.Name, StringComparison.Ordinal);
+        Assert.Contains("__pure__spec_", specializedLiftTarget.Name, StringComparison.Ordinal);
         Assert.True(specializedLiftTarget.SymbolId.IsValid);
         Assert.NotEqual(traitMethodId, specializedLiftTarget.SymbolId);
     }

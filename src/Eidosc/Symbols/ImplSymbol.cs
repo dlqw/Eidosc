@@ -118,15 +118,15 @@ public sealed record ImplSymbol : Symbol
 
     /// <summary>
     /// implementing type 的类型实参约束。
-    /// 例如 `@impl(Eq) func eq[T: Eq]: Option[T] -> ...`
+    /// 例如 `EqOption[T: Eq] :: instance Eq { ... }`
     /// 会记录 `Option` 的第 1 个类型实参需要满足 `Eq`。
     /// </summary>
     public List<ImplTypeArgTraitRequirement> ImplementingTypeRequirements { get; init; } = [];
 
     /// <summary>
     /// True when this impl was auto-derived from a supertrait chain
-    /// (e.g., @impl(Ord) automatically generates an Eq impl).
-    /// Auto-derived impls have lower priority than explicit @impl annotations.
+    /// (e.g., an Ord instance automatically generates Eq evidence).
+    /// Auto-derived evidence has lower priority than explicit named instances.
     /// </summary>
     public bool IsAutoDerived { get; init; }
 }

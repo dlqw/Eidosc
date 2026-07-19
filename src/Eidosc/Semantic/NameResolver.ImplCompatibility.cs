@@ -109,11 +109,22 @@ public sealed partial class NameResolver
         TypePath implementingTypePath,
         out List<ImplTypeArgTraitRequirement> implementingTypeRequirements,
         out string? errorMessage)
+        => TryBuildImplTypeRequirements(
+            func.TypeParams,
+            implementingTypePath,
+            out implementingTypeRequirements,
+            out errorMessage);
+
+    private bool TryBuildImplTypeRequirements(
+        IEnumerable<TypeParam> typeParams,
+        TypePath implementingTypePath,
+        out List<ImplTypeArgTraitRequirement> implementingTypeRequirements,
+        out string? errorMessage)
     {
         implementingTypeRequirements = [];
         errorMessage = null;
 
-        var constrainedTypeParams = func.TypeParams
+        var constrainedTypeParams = typeParams
             .Where(typeParam => typeParam.SymbolId.IsValid && typeParam.TraitConstraints.Count > 0)
             .ToDictionary(typeParam => typeParam.SymbolId, typeParam => typeParam);
 

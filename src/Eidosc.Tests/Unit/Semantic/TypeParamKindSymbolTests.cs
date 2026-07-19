@@ -468,10 +468,10 @@ Holder :: type {
 }
 
 
-make :: Holder -> Buffer[4, Int]
- impl Sized[4]
-{
-    value => Buffer[4, Int](1)
+SizedHolder :: instance Sized[4] {
+    make :: Holder -> Buffer[4, Int] {
+        value => Buffer[4, Int](1)
+    }
 }
 """;
 

@@ -59,8 +59,7 @@ public sealed partial class NameResolver
     internal string LanguageVersion { get; init; } = ProjectSystem.EidosLanguageVersions.Current;
     private readonly Dictionary<string, ImplOverlapCheckSnapshotEntry> _implOverlapSnapshotEntries = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ImplOverlapCheckSnapshotEntry> _previousImplOverlapSnapshotEntries = new(StringComparer.Ordinal);
-    private readonly HashSet<DeclarationClause> _processedImplClauses = new(ReferenceEqualityComparer.Instance);
-    private readonly HashSet<SymbolId> _processedConventionImplFunctions = [];
+    private readonly HashSet<InstanceDecl> _processedNamedInstanceDeclarations = new(ReferenceEqualityComparer.Instance);
     private HashSet<SymbolId>? _traitImplMethodIds;
     private readonly List<string> _patternDiagnosticContext = [];
     private readonly Dictionary<SymbolId, SymbolId> _patternValueAdtBindings = [];
@@ -307,11 +306,10 @@ public sealed partial class NameResolver
     {
         _rootInputFilePath = module.Span.FilePath;
         _implOverlapSnapshotEntries.Clear();
-        _processedImplClauses.Clear();
-        _processedConventionImplFunctions.Clear();
         _metaInvocationOccurrences.Clear();
         _metaSyntaxSiteOccurrences.Clear();
         _registeredMetaSyntaxSites.Clear();
+        _processedNamedInstanceDeclarations.Clear();
         _completedMetaInvocations.Clear();
         _metaInvocationInputFingerprints.Clear();
         _queryDependentMetaInvocations.Clear();
@@ -588,8 +586,6 @@ public sealed partial class NameResolver
         }
 
         ResolveEffectRequirements(func.RequiredAbilities);
-
-        TryRegisterTraitImplFromClauses(func);
 
         if (!resolveBody)
         {

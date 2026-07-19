@@ -914,6 +914,19 @@ public sealed class DeclParser(ParserContext ctx)
                 continue;
             }
 
+            if (ctx.Check("impl"))
+            {
+                if (!ctx.SupportsTypedClauses)
+                {
+                    clauses.Add(ParseLegacyImplClause());
+                    continue;
+                }
+
+                ctx.Error("function-level impl clauses were removed; declare a named instance");
+                SkipRemovedFunctionClause();
+                continue;
+            }
+
             if (ctx.Check("operator"))
             {
                 ctx.Error("function-level operator clauses were removed; declare the symbolic function name directly");
@@ -931,6 +944,18 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         return requiredAbilities;
+    }
+
+    private DeclarationClause ParseLegacyImplClause()
+    {
+        var start = ctx.Current;
+        ctx.Advance();
+        var argumentStart = ctx.SavePosition();
+        _typeParser.ParseTraitRef();
+        var clause = CreateClause(DeclarationClauseKind.LegacyImpl, "impl", start);
+        clause.AddArgument(ReadConsumedTokenRange(argumentStart));
+        clause.SetSpan(ctx.SpanFrom(start));
+        return clause;
     }
 
     private void SkipRemovedFunctionClause()

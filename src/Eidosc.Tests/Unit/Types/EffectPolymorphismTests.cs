@@ -222,10 +222,10 @@ Box :: type
 }
 
 
-run[A, B, E: effects] :: Box -> (A -> B need E) -> A -> B need E
- impl Runner
-{
-    _ => callback => value => callback(value)
+RunnerBox :: instance Runner {
+    run[A, B, E: effects] :: Box -> (A -> B need E) -> A -> B need E {
+        _ => callback => value => callback(value)
+    }
 }
 
 write :: Int -> Int need io

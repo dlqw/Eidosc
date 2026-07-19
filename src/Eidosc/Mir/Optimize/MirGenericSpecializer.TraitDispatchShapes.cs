@@ -93,7 +93,7 @@ public sealed partial class MirGenericSpecializer
 
     /// <summary>
     /// Falls back to finding impls for child traits that extend the requested parent trait
-    /// via supertrait chains. E.g., if requesting Eq and no @impl(Eq) exists, finds @impl(Ord)
+    /// via supertrait chains. E.g., if requesting Eq and no Eq instance exists, finds an Ord instance
     /// where Ord: Eq.
     /// </summary>
     private List<ImplSymbol> ResolveApplicableImplsViaSupertraitChain(

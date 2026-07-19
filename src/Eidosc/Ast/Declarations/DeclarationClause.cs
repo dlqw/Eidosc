@@ -13,7 +13,6 @@ public enum DeclarationClauseKind
     LinkLibrary,
     LinkName,
     Derive,
-    Impl,
     Operator,
     Borrow,
     ProofUnfold,
@@ -25,7 +24,8 @@ public enum DeclarationClauseKind
     Internal,
     Intrinsic,
     LlvmAbi,
-    Compiler
+    Compiler,
+    LegacyImpl
 }
 
 [Flags]
@@ -107,7 +107,6 @@ public enum DeclarationAttachmentAdapterKind
     SignatureComponent,
     TypedTag,
     ForeignContract,
-    DedicatedDeclaration,
     CompilerDirective,
     RemovedSurface
 }
@@ -209,7 +208,7 @@ public sealed record MetaInvocationSyntax : EidosAstNode
 /// </summary>
 public static class ClauseSchema
 {
-    public const string Version = "clause-schema-v1";
+    public const string Version = "clause-schema-v2";
 
     private static readonly ClauseMigrationRule NoLegacyMigration = new("none", []);
 
@@ -222,7 +221,6 @@ public static class ClauseSchema
             ["repr"] = new("repr", DeclarationClauseKind.Repr, DeclarationClauseTarget.Type, ClauseArgumentGrammar.Identifier, ClauseCanonicalArgumentType.Identifier, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-cstruct-to-repr-c", ["cstruct"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
             ["extern"] = new("extern", DeclarationClauseKind.Extern, DeclarationClauseTarget.Function, ClauseArgumentGrammar.TokenIsland, ClauseCanonicalArgumentType.Abi, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Requires: [DeclarationClauseKind.Need], Migration: new("attribute-ffi-to-extern-c", ["ffi"]), Adapter: DeclarationAttachmentAdapterKind.ForeignContract),
             ["derive"] = new("derive", DeclarationClauseKind.Derive, DeclarationClauseTarget.Type | DeclarationClauseTarget.CaseType, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Trait, ClauseStage.Semantic, ClauseSourceOrderBehavior.GeneratorSequence, Repeatable: true, ProducesMetaInvocation: true, CompilerOwnedInvocation: true, Migration: new("attribute-derive", ["derive"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
-            ["impl"] = new("impl", DeclarationClauseKind.Impl, DeclarationClauseTarget.Function, ClauseArgumentGrammar.Path, ClauseCanonicalArgumentType.Trait, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-impl", ["impl"]), Adapter: DeclarationAttachmentAdapterKind.DedicatedDeclaration),
             ["borrow"] = new("borrow", DeclarationClauseKind.Borrow, DeclarationClauseTarget.Function, ClauseArgumentGrammar.IdentifierList, ClauseCanonicalArgumentType.BorrowCapability, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-borrow", ["borrow"]), Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
             ["proof_unfold"] = new("proof_unfold", DeclarationClauseKind.ProofUnfold, DeclarationClauseTarget.Function, ClauseArgumentGrammar.Path, ClauseCanonicalArgumentType.Declaration, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-proof-unfold", ["proof_unfold"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
             ["transparent"] = new("transparent", DeclarationClauseKind.Transparent, DeclarationClauseTarget.Function, ClauseArgumentGrammar.None, ClauseCanonicalArgumentType.None, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-transparent", ["transparent"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),

@@ -310,10 +310,10 @@ Main :: module {
     }
 
 
-    show :: Box -> Int
-     impl ShowBox
-{
-        value => 2
+    ShowBoxInstance :: instance ShowBox {
+        show :: Box -> Int {
+            value => 2
+        }
     }
 }
 """);

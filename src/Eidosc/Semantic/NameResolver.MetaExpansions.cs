@@ -1789,7 +1789,7 @@ public sealed partial class NameResolver
             invocation.TargetPath);
         if (generated != null)
         {
-            RegisterGeneratedDerivedFunction(generated);
+            RegisterGeneratedDerivedInstance(generated);
         }
     }
 

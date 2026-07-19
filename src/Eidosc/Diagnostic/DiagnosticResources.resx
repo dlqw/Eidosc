@@ -1003,7 +1003,7 @@
     <value>@borrow requires at least one capability tag: read, write, move</value>
   </data>
   <data name="AmbiguousOverlappingImplRegistration" xml:space="preserve">
-    <value>Ambiguous overlapping impl registration</value>
+    <value>Ambiguous overlapping instance registration</value>
   </data>
   <data name="CannotAssignToImmutableVariable" xml:space="preserve">
     <value>Cannot assign to immutable variable '{0}'</value>
@@ -1117,7 +1117,7 @@
     <value>类型 '{0}' 不是 FFI 安全类型，不能用于 @ffi 函数的{1}</value>
   </data>
   <data name="ExistingOverlappingImplRegisteredHere" xml:space="preserve">
-    <value>existing overlapping impl registered here</value>
+    <value>existing overlapping instance registered here</value>
   </data>
   <data name="GuardedBranchesExcludedFromExactCoverage" xml:space="preserve">
     <value>Guarded branches with unresolved predicates were conservatively excluded from exact coverage: {0}.</value>
@@ -1240,19 +1240,19 @@
     <value>existing canonical head: {0}</value>
   </data>
   <data name="OverlappingImplExistingHead" xml:space="preserve">
-    <value>existing impl head: {0}</value>
+    <value>existing instance head: {0}</value>
   </data>
   <data name="OverlappingImplHelp" xml:space="preserve">
-    <value>Keep only one impl head per canonical trait/type shape. Different aliases that canonicalize to the same underlying constructor currently overlap.</value>
+    <value>Keep only one instance head per canonical trait/type shape. Different aliases that canonicalize to the same underlying constructor currently overlap.</value>
   </data>
   <data name="OverlappingImplRequestedCanonicalHead" xml:space="preserve">
     <value>requested canonical head: {0}</value>
   </data>
   <data name="OverlappingImplRequestedHead" xml:space="preserve">
-    <value>requested impl head: {0}</value>
+    <value>requested instance head: {0}</value>
   </data>
   <data name="OverlappingImplRequestedHere" xml:space="preserve">
-    <value>overlapping impl requested here: {0}</value>
+    <value>overlapping instance requested here: {0}</value>
   </data>
   <data name="OverlappingImplSpecializationRelation" xml:space="preserve">
     <value>specialization relation: {0}</value>

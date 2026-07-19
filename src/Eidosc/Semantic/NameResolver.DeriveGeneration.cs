@@ -154,19 +154,15 @@ public sealed partial class NameResolver
         }
     }
 
-    private void RegisterGeneratedDerivedFunction(FuncDef funcDef)
+    private void RegisterGeneratedDerivedInstance(InstanceDecl instance)
     {
-        AddCounter("Namer.collect.derivedFunction.count");
+        AddCounter("Namer.collect.derivedInstance.count");
         if (TryGetCurrentModuleDecl() is { } module)
         {
-            module.Declarations.Add(funcDef);
+            module.Declarations.Add(instance);
         }
 
-        CollectDeclaration(funcDef);
-        if (funcDef.SymbolId.IsValid)
-        {
-            _symbolTable.AddMemberToModule(_currentModule, funcDef.SymbolId);
-        }
+        CollectDeclaration(instance);
     }
 
     private static string? NormalizeBuiltinDeriveTraitName(string name)
@@ -201,7 +197,7 @@ public sealed partial class NameResolver
         return ctor.PositionalArgs.Count + ctor.NamedArgs.Count;
     }
 
-    private FuncDef? GenerateDerivedImpl(
+    private InstanceDecl? GenerateDerivedImpl(
         AdtDef adt,
         string traitName,
         SourceSpan span,
@@ -228,9 +224,8 @@ public sealed partial class NameResolver
             return null;
         }
 
-        var funcDef = new FuncDef();
-        SetPrivate(funcDef, "Name", funcName);
-
+        var derivedTypeParams = new List<TypeParam>(adt.TypeParams.Count);
+        var derivedMethodTypeParams = new List<TypeParam>(adt.TypeParams.Count);
         var requiredConstraint = GetDeriveRequiredConstraint(traitName);
         foreach (var tp in adt.TypeParams)
         {
@@ -239,14 +234,32 @@ public sealed partial class NameResolver
                 requiredConstraint,
                 traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
                 span);
-            funcDef.TypeParams.Add(derivedTp);
+            derivedTypeParams.Add(derivedTp);
+            derivedMethodTypeParams.Add(CreateDerivedTypeParam(
+                tp,
+                requiredConstraint,
+                traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
+                span));
         }
 
-        var implClause = new DeclarationClause();
-        implClause.SetKind(DeclarationClauseKind.Impl, "impl");
-        implClause.AddArgument(traitName);
-        implClause.SetSpan(span);
-        funcDef.SetClauses([implClause]);
+        if (traitName == "Copy")
+        {
+            var markerTrait = new TraitRef();
+            markerTrait.SetTraitName(traitName);
+            markerTrait.SetSpan(span);
+
+            var markerInstance = new InstanceDecl();
+            markerInstance.SetName(CreateDerivedInstanceName(traitName, adt.Name, targetPath));
+            markerInstance.SetSpan(span);
+            markerInstance.SetTypeParams(derivedTypeParams);
+            markerInstance.SetTrait(markerTrait);
+            markerInstance.SetTargetType(CreateAdtSelfType(adt, span, targetPath));
+            return markerInstance;
+        }
+
+        var funcDef = new FuncDef();
+        SetPrivate(funcDef, "Name", funcName);
+        funcDef.TypeParams.AddRange(derivedMethodTypeParams);
 
         var returnType = traitName switch
         {
@@ -255,7 +268,6 @@ public sealed partial class NameResolver
             "Ord" => CreateTypePath("Ordering"),
             "Hash" => CreateTypePath("Int"),
             "Clone" => CreateAdtSelfType(adt, span, targetPath),
-            "Copy" => CreateTypePath("Unit"),
             _ => null
         };
 
@@ -280,7 +292,30 @@ public sealed partial class NameResolver
         if (funcDef.Body.Count == 0)
             return null;
 
-        return funcDef;
+        var trait = new TraitRef();
+        trait.SetTraitName(traitName);
+        trait.SetSpan(span);
+
+        var instance = new InstanceDecl();
+        instance.SetName(CreateDerivedInstanceName(traitName, adt.Name, targetPath));
+        instance.SetSpan(span);
+        instance.SetTypeParams(derivedTypeParams);
+        instance.SetTrait(trait);
+        instance.SetMethods([funcDef]);
+        instance.SetMembers([funcDef]);
+        return instance;
+    }
+
+    private static string CreateDerivedInstanceName(
+        string traitName,
+        string typeName,
+        IReadOnlyList<string>? targetPath)
+    {
+        var path = targetPath is { Count: > 0 } ? targetPath : [typeName];
+        return $"Derived{traitName}{string.Concat(path.Select(static segment =>
+            string.IsNullOrEmpty(segment)
+                ? string.Empty
+                : char.ToUpperInvariant(segment[0]) + segment[1..]))}";
     }
 
     private static string? GetDeriveRequiredConstraint(string traitName)

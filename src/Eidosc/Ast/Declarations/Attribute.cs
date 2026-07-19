@@ -9,9 +9,8 @@ namespace Eidosc.Ast;
 /// 属性
 /// </summary>
 /// <example>
-/// @public
-/// @impl(Show)
-/// @inline
+/// @[repr(c)]
+/// @[derive(Eq, Show)]
 /// </example>
 public record Attribute : EidosAstNode
 {
@@ -26,7 +25,7 @@ public record Attribute : EidosAstNode
     public List<EidosAstNode> Arguments { get; private set; } = [];
 
     /// <summary>
-    /// 参数文本（便于语义层直接匹配如 @impl(Show)）
+    /// 参数文本，用于 typed attribute group 的结构化绑定。
     /// </summary>
     public List<string> ArgumentTexts { get; private set; } = [];
 

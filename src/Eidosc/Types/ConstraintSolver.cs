@@ -409,7 +409,7 @@ public sealed class ConstraintSolver
 
         // Supertrait chain fallback: if no direct impl found for the requested trait,
         // check if there is an impl for a child trait that extends this trait.
-        // E.g., if checking Eq and no @impl(Eq) exists, but @impl(Ord) does and Ord: Eq, accept it.
+        // E.g., if checking Eq and no Eq instance exists, but an Ord instance does and Ord: Eq, accept it.
         if (lookupRequest.TypeId.IsValid &&
             TryFindImplViaSupertraitChain(
                 lookupRequest.TypeId,
@@ -426,7 +426,7 @@ public sealed class ConstraintSolver
 
     /// <summary>
     /// Checks whether a type satisfies a trait through a supertrait chain.
-    /// For example, if Ord: Eq and the type has @impl(Ord), it also satisfies Eq.
+    /// For example, if Ord: Eq and the type has an Ord instance, it also satisfies Eq.
     /// </summary>
     private bool TryFindImplViaSupertraitChain(
         TypeId typeId,

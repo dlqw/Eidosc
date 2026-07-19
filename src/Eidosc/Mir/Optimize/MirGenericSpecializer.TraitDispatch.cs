@@ -1319,7 +1319,7 @@ public sealed partial class MirGenericSpecializer
 
         // Supertrait chain fallback: if no direct impl found, try child traits
         // whose supertrait chain includes ownerTrait.
-        // E.g., looking up Eq for a type that has @impl(Ord) where Ord: Eq.
+        // E.g., looking up Eq for a type that has an Ord instance where Ord: Eq.
         if (applicableImpls.Count == 0)
         {
             applicableImpls = ResolveApplicableImplsViaSupertraitChain(ownerTrait, receiverTypeId);

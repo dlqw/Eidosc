@@ -35,10 +35,10 @@ BoxedResult[E, T] :: type = ResultWith[E, T];
 DeepBoxedResult[E, T] :: type = BoxedResult[E, T];
 
 
-pure[A] :: A -> DeepBoxedResult[String, A]
- impl Applicative[DeepBoxedResult[String]]
-{
-    value => Ok(value)
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 make :: Unit -> Result[Int, String]
@@ -67,7 +67,7 @@ make :: Unit -> Result[Int, String]
             impl => impl.Trait == applicativeTraitId &&
                     impl.TraitTypeArgs.Any(arg => arg.Contains("DeepBoxedResult[String]", StringComparison.Ordinal)));
 
-        Assert.StartsWith("pure", makeTarget.Name, StringComparison.Ordinal);
+        Assert.Contains("__pure", makeTarget.Name, StringComparison.Ordinal);
         Assert.True(makeTarget.SymbolId.IsValid);
         Assert.NotEqual(traitMethodId, makeTarget.SymbolId);
     }
@@ -89,10 +89,10 @@ BoxedResult[E, T] :: type = ResultWith[E, T];
 DeepBoxedResult[E, T] :: type = BoxedResult[E, T];
 
 
-pure[A] :: A -> DeepBoxedResult[String, A]
- impl Applicative[DeepBoxedResult[String]]
-{
-    value => Ok(value)
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 lift[A, G: kind2 : Applicative[G]] :: A -> G[A]
@@ -135,7 +135,7 @@ make :: Unit -> Result[Int, String]
             impl => impl.Trait == applicativeTraitId &&
                     impl.TraitTypeArgs.Any(arg => arg.Contains("DeepBoxedResult[String]", StringComparison.Ordinal)));
 
-        Assert.StartsWith("pure__spec_", specializedLiftTarget.Name, StringComparison.Ordinal);
+        Assert.Contains("__pure__spec_", specializedLiftTarget.Name, StringComparison.Ordinal);
         Assert.True(specializedLiftTarget.SymbolId.IsValid);
         Assert.NotEqual(traitMethodId, specializedLiftTarget.SymbolId);
     }
@@ -157,10 +157,10 @@ BoxedResult[E, T] :: type = ResultWith[E, T];
 DeepBoxedResult[E, T] :: type = BoxedResult[E, T];
 
 
-pure[A] :: A -> DeepBoxedResult[String, A]
- impl Applicative[DeepBoxedResult[String]]
-{
-    value => Ok(value)
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -214,10 +214,10 @@ Triple[A, B, C] :: type {
 KeepEdges[L, R, X] :: type = Triple[L, X, R];
 
 
-pure[A] :: A -> KeepEdges[String, Bool, A]
- impl Applicative[KeepEdges[String, Bool]]
-{
-    value => Triple("ctx", value, true)
+ApplicativeKeepEdgesStringBool :: instance Applicative[KeepEdges[String, Bool]] {
+    pure[A] :: A -> KeepEdges[String, Bool, A] {
+        value => Triple("ctx", value, true)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]

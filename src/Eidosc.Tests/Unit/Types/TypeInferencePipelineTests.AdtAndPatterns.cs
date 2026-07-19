@@ -874,10 +874,10 @@ Label :: trait {
 Token :: type {}
 
 
-label :: Token -> Int
- impl Label
-{
-    _ => 7
+LabelToken :: instance Label {
+    label :: Token -> Int {
+        _ => 7
+    }
 }
 
 Box :: type {

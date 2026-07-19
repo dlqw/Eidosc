@@ -423,6 +423,41 @@ Direction[A] :: type {
         Assert.DoesNotContain("case type", rewritten, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CreatePlan_FromPrevious_RewritesFunctionImplClauseToNamedInstance()
+    {
+        const string source = """
+Show :: trait {
+    show :: Self -> String
+}
+
+Person :: type {}
+
+show :: Person -> String
+impl Show
+{
+    _ => "person"
+}
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
+
+        Assert.Contains("ShowPerson :: instance Show", rewritten, StringComparison.Ordinal);
+        Assert.Contains("show :: Person -> String", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("impl Show", rewritten, StringComparison.Ordinal);
+        var result = new CompilationPipeline(rewritten, new CompilationOptions
+        {
+            InputFile = "migrated_impl_instance.eidos",
+            StopAtPhase = CompilationPhase.Namer,
+            LanguageVersion = EidosLanguageVersions.Current,
+            UseColors = false
+        }).Run();
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
     private static (SyntaxMigrationPlan Plan, string SourceText) CreatePlanForSource(
         string source,
         string fromSyntax = EidosLanguageVersions.Legacy)

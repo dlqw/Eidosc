@@ -198,7 +198,7 @@ public sealed partial class NameResolver
 
         var hasBody = func.Body.Count > 0 && ffiInfo == null && intrinsicInfo == null;
 
-        var isTraitImplementation = HasClause(func, DeclarationClauseKind.Impl) || _instanceMethodDeclarationDepth > 0;
+        var isTraitImplementation = _instanceMethodDeclarationDepth > 0;
         if (isTraitImplementation)
         {
             AddCounter("Namer.collect.traitImplementationFunction.count");

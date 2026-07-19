@@ -238,15 +238,6 @@ public sealed partial class NameResolver
                 candidateHeads.Add(head);
             }
 
-            foreach (var function in declarations.OfType<FuncDef>().Where(static function =>
-                         function.Clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Impl)))
-            {
-                if (!TryBuildProspectiveFunctionImplHeads(function, candidateHeads, out reason))
-                {
-                    reason = $"generated function implementation '{function.Name}' failed detached coherence validation: {reason}";
-                    return false;
-                }
-            }
         }
 
         if (candidateHeads.Count == 0)
@@ -319,60 +310,6 @@ public sealed partial class NameResolver
                     return false;
                 }
             }
-        }
-
-        reason = string.Empty;
-        return true;
-    }
-
-    private bool TryBuildProspectiveFunctionImplHeads(
-        FuncDef function,
-        List<ProspectiveInstanceHead> heads,
-        out string reason)
-    {
-        foreach (var clause in function.Clauses.Where(static clause =>
-                     clause.ClauseKind == DeclarationClauseKind.Impl))
-        {
-            if (!TryResolveTraitFromImplClause(clause, out var traitId, out _, out var traitReference))
-            {
-                reason = "the referenced impl trait is unavailable";
-                return false;
-            }
-            if (!TryGetImplTargetType(
-                    function,
-                    out var implementingType,
-                    out var implementingTypeId,
-                    cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
-            {
-                reason = $"function '{function.Name}' has no concrete implementation target type";
-                return false;
-            }
-            if (!TryBuildImplTypeRequirements(function, implementingType, out _, out var requirementError))
-            {
-                reason = requirementError ?? "the generated impl head has unsupported constraints";
-                return false;
-            }
-            if (!TryValidateTraitImplCompatibility(
-                    traitId,
-                    function,
-                    implementingType,
-                    traitReference.TypeArgTexts,
-                    out reason,
-                    out _))
-            {
-                return false;
-            }
-
-            heads.Add(new ProspectiveInstanceHead(
-                function,
-                traitId,
-                implementingType,
-                implementingTypeId,
-                BuildDetachedImplHeadShape(
-                    traitId,
-                    traitReference,
-                    implementingType,
-                    function.TypeParams)));
         }
 
         reason = string.Empty;

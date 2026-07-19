@@ -486,7 +486,7 @@ Seed :: type expand emit_conflict {}
     }
 
     [Fact]
-    public void TransformationPreflight_RejectsGeneratedFunctionImplOverlapWithoutPartialCommit()
+    public void TransformationPreflight_RejectsGeneratedInstanceOverlapWithoutPartialCommit()
     {
         const string source = """
 Marker :: trait {
@@ -501,7 +501,9 @@ Existing :: instance Marker {
 
 emit_conflict :: comptime meta.Target[meta.Stage.Syntax] -> meta.Transformation {
     input => meta.add_after(input, [quote item {
-        mark :: Person -> Bool impl Marker { _ => false }
+        Generated :: instance Marker {
+            mark :: Person -> Bool { _ => false }
+        }
     }])
 }
 
@@ -515,8 +517,8 @@ Seed :: type expand emit_conflict {}
             diagnostic.Code == "E3616" &&
             diagnostic.Message.Contains("overlaps instance 'Existing'", StringComparison.Ordinal));
         Assert.DoesNotContain(
-            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
-            static function => function.Name == "mark");
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<InstanceDecl>(),
+            static instance => instance.Name == "Generated");
     }
 
     [Theory]
@@ -679,13 +681,15 @@ Existing :: instance Marker {
     }
 
     [Fact]
-    public void SyntaxRemoval_RemovesTheImplOwnedByASourceFunction()
+    public void SyntaxRemoval_RemovesASourceInstanceAndItsEvidence()
     {
         const string source = """
 remove :: comptime meta.Target[meta.Stage.Syntax] -> meta.Transformation { input => meta.remove_target(input) }
 Marker :: trait { mark :: Self -> Bool }
 Person :: type {}
-mark :: Person -> Bool impl Marker expand remove { _ => true }
+MarkerPerson :: instance Marker expand remove {
+    mark :: Person -> Bool { _ => true }
+}
 """;
 
         var result = Compile("meta_remove_function_impl.eidos", source);
@@ -696,8 +700,8 @@ mark :: Person -> Bool impl Marker expand remove { _ => true }
         Assert.True(markerId.HasValue);
         Assert.Empty(table.GetImplsForTrait(markerId.Value));
         Assert.DoesNotContain(
-            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
-            static function => function.Name == "mark");
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<InstanceDecl>(),
+            static instance => instance.Name == "MarkerPerson");
     }
 
     [Fact]
