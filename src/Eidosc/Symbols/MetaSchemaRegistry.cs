@@ -205,7 +205,7 @@ internal static class MetaSchemaRegistry
         new("parse_expr", 2)
     ];
 
-    public static void Register(SymbolTable symbolTable)
+    public static void Register(SymbolTable symbolTable, bool allowLegacySurface = false)
     {
         if (symbolTable.Modules.LookupRootModule(WellKnownStrings.Meta.Module) is { IsValid: true })
         {
@@ -225,7 +225,7 @@ internal static class MetaSchemaRegistry
         var identifierCategoryId = SymbolId.None;
         var parseFailureId = SymbolId.None;
         var resolveFailureId = SymbolId.None;
-        foreach (var typeSpec in s_types)
+        foreach (var typeSpec in s_types.Where(typeSpec => allowLegacySurface || !IsLegacyType(typeSpec.Name)))
         {
             var typeId = symbolTable.RegisterSymbol(new AdtSymbol
             {
@@ -353,7 +353,7 @@ internal static class MetaSchemaRegistry
             RegisterMetaCase(symbolTable, resolveFailureId, "Ambiguous", WellKnownTypeIds.StringId);
         }
 
-        foreach (var functionSpec in s_functions)
+        foreach (var functionSpec in s_functions.Where(functionSpec => allowLegacySurface || !IsLegacyFunction(functionSpec.Name)))
         {
             var functionId = symbolTable.RegisterSymbol(new FuncSymbol
             {
@@ -369,6 +369,16 @@ internal static class MetaSchemaRegistry
             symbolTable.AddMemberToModule(moduleId, functionId);
         }
     }
+
+    private static bool IsLegacyType(string name) => name is
+        "Stage" or "Target" or "Transformation" or "GenerationSlot" or "ScopeKind" or "Query";
+
+    private static bool IsLegacyFunction(string name) => name is
+        "target_type_of" or "target_declaration_of" or
+        "target_scope" or "module_scope" or "package_scope" or "dependencies_scope" or "workspace_scope" or
+        "resources_of" or "slot_from" or "with_slot" or "keep" or "add_before" or "add_after" or
+        "add_members" or "replace_target" or "remove_target" or "report" or "add_items" or
+        "add_module" or "combine";
 
     public static bool IsMetaIntrinsic(FuncSymbol symbol, out string name)
     {

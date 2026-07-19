@@ -400,7 +400,6 @@ extend_items :: comptime meta.Package -> meta.Items { _ => [] }
 extend_modules :: comptime meta.Package -> meta.Modules { _ => [] }
 build_pass :: comptime build.Inputs -> build.Graph { _ => build.graph(build.emit(build.session()), [], []) }
 pure_pass :: comptime Int -> Bool { _ => true }
-legacy_pass :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation { _ => meta.keep() }
 runtime_pass :: Int -> Bool { _ => true }
 """;
 
@@ -425,10 +424,23 @@ runtime_pass :: Int -> Bool { _ => true }
         AssertProtocol("extend_modules", CompilerMetaProtocolKind.ExtensionModules);
         AssertProtocol("build_pass", CompilerMetaProtocolKind.BuildHost);
         AssertProtocol("pure_pass", CompilerMetaProtocolKind.PureComptime);
-        AssertProtocol("legacy_pass", CompilerMetaProtocolKind.PureComptime);
-
         var runtime = Assert.Single(module.Declarations.OfType<FuncDef>(), static function => function.Name == "runtime_pass");
         Assert.False(CompilerMetaProtocolRegistry.TryClassify(runtime, 0, symbolTable, out _, out _));
+
+        const string removedSurface = "legacy :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation { _ => meta.keep() }";
+        var removed = new CompilationPipeline(removedSurface, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+        Assert.Contains(removed.Diagnostics, static diagnostic =>
+            diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error &&
+            (diagnostic.Message.Contains("Target", StringComparison.Ordinal) ||
+             diagnostic.Message.Contains("Transformation", StringComparison.Ordinal)));
 
         void AssertProtocol(string name, CompilerMetaProtocolKind expected)
         {

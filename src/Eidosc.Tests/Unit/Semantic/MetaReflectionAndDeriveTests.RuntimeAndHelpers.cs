@@ -306,7 +306,8 @@ main :: Unit -> String {
         {
             InputFile = inputFile,
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            AllowLegacyMetaSurface = true
         };
         configure?.Invoke(options);
         return new CompilationPipeline(source, options).Run();
@@ -333,7 +334,8 @@ main :: Unit -> String {
                 InputFile = entry,
                 StopAtPhase = CompilationPhase.Types,
                 ImportSearchRoots = [tempDir],
-                UseColors = false
+                UseColors = false,
+                AllowLegacyMetaSurface = true
             }).Run();
         }
         finally

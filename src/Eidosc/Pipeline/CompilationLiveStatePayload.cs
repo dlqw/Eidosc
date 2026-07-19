@@ -25,7 +25,7 @@ public sealed record CompilationLiveStatePayload(
     LiveStateRemapPlan RemapPlan,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "compilation-live-state-payload-v9";
+    public const string CurrentSchemaVersion = "compilation-live-state-payload-v10";
 
     public static CompilationLiveStatePayload Create(
         string sourceText,
@@ -196,7 +196,7 @@ public sealed record SymbolTablePayload(
     IReadOnlyDictionary<string, int> GlobalAbilities,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "symbol-table-payload-v6";
+    public const string CurrentSchemaVersion = "symbol-table-payload-v7";
 
     public static SymbolTablePayload Create(SymbolTable? symbolTable)
     {

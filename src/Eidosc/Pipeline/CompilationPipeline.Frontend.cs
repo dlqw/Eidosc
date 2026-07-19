@@ -30,7 +30,7 @@ public sealed partial class CompilationPipeline
 
         using (MeasureSubphase(CompilationPhase.Namer, "create_resolver"))
         {
-            _symbolTable = new SymbolTable();
+            _symbolTable = new SymbolTable(_options.AllowLegacyMetaSurface);
             _nameResolver = new NameResolver(_symbolTable, _sourceCode, _options.ImportSearchRoots)
             {
                 ComptimeExecution = _comptimeExecution,
@@ -219,7 +219,7 @@ public sealed partial class CompilationPipeline
         NamerStateMergeResult merge;
         using (MeasureSubphase(CompilationPhase.Namer, "module_namer_restore_merge"))
         {
-            merge = NamerStateMerger.Merge(mergePayloads);
+            merge = NamerStateMerger.Merge(mergePayloads, _options.AllowLegacyMetaSurface);
         }
         var restored = merge.BuildResult;
         if (!merge.IsApplied || restored?.SymbolTable == null)

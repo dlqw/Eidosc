@@ -9,7 +9,7 @@ namespace Eidosc.Tests.Unit.Cli;
 public sealed class MetaCommandTests
 {
     [Fact]
-    public async Task Expand_JsonTraceAndGeneratedDocuments_AreEmittedWithoutMixingStreams()
+    public async Task Expand_RejectsRemovedLegacyTransformationSurface()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_meta_cli_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -51,7 +51,7 @@ Subject :: type  expand deriveAnswer
                 "--no-color"
             ]);
 
-            Assert.Equal(0, exitCode);
+            Assert.NotEqual(0, exitCode);
         }
         finally
         {
@@ -59,14 +59,9 @@ Subject :: type  expand deriveAnswer
             Console.SetError(originalError);
         }
 
-        using var json = JsonDocument.Parse(stdout.ToString());
-        Assert.Equal("eidos-meta-expansion-v1", json.RootElement.GetProperty("SchemaVersion").GetString());
-        var declaration = Assert.Single(json.RootElement.GetProperty("Declarations").EnumerateArray());
-        Assert.Equal("answer", declaration.GetProperty("Name").GetString());
-        Assert.Contains("[comptime #", stderr.ToString(), StringComparison.Ordinal);
-        Assert.Contains("meta.warning", stderr.ToString(), StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(generatedDir, "generated-manifest.json")));
-        Assert.True(Directory.EnumerateFiles(generatedDir, "*.eidos").Any());
+        Assert.Contains("Target", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Transformation", stderr.ToString(), StringComparison.Ordinal);
+        Assert.NotEmpty(stdout.ToString());
 
         Directory.Delete(tempDir, recursive: true);
     }
