@@ -585,6 +585,53 @@ TraitInfo :: comptime meta.shape_of(Marker);
     }
 
     [Fact]
+    public void TypeInfo_FunctionShapeExposesReadOnlyOwnershipProjections()
+    {
+        const string source = """
+Holder :: type {
+    callback:: Ref[Int] -> MRef[String]
+}
+
+find_field_type :: comptime Option[meta.Field] -> Type {
+    Some(field) => meta.type_of(field),
+    None => Unit
+}
+
+CallbackType :: comptime find_field_type(meta.find_field(Holder, "callback"));
+FunctionInfo :: comptime meta.shape_of(CallbackType);
+""";
+
+        var result = Compile("meta_function_ownership.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var inferer = Assert.IsType<TypeInferer>(result.TypeInferer);
+        var functionShape = Assert.IsType<ComptimeAdtValue>(GetComptimeValue("FunctionInfo", symbolTable, inferer));
+        var functionInfo = ReadShapePayload(functionShape);
+        Assert.True(functionInfo.TryGet("borrowConstraints", out var ownershipValue));
+        var ownership = Assert.IsType<ComptimeSequenceValue>(ownershipValue).Elements
+            .Select(Assert.IsType<ComptimeMetaObjectValue>)
+            .ToArray();
+
+        Assert.Collection(
+            ownership,
+            parameter =>
+            {
+                Assert.True(parameter.TryGet("role", out var role));
+                Assert.Equal("parameter", Assert.IsType<ComptimeStringValue>(role).Value);
+                Assert.True(parameter.TryGet("kind", out var kind));
+                Assert.Equal("sharedBorrow", Assert.IsType<ComptimeStringValue>(kind).Value);
+            },
+            resultSlot =>
+            {
+                Assert.True(resultSlot.TryGet("role", out var role));
+                Assert.Equal("result", Assert.IsType<ComptimeStringValue>(role).Value);
+                Assert.True(resultSlot.TryGet("kind", out var kind));
+                Assert.Equal("mutableBorrow", Assert.IsType<ComptimeStringValue>(kind).Value);
+            });
+    }
+
+    [Fact]
     public void AttributeBuilder_IsNotPartOfThe07MetaSurface()
     {
         const string source = """

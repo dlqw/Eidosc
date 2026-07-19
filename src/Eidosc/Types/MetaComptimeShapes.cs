@@ -104,6 +104,13 @@ internal static partial class MetaComptimeIntrinsics
                     .Where(static argument => argument.Domain == MetaGenericArgumentDomain.EffectRow)
                     .SelectMany(static argument => argument.Type?.Arguments ?? [])
                     .Select(static effect => (ComptimeValue)new ComptimeTypeValue(effect))));
+            properties.Replace(
+                "borrowConstraints",
+                List(type.Arguments
+                    .Select((argument, index) => CreateOwnershipProjection(
+                        argument,
+                        index == type.Arguments.Count - 1 ? "result" : "parameter",
+                        index == type.Arguments.Count - 1 ? -1 : index))));
         }
 
         if (symbol is AdtSymbol adtSymbol &&
@@ -145,6 +152,23 @@ internal static partial class MetaComptimeIntrinsics
             properties.Replace("clauses", CreateClauseList(trait.BoundClauses, meta));
         }
     }
+
+    private static ComptimeValue CreateOwnershipProjection(
+        MetaTypeRef type,
+        string role,
+        int ordinal) =>
+        Obj(
+            "ownership-slot",
+            ("role", new ComptimeStringValue(role)),
+            ("ordinal", new ComptimeIntegerValue(ordinal)),
+            ("kind", new ComptimeStringValue(type.Kind switch
+            {
+                MetaTypeKind.Reference => "sharedBorrow",
+                MetaTypeKind.MutableReference => "mutableBorrow",
+                _ => "byValue"
+            })),
+            ("type", new ComptimeTypeValue(type)),
+            ("deferred", new ComptimeBoolValue(type.Kind == MetaTypeKind.TypeParameter)));
 
     private static void PopulateAdtShape(
         ComptimeTypeValue typeValue,
