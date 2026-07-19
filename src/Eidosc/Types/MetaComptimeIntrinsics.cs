@@ -1506,7 +1506,12 @@ internal static partial class MetaComptimeIntrinsics
             symbol.Id,
             symbol.TypeId,
             arguments,
-            GenericArguments: genericArguments));
+            GenericArguments: genericArguments))
+        {
+            StaticType = MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.Type,
+                WellKnownTypeIds.MetaTypeId)
+        };
     }
 
     internal static ComptimeTypeValue CreateTypeValue(TyCon type, SymbolTable symbolTable)

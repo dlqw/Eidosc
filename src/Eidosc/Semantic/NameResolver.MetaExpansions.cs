@@ -273,11 +273,16 @@ public sealed partial class NameResolver
                 RecordMetaInvocationQueryDependency(invocation, metaContext.Queries, queryDependencyCursor);
                 continue;
             }
-            invocationArguments.Add(protocol.Kind == CompilerMetaProtocolKind.BodyTransform
-                ? MetaComptimeIntrinsics.CreateFunctionHandle(
+            invocationArguments.Add(protocol.Kind switch
+            {
+                CompilerMetaProtocolKind.Derive => MetaComptimeIntrinsics.CreateTypeValue(
+                    targetSymbol,
+                    _symbolTable),
+                CompilerMetaProtocolKind.BodyTransform => MetaComptimeIntrinsics.CreateFunctionHandle(
                     (FuncSymbol)targetSymbol,
-                    _symbolTable)
-                : target);
+                    _symbolTable),
+                _ => target
+            });
 
             if (!ComptimeEvaluator.TryInvoke(
                     generator,

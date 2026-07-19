@@ -454,7 +454,12 @@ runtime_pass :: Int -> Bool { _ => true }
     public void User_derive_uses_meta_type_to_items_protocol_without_target_surface()
     {
         const string source = """
-derive_empty :: comptime meta.Type -> meta.Items { _ => [] }
+derive_empty :: comptime meta.Type -> meta.Items {
+    value => {
+        type_name := meta.name_of(value);
+        []
+    }
+}
 
 Subject :: type expand derive_empty {
     value :: Int
