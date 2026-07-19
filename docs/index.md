@@ -8,3 +8,4 @@ This offline documentation set matches the Eidosc version that installed it.
 - [Distribution sources](eidosup/distribution-sources.md)
 - [Compiler architecture](architecture/compiler-overview.md)
 - [Ownership contract and loan summaries](architecture/ownership-contract.md)
+- [Typed reflection values](architecture/typed-reflection.md)

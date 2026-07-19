@@ -20,7 +20,7 @@ The compiler must:
 4. track partial moves and explicit reinitialization at field/index places across CFG joins;
 5. prove returned-reference provenance and lifetime, reject escaping locals, and release each owned value exactly once;
 6. keep body-derived facts in a separate versioned loan summary;
-7. expose ownership only as read-only tooling data; metadata and compiler tags cannot grant or override it.
+7. expose ownership only as read-only tooling data; metadata and compiler tags cannot grant or override it. Meta reflection, IDE semantic snapshots, and LSP hover expose typed `meta.Ownership` slots with `role`, `ordinal`, `kind`, `type`, `deferred`, `copy`, `clone`, `drop`, `borrowed`, and `mutable`; the schema participates in canonical values and cache keys.
 
 The `loan-summary-v1` payload contains returned-borrow provenance, lifetime/outlives constraints, inference confidence, and validation facts. It is keyed by the MIR body fingerprint and can change when a body changes without changing the signature-derived ownership contract.
 
@@ -42,4 +42,4 @@ The 0.7 migrator does not convert legacy `@borrow(read/write/move)` into a new a
 - `E1001` covers use/double-consumption after move, including duplicate drop.
 - HIR and MIR payload schemas reject older artifacts that omit the ownership contract.
 - Borrow diagnostic snapshot v3 restores `loan-summary-v1`; clean Borrow and LLVM cache hits retain provenance and lifetime facts.
-- Meta reflection, IDE snapshots, and LSP hover report structured slots but cannot mutate them.
+- Meta reflection, IDE snapshots, and LSP hover report structured slots but cannot mutate them. Function reflection exposes the same ownership slots under `meta.Function.ownership`, together with typed parameters, result, effects, and a body handle only once Body-stage facts are available. Body loan summaries remain separate facts and are never synthesized into this signature-derived value.
