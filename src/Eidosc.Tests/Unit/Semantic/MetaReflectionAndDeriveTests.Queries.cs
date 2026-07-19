@@ -508,6 +508,68 @@ work :: Int -> Int expand inspect_body {
     }
 
     [Fact]
+    public void FunctionHandles_ExposeTypedSignatureParametersOwnershipAndStageGatedBody()
+    {
+        const string source = """
+work :: Int -> String {
+    value => "ok"
+}
+""";
+
+        var result = Compile("meta_function_handle_typed.eidos", source);
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var table = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var function = Assert.Single(module.Declarations.OfType<FuncDef>());
+        Assert.NotEmpty(function.Body);
+        var functionSymbol = Assert.IsType<FuncSymbol>(table.GetSymbol(function.SymbolId));
+        Assert.True(table.Modules.TryGetOwningModuleId(function.SymbolId, out var moduleId));
+        var declarations = new Dictionary<SymbolId, Declaration> { [function.SymbolId] = function };
+
+        var semanticContext = new MetaComptimeContext(
+            table,
+            new Dictionary<SymbolId, AdtDef>(),
+            new Dictionary<SymbolId, TraitDef>(),
+            Declarations: declarations,
+            QueryAccess: new MetaQueryAccessContext(
+                moduleId,
+                ClauseStage.Semantic,
+                MetaQueryCapability.CurrentPackagePrivateShapes | MetaQueryCapability.CurrentPackageBodies,
+                TargetSymbolId: function.SymbolId));
+        var semanticHandle = MetaComptimeIntrinsics.CreateFunctionHandle(
+            functionSymbol,
+            function,
+            table,
+            semanticContext);
+
+        Assert.Equal(WellKnownTypeIds.MetaFunctionId, Assert.IsType<TyCon>(semanticHandle.StaticType).Id.Value);
+        Assert.True(semanticHandle.TryGet("type", out var typeValue));
+        var functionType = Assert.IsType<ComptimeTypeValue>(typeValue).TypeRef;
+        Assert.Equal(MetaTypeKind.Function, functionType.Kind);
+        Assert.Equal(2, functionType.Arguments.Count);
+        Assert.True(semanticHandle.TryGet("parameters", out var parameterValue));
+        var parameters = Assert.IsType<ComptimeSequenceValue>(parameterValue).Elements;
+        var parameter = Assert.IsType<ComptimeMetaObjectValue>(Assert.Single(parameters));
+        Assert.Equal(WellKnownTypeIds.MetaParameterId, Assert.IsType<TyCon>(parameter.StaticType).Id.Value);
+        Assert.True(parameter.TryGet("ownership", out var parameterOwnership));
+        Assert.Equal(WellKnownTypeIds.MetaOwnershipId, Assert.IsType<TyCon>(Assert.IsType<ComptimeMetaObjectValue>(parameterOwnership).StaticType).Id.Value);
+        Assert.True(semanticHandle.TryGet("body", out var semanticBody));
+        Assert.IsType<ComptimeUnitValue>(semanticBody);
+
+        var bodyContext = new MetaComptimeContext(
+            table,
+            new Dictionary<SymbolId, AdtDef>(),
+            new Dictionary<SymbolId, TraitDef>(),
+            Declarations: declarations,
+            QueryAccess: semanticContext.Access with { AvailableStage = ClauseStage.Body });
+        Assert.Equal(ClauseStage.Body, bodyContext.Access.AvailableStage);
+        Assert.True(bodyContext.Access.AvailableStage >= ClauseStage.Body);
+        var bodyHandle = MetaComptimeIntrinsics.CreateFunctionHandle(functionSymbol, function, table, bodyContext);
+        Assert.True(bodyHandle.TryGet("body", out var bodyValue));
+        Assert.Equal("body-handle", Assert.IsType<ComptimeMetaObjectValue>(bodyValue).SchemaKind);
+    }
+
+    [Fact]
     public void LayoutStageGenerator_RunsAfterMirAndUsesTheSelectedTargetInQueryIdentity()
     {
         const string source = """

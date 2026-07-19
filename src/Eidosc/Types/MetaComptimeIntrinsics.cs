@@ -1980,16 +1980,115 @@ internal static partial class MetaComptimeIntrinsics
 
     internal static ComptimeMetaObjectValue CreateFunctionHandle(
         FuncSymbol function,
-        SymbolTable symbolTable) => TypedObject(
+        FuncDef? definition,
+        SymbolTable symbolTable,
+        MetaComptimeContext meta)
+    {
+        var identity = CreateStableIdentity(function, symbolTable);
+        var signature = definition?.Signature.Count == 1
+            ? CreateTypeRef(definition.Signature[0], symbolTable)
+            : new MetaTypeRef(
+                MetaTypeKind.Function,
+                function.Name,
+                $"function:{identity}",
+                SymbolId.None,
+                TypeId.None,
+                []);
+        var signatureParts = signature.Kind == MetaTypeKind.Function && signature.Arguments.Count > 0
+            ? (signature.Arguments.Count == 1
+                ? (Parameters: Array.Empty<MetaTypeRef>(), Result: signature.Arguments[0])
+                : (Parameters: signature.Arguments.Take(signature.Arguments.Count - 1).ToArray(), Result: signature.Arguments[^1]))
+            : (Parameters: Array.Empty<MetaTypeRef>(), Result: new MetaTypeRef(
+                MetaTypeKind.Unknown,
+                "Unknown",
+                "unknown",
+                SymbolId.None,
+                TypeId.None,
+                []));
+        var parameters = signatureParts.Parameters
+            .Select((type, index) => CreateFunctionParameterHandle(
+                function,
+                type,
+                index,
+                identity,
+                symbolTable,
+                meta))
+            .ToArray();
+        var ownership = signatureParts.Parameters
+            .Select((type, index) => CreateOwnershipProjection(type, "parameter", index, meta))
+            .Concat([CreateOwnershipProjection(signatureParts.Result, "result", -1, meta)])
+            .ToArray();
+        ComptimeValue body = definition is { Body.Count: > 0 } &&
+                   meta.Access.AvailableStage >= ClauseStage.Body
+            ? CreateBodyHandle(definition, CreateDeclValue(function, symbolTable), meta)
+            : ComptimeUnitValue.Instance;
+        var effects = CreateFunctionEffects(function, signature);
+        return TypedObject(
             "function-handle",
             WellKnownStrings.Meta.Types.Function,
             WellKnownTypeIds.MetaFunctionId,
             [
-                ("identity", new ComptimeStringValue(CreateStableIdentity(function, symbolTable))),
+                ("identity", new ComptimeStringValue(identity)),
                 ("name", new ComptimeStringValue(function.Name)),
                 ("declaration", CreateDeclValue(function, symbolTable)),
-                ("span", CreateSpan(function.Span, symbolTable))
+                ("span", CreateSpan(function.Span, symbolTable)),
+                ("type", new ComptimeTypeValue(signature)),
+                ("parameters", List(parameters)),
+                ("result", new ComptimeTypeValue(signatureParts.Result)),
+                ("effects", List(effects)),
+                ("ownership", List(ownership)),
+                ("body", body)
             ]);
+    }
+
+    private static ComptimeMetaObjectValue CreateFunctionParameterHandle(
+        FuncSymbol function,
+        MetaTypeRef type,
+        int ordinal,
+        string functionIdentity,
+        SymbolTable symbolTable,
+        MetaComptimeContext meta)
+    {
+        var parameterSymbol = ordinal < function.Parameters.Count
+            ? symbolTable.GetSymbol(function.Parameters[ordinal])
+            : null;
+        var declaration = parameterSymbol == null
+            ? new ComptimeDeclValue(
+                SymbolId.None,
+                Hash($"{functionIdentity}|parameter|{ordinal}"),
+                $"arg{ordinal}",
+                "parameter",
+                function.Span)
+            : CreateDeclValue(parameterSymbol, symbolTable);
+        return TypedObject(
+            "parameter",
+            WellKnownStrings.Meta.Types.Parameter,
+            WellKnownTypeIds.MetaParameterId,
+            [
+                ("identity", new ComptimeStringValue(Hash($"{functionIdentity}|parameter|{ordinal}|{type.CanonicalText}"))),
+                ("name", new ComptimeStringValue(parameterSymbol?.Name ?? $"arg{ordinal}")),
+                ("ordinal", new ComptimeIntegerValue(ordinal)),
+                ("type", new ComptimeTypeValue(type)),
+                ("declaration", declaration),
+                ("ownership", CreateOwnershipProjection(type, "parameter", ordinal, meta)),
+                ("span", CreateSpan(parameterSymbol?.Span ?? function.Span, symbolTable))
+            ]);
+    }
+
+    private static IReadOnlyList<ComptimeValue> CreateFunctionEffects(
+        FuncSymbol function,
+        MetaTypeRef signature)
+    {
+        var effectNames = (signature.GenericArguments ?? [])
+            .Where(static argument => argument.Domain == MetaGenericArgumentDomain.EffectRow)
+            .Select(static argument => argument.Display)
+            .Concat(function.EffectSummary?.InferredEffects.Effects.Select(static effect => effect.ToString()) ?? [])
+            .Order(StringComparer.Ordinal)
+            .Distinct(StringComparer.Ordinal)
+            .Select(static effect => (ComptimeValue)new ComptimeStringValue(effect))
+            .ToArray();
+        return effectNames;
+    }
 
     private static Type GetDeclarationHandleType(Symbol symbol) => symbol switch
     {

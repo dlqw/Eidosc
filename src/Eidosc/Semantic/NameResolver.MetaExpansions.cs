@@ -280,7 +280,9 @@ public sealed partial class NameResolver
                     _symbolTable),
                 CompilerMetaProtocolKind.BodyTransform => MetaComptimeIntrinsics.CreateFunctionHandle(
                     (FuncSymbol)targetSymbol,
-                    _symbolTable),
+                    _declarationsBySymbol.GetValueOrDefault(targetSymbol.Id) as FuncDef,
+                    _symbolTable,
+                    metaContext),
                 _ => target
             });
 
