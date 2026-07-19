@@ -413,7 +413,7 @@ public sealed class DeclParser(ParserContext ctx)
             var start = ctx.Current;
             var keyword = ctx.GetText();
             if (!ClauseSchema.TryGet(keyword, out var spec) ||
-                spec.Adapter != DeclarationAttachmentAdapterKind.TypedTag)
+                spec.Adapter is not (DeclarationAttachmentAdapterKind.TypedTag or DeclarationAttachmentAdapterKind.ForeignContract))
             {
                 ctx.Error($"'{keyword}' is not a typed declaration tag");
                 SkipTypedTag();

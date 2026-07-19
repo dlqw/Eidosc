@@ -306,10 +306,37 @@ User :: type {}
     }
 
     [Fact]
+    public void Parser_accepts_structured_extern_as_a_typed_tag()
+    {
+        const string source = """
+@[extern(c, library: C, name: "malloc")]
+malloc :: Int -> Int need ffi;
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var function = Assert.IsType<FuncDecl>(Assert.Single(module.Declarations));
+        Assert.Equal(
+            [DeclarationClauseKind.Extern, DeclarationClauseKind.Need],
+            function.Clauses.Select(static clause => clause.ClauseKind));
+        Assert.Equal(["c", "library :C", "name :\"malloc\""], function.Clauses[0].ArgumentTokens);
+    }
+
+    [Fact]
     public void Parser_rejects_non_tag_adapters_inside_typed_tag_groups()
     {
         const string source = """
-@[extern(c)]
+@[before(normalize)]
 malloc :: Int -> RawPtr need ffi;
 """;
 
