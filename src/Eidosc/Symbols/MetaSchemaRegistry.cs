@@ -18,10 +18,7 @@ internal static class MetaSchemaRegistry
         new(WellKnownStrings.Meta.Types.Declaration, WellKnownTypeIds.MetaDeclarationId),
         new(WellKnownStrings.Meta.Types.DeclarationShape, WellKnownTypeIds.MetaDeclarationShapeId),
         new(WellKnownStrings.Meta.Types.Span, WellKnownTypeIds.MetaSpanId),
-        new(WellKnownStrings.Meta.Types.Stage, WellKnownTypeIds.MetaStageId),
-        new(WellKnownStrings.Meta.Types.Target, WellKnownTypeIds.MetaTargetId, Arity: 1),
         new(WellKnownStrings.Meta.Types.Site, WellKnownTypeIds.MetaSiteId, Arity: 1),
-        new(WellKnownStrings.Meta.Types.Transformation, WellKnownTypeIds.MetaTransformationId),
         new(WellKnownStrings.Meta.Types.Syntax, WellKnownTypeIds.MetaSyntaxId, Arity: 1),
         new(WellKnownStrings.Meta.Types.Item, WellKnownTypeIds.MetaItemId),
         new(WellKnownStrings.Meta.Types.Member, WellKnownTypeIds.MetaMemberId),
@@ -61,13 +58,9 @@ internal static class MetaSchemaRegistry
         new(WellKnownStrings.Meta.Types.ParseFailure, WellKnownTypeIds.MetaParseFailureId),
         new(WellKnownStrings.Meta.Types.ResolveFailure, WellKnownTypeIds.MetaResolveFailureId),
         new(WellKnownStrings.Meta.Types.GeneratedModule, WellKnownTypeIds.MetaGeneratedModuleId),
-        new(WellKnownStrings.Meta.Types.GenerationSlot, WellKnownTypeIds.MetaGenerationSlotId),
         new(WellKnownStrings.Meta.Types.Resource, WellKnownTypeIds.MetaResourceId),
         new(WellKnownStrings.Meta.Types.Fix, WellKnownTypeIds.MetaFixId),
         new(WellKnownStrings.Meta.Types.Origin, WellKnownTypeIds.MetaOriginId),
-        new(WellKnownStrings.Meta.Types.Scope, WellKnownTypeIds.MetaScopeId),
-        new(WellKnownStrings.Meta.Types.ScopeKind, WellKnownTypeIds.MetaScopeKindId),
-        new(WellKnownStrings.Meta.Types.Query, WellKnownTypeIds.MetaQueryId, Arity: 1),
         new(WellKnownStrings.Meta.Types.FunctionShape, WellKnownTypeIds.MetaFunctionShapeId),
         new(WellKnownStrings.Meta.Types.NominalShape, WellKnownTypeIds.MetaNominalShapeId),
         new(WellKnownStrings.Meta.Types.ReferenceShape, WellKnownTypeIds.MetaReferenceShapeId),
@@ -104,7 +97,6 @@ internal static class MetaSchemaRegistry
         new("clauses_of", 1),
         new("clause_keyword_of", 1),
         new("clause_kind_of", 1),
-        new("clause_stage_of", 1),
         new("clause_arguments_of", 1),
         new("clause_occurrence_of", 1),
         new("clause_source_order_of", 1),
@@ -114,8 +106,6 @@ internal static class MetaSchemaRegistry
         new("clause_argument_index_of", 1),
         new("clause_argument_occurrence_of", 1),
         new("span_of", 1),
-        new("target_type_of", 1),
-        new("target_declaration_of", 1),
         new("layout_of", 2),
         new("layout_size", 1),
         new("layout_alignment", 1),
@@ -142,12 +132,6 @@ internal static class MetaSchemaRegistry
         new("calls_from", 1),
         new("callers_of", 2),
         new("implementations_of", 2),
-        new("target_scope", 1),
-        new("module_scope", 1),
-        new("package_scope", 1),
-        new("dependencies_scope", 1),
-        new("workspace_scope", 1),
-        new("resources_of", 1),
         new("resource_path_of", 1),
         new("resource_content_of", 1),
         new("resource_exists", 1),
@@ -155,18 +139,6 @@ internal static class MetaSchemaRegistry
         new("error", 2),
         new("warning", 2),
         new("with_body", 2),
-        new("slot_from", 1),
-        new("with_slot", 2),
-        new("keep", 0),
-        new("add_before", 2),
-        new("add_after", 2),
-        new("add_members", 2),
-        new("replace_target", 2),
-        new("remove_target", 1),
-        new("report", 1),
-        new("add_items", 3),
-        new("add_module", 2),
-        new("combine", 1),
         new("function", 4),
         new("implementation", 3),
         new("comptime_value", 3),
@@ -220,14 +192,12 @@ internal static class MetaSchemaRegistry
             SourceSpan.Empty,
             isPublic: true);
 
-        var stageId = SymbolId.None;
-        var scopeKindId = SymbolId.None;
         var typeShapeId = SymbolId.None;
         var declarationShapeId = SymbolId.None;
         var identifierCategoryId = SymbolId.None;
         var parseFailureId = SymbolId.None;
         var resolveFailureId = SymbolId.None;
-        foreach (var typeSpec in s_types.Where(static typeSpec => !IsLegacyType(typeSpec.Name)))
+        foreach (var typeSpec in s_types)
         {
             var registeredTypeId = typeSpec.Name == WellKnownStrings.Meta.Types.Items
                 ? symbolTable.GetSymbol(symbolTable.LookupType(WellKnownStrings.BuiltinTypes.Seq) ?? SymbolId.None)?.TypeId.Value ?? typeSpec.TypeId
@@ -244,15 +214,7 @@ internal static class MetaSchemaRegistry
                 TypeParams = Enumerable.Repeat(SymbolId.None, typeSpec.Arity).ToList()
             });
             symbolTable.AddMemberToModule(moduleId, typeId);
-            if (string.Equals(typeSpec.Name, WellKnownStrings.Meta.Types.Stage, StringComparison.Ordinal))
-            {
-                stageId = typeId;
-            }
-            else if (string.Equals(typeSpec.Name, WellKnownStrings.Meta.Types.ScopeKind, StringComparison.Ordinal))
-            {
-                scopeKindId = typeId;
-            }
-            else if (string.Equals(typeSpec.Name, WellKnownStrings.Meta.Types.TypeShape, StringComparison.Ordinal))
+            if (string.Equals(typeSpec.Name, WellKnownStrings.Meta.Types.TypeShape, StringComparison.Ordinal))
             {
                 typeShapeId = typeId;
             }
@@ -271,22 +233,6 @@ internal static class MetaSchemaRegistry
             else if (string.Equals(typeSpec.Name, WellKnownStrings.Meta.Types.ResolveFailure, StringComparison.Ordinal))
             {
                 resolveFailureId = typeId;
-            }
-        }
-
-        if (stageId.IsValid)
-        {
-            foreach (var stageName in new[] { "Syntax", "Semantic", "Body", "Layout" })
-            {
-                RegisterMetaCase(symbolTable, stageId, stageName);
-            }
-        }
-
-        if (scopeKindId.IsValid)
-        {
-            foreach (var scopeKindName in new[] { "Target", "Module", "Package", "Dependencies", "Workspace" })
-            {
-                RegisterMetaCase(symbolTable, scopeKindId, scopeKindName);
             }
         }
 
@@ -360,7 +306,7 @@ internal static class MetaSchemaRegistry
             RegisterMetaCase(symbolTable, resolveFailureId, "Ambiguous", WellKnownTypeIds.StringId);
         }
 
-        foreach (var functionSpec in s_functions.Where(static functionSpec => !IsLegacyFunction(functionSpec.Name)))
+        foreach (var functionSpec in s_functions)
         {
             var functionId = symbolTable.RegisterSymbol(new FuncSymbol
             {
@@ -376,16 +322,6 @@ internal static class MetaSchemaRegistry
             symbolTable.AddMemberToModule(moduleId, functionId);
         }
     }
-
-    private static bool IsLegacyType(string name) => name is
-        "Stage" or "Target" or "Transformation" or "GenerationSlot" or "ScopeKind" or "Query";
-
-    private static bool IsLegacyFunction(string name) => name is
-        "target_type_of" or "target_declaration_of" or
-        "target_scope" or "module_scope" or "package_scope" or "dependencies_scope" or "workspace_scope" or
-        "resources_of" or "slot_from" or "with_slot" or "keep" or "add_before" or "add_after" or
-        "add_members" or "replace_target" or "remove_target" or "report" or "add_items" or
-        "add_module" or "combine";
 
     public static bool IsMetaIntrinsic(FuncSymbol symbol, out string name)
     {
@@ -409,14 +345,11 @@ internal static class MetaSchemaRegistry
             "leaf_cases_of" or "parent_type_of" or "case_type_of" or "constructor_of"
             or "syntax_of" or "arguments_of" or "module_of" or "package_of" or "workspace_of"
             or "modules_of" or "imports_of" or "exports_of" or "body_of" or "nodes_of"
-            or "value_of" or "calls_from" or "target_scope" or "module_scope" or "package_scope"
-            or "dependencies_scope" or "workspace_scope"
-            or "resources_of"
+            or "value_of" or "calls_from"
             or "resource_path_of" or "resource_content_of" or "resource_exists" or "resource_hash_of"
             or "site_of" or "origin_of"
             => argumentIndex == 0,
-        "slot_from" => argumentIndex == 0,
-        "clause_keyword_of" or "clause_kind_of" or "clause_stage_of" or
+        "clause_keyword_of" or "clause_kind_of" or
             "clause_arguments_of" or "clause_occurrence_of" or "clause_source_order_of" or
             "clause_argument_type_of" or "clause_argument_text_of" or
             "clause_argument_path_of" or "clause_argument_index_of" or
@@ -440,18 +373,9 @@ internal static class MetaSchemaRegistry
         var decl = MetaType(WellKnownStrings.Meta.Types.Declaration, WellKnownTypeIds.MetaDeclarationId);
         var declInfo = MetaType(WellKnownStrings.Meta.Types.DeclarationShape, WellKnownTypeIds.MetaDeclarationShapeId);
         var span = MetaType(WellKnownStrings.Meta.Types.Span, WellKnownTypeIds.MetaSpanId);
-        var deriveInput = MetaType(WellKnownStrings.Meta.Types.Target, WellKnownTypeIds.MetaTargetId) with
-        {
-            Args = [substitution.FreshTypeVariable()]
-        };
-        var expansion = MetaType(WellKnownStrings.Meta.Types.Transformation, WellKnownTypeIds.MetaTransformationId);
         var declaration = MetaType(WellKnownStrings.Meta.Types.Syntax, WellKnownTypeIds.MetaSyntaxId) with
         {
             Args = [MetaType(WellKnownStrings.Meta.Types.Item, WellKnownTypeIds.MetaItemId)]
-        };
-        var memberSyntax = MetaType(WellKnownStrings.Meta.Types.Syntax, WellKnownTypeIds.MetaSyntaxId) with
-        {
-            Args = [MetaType(WellKnownStrings.Meta.Types.Member, WellKnownTypeIds.MetaMemberId)]
         };
         var parameter = MetaType(WellKnownStrings.Meta.Types.Parameter, WellKnownTypeIds.MetaParameterId);
         var binding = MetaType(WellKnownStrings.Meta.Types.Binding, WellKnownTypeIds.MetaBindingId);
@@ -477,7 +401,6 @@ internal static class MetaSchemaRegistry
         var body = MetaType(WellKnownStrings.Meta.Types.Body, WellKnownTypeIds.MetaBodyId);
         var bodyNode = MetaType(WellKnownStrings.Meta.Types.BodyNode, WellKnownTypeIds.MetaBodyNodeId);
         var function = MetaType(WellKnownStrings.Meta.Types.Function, WellKnownTypeIds.MetaDeclarationId);
-        var scope = MetaType(WellKnownStrings.Meta.Types.Scope, WellKnownTypeIds.MetaScopeId);
         var genericArgument = MetaType(WellKnownStrings.Meta.Types.GenericArgument, WellKnownTypeIds.MetaGenericArgumentId);
         var syntax = MetaType(WellKnownStrings.Meta.Types.Syntax, WellKnownTypeIds.MetaSyntaxId) with
         {
@@ -489,16 +412,9 @@ internal static class MetaSchemaRegistry
         };
         var identifier = MetaType(WellKnownStrings.Meta.Types.Identifier, WellKnownTypeIds.MetaIdentifierId);
         var origin = MetaType(WellKnownStrings.Meta.Types.Origin, WellKnownTypeIds.MetaOriginId);
-        var generationSlot = MetaType(
-            WellKnownStrings.Meta.Types.GenerationSlot,
-            WellKnownTypeIds.MetaGenerationSlotId);
         var parseFailure = MetaType(WellKnownStrings.Meta.Types.ParseFailure, WellKnownTypeIds.MetaParseFailureId);
         var resolveFailure = MetaType(WellKnownStrings.Meta.Types.ResolveFailure, WellKnownTypeIds.MetaResolveFailureId);
         var site = MetaType(WellKnownStrings.Meta.Types.Site, WellKnownTypeIds.MetaSiteId) with
-        {
-            Args = [substitution.FreshTypeVariable()]
-        };
-        var query = MetaType(WellKnownStrings.Meta.Types.Query, WellKnownTypeIds.MetaQueryId) with
         {
             Args = [substitution.FreshTypeVariable()]
         };
@@ -514,9 +430,7 @@ internal static class MetaSchemaRegistry
                 "constructor_of" => [any],
             "syntax_of" or "arguments_of" or "module_of" or "package_of" or "workspace_of" or
                 "modules_of" or "imports_of" or "exports_of" or "body_of" or "nodes_of" or
-                "value_of" or "calls_from" or "target_scope" or "module_scope" or "package_scope" or
-                "dependencies_scope" or "workspace_scope" => [any],
-            "resources_of" => [query],
+                "value_of" or "calls_from" => [any],
             "resource_path_of" or "resource_content_of" or "resource_exists" or "resource_hash_of" => [resource],
             "references_to" or "callers_of" or "implementations_of" =>
                 [substitution.FreshTypeVariable(), substitution.FreshTypeVariable()],
@@ -527,26 +441,14 @@ internal static class MetaSchemaRegistry
                 "clause_argument_occurrence_of" => [clauseArgument],
             "has_field" or "find_field" => [typeValue, BaseTypes.String],
             "is_subtype" or "join_type_of" => [typeValue, typeValue],
-            "target_type_of" or "target_declaration_of" => [deriveInput],
             "layout_of" => [typeValue, BaseTypes.String],
             "layout_size" or "layout_alignment" or "layout_field_offsets" => [layout],
             "error" or "warning" => [span, BaseTypes.String],
             "with_body" => [function, expressionSyntax],
-            "slot_from" => [any],
-            "with_slot" => [any, generationSlot],
             "identifier" => [BaseTypes.String, typeValue],
             "site_of" or "origin_of" => [any],
             "resolve_at" => [site, BaseTypes.String],
             "parse_items" or "parse_expr" => [BaseTypes.String, origin],
-            "keep" => [],
-            "add_before" or "add_after" => [deriveInput, ListOf(symbolTable, declaration)],
-            "add_members" => [deriveInput, ListOf(symbolTable, memberSyntax)],
-            "replace_target" => [deriveInput, syntax],
-            "remove_target" => [deriveInput],
-            "report" => [ListOf(symbolTable, diagnostic)],
-            "add_items" => [query, module, ListOf(symbolTable, declaration)],
-            "add_module" => [query, declaration],
-            "combine" => [ListOf(symbolTable, expansion)],
             "function" => [BaseTypes.String, ListOf(symbolTable, parameter), typeValue, expr],
             "implementation" => [decl, typeValue, ListOf(symbolTable, declaration)],
             "comptime_value" => [BaseTypes.String, typeValue, expr],
@@ -588,9 +490,9 @@ internal static class MetaSchemaRegistry
                 "clause_argument_text_of" or "clause_argument_occurrence_of" => BaseTypes.String,
             "has_field" or "is_subtype" or "mutability_of" => BaseTypes.Bool,
             "type_of" or "result_type_of" or "referent_of" or
-                "target_type_of" or "parent_type_of" or "case_type_of" or "join_type_of" => typeValue,
+                "parent_type_of" or "case_type_of" or "join_type_of" => typeValue,
             "find_field" => OptionOf(symbolTable, fieldInfo),
-            "declaration_of" or "target_declaration_of" => decl,
+            "declaration_of" => decl,
             "parameters_of" or "cases_of" or "leaf_cases_of" => ListOf(symbolTable, typeValue),
             "constructors_of" => ListOf(symbolTable, constructorInfo),
             "fields_of" or "declared_fields_of" => ListOf(symbolTable, fieldInfo),
@@ -609,14 +511,10 @@ internal static class MetaSchemaRegistry
             "references_to" => ListOf(symbolTable, referenceInfo),
             "calls_from" or "callers_of" => ListOf(symbolTable, callInfo),
             "implementations_of" => ListOf(symbolTable, implementationInfo),
-            "target_scope" or "module_scope" or "package_scope" or "dependencies_scope" or
-                "workspace_scope" => scope,
-            "resources_of" => ListOf(symbolTable, resource),
             "resource_path_of" or "resource_content_of" or "resource_hash_of" => BaseTypes.String,
             "resource_exists" => BaseTypes.Bool,
             "effects_of" or "constraints_of" => ListOf(symbolTable, BaseTypes.String),
             "clauses_of" => ListOf(symbolTable, clause),
-            "clause_stage_of" => MetaType(WellKnownStrings.Meta.Types.Stage, WellKnownTypeIds.MetaStageId),
             "clause_arguments_of" => ListOf(symbolTable, clauseArgument),
             "clause_argument_path_of" => ListOf(symbolTable, BaseTypes.String),
             "clause_source_order_of" or "clause_argument_index_of" => BaseTypes.Int,
@@ -627,16 +525,12 @@ internal static class MetaSchemaRegistry
             "layout_field_offsets" => ListOf(symbolTable, BaseTypes.Int),
             "error" or "warning" => BaseTypes.Unit,
             "with_body" => function,
-            "slot_from" => generationSlot,
-            "with_slot" => any,
             "identifier" => identifier,
             "site_of" => site,
             "resolve_at" => ResultOf(symbolTable, decl, resolveFailure),
             "origin_of" => origin,
             "parse_items" => ResultOf(symbolTable, ListOf(symbolTable, declaration), parseFailure),
             "parse_expr" => ResultOf(symbolTable, expressionSyntax, parseFailure),
-            "keep" or "add_before" or "add_after" or "add_members" or
-                "replace_target" or "remove_target" or "report" or "add_items" or "add_module" or "combine" => expansion,
             "function" or "implementation" or "comptime_value" or "test" or
                 "module_member" => declaration,
             "diagnostic" => diagnostic,
