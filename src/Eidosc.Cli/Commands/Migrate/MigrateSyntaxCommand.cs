@@ -725,20 +725,26 @@ public static partial class SyntaxMigrationPlanner
             return;
         }
 
-        var clauses = new List<string>();
+        var typedTags = new List<string>();
+        var signatureClauses = new List<string>();
         foreach (var attribute in declaration.Attributes)
         {
-            clauses.AddRange(ConvertAttributeToClauses(attribute));
+            ConvertAttributeToAttachments(attribute, typedTags, signatureClauses);
+        }
+
+        for (var index = 0; index < declaration.Attributes.Count; index++)
+        {
+            var attribute = declaration.Attributes[index];
             var attributeEnd = FindAttributeEnd(tokens, attribute);
             edits.Add(new SyntaxMigrationEdit(
                 attribute.Span.Position,
                 attributeEnd - attribute.Span.Position,
-                string.Empty,
+                index == 0 && typedTags.Count > 0 ? $"@[{string.Join(", ", typedTags)}]" : string.Empty,
                 "remove-attribute",
-                $"Replace '@{attribute.Name}' with typed declaration clauses."));
+                $"Replace '@{attribute.Name}' with typed declaration attachments."));
         }
 
-        if (clauses.Count == 0 || !TryFindClauseInsertionPosition(tokens, declaration, out var insertion))
+        if (signatureClauses.Count == 0 || !TryFindClauseInsertionPosition(tokens, declaration, out var insertion))
         {
             return;
         }
@@ -747,87 +753,86 @@ public static partial class SyntaxMigrationPlanner
         edits.Add(new SyntaxMigrationEdit(
             insertion,
             0,
-            $" {string.Join(" ", clauses)}{terminator}\n",
-            "declaration-clauses",
-            "Attach migrated typed clauses in the declaration's pre-body clause zone."));
+            $" {string.Join(" ", signatureClauses)}{terminator}\n",
+            "declaration-signature-clauses",
+            "Attach migrated signature components to the declaration."));
     }
 
-    private static IEnumerable<string> ConvertAttributeToClauses(AstAttribute attribute)
+    private static void ConvertAttributeToAttachments(
+        AstAttribute attribute,
+        List<string> typedTags,
+        List<string> signatureClauses)
     {
         var arguments = attribute.ArgumentTexts.Select(static argument => argument.Trim()).ToList();
         var specs = ClauseSchema.Entries.Values
             .Where(spec => spec.Migration?.LegacySpellings.Contains(attribute.Name, StringComparer.Ordinal) == true)
             .OrderBy(static spec => spec.Keyword, StringComparer.Ordinal)
             .ToArray();
+
         if (specs.Length == 0)
         {
-            yield return arguments.Count == 0
-                ? $"expand {attribute.Name}"
-                : $"expand {attribute.Name}({string.Join(", ", arguments)})";
-            yield break;
+            typedTags.Add(arguments.Count == 0
+                ? $"expand({attribute.Name})"
+                : $"expand({attribute.Name}({string.Join(", ", arguments)}))");
+            return;
         }
 
         if (specs.Any(static spec => spec.Migration!.RuleId == "attribute-derive"))
         {
             foreach (var argument in arguments)
             {
-                yield return BuiltinDeriveNames.Contains(argument)
-                    ? $"derive {argument}"
-                    : $"expand {argument}";
+                typedTags.Add(BuiltinDeriveNames.Contains(argument)
+                    ? $"derive({argument})"
+                    : $"expand({argument})");
             }
-            yield break;
+            return;
         }
 
         if (specs.Any(static spec => spec.Migration!.RuleId.StartsWith("attribute-ffi", StringComparison.Ordinal)))
         {
-            yield return "need ffi";
+            signatureClauses.Add("need ffi");
             if (arguments.FirstOrDefault() is { Length: > 0 } ffiArgument)
             {
                 var raw = ffiArgument.Trim('"', '\'');
                 var slash = raw.IndexOf('/');
-                if (slash >= 0)
-                {
-                    yield return $"extern(c, library: \"{raw[..slash]}\", name: \"{raw[(slash + 1)..]}\")";
-                }
-                else
-                {
-                    yield return $"extern(c, name: \"{raw}\")";
-                }
+                typedTags.Add(slash >= 0
+                    ? $"extern(c, library: \"{raw[..slash]}\", name: \"{raw[(slash + 1)..]}\")"
+                    : $"extern(c, name: \"{raw}\")");
             }
             else
             {
-                yield return "extern(c)";
+                typedTags.Add("extern(c)");
             }
-            yield break;
+            return;
         }
 
         var spec = specs[0];
         switch (spec.Migration!.RuleId)
         {
             case "compiler-directive":
-                yield return attribute.Name switch
+                signatureClauses.Add(attribute.Name switch
                 {
                     "internal" => "compiler(internal)",
                     "intrinsic" => $"compiler(intrinsic: {arguments.FirstOrDefault() ?? "\"\""})",
                     "llvm_abi" => $"compiler(llvm_abi: {arguments.FirstOrDefault() ?? "\"\""})",
                     _ => "compiler()"
-                };
+                });
                 break;
             case "attribute-cstruct-to-repr-c":
-                yield return $"{spec.Keyword} c";
+                typedTags.Add("repr(c)");
                 break;
             case "attribute-effects-to-need":
-                yield return $"{spec.Keyword} {string.Join(", ", arguments.Select(NormalizeEffectName))}";
+                signatureClauses.Add($"need {string.Join(", ", arguments.Select(NormalizeEffectName))}");
                 break;
             case "attribute-generator-to-expand":
-                yield return arguments.Count == 0
-                    ? $"{spec.Keyword} {attribute.Name}"
-                    : $"{spec.Keyword} {attribute.Name}({string.Join(", ", arguments)})";
+                typedTags.Add(arguments.Count == 0
+                    ? $"expand({attribute.Name})"
+                    : $"expand({attribute.Name}({string.Join(", ", arguments)}))");
                 break;
             default:
-                yield return arguments.Count == 0
+                typedTags.Add(arguments.Count == 0
                     ? spec.Keyword
-                    : $"{spec.Keyword} {string.Join(", ", arguments)}";
+                    : $"{spec.Keyword}({string.Join(", ", arguments)})");
                 break;
         }
     }

@@ -4,7 +4,7 @@ using Eidosc.ProjectSystem;
 
 namespace Eidosc.Cli.Commands.Migrate;
 
-public sealed class MigrateClausesOptions
+public sealed class MigrateAttachmentsOptions
 {
     public string Path { get; set; } = ".";
     public string To { get; set; } = EidosLanguageVersions.Current;
@@ -12,33 +12,33 @@ public sealed class MigrateClausesOptions
     public string? Report { get; set; }
 }
 
-public static class MigrateClausesCommand
+public static class MigrateAttachmentsCommand
 {
     public static Command Create()
     {
         var command = new Command(
-            "clauses",
-            "Migrate 0.6 declaration attributes to the 0.7 typed pre-body clause model.")
+            "attachments",
+            "Migrate 0.6 declaration attributes to the 0.7 typed declaration attachment model.")
         {
             new Argument<string>(
                 "path",
                 getDefaultValue: () => ".",
                 description: "Project directory, eidos.toml, or .eidos source file to migrate."),
             new Option<string>("--to", () => EidosLanguageVersions.Current, "Target language version."),
-            new Option<bool>("--dry-run", "Print and report the clause migration plan without rewriting files."),
-            new Option<string?>("--report", "Write a JSON clause migration plan report.")
+            new Option<bool>("--dry-run", "Print and report the attachment migration plan without rewriting files."),
+            new Option<string?>("--report", "Write a JSON attachment migration plan report.")
         };
 
-        command.Handler = CommandHandler.Create<MigrateClausesOptions>(Run);
+        command.Handler = CommandHandler.Create<MigrateAttachmentsOptions>(Run);
         return command;
     }
 
-    internal static int Run(MigrateClausesOptions options)
+    internal static int Run(MigrateAttachmentsOptions options)
     {
         if (!string.Equals(options.To, EidosLanguageVersions.Current, StringComparison.Ordinal))
         {
             Console.Error.WriteLine(
-                $"Clause migration target must be '{EidosLanguageVersions.Current}', but received '{options.To}'.");
+                $"Attachment migration target must be '{EidosLanguageVersions.Current}', but received '{options.To}'.");
             return 2;
         }
 

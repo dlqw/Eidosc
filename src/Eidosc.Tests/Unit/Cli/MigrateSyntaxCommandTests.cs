@@ -230,9 +230,7 @@ Payload :: type { Payload(Int) }
         var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
-        Assert.Contains("derive Eq", rewritten, StringComparison.Ordinal);
-        Assert.Contains("expand URLCodec", rewritten, StringComparison.Ordinal);
-        Assert.Contains("expand deriveMarker", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@[derive(Eq), expand(URLCodec), expand(deriveMarker)]", rewritten, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -256,9 +254,8 @@ Api :: module {
         Assert.Contains("extern(c, library: \"native\", name: \"allocate\")", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("link_library", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("link_name", rewritten, StringComparison.Ordinal);
-        Assert.Contains("repr c", rewritten, StringComparison.Ordinal);
-        Assert.Contains("derive Eq", rewritten, StringComparison.Ordinal);
-        Assert.Contains("expand codec", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@[extern(c, library: \"native\", name: \"allocate\")]", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@[repr(c), derive(Eq), expand(codec)]", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("@ffi", rewritten, StringComparison.Ordinal);
         Assert.DoesNotContain("@derive", rewritten, StringComparison.Ordinal);
     }
@@ -274,7 +271,7 @@ Payload :: type { Payload(Int) }
         var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
-        Assert.Contains("expand generator(target, 1)", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@[expand(generator(target, 1))]", rewritten, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -338,7 +335,7 @@ main :: Payload -> Payload {
     }
 
     [Fact]
-    public async Task ClausesCommand_ProvidesDedicatedDryRunSurfaceForVersion07()
+    public async Task AttachmentsCommand_ProvidesDedicatedDryRunSurfaceForVersion07()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "eidos-migrate-clauses-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
@@ -349,7 +346,7 @@ main :: Payload -> Payload {
         try
         {
             var exitCode = await MigrateCommand.Create().InvokeAsync([
-                "clauses",
+                "attachments",
                 sourcePath,
                 "--to",
                 EidosLanguageVersions.Current,
