@@ -731,6 +731,7 @@ public sealed partial class NameResolver
                 out var generator,
                 out var generatorSymbol,
                 out var parameterTypes,
+                out var usesTypedProtocol,
                 out reason))
         {
             return false;
@@ -807,14 +808,25 @@ public sealed partial class NameResolver
             invocationArguments.Add(argumentValue);
         }
 
-        var boundary = MetaComptimeIntrinsics.CreateDeclValue(boundarySymbol, _symbolTable);
-        var site = MetaComptimeIntrinsics.CreateSiteValue(
-            boundary,
-            siteKind,
-            occurrence.SiteNode.Span,
-            _symbolTable,
-            CollectVisibleScopeLayers(occurrence.Scope));
-        invocationArguments.Add(site);
+        if (usesTypedProtocol)
+        {
+            invocationArguments.Add(ComptimeSyntaxCapture.CreatePlaceholder(
+                occurrence.Category,
+                occurrence.SiteNode.Span,
+                _symbolTable,
+                trace));
+        }
+        else
+        {
+            var boundary = MetaComptimeIntrinsics.CreateDeclValue(boundarySymbol, _symbolTable);
+            var site = MetaComptimeIntrinsics.CreateSiteValue(
+                boundary,
+                siteKind,
+                occurrence.SiteNode.Span,
+                _symbolTable,
+                CollectVisibleScopeLayers(occurrence.Scope));
+            invocationArguments.Add(site);
+        }
         if (!ComptimeEvaluator.TryInvoke(
                 generator,
                 invocationArguments,
@@ -975,11 +987,13 @@ public sealed partial class NameResolver
         out FuncDef generator,
         out FuncSymbol generatorSymbol,
         out IReadOnlyList<TypeNode> parameterTypes,
+        out bool usesTypedProtocol,
         out string reason)
     {
         generator = null!;
         generatorSymbol = null!;
         parameterTypes = [];
+        usesTypedProtocol = false;
         var path = occurrence.Site.Invocation.GeneratorPath;
         var display = occurrence.Site.Invocation.GeneratorDisplayName;
         SymbolId symbolId;
@@ -1019,15 +1033,34 @@ public sealed partial class NameResolver
             ResolveFuncDefReferences(generator);
         }
 
+        if (CompilerMetaProtocolRegistry.TryClassify(
+                generator,
+                occurrence.Site.Invocation.ExplicitArguments.Count,
+                _symbolTable,
+                out var protocol,
+                out var protocolReason) &&
+            protocol.Kind == CompilerMetaProtocolKind.SyntaxExpansion)
+        {
+            parameterTypes = GetFunctionParameterTypes(generator)
+                .Take(occurrence.Site.Invocation.ExplicitArguments.Count)
+                .ToArray();
+            usesTypedProtocol = true;
+            generatorSymbol = symbol;
+            reason = string.Empty;
+            return true;
+        }
+
         if (!TryGetSyntaxSiteSignature(
                 generator,
                 occurrence.Site.Invocation.ExplicitArguments.Count,
                 occurrence.Category,
-                out parameterTypes))
+                out parameterTypes,
+                out usesTypedProtocol))
         {
             reason = $"syntax-site generator '{generator.Name}' must accept the explicit arguments followed by " +
-                     $"meta.Site[meta.{FormatSyntaxMarker(occurrence.Category)}] and return " +
-                     $"meta.Syntax[meta.{FormatSyntaxMarker(occurrence.Category)}]";
+                     $"meta.Syntax[meta.{FormatSyntaxMarker(occurrence.Category)}] and return " +
+                     $"meta.Syntax[meta.{FormatSyntaxMarker(occurrence.Category)}]" +
+                     (string.IsNullOrWhiteSpace(protocolReason) ? string.Empty : $" (protocol: {protocolReason})");
             return false;
         }
 
@@ -1036,13 +1069,28 @@ public sealed partial class NameResolver
         return true;
     }
 
+    private static IReadOnlyList<TypeNode> GetFunctionParameterTypes(FuncDef function)
+    {
+        var parameters = new List<TypeNode>();
+        var result = function.Signature[0];
+        while (result is ArrowType arrow)
+        {
+            parameters.Add(arrow.ParamType);
+            result = arrow.ReturnType;
+        }
+
+        return parameters;
+    }
+
     private bool TryGetSyntaxSiteSignature(
         FuncDef generator,
         int explicitArgumentCount,
         SyntaxCategory category,
-        out IReadOnlyList<TypeNode> explicitParameters)
+        out IReadOnlyList<TypeNode> explicitParameters,
+        out bool usesTypedProtocol)
     {
         explicitParameters = [];
+        usesTypedProtocol = false;
         if (generator.Signature.Count != 1)
         {
             return false;
@@ -1054,6 +1102,19 @@ public sealed partial class NameResolver
         {
             parameters.Add(arrow.ParamType);
             result = arrow.ReturnType;
+        }
+
+        if (parameters.Count == explicitArgumentCount + 1 &&
+            parameters[^1] is TypePath typedInput &&
+            TryGetSyntaxParameterCategory(typedInput, out var typedCategory) &&
+            typedCategory == category &&
+            TryGetSyntaxSiteResultCategory(result, out var typedResultCategory, out var typedIsSequence) &&
+            typedResultCategory == category &&
+            !typedIsSequence)
+        {
+            explicitParameters = parameters.Take(explicitArgumentCount).ToArray();
+            usesTypedProtocol = true;
+            return true;
         }
 
         if (parameters.Count != explicitArgumentCount + 1 ||

@@ -478,6 +478,30 @@ Subject :: type expand derive_empty {
     }
 
     [Fact]
+    public void Syntax_expand_uses_same_category_meta_syntax_protocol()
+    {
+        const string source = """
+identity_expr :: comptime meta.Syntax[meta.Expr] -> meta.Syntax[meta.Expr] { _ => quote expr { 1 } }
+
+main :: Unit -> Int {
+    _ => expand identity_expr()
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """

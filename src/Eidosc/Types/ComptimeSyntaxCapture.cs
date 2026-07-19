@@ -116,6 +116,30 @@ internal static class ComptimeSyntaxCapture
         return true;
     }
 
+    internal static ComptimeSyntaxValue CreatePlaceholder(
+        SyntaxCategory category,
+        SourceSpan span,
+        SymbolTable symbolTable,
+        string expansionTrace)
+    {
+        var origin = new ComptimeSyntaxOrigin(
+            MetaComptimeIntrinsics.CreatePublicSourceUri(span, symbolTable),
+            span.Position,
+            span.Location.Line,
+            span.Location.Column,
+            span.Length,
+            expansionTrace);
+        return new ComptimeSyntaxValue(
+            category,
+            [],
+            string.Empty,
+            origin,
+            $"placeholder:{SyntaxSchema.Version}:{category}:{span.Position}:{span.Length}")
+        {
+            StaticType = CreateSyntaxType(category)
+        };
+    }
+
     private static IReadOnlyList<CaptureIdentityNode> CollectIdentityNodes(
         EidosAstNode root,
         SymbolTable symbolTable)
@@ -217,7 +241,7 @@ internal static class ComptimeSyntaxCapture
         return sourceText.Substring(safeStart, safeEnd - safeStart);
     }
 
-    private static Type CreateSyntaxType(SyntaxCategory category)
+    internal static Type CreateSyntaxType(SyntaxCategory category)
     {
         var marker = category switch
         {

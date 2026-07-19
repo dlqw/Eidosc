@@ -101,8 +101,9 @@ internal static class CompilerMetaProtocolRegistry
     private static bool HasSameResolvedType(TypeNode left, TypeNode right) =>
         left is TypePath leftPath &&
         right is TypePath rightPath &&
-        leftPath.SymbolId.IsValid &&
-        leftPath.SymbolId == rightPath.SymbolId &&
+        ((leftPath.SymbolId.IsValid && leftPath.SymbolId == rightPath.SymbolId) ||
+         (!leftPath.SymbolId.IsValid && !rightPath.SymbolId.IsValid &&
+          string.Equals(leftPath.TypeName, rightPath.TypeName, StringComparison.Ordinal))) &&
         leftPath.TypeArgs.Count == rightPath.TypeArgs.Count &&
         leftPath.TypeArgs.Zip(rightPath.TypeArgs).All(static pair => HasSameResolvedType(pair.First, pair.Second));
 
