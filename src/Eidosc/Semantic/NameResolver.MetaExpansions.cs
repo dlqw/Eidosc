@@ -273,7 +273,9 @@ public sealed partial class NameResolver
                 RecordMetaInvocationQueryDependency(invocation, metaContext.Queries, queryDependencyCursor);
                 continue;
             }
-            invocationArguments.Add(target);
+            invocationArguments.Add(protocol.Kind == CompilerMetaProtocolKind.BodyTransform
+                ? MetaComptimeIntrinsics.CreateDeclValue(targetSymbol, _symbolTable)
+                : target);
 
             if (!ComptimeEvaluator.TryInvoke(
                     generator,
@@ -307,9 +309,22 @@ public sealed partial class NameResolver
                 invocation.ModuleId,
                 invocation.Clause.Span,
                 invocation.TargetPath);
-            var materializedSuccessfully = protocol.Kind == CompilerMetaProtocolKind.Derive
-                ? materializer.TryMaterializeItems(expansionValue, out var materialization, out reason)
-                : materializer.TryMaterialize(expansionValue, out materialization, out reason);
+            MetaExpansionMaterializationResult materialization;
+            bool materializedSuccessfully;
+            if (protocol.Kind == CompilerMetaProtocolKind.BodyTransform &&
+                (expansionValue is ComptimeDeclValue ||
+                 expansionValue is ComptimeMetaObjectValue { SchemaKind: "declaration" }))
+            {
+                materialization = new MetaExpansionMaterializationResult([], []);
+                reason = string.Empty;
+                materializedSuccessfully = true;
+            }
+            else
+            {
+                materializedSuccessfully = protocol.Kind == CompilerMetaProtocolKind.Derive
+                    ? materializer.TryMaterializeItems(expansionValue, out materialization, out reason)
+                    : materializer.TryMaterialize(expansionValue, out materialization, out reason);
+            }
             if (!materializedSuccessfully)
             {
                 AddMetaExpansionDiagnostic(

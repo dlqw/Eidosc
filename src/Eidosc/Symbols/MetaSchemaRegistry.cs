@@ -229,6 +229,8 @@ internal static class MetaSchemaRegistry
         {
             var registeredTypeId = typeSpec.Name == WellKnownStrings.Meta.Types.Items
                 ? symbolTable.GetSymbol(symbolTable.LookupType(WellKnownStrings.BuiltinTypes.Seq) ?? SymbolId.None)?.TypeId.Value ?? typeSpec.TypeId
+                : typeSpec.Name == WellKnownStrings.Meta.Types.Function
+                    ? WellKnownTypeIds.MetaDeclarationId
                 : typeSpec.TypeId;
             var typeId = symbolTable.RegisterSymbol(new AdtSymbol
             {

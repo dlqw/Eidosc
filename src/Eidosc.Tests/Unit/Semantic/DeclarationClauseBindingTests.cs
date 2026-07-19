@@ -502,6 +502,30 @@ main :: Unit -> Int {
     }
 
     [Fact]
+    public void Body_expand_uses_meta_function_protocol_and_preserves_the_contract()
+    {
+        const string source = """
+identity_body :: comptime meta.Function -> meta.Function { value => value }
+
+work :: Int -> Int expand identity_body {
+    value => value
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """
