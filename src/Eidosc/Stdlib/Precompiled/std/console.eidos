@@ -5,73 +5,73 @@ Console :: module {
 
 
 
-    print_int :: Int -> Unit internal intrinsic "print_int" need io;
+    print_int :: Int -> Unit compiler(internal, intrinsic: "print_int") need io;
 
 
 
 
 
-    print_float :: Float -> Unit internal intrinsic "print_float" need io;
+    print_float :: Float -> Unit compiler(internal, intrinsic: "print_float") need io;
 
 
 
 
 
-    print_string :: String -> Unit internal intrinsic "print_string" need io;
+    print_string :: String -> Unit compiler(internal, intrinsic: "print_string") need io;
 
 
 
 
 
-    print_newline :: Unit -> Unit internal intrinsic "print_newline" need io;
+    print_newline :: Unit -> Unit compiler(internal, intrinsic: "print_newline") need io;
 
 
 
 
 
-    print_char :: Int -> Unit internal intrinsic "print_char" need io;
+    print_char :: Int -> Unit compiler(internal, intrinsic: "print_char") need io;
 
 
 
 
 
-    read_line :: Unit -> String internal intrinsic "read_line" need io;
+    read_line :: Unit -> String compiler(internal, intrinsic: "read_line") need io;
 
 
 
 
 
-    read_char :: Unit -> Int internal intrinsic "read_char" need io;
+    read_char :: Unit -> Int compiler(internal, intrinsic: "read_char") need io;
 
 
 
 
 
-    terminal_set_raw :: Unit -> Unit internal intrinsic "terminal_set_raw" need io;
+    terminal_set_raw :: Unit -> Unit compiler(internal, intrinsic: "terminal_set_raw") need io;
 
 
 
 
 
-    terminal_restore :: Unit -> Unit internal intrinsic "terminal_restore" need io;
+    terminal_restore :: Unit -> Unit compiler(internal, intrinsic: "terminal_restore") need io;
 
 
 
 
 
-    sleep_ms :: Int -> Unit internal intrinsic "sleep_ms" need io;
+    sleep_ms :: Int -> Unit compiler(internal, intrinsic: "sleep_ms") need io;
 
 
 
 
 
-    io_last_success :: Unit -> Bool internal intrinsic "io_last_success" need io;
+    io_last_success :: Unit -> Bool compiler(internal, intrinsic: "io_last_success") need io;
 
 
 
 
 
-    io_last_error :: Unit -> String internal intrinsic "io_last_error" need io;
+    io_last_error :: Unit -> String compiler(internal, intrinsic: "io_last_error") need io;
 
 
     write_text :: String -> Unit need io

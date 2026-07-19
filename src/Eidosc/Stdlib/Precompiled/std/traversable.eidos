@@ -3,35 +3,35 @@ Traversable :: module {
 
 
     identity[A] :: A -> A
-     internal
+     compiler(internal)
 {
         value => value
     }
 
 
     identity_applicative[A, G: kind2 : Applicative.Applicative[G]] :: G[A] -> G[A]
-     internal
+     compiler(internal)
 {
         value => value
     }
 
 
     lift_pure[A, G: kind2 : Applicative.Applicative[G]] :: A -> G[A]
-     internal
+     compiler(internal)
 {
         value => Applicative.lift(value)
     }
 
 
     map_applicative[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: (A -> B need E) -> G[A] -> G[B] need E
-     internal
+     compiler(internal)
 {
         f => lifted => Applicative.map(lifted)(f)
     }
 
 
     map2_applicative[A, B, C, G: kind2 : Applicative.Applicative[G], E: effects] :: (A -> B -> C need E) -> G[A] -> G[B] -> G[C] need E
-     internal
+     compiler(internal)
 {
         f => left => right => Applicative.apply(Applicative.map(left)(f))(right)
     }

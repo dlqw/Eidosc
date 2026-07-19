@@ -138,7 +138,7 @@ Test :: module {
         const string source = """
 Test :: module {
 
-    value_box[A] :: A -> RawPtr intrinsic "value_box";
+    value_box[A] :: A -> RawPtr compiler(intrinsic: "value_box");
 
 }
 """;
@@ -194,7 +194,7 @@ Test :: module {
 Test :: module {
 
     value_box :: RawPtr -> RawPtr
-     intrinsic "value_box"
+     compiler(intrinsic: "value_box")
 {
         value => value
     }
@@ -213,7 +213,7 @@ Test :: module {
     {
         const string source = """
 
-value_box[A] :: A -> RawPtr intrinsic "value_box";
+value_box[A] :: A -> RawPtr compiler(intrinsic: "value_box");
 
 
 ptr :: value_box[Int](1);
@@ -249,7 +249,7 @@ ptr :: value_box[Int](1);
 Runtime :: module {
 
 
-    hidden_len :: String -> Int internal intrinsic "string_length";
+    hidden_len :: String -> Int compiler(internal, intrinsic: "string_length");
 
 }
 
@@ -862,7 +862,7 @@ Test :: module {
 Test :: module {
 
     helper :: Int -> Int
-     internal
+     compiler(internal)
 {
         x => x
     }

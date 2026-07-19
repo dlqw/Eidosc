@@ -5,12 +5,12 @@ Hash :: module {
 
 
 
-    string_length :: String -> Int internal intrinsic "string_length";
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
 
 
 
-    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
     int :: Int -> Int
@@ -128,7 +128,7 @@ Hash :: module {
 
 
     hash_string_loop :: String -> Int -> Int -> Int
-     internal
+     compiler(internal)
 {
         s => idx => h =>
             if idx >= string_length(s) then { h }

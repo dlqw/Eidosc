@@ -7,37 +7,37 @@ JsonParser :: module {
 
 
 
-    string_length :: String -> Int internal intrinsic "string_length";
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
 
 
 
-    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
 
 
-    string_slice :: String -> Int -> Int -> String internal intrinsic "string_slice";
+    string_slice :: String -> Int -> Int -> String compiler(internal, intrinsic: "string_slice");
 
 
 
 
-    string_equals :: String -> String -> Bool internal intrinsic "string_equals";
+    string_equals :: String -> String -> Bool compiler(internal, intrinsic: "string_equals");
 
 
 
 
-    string_from_char :: Int -> String internal intrinsic "string_from_char";
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
 
 
 
 
-    int_to_string :: Int -> String internal intrinsic "int_to_string";
+    int_to_string :: Int -> String compiler(internal, intrinsic: "int_to_string");
 
 
 
 
-    string_to_float :: String -> Float internal intrinsic "string_to_float";
+    string_to_float :: String -> Float compiler(internal, intrinsic: "string_to_float");
 
 
     // ── Parse result: (JsonValue, Int) = (parsed value, next position) ──
@@ -46,21 +46,21 @@ JsonParser :: module {
 
 
     char_code_is_space :: Int -> Bool
-     internal
+     compiler(internal)
 {
         c => c == 32 || c == 9 || c == 10 || c == 13
     }
 
 
     char_code_is_digit :: Int -> Bool
-     internal
+     compiler(internal)
 {
         c => c >= 48 && c <= 57
     }
 
 
     digit_value :: Int -> Int
-     internal
+     compiler(internal)
 {
         c => c - 48
     }
@@ -69,7 +69,7 @@ JsonParser :: module {
 
 
     skip_whitespace :: String -> Int -> Int
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { index }
@@ -85,7 +85,7 @@ JsonParser :: module {
 
 
     parse_int_digits :: String -> Int -> Int -> Int
-     internal
+     compiler(internal)
 {
         src => index => acc =>
             if index >= string_length(src) then { acc }
@@ -101,7 +101,7 @@ JsonParser :: module {
 
 
     parse_null :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index + 3 >= string_length(src) then { Err("Unexpected end of input at position " ++ int_to_string(index)) }
@@ -114,7 +114,7 @@ JsonParser :: module {
 
 
     parse_true :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index + 3 >= string_length(src) then { Err("Unexpected end of input at position " ++ int_to_string(index)) }
@@ -127,7 +127,7 @@ JsonParser :: module {
 
 
     parse_false :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index + 4 >= string_length(src) then { Err("Unexpected end of input at position " ++ int_to_string(index)) }
@@ -142,7 +142,7 @@ JsonParser :: module {
 
 
     parse_number :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { Err("Unexpected end of input in number at position " ++ int_to_string(index)) }
@@ -162,7 +162,7 @@ JsonParser :: module {
 
 
     skip_past_digits :: String -> Int -> Int -> Int
-     internal
+     compiler(internal)
 {
         src => index => len =>
             if index >= len then { index }
@@ -176,7 +176,7 @@ JsonParser :: module {
 
 
     skip_fractional :: String -> Int -> Int -> Int
-     internal
+     compiler(internal)
 {
         src => index => len =>
             if index >= len then { index }
@@ -192,7 +192,7 @@ JsonParser :: module {
 
 
     skip_exponent :: String -> Int -> Int -> Int
-     internal
+     compiler(internal)
 {
         src => index => len =>
             if index >= len then { index }
@@ -215,7 +215,7 @@ JsonParser :: module {
 
 
     hex_digit_value :: Int -> Int
-     internal
+     compiler(internal)
 {
         c when c >= 48 && c <= 57 => c - 48,
         c when c >= 65 && c <= 70 => c - 55,
@@ -225,7 +225,7 @@ JsonParser :: module {
 
 
     parse_string_chars :: String -> Int -> String -> Result[(String, Int), String]
-     internal
+     compiler(internal)
 {
         src => index => acc =>
             if index >= string_length(src) then { Err("Unterminated string") }
@@ -240,7 +240,7 @@ JsonParser :: module {
 
 
     parse_escape :: String -> Int -> String -> Result[(String, Int), String]
-     internal
+     compiler(internal)
 {
         src => index => acc =>
             if index >= string_length(src) then { Err("Unterminated escape sequence") }
@@ -261,7 +261,7 @@ JsonParser :: module {
 
 
     parse_unicode_escape :: String -> Int -> String -> Result[(String, Int), String]
-     internal
+     compiler(internal)
 {
         src => index => acc =>
             if index + 3 >= string_length(src) then { Err("Incomplete unicode escape at position " ++ int_to_string(index)) }
@@ -277,7 +277,7 @@ JsonParser :: module {
 
 
     parse_string_value :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { Err("Unexpected end of input in string at position " ++ int_to_string(index)) }
@@ -298,7 +298,7 @@ JsonParser :: module {
 
 
     parse_array_elements :: String -> Int -> Seq[JsonValue] -> Result[(Seq[JsonValue], Int), String]
-     internal
+     compiler(internal)
 {
         src => index => acc =>
             if index >= string_length(src) then { Err("Unterminated array") }
@@ -332,7 +332,7 @@ JsonParser :: module {
 
 
     parse_array :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { Err("Unexpected end of input in array") }
@@ -353,7 +353,7 @@ JsonParser :: module {
 
 
     parse_object_fields :: String -> Int -> Seq[(String, JsonValue)] -> Result[(Seq[(String, JsonValue)], Int), String]
-     internal
+     compiler(internal)
 {
         src => index => acc =>
             if index >= string_length(src) then { Err("Unterminated object") }
@@ -408,7 +408,7 @@ JsonParser :: module {
 
 
     parse_object :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { Err("Unexpected end of input in object") }
@@ -429,7 +429,7 @@ JsonParser :: module {
 
 
     parse_value :: String -> Int -> Result[(JsonValue, Int), String]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { Err("Unexpected end of input at position " ++ int_to_string(index)) }

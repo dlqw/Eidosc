@@ -119,7 +119,7 @@ public class FfiLibraryQualificationTests
             native_call :: Int -> Int
                 need ffi
                 extern(c)
-                intrinsic "llvm.native_call";
+                compiler(intrinsic: "llvm.native_call");
             """;
 
         var result = RunPipeline(source);

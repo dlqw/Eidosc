@@ -91,7 +91,7 @@ public sealed class DeclarationClauseBindingTests
             Clause(DeclarationClauseKind.Need, "need", "ffi"),
             Clause(DeclarationClauseKind.Extern, "extern", "c"),
             Clause(DeclarationClauseKind.Transparent, "transparent"),
-            Clause(DeclarationClauseKind.Internal, "internal"));
+            Clause(DeclarationClauseKind.Compiler, "compiler", "internal"));
 
         var result = Bind(declaration, CompilerOwnedSourceGrant.Create([SourcePath]));
         declaration.SetBoundClauses(result.Clauses, result.MetaInvocations);
@@ -110,10 +110,11 @@ public sealed class DeclarationClauseBindingTests
             declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.ForeignContract)
                 .Select(static clause => clause.Kind));
         Assert.Equal(
-            [DeclarationClauseKind.Internal],
+            [DeclarationClauseKind.Compiler],
             declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.CompilerDirective)
                 .Select(static clause => clause.Kind));
         Assert.Equal("c", Assert.IsType<ForeignContractIR>(declaration.Attachment.ForeignContract).Abi);
+        Assert.True(Assert.IsType<CompilerDirectiveIR>(declaration.Attachment.CompilerDirective).IsInternal);
         Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.DedicatedDeclaration));
         Assert.Empty(declaration.Attachment.GetAdapterEntries(DeclarationAttachmentAdapterKind.RemovedSurface));
     }
@@ -187,13 +188,13 @@ public sealed class DeclarationClauseBindingTests
         var conflicting = CreateFunction(
             Clause(DeclarationClauseKind.Need, "need", "ffi"),
             Clause(DeclarationClauseKind.Extern, "extern", "c"),
-            Clause(DeclarationClauseKind.Intrinsic, "intrinsic", "\"llvm.foo\""));
+            Clause(DeclarationClauseKind.Compiler, "compiler", "intrinsic: \"llvm.foo\""));
 
         var malformedResult = Bind(malformed);
         var conflictResult = Bind(conflicting, CompilerOwnedSourceGrant.Create([SourcePath]));
 
         Assert.Contains(malformedResult.Diagnostics, diagnostic => diagnostic.Message.Contains("unknown extern field", StringComparison.Ordinal));
-        Assert.Contains(conflictResult.Diagnostics, diagnostic => diagnostic.Message.Contains("conflicts with clause", StringComparison.Ordinal));
+        Assert.Contains(conflictResult.Diagnostics, diagnostic => diagnostic.Message.Contains("conflicts with extern", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -213,13 +214,14 @@ public sealed class DeclarationClauseBindingTests
     [Fact]
     public void Compiler_private_privilege_is_an_exact_unforgeable_source_grant()
     {
-        var ordinary = CreateType(Clause(DeclarationClauseKind.Internal, "internal"));
+        var ordinary = CreateType(Clause(DeclarationClauseKind.Compiler, "compiler", "internal"));
         var pathSpoof = CreateType(
             ClauseAt(
                 Path.Combine(Path.GetTempPath(), "Stdlib", "Precompiled", "std", "spoof.eidos"),
-                DeclarationClauseKind.Internal,
+                DeclarationClauseKind.Compiler,
+                "compiler",
                 "internal"));
-        var granted = CreateType(Clause(DeclarationClauseKind.Internal, "internal"));
+        var granted = CreateType(Clause(DeclarationClauseKind.Compiler, "compiler", "internal"));
 
         var ordinaryResult = Bind(ordinary);
         var spoofResult = Bind(pathSpoof);
@@ -365,6 +367,25 @@ legacy :: Int -> Int -> Int operator infixl 4 { left => right => left + right }
         var module = Assert.IsType<ModuleDecl>(result.Ast);
         Assert.Contains(module.Declarations.OfType<FuncDef>(), static function => function.Name == "|+|");
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void Parser_rejects_flat_compiler_private_directives()
+    {
+        const string source = "legacy :: Unit -> Unit internal intrinsic \"unit\";";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("structured compiler(...) directive", StringComparison.Ordinal));
     }
 
     [Fact]

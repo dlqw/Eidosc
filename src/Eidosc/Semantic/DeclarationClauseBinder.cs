@@ -155,8 +155,43 @@ internal static class DeclarationClauseBinder
         }
 
         ValidateForeignContract(declaration, occurrences, diagnostics);
+        ValidateCompilerDirective(declaration, occurrences, diagnostics);
         _ = languageVersion;
         return new DeclarationClauseBindingResult(clauses, invocations, diagnostics);
+    }
+
+    private static void ValidateCompilerDirective(
+        Declaration declaration,
+        IReadOnlyDictionary<DeclarationClauseKind, List<DeclarationClause>> occurrences,
+        List<ClauseBindingDiagnostic> diagnostics)
+    {
+        if (!occurrences.ContainsKey(DeclarationClauseKind.Compiler))
+        {
+            return;
+        }
+
+        if (!CompilerDirectiveIR.TryCreate(declaration.Clauses, out var directive, out var errors))
+        {
+            diagnostics.AddRange(errors.Select(error => new ClauseBindingDiagnostic(declaration.Span, error, "E3058")));
+        }
+
+        if (declaration is not (FuncDef or FuncDecl) &&
+            (directive.Intrinsic != null || directive.LlvmAbi != null))
+        {
+            diagnostics.Add(new ClauseBindingDiagnostic(
+                declaration.Span,
+                "compiler intrinsic and llvm_abi fields are only valid on functions",
+                "E3058"));
+        }
+
+        if (directive.Intrinsic != null &&
+            occurrences.ContainsKey(DeclarationClauseKind.Extern))
+        {
+            diagnostics.Add(new ClauseBindingDiagnostic(
+                declaration.Span,
+                "compiler intrinsic conflicts with extern on the same declaration",
+                "E3058"));
+        }
     }
 
     private static IReadOnlyList<ClauseArgumentIR> BindArguments(

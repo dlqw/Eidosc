@@ -245,8 +245,7 @@ bad_contract :: Unit -> Unit need ffi
     {
         const string source = """
 forged :: Unit -> Unit
-    internal
-    intrinsic "unit";
+    compiler(internal, intrinsic: "unit");
 """;
 
         var result = RunPipeline(source, CompilationPhase.Namer);

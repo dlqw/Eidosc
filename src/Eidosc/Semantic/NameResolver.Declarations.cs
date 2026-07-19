@@ -87,7 +87,7 @@ public sealed partial class NameResolver
             return false;
         }
 
-        if (HasClause(declaration, DeclarationClauseKind.Internal))
+        if (CompilerDirectiveIR.FromDeclaration(declaration) is { IsInternal: true })
         {
             return false;
         }
@@ -658,8 +658,10 @@ public sealed partial class NameResolver
             AddError(diagnostic.Span, diagnostic.Message, diagnostic.Code);
         }
 
-        if (isPublic && clauseBinding.Clauses.Any(static clause =>
-                clause.Kind == DeclarationClauseKind.Internal && clause.HasCompilerOwnedSourceGrant))
+        if (isPublic &&
+            CompilerDirectiveIR.FromDeclaration(caseType) is { IsInternal: true } &&
+            clauseBinding.Clauses.Any(static clause =>
+                clause.Kind == DeclarationClauseKind.Compiler && clause.HasCompilerOwnedSourceGrant))
         {
             var rootName = _symbolTable.GetSymbol<AdtSymbol>(rootAdtId)?.Name ?? "<closed-root>";
             AddError(

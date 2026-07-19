@@ -802,6 +802,15 @@ public static partial class SyntaxMigrationPlanner
         var spec = specs[0];
         switch (spec.Migration!.RuleId)
         {
+            case "compiler-directive":
+                yield return attribute.Name switch
+                {
+                    "internal" => "compiler(internal)",
+                    "intrinsic" => $"compiler(intrinsic: {arguments.FirstOrDefault() ?? "\"\""})",
+                    "llvm_abi" => $"compiler(llvm_abi: {arguments.FirstOrDefault() ?? "\"\""})",
+                    _ => "compiler()"
+                };
+                break;
             case "attribute-cstruct-to-repr-c":
                 yield return $"{spec.Keyword} c";
                 break;

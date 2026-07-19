@@ -4,27 +4,27 @@ Json :: module {
 
 
 
-    string_length :: String -> Int internal intrinsic "string_length";
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
 
 
 
-    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
 
 
-    string_from_char :: Int -> String internal intrinsic "string_from_char";
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
 
 
 
 
-    int_to_string :: Int -> String internal intrinsic "int_to_string";
+    int_to_string :: Int -> String compiler(internal, intrinsic: "int_to_string");
 
 
 
     hex_digit :: Int -> String
-     internal
+     compiler(internal)
 {
         0 => "0",
         1 => "1",
@@ -46,14 +46,14 @@ Json :: module {
 
 
     escape_control_byte :: Int -> String
-     internal
+     compiler(internal)
 {
         value => "\\u00" ++ Json.hex_digit(value / 16) ++ Json.hex_digit(value % 16)
     }
 
 
     escape_byte :: Int -> String
-     internal
+     compiler(internal)
 {
         value when value == 34 => "\\\"",
         value when value == 92 => "\\\\",
@@ -66,7 +66,7 @@ Json :: module {
 
 
     escape_loop :: String -> Int -> String
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { "" }
@@ -124,7 +124,7 @@ Json :: module {
 
 
     join_with :: Seq[String] -> String -> String
-     internal
+     compiler(internal)
 {
         [] => _ => "",
         [head] => _ => head,

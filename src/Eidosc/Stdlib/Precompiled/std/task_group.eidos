@@ -15,37 +15,37 @@ Status :: type derive Copy {
 
 
 
-new_runtime :: Unit -> RawPtr internal need ffi extern(c, name: "eidos_taskgroup_new");
+new_runtime :: Unit -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_taskgroup_new");
 
 
 
 
-cancel_runtime :: RawPtr -> Unit internal need ffi extern(c, name: "eidos_taskgroup_cancel");
+cancel_runtime :: RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_taskgroup_cancel");
 
 
 
 
-is_cancelled_runtime :: RawPtr -> Bool internal need ffi extern(c, name: "eidos_taskgroup_is_cancelled");
+is_cancelled_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_taskgroup_is_cancelled");
 
 
 
 
-pending_count_runtime :: RawPtr -> Int internal need ffi extern(c, name: "eidos_taskgroup_pending_count");
+pending_count_runtime :: RawPtr -> Int compiler(internal) need ffi extern(c, name: "eidos_taskgroup_pending_count");
 
 
 
 
-spawn_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern(c, name: "eidos_taskgroup_spawn_closure_raw");
+spawn_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi extern(c, name: "eidos_taskgroup_spawn_closure_raw");
 
 
 
 
-spawn_closure_value_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E internal need ffi extern(c, name: "eidos_taskgroup_spawn_closure_value");
+spawn_closure_value_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi extern(c, name: "eidos_taskgroup_spawn_closure_value");
 
 
 
 
-join_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E internal need ffi extern(c, name: "eidos_taskgroup_join_closure_raw");
+join_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E compiler(internal) need ffi extern(c, name: "eidos_taskgroup_join_closure_raw");
 
 
 /// Create an empty runtime-backed task group.

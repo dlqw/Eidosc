@@ -43,7 +43,7 @@ Deque :: module {
 
 
     normalize_front[T] :: Deque[T] -> Deque[T]
-     internal
+     compiler(internal)
 {
         Deque{front: [], back: b} => Deque{front: Seq.reverse(b), back: []},
         deque => deque
@@ -51,7 +51,7 @@ Deque :: module {
 
 
     normalize_back[T] :: Deque[T] -> Deque[T]
-     internal
+     compiler(internal)
 {
         Deque{front: f, back: []} => Deque{front: [], back: Seq.reverse(f)},
         deque => deque

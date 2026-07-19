@@ -5,7 +5,7 @@ JsonValue :: module {
 
 
 
-    string_equals :: String -> String -> Bool internal intrinsic "string_equals";
+    string_equals :: String -> String -> Bool compiler(internal, intrinsic: "string_equals");
 
 
     // JSON value ADT — represents any valid JSON value.
@@ -150,7 +150,7 @@ JsonValue :: module {
 
 
     find_field :: Seq[(String, JsonValue)] -> String -> Option[JsonValue]
-     internal
+     compiler(internal)
 {
         [] => _ => None(),
         [(key, value), ..tail] => target =>
@@ -176,7 +176,7 @@ JsonValue :: module {
 
 
     upsert_field :: Seq[(String, JsonValue)] -> String -> JsonValue -> Seq[(String, JsonValue)]
-     internal
+     compiler(internal)
 {
         [] => key => value => [(key, value)],
         [(field_key, field_value), ..tail] => key => value =>
@@ -187,7 +187,7 @@ JsonValue :: module {
 
 
     remove_field_from :: Seq[(String, JsonValue)] -> String -> Seq[(String, JsonValue)]
-     internal
+     compiler(internal)
 {
         [] => _ => [],
         [(field_key, field_value), ..tail] => key =>
@@ -198,7 +198,7 @@ JsonValue :: module {
 
 
     merge_fields :: Seq[(String, JsonValue)] -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
-     internal
+     compiler(internal)
 {
         left => [] => left,
         left => [(key, value), ..tail] => JsonValue.merge_fields(JsonValue.upsert_field(left)(key)(value))(tail)

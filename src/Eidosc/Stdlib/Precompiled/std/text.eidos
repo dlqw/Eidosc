@@ -7,43 +7,43 @@ Text :: module {
 
 
 
-    string_length :: String -> Int internal intrinsic "string_length";
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
-    string_length_ref :: Ref[String] -> Int internal intrinsic "string_length";
-
-
-
-
-    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
-
-    string_char_at_ref :: Ref[String] -> Int -> Int internal intrinsic "string_char_at";
+    string_length_ref :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
 
 
 
 
-    string_slice :: String -> Int -> Int -> String internal intrinsic "string_slice";
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
-    string_slice_ref :: Ref[String] -> Int -> Int -> String internal intrinsic "string_slice";
-
-
-
-
-    string_equals :: String -> String -> Bool internal intrinsic "string_equals";
+    string_char_at_ref :: Ref[String] -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
 
 
-    string_from_char :: Int -> String internal intrinsic "string_from_char";
+    string_slice :: String -> Int -> Int -> String compiler(internal, intrinsic: "string_slice");
+
+    string_slice_ref :: Ref[String] -> Int -> Int -> String compiler(internal, intrinsic: "string_slice");
 
 
 
 
-    char_from_code :: Int -> Char internal intrinsic "char_from_code";
+    string_equals :: String -> String -> Bool compiler(internal, intrinsic: "string_equals");
 
 
 
 
-    int_to_string :: Int -> String internal intrinsic "int_to_string";
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
+
+
+
+
+    char_from_code :: Int -> Char compiler(internal, intrinsic: "char_from_code");
+
+
+
+
+    int_to_string :: Int -> String compiler(internal, intrinsic: "int_to_string");
 
 
     len :: String -> Int { s => string_length(s) }
@@ -67,7 +67,7 @@ Text :: module {
 
 
     is_ascii_space_code :: Int -> Bool
-     internal
+     compiler(internal)
 {
         code => code == 32 || code == 9 || code == 10 || code == 13
     }
@@ -109,7 +109,7 @@ Text :: module {
 
 
     trim_start_index :: Ref[String] -> Int -> Int
-     internal
+     compiler(internal)
 {
         s => index => {
             text_len := string_length_ref(s);
@@ -124,7 +124,7 @@ Text :: module {
 
 
     trim_end_count :: Ref[String] -> Int -> Int
-     internal
+     compiler(internal)
 {
         s => count => {
             if count <= 0 then { 0 }
@@ -252,7 +252,7 @@ Text :: module {
 
 
     contains_from :: Ref[String] -> String -> Int -> Bool
-     internal
+     compiler(internal)
 {
         s => needle => index => {
             needle_len := string_length(needle);
@@ -270,7 +270,7 @@ Text :: module {
 
 
     index_of_from_opt :: Ref[String] -> String -> Int -> Option[Int]
-     internal
+     compiler(internal)
 {
         s => needle => index => {
             needle_len := string_length(needle);
@@ -293,7 +293,7 @@ Text :: module {
 
 
     last_index_of_from_opt :: Ref[String] -> String -> Int -> Option[Int]
-     internal
+     compiler(internal)
 {
         s => needle => index => {
             needle_len := string_length(needle);
@@ -321,7 +321,7 @@ Text :: module {
 
 
     count_from :: Ref[String] -> String -> Int -> Int
-     internal
+     compiler(internal)
 {
         s => needle => index => {
             needle_len := string_length(needle);
@@ -418,7 +418,7 @@ Text :: module {
 
 
     map_ascii_codes[E: effects] :: String -> Int -> (Int -> Int need E) -> String need E
-     internal
+     compiler(internal)
 {
         s => index => mapper => {
             if index >= string_length(s) then { "" }
@@ -444,7 +444,7 @@ Text :: module {
 
 
     repeat_to_length :: String -> Int -> String
-     internal
+     compiler(internal)
 {
         fill => count => {
             if count <= 0 || string_length(fill) == 0 then { "" }
@@ -492,7 +492,7 @@ Text :: module {
 
 
     compare_from :: String -> String -> Int -> Ordering
-     internal
+     compiler(internal)
 {
         left => right => index => {
             left_len := string_length(left);

@@ -24,7 +24,8 @@ public enum DeclarationClauseKind
     Requires,
     Internal,
     Intrinsic,
-    LlvmAbi
+    LlvmAbi,
+    Compiler
 }
 
 [Flags]
@@ -84,7 +85,8 @@ public enum ClauseCanonicalArgumentType
     Declaration,
     Generator,
     Capability,
-    MetaInvocation
+    MetaInvocation,
+    CompilerDirective
 }
 
 public enum ClauseSourceOrderBehavior
@@ -218,7 +220,7 @@ public static class ClauseSchema
             ["case"] = new("case", DeclarationClauseKind.Case, DeclarationClauseTarget.CaseType, ClauseArgumentGrammar.Path, ClauseCanonicalArgumentType.Type, ClauseStage.Syntax, ClauseSourceOrderBehavior.Preserve, Migration: NoLegacyMigration),
             ["need"] = new("need", DeclarationClauseKind.Need, DeclarationClauseTarget.Function, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Effect, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Repeatable: true, Migration: new("attribute-effects-to-need", ["effects"])),
             ["repr"] = new("repr", DeclarationClauseKind.Repr, DeclarationClauseTarget.Type, ClauseArgumentGrammar.Identifier, ClauseCanonicalArgumentType.Identifier, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-cstruct-to-repr-c", ["cstruct"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
-            ["extern"] = new("extern", DeclarationClauseKind.Extern, DeclarationClauseTarget.Function, ClauseArgumentGrammar.TokenIsland, ClauseCanonicalArgumentType.Abi, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Requires: [DeclarationClauseKind.Need], Conflicts: [DeclarationClauseKind.Intrinsic], Migration: new("attribute-ffi-to-extern-c", ["ffi"]), Adapter: DeclarationAttachmentAdapterKind.ForeignContract),
+            ["extern"] = new("extern", DeclarationClauseKind.Extern, DeclarationClauseTarget.Function, ClauseArgumentGrammar.TokenIsland, ClauseCanonicalArgumentType.Abi, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Requires: [DeclarationClauseKind.Need], Migration: new("attribute-ffi-to-extern-c", ["ffi"]), Adapter: DeclarationAttachmentAdapterKind.ForeignContract),
             ["derive"] = new("derive", DeclarationClauseKind.Derive, DeclarationClauseTarget.Type | DeclarationClauseTarget.CaseType, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Trait, ClauseStage.Semantic, ClauseSourceOrderBehavior.GeneratorSequence, Repeatable: true, ProducesMetaInvocation: true, CompilerOwnedInvocation: true, Migration: new("attribute-derive", ["derive"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
             ["impl"] = new("impl", DeclarationClauseKind.Impl, DeclarationClauseTarget.Function, ClauseArgumentGrammar.Path, ClauseCanonicalArgumentType.Trait, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-impl", ["impl"]), Adapter: DeclarationAttachmentAdapterKind.DedicatedDeclaration),
             ["borrow"] = new("borrow", DeclarationClauseKind.Borrow, DeclarationClauseTarget.Function, ClauseArgumentGrammar.IdentifierList, ClauseCanonicalArgumentType.BorrowCapability, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-borrow", ["borrow"]), Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
@@ -228,9 +230,7 @@ public static class ClauseSchema
             ["after"] = new("after", DeclarationClauseKind.After, DeclarationClauseTarget.Function, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Generator, ClauseStage.Syntax, ClauseSourceOrderBehavior.OrderingConstraint, Repeatable: true, MetaGeneratorOnly: true, Migration: NoLegacyMigration, Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
             ["expand"] = new("expand", DeclarationClauseKind.Expand, DeclarationClauseTarget.AnyDeclaration, ClauseArgumentGrammar.MetaInvocation, ClauseCanonicalArgumentType.MetaInvocation, ClauseStage.Semantic, ClauseSourceOrderBehavior.GeneratorSequence, Repeatable: true, ProducesMetaInvocation: true, Migration: new("attribute-generator-to-expand", ["generator"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
             ["requires"] = new("requires", DeclarationClauseKind.Requires, DeclarationClauseTarget.Function, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Generator, ClauseStage.Syntax, ClauseSourceOrderBehavior.OrderingConstraint, Repeatable: true, MetaGeneratorOnly: true, Migration: NoLegacyMigration, Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
-            ["internal"] = new("internal", DeclarationClauseKind.Internal, DeclarationClauseTarget.AnyDeclaration, ClauseArgumentGrammar.None, ClauseCanonicalArgumentType.None, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Privilege: ClausePrivilegePolicy.ToolchainOwnedSource, Migration: new("attribute-internal", ["internal"]), Adapter: DeclarationAttachmentAdapterKind.CompilerDirective),
-            ["intrinsic"] = new("intrinsic", DeclarationClauseKind.Intrinsic, DeclarationClauseTarget.Function, ClauseArgumentGrammar.String, ClauseCanonicalArgumentType.String, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Privilege: ClausePrivilegePolicy.ToolchainOwnedSource, Conflicts: [DeclarationClauseKind.Extern], Migration: new("attribute-intrinsic", ["intrinsic"]), Adapter: DeclarationAttachmentAdapterKind.CompilerDirective),
-            ["llvm_abi"] = new("llvm_abi", DeclarationClauseKind.LlvmAbi, DeclarationClauseTarget.Function, ClauseArgumentGrammar.String, ClauseCanonicalArgumentType.String, ClauseStage.Layout, ClauseSourceOrderBehavior.Preserve, Privilege: ClausePrivilegePolicy.ToolchainOwnedSource, Migration: new("attribute-llvm-abi", ["llvm_abi"]), Adapter: DeclarationAttachmentAdapterKind.CompilerDirective)
+            ["compiler"] = new("compiler", DeclarationClauseKind.Compiler, DeclarationClauseTarget.AnyDeclaration, ClauseArgumentGrammar.TokenIsland, ClauseCanonicalArgumentType.CompilerDirective, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Repeatable: true, Privilege: ClausePrivilegePolicy.ToolchainOwnedSource, Migration: new("compiler-directive", ["internal", "intrinsic", "llvm_abi"]), Adapter: DeclarationAttachmentAdapterKind.CompilerDirective)
         };
 
     public static IReadOnlyDictionary<string, DeclarationClauseSpec> Entries => Specs;

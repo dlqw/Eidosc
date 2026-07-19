@@ -108,7 +108,7 @@ public static class PrecompiledStdlibDeclarationAuditor
                 "extern precompiled std declarations must not provide an Eidos function body"));
         }
 
-        if (HasClause(funcDef, DeclarationClauseKind.Intrinsic) && funcDef.Body.Count > 0)
+        if (CompilerDirectiveIR.FromDeclaration(funcDef) is { Intrinsic: not null } && funcDef.Body.Count > 0)
         {
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
@@ -120,7 +120,7 @@ public static class PrecompiledStdlibDeclarationAuditor
     private static bool HasImplementationClause(Declaration declaration)
     {
         return HasClause(declaration, DeclarationClauseKind.Extern) ||
-               HasClause(declaration, DeclarationClauseKind.Intrinsic);
+               CompilerDirectiveIR.FromDeclaration(declaration) is { Intrinsic: not null };
     }
 
     private static bool HasClause(Declaration declaration, DeclarationClauseKind kind) =>
@@ -196,20 +196,12 @@ public static class PrecompiledStdlibDeclarationAuditor
                 break;
         }
 
-        foreach (var clause in declaration.Clauses)
+        if (CompilerDirectiveIR.FromDeclaration(declaration) is { Intrinsic: { } intrinsic })
         {
-            if (clause.ClauseKind != DeclarationClauseKind.Intrinsic)
+            var helperName = TrimStringLiteralQuotes(intrinsic);
+            if (!string.IsNullOrWhiteSpace(helperName))
             {
-                continue;
-            }
-
-            foreach (var argument in clause.ArgumentTokens)
-            {
-                var helperName = TrimStringLiteralQuotes(argument);
-                if (!string.IsNullOrWhiteSpace(helperName))
-                {
-                    declaredHelpers.Add(helperName);
-                }
+                declaredHelpers.Add(helperName);
             }
         }
     }

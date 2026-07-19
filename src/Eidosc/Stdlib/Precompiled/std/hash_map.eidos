@@ -36,7 +36,7 @@ HashMap :: module {
 
 
     make_empty_buckets[K, V] :: Int -> Seq[Seq[(K, V)]]
-     internal
+     compiler(internal)
 {
         n => {
             count := if n < 0 then 0 else n
@@ -54,7 +54,7 @@ HashMap :: module {
 
 
     bucket_index[K: Traits.Hash, V] :: HashMap[K, V] -> K -> Int
-     internal
+     compiler(internal)
 {
         HashMap{buckets: _, size: _, capacity: cap} => key =>
             Math.abs(TraitInvoke.hash_value(key)) % cap
@@ -62,7 +62,7 @@ HashMap :: module {
 
 
     get_bucket[K, V] :: Seq[Seq[(K, V)]] -> Int -> Seq[(K, V)]
-     internal
+     compiler(internal)
 {
         buckets => index => {
             if index < 0 then { [] } else { buckets[index] }
@@ -71,7 +71,7 @@ HashMap :: module {
 
 
     set_bucket[K, V] :: Seq[Seq[(K, V)]] -> Int -> Seq[(K, V)] -> Seq[Seq[(K, V)]]
-     internal
+     compiler(internal)
 {
         // Rebuild the buckets Seq with the target index replaced by newBucket.
         // fold_left over a (acc, index) pair; fold_left is borrow-safe in this
@@ -88,7 +88,7 @@ HashMap :: module {
 
 
     find_in_bucket[K: Traits.Eq, V] :: Seq[(K, V)] -> K -> Option[(K, V)]
-     internal
+     compiler(internal)
 {
         bucket => key => {
             len := Seq.len(bucket)
@@ -111,7 +111,7 @@ HashMap :: module {
 
 
     find_in_buckets[K: Traits.Eq, V] :: Seq[Seq[(K, V)]] -> Int -> K -> Option[V]
-     internal
+     compiler(internal)
 {
         buckets => index => key => {
             bucket := HashMap.get_bucket(buckets)(index)
@@ -125,7 +125,7 @@ HashMap :: module {
 
 
     replace_in_bucket[K: Traits.Eq, V] :: Seq[(K, V)] -> K -> V -> Seq[(K, V)]
-     internal
+     compiler(internal)
 {
         bucket => key => value => {
             len := Seq.len(bucket)
@@ -151,7 +151,7 @@ HashMap :: module {
 
 
     replace_in_bucket_with_flag[K: Traits.Eq, V] :: Seq[(K, V)] -> K -> V -> (Seq[(K, V)], Bool)
-     internal
+     compiler(internal)
 {
         bucket => key => value => {
             len := Seq.len(bucket)
@@ -177,7 +177,7 @@ HashMap :: module {
 
 
     insert_bucket_at[K: Traits.Eq, V] :: Seq[Seq[(K, V)]] -> Int -> K -> V -> (Seq[Seq[(K, V)]], Bool)
-     internal
+     compiler(internal)
 {
         [] => _ => key => value => ([[(key, value)]], true),
         [bucket, ..rest] => index => key => value =>
@@ -198,7 +198,7 @@ HashMap :: module {
 
 
     remove_from_bucket[K: Traits.Eq, V] :: Seq[(K, V)] -> K -> Seq[(K, V)]
-     internal
+     compiler(internal)
 {
         bucket => key =>
             Seq.filter(bucket)(pair => match pair { (k, _) => !TraitInvoke.eq_value(k)(key) })
@@ -206,7 +206,7 @@ HashMap :: module {
 
 
     remove_from_bucket_with_flag[K: Traits.Eq, V] :: Seq[(K, V)] -> K -> (Seq[(K, V)], Bool)
-     internal
+     compiler(internal)
 {
         bucket => key => {
             len := Seq.len(bucket)
@@ -232,7 +232,7 @@ HashMap :: module {
 
 
     remove_bucket_at[K: Traits.Eq, V] :: Seq[Seq[(K, V)]] -> Int -> K -> (Seq[Seq[(K, V)]], Bool)
-     internal
+     compiler(internal)
 {
         [] => _ => _ => ([], false),
         [bucket, ..rest] => index => key =>
@@ -362,7 +362,7 @@ HashMap :: module {
 
 
     collect_keys[K, V] :: Seq[Seq[(K, V)]] -> Seq[K]
-     internal
+     compiler(internal)
 {
         buckets => {
             bucket_count := Seq.len(buckets)
@@ -390,7 +390,7 @@ HashMap :: module {
 
 
     collect_values[K, V] :: Seq[Seq[(K, V)]] -> Seq[V]
-     internal
+     compiler(internal)
 {
         buckets => {
             bucket_count := Seq.len(buckets)
@@ -418,7 +418,7 @@ HashMap :: module {
 
 
     bucket_contains_value[K, V: Traits.Eq] :: Seq[(K, V)] -> V -> Bool
-     internal
+     compiler(internal)
 {
         bucket => value => {
             len := Seq.len(bucket)
@@ -440,7 +440,7 @@ HashMap :: module {
 
 
     buckets_contain_value[K, V: Traits.Eq] :: Seq[Seq[(K, V)]] -> V -> Bool
-     internal
+     compiler(internal)
 {
         buckets => value => {
             bucket_count := Seq.len(buckets)
@@ -461,7 +461,7 @@ HashMap :: module {
 
 
     maybe_resize[K: Traits.Hash + Traits.Eq, V] :: HashMap[K, V] -> HashMap[K, V]
-     internal
+     compiler(internal)
 {
         HashMap{buckets: buckets, size: size, capacity: capacity} => {
             load_factor_num := size * 100;
@@ -474,7 +474,7 @@ HashMap :: module {
 
 
     resize_to[K: Traits.Hash + Traits.Eq, V] :: HashMap[K, V] -> Int -> HashMap[K, V]
-     internal
+     compiler(internal)
 {
         HashMap{buckets: buckets, size: size, capacity: _} => new_capacity => {
             all_pairs := HashMap.collect_pairs(buckets);
@@ -486,7 +486,7 @@ HashMap :: module {
 
 
     collect_pairs[K, V] :: Seq[Seq[(K, V)]] -> Seq[(K, V)]
-     internal
+     compiler(internal)
 {
         // Flatten buckets via flat_map (comprehension); each bucket is already a
         // Seq[(K, V)], so the identity function concatenates them.
@@ -495,7 +495,7 @@ HashMap :: module {
 
 
     rehash_all[K: Traits.Hash + Traits.Eq, V] :: Seq[(K, V)] -> Seq[Seq[(K, V)]] -> Int -> Seq[Seq[(K, V)]]
-     internal
+     compiler(internal)
 {
         pairs => buckets => new_capacity => {
             pair_count := Seq.len(pairs)
@@ -522,7 +522,7 @@ HashMap :: module {
 
 
     insert_pairs[K: Traits.Hash + Traits.Eq, V] :: Seq[(K, V)] -> HashMap[K, V] -> HashMap[K, V]
-     internal
+     compiler(internal)
 {
         pairs => acc => {
             len := Seq.len(pairs)
@@ -547,7 +547,7 @@ HashMap :: module {
 
 
     remove_keys[K: Traits.Hash + Traits.Eq, V] :: Seq[K] -> HashMap[K, V] -> HashMap[K, V]
-     internal
+     compiler(internal)
 {
         keys => acc => {
             len := Seq.len(keys)
@@ -565,7 +565,7 @@ HashMap :: module {
 
 
     all_keys_contained[K: Traits.Hash + Traits.Eq, V] :: Seq[K] -> HashMap[K, V] -> Bool
-     internal
+     compiler(internal)
 {
         keys => self => {
             len := Seq.len(keys)
@@ -583,7 +583,7 @@ HashMap :: module {
 
 
     any_key_contained[K: Traits.Hash + Traits.Eq, V] :: Seq[K] -> HashMap[K, V] -> Bool
-     internal
+     compiler(internal)
 {
         keys => self => {
             len := Seq.len(keys)
@@ -611,7 +611,7 @@ HashMap :: module {
 
 
     map_pair_values[K, V, U, E: effects] :: Seq[(K, V)] -> (V -> U need E) -> Seq[(K, U)] need E
-     internal
+     compiler(internal)
 {
         pairs => f => {
             len := Seq.len(pairs)
@@ -638,7 +638,7 @@ HashMap :: module {
 
 
     fold_pairs[K, V, A, E: effects] :: Seq[(K, V)] -> A -> (A -> K -> V -> A need E) -> A need E
-     internal
+     compiler(internal)
 {
         pairs => acc => f => {
             len := Seq.len(pairs)
@@ -658,7 +658,7 @@ HashMap :: module {
 
 
     fold_buckets[K, V, A, E: effects] :: Seq[Seq[(K, V)]] -> A -> (A -> K -> V -> A need E) -> A need E
-     internal
+     compiler(internal)
 {
         buckets => acc => f => {
             bucket_count := Seq.len(buckets)

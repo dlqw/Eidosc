@@ -5,41 +5,41 @@ Regex :: module {
 
 
 
-    regex_compile :: RawPtr -> Int -> RawPtr internal intrinsic "regex_compile" need ffi;
+    regex_compile :: RawPtr -> Int -> RawPtr compiler(internal, intrinsic: "regex_compile") need ffi;
 
 
 
 
 
-    regex_free :: RawPtr -> Unit internal intrinsic "regex_free" need ffi;
+    regex_free :: RawPtr -> Unit compiler(internal, intrinsic: "regex_free") need ffi;
 
 
 
 
 
-    regex_is_match :: RawPtr -> RawPtr -> Int internal intrinsic "regex_is_match" need ffi;
+    regex_is_match :: RawPtr -> RawPtr -> Int compiler(internal, intrinsic: "regex_is_match") need ffi;
 
 
 
 
 
-    regex_find_string :: RawPtr -> RawPtr -> String internal intrinsic "regex_find_string" need ffi;
+    regex_find_string :: RawPtr -> RawPtr -> String compiler(internal, intrinsic: "regex_find_string") need ffi;
 
 
 
 
 
-    string_to_cstr :: String -> RawPtr internal intrinsic "string_to_cstr" need ffi;
+    string_to_cstr :: String -> RawPtr compiler(internal, intrinsic: "string_to_cstr") need ffi;
 
 
 
 
-    ptr_null :: Unit -> RawPtr internal intrinsic "ptr_null";
+    ptr_null :: Unit -> RawPtr compiler(internal, intrinsic: "ptr_null");
 
 
 
 
-    ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
+    ptr_is_null :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_is_null");
 
 
     // 编译正则表达式

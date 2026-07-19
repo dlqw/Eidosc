@@ -15,35 +15,35 @@ Result :: module {
 
 
     identity[T] :: T -> T
-     internal
+     compiler(internal)
 {
         value => value
     }
 
 
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
-     internal
+     compiler(internal)
 {
         (g, f, value) => g(f(value))
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
-     internal
+     compiler(internal)
 {
         (value, f) => f(value)
     }
 
 
     bind_then[A, B, C, E, E1: effects, E2: effects] :: (A -> With[E, B] need E1) -> (B -> With[E, C] need E2) -> A -> With[E, C] need E1, E2
-     internal
+     compiler(internal)
 {
         (f, g, value) => f(value).bind(g)
     }
 
 
     ok_wrap[T, E] :: T -> With[E, T]
-     internal
+     compiler(internal)
 {
         value => Ok(value)
     }

@@ -3,27 +3,27 @@ Math :: module {
 
 
 
-    math_fabs :: Float -> Float internal intrinsic "math_fabs";
+    math_fabs :: Float -> Float compiler(internal, intrinsic: "math_fabs");
 
 
 
 
-    math_fmin :: Float -> Float -> Float internal intrinsic "math_fmin";
+    math_fmin :: Float -> Float -> Float compiler(internal, intrinsic: "math_fmin");
 
 
 
 
-    math_fmax :: Float -> Float -> Float internal intrinsic "math_fmax";
+    math_fmax :: Float -> Float -> Float compiler(internal, intrinsic: "math_fmax");
 
 
 
 
-    math_copysign :: Float -> Float -> Float internal intrinsic "math_copysign";
+    math_copysign :: Float -> Float -> Float compiler(internal, intrinsic: "math_copysign");
 
 
 
 
-    math_pow :: Float -> Float -> Float internal intrinsic "math_pow";
+    math_pow :: Float -> Float -> Float compiler(internal, intrinsic: "math_pow");
 
 
     abs :: Int -> Int

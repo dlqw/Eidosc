@@ -4,22 +4,22 @@ Binary :: module {
 
 
 
-    string_length :: String -> Int internal intrinsic "string_length";
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
 
 
 
-    string_char_at :: String -> Int -> Int internal intrinsic "string_char_at";
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
 
 
-    string_from_char :: Int -> String internal intrinsic "string_from_char";
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
 
 
 
     uint_mod :: Int -> Int -> Int
-     internal
+     compiler(internal)
 {
         value => modulus => {
             modded := value % modulus;
@@ -29,49 +29,49 @@ Binary :: module {
 
 
     byte :: Int -> Int
-     internal
+     compiler(internal)
 {
         value => Binary.uint_mod(value)(256)
     }
 
 
     u16 :: Int -> Int
-     internal
+     compiler(internal)
 {
         value => Binary.uint_mod(value)(65536)
     }
 
 
     u32 :: Int -> Int
-     internal
+     compiler(internal)
 {
         value => Binary.uint_mod(value)(65536 * 65536)
     }
 
 
     empty :: Unit -> Seq[Int]
-     internal
+     compiler(internal)
 {
         _ => []
     }
 
 
     append :: Seq[Int] -> Seq[Int] -> Seq[Int]
-     internal
+     compiler(internal)
 {
         left => right => [x | xs <- [left, right], x <- xs]
     }
 
 
     push :: Seq[Int] -> Int -> Seq[Int]
-     internal
+     compiler(internal)
 {
         bytes => value => Binary.append(bytes)([Binary.byte(value)])
     }
 
 
     concat :: Seq[Seq[Int]] -> Seq[Int]
-     internal
+     compiler(internal)
 {
         parts => [x | xs <- parts, x <- xs]
     }
@@ -322,7 +322,7 @@ Binary :: module {
 
 
     string_to_bytes_loop :: String -> Int -> Seq[Int]
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= string_length(src) then { [] }
@@ -342,7 +342,7 @@ Binary :: module {
 
 
     bytes_to_string_exact :: Seq[Int] -> Int -> Option[String]
-     internal
+     compiler(internal)
 {
         bytes => remaining =>
             if remaining < 0 then { None() }

@@ -921,6 +921,12 @@ public sealed class DeclParser(ParserContext ctx)
                 continue;
             }
 
+            if (IsRemovedCompilerDirective(ctx.GetText()))
+            {
+                RejectRemovedCompilerDirective();
+                continue;
+            }
+
             break;
         }
 
@@ -942,8 +948,15 @@ public sealed class DeclParser(ParserContext ctx)
     private List<DeclarationClause> ParseDeclarationClauseZone(IReadOnlyList<TypeParam> typeParams)
     {
         var clauses = new List<DeclarationClause>();
-        while (ClauseSchema.TryGetKind(ctx.GetText(), out var kind))
+        while (ClauseSchema.TryGetKind(ctx.GetText(), out _) || IsRemovedCompilerDirective(ctx.GetText()))
         {
+            if (IsRemovedCompilerDirective(ctx.GetText()))
+            {
+                RejectRemovedCompilerDirective();
+                continue;
+            }
+
+            _ = ClauseSchema.TryGetKind(ctx.GetText(), out var kind);
             if (kind == DeclarationClauseKind.Where)
             {
                 clauses.Add(ParseGenericWhereClause(typeParams));
@@ -957,6 +970,20 @@ public sealed class DeclParser(ParserContext ctx)
         return clauses;
     }
 
+    private static bool IsRemovedCompilerDirective(string keyword) =>
+        keyword is "internal" or "intrinsic" or "llvm_abi";
+
+    private void RejectRemovedCompilerDirective()
+    {
+        var keyword = ctx.GetText();
+        ctx.Error($"'{keyword}' was replaced by the structured compiler(...) directive");
+        ctx.Advance();
+        if (keyword is "intrinsic" or "llvm_abi" && !IsClauseBoundary())
+        {
+            ctx.Advance();
+        }
+    }
+
     private DeclarationClause ParseDeclarationClause(DeclarationClauseKind kind)
     {
         var start = ctx.Current;
@@ -965,11 +992,13 @@ public sealed class DeclParser(ParserContext ctx)
         var clause = CreateClause(kind, keyword, start);
         _ = ClauseSchema.TryGet(keyword, out var spec);
 
-        if (kind == DeclarationClauseKind.Extern)
+        if (kind is DeclarationClauseKind.Extern or DeclarationClauseKind.Compiler)
         {
             if (!ctx.Match("("))
             {
-                ctx.Error("extern uses the structured form 'extern(c, library: Library, name: \"symbol\")'");
+                ctx.Error(kind == DeclarationClauseKind.Extern
+                    ? "extern uses the structured form 'extern(c, library: Library, name: \"symbol\")'"
+                    : "compiler directives use the structured form 'compiler(internal, intrinsic: \"name\")'");
                 if (!IsClauseBoundary())
                 {
                     clause.AddArgument(ReadClauseArgument());
@@ -1465,8 +1494,15 @@ public sealed class DeclParser(ParserContext ctx)
     {
         var clauses = new List<DeclarationClause>();
         parentSpecialization = null;
-        while (ClauseSchema.TryGetKind(ctx.GetText(), out var kind))
+        while (ClauseSchema.TryGetKind(ctx.GetText(), out _) || IsRemovedCompilerDirective(ctx.GetText()))
         {
+            if (IsRemovedCompilerDirective(ctx.GetText()))
+            {
+                RejectRemovedCompilerDirective();
+                continue;
+            }
+
+            _ = ClauseSchema.TryGetKind(ctx.GetText(), out var kind);
             if (kind == DeclarationClauseKind.Where)
             {
                 clauses.Add(ParseGenericWhereClause(typeParams));

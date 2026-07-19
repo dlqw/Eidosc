@@ -5,24 +5,24 @@ Shared :: module {
     }
 
 
-    new[T] :: T -> Shared[T] intrinsic "shared_new";
+    new[T] :: T -> Shared[T] compiler(intrinsic: "shared_new");
 
 
 
-    borrow[T] :: Shared[T] -> Ref[T] intrinsic "shared_borrow";
+    borrow[T] :: Shared[T] -> Ref[T] compiler(intrinsic: "shared_borrow");
 
 
 
-    clone[T] :: Ref[Shared[T]] -> Shared[T] intrinsic "shared_clone";
+    clone[T] :: Ref[Shared[T]] -> Shared[T] compiler(intrinsic: "shared_clone");
 
 
     CloneSharedT :: instance Traits.Clone {
 
-        clone[T] :: Ref[Shared[T]] -> Shared[T] intrinsic "shared_clone";
+        clone[T] :: Ref[Shared[T]] -> Shared[T] compiler(intrinsic: "shared_clone");
 
     }
 
 
-    ptr_eq[T] :: Shared[T] -> Shared[T] -> Bool intrinsic "shared_ptr_eq";
+    ptr_eq[T] :: Shared[T] -> Shared[T] -> Bool compiler(intrinsic: "shared_ptr_eq");
 
 }

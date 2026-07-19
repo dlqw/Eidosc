@@ -43,28 +43,28 @@ BinaryHeap :: module {
 
 
     parent_index :: Int -> Int
-     internal
+     compiler(internal)
 {
         index => (index - 1) / 2
     }
 
 
     left_child_index :: Int -> Int
-     internal
+     compiler(internal)
 {
         index => index * 2 + 1
     }
 
 
     right_child_index :: Int -> Int
-     internal
+     compiler(internal)
 {
         index => index * 2 + 2
     }
 
 
     sift_up_from[T: Traits.Ord] :: Seq[T] -> Int -> Seq[T]
-     internal
+     compiler(internal)
 {
         values => start => {
             mut heap := values
@@ -84,7 +84,7 @@ BinaryHeap :: module {
 
 
     sift_down_from[T: Traits.Ord] :: Seq[T] -> Int -> Seq[T]
-     internal
+     compiler(internal)
 {
         values => start => {
             len := Seq.len(values)

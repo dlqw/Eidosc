@@ -2,13 +2,13 @@ CommandLine :: module {
 
 
 
-    command_line_argc :: Unit -> Int internal intrinsic "command_line_argc" need io;
+    command_line_argc :: Unit -> Int compiler(internal, intrinsic: "command_line_argc") need io;
 
 
 
 
 
-    command_line_arg_or :: Int -> String -> String internal intrinsic "command_line_arg_or" need io;
+    command_line_arg_or :: Int -> String -> String compiler(internal, intrinsic: "command_line_arg_or") need io;
 
 
     argc :: Unit -> Int need io

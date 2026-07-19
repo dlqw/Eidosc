@@ -13,18 +13,18 @@ Seq :: module {
 
 
     identity[T] :: T -> T
-     internal
+     compiler(internal)
 {
         value => value
     }
 
 
-    len[T] :: Seq[T] -> Int intrinsic "array_length";
+    len[T] :: Seq[T] -> Int compiler(intrinsic: "array_length");
 
 
 
     len_from[T] :: Seq[T] -> Int -> Int
-     internal
+     compiler(internal)
 {
         [] => acc => acc,
         [_, ..tail] => acc => Seq.len_from(tail)(acc + 1)
@@ -49,7 +49,7 @@ Seq :: module {
 
 
     get_from_opt[T] :: Seq[T] -> Int -> Option[T]
-     internal
+     compiler(internal)
 {
         xs => index => {
             len := Seq.len(xs)
@@ -182,7 +182,7 @@ Seq :: module {
 
 
     find_index_from[T, E: effects] :: Seq[T] -> Int -> (T -> Bool need E) -> Option[Int] need E
-     internal
+     compiler(internal)
 {
         xs => start => pred => {
             len := Seq.len(xs)
@@ -368,7 +368,7 @@ Seq :: module {
 
 
     show_items[T: Traits.Show] :: Seq[T] -> String
-     internal
+     compiler(internal)
 {
         // fold_left with a (String, Bool) accumulator: built string so far and an
         // is-first flag (to suppress the leading separator). fold_left is lowered
@@ -468,21 +468,21 @@ Seq :: module {
 
 
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
-     internal
+     compiler(internal)
 {
         g => f => value => g(f(value))
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
-     internal
+     compiler(internal)
 {
         value => f => f(value)
     }
 
 
     law_append[A] :: Seq[A] -> Seq[A] -> Seq[A]
-     internal
+     compiler(internal)
 {
         [] => right => right,
         [head, ..tail] => right => [head, ..law_append(tail)(right)]
@@ -490,14 +490,14 @@ Seq :: module {
 
 
     law_pure[A] :: A -> Seq[A]
-     internal
+     compiler(internal)
 {
         value => [value]
     }
 
 
     law_bind[A, B, E: effects] :: Seq[A] -> (A -> Seq[B] need E) -> Seq[B] need E
-     internal
+     compiler(internal)
 {
         [] => _ => [],
         [head] => f => f(head),
@@ -506,7 +506,7 @@ Seq :: module {
 
 
     law_apply[A, B, E: effects] :: Seq[A -> B need E] -> Seq[A] -> Seq[B] need E
-     internal
+     compiler(internal)
 {
         [] => _ => [],
         [f] => xs => fmap(xs)(f),
@@ -515,7 +515,7 @@ Seq :: module {
 
 
     bind_then[A, B, C, E1: effects, E2: effects] :: (A -> Seq[B] need E1) -> (B -> Seq[C] need E2) -> A -> Seq[C] need E1, E2
-     internal
+     compiler(internal)
 {
         f => g => value => law_bind(f(value))(g)
     }

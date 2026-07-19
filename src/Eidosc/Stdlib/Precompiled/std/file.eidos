@@ -7,36 +7,36 @@ File :: module {
 
 
 
-    file_exists :: String -> Bool internal intrinsic "file_exists" need io;
+    file_exists :: String -> Bool compiler(internal, intrinsic: "file_exists") need io;
 
 
 
 
 
-    file_read_all_text :: String -> String internal intrinsic "file_read_all_text" need io;
+    file_read_all_text :: String -> String compiler(internal, intrinsic: "file_read_all_text") need io;
 
 
 
 
 
-    file_write_all_text :: String -> String -> Bool internal intrinsic "file_write_all_text" need io;
+    file_write_all_text :: String -> String -> Bool compiler(internal, intrinsic: "file_write_all_text") need io;
 
 
 
 
 
-    io_last_success :: Unit -> Bool internal intrinsic "io_last_success" need io;
+    io_last_success :: Unit -> Bool compiler(internal, intrinsic: "io_last_success") need io;
 
 
 
 
 
-    io_last_error :: Unit -> String internal intrinsic "io_last_error" need io;
+    io_last_error :: Unit -> String compiler(internal, intrinsic: "io_last_error") need io;
 
 
 
 
-    string_length :: String -> Int internal intrinsic "string_length";
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
 
     exists :: String -> Bool need io

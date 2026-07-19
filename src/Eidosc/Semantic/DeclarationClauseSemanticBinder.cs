@@ -39,30 +39,12 @@ internal sealed class DeclarationClauseSemanticBinder
         }
 
         IntrinsicBindingInfo? intrinsic = null;
-        foreach (var clause in declaration.Clauses)
+        if (CompilerDirectiveIR.FromDeclaration(declaration) is { Intrinsic: { } intrinsicName })
         {
-            if (clause.ClauseKind == DeclarationClauseKind.Intrinsic)
-            {
-                var intrinsicName = clause.ArgumentTokens
-                    .Select(static argument => NormalizeClauseArgumentText(argument))
-                    .FirstOrDefault(static argument => !string.IsNullOrWhiteSpace(argument)) ?? declarationName;
-                intrinsic = new IntrinsicBindingInfo(intrinsicName, effects);
-            }
+            intrinsic = new IntrinsicBindingInfo(intrinsicName, effects);
         }
 
         return new DeclarationClauseSemanticBindingResult(ffi, intrinsic, effects, diagnostics);
     }
 
-    private static string NormalizeClauseArgumentText(string text)
-    {
-        var trimmed = text.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
-        {
-            return trimmed[1..^1];
-        }
-
-        return trimmed;
-    }
 }

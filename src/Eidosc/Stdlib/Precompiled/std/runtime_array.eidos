@@ -1,36 +1,36 @@
 RuntimeArray :: module {
 
 
-    new_raw[T] :: Int -> Int -> Seq[T] internal intrinsic "array_new";
+    new_raw[T] :: Int -> Int -> Seq[T] compiler(internal, intrinsic: "array_new");
 
 
 
 
-    push_raw[T] :: Seq[T] -> T -> Int -> Seq[T] internal intrinsic "array_push";
+    push_raw[T] :: Seq[T] -> T -> Int -> Seq[T] compiler(internal, intrinsic: "array_push");
 
 
 
 
-    extend_raw[T] :: Seq[T] -> Seq[T] -> Int -> Seq[T] internal intrinsic "array_extend";
+    extend_raw[T] :: Seq[T] -> Seq[T] -> Int -> Seq[T] compiler(internal, intrinsic: "array_extend");
 
 
 
 
-    pop_raw[T] :: Seq[T] -> Unit internal intrinsic "array_pop";
+    pop_raw[T] :: Seq[T] -> Unit compiler(internal, intrinsic: "array_pop");
 
 
 
 
-    swap_raw[T] :: Seq[T] -> Int -> Int -> Unit internal intrinsic "array_swap";
+    swap_raw[T] :: Seq[T] -> Int -> Int -> Unit compiler(internal, intrinsic: "array_swap");
 
 
 
 
-    set_raw[T] :: Seq[T] -> Int -> T -> Int -> Unit internal intrinsic "array_set";
+    set_raw[T] :: Seq[T] -> Int -> T -> Int -> Unit compiler(internal, intrinsic: "array_set");
 
 
 
-    len[T] :: Seq[T] -> Int intrinsic "array_length";
+    len[T] :: Seq[T] -> Int compiler(intrinsic: "array_length");
 
 
     with_capacity[T] :: Int -> Seq[T]

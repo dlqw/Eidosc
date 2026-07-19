@@ -147,42 +147,42 @@ HashSet :: module {
 
 
     fold_insert[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> HashSet[K]
-     internal
+     compiler(internal)
 {
         keys => acc => Seq.fold_left(keys)(acc)(s => k => HashSet.insert(s)(k))
     }
 
 
     fold_remove[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> HashSet[K]
-     internal
+     compiler(internal)
 {
         keys => acc => Seq.fold_left(keys)(acc)(s => k => HashSet.remove(s)(k))
     }
 
 
     all_contained[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> Bool
-     internal
+     compiler(internal)
 {
         keys => self => Seq.fold_left(keys)(true)(ok => k => ok && HashSet.contains(self)(k))
     }
 
 
     any_contained[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> Bool
-     internal
+     compiler(internal)
 {
         keys => self => Seq.fold_left(keys)(false)(found => k => found || HashSet.contains(self)(k))
     }
 
 
     none_contained[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> Bool
-     internal
+     compiler(internal)
 {
         keys => self => Seq.fold_left(keys)(true)(ok => k => ok && !HashSet.contains(self)(k))
     }
 
 
     filter_contains[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> HashSet[K]
-     internal
+     compiler(internal)
 {
         keys => other => Seq.fold_left(keys)(HashSet.empty(()))(acc => k =>
             if HashSet.contains(other)(k) then HashSet.insert(acc)(k) else acc)
@@ -190,7 +190,7 @@ HashSet :: module {
 
 
     filter_not_contains[K: Traits.Hash + Traits.Eq] :: Seq[K] -> HashSet[K] -> HashSet[K]
-     internal
+     compiler(internal)
 {
         keys => other => Seq.fold_left(keys)(HashSet.empty(()))(acc => k =>
             if HashSet.contains(other)(k) then acc else HashSet.insert(acc)(k))

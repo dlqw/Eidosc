@@ -640,7 +640,7 @@ public static class PrecompiledModuleRegistry
 
     private static bool HasInternalClause(Declaration declaration)
     {
-        return declaration.Clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Internal);
+        return CompilerDirectiveIR.FromDeclaration(declaration) is { IsInternal: true };
     }
 
     private static void AddDirectDeclaration(ExportSurfaceAccumulator accumulator, Declaration declaration)

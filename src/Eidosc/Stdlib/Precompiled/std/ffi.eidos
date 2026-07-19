@@ -3,111 +3,111 @@ Ffi :: module {
 
 
 
-    ptr_null :: Unit -> RawPtr internal intrinsic "ptr_null";
+    ptr_null :: Unit -> RawPtr compiler(internal, intrinsic: "ptr_null");
 
 
 
 
-    ptr_is_null :: RawPtr -> Bool internal intrinsic "ptr_is_null";
+    ptr_is_null :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_is_null");
 
 
 
 
-    ptr_equals :: RawPtr -> RawPtr -> Bool internal intrinsic "ptr_equals";
+    ptr_equals :: RawPtr -> RawPtr -> Bool compiler(internal, intrinsic: "ptr_equals");
 
 
 
 
 
-    ptr_add :: RawPtr -> Int -> RawPtr internal intrinsic "ptr_add" need ffi;
+    ptr_add :: RawPtr -> Int -> RawPtr compiler(internal, intrinsic: "ptr_add") need ffi;
 
 
 
 
 
-    ptr_load_int :: RawPtr -> Int internal intrinsic "ptr_load_int" need ffi;
+    ptr_load_int :: RawPtr -> Int compiler(internal, intrinsic: "ptr_load_int") need ffi;
 
 
 
 
 
-    ptr_store_int :: RawPtr -> Int -> Unit internal intrinsic "ptr_store_int" need ffi;
+    ptr_store_int :: RawPtr -> Int -> Unit compiler(internal, intrinsic: "ptr_store_int") need ffi;
 
 
 
 
 
-    ptr_load_float :: RawPtr -> Float internal intrinsic "ptr_load_float" need ffi;
+    ptr_load_float :: RawPtr -> Float compiler(internal, intrinsic: "ptr_load_float") need ffi;
 
 
 
 
 
-    ptr_load_ptr :: RawPtr -> RawPtr internal intrinsic "ptr_load_ptr" need ffi;
+    ptr_load_ptr :: RawPtr -> RawPtr compiler(internal, intrinsic: "ptr_load_ptr") need ffi;
 
 
 
 
 
 
-    ptr_load_i32 :: RawPtr -> Int internal intrinsic "ptr_load_i32" need ffi llvm_abi "ptr -> i32";
+    ptr_load_i32 :: RawPtr -> Int compiler(internal, intrinsic: "ptr_load_i32") need ffi compiler(llvm_abi: "ptr -> i32");
 
 
 
 
 
 
-    ptr_load_i8 :: RawPtr -> Int internal intrinsic "ptr_load_i8" need ffi llvm_abi "ptr -> i8";
+    ptr_load_i8 :: RawPtr -> Int compiler(internal, intrinsic: "ptr_load_i8") need ffi compiler(llvm_abi: "ptr -> i8");
 
 
 
 
 
-    ptr_load_bool :: RawPtr -> Bool internal intrinsic "ptr_load_bool" need ffi;
+    ptr_load_bool :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_load_bool") need ffi;
 
 
 
 
 
-    ptr_store_float :: RawPtr -> Float -> Unit internal intrinsic "ptr_store_float" need ffi;
+    ptr_store_float :: RawPtr -> Float -> Unit compiler(internal, intrinsic: "ptr_store_float") need ffi;
 
 
 
 
 
-    ptr_store_ptr :: RawPtr -> RawPtr -> Unit internal intrinsic "ptr_store_ptr" need ffi;
+    ptr_store_ptr :: RawPtr -> RawPtr -> Unit compiler(internal, intrinsic: "ptr_store_ptr") need ffi;
 
 
 
 
 
 
-    ptr_store_i32 :: RawPtr -> Int -> Unit internal intrinsic "ptr_store_i32" need ffi llvm_abi "ptr, i32 -> void";
+    ptr_store_i32 :: RawPtr -> Int -> Unit compiler(internal, intrinsic: "ptr_store_i32") need ffi compiler(llvm_abi: "ptr, i32 -> void");
 
 
 
 
 
 
-    ptr_store_i8 :: RawPtr -> Int -> Unit internal intrinsic "ptr_store_i8" need ffi llvm_abi "ptr, i8 -> void";
+    ptr_store_i8 :: RawPtr -> Int -> Unit compiler(internal, intrinsic: "ptr_store_i8") need ffi compiler(llvm_abi: "ptr, i8 -> void");
 
 
 
 
 
-    ptr_store_bool :: RawPtr -> Bool -> Unit internal intrinsic "ptr_store_bool" need ffi;
+    ptr_store_bool :: RawPtr -> Bool -> Unit compiler(internal, intrinsic: "ptr_store_bool") need ffi;
 
 
 
 
 
-    cfn_from[A] :: A -> RawPtr internal intrinsic "cfn_from" need ffi;
+    cfn_from[A] :: A -> RawPtr compiler(internal, intrinsic: "cfn_from") need ffi;
 
 
 
 
 
-    cfn_call[A, R] :: Cfn[A, R] -> A -> R internal intrinsic "cfn_call" need ffi;
+    cfn_call[A, R] :: Cfn[A, R] -> A -> R compiler(internal, intrinsic: "cfn_call") need ffi;
 
 
 
@@ -137,19 +137,19 @@ Ffi :: module {
 
 
 
-    value_box[A] :: A -> RawPtr internal intrinsic "value_box" need ffi;
+    value_box[A] :: A -> RawPtr compiler(internal, intrinsic: "value_box") need ffi;
 
 
 
 
 
-    value_unbox[A] :: RawPtr -> A internal intrinsic "value_unbox" need ffi;
+    value_unbox[A] :: RawPtr -> A compiler(internal, intrinsic: "value_unbox") need ffi;
 
 
 
 
 
-    value_box_free :: RawPtr -> Unit internal intrinsic "value_box_free" need ffi;
+    value_box_free :: RawPtr -> Unit compiler(internal, intrinsic: "value_box_free") need ffi;
 
 
     is_null :: RawPtr -> Bool need ffi

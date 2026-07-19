@@ -4,43 +4,43 @@ Time :: module {
 
 
 
-    time_now :: Unit -> Int internal intrinsic "time_now" need io;
+    time_now :: Unit -> Int compiler(internal, intrinsic: "time_now") need io;
 
 
 
 
 
-    time_now_ms :: Unit -> Int internal intrinsic "time_now_ms" need io;
+    time_now_ms :: Unit -> Int compiler(internal, intrinsic: "time_now_ms") need io;
 
 
 
 
-    time_year :: Int -> Int internal intrinsic "time_year";
+    time_year :: Int -> Int compiler(internal, intrinsic: "time_year");
 
 
 
 
-    time_month :: Int -> Int internal intrinsic "time_month";
+    time_month :: Int -> Int compiler(internal, intrinsic: "time_month");
 
 
 
 
-    time_day :: Int -> Int internal intrinsic "time_day";
+    time_day :: Int -> Int compiler(internal, intrinsic: "time_day");
 
 
 
 
-    time_hour :: Int -> Int internal intrinsic "time_hour";
+    time_hour :: Int -> Int compiler(internal, intrinsic: "time_hour");
 
 
 
 
-    time_minute :: Int -> Int internal intrinsic "time_minute";
+    time_minute :: Int -> Int compiler(internal, intrinsic: "time_minute");
 
 
 
 
-    time_second :: Int -> Int internal intrinsic "time_second";
+    time_second :: Int -> Int compiler(internal, intrinsic: "time_second");
 
 
     // 核心操作

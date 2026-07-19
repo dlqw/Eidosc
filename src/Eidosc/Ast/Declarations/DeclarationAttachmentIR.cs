@@ -8,13 +8,15 @@ public sealed record DeclarationAttachmentIR(
     IReadOnlyList<ClauseIR> Clauses,
     IReadOnlyList<MetaInvocationIR> MetaInvocations,
     IReadOnlyDictionary<DeclarationAttachmentAdapterKind, IReadOnlyList<ClauseIR>> AdapterGroups,
-    ForeignContractIR? ForeignContract)
+    ForeignContractIR? ForeignContract,
+    CompilerDirectiveIR? CompilerDirective)
 {
     public static DeclarationAttachmentIR Empty { get; } = new(
         ClauseSchema.Version,
         [],
         [],
         EmptyAdapterGroups(),
+        null,
         null);
 
     public IReadOnlyList<ClauseIR> GetAdapterEntries(DeclarationAttachmentAdapterKind adapter) =>
@@ -35,7 +37,14 @@ public sealed record DeclarationAttachmentIR(
             .Where(static clause => clause.ClauseKind == DeclarationClauseKind.Extern)
             .Select(static clause => ForeignContractIR.TryCreate(clause, out var contract, out _) ? contract : null)
             .FirstOrDefault(static contract => contract != null);
-        return new DeclarationAttachmentIR(ClauseSchema.Version, clauses, metaInvocations, groups, foreignContract);
+        var compilerDirective = CompilerDirectiveIR.FromClauses(sourceClauses);
+        return new DeclarationAttachmentIR(
+            ClauseSchema.Version,
+            clauses,
+            metaInvocations,
+            groups,
+            foreignContract,
+            compilerDirective);
     }
 
     private static IReadOnlyDictionary<DeclarationAttachmentAdapterKind, IReadOnlyList<ClauseIR>> EmptyAdapterGroups() =>

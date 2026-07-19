@@ -24,35 +24,35 @@ Option :: module {
 
 
     identity[T] :: T -> T
-     internal
+     compiler(internal)
 {
         value => value
     }
 
 
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
-     internal
+     compiler(internal)
 {
         (g, f, value) => g(f(value))
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
-     internal
+     compiler(internal)
 {
         (value, f) => f(value)
     }
 
 
     bind_then[A, B, C, E1: effects, E2: effects] :: (A -> Option[B] need E1) -> (B -> Option[C] need E2) -> A -> Option[C] need E1, E2
-     internal
+     compiler(internal)
 {
         (f, g, value) => f(value).bind(g)
     }
 
 
     some_wrap[T] :: T -> Option[T]
-     internal
+     compiler(internal)
 {
         value => Some(value)
     }

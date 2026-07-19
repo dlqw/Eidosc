@@ -393,7 +393,7 @@ Message :: type {
     Text :: type { value :: String },
 
     InternalControl :: type
-        internal
+        compiler(internal)
     {
         code :: Int,
     },
@@ -417,7 +417,7 @@ Message :: type {
     {
         const string source = """
 Message :: type
-    internal
+    compiler(internal)
 {
     InternalControl :: type {
         code :: Int,

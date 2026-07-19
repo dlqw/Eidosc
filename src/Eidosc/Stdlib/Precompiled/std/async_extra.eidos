@@ -23,7 +23,7 @@ AsyncExtra :: module {
 
 
     make_action_thunk[A, E: effects] :: (A -> Unit need E) -> A -> Unit -> Unit need E
-     internal
+     compiler(internal)
 {
         action => x => _ => action(x)
     }
@@ -42,7 +42,7 @@ AsyncExtra :: module {
 
 
     chunk_positive[A] :: Seq[A] -> Int -> Seq[Seq[A]]
-     internal
+     compiler(internal)
 {
         [] => _ => [],
         xs => n => Seq.append(
@@ -58,7 +58,7 @@ AsyncExtra :: module {
 
 
     indexed_from[T] :: Seq[T] -> Int -> Seq[(Int, T)]
-     internal
+     compiler(internal)
 {
         [] => _ => [],
         [head, ..tail] => i => Seq.append([(i, head)])(AsyncExtra.indexed_from(tail)(i + 1))
@@ -72,7 +72,7 @@ AsyncExtra :: module {
 
 
     select_at_inner[A] :: Seq[A] -> Seq[Int] -> Seq[A]
-     internal
+     compiler(internal)
 {
         xs => [] => [],
         xs => [index, ..rest] => match Seq.get_opt(xs)(index)
@@ -90,7 +90,7 @@ AsyncExtra :: module {
 
 
     replicate_from[A, E: effects] :: Int -> Int -> (Unit -> A need E) -> Seq[A] need E
-     internal
+     compiler(internal)
 {
         n => i => thunk => if i >= n then { [] } else {
             Seq.append([thunk(())])(AsyncExtra.replicate_from(n)(i + 1)(thunk))

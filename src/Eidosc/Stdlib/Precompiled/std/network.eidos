@@ -5,67 +5,67 @@ Network :: module {
 
 
 
-    string_from_char :: Int -> String internal intrinsic "string_from_char";
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
 
 
 
 
 
-    http_request_text_with_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_text_with_options" need io;
+    http_request_text_with_options :: String -> String -> String -> String -> String -> Int -> Int -> String compiler(internal, intrinsic: "http_request_text_with_options") need io;
 
 
 
 
 
-    http_request_body_hex_with_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_body_hex_with_options" need io;
+    http_request_body_hex_with_options :: String -> String -> String -> String -> String -> Int -> Int -> String compiler(internal, intrinsic: "http_request_body_hex_with_options") need io;
 
 
 
 
 
-    http_request_text_with_binary_body_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_text_with_binary_body_options" need io;
+    http_request_text_with_binary_body_options :: String -> String -> String -> String -> String -> Int -> Int -> String compiler(internal, intrinsic: "http_request_text_with_binary_body_options") need io;
 
 
 
 
 
-    http_request_body_hex_with_binary_body_options :: String -> String -> String -> String -> String -> Int -> Int -> String internal intrinsic "http_request_body_hex_with_binary_body_options" need io;
+    http_request_body_hex_with_binary_body_options :: String -> String -> String -> String -> String -> Int -> Int -> String compiler(internal, intrinsic: "http_request_body_hex_with_binary_body_options") need io;
 
 
 
 
 
-    http_last_status_code :: Unit -> Int internal intrinsic "http_last_status_code" need io;
+    http_last_status_code :: Unit -> Int compiler(internal, intrinsic: "http_last_status_code") need io;
 
 
 
 
 
-    http_last_effective_url :: Unit -> String internal intrinsic "http_last_effective_url" need io;
+    http_last_effective_url :: Unit -> String compiler(internal, intrinsic: "http_last_effective_url") need io;
 
 
 
 
 
-    http_last_content_type :: Unit -> String internal intrinsic "http_last_content_type" need io;
+    http_last_content_type :: Unit -> String compiler(internal, intrinsic: "http_last_content_type") need io;
 
 
 
 
 
-    http_last_headers :: Unit -> String internal intrinsic "http_last_headers" need io;
+    http_last_headers :: Unit -> String compiler(internal, intrinsic: "http_last_headers") need io;
 
 
 
 
 
-    io_last_success :: Unit -> Bool internal intrinsic "io_last_success" need io;
+    io_last_success :: Unit -> Bool compiler(internal, intrinsic: "io_last_success") need io;
 
 
 
 
 
-    io_last_error :: Unit -> String internal intrinsic "io_last_error" need io;
+    io_last_error :: Unit -> String compiler(internal, intrinsic: "io_last_error") need io;
 
 
     HttpRequest :: type {method:: String, url:: String, content_type:: String, body:: String, headers:: String, connect_timeout_seconds:: Int, total_timeout_seconds:: Int}
@@ -74,7 +74,7 @@ Network :: module {
 
 
     hex_digit :: Int -> String
-     internal
+     compiler(internal)
 {
         0 => "0",
         1 => "1",
@@ -96,7 +96,7 @@ Network :: module {
 
 
     is_unreserved_char_code :: Int -> Bool
-     internal
+     compiler(internal)
 {
         code => (code >= 48 && code <= 57) ||
             (code >= 65 && code <= 90) ||
@@ -106,14 +106,14 @@ Network :: module {
 
 
     percent_encode_byte :: Int -> String
-     internal
+     compiler(internal)
 {
         value => "%" ++ Network.hex_digit(value / 16) ++ Network.hex_digit(value % 16)
     }
 
 
     url_encode_loop :: String -> Int -> String
-     internal
+     compiler(internal)
 {
         src => index =>
             if index >= Text.len(src) then { "" }
@@ -142,7 +142,7 @@ Network :: module {
 
 
     add_header_line :: String -> String -> String -> String
-     internal
+     compiler(internal)
 {
         headers => key => value => {
             line := key ++ ": " ++ value;
@@ -152,14 +152,14 @@ Network :: module {
 
 
     append_bytes :: Seq[Int] -> Seq[Int] -> Seq[Int]
-     internal
+     compiler(internal)
 {
         left => right => [x | xs <- [left, right], x <- xs]
     }
 
 
     normalize_byte :: Int -> Int
-     internal
+     compiler(internal)
 {
         value => {
             modded := value % 256;
@@ -169,7 +169,7 @@ Network :: module {
 
 
     encode_hex_byte :: Int -> String
-     internal
+     compiler(internal)
 {
         value => {
             byte_value := Network.normalize_byte(value);
@@ -179,7 +179,7 @@ Network :: module {
 
 
     encode_hex_bytes :: Seq[Int] -> String
-     internal
+     compiler(internal)
 {
         [] => "",
         [head, ..tail] => Network.encode_hex_byte(head) ++ Network.encode_hex_bytes(tail)
@@ -187,7 +187,7 @@ Network :: module {
 
 
     hex_digit_value :: Int -> Option[Int]
-     internal
+     compiler(internal)
 {
         code when code >= 48 && code <= 57 => Some(code - 48),
         code when code >= 65 && code <= 70 => Some(code - 55),
@@ -197,7 +197,7 @@ Network :: module {
 
 
     decode_hex_byte_from :: String -> Int -> Option[Int]
-     internal
+     compiler(internal)
 {
         text => index =>
             if index + 1 >= Text.len(text) then { None() }
@@ -218,7 +218,7 @@ Network :: module {
 
 
     decode_hex_bytes_from_opt :: String -> Int -> Option[Seq[Int]]
-     internal
+     compiler(internal)
 {
         text => index =>
             if index >= Text.len(text) then { Some([]) }
@@ -239,7 +239,7 @@ Network :: module {
 
 
     binary_error_or_default :: String -> String
-     internal
+     compiler(internal)
 {
         message =>
             if Text.len(Text.clone(ref message)) > 0
@@ -803,7 +803,7 @@ Network :: module {
 
 
     normalize_header_char :: Int -> String
-     internal
+     compiler(internal)
 {
         code =>
             if code >= 65 && code <= 90
@@ -813,7 +813,7 @@ Network :: module {
 
 
     normalize_header_name_from :: String -> Int -> String
-     internal
+     compiler(internal)
 {
         text => index =>
             if index >= Text.len(text) then { "" }
@@ -825,14 +825,14 @@ Network :: module {
 
 
     normalize_header_name :: String -> String
-     internal
+     compiler(internal)
 {
         text => Network.normalize_header_name_from(text)(0)
     }
 
 
     drop_header_value_padding :: String -> Int -> String
-     internal
+     compiler(internal)
 {
         text => index =>
             if index >= Text.len(text) then { "" }
@@ -846,7 +846,7 @@ Network :: module {
 
 
     find_line_end :: String -> Int -> Int
-     internal
+     compiler(internal)
 {
         text => index =>
             if index >= Text.len(text) then { index }
@@ -856,7 +856,7 @@ Network :: module {
 
 
     find_header_value_from :: String -> String -> Int -> Option[String]
-     internal
+     compiler(internal)
 {
         text => prefix => start =>
             if start >= Text.len(text) then { None() }

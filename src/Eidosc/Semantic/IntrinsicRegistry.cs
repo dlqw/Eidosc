@@ -129,8 +129,7 @@ public static class IntrinsicRegistry
         Dictionary<string, IntrinsicDeclaration> firstByName,
         Dictionary<string, Dictionary<string, IntrinsicDeclaration>> byNameAndSignature)
     {
-        var intrinsicName = GetClauseArgument(clauses, DeclarationClauseKind.Intrinsic) ?? functionName;
-        if (!clauses.Any(static clause => clause.ClauseKind == DeclarationClauseKind.Intrinsic) ||
+        if (CompilerDirectiveIR.FromClauses(clauses) is not { Intrinsic: { } intrinsicName } directive ||
             string.IsNullOrWhiteSpace(intrinsicName))
         {
             return;
@@ -141,7 +140,7 @@ public static class IntrinsicRegistry
             .SelectMany(static clause => clause.ArgumentTokens)
             .Distinct(StringComparer.Ordinal)
             .ToList();
-        var llvmAbi = GetClauseArgument(clauses, DeclarationClauseKind.LlvmAbi);
+        var llvmAbi = directive.LlvmAbi;
         var declaration = new IntrinsicDeclaration(
             intrinsicName,
             modulePath,
@@ -207,37 +206,6 @@ public static class IntrinsicRegistry
                 .Select(path => string.Join(".", path)));
         var output = effectful.OutputType == null ? "" : $"->{RenderTypeNode(effectful.OutputType)}";
         return $"{input}->{{{effects}}}{output}";
-    }
-
-    private static string? GetClauseArgument(IReadOnlyList<DeclarationClause> clauses, DeclarationClauseKind kind)
-    {
-        foreach (var clause in clauses)
-        {
-            if (clause.ClauseKind == kind)
-            {
-                return NormalizeClauseArgumentText(clause.ArgumentTokens.FirstOrDefault());
-            }
-        }
-
-        return null;
-    }
-
-    private static string? NormalizeClauseArgumentText(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        var trimmed = text.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
-        {
-            return trimmed[1..^1];
-        }
-
-        return trimmed;
     }
 
     private sealed record IntrinsicRegistryData(
