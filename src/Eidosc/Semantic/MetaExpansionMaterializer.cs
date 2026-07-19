@@ -257,7 +257,7 @@ internal sealed class MetaExpansionMaterializer(
         switch (structured.SchemaKind)
         {
             case "declaration.function":
-                if (!TryCreateFunction(structured, implTrait: null, out var function, out reason))
+                if (!TryCreateFunction(structured, out var function, out reason))
                 {
                     return false;
                 }
@@ -580,7 +580,6 @@ internal sealed class MetaExpansionMaterializer(
 
     private bool TryCreateFunction(
         ComptimeMetaObjectValue declaration,
-        ComptimeDeclValue? implTrait,
         out FuncDef function,
         out string reason)
     {
@@ -646,11 +645,6 @@ internal sealed class MetaExpansionMaterializer(
         function.SetTypeParams(CloneTargetTypeParameters());
         function.SetSignature(CreateFunctionType(parameterTypes, CreateTypeNode(resultType)));
         function.SetBody([branch]);
-        if (implTrait != null)
-        {
-            function.SetClauses([CreateImplClause(implTrait)]);
-        }
-
         return true;
     }
 
@@ -693,10 +687,11 @@ internal sealed class MetaExpansionMaterializer(
             return false;
         }
 
+        var methods = new List<FuncDef>(methodValues.Count);
         for (var methodIndex = 0; methodIndex < methodValues.Count; methodIndex++)
         {
             if (methodValues[methodIndex] is not ComptimeMetaObjectValue { SchemaKind: "declaration.function" } methodValue ||
-                !TryCreateFunction(methodValue, trait, out var method, out reason))
+                !TryCreateFunction(methodValue, out var method, out reason))
             {
                 reason = string.IsNullOrWhiteSpace(reason)
                     ? $"implementation method {methodIndex} must be a structured function declaration"
@@ -704,13 +699,32 @@ internal sealed class MetaExpansionMaterializer(
                 return false;
             }
 
-            nodes.Add(new MaterializedMetaNode(
-                method,
-                outputIndex,
-                methodIndex,
-                placement,
-                generationSlotIdentity));
+            methods.Add(method);
         }
+
+        var traitRef = new TraitRef();
+        traitRef.SetSpan(_invocationSpan);
+        traitRef.SetTraitName(trait.Name);
+        if (_symbolTable.Modules.TryGetOwningModule(trait.SymbolId, out var traitModule))
+        {
+            traitRef.ModulePath = [.. traitModule.Path];
+        }
+
+        var identity = generationSlotIdentity ??
+                       $"{trait.SymbolId.Value}:{implementationTarget.TypeRef.StableIdentity}:{outputIndex}";
+        var instance = new InstanceDecl();
+        instance.SetSpan(_invocationSpan);
+        instance.SetName(CreateHygienicCompileTimeName(identity, trait.Name));
+        instance.SetTypeParams(CloneTargetTypeParameters());
+        instance.SetTrait(traitRef);
+        instance.SetTargetType(CreateTypeNode(implementationTarget));
+        instance.SetMethods(methods);
+        instance.SetMembers([.. methods]);
+        nodes.Add(new MaterializedMetaNode(
+            instance,
+            outputIndex,
+            Placement: placement,
+            GenerationSlotIdentity: generationSlotIdentity));
 
         return true;
     }
@@ -1267,23 +1281,6 @@ internal sealed class MetaExpansionMaterializer(
         }
     }
 
-    private DeclarationClause CreateImplClause(ComptimeDeclValue trait)
-    {
-        var clause = new DeclarationClause();
-        clause.SetSpan(_invocationSpan);
-        clause.SetKind(DeclarationClauseKind.Impl, "impl");
-        var display = FormatDeclarationPath(trait);
-        clause.AddArgument(display);
-        return clause;
-    }
-
-    private string FormatDeclarationPath(ComptimeDeclValue declaration)
-    {
-        return _symbolTable.Modules.TryGetOwningModule(declaration.SymbolId, out var module) && module.Path.Count > 0
-            ? string.Join(WellKnownStrings.Separators.Path, module.Path.Concat([declaration.Name]))
-            : declaration.Name;
-    }
-
     private List<TypeParam> CloneTargetTypeParameters()
     {
         return _target switch
@@ -1628,6 +1625,13 @@ internal sealed class MetaExpansionMaterializer(
         }
 
         return $"meta_{prefix}_{hash}_{suffix}";
+    }
+
+    private static string CreateHygienicCompileTimeName(string identity, string requestedName)
+    {
+        var hash = identity.Length >= 12 ? identity[..12] : identity;
+        var suffix = new string(requestedName.Where(static ch => char.IsLetterOrDigit(ch)).ToArray());
+        return $"MetaInstance{hash}{(string.IsNullOrWhiteSpace(suffix) ? "Generated" : suffix)}";
     }
 
     private static string EscapeString(string value) => value

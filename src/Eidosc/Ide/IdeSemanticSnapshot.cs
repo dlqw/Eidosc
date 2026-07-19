@@ -410,8 +410,9 @@ public static partial class IdeSemanticSnapshotBuilder
         var completions = BuildCompletions(result.SymbolTable, symbols, overloadGroups);
         var generatedDocuments = symbols
             .Where(static symbol => symbol.IsGenerated && symbol.GeneratedOrigin != null)
-            .OrderBy(static symbol => symbol.GeneratedOrigin!.StableIdentity, StringComparer.Ordinal)
-            .Select(GeneratedDocumentRenderer.Create)
+            .GroupBy(static symbol => symbol.GeneratedOrigin!.VirtualDocumentPath, StringComparer.Ordinal)
+            .OrderBy(static group => group.Key, StringComparer.Ordinal)
+            .Select(static group => GeneratedDocumentRenderer.Create(group.ToArray()))
             .ToList();
         var borrowCapabilities = BuildBorrowCapabilities(result.BorrowCheckResult);
 

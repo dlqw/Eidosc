@@ -482,7 +482,8 @@ readMarker :: User -> String {
             occurrence.Span.FilePath == generated.GeneratedOrigin.VirtualDocumentPath);
         var generatedDocument = Assert.Single(snapshot.GeneratedDocuments, document =>
             document.Uri == generated.GeneratedOrigin.VirtualDocumentPath);
-        Assert.StartsWith("marker :: ", generatedDocument.Content, StringComparison.Ordinal);
+        Assert.StartsWith("MetaInstance", generatedDocument.Content, StringComparison.Ordinal);
+        Assert.Contains("marker :: ", generatedDocument.Content, StringComparison.Ordinal);
         Assert.Contains(generated.GeneratedOrigin.StableIdentity, generatedDocument.Content, StringComparison.Ordinal);
     }
 
