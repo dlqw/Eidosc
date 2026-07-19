@@ -1925,6 +1925,19 @@ internal static partial class MetaComptimeIntrinsics
         StaticType = GetDeclarationHandleType(symbol)
     };
 
+    internal static ComptimeMetaObjectValue CreateFunctionHandle(
+        FuncSymbol function,
+        SymbolTable symbolTable) => TypedObject(
+            "function-handle",
+            WellKnownStrings.Meta.Types.Function,
+            WellKnownTypeIds.MetaFunctionId,
+            [
+                ("identity", new ComptimeStringValue(CreateStableIdentity(function, symbolTable))),
+                ("name", new ComptimeStringValue(function.Name)),
+                ("declaration", CreateDeclValue(function, symbolTable)),
+                ("span", CreateSpan(function.Span, symbolTable))
+            ]);
+
     private static Type GetDeclarationHandleType(Symbol symbol) => symbol switch
     {
         AdtSymbol { IsCaseType: true } => MetaSchemaRegistry.MetaType(

@@ -505,7 +505,13 @@ main :: Unit -> Int {
     public void Body_expand_uses_meta_function_protocol_and_preserves_the_contract()
     {
         const string source = """
-identity_body :: comptime meta.Function -> meta.Function { value => value }
+identity_body :: comptime meta.Function -> meta.Function {
+    value => {
+        function_name := meta.name_of(value);
+        meta.warning(meta.span_of(value), function_name);
+        value
+    }
+}
 
 work :: Int -> Int expand identity_body {
     value => value
@@ -523,6 +529,7 @@ work :: Int -> Int expand identity_body {
         }).Run();
 
         Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Contains(result.Diagnostics, static diagnostic => diagnostic.Message == "work");
     }
 
     [Fact]

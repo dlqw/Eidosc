@@ -274,7 +274,9 @@ public sealed partial class NameResolver
                 continue;
             }
             invocationArguments.Add(protocol.Kind == CompilerMetaProtocolKind.BodyTransform
-                ? MetaComptimeIntrinsics.CreateDeclValue(targetSymbol, _symbolTable)
+                ? MetaComptimeIntrinsics.CreateFunctionHandle(
+                    (FuncSymbol)targetSymbol,
+                    _symbolTable)
                 : target);
 
             if (!ComptimeEvaluator.TryInvoke(
@@ -313,7 +315,7 @@ public sealed partial class NameResolver
             bool materializedSuccessfully;
             if (protocol.Kind == CompilerMetaProtocolKind.BodyTransform &&
                 (expansionValue is ComptimeDeclValue ||
-                 expansionValue is ComptimeMetaObjectValue { SchemaKind: "declaration" }))
+                 expansionValue is ComptimeMetaObjectValue { SchemaKind: "declaration" or "function-handle" }))
             {
                 materialization = new MetaExpansionMaterializationResult([], []);
                 reason = string.Empty;
