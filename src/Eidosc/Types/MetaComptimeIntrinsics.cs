@@ -6,6 +6,7 @@ using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Pipeline;
 using Eidosc.Symbols;
+using Eidosc.Syntax;
 using Eidosc.Utils;
 
 namespace Eidosc.Types;
@@ -74,6 +75,7 @@ internal static partial class MetaComptimeIntrinsics
         {
             "error" => TryReportDiagnostic(arguments, MetaDiagnosticLevel.Error, context.Meta, context.Resources, out value, out reason),
             "warning" => TryReportDiagnostic(arguments, MetaDiagnosticLevel.Warning, context.Meta, context.Resources, out value, out reason),
+            "with_body" => TryReplaceFunctionBody(arguments, out value, out reason),
             "slot_from" => TryCreateGenerationSlot(arguments, out value, out reason),
             "with_slot" => TryBindGenerationSlot(arguments, out value, out reason),
             "identifier" => TryCreateIdentifier(arguments, call.Span, context.Meta, out value, out reason),
@@ -126,6 +128,35 @@ internal static partial class MetaComptimeIntrinsics
             "branch" => TryObject("branch", arguments, ["pattern", "expression"], out value, out reason),
             _ => Fail($"unknown Meta intrinsic '{name}'", out value, out reason)
         };
+    }
+
+    private static bool TryReplaceFunctionBody(
+        IReadOnlyList<ComptimeValue> arguments,
+        out ComptimeValue value,
+        out string reason)
+    {
+        if (arguments.Count != 2 ||
+            arguments[0] is not ComptimeMetaObjectValue { SchemaKind: "function-handle" } function ||
+            arguments[1] is not ComptimeSyntaxValue { Category: SyntaxCategory.Expression } body)
+        {
+            return Fail(
+                "meta.Function.with_body expects a function handle and meta.Syntax[meta.Expr]",
+                out value,
+                out reason);
+        }
+
+        value = new ComptimeMetaObjectValue(
+            function.SchemaKind,
+            [
+                .. function.Properties.Where(static property =>
+                    !string.Equals(property.Name, "replacementBody", StringComparison.Ordinal)),
+                new ComptimeNamedValue("replacementBody", body)
+            ])
+        {
+            StaticType = function.StaticType
+        };
+        reason = string.Empty;
+        return true;
     }
 
     private static bool TryCreateGenerationSlot(

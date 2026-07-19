@@ -538,6 +538,69 @@ work :: Int -> Int expand identity_body {
     }
 
     [Fact]
+    public void Body_expand_with_body_replaces_only_the_typed_function_body()
+    {
+        const string source = """
+Logging :: effect;
+
+replace_body :: comptime meta.Function -> meta.Function {
+    function => function.with_body(quote expr { 7 })
+}
+
+work[T] :: Ref[T] -> Int need Logging expand replace_body {
+    value => 1
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var function = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static declaration => declaration.Name == "work");
+        Assert.Equal("T", Assert.Single(function.TypeParams).Name);
+        Assert.Equal(["Logging"], Assert.Single(function.RequiredAbilities).Path);
+        var body = Assert.IsType<Eidosc.Ast.Expressions.LiteralExpr>(Assert.Single(function.Body).Expression);
+        Assert.Equal(7L, Convert.ToInt64(body.Value, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void Body_expand_with_body_rejects_a_contract_break_atomically()
+    {
+        const string source = """
+replace_body :: comptime meta.Function -> meta.Function {
+    function => function.with_body(quote expr { "wrong" })
+}
+
+work :: Int -> Int expand replace_body {
+    value => 1
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Level == global::Eidosc.Diagnostic.DiagnosticLevel.Error);
+    }
+
+    [Fact]
     public void Value_clause_zone_precedes_the_initializer_and_reaches_the_unified_scheduler()
     {
         const string source = """

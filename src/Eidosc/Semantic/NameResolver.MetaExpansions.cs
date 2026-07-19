@@ -319,8 +319,31 @@ public sealed partial class NameResolver
             MetaExpansionMaterializationResult materialization;
             bool materializedSuccessfully;
             if (protocol.Kind == CompilerMetaProtocolKind.BodyTransform &&
-                (expansionValue is ComptimeDeclValue ||
-                 expansionValue is ComptimeMetaObjectValue { SchemaKind: "declaration" or "function-handle" }))
+                expansionValue is ComptimeMetaObjectValue { SchemaKind: "function-handle" } functionHandle &&
+                invocation.Target is FuncDef bodyTarget)
+            {
+                if (!materializer.TryMaterializeFunctionBody(
+                        functionHandle,
+                        bodyTarget,
+                        out var replacement,
+                        out var hasReplacement,
+                        out reason))
+                {
+                    materialization = new MetaExpansionMaterializationResult([], []);
+                    materializedSuccessfully = false;
+                }
+                else
+                {
+                    materialization = hasReplacement
+                        ? new MetaExpansionMaterializationResult(
+                            [new MaterializedMetaNode(replacement, 0, Placement: MetaDeclarationPlacement.ReplaceTarget)],
+                            [])
+                        : new MetaExpansionMaterializationResult([], []);
+                    materializedSuccessfully = true;
+                }
+            }
+            else if (protocol.Kind == CompilerMetaProtocolKind.BodyTransform &&
+                     expansionValue is ComptimeDeclValue)
             {
                 materialization = new MetaExpansionMaterializationResult([], []);
                 reason = string.Empty;

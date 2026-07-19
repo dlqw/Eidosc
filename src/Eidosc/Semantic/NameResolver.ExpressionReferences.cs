@@ -1277,6 +1277,16 @@ public sealed partial class NameResolver
 
             AddMethodCandidateIfFunction(methodCall, importScope.LookupImportedSymbol(methodCall.MethodName));
         }
+
+        var metaMember = _lookupService.LookupPath(
+            [WellKnownStrings.Meta.Module, methodCall.MethodName],
+            LookupKind.Value,
+            CreateLookupContext());
+        if (metaMember.IsSuccess)
+        {
+            AddMethodCandidateIfFunction(methodCall, metaMember.SymbolId);
+        }
+
     }
 
     private void AddMethodCandidateIfFunction(MethodCallExpr methodCall, SymbolId? symbolId)

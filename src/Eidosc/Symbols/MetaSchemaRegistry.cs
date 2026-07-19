@@ -153,6 +153,7 @@ internal static class MetaSchemaRegistry
         new("resource_hash_of", 1),
         new("error", 2),
         new("warning", 2),
+        new("with_body", 2),
         new("slot_from", 1),
         new("with_slot", 2),
         new("keep", 0),
@@ -474,6 +475,7 @@ internal static class MetaSchemaRegistry
         var callInfo = MetaType(WellKnownStrings.Meta.Types.Call, WellKnownTypeIds.MetaCallId);
         var body = MetaType(WellKnownStrings.Meta.Types.Body, WellKnownTypeIds.MetaBodyId);
         var bodyNode = MetaType(WellKnownStrings.Meta.Types.BodyNode, WellKnownTypeIds.MetaBodyNodeId);
+        var function = MetaType(WellKnownStrings.Meta.Types.Function, WellKnownTypeIds.MetaDeclarationId);
         var scope = MetaType(WellKnownStrings.Meta.Types.Scope, WellKnownTypeIds.MetaScopeId);
         var genericArgument = MetaType(WellKnownStrings.Meta.Types.GenericArgument, WellKnownTypeIds.MetaGenericArgumentId);
         var syntax = MetaType(WellKnownStrings.Meta.Types.Syntax, WellKnownTypeIds.MetaSyntaxId) with
@@ -528,6 +530,7 @@ internal static class MetaSchemaRegistry
             "layout_of" => [typeValue, BaseTypes.String],
             "layout_size" or "layout_alignment" or "layout_field_offsets" => [layout],
             "error" or "warning" => [span, BaseTypes.String],
+            "with_body" => [function, expressionSyntax],
             "slot_from" => [any],
             "with_slot" => [any, generationSlot],
             "identifier" => [BaseTypes.String, typeValue],
@@ -622,6 +625,7 @@ internal static class MetaSchemaRegistry
             "layout_size" or "layout_alignment" => BaseTypes.Int,
             "layout_field_offsets" => ListOf(symbolTable, BaseTypes.Int),
             "error" or "warning" => BaseTypes.Unit,
+            "with_body" => function,
             "slot_from" => generationSlot,
             "with_slot" => any,
             "identifier" => identifier,

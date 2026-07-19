@@ -494,10 +494,17 @@ internal static partial class ComptimeEvaluator
             return false;
         }
 
+        if (receiver is ComptimeMetaObjectValue metaObject &&
+            metaObject.TryGet(fieldAccess.MethodName, out value))
+        {
+            reason = string.Empty;
+            return true;
+        }
+
         if (receiver is not ComptimeAdtValue adt)
         {
             value = ComptimeUnitValue.Instance;
-            reason = $"field access '{fieldAccess.MethodName}' requires a comptime ADT value";
+            reason = $"field access '{fieldAccess.MethodName}' requires a comptime structured value";
             return false;
         }
 

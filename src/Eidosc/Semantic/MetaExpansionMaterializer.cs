@@ -232,6 +232,86 @@ internal sealed class MetaExpansionMaterializer(
         return true;
     }
 
+    internal bool TryMaterializeFunctionBody(
+        ComptimeMetaObjectValue functionHandle,
+        FuncDef source,
+        out FuncDef replacement,
+        out bool hasReplacement,
+        out string reason)
+    {
+        replacement = null!;
+        hasReplacement = false;
+        reason = string.Empty;
+        if (!functionHandle.TryGet("identity", out var identityValue) ||
+            identityValue is not ComptimeStringValue identity ||
+            _symbolTable.GetSymbol(source.SymbolId) is not { } sourceSymbol ||
+            !string.Equals(identity.Value, MetaComptimeIntrinsics.CreateStableIdentity(sourceSymbol, _symbolTable), StringComparison.Ordinal))
+        {
+            reason = "meta.Function.with_body may only return the authorized target function";
+            return false;
+        }
+
+        if (!functionHandle.TryGet("replacementBody", out var replacementValue))
+        {
+            return true;
+        }
+
+        if (replacementValue is not ComptimeSyntaxValue { Category: SyntaxCategory.Expression } bodySyntax)
+        {
+            reason = "meta.Function.with_body requires a meta.Syntax[meta.Expr] replacement body";
+            return false;
+        }
+
+        if (source.Body.Count == 0)
+        {
+            reason = "meta.Function.with_body requires a target function with at least one body branch";
+            return false;
+        }
+
+        replacement = new FuncDef
+        {
+            Span = source.Span,
+            SymbolId = source.SymbolId
+        };
+        replacement.SetName(source.Name);
+        replacement.SetTypeParams([.. source.TypeParams]);
+        if (source.Signature.Count != 1)
+        {
+            reason = "meta.Function.with_body requires a function with one canonical signature";
+            return false;
+        }
+        replacement.SetSignature(source.Signature[0]);
+        replacement.SetRequiredAbilities([.. source.RequiredAbilities]);
+        replacement.SetComptime(source.IsComptime);
+
+        var branches = new List<PatternBranch>(source.Body.Count);
+        for (var index = 0; index < source.Body.Count; index++)
+        {
+            if (!TryMaterializeSyntax(
+                    bodySyntax,
+                    SyntaxCategory.Expression,
+                    SyntaxMemberGrammar.Any,
+                    out var expressionNodes,
+                    out reason) ||
+                expressionNodes.Count != 1 ||
+                expressionNodes[0] is not Expression expression)
+            {
+                reason = string.IsNullOrWhiteSpace(reason)
+                    ? $"meta.Function.with_body replacement must materialize exactly one expression for branch {index}"
+                    : reason;
+                return false;
+            }
+
+            var branch = source.Body[index] with { };
+            branch.SetExpression(expression);
+            branches.Add(branch);
+        }
+
+        replacement.SetBody(branches);
+        hasReplacement = true;
+        return true;
+    }
+
     private bool TryValidateTarget(ComptimeMetaObjectValue edit, out string reason)
     {
         reason = string.Empty;
