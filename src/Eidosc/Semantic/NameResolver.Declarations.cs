@@ -20,7 +20,7 @@ public sealed partial class NameResolver
             {
                 AddError(
                     attribute.Span,
-                    $"attribute '@{attribute.Name}' is not part of the 0.7 declaration model; run 'eidosc migrate clauses --to {ProjectSystem.EidosLanguageVersions.Current}'");
+                    $"attribute '@{attribute.Name}' is not part of the 0.7 declaration model; run 'eidosc migrate attachments --to {ProjectSystem.EidosLanguageVersions.Current}'");
             }
         }
 
