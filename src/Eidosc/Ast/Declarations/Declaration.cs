@@ -16,8 +16,9 @@ public abstract record Declaration : EidosAstNode
     public List<Attribute> Attributes { get; protected set; } = [];
 
     /// <summary>
-    /// Typed pre-body clauses in source order. This is the public 0.7
-    /// declaration metadata surface; Attributes only represents legacy input.
+    /// Normalized source declaration attachments in source order. Signature
+    /// components and typed tags share this internal representation; Attributes
+    /// only represents legacy input.
     /// </summary>
     public List<DeclarationClause> Clauses { get; protected set; } = [];
 
