@@ -343,6 +343,16 @@ public static partial class SyntaxMigrationPlanner
             var (currentAst, currentDiagnostics) = SyntaxParser.Parse(tokens, sourcePath, toSyntax);
             if (currentAst != null && currentDiagnostics.Count == 0)
             {
+                var ownershipBlockers = CollectOwnershipMigrationBlockers(currentAst);
+                if (ownershipBlockers.Length > 0)
+                {
+                    return new SyntaxMigrationFilePlan(
+                        sourcePath,
+                        "blocked",
+                        ownershipBlockers,
+                        []);
+                }
+
                 var currentEdits = new List<SyntaxMigrationEdit>();
                 AddVersion07NamingEdits(tokens, currentEdits);
                 var normalizedCurrentEdits = NormalizeEdits(currentEdits);
@@ -367,6 +377,20 @@ public static partial class SyntaxMigrationPlanner
                 "parse-error",
                 diagnostics.Select(static diagnostic => diagnostic.ToString() ?? "").ToArray(),
                 NormalizeEdits(edits));
+        }
+
+        if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
+            string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal))
+        {
+            var ownershipBlockers = CollectOwnershipMigrationBlockers(ast);
+            if (ownershipBlockers.Length > 0)
+            {
+                return new SyntaxMigrationFilePlan(
+                    sourcePath,
+                    "blocked",
+                    ownershipBlockers,
+                    []);
+            }
         }
 
         var declarationBindingPositions = CollectDeclarationBindingPositions(source, tokens, ast, fromSyntax);
@@ -471,6 +495,19 @@ public static partial class SyntaxMigrationPlanner
     {
         return CollectFunctionsRequiringNativeEffect(ast, IsFfiOrNativeCall);
     }
+
+    private static string[] CollectOwnershipMigrationBlockers(EidosAstNode ast) =>
+        EnumerateAst(ast)
+            .OfType<Declaration>()
+            .SelectMany(static declaration => declaration.Attributes
+                .Where(static attribute => string.Equals(attribute.Name, "borrow", StringComparison.Ordinal))
+                .Select(attribute =>
+                    $"Ownership migration blocked at {attribute.Span.Location.Line}:{attribute.Span.Location.Column}: " +
+                    "legacy @borrow capabilities cannot determine ownership. " +
+                    "Rewrite the definition signature with Ref/MRef and update all typed call sites atomically; " +
+                    "the migrator will not insert clone."))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
     private static void AddVersion07Edits(
         string source,
@@ -2119,6 +2156,11 @@ public static partial class SyntaxMigrationPlanner
 
     private static string GetSourceRewriteStatus(IReadOnlyList<SyntaxMigrationFilePlan> filePlans)
     {
+        if (filePlans.Any(static file => string.Equals(file.Status, "blocked", StringComparison.Ordinal)))
+        {
+            return "blocked";
+        }
+
         if (filePlans.Any(static file => string.Equals(file.Status, "parse-error", StringComparison.Ordinal)))
         {
             return "parse-error";

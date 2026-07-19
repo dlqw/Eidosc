@@ -278,6 +278,66 @@ Payload :: type { Payload(Int) }
     }
 
     [Fact]
+    public void CreatePlan_FromPrevious_LegacyBorrowAttributeBlocksAtomicOwnershipMigration()
+    {
+        const string source = """
+@borrow(read, write)
+update :: Payload -> Payload {
+    value => value
+}
+
+main :: Payload -> Payload {
+    value => update(value)
+}
+""";
+
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+
+        Assert.Equal("blocked", plan.SourceRewriteStatus);
+        var file = Assert.Single(plan.FilePlans);
+        Assert.Equal("blocked", file.Status);
+        Assert.Empty(file.Edits);
+        Assert.Contains(
+            file.Diagnostics,
+            diagnostic => diagnostic.Contains("Ref/MRef", StringComparison.Ordinal) &&
+                          diagnostic.Contains("call sites", StringComparison.Ordinal));
+        Assert.Throws<InvalidOperationException>(() => SyntaxMigrationPlanner.ApplyPlan(plan));
+        Assert.Equal(source, sourceText);
+    }
+
+    [Fact]
+    public void ApplyPlan_ProjectOwnershipBlockerPreventsAllDefinitionAndCallSiteWrites()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "eidos-ownership-migrate-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var definitionPath = Path.Combine(tempDir, "Definition.eidos");
+        var callSitePath = Path.Combine(tempDir, "CallSite.eidos");
+        const string definition = "@borrow(read)\nconsume :: Payload -> Unit { _ => () }\n";
+        const string callSite = "@derive(Eq)\nPayload :: type { Payload(Int) }\nmain :: Payload -> Unit { value => consume(value) }\n";
+        File.WriteAllText(definitionPath, definition);
+        File.WriteAllText(callSitePath, callSite);
+
+        try
+        {
+            var plan = SyntaxMigrationPlanner.CreatePlan(
+                tempDir,
+                EidosLanguageVersions.Previous,
+                EidosLanguageVersions.Current);
+
+            Assert.Equal("blocked", plan.SourceRewriteStatus);
+            Assert.Contains(plan.FilePlans, file => file.Status == "blocked");
+            Assert.Contains(plan.FilePlans, file => file.Edits.Length > 0);
+            Assert.Throws<InvalidOperationException>(() => SyntaxMigrationPlanner.ApplyPlan(plan));
+            Assert.Equal(definition, File.ReadAllText(definitionPath));
+            Assert.Equal(callSite, File.ReadAllText(callSitePath));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ClausesCommand_ProvidesDedicatedDryRunSurfaceForVersion07()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "eidos-migrate-clauses-" + Guid.NewGuid().ToString("N"));
