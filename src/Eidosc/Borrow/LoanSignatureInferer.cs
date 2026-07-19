@@ -120,13 +120,15 @@ public sealed class LoanSignatureInferer
         LifetimeConstraints = [];
 
         EnsurePreparedAnalysis();
-        _ownershipContract = OwnershipContract.Create(
-            _function.SymbolId,
-            _function.SourceName.Length > 0 ? _function.SourceName : _function.Name,
-            _paramLocals.Select(static local => (local.Name, local.TypeId)).ToArray(),
-            _function.ReturnType,
-            _typeDescriptors,
-            _symbolTable);
+        _ownershipContract = string.IsNullOrEmpty(_function.OwnershipContract.CanonicalIdentity)
+            ? OwnershipContract.Create(
+                _function.SymbolId,
+                _function.SourceName.Length > 0 ? _function.SourceName : _function.Name,
+                _paramLocals.Select(static local => (local.Name, local.TypeId)).ToArray(),
+                _function.ReturnType,
+                _typeDescriptors,
+                _symbolTable)
+            : _function.OwnershipContract;
         _function.OwnershipContract = _ownershipContract;
 
         // 1. 推断参数借用要求

@@ -1,4 +1,7 @@
+using Eidosc;
 using Eidosc.Symbols;
+using Eidosc.Pipeline;
+using Eidosc.ProjectSystem;
 using Eidosc.Types;
 using Eidosc.Utils;
 using Xunit;
@@ -78,5 +81,43 @@ public sealed class OwnershipContractTests
         Assert.Contains(OwnershipContract.CurrentSchemaVersion, first.CanonicalIdentity, StringComparison.Ordinal);
         Assert.DoesNotContain("before", first.CanonicalIdentity, StringComparison.Ordinal);
         Assert.DoesNotContain("after", second.CanonicalIdentity, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MirBoundary_DerivesOwnershipContractFromSignatureBeforeBorrowAnalysis()
+    {
+        var first = CompileToMir("value => value", "ownership_contract.eidos");
+        var second = CompileToMir("renamed => renamed", "ownership_contract.eidos");
+
+        var firstContract = Assert.Single(first.MirModule!.Functions).OwnershipContract;
+        var secondContract = Assert.Single(second.MirModule!.Functions).OwnershipContract;
+        Assert.NotEmpty(firstContract.CanonicalIdentity);
+        Assert.Equal(firstContract.CanonicalIdentity, secondContract.CanonicalIdentity);
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, firstContract.GetParameter(0).Projection.Kind);
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, firstContract.Result.Projection.Kind);
+    }
+
+    private static CompilationResult CompileToMir(string branch, string inputFile)
+    {
+        var result = new CompilationPipeline($$"""
+borrow_value :: Ref[Int] -> Ref[Int]
+{
+    {{branch}}
+}
+""", new CompilationOptions
+        {
+            InputFile = inputFile,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Mir,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.ToString())));
+        Assert.NotNull(result.MirModule);
+        return result;
     }
 }

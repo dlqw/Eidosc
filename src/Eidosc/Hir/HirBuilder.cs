@@ -291,6 +291,11 @@ public sealed partial class HirBuilder
             TypeParams = typeParams,
             Parameters = parameters,
             ReturnType = returnType,
+            OwnershipContract = CreateOwnershipContract(
+                func.SymbolId,
+                sourceName ?? func.Name,
+                parameters,
+                returnType),
             Body = bodyNode,
             IsComptime = func.IsComptime,
             IsExternal = isExternal,
@@ -366,6 +371,11 @@ public sealed partial class HirBuilder
             TypeParams = ConvertTypeParams(funcDecl.TypeParams, GetFunctionTypeParameters(funcDecl.SymbolId)),
             Parameters = parameters,
             ReturnType = returnType,
+            OwnershipContract = CreateOwnershipContract(
+                funcDecl.SymbolId,
+                funcDecl.Name,
+                parameters,
+                returnType),
             Body = null,
             IsExternal = isExternal,
             ExternalSymbolName = externalSymbolName,
@@ -379,6 +389,19 @@ public sealed partial class HirBuilder
     private bool IsConfiguredEntryFunction(string functionName) =>
         !string.IsNullOrWhiteSpace(EntryFunctionName) &&
         string.Equals(functionName, EntryFunctionName, StringComparison.Ordinal);
+
+    private OwnershipContract CreateOwnershipContract(
+        SymbolId callableSymbol,
+        string callableName,
+        IReadOnlyList<HirParam> parameters,
+        TypeId resultType) =>
+        OwnershipContract.Create(
+            callableSymbol,
+            callableName,
+            parameters.Select(static parameter => (parameter.Name, parameter.TypeId)).ToArray(),
+            resultType,
+            _typeRegistry.TypeDescriptors,
+            _symbolTable);
 
     private static string BuildModuleScopedFunctionName(
         string functionName,

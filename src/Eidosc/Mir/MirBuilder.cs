@@ -655,6 +655,7 @@ public sealed partial class MirBuilder
             GenericParameters = GetGenericParameters(func),
             GenericTypeParameterIds = GetGenericTypeParameterIds(func),
             ReturnType = func.ReturnType,
+            OwnershipContract = func.OwnershipContract,
             EntryBlockId = entryBlock.Id,
             IsEntry = func.IsEntry,
             IntrinsicName = func.IntrinsicName,
