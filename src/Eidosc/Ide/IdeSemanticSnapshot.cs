@@ -128,12 +128,31 @@ public sealed class IdeSymbolEntry
     public string? DefinitionFingerprint { get; init; }
     public string? DefinitionFingerprintScope { get; init; }
     public string? BindingMode { get; init; }
+    public IdeOwnershipContractEntry? OwnershipContract { get; init; }
     public IdeSpan? VisibilitySpan { get; init; }
     public bool IsBuiltin { get; init; }
     public bool IsGenerated { get; init; }
     public IdeGeneratedOriginEntry? GeneratedOrigin { get; init; }
     public string? ExternalLibrary { get; init; }
     public IdeSpan? Span { get; init; }
+}
+
+public sealed class IdeOwnershipContractEntry
+{
+    public string SchemaVersion { get; init; } = "";
+    public string CanonicalIdentity { get; init; } = "";
+    public List<IdeOwnershipSlotEntry> Parameters { get; init; } = [];
+    public IdeOwnershipSlotEntry Result { get; init; } = new();
+}
+
+public sealed class IdeOwnershipSlotEntry
+{
+    public int Ordinal { get; init; }
+    public string Name { get; init; } = "";
+    public int TypeId { get; init; }
+    public string TypeIdentity { get; init; } = "";
+    public string Kind { get; init; } = "byValue";
+    public bool IsDeferred { get; init; }
 }
 
 public sealed class IdeGeneratedOriginEntry
@@ -366,7 +385,8 @@ public static partial class IdeSemanticSnapshotBuilder
             ? CollectSymbolMetadata(result.Ast)
             : new Dictionary<int, IdeSymbolMetadata>();
         var canBuildFingerprints = CanBuildDefinitionFingerprints(result);
-        var symbols = BuildSymbols(result.SymbolTable, symbolMetadata, canBuildFingerprints);
+        var ownershipContracts = BuildOwnershipContracts(result);
+        var symbols = BuildSymbols(result.SymbolTable, symbolMetadata, ownershipContracts, canBuildFingerprints);
         var overloadGroups = BuildOverloadGroups(result.SymbolTable, symbols);
         var modulePathSymbolIds = AddSyntheticModulePrefixSymbols(result.SymbolTable, symbols);
         var importedModuleAliases = result.Ast != null
@@ -968,7 +988,11 @@ public static partial class IdeSemanticSnapshotBuilder
         var previewMetadata = preview.Ast != null
             ? CollectSymbolMetadata(preview.Ast)
             : new Dictionary<int, IdeSymbolMetadata>();
-        var previewSymbols = BuildSymbols(preview.SymbolTable, previewMetadata, canBuildDefinitionFingerprints: true);
+        var previewSymbols = BuildSymbols(
+            preview.SymbolTable,
+            previewMetadata,
+            BuildOwnershipContracts(preview),
+            canBuildDefinitionFingerprints: true);
         var replacementSymbol = previewSymbols.FirstOrDefault(symbol => symbol.SymbolId == replacementSymbolId);
         if (replacementSymbol == null)
         {
@@ -1105,6 +1129,7 @@ public static partial class IdeSemanticSnapshotBuilder
     private static List<IdeSymbolEntry> BuildSymbols(
         SymbolTable? symbolTable,
         IReadOnlyDictionary<int, IdeSymbolMetadata> symbolMetadata,
+        IReadOnlyDictionary<int, OwnershipContract> ownershipContracts,
         bool canBuildDefinitionFingerprints)
     {
         if (symbolTable == null)
@@ -1131,6 +1156,7 @@ public static partial class IdeSemanticSnapshotBuilder
             var definitionFingerprint = canBuildDefinitionFingerprints
                 ? BuildDefinitionFingerprint(symbol, metadata, modulePathsBySymbolId)
                 : null;
+            ownershipContracts.TryGetValue(symbol.Id.Value, out var ownershipContract);
             symbols.Add(new IdeSymbolEntry
             {
                 SymbolId = symbol.Id.Value,
@@ -1150,6 +1176,7 @@ public static partial class IdeSemanticSnapshotBuilder
                     ? DefinitionFingerprintScope
                     : null,
                 BindingMode = metadata?.BindingMode,
+                OwnershipContract = CreateOwnershipContractEntry(ownershipContract),
                 VisibilitySpan = symbol.IsModuleLevel
                     ? null
                     : TryConvertIdeSpan(metadata?.VisibilitySpan),
@@ -1176,6 +1203,71 @@ public static partial class IdeSemanticSnapshotBuilder
 
         return symbols;
     }
+
+    private static IReadOnlyDictionary<int, OwnershipContract> BuildOwnershipContracts(CompilationResult result)
+    {
+        var contracts = new Dictionary<int, OwnershipContract>();
+        if (result.HirModule != null)
+        {
+            foreach (var function in result.HirModule.Declarations.OfType<Eidosc.Hir.HirFunc>())
+            {
+                AddOwnershipContract(function.SymbolId, function.OwnershipContract, contracts);
+            }
+        }
+
+        if (result.MirModule != null)
+        {
+            foreach (var function in result.MirModule.Functions)
+            {
+                AddOwnershipContract(function.SymbolId, function.OwnershipContract, contracts);
+            }
+        }
+
+        return contracts;
+    }
+
+    private static void AddOwnershipContract(
+        SymbolId symbolId,
+        OwnershipContract contract,
+        Dictionary<int, OwnershipContract> contracts)
+    {
+        if (symbolId.IsValid && !string.IsNullOrEmpty(contract.CanonicalIdentity))
+        {
+            contracts[symbolId.Value] = contract;
+        }
+    }
+
+    private static IdeOwnershipContractEntry? CreateOwnershipContractEntry(OwnershipContract? contract)
+    {
+        if (contract == null || string.IsNullOrEmpty(contract.CanonicalIdentity))
+        {
+            return null;
+        }
+
+        return new IdeOwnershipContractEntry
+        {
+            SchemaVersion = contract.SchemaVersion,
+            CanonicalIdentity = contract.CanonicalIdentity,
+            Parameters = contract.Parameters.Select(CreateOwnershipSlotEntry).ToList(),
+            Result = CreateOwnershipSlotEntry(contract.Result)
+        };
+    }
+
+    private static IdeOwnershipSlotEntry CreateOwnershipSlotEntry(OwnershipSlot slot) =>
+        new()
+        {
+            Ordinal = slot.Ordinal,
+            Name = slot.Name,
+            TypeId = slot.TypeId.Value,
+            TypeIdentity = slot.TypeIdentity,
+            Kind = slot.Projection.Kind switch
+            {
+                OwnershipPassingKind.SharedBorrow => "sharedBorrow",
+                OwnershipPassingKind.MutableBorrow => "mutableBorrow",
+                _ => "byValue"
+            },
+            IsDeferred = slot.Projection.IsDeferred
+        };
 
     private static IdeGeneratedOriginEntry? CreateGeneratedOriginEntry(GeneratedDeclarationOrigin? origin)
     {
