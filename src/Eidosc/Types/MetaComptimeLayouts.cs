@@ -43,13 +43,17 @@ internal static partial class MetaComptimeIntrinsics
                 out reason);
         }
 
-        value = Obj(
+        value = TypedObject(
             "layout-info",
+            WellKnownStrings.Meta.Types.Layout,
+            WellKnownTypeIds.MetaLayoutId,
+            [
             ("target", new ComptimeStringValue(targetInfo.Triple)),
             ("size", new ComptimeIntegerValue(layout.Size)),
             ("alignment", new ComptimeIntegerValue(layout.Alignment)),
             ("fieldOffsets", List(layout.Offsets.Select(static offset =>
-                (ComptimeValue)new ComptimeIntegerValue(offset)))));
+                (ComptimeValue)new ComptimeIntegerValue(offset))))
+            ]);
         reason = string.Empty;
         return true;
     }

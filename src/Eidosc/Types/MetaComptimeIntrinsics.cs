@@ -1308,12 +1308,16 @@ internal static partial class MetaComptimeIntrinsics
         var declaration = constructorSymbol == null
             ? new ComptimeDeclValue(SymbolId.None, $"constructor:{owner.Name}:{constructor.Name}", constructor.Name, "constructor", constructor.Span)
             : CreateDeclValue(constructorSymbol, meta.SymbolTable);
-        return Obj(
+        return TypedObject(
             "constructor-info",
+            WellKnownStrings.Meta.Types.Constructor,
+            WellKnownTypeIds.MetaConstructorId,
+            [
             ("name", new ComptimeStringValue(constructor.Name)),
             ("decl", declaration),
             ("fields", List(fields)),
-            ("span", CreateSpan(constructor.Span, meta.SymbolTable)));
+            ("span", CreateSpan(constructor.Span, meta.SymbolTable))
+            ]);
     }
 
     private static ComptimeMetaObjectValue CreateFieldInfo(
@@ -1341,8 +1345,11 @@ internal static partial class MetaComptimeIntrinsics
         var inherited = receiverType?.TypeRef.SymbolId.IsValid == true &&
                         declaringType?.TypeRef.SymbolId.IsValid == true &&
                         receiverType.TypeRef.SymbolId != declaringType.TypeRef.SymbolId;
-        return Obj(
+        return TypedObject(
             "field-info",
+            WellKnownStrings.Meta.Types.Field,
+            WellKnownTypeIds.MetaFieldId,
+            [
             ("name", new ComptimeStringValue(name)),
             ("type", fieldType),
             ("decl", declaration),
@@ -1351,7 +1358,8 @@ internal static partial class MetaComptimeIntrinsics
                 ? receiverType
                 : declaringType is not null ? declaringType : ComptimeUnitValue.Instance),
             ("inherited", new ComptimeBoolValue(inherited)),
-            ("span", CreateSpan(span, meta.SymbolTable)));
+            ("span", CreateSpan(span, meta.SymbolTable))
+            ]);
     }
 
     private static bool TryFindField(
@@ -2310,13 +2318,17 @@ internal static partial class MetaComptimeIntrinsics
     private static ComptimeAdtValue CreateDeclInfo(ComptimeDeclValue declaration, MetaComptimeContext meta) =>
         BuildDeclarationShape(declaration, meta);
 
-    internal static ComptimeMetaObjectValue CreateSpan(SourceSpan span, SymbolTable? symbolTable = null) => Obj(
+    internal static ComptimeMetaObjectValue CreateSpan(SourceSpan span, SymbolTable? symbolTable = null) => TypedObject(
         "span",
-        ("file", new ComptimeStringValue(CreatePublicSourceUri(span, symbolTable))),
-        ("position", new ComptimeIntegerValue(span.Position)),
-        ("line", new ComptimeIntegerValue(span.Location.Line)),
-        ("column", new ComptimeIntegerValue(span.Location.Column)),
-        ("length", new ComptimeIntegerValue(span.Length)));
+        WellKnownStrings.Meta.Types.Span,
+        WellKnownTypeIds.MetaSpanId,
+        [
+            ("file", new ComptimeStringValue(CreatePublicSourceUri(span, symbolTable))),
+            ("position", new ComptimeIntegerValue(span.Position)),
+            ("line", new ComptimeIntegerValue(span.Location.Line)),
+            ("column", new ComptimeIntegerValue(span.Location.Column)),
+            ("length", new ComptimeIntegerValue(span.Length))
+        ]);
 
     internal static string CreatePublicSourceUri(SourceSpan span, SymbolTable? symbolTable = null)
     {

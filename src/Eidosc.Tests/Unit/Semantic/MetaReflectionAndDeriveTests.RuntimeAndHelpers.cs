@@ -24,6 +24,9 @@ AliasLayout :: comptime meta.layout_of(Int, "linux-x64");
         var symbolTable = Assert.IsType<SymbolTable>(primitiveResult.SymbolTable);
         var inferer = Assert.IsType<TypeInferer>(primitiveResult.TypeInferer);
         var layout = Assert.IsType<ComptimeMetaObjectValue>(GetComptimeValue("IntLayout", symbolTable, inferer));
+        Assert.Equal(
+            WellKnownTypeIds.MetaLayoutId,
+            Assert.IsType<TyCon>(layout.StaticType).Id.Value);
         Assert.True(layout.TryGet("size", out var size));
         Assert.Equal(8, Assert.IsType<ComptimeIntegerValue>(size).Value);
         var aliasLayout = Assert.IsType<ComptimeMetaObjectValue>(GetComptimeValue("AliasLayout", symbolTable, inferer));

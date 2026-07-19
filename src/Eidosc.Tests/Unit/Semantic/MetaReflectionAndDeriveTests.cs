@@ -518,6 +518,14 @@ NameType :: comptime find_field_type(meta.find_field(User, "name"));
         Assert.True(info.TryGet("constructors", out var constructorsValue));
         var constructors = Assert.IsType<ComptimeSequenceValue>(constructorsValue);
         var constructor = Assert.IsType<ComptimeMetaObjectValue>(Assert.Single(constructors.Elements));
+        Assert.Equal(
+            WellKnownTypeIds.MetaConstructorId,
+            Assert.IsType<TyCon>(constructor.StaticType).Id.Value);
+        Assert.True(constructor.TryGet("span", out var constructorSpanValue));
+        var constructorSpan = Assert.IsType<ComptimeMetaObjectValue>(constructorSpanValue);
+        Assert.Equal(
+            WellKnownTypeIds.MetaSpanId,
+            Assert.IsType<TyCon>(constructorSpan.StaticType).Id.Value);
         Assert.True(constructor.TryGet("fields", out var fieldsValue));
         var fields = Assert.IsType<ComptimeSequenceValue>(fieldsValue);
         Assert.Equal(
@@ -525,6 +533,9 @@ NameType :: comptime find_field_type(meta.find_field(User, "name"));
             fields.Elements.Select(field =>
             {
                 var fieldInfo = Assert.IsType<ComptimeMetaObjectValue>(field);
+                Assert.Equal(
+                    WellKnownTypeIds.MetaFieldId,
+                    Assert.IsType<TyCon>(fieldInfo.StaticType).Id.Value);
                 Assert.True(fieldInfo.TryGet("name", out var fieldName));
                 return Assert.IsType<ComptimeStringValue>(fieldName).Value;
             }).ToArray());
