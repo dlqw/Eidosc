@@ -9,31 +9,37 @@ ptr_is_null :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_is_null");
 
 
 /// A write-once promise that can be awaited by multiple readers.
-Promise[A] :: type derive Copy {promise:: RawPtr}
+@[derive(Copy)]
+Promise[A] :: type {promise:: RawPtr}
 
 /// Observable state of a runtime-backed Promise.
-Status :: type derive Copy {
+@[derive(Copy)]
+Status :: type {
     PromisePending :: type {} , PromiseFulfilled :: type {}
 }
 
 
 
-new_runtime :: Unit -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_promise_new_raw_single");
+@[extern(c, name: "eidos_promise_new_raw_single")]
+new_runtime :: Unit -> RawPtr compiler(internal) need ffi;
 
 
 
 
-new_value_runtime :: Unit -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_promise_new_single");
+@[extern(c, name: "eidos_promise_new_single")]
+new_value_runtime :: Unit -> RawPtr compiler(internal) need ffi;
 
 
 
 
-fulfill_runtime :: RawPtr -> RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_promise_fulfill_raw");
+@[extern(c, name: "eidos_promise_fulfill_raw")]
+fulfill_runtime :: RawPtr -> RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-try_get_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_promise_try_get_raw");
+@[extern(c, name: "eidos_promise_try_get_raw")]
+try_get_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 /// Create a runtime-backed RawPtr payload Promise.

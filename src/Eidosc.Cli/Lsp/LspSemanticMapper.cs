@@ -341,9 +341,66 @@ public static class LspSemanticMapper
             });
         }
 
+        AddTypedTagCompletions(items, sourceText, line, character, prefix, replacementRange);
         AddClauseCompletions(items, sourceText, line, character, prefix, replacementRange);
 
         return items;
+    }
+
+    private static void AddTypedTagCompletions(
+        List<LspCompletionItem> items,
+        string? sourceText,
+        int line,
+        int character,
+        string prefix,
+        LspRange? replacementRange)
+    {
+        if (!TryGetTypedTagCompletionTarget(sourceText, line, character))
+        {
+            return;
+        }
+
+        var existing = items.Select(static item => item.Label).ToHashSet(StringComparer.Ordinal);
+        foreach (var spec in ClauseSchema.Entries.Values
+                     .Where(static spec => spec.Adapter is DeclarationAttachmentAdapterKind.TypedTag or DeclarationAttachmentAdapterKind.ForeignContract)
+                     .OrderBy(static spec => spec.Keyword, StringComparer.Ordinal))
+        {
+            if (!MatchesCompletionPrefix(spec.Keyword, prefix) || !existing.Add(spec.Keyword))
+            {
+                continue;
+            }
+
+            items.Add(new LspCompletionItem
+            {
+                Label = spec.Keyword,
+                Kind = LspCompletionItemKind.Keyword,
+                Detail = $"typed declaration tag; {spec.CanonicalArgumentType.ToString().ToLowerInvariant()} argument",
+                Documentation = $"Typed declaration tag. Valid targets: {spec.Targets}.",
+                SortText = $"0-tag-{spec.Keyword}",
+                InsertText = spec.Keyword,
+                TextEdit = replacementRange == null
+                    ? null
+                    : new LspTextEdit { Range = replacementRange, NewText = spec.Keyword }
+            });
+        }
+    }
+
+    private static bool TryGetTypedTagCompletionTarget(string? sourceText, int line, int character)
+    {
+        if (!TryGetOffset(sourceText, line, character, out var offset) || string.IsNullOrEmpty(sourceText))
+        {
+            return false;
+        }
+
+        var searchEnd = Math.Min(offset - 1, sourceText.Length - 1);
+        if (searchEnd < 0)
+        {
+            return false;
+        }
+
+        var open = sourceText.LastIndexOf("@[", searchEnd, StringComparison.Ordinal);
+        var close = sourceText.LastIndexOf(']', searchEnd);
+        return open >= 0 && open > close;
     }
 
     private static void AddClauseCompletions(
@@ -361,6 +418,7 @@ public static class LspSemanticMapper
 
         var existing = items.Select(static item => item.Label).ToHashSet(StringComparer.Ordinal);
         foreach (var spec in ClauseSchema.Entries.Values
+                     .Where(static spec => spec.Adapter == DeclarationAttachmentAdapterKind.SignatureComponent)
                      .Where(spec => (spec.Targets & target) != 0)
                      .OrderBy(static spec => spec.SourceOrder)
                      .ThenBy(static spec => spec.Keyword, StringComparer.Ordinal))
@@ -976,7 +1034,7 @@ public static class LspSemanticMapper
                 Contents = new LspMarkupContent
                 {
                     Kind = "markdown",
-                    Value = $"`{spec.Keyword}` declaration clause\n\nStage: `{spec.Stage}`  \nArguments: `{spec.CanonicalArgumentType}`  \nTargets: `{spec.Targets}`  \nSource order: `{spec.SourceOrder}`"
+                    Value = $"`{spec.Keyword}` {(spec.Adapter is DeclarationAttachmentAdapterKind.TypedTag or DeclarationAttachmentAdapterKind.ForeignContract ? "typed declaration tag" : "declaration clause")}\n\nStage: `{spec.Stage}`  \nArguments: `{spec.CanonicalArgumentType}`  \nTargets: `{spec.Targets}`  \nSource order: `{spec.SourceOrder}`"
                 },
                 Range = range
             };

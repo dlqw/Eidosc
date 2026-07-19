@@ -16,11 +16,13 @@ public class CStructDotAccessTests
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
 
 
 
-Point :: type  repr c
+@[repr(c)]
+Point :: type
 {
     x:: Float,
     y:: Float
@@ -46,18 +48,21 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
 
 
 
-Point :: type  repr c
+@[repr(c)]
+Point :: type
 {
     x:: Float,
     y:: Float
 }
 
 
-Header :: type  repr c
+@[repr(c)]
+Header :: type
 {
     magic:: Int,
     version:: Int
@@ -85,18 +90,21 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
 
 
 
-Point :: type  repr c
+@[repr(c)]
+Point :: type
 {
     x:: Float,
     y:: Float
 }
 
 
-Rect :: type  repr c
+@[repr(c)]
+Rect :: type
 {
     x:: Float,
     y:: Float,
@@ -129,11 +137,13 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
 
 
 
-Point :: type  repr c
+@[repr(c)]
+Point :: type
 {
     x:: Float,
     y:: Float
@@ -187,11 +197,13 @@ main :: Int -> Int
     {
         const string source = """
 
-malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
 
 
 
-Point :: type  repr c
+@[repr(c)]
+Point :: type
 {
     x:: Float
 }

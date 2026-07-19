@@ -6,46 +6,55 @@ TaskGroup :: module {
     import Traits
 
 /// A group of related tasks (structured concurrency).
-TaskGroup :: type derive Copy {handle:: RawPtr}
+@[derive(Copy)]
+TaskGroup :: type {handle:: RawPtr}
 
 /// Snapshot of a task group's observable runtime state.
-Status :: type derive Copy {
+@[derive(Copy)]
+Status :: type {
     TaskGroupIdle :: type {} , TaskGroupPending:: type(Int) , TaskGroupCancelled:: type(Int)
 }
 
 
 
-new_runtime :: Unit -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_taskgroup_new");
+@[extern(c, name: "eidos_taskgroup_new")]
+new_runtime :: Unit -> RawPtr compiler(internal) need ffi;
 
 
 
 
-cancel_runtime :: RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_taskgroup_cancel");
+@[extern(c, name: "eidos_taskgroup_cancel")]
+cancel_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 
 
 
 
-is_cancelled_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_taskgroup_is_cancelled");
+@[extern(c, name: "eidos_taskgroup_is_cancelled")]
+is_cancelled_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-pending_count_runtime :: RawPtr -> Int compiler(internal) need ffi extern(c, name: "eidos_taskgroup_pending_count");
+@[extern(c, name: "eidos_taskgroup_pending_count")]
+pending_count_runtime :: RawPtr -> Int compiler(internal) need ffi;
 
 
 
 
-spawn_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi extern(c, name: "eidos_taskgroup_spawn_closure_raw");
+@[extern(c, name: "eidos_taskgroup_spawn_closure_raw")]
+spawn_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi;
 
 
 
 
-spawn_closure_value_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi extern(c, name: "eidos_taskgroup_spawn_closure_value");
+@[extern(c, name: "eidos_taskgroup_spawn_closure_value")]
+spawn_closure_value_runtime[E: effects] :: RawPtr -> (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi;
 
 
 
 
-join_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E compiler(internal) need ffi extern(c, name: "eidos_taskgroup_join_closure_raw");
+@[extern(c, name: "eidos_taskgroup_join_closure_raw")]
+join_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E compiler(internal) need ffi;
 
 
 /// Create an empty runtime-backed task group.

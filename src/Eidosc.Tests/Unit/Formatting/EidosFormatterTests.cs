@@ -312,26 +312,27 @@ public sealed class EidosFormatterTests
     [Fact]
     public void Format_InterleavedMetaClauses_PreservesObservableSourceOrder()
     {
-        const string source = "Subject :: type derive Eq expand inspect derive Show{}";
+        const string source = "@[derive(Eq), expand(inspect), derive(Show)] Subject :: type {}";
 
         var result = EidosFormatter.Format(source, options: NameFirstValidation());
 
         Assert.True(result.Success);
-        var deriveEq = result.FormattedText.IndexOf("derive Eq", StringComparison.Ordinal);
-        var expand = result.FormattedText.IndexOf("expand inspect", StringComparison.Ordinal);
-        var deriveShow = result.FormattedText.IndexOf("derive Show", StringComparison.Ordinal);
+        var deriveEq = result.FormattedText.IndexOf("derive(Eq)", StringComparison.Ordinal);
+        var expand = result.FormattedText.IndexOf("expand(inspect)", StringComparison.Ordinal);
+        var deriveShow = result.FormattedText.IndexOf("derive(Show)", StringComparison.Ordinal);
         Assert.True(deriveEq >= 0 && deriveEq < expand && expand < deriveShow, result.FormattedText);
     }
 
     [Fact]
     public void Format_ClauseBoundaryAfterClosedArgument_UsesSchemaSeparator()
     {
-        const string source = "Subject :: type where Eq[T]derive Show{}";
+        const string source = "@[derive(Show)] Subject :: type where Eq[T] {}";
 
         var result = EidosFormatter.Format(source, options: NoValidation());
 
         Assert.True(result.Success);
-        Assert.Contains("where Eq[T] derive Show", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("where Eq[T]", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("@[derive(Show)]", result.FormattedText, StringComparison.Ordinal);
     }
 
     private static EidosFormatterOptions NoValidation() => new()

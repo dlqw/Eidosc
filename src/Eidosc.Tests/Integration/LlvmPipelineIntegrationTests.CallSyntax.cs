@@ -178,7 +178,8 @@ public partial class LlvmPipelineIntegrationTests
     {
         const string source = """
 
-            ping :: Unit -> Int need ffi extern(c, name: "eidos_test_ping");
+            @[extern(c, name: "eidos_test_ping")]
+            ping :: Unit -> Int need ffi
 
             main :: Unit -> Int need ffi
             {
@@ -282,7 +283,8 @@ public partial class LlvmPipelineIntegrationTests
     {
         const string source = """
 
-            ping :: Unit -> Unit need ffi extern(c, name: "eidos_test_ping");
+            @[extern(c, name: "eidos_test_ping")]
+            ping :: Unit -> Unit need ffi
 
             draw_if :: Bool -> Unit need ffi
             {

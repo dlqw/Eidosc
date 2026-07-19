@@ -14,12 +14,13 @@ public enum DeclarationClauseKind
     LinkName,
     Derive,
     Operator,
-    Borrow,
     ProofUnfold,
     Transparent,
+    Expand,
+    // Retained only as internal tombstone values while stale serialized state is rejected by schema lookup.
+    Borrow,
     Before,
     After,
-    Expand,
     Requires,
     Internal,
     Intrinsic,
@@ -221,13 +222,9 @@ public static class ClauseSchema
             ["repr"] = new("repr", DeclarationClauseKind.Repr, DeclarationClauseTarget.Type, ClauseArgumentGrammar.Identifier, ClauseCanonicalArgumentType.Identifier, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-cstruct-to-repr-c", ["cstruct"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
             ["extern"] = new("extern", DeclarationClauseKind.Extern, DeclarationClauseTarget.Function, ClauseArgumentGrammar.TokenIsland, ClauseCanonicalArgumentType.Abi, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Requires: [DeclarationClauseKind.Need], Migration: new("attribute-ffi-to-extern-c", ["ffi"]), Adapter: DeclarationAttachmentAdapterKind.ForeignContract),
             ["derive"] = new("derive", DeclarationClauseKind.Derive, DeclarationClauseTarget.Type | DeclarationClauseTarget.CaseType, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Trait, ClauseStage.Semantic, ClauseSourceOrderBehavior.GeneratorSequence, Repeatable: true, ProducesMetaInvocation: true, CompilerOwnedInvocation: true, Migration: new("attribute-derive", ["derive"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
-            ["borrow"] = new("borrow", DeclarationClauseKind.Borrow, DeclarationClauseTarget.Function, ClauseArgumentGrammar.IdentifierList, ClauseCanonicalArgumentType.BorrowCapability, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-borrow", ["borrow"]), Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
             ["proof_unfold"] = new("proof_unfold", DeclarationClauseKind.ProofUnfold, DeclarationClauseTarget.Function, ClauseArgumentGrammar.Path, ClauseCanonicalArgumentType.Declaration, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-proof-unfold", ["proof_unfold"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
             ["transparent"] = new("transparent", DeclarationClauseKind.Transparent, DeclarationClauseTarget.Function, ClauseArgumentGrammar.None, ClauseCanonicalArgumentType.None, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Migration: new("attribute-transparent", ["transparent"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
-            ["before"] = new("before", DeclarationClauseKind.Before, DeclarationClauseTarget.Function, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Generator, ClauseStage.Syntax, ClauseSourceOrderBehavior.OrderingConstraint, Repeatable: true, MetaGeneratorOnly: true, Migration: NoLegacyMigration, Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
-            ["after"] = new("after", DeclarationClauseKind.After, DeclarationClauseTarget.Function, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Generator, ClauseStage.Syntax, ClauseSourceOrderBehavior.OrderingConstraint, Repeatable: true, MetaGeneratorOnly: true, Migration: NoLegacyMigration, Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
             ["expand"] = new("expand", DeclarationClauseKind.Expand, DeclarationClauseTarget.AnyDeclaration, ClauseArgumentGrammar.MetaInvocation, ClauseCanonicalArgumentType.MetaInvocation, ClauseStage.Semantic, ClauseSourceOrderBehavior.GeneratorSequence, Repeatable: true, ProducesMetaInvocation: true, Migration: new("attribute-generator-to-expand", ["generator"]), Adapter: DeclarationAttachmentAdapterKind.TypedTag),
-            ["requires"] = new("requires", DeclarationClauseKind.Requires, DeclarationClauseTarget.Function, ClauseArgumentGrammar.PathList, ClauseCanonicalArgumentType.Generator, ClauseStage.Syntax, ClauseSourceOrderBehavior.OrderingConstraint, Repeatable: true, MetaGeneratorOnly: true, Migration: NoLegacyMigration, Adapter: DeclarationAttachmentAdapterKind.RemovedSurface),
             ["compiler"] = new("compiler", DeclarationClauseKind.Compiler, DeclarationClauseTarget.AnyDeclaration, ClauseArgumentGrammar.TokenIsland, ClauseCanonicalArgumentType.CompilerDirective, ClauseStage.Semantic, ClauseSourceOrderBehavior.Preserve, Repeatable: true, Privilege: ClausePrivilegePolicy.ToolchainOwnedSource, Migration: new("compiler-directive", ["internal", "intrinsic", "llvm_abi"]), Adapter: DeclarationAttachmentAdapterKind.CompilerDirective)
         };
 

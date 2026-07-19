@@ -111,27 +111,33 @@ Ffi :: module {
 
 
 
-    malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+    @[extern(c, name: "malloc")]
+    malloc :: Int -> RawPtr need ffi;
 
 
 
-    free :: RawPtr -> Unit need ffi extern(c, name: "free");
+    @[extern(c, name: "free")]
+    free :: RawPtr -> Unit need ffi;
 
 
 
-    calloc :: Int -> Int -> RawPtr need ffi extern(c, name: "calloc");
+    @[extern(c, name: "calloc")]
+    calloc :: Int -> Int -> RawPtr need ffi;
 
 
 
-    realloc :: RawPtr -> Int -> RawPtr need ffi extern(c, name: "realloc");
+    @[extern(c, name: "realloc")]
+    realloc :: RawPtr -> Int -> RawPtr need ffi;
 
 
 
-    memcpy :: RawPtr -> RawPtr -> Int -> RawPtr need ffi extern(c, name: "memcpy");
+    @[extern(c, name: "memcpy")]
+    memcpy :: RawPtr -> RawPtr -> Int -> RawPtr need ffi;
 
 
 
-    memset :: RawPtr -> Int -> Int -> RawPtr need ffi extern(c, name: "memset");
+    @[extern(c, name: "memset")]
+    memset :: RawPtr -> Int -> Int -> RawPtr need ffi;
 
 
 

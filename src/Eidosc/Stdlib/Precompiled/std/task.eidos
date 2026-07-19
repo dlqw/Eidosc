@@ -9,56 +9,67 @@ ptr_is_null :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_is_null");
 
 
 /// A concurrent task that produces a value.
-Task[A] :: type derive Copy {handle:: RawPtr}
+@[derive(Copy)]
+Task[A] :: type {handle:: RawPtr}
 
 /// Observable state of a runtime-backed Task.
-Status :: type derive Copy {
+@[derive(Copy)]
+Status :: type {
     TaskPending :: type {} , TaskCompleted :: type {}
 }
 
 
 
-completed_raw_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_task_new_completed_raw");
+@[extern(c, name: "eidos_task_new_completed_raw")]
+completed_raw_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-completed_value_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_task_new_completed_value");
+@[extern(c, name: "eidos_task_new_completed_value")]
+completed_value_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-is_completed_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_task_is_completed");
+@[extern(c, name: "eidos_task_is_completed")]
+is_completed_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-try_get_raw_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_task_try_get_raw");
+@[extern(c, name: "eidos_task_try_get_raw")]
+try_get_raw_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-try_get_value_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_task_try_get_value");
+@[extern(c, name: "eidos_task_try_get_value")]
+try_get_value_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-spawn_closure_raw_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi extern(c, name: "eidos_task_spawn_closure_raw");
+@[extern(c, name: "eidos_task_spawn_closure_raw")]
+spawn_closure_raw_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi;
 
 
 
 
-spawn_closure_value_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi extern(c, name: "eidos_task_spawn_closure_value");
+@[extern(c, name: "eidos_task_spawn_closure_value")]
+spawn_closure_value_runtime[E: effects] :: (Unit -> RawPtr need E) -> RawPtr need E compiler(internal) need ffi;
 
 
 
 
-await_closure_raw_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E compiler(internal) need ffi extern(c, name: "eidos_task_await_closure_raw");
+@[extern(c, name: "eidos_task_await_closure_raw")]
+await_closure_raw_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E compiler(internal) need ffi;
 
 
 
 
-await_closure_value_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E compiler(internal) need ffi extern(c, name: "eidos_task_await_closure_value");
+@[extern(c, name: "eidos_task_await_closure_value")]
+await_closure_value_runtime[E: effects] :: RawPtr -> (RawPtr -> Unit need E) -> Unit need E compiler(internal) need ffi;
 
 
 /// Create an already-completed runtime-backed task with a non-null raw pointer payload.

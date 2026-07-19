@@ -9,46 +9,55 @@ ptr_null :: Unit -> RawPtr compiler(internal, intrinsic: "ptr_null");
 
 
 /// A reader-writer lock allowing concurrent reads or exclusive writes.
-RwLock[A] :: type derive Copy {handle:: RawPtr}
+@[derive(Copy)]
+RwLock[A] :: type {handle:: RawPtr}
 
 /// Observable non-blocking reader-writer lock state.
-Status :: type derive Copy {
+@[derive(Copy)]
+Status :: type {
     RwLockIdle :: type {} , RwLockReadable :: type {} , RwLockBlocked :: type {}
 }
 
 
 
-new_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_rwlock_new");
+@[extern(c, name: "eidos_rwlock_new")]
+new_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-try_read_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_rwlock_try_read");
+@[extern(c, name: "eidos_rwlock_try_read")]
+try_read_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-try_write_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_rwlock_try_write");
+@[extern(c, name: "eidos_rwlock_try_write")]
+try_write_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-unlock_read_runtime :: RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_rwlock_read_release");
+@[extern(c, name: "eidos_rwlock_read_release")]
+unlock_read_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 
 
 
 
-unlock_write_runtime :: RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_rwlock_write_release");
+@[extern(c, name: "eidos_rwlock_write_release")]
+unlock_write_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 
 
 
 
-get_inner_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_rwlock_get_inner");
+@[extern(c, name: "eidos_rwlock_get_inner")]
+get_inner_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-replace_inner_runtime :: RawPtr -> RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_rwlock_replace_inner");
+@[extern(c, name: "eidos_rwlock_replace_inner")]
+replace_inner_runtime :: RawPtr -> RawPtr -> Unit compiler(internal) need ffi;
 
 
 /// Create a runtime-backed reader-writer lock handle.

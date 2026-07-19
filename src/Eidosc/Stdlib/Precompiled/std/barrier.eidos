@@ -2,26 +2,31 @@ Barrier :: module {
     import Traits
 
 /// A barrier that synchronizes a fixed number of tasks.
-Barrier :: type derive Copy {handle:: RawPtr}
+@[derive(Copy)]
+Barrier :: type {handle:: RawPtr}
 
 /// Result of a non-blocking barrier arrival.
-Arrival :: type derive Copy {
+@[derive(Copy)]
+Arrival :: type {
     ArrivalPending :: type {} , ArrivalTripped :: type {}
 }
 
 
 
-new_runtime :: Int -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_barrier_new");
+@[extern(c, name: "eidos_barrier_new")]
+new_runtime :: Int -> RawPtr compiler(internal) need ffi;
 
 
 
 
-arrive_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_barrier_arrive");
+@[extern(c, name: "eidos_barrier_arrive")]
+arrive_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-wait_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E compiler(internal) need ffi extern(c, name: "eidos_barrier_wait_closure_raw");
+@[extern(c, name: "eidos_barrier_wait_closure_raw")]
+wait_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit need E compiler(internal) need ffi;
 
 
 /// Create a runtime-backed barrier handle with the requested participant count.

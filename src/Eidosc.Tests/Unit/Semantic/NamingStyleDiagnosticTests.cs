@@ -82,7 +82,8 @@ Option :: type {}
     public void CompilationPipeline_FfiNamingContract_SeparatesBindingFromExternalLinkName()
     {
         const string source = """
-curlEasyInit :: Unit -> RawPtr need ffi extern(c, name: "SSL_CTX_new");
+@[extern(c, name: "SSL_CTX_new")]
+curlEasyInit :: Unit -> RawPtr need ffi
 """;
 
         var result = RunTypes(source, "ffi_naming_contract.eidos");
@@ -111,11 +112,12 @@ bad_instance :: instance bad_trait {
 
 BadConstant :: comptime 1;
 
-BadGenerator :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation {
-    _ => meta.keep()
+BadGenerator :: comptime meta.Type -> meta.Items {
+    _ => []
 }
 
-Expanded :: type expand BadGenerator {}
+@[expand(BadGenerator)]
+Expanded :: type {}
 """;
 
         var result = RunTypes(source, "semantic_categories.eidos");

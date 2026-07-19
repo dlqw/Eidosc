@@ -34,13 +34,14 @@ public sealed class DeclParser(ParserContext ctx)
             }
 
             var start = ctx.Position;
+            var attributes = ParseAttributes();
             if (ctx.Check("expand"))
             {
                 members.Add(ParseExpandDeclaration(SyntaxCategory.Member));
             }
             else if (IsClosedCaseLookahead())
             {
-                members.Add(ParseCaseType(fieldNames));
+                members.Add(ParseCaseType(fieldNames, attributes));
             }
             else if (IsNewFieldLookahead())
             {
@@ -910,6 +911,12 @@ public sealed class DeclParser(ParserContext ctx)
 
             if (ClauseSchema.TryGetKind(ctx.GetText(), out var kind))
             {
+                if (!IsSignatureClause(kind))
+                {
+                    RejectInterimAttachmentClause(kind);
+                    continue;
+                }
+
                 clauses.Add(ParseDeclarationClause(kind));
                 continue;
             }
@@ -982,6 +989,12 @@ public sealed class DeclParser(ParserContext ctx)
             }
 
             _ = ClauseSchema.TryGetKind(ctx.GetText(), out var kind);
+            if (!IsSignatureClause(kind))
+            {
+                RejectInterimAttachmentClause(kind);
+                continue;
+            }
+
             if (kind == DeclarationClauseKind.Where)
             {
                 clauses.Add(ParseGenericWhereClause(typeParams));
@@ -993,6 +1006,17 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         return clauses;
+    }
+
+    private static bool IsSignatureClause(DeclarationClauseKind kind) =>
+        kind is DeclarationClauseKind.Where or DeclarationClauseKind.Case or
+        DeclarationClauseKind.Need or DeclarationClauseKind.Compiler;
+
+    private void RejectInterimAttachmentClause(DeclarationClauseKind kind)
+    {
+        var keyword = ctx.GetText();
+        ctx.Error($"'{keyword}' is an interim pre-body attachment; use '@[{keyword}(...)]' typed declaration tag syntax");
+        _ = ParseDeclarationClause(kind);
     }
 
     private static bool IsRemovedCompilerDirective(string keyword) =>
@@ -1370,6 +1394,7 @@ public sealed class DeclParser(ParserContext ctx)
                 continue;
             }
 
+            var attributes = ParseAttributes();
             if (ctx.Check("expand"))
             {
                 members.Add(ParseExpandDeclaration(SyntaxCategory.Member));
@@ -1379,7 +1404,7 @@ public sealed class DeclParser(ParserContext ctx)
             if (IsClosedCaseLookahead())
             {
                 seenCase = true;
-                var caseType = ParseCaseType(fieldNames);
+                var caseType = ParseCaseType(fieldNames, attributes);
                 if (!caseNames.Add(caseType.Name))
                 {
                     ctx.Error($"duplicate case type '{caseType.Name}'", caseType.Span.Location);
@@ -1471,7 +1496,9 @@ public sealed class DeclParser(ParserContext ctx)
         return TokenKind.IsAnyIdentifier(ctx.Current) && ctx.CheckPeek(1, ":");
     }
 
-    private CaseTypeDef ParseCaseType(IReadOnlySet<string> inheritedFieldNames)
+    private CaseTypeDef ParseCaseType(
+        IReadOnlySet<string> inheritedFieldNames,
+        IReadOnlyList<AstAttribute>? attributes = null)
     {
         var startToken = ctx.Current;
         var caseType = new CaseTypeDef();
@@ -1479,6 +1506,7 @@ public sealed class DeclParser(ParserContext ctx)
         caseType.SetTypeParams(_typeParser.TryParseTypeParams() ?? []);
         ctx.Expect("::");
         ctx.Expect(WellKnownStrings.Keywords.Type);
+        caseType.SetAttributes([.. attributes ?? []]);
 
         var isPositional = ctx.Match("(");
         if (isPositional)
@@ -1528,6 +1556,12 @@ public sealed class DeclParser(ParserContext ctx)
             }
 
             _ = ClauseSchema.TryGetKind(ctx.GetText(), out var kind);
+            if (!IsSignatureClause(kind))
+            {
+                RejectInterimAttachmentClause(kind);
+                continue;
+            }
+
             if (kind == DeclarationClauseKind.Where)
             {
                 clauses.Add(ParseGenericWhereClause(typeParams));
@@ -1581,6 +1615,7 @@ public sealed class DeclParser(ParserContext ctx)
                 continue;
             }
 
+            var attributes = ParseAttributes();
             if (ctx.Check("expand"))
             {
                 owner.AddMemberExpansion(ParseExpandDeclaration(SyntaxCategory.Member));
@@ -1590,7 +1625,7 @@ public sealed class DeclParser(ParserContext ctx)
             if (IsClosedCaseLookahead())
             {
                 seenCase = true;
-                var child = ParseCaseType(effectiveFieldNames);
+                var child = ParseCaseType(effectiveFieldNames, attributes);
                 if (!caseNames.Add(child.Name))
                 {
                     ctx.Error($"duplicate case type '{child.Name}'", child.Span.Location);

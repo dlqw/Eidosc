@@ -55,7 +55,8 @@ public sealed class RawBindingGenerator
             if (st.Fields.Count == 0)
                 continue;
 
-            sb.AppendLine($"    export {st.Name} :: type repr c {{");
+            sb.AppendLine("    @[repr(c)]");
+            sb.AppendLine($"    export {st.Name} :: type {{");
             foreach (var field in st.Fields)
             {
                 var mapping = _typeMapper.Map(field.Type);
@@ -86,7 +87,8 @@ public sealed class RawBindingGenerator
 
             var needsShim = NeedsShim(fn);
             var ffiName = needsShim ? $"eidos_shim_{fn.Name}" : fn.Name;
-            sb.AppendLine($"    export {eidosName} :: {FormatSignature(fn, needsShim)} need ffi extern(c, name: \"{ffiName}\");");
+            sb.AppendLine($"    @[extern(c, name: \"{ffiName}\")]");
+            sb.AppendLine($"    export {eidosName} :: {FormatSignature(fn, needsShim)} need ffi;");
             sb.AppendLine();
         }
     }

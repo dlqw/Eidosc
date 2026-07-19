@@ -423,7 +423,8 @@ Main :: module {
         var result = CompileToTypes("""
 Main :: module {
 
-    Point :: type  repr c
+    @[repr(c)]
+    Point :: type
 {
         x:: Float,
         y:: Float

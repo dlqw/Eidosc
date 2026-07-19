@@ -9,41 +9,49 @@ ptr_is_null :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_is_null");
 
 
 /// A runtime-backed channel handle.
-Channel[A] :: type derive Copy {handle:: RawPtr}
+@[derive(Copy)]
+Channel[A] :: type {handle:: RawPtr}
 
 /// Non-blocking receive result for a runtime-backed raw-payload Channel.
-ReceiveStatus :: type derive Copy {
+@[derive(Copy)]
+ReceiveStatus :: type {
     ReceivePending :: type {} , ReceiveClosed :: type {} , ReceiveValue:: type(RawPtr)
 }
 
 
 
-new_runtime :: Int -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_channel_new_raw_capacity");
+@[extern(c, name: "eidos_channel_new_raw_capacity")]
+new_runtime :: Int -> RawPtr compiler(internal) need ffi;
 
 
 
 
-new_value_runtime :: Int -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_channel_new_capacity");
+@[extern(c, name: "eidos_channel_new_capacity")]
+new_value_runtime :: Int -> RawPtr compiler(internal) need ffi;
 
 
 
 
-try_send_runtime :: RawPtr -> RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_channel_try_send");
+@[extern(c, name: "eidos_channel_try_send")]
+try_send_runtime :: RawPtr -> RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-try_recv_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_channel_try_recv");
+@[extern(c, name: "eidos_channel_try_recv")]
+try_recv_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-close_runtime :: RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_channel_close");
+@[extern(c, name: "eidos_channel_close")]
+close_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 
 
 
 
-is_closed_value_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_channel_is_closed_value");
+@[extern(c, name: "eidos_channel_is_closed_value")]
+is_closed_value_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 /// Create a runtime-backed RawPtr payload channel with the requested buffer capacity.

@@ -222,14 +222,16 @@ choose :: Bool -> Anim
     public void Namer_ClauseSchemaRejectsWrongTargetDuplicateAndMissingDependency()
     {
         const string source = """
-WrongTarget :: type extern(c) {}
+@[extern(c)]
+WrongTarget :: type {}
 
-DuplicateRepr :: type repr c repr c {
+@[repr(c), repr(c)]
+DuplicateRepr :: type {
     value :: Int,
 }
 
-bad_contract :: Unit -> Unit need ffi
-    extern(c, unknown: "bad");
+@[extern(c, unknown: "bad")]
+bad_contract :: Unit -> Unit need ffi;
 """;
 
         var result = RunPipeline(source, CompilationPhase.Namer);
@@ -836,7 +838,8 @@ Axis :: type {
 }
 
 
-Direction[A] :: type  derive Clone
+@[derive(Clone)]
+Direction[A] :: type
 {
     North :: type case Direction[Vertical] {} ,
     South :: type case Direction[Vertical] {} ,

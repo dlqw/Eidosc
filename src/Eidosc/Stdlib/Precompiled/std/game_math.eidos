@@ -3,10 +3,14 @@ GameMath :: module {
     import Math
     import Traits
 
-    IVec2 :: type derive Copy {x:: Int, y:: Int}
-    Vec2 :: type derive Copy {x:: Float, y:: Float}
-    IRect :: type derive Copy {x:: Int, y:: Int, width:: Int, height:: Int}
-    Rect :: type derive Copy {x:: Float, y:: Float, width:: Float, height:: Float}
+    @[derive(Copy)]
+    IVec2 :: type {x:: Int, y:: Int}
+    @[derive(Copy)]
+    Vec2 :: type {x:: Float, y:: Float}
+    @[derive(Copy)]
+    IRect :: type {x:: Int, y:: Int, width:: Int, height:: Int}
+    @[derive(Copy)]
+    Rect :: type {x:: Float, y:: Float, width:: Float, height:: Float}
 
     zero_i :: IVec2 = IVec2{x: 0, y: 0};
     unit_x_i :: IVec2 = IVec2{x: 1, y: 0};

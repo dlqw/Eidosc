@@ -198,20 +198,6 @@ public sealed class DeclarationClauseBindingTests
     }
 
     [Fact]
-    public void Ordering_clauses_are_restricted_to_comptime_meta_generators()
-    {
-        var ordinary = CreateFunction(Clause(DeclarationClauseKind.Before, "before", "normalize"));
-        var generator = CreateFunction(Clause(DeclarationClauseKind.Before, "before", "normalize"));
-        generator.SetComptime(true);
-
-        var ordinaryResult = Bind(ordinary);
-        var generatorResult = Bind(generator);
-
-        Assert.Contains(ordinaryResult.Diagnostics, diagnostic => diagnostic.Message.Contains("only valid on comptime meta generator", StringComparison.Ordinal));
-        Assert.DoesNotContain(generatorResult.Diagnostics, diagnostic => diagnostic.Message.Contains("only valid on comptime meta generator", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void Compiler_private_privilege_is_an_exact_unforgeable_source_grant()
     {
         var ordinary = CreateType(Clause(DeclarationClauseKind.Compiler, "compiler", "internal"));
@@ -239,8 +225,8 @@ public sealed class DeclarationClauseBindingTests
     public void Parser_preserves_where_and_case_clauses_as_typed_lossless_ir()
     {
         const string source = """
+@[derive(Eq)]
 Tree[T] :: type
-    derive Eq
     where T: Eq
 {
     Leaf[T] :: type
@@ -274,6 +260,25 @@ Tree[T] :: type
         var bindingDiagnostics = DeclarationClauseBinder.BindTree(module, EidosLanguageVersions.Current);
         Assert.Empty(bindingDiagnostics);
         Assert.Equal([DeclarationClauseKind.Case, DeclarationClauseKind.Where], leaf.BoundClauses.Select(static clause => clause.Kind));
+    }
+
+    [Fact]
+    public void Parser_rejects_interim_typed_attachment_clauses()
+    {
+        const string source = "Subject :: type derive Eq {};";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = SourcePath,
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Parser,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("typed declaration tag", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -488,7 +493,8 @@ derive_empty :: comptime meta.Type -> meta.Items {
     }
 }
 
-Subject :: type expand derive_empty {
+@[expand(derive_empty)]
+Subject :: type {
     value :: Int
 }
 """;
@@ -545,7 +551,8 @@ identity_body :: comptime meta.Function -> meta.Function {
     }
 }
 
-work :: Int -> Int expand identity_body {
+@[expand(identity_body)]
+work :: Int -> Int {
     value => value
 }
 """;
@@ -574,7 +581,8 @@ replace_body :: comptime meta.Function -> meta.Function {
     function => function.with_body(quote expr { 7 })
 }
 
-work[T] :: Ref[T] -> Int need Logging expand replace_body {
+@[expand(replace_body)]
+work[T] :: Ref[T] -> Int need Logging {
     value => 1
 }
 """;
@@ -607,7 +615,8 @@ replace_body :: comptime meta.Function -> meta.Function {
     function => function.with_body(quote expr { "wrong" })
 }
 
-work :: Int -> Int expand replace_body {
+@[expand(replace_body)]
+work :: Int -> Int {
     value => 1
 }
 """;

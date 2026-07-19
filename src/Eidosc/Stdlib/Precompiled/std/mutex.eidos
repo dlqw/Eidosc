@@ -9,36 +9,43 @@ ptr_null :: Unit -> RawPtr compiler(internal, intrinsic: "ptr_null");
 
 
 /// A mutual exclusion lock for protecting shared state.
-Mutex[A] :: type derive Copy {handle:: RawPtr}
+@[derive(Copy)]
+Mutex[A] :: type {handle:: RawPtr}
 
 /// Observable non-blocking mutex state.
-Status :: type derive Copy {
+@[derive(Copy)]
+Status :: type {
     MutexAvailable :: type {} , MutexLocked :: type {}
 }
 
 
 
-new_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_mutex_new");
+@[extern(c, name: "eidos_mutex_new")]
+new_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-try_lock_runtime :: RawPtr -> Bool compiler(internal) need ffi extern(c, name: "eidos_mutex_try_lock");
+@[extern(c, name: "eidos_mutex_try_lock")]
+try_lock_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
 
 
-unlock_runtime :: RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_mutex_unlock");
+@[extern(c, name: "eidos_mutex_unlock")]
+unlock_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 
 
 
 
-get_inner_runtime :: RawPtr -> RawPtr compiler(internal) need ffi extern(c, name: "eidos_mutex_get_inner");
+@[extern(c, name: "eidos_mutex_get_inner")]
+get_inner_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
 
-replace_inner_runtime :: RawPtr -> RawPtr -> Unit compiler(internal) need ffi extern(c, name: "eidos_mutex_replace_inner");
+@[extern(c, name: "eidos_mutex_replace_inner")]
+replace_inner_runtime :: RawPtr -> RawPtr -> Unit compiler(internal) need ffi;
 
 
 /// Create a runtime-backed mutex handle.

@@ -945,7 +945,8 @@ read_parent :: Ref[Anim] -> String
     public void Namer_ClosedCaseReprC_DoesNotPretendSealedSumHasCStructLayout()
     {
         const string source = """
-Anim :: type repr c {
+@[repr(c)]
+Anim :: type {
     Dog :: type {},
     Cat :: type {},
 }

@@ -15,7 +15,8 @@ public class DeriveGenerationTests
     {
         const string source = """
 Choice :: type {
-    Selected :: type derive Eq {},
+    @[derive(Eq)]
+    Selected :: type {},
     Unselected :: type {},
 }
 """;
@@ -38,7 +39,8 @@ Choice :: type {
     {
         const string source = """
 Choice :: type {
-    Active :: type derive Show {
+    @[derive(Show)]
+    Active :: type {
         Selected :: type {},
         Pending :: type {},
     },
@@ -61,7 +63,9 @@ Choice :: type {
     {
         const string source = """
 
-Point :: type  derive Copy
+@[derive(Copy)]
+
+Point :: type
 {
     Point:: type(Int, Int)
 }
@@ -81,7 +85,8 @@ Point :: type  derive Copy
     public void DeriveCopy_PhantomGeneric_DoesNotRequireUnusedTypeParameter()
     {
         const string source = """
-Handle[A] :: type derive Copy { handle :: RawPtr }
+@[derive(Copy)]
+Handle[A] :: type { handle :: RawPtr }
 """;
 
         var result = Compile("derive_copy_phantom_generic.eidos", source);
@@ -107,7 +112,9 @@ Handle[A] :: type derive Copy { handle :: RawPtr }
     {
         const string source = """
 
-Box :: type  derive Clone
+@[derive(Clone)]
+
+Box :: type
 {
     Box:: type(String)
 }
@@ -121,7 +128,9 @@ Box :: type  derive Clone
     {
         const string source = """
 
-Box :: type  derive Clone
+@[derive(Clone)]
+
+Box :: type
 {
     Box:: type(String)
 }
@@ -144,7 +153,9 @@ Box :: type  derive Clone
     {
         const string source = """
 
-Pair :: type  derive Eq
+@[derive(Eq)]
+
+Pair :: type
 {
     Pair:: type(Int, Int)
 }
@@ -158,7 +169,9 @@ Pair :: type  derive Eq
     {
         const string source = """
 
-Wrapper :: type  derive Show
+@[derive(Show)]
+
+Wrapper :: type
 {
     Wrapper:: type(Int)
 }
@@ -172,9 +185,9 @@ Wrapper :: type  derive Show
     {
         const string source = """
 
+@[derive(Copy, Clone, Show)]
 
-
-Shape :: type  derive Copy derive Clone derive Show
+Shape :: type
 {
     Circle:: type(Int) , Rect:: type(Int, Int)
 }
@@ -188,9 +201,9 @@ Shape :: type  derive Copy derive Clone derive Show
     {
         const string source = """
 
+@[derive(Eq, Copy, Clone)]
 
-
-Color :: type  derive Eq derive Copy derive Clone
+Color :: type
 {
     Red :: type {} , Green :: type {} , Blue :: type {}
 }
@@ -204,10 +217,9 @@ Color :: type  derive Eq derive Copy derive Clone
     {
         const string source = """
 
+@[derive(Eq, Ord, Copy, Clone)]
 
-
-
-Ordering2 :: type  derive Eq derive Ord derive Copy derive Clone
+Ordering2 :: type
 {
     Less2 :: type {} , Equal2 :: type {} , Greater2 :: type {}
 }
@@ -221,10 +233,9 @@ Ordering2 :: type  derive Eq derive Ord derive Copy derive Clone
     {
         const string source = """
 
+@[derive(Copy, Clone, Eq, Show)]
 
-
-
-Maybe[T] :: type  derive Copy derive Clone derive Eq derive Show
+Maybe[T] :: type
 {
     Just:: type(T) , Nothing :: type {}
 }
@@ -238,7 +249,9 @@ Maybe[T] :: type  derive Copy derive Clone derive Eq derive Show
     {
         const string source = """
 
-Point :: type  derive Debug
+@[derive(Debug)]
+
+Point :: type
 {
     Point:: type(Int)
 }
@@ -340,8 +353,9 @@ DirectionFacts :: trait {
     opposite :: Self -> Self
 }
 
+@[derive(Eq)]
 
-Direction :: type  derive Eq
+Direction :: type
 {
     North :: type {} ,
     South :: type {}
@@ -498,7 +512,9 @@ Direction :: type {
     {
         const string source = """
 
-Empty :: type  derive Eq
+@[derive(Eq)]
+
+Empty :: type
 {
 }
 """;
@@ -518,7 +534,9 @@ Empty :: type  derive Eq
     {
         const string source = """
 
-Unit2 :: type  derive Copy
+@[derive(Copy)]
+
+Unit2 :: type
 {
     Unit2 :: type {}
 }
@@ -539,7 +557,6 @@ MyClone :: trait {
 Wrapper[T] :: type {
     Wrap:: type(T)
 }
-
 
 MyCloneWrapper :: instance MyClone {
     my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
@@ -568,8 +585,9 @@ MyCloneWrapper :: instance MyClone {
     {
         const string source = """
 
+@[derive(Clone, Show)]
 
-Result2[T, E] :: type  derive Clone derive Show
+Result2[T, E] :: type
 {
     Ok:: type(T) , Err:: type(E)
 }
@@ -586,8 +604,9 @@ Result2[T, E] :: type  derive Clone derive Show
         // like the equivalent explicit single-constructor form.
         const string source = """
 
+@[derive(Eq, Show)]
 
-Point :: type  derive Eq derive Show
+Point :: type
 {
     x:: Int,
     y:: Int

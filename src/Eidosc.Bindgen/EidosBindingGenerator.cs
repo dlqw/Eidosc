@@ -75,7 +75,8 @@ public sealed class EidosBindingGenerator
             var name = st.EffectiveName;
 
             sb.AppendLine($"// {name} (size: {st.Size}, alignment: {st.Alignment})");
-            sb.AppendLine($"export {name} :: type repr c {{");
+            sb.AppendLine("@[repr(c)]");
+            sb.AppendLine($"export {name} :: type {{");
 
             foreach (var field in st.Fields)
             {
@@ -131,6 +132,7 @@ public sealed class EidosBindingGenerator
         var eidosName = TypeMapper.EidosFunctionName(fn.Name);
         var retMapping = TypeMapper.MapCType(fn.ReturnType);
 
+        sb.AppendLine($"@[extern(c, name: \"{fn.Name}\")]");
         sb.Append($"export {eidosName} :: ");
 
         if (fn.Params.Count == 0)
@@ -147,7 +149,7 @@ public sealed class EidosBindingGenerator
             sb.Append(retMapping.EidosType);
         }
 
-        sb.AppendLine($" need ffi extern(c, name: \"{fn.Name}\");");
+        sb.AppendLine(" need ffi;");
     }
 
     private void GenerateShimmedFunction(StringBuilder sb, CFunctionInfo fn)
@@ -175,7 +177,7 @@ public sealed class EidosBindingGenerator
             sb.Append(retMapping.EidosType);
         }
 
-        sb.AppendLine($" need ffi extern(c, name: \"eidos_shim_{fn.Name}\");");
+        sb.AppendLine(" need ffi;");
     }
 
     private static (bool canBind, string reason) CanBindFunction(CFunctionInfo fn)

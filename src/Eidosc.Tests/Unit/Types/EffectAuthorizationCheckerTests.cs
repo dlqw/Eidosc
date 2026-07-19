@@ -64,7 +64,8 @@ helper :: Int -> Unit need Emitter
     public void CompilationPipeline_FfiCallInsideModuleInitializerWithoutCapability_ReportsE3003()
     {
         const string source = """
- malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
 
 leaked :: malloc(8);
@@ -93,7 +94,8 @@ main :: Unit -> RawPtr need ffi
     public void CompilationPipeline_FfiCallInsideEntryFunction_UsesRootCapability()
     {
         const string source = """
- malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
 
 main :: Unit -> RawPtr need ffi
@@ -117,7 +119,8 @@ main :: Unit -> RawPtr need ffi
     public void CompilationPipeline_NameFirstFfiCallInsideEntryFunctionWithoutNeed_ReportsE3003()
     {
         const string source = """
- malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
 main :: Unit -> RawPtr
 {
@@ -146,7 +149,8 @@ main :: Unit -> RawPtr
     public void CompilationPipeline_NameFirstFfiCallInsideEntryFunctionWithNeed_Succeeds()
     {
         const string source = """
- malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
 main :: Unit -> RawPtr need ffi
 {
@@ -172,7 +176,8 @@ main :: Unit -> RawPtr need ffi
     public void CompilationPipeline_NameFirstFfiHelperResultsCanFlowThroughBinaryWhenCallerHasNeed()
     {
         const string source = """
- malloc :: Int -> RawPtr need ffi extern(c, name: "malloc");
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
 left :: Unit -> Int need ffi
 {
