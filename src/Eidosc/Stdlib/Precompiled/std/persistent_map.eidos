@@ -39,7 +39,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => 0,
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{key: _, value: _, left: _, right: _, size: size, height: _} => size
         }
     }
@@ -49,7 +49,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => 0,
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{key: _, value: _, left: _, right: _, size: _, height: height} => height
         }
     }
@@ -83,7 +83,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => 0,
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{key: _, value: _, left: left, right: right, size: _, height: _} =>
                 PersistentMap.height_link(left) - PersistentMap.height_link(right)
         }
@@ -93,7 +93,7 @@ PersistentMap :: module {
     rotate_right[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V]
      compiler(internal)
 {
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{
                 key: key,
                 value: value,
@@ -101,7 +101,7 @@ PersistentMap :: module {
                 right: right,
                 size: _,
                 height: _
-            } => match *Shared.borrow(left_node) {
+            } => match *Shared.borrow(ref left_node) {
                 Node{key: left_key, value: left_value, left: left_left, right: left_right, size: _, height: _} =>
                     PersistentMap.make_link(TraitInvoke.clone_value(ref left_key))(TraitInvoke.clone_value(ref left_value))(
                         PersistentMap.clone_link(left_left))(
@@ -118,7 +118,7 @@ PersistentMap :: module {
     rotate_left[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V]
      compiler(internal)
 {
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{
                 key: key,
                 value: value,
@@ -126,7 +126,7 @@ PersistentMap :: module {
                 right: Link(right_node),
                 size: _,
                 height: _
-            } => match *Shared.borrow(right_node) {
+            } => match *Shared.borrow(ref right_node) {
                 Node{key: right_key, value: right_value, left: right_left, right: right_right, size: _, height: _} =>
                     PersistentMap.make_link(TraitInvoke.clone_value(ref right_key))(TraitInvoke.clone_value(ref right_value))(
                         PersistentMap.make_link(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
@@ -168,7 +168,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => key => value => PersistentMap.make_link(key)(value)(Empty())(Empty()),
-        Link(node) => key => value => match *Shared.borrow(node) {
+        Link(node) => key => value => match *Shared.borrow(ref node) {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
@@ -207,7 +207,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => _ => None(),
-        Link(node) => key => match *Shared.borrow(node) {
+        Link(node) => key => match *Shared.borrow(ref node) {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
@@ -234,7 +234,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => _ => false,
-        Link(node) => key => match *Shared.borrow(node) {
+        Link(node) => key => match *Shared.borrow(ref node) {
             Node{key: node_key, value: _, left: left, right: right, size: _, height: _} => {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
@@ -256,7 +256,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => None(),
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{key: key, value: value, left: Empty(), right: _, size: _, height: _} =>
                 Some((TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))),
             Node{key: _, value: _, left: left, right: _, size: _, height: _} =>
@@ -269,7 +269,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => Empty(),
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{key: _, value: _, left: Empty(), right: right, size: _, height: _} =>
                 PersistentMap.clone_link(right),
             Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
@@ -298,7 +298,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => _ => Empty(),
-        Link(node) => key => match *Shared.borrow(node) {
+        Link(node) => key => match *Shared.borrow(ref node) {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
@@ -324,7 +324,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => [],
-        Link(node) => match *Shared.borrow(node) {
+        Link(node) => match *Shared.borrow(ref node) {
             Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
                 Seq.append(PersistentMap.to_seq_link(PersistentMap.clone_link(left)))(
                     Seq.append([(TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))])(

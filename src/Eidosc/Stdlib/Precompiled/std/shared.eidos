@@ -9,7 +9,7 @@ Shared :: module {
 
 
 
-    borrow[T] :: Shared[T] -> Ref[T] compiler(intrinsic: "shared_borrow");
+    borrow[T] :: Ref[Shared[T]] -> Ref[T] compiler(intrinsic: "shared_borrow");
 
 
 
@@ -23,6 +23,6 @@ Shared :: module {
     }
 
 
-    ptr_eq[T] :: Shared[T] -> Shared[T] -> Bool compiler(intrinsic: "shared_ptr_eq");
+    ptr_eq[T] :: Ref[Shared[T]] -> Ref[Shared[T]] -> Bool compiler(intrinsic: "shared_ptr_eq");
 
 }

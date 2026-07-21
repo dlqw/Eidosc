@@ -27,8 +27,8 @@ main :: Unit -> Int
     _ => {
         first := Shared.new((40, 2))
         second := Shared.clone(ref first)
-        same := Shared.ptr_eq(first)(second)
-        borrowed := Shared.borrow(second)
+        same := Shared.ptr_eq(ref first)(ref second)
+        borrowed := Shared.borrow(ref second)
         match *borrowed {
             (value, extra) =>
                 if same && value == 40 then { 42 } else { 1 }
