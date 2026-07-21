@@ -77,67 +77,67 @@ main :: Unit -> Int
         timeoutStatusResponse := Network.send(timeoutStatusRequest);
         timeoutErrorResponse := Network.send(timeoutErrorRequest);
 
-        queryHeaderBit := if Network.body(queryHeaderResponse) == "q=hello%20world|alpha" then { 1 } else { 0 };
-        binaryQueryHeaderBit := match Network.body_bytes(binaryQueryHeaderResponse)
+        queryHeaderBit := if Network.body(ref queryHeaderResponse) == "q=hello%20world|alpha" then { 1 } else { 0 };
+        binaryQueryHeaderBit := match Network.body_bytes(ref binaryQueryHeaderResponse)
         {
             [113, 61, 104, 101, 108, 108, 111, 37, 50, 48, 119, 111, 114, 108, 100, 124, 98, 101, 116, 97] => 1,
             _ => 0
         };
-        binaryQueryHeaderResponseBit := match Network.bytes_header_value_opt(binaryQueryHeaderHeaderResponse)("x-binary-reply")
+        binaryQueryHeaderResponseBit := match Network.bytes_header_value_opt(ref binaryQueryHeaderHeaderResponse)("x-binary-reply")
         {
             Some(value) => if value == "bytes-query" then { 1 } else { 0 },
             None() => 0
         };
-        binaryRedirectBodyBit := match Network.body_bytes(binaryRedirectBodyResponse)
+        binaryRedirectBodyBit := match Network.body_bytes(ref binaryRedirectBodyResponse)
         {
             [0, 1, 255, 65] => 1,
             _ => 0
         };
-        binaryRedirectUrlBit := if Text.ends_with(Network.bytes_effective_url(binaryRedirectUrlResponse))("/binary") then { 1 } else { 0 };
-        binaryRedirectHeaderBit := match Network.bytes_header_value_opt(binaryRedirectHeaderResponse)("x-binary-reply")
+        binaryRedirectUrlBit := if Text.ends_with(Network.bytes_effective_url(ref binaryRedirectUrlResponse))("/binary") then { 1 } else { 0 };
+        binaryRedirectHeaderBit := match Network.bytes_header_value_opt(ref binaryRedirectHeaderResponse)("x-binary-reply")
         {
             Some(value) => if value == "bytes-value" then { 1 } else { 0 },
             None() => 0
         };
-        repeatHeaderBit := match Network.header_value_opt(repeatHeaderValueResponse)("x-repeat")
+        repeatHeaderBit := match Network.header_value_opt(ref repeatHeaderValueResponse)("x-repeat")
         {
             Some(value) => if value == "first" then { 1 } else { 0 },
             None() => 0
         };
-        repeatHeaderRawBit := if Text.contains(Network.headers(repeatHeaderRawFirstResponse))("X-Repeat: first") &&
-            Text.contains(Network.headers(repeatHeaderRawSecondResponse))("X-Repeat: second")
+        repeatHeaderRawBit := if Text.contains(Network.headers(ref repeatHeaderRawFirstResponse))("X-Repeat: first") &&
+            Text.contains(Network.headers(ref repeatHeaderRawSecondResponse))("X-Repeat: second")
             then { 1 } else { 0 };
-        emptyJsonBodyBit := if Network.body(emptyJsonBodyResponse) == "" then { 1 } else { 0 };
-        emptyJsonTypeBit := if Text.starts_with(Network.content_type(emptyJsonTypeResponse))("application.json") then { 1 } else { 0 };
-        binaryRepeatHeaderBit := match Network.bytes_header_value_opt(binaryRepeatHeaderValueResponse)("x-repeat")
+        emptyJsonBodyBit := if Network.body(ref emptyJsonBodyResponse) == "" then { 1 } else { 0 };
+        emptyJsonTypeBit := if Text.starts_with(Network.content_type(ref emptyJsonTypeResponse))("application.json") then { 1 } else { 0 };
+        binaryRepeatHeaderBit := match Network.bytes_header_value_opt(ref binaryRepeatHeaderValueResponse)("x-repeat")
         {
             Some(value) => if value == "first" then { 1 } else { 0 },
             None() => 0
         };
-        binaryRepeatHeaderRawBit := if Text.contains(Network.bytes_headers(binaryRepeatHeaderRawFirstResponse))("X-Repeat: first") &&
-            Text.contains(Network.bytes_headers(binaryRepeatHeaderRawSecondResponse))("X-Repeat: second")
+        binaryRepeatHeaderRawBit := if Text.contains(Network.bytes_headers(ref binaryRepeatHeaderRawFirstResponse))("X-Repeat: first") &&
+            Text.contains(Network.bytes_headers(ref binaryRepeatHeaderRawSecondResponse))("X-Repeat: second")
             then { 1 } else { 0 };
-        binaryEmptyBodyBit := match Network.body_bytes(binaryEmptyBodyResponse)
+        binaryEmptyBodyBit := match Network.body_bytes(ref binaryEmptyBodyResponse)
         {
             [] => 1,
             _ => 0
         };
-        binaryEmptyTypeBit := if Text.starts_with(Network.bytes_content_type(binaryEmptyTypeResponse))("application.empty") then { 1 } else { 0 };
-        binaryEmptyHeaderBit := match Network.bytes_header_value_opt(binaryEmptyHeaderResponse)("x-binary-reply")
+        binaryEmptyTypeBit := if Text.starts_with(Network.bytes_content_type(ref binaryEmptyTypeResponse))("application.empty") then { 1 } else { 0 };
+        binaryEmptyHeaderBit := match Network.bytes_header_value_opt(ref binaryEmptyHeaderResponse)("x-binary-reply")
         {
             Some(value) => if value == "empty-value" then { 1 } else { 0 },
             None() => 0
         };
-        headBit := if Network.status(headStatusResponse) == 200 && Network.body(headBodyResponse) == "" then { 1 } else { 0 };
-        headHeaderBit := match Network.header_value_opt(headHeaderResponse)("X-Reply")
+        headBit := if Network.status(ref headStatusResponse) == 200 && Network.body(ref headBodyResponse) == "" then { 1 } else { 0 };
+        headHeaderBit := match Network.header_value_opt(ref headHeaderResponse)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        binaryErrorBit := if Network.bytes_status(binaryErrorStatusResponse) == 404 &&
-            Text.contains(Network.bytes_error(binaryErrorMessageResponse))("404")
+        binaryErrorBit := if Network.bytes_status(ref binaryErrorStatusResponse) == 404 &&
+            Text.contains(Network.bytes_error(ref binaryErrorMessageResponse))("404")
             then { 1 } else { 0 };
-        binaryErrorHeaderBit := match Network.bytes_header_value_opt(binaryErrorHeaderResponse)("x-binary-reply")
+        binaryErrorHeaderBit := match Network.bytes_header_value_opt(ref binaryErrorHeaderResponse)("x-binary-reply")
         {
             Some(value) => if value == "bytes-value" then { 1 } else { 0 },
             None() => 0
@@ -147,15 +147,15 @@ main :: Unit -> Int
             Ok(bytes) => 0,
             Err(message) => if Text.contains(message)("404") then { 1 } else { 0 }
         };
-        uploadBodyBit := match Network.body_bytes(uploadBodyResponse)
+        uploadBodyBit := match Network.body_bytes(ref uploadBodyResponse)
         {
             [9, 8] => 1,
             _ => 0
         };
-        uploadTypeBit := if Text.starts_with(Network.bytes_content_type(uploadTypeResponse))("application.custom") then { 1 } else { 0 };
-        timeoutBit := if !Network.ok(timeoutStatusResponse) &&
-            Network.status(timeoutStatusResponse) == 0 &&
-            Text.contains(Network.error(timeoutErrorResponse))("timed out")
+        uploadTypeBit := if Text.starts_with(Network.bytes_content_type(ref uploadTypeResponse))("application.custom") then { 1 } else { 0 };
+        timeoutBit := if !Network.ok(ref timeoutStatusResponse) &&
+            Network.status(ref timeoutStatusResponse) == 0 &&
+            Text.contains(Network.error(ref timeoutErrorResponse))("timed out")
             then { 1 } else { 0 };
 
         if queryHeaderBit + binaryQueryHeaderBit + binaryQueryHeaderResponseBit + binaryRedirectBodyBit + binaryRedirectUrlBit + binaryRedirectHeaderBit + repeatHeaderBit + repeatHeaderRawBit + emptyJsonBodyBit + emptyJsonTypeBit + binaryRepeatHeaderBit + binaryRepeatHeaderRawBit + binaryEmptyBodyBit + binaryEmptyTypeBit + binaryEmptyHeaderBit + headBit + headHeaderBit + binaryErrorBit + binaryErrorHeaderBit + binaryResultBit + uploadBodyBit + uploadTypeBit + timeoutBit == 23
@@ -201,11 +201,11 @@ main :: Unit -> Int
     _ => {
         redirect := Network.http_get_response("{{baseUrl}}redirect");
         headResponse := Network.send(Network.request("HEAD")("{{baseUrl}}reply-header")("text.plain")(""));
-        redirectBit := if Network.status(redirect) == 200 &&
-            Network.body(redirect) == "hello-from-eidos" &&
-            Text.ends_with(Network.effective_url(redirect))("/ok")
+        redirectBit := if Network.status(ref redirect) == 200 &&
+            Network.body(ref redirect) == "hello-from-eidos" &&
+            Text.ends_with(Network.effective_url(ref redirect))("/ok")
             then { 1 } else { 0 };
-        headHeaderBit := match Network.header_value_opt(headResponse)("X-Reply")
+        headHeaderBit := match Network.header_value_opt(ref headResponse)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
@@ -269,13 +269,13 @@ main :: Unit -> Int
                 Network.request("PUT")("{{baseUrl}}request-shape-headers")("application.empty")(""))("X-Repeat")("first"))("X-Repeat")("second");
         bytesDuplicateHeaderResponse := Network.send_with_bytes_body(bytesDuplicateHeaderRequest)([]);
 
-        textBit := if Network.body(textResponse) == "POST|q=hello%20world|text.custom|4|alpha"
+        textBit := if Network.body(ref textResponse) == "POST|q=hello%20world|text.custom|4|alpha"
             then { 1 } else { 0 };
-        bytesBit := if Network.body(bytesResponse) == "PUT|k=v|application.custom|3|beta"
+        bytesBit := if Network.body(ref bytesResponse) == "PUT|k=v|application.custom|3|beta"
             then { 1 } else { 0 };
-        textDuplicateHeaderBit := if Network.body(textDuplicateHeaderResponse) == "POST||application.json|0||first,second"
+        textDuplicateHeaderBit := if Network.body(ref textDuplicateHeaderResponse) == "POST||application.json|0||first,second"
             then { 1 } else { 0 };
-        bytesDuplicateHeaderBit := if Network.body(bytesDuplicateHeaderResponse) == "PUT||application.empty|0||first,second"
+        bytesDuplicateHeaderBit := if Network.body(ref bytesDuplicateHeaderResponse) == "PUT||application.empty|0||first,second"
             then { 1 } else { 0 };
 
         if textBit + bytesBit + textDuplicateHeaderBit + bytesDuplicateHeaderBit == 4
@@ -337,13 +337,13 @@ main :: Unit -> Int
                 Network.request("PUT")("{{baseUrl}}redirect-308-request-shape")("application.octet-stream")(""))("X-Test")("beta"))("X-Repeat")("first");
         bytesRedirectUrlResponse := Network.send_with_bytes_body(Network.with_header(bytesRedirectUrlRequest)("x-repeat")("second"))([9, 8, 7]);
 
-        textRedirectBit := if Network.body(textRedirectResponse) == "POST||application.custom|4|alpha|first,second"
+        textRedirectBit := if Network.body(ref textRedirectResponse) == "POST||application.custom|4|alpha|first,second"
             then { 1 } else { 0 };
-        textRedirectUrlBit := if Text.ends_with(Network.effective_url(textRedirectUrlResponse))("/request-shape-headers")
+        textRedirectUrlBit := if Text.ends_with(Network.effective_url(ref textRedirectUrlResponse))("/request-shape-headers")
             then { 1 } else { 0 };
-        bytesRedirectBit := if Network.body(bytesRedirectResponse) == "PUT||application.octet-stream|3|beta|first,second"
+        bytesRedirectBit := if Network.body(ref bytesRedirectResponse) == "PUT||application.octet-stream|3|beta|first,second"
             then { 1 } else { 0 };
-        bytesRedirectUrlBit := if Text.ends_with(Network.effective_url(bytesRedirectUrlResponse))("/request-shape-headers")
+        bytesRedirectUrlBit := if Text.ends_with(Network.effective_url(ref bytesRedirectUrlResponse))("/request-shape-headers")
             then { 1 } else { 0 };
 
         if textRedirectBit + textRedirectUrlBit + bytesRedirectBit + bytesRedirectUrlBit == 4
@@ -390,9 +390,9 @@ main :: Unit -> Int
         bytesResponse := Network.send_with_bytes_body(
             Network.request("PUT")("{{baseUrl}}request-shape-length")("application.octet-stream")(""))([]);
 
-        textBit := if Network.body(textResponse) == "POST|application.json|0|0"
+        textBit := if Network.body(ref textResponse) == "POST|application.json|0|0"
             then { 1 } else { 0 };
-        bytesBit := if Network.body(bytesResponse) == "PUT|application.octet-stream|0|0"
+        bytesBit := if Network.body(ref bytesResponse) == "PUT|application.octet-stream|0|0"
             then { 1 } else { 0 };
 
         if textBit + bytesBit == 2
@@ -441,11 +441,11 @@ main :: Unit -> Int
         missingResponse := Network.http_get_response("{{baseUrl}}missing");
         missingResult := Network.http_get_text_result("{{baseUrl}}missing");
 
-        acceptBit := if Network.body(acceptResponse) == "application.json" then { 1 } else { 0 };
-        deleteBit := if Network.body(deleteResponse) == "Bearer token-123" then { 1 } else { 0 };
-        missingBodyBit := if Network.body(missingResponse) == "missing-body" then { 1 } else { 0 };
-        missingHeaderBit := if Text.contains(Network.headers(missingResponse))("Content-Type: text.plain") then { 1 } else { 0 };
-        missingErrorBit := if Text.contains(Network.error(missingResponse))("404") then { 1 } else { 0 };
+        acceptBit := if Network.body(ref acceptResponse) == "application.json" then { 1 } else { 0 };
+        deleteBit := if Network.body(ref deleteResponse) == "Bearer token-123" then { 1 } else { 0 };
+        missingBodyBit := if Network.body(ref missingResponse) == "missing-body" then { 1 } else { 0 };
+        missingHeaderBit := if Text.contains(Network.headers(ref missingResponse))("Content-Type: text.plain") then { 1 } else { 0 };
+        missingErrorBit := if Text.contains(Network.error(ref missingResponse))("404") then { 1 } else { 0 };
         missingResultBit := match missingResult
         {
             Ok(body) => 0,

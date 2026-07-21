@@ -895,14 +895,14 @@ main :: Unit -> Int
     _ => {
         redirect := Network.http_get_response("{{baseUrl}}redirect");
         replyHeader := Network.http_get_response("{{baseUrl}}reply-header");
-        headerBit := match Network.header_value_opt(replyHeader)("X-Reply")
+        headerBit := match Network.header_value_opt(ref replyHeader)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        redirectBit := if Network.status(redirect) == 200 &&
-            Network.body(redirect) == "hello-from-eidos" &&
-            Text.ends_with(Network.effective_url(redirect))("/ok")
+        redirectBit := if Network.status(ref redirect) == 200 &&
+            Network.body(ref redirect) == "hello-from-eidos" &&
+            Text.ends_with(Network.effective_url(ref redirect))("/ok")
             then { 1 } else { 0 };
 
         if redirectBit + headerBit == 2

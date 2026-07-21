@@ -1,6 +1,7 @@
 Network :: module {
     import Option
     import Result
+    import Seq
     import Text
 
 
@@ -540,39 +541,53 @@ Network :: module {
             }
     }
 
-    connect_timeout_seconds :: HttpRequest -> Int
+    connect_timeout_seconds :: Ref[HttpRequest] -> Int
     {
-        HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: seconds, total_timeout_seconds: _} => seconds
+        request => match *request {
+            HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: seconds, total_timeout_seconds: _} => seconds
+        }
     }
 
-    total_timeout_seconds :: HttpRequest -> Int
+    total_timeout_seconds :: Ref[HttpRequest] -> Int
     {
-        HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: seconds} => seconds
+        request => match *request {
+            HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: seconds} => seconds
+        }
     }
 
-    request_method :: HttpRequest -> String
+    request_method :: Ref[HttpRequest] -> String
     {
-        HttpRequest{method: method, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => method
+        request => match *request {
+            HttpRequest{method: method, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref method)
+        }
     }
 
-    request_url :: HttpRequest -> String
+    request_url :: Ref[HttpRequest] -> String
     {
-        HttpRequest{method: _, url: url, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => url
+        request => match *request {
+            HttpRequest{method: _, url: url, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref url)
+        }
     }
 
-    request_body :: HttpRequest -> String
+    request_body :: Ref[HttpRequest] -> String
     {
-        HttpRequest{method: _, url: _, content_type: _, body: body, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => body
+        request => match *request {
+            HttpRequest{method: _, url: _, content_type: _, body: body, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref body)
+        }
     }
 
-    request_content_type :: HttpRequest -> String
+    request_content_type :: Ref[HttpRequest] -> String
     {
-        HttpRequest{method: _, url: _, content_type: content_type, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => content_type
+        request => match *request {
+            HttpRequest{method: _, url: _, content_type: content_type, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref content_type)
+        }
     }
 
-    request_headers :: HttpRequest -> String
+    request_headers :: Ref[HttpRequest] -> String
     {
-        HttpRequest{method: _, url: _, content_type: _, body: _, headers: headers, connect_timeout_seconds: _, total_timeout_seconds: _} => headers
+        request => match *request {
+            HttpRequest{method: _, url: _, content_type: _, body: _, headers: headers, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref headers)
+        }
     }
 
     send :: HttpRequest -> HttpResponse need io
@@ -731,74 +746,102 @@ Network :: module {
         }
     }
 
-    ok :: HttpResponse -> Bool
+    ok :: Ref[HttpResponse] -> Bool
     {
-        HttpResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
+        response => match *response {
+            HttpResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
+        }
     }
 
-    status :: HttpResponse -> Int
+    status :: Ref[HttpResponse] -> Int
     {
-        HttpResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
+        response => match *response {
+            HttpResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
+        }
     }
 
-    body :: HttpResponse -> String
+    body :: Ref[HttpResponse] -> String
     {
-        HttpResponse{ok: _, status: _, body: text, headers: _, effective_url: _, content_type: _, error: _} => text
+        response => match *response {
+            HttpResponse{ok: _, status: _, body: text, headers: _, effective_url: _, content_type: _, error: _} => Text.clone(ref text)
+        }
     }
 
-    headers :: HttpResponse -> String
+    headers :: Ref[HttpResponse] -> String
     {
-        HttpResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => raw
+        response => match *response {
+            HttpResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => Text.clone(ref raw)
+        }
     }
 
-    effective_url :: HttpResponse -> String
+    effective_url :: Ref[HttpResponse] -> String
     {
-        HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => url
+        response => match *response {
+            HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => Text.clone(ref url)
+        }
     }
 
-    content_type :: HttpResponse -> String
+    content_type :: Ref[HttpResponse] -> String
     {
-        HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => mime
+        response => match *response {
+            HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => Text.clone(ref mime)
+        }
     }
 
-    error :: HttpResponse -> String
+    error :: Ref[HttpResponse] -> String
     {
-        HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => message
+        response => match *response {
+            HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => Text.clone(ref message)
+        }
     }
 
-    bytes_ok :: HttpBytesResponse -> Bool
+    bytes_ok :: Ref[HttpBytesResponse] -> Bool
     {
-        HttpBytesResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
+        response => match *response {
+            HttpBytesResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
+        }
     }
 
-    bytes_status :: HttpBytesResponse -> Int
+    bytes_status :: Ref[HttpBytesResponse] -> Int
     {
-        HttpBytesResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
+        response => match *response {
+            HttpBytesResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
+        }
     }
 
-    body_bytes :: HttpBytesResponse -> Seq[Int]
+    body_bytes :: Ref[HttpBytesResponse] -> Seq[Int]
     {
-        HttpBytesResponse{ok: _, status: _, body: bytes, headers: _, effective_url: _, content_type: _, error: _} => bytes
+        response => match *response {
+            HttpBytesResponse{ok: _, status: _, body: bytes, headers: _, effective_url: _, content_type: _, error: _} => Seq.clone_items(ref bytes)
+        }
     }
 
-    bytes_headers :: HttpBytesResponse -> String
+    bytes_headers :: Ref[HttpBytesResponse] -> String
     {
-        HttpBytesResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => raw
+        response => match *response {
+            HttpBytesResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => Text.clone(ref raw)
+        }
     }
 
-    bytes_effective_url :: HttpBytesResponse -> String
+    bytes_effective_url :: Ref[HttpBytesResponse] -> String
     {
-        HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => url
+        response => match *response {
+            HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => Text.clone(ref url)
+        }
     }
 
-    bytes_content_type :: HttpBytesResponse -> String
+    bytes_content_type :: Ref[HttpBytesResponse] -> String
     {
-        HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => mime
+        response => match *response {
+            HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => Text.clone(ref mime)
+        }
     }
 
-    bytes_error :: HttpBytesResponse -> String
+    bytes_error :: Ref[HttpBytesResponse] -> String
     {
-        HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => message
+        response => match *response {
+            HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => Text.clone(ref message)
+        }
     }
 
 
@@ -873,7 +916,7 @@ Network :: module {
             }
     }
 
-    header_value_opt :: HttpResponse -> String -> Option[String]
+    header_value_opt :: Ref[HttpResponse] -> String -> Option[String]
     {
         response => name => Network.find_header_value_from(
             Network.headers(response))(
@@ -881,7 +924,7 @@ Network :: module {
             0)
     }
 
-    header_value_or_empty :: HttpResponse -> String -> String
+    header_value_or_empty :: Ref[HttpResponse] -> String -> String
     {
         response => name => match Network.header_value_opt(response)(name)
         {
@@ -890,7 +933,7 @@ Network :: module {
         }
     }
 
-    bytes_header_value_opt :: HttpBytesResponse -> String -> Option[String]
+    bytes_header_value_opt :: Ref[HttpBytesResponse] -> String -> Option[String]
     {
         response => name => Network.find_header_value_from(
             Network.bytes_headers(response))(
@@ -898,7 +941,7 @@ Network :: module {
             0)
     }
 
-    bytes_header_value_or_empty :: HttpBytesResponse -> String -> String
+    bytes_header_value_or_empty :: Ref[HttpBytesResponse] -> String -> String
     {
         response => name => match Network.bytes_header_value_opt(response)(name)
         {
@@ -932,52 +975,52 @@ Network :: module {
         code => Network.is_client_error_code(code) || Network.is_server_error_code(code)
     }
 
-    is_success_status :: HttpResponse -> Bool
+    is_success_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_success_code(Network.status(response))
     }
 
-    is_redirect_status :: HttpResponse -> Bool
+    is_redirect_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_redirect_code(Network.status(response))
     }
 
-    is_client_error_status :: HttpResponse -> Bool
+    is_client_error_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_client_error_code(Network.status(response))
     }
 
-    is_server_error_status :: HttpResponse -> Bool
+    is_server_error_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_server_error_code(Network.status(response))
     }
 
-    is_error_status :: HttpResponse -> Bool
+    is_error_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_error_code(Network.status(response))
     }
 
-    bytes_is_success_status :: HttpBytesResponse -> Bool
+    bytes_is_success_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_success_code(Network.bytes_status(response))
     }
 
-    bytes_is_redirect_status :: HttpBytesResponse -> Bool
+    bytes_is_redirect_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_redirect_code(Network.bytes_status(response))
     }
 
-    bytes_is_client_error_status :: HttpBytesResponse -> Bool
+    bytes_is_client_error_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_client_error_code(Network.bytes_status(response))
     }
 
-    bytes_is_server_error_status :: HttpBytesResponse -> Bool
+    bytes_is_server_error_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_server_error_code(Network.bytes_status(response))
     }
 
-    bytes_is_error_status :: HttpBytesResponse -> Bool
+    bytes_is_error_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_error_code(Network.bytes_status(response))
     }
@@ -986,9 +1029,9 @@ Network :: module {
     {
         request => {
             response := Network.send(request);
-            if Network.ok(response)
-                then { Ok(Network.body(response)) }
-                else { Err(Network.error(response)) }
+            if Network.ok(ref response)
+                then { Ok(Network.body(ref response)) }
+                else { Err(Network.error(ref response)) }
         }
     }
 
@@ -1005,9 +1048,9 @@ Network :: module {
     {
         request => body_bytes => {
             response := Network.send_with_bytes_body(request)(body_bytes);
-            if Network.ok(response)
-                then { Ok(Network.body(response)) }
-                else { Err(Network.error(response)) }
+            if Network.ok(ref response)
+                then { Ok(Network.body(ref response)) }
+                else { Err(Network.error(ref response)) }
         }
     }
 
