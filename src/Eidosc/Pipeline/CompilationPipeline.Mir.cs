@@ -54,17 +54,6 @@ public sealed partial class CompilationPipeline
         }
         var hasMirErrors = filteredDiagnostics.Any(diagnostic => diagnostic.Level == Diagnostic.DiagnosticLevel.Error);
 
-        if (!hasMirErrors)
-        {
-            using (MeasureSubphase(CompilationPhase.Mir, "mir_effect_fixup"))
-            {
-                var mirEffectAnalysis = new ParameterEffectAnalysis(_mirModule!);
-                mirEffectAnalysis.Analyze();
-                ParameterEffectAnalysis.ApplyCallSiteEffectFixup(_mirModule!, mirEffectAnalysis.Results);
-                ParameterEffectAnalysis.ApplyReadOnlyParameterFix(_mirModule!, mirEffectAnalysis.Results);
-            }
-        }
-
         MirModule? mirBeforeOptimization = null;
         IReadOnlyList<string> optimizationPasses = [];
         var optimizationApplied = false;

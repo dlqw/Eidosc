@@ -433,14 +433,6 @@ public sealed partial class QueryDrivenPipeline
 
         var hasErrors = mirBuilder.Diagnostics.Any(d => d.Level == Diagnostic.DiagnosticLevel.Error);
 
-        if (!hasErrors)
-        {
-            var mirEffectAnalysis = new ParameterEffectAnalysis(mirModule);
-            mirEffectAnalysis.Analyze();
-            ParameterEffectAnalysis.ApplyCallSiteEffectFixup(mirModule, mirEffectAnalysis.Results);
-            ParameterEffectAnalysis.ApplyReadOnlyParameterFix(mirModule, mirEffectAnalysis.Results);
-        }
-
         MirModule borrowMirModule = mirModule;
 
         if (!hasErrors)

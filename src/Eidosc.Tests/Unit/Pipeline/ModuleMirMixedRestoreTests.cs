@@ -67,6 +67,8 @@ LibA :: module {
 
             Assert.True(expected.Success, FormatDiagnostics(expected));
             Assert.True(second.Success, FormatFailure(second));
+            AssertNonCopyOwnedArgumentIsMoved(expected);
+            AssertNonCopyOwnedArgumentIsMoved(second);
             Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault("Mir.moduleRestore.applied"));
             Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault("Mir.moduleRestore.fallbackBuildMir"));
             Assert.Equal(2, second.ProfilingCounters.GetValueOrDefault("Build.moduleStage.Mir.compiledModules"));
@@ -241,5 +243,24 @@ LibB :: module {
         result.MirFunctionFingerprints?.Functions
             .Select(static fingerprint => $"{fingerprint.FunctionKey}:{fingerprint.BodyHash}")
             .ToArray() ?? [];
+
+    private static void AssertNonCopyOwnedArgumentIsMoved(CompilationResult result)
+    {
+        var main = Assert.Single(
+            result.MirModule!.Functions,
+            static function => string.Equals(function.SourceName, "main", StringComparison.Ordinal));
+        var call = Assert.Single(
+            main.BasicBlocks.SelectMany(static block => block.Instructions).OfType<Eidosc.Mir.MirCall>(),
+            static candidate => candidate.Function is Eidosc.Mir.MirFunctionRef function &&
+                                function.Name.Contains("unbox", StringComparison.Ordinal));
+        var block = Assert.Single(main.BasicBlocks, candidate => candidate.Instructions.Contains(call));
+        var argument = Assert.IsType<Eidosc.Mir.MirPlace>(Assert.Single(call.Arguments));
+        Assert.Contains(
+            block.Instructions.OfType<Eidosc.Mir.MirMove>(),
+            move => move.Target.Local.Equals(argument.Local));
+        Assert.DoesNotContain(
+            block.Instructions.OfType<Eidosc.Mir.MirCopy>(),
+            copy => copy.Target.Local.Equals(argument.Local));
+    }
 
 }
