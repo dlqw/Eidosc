@@ -21,12 +21,15 @@ TreeSet :: module {
         values => Seq.fold_left(values)(TreeSet.empty(()))(set => key => TreeSet.insert(set)(key))
     }
 
-    len[K] :: TreeSet[K] -> Int
+    len[K] :: Ref[TreeSet[K]] -> Int
     {
-        TreeSet{inner: inner} => TreeMap.len(inner)
+        set => match *set {
+            TreeSet{inner: TreeMap.Empty()} => 0,
+            TreeSet{inner: TreeMap.Node{size: size, key: _, value: _, left: _, right: _, height: _}} => size
+        }
     }
 
-    is_empty[K] :: TreeSet[K] -> Bool
+    is_empty[K] :: Ref[TreeSet[K]] -> Bool
     {
         set => TreeSet.len(set) == 0
     }

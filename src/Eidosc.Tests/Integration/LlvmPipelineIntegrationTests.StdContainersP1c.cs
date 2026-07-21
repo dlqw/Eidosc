@@ -25,12 +25,20 @@ check_map :: Unit -> Int
     _ => {
         map0 := TreeMap.from_seq[Int, Int]([(3, 30), (1, 10), (2, 20), (3, 300)])
         map1 := TreeMap.remove(map0)(1)
-        keys := TreeMap.keys(map1)
-        folded := TreeMap.fold(map1)(0)(acc => key => value => acc + key * 100 + value)
-        if TreeMap.len(map1) == 2 &&
+        map_for_keys := TreeMap.remove(
+            TreeMap.from_seq[Int, Int]([(3, 30), (1, 10), (2, 20), (3, 300)]))(1)
+        map_for_fold := TreeMap.remove(
+            TreeMap.from_seq[Int, Int]([(3, 30), (1, 10), (2, 20), (3, 300)]))(1)
+        keys := TreeMap.keys(map_for_keys)
+        keys_ok := match keys
+        {
+            [first, second] => first == 2 && second == 3,
+            _ => false
+        }
+        folded := TreeMap.fold(map_for_fold)(0)(acc => key => value => acc + key * 100 + value)
+        if TreeMap.len(ref map1) == 2 &&
            TreeMap.get_or(map1)(3)(0) == 300 &&
-           keys[0] == 2 &&
-           keys[1] == 3 &&
+           keys_ok &&
            folded == 820
         then { 20 }
         else { 1 }
@@ -42,12 +50,16 @@ check_set :: Unit -> Int
     _ => {
         set0 := TreeSet.from_seq[Int]([4, 1, 3, 1, 2])
         set1 := TreeSet.remove(set0)(3)
+        set_len := TreeSet.len(ref set1)
+        contains_four := TreeSet.contains(
+            TreeSet.remove(TreeSet.from_seq[Int]([4, 1, 3, 1, 2]))(3))(4)
         xs := TreeSet.to_seq(set1)
-        if TreeSet.len(set1) == 3 &&
-           TreeSet.contains(set1)(4) &&
-           xs[0] == 1 &&
-           xs[1] == 2 &&
-           xs[2] == 4
+        ordered := match xs
+        {
+            [first, second, third] => first == 1 && second == 2 && third == 4,
+            _ => false
+        }
+        if set_len == 3 && contains_four && ordered
         then { 22 }
         else { 2 }
     }
@@ -61,10 +73,15 @@ check_balancing :: Unit -> Int
             (6, 6), (7, 7), (8, 8), (9, 9), (10, 10),
             (11, 11), (12, 12), (13, 13), (14, 14), (15, 15)
         ])
-        if TreeMap.len(sorted) == 15 &&
-           TreeMap.height(sorted) <= 5 &&
-           TreeMap.keys(sorted)[0] == 1 &&
-           TreeMap.keys(sorted)[14] == 15
+        size := TreeMap.len(ref sorted);
+        tree_height := TreeMap.height(ref sorted);
+        keys := TreeMap.keys(sorted);
+        keys_ok := match keys
+        {
+            [first, ..rest] => first == 1 && Seq.last_or(rest)(0) == 15,
+            _ => false
+        }
+        if size == 15 && tree_height <= 5 && keys_ok
         then { 8 }
         else { 3 }
     }
