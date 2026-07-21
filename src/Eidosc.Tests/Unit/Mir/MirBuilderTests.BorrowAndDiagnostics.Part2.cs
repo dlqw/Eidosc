@@ -427,7 +427,7 @@ borrow_first :: MRef[Seq[Int]] -> MRef[Int]
     }
 
     [Fact]
-    public void Build_CallAcceptingRef_WithFieldProjectedRefArgument_DoesNotCreateBorrowAliasLoad()
+    public void Build_CallAcceptingRef_WithFieldProjectedRefArgument_PassesProjectedPlaceWithoutLoad()
     {
         const string source = """
 ReaderBox[T] :: type {
@@ -456,18 +456,22 @@ use :: Ref[ReaderBox[Int]] -> Int
         var mirModule = Assert.IsType<MirModule>(result.MirModule);
         var use = Assert.Single(mirModule.Functions, function => function.Name == "use");
         var entry = Assert.Single(use.BasicBlocks, block => block.IsEntry);
-        var load = Assert.Single(
+        var call = Assert.Single(entry.Instructions.OfType<MirCall>());
+        var argument = Assert.IsType<MirPlace>(Assert.Single(call.Arguments));
+        var derefBase = Assert.IsType<MirPlace>(argument.Base);
+        var localBase = Assert.IsType<MirPlace>(derefBase.Base);
+
+        Assert.DoesNotContain(
             entry.Instructions.OfType<MirLoad>(),
             item => item.Source is MirPlace { Kind: PlaceKind.Field });
-        var call = Assert.Single(entry.Instructions.OfType<MirCall>());
-        var argument = Assert.Single(call.Arguments);
-
-        Assert.False(load.CreatesBorrowAlias);
-        Assert.IsType<MirPlace>(argument);
+        Assert.Equal(PlaceKind.Field, argument.Kind);
+        Assert.False(string.IsNullOrWhiteSpace(argument.FieldName));
+        Assert.Equal(PlaceKind.Deref, derefBase.Kind);
+        Assert.Equal(PlaceKind.Local, localBase.Kind);
     }
 
     [Fact]
-    public void Build_CallAcceptingRef_WithFieldProjectedMRefArgument_DoesNotCreateBorrowAliasLoad()
+    public void Build_CallAcceptingRef_WithFieldProjectedMRefArgument_PassesProjectedPlaceWithoutLoad()
     {
         const string source = """
 WriterBox[T] :: type {
@@ -496,18 +500,22 @@ use :: Ref[WriterBox[Int]] -> Int
         var mirModule = Assert.IsType<MirModule>(result.MirModule);
         var use = Assert.Single(mirModule.Functions, function => function.Name == "use");
         var entry = Assert.Single(use.BasicBlocks, block => block.IsEntry);
-        var load = Assert.Single(
+        var call = Assert.Single(entry.Instructions.OfType<MirCall>());
+        var argument = Assert.IsType<MirPlace>(Assert.Single(call.Arguments));
+        var derefBase = Assert.IsType<MirPlace>(argument.Base);
+        var localBase = Assert.IsType<MirPlace>(derefBase.Base);
+
+        Assert.DoesNotContain(
             entry.Instructions.OfType<MirLoad>(),
             item => item.Source is MirPlace { Kind: PlaceKind.Field });
-        var call = Assert.Single(entry.Instructions.OfType<MirCall>());
-        var argument = Assert.Single(call.Arguments);
-
-        Assert.False(load.CreatesBorrowAlias);
-        Assert.IsType<MirPlace>(argument);
+        Assert.Equal(PlaceKind.Field, argument.Kind);
+        Assert.False(string.IsNullOrWhiteSpace(argument.FieldName));
+        Assert.Equal(PlaceKind.Deref, derefBase.Kind);
+        Assert.Equal(PlaceKind.Local, localBase.Kind);
     }
 
     [Fact]
-    public void Build_CallAcceptingRef_WithIndexProjectedRefArgument_DoesNotCreateBorrowAliasLoad()
+    public void Build_CallAcceptingRef_WithIndexProjectedRefArgument_PassesProjectedPlaceWithoutLoad()
     {
         const string source = """
 read :: Ref[Int] -> Int
@@ -532,14 +540,18 @@ use :: Ref[Seq[Ref[Int]]] -> Int
         var mirModule = Assert.IsType<MirModule>(result.MirModule);
         var use = Assert.Single(mirModule.Functions, function => function.Name == "use");
         var entry = Assert.Single(use.BasicBlocks, block => block.IsEntry);
-        var load = Assert.Single(
+        var call = Assert.Single(entry.Instructions.OfType<MirCall>());
+        var argument = Assert.IsType<MirPlace>(Assert.Single(call.Arguments));
+        var derefBase = Assert.IsType<MirPlace>(argument.Base);
+        var localBase = Assert.IsType<MirPlace>(derefBase.Base);
+
+        Assert.DoesNotContain(
             entry.Instructions.OfType<MirLoad>(),
             item => item.Source is MirPlace { Kind: PlaceKind.Index });
-        var call = Assert.Single(entry.Instructions.OfType<MirCall>());
-        var argument = Assert.Single(call.Arguments);
-
-        Assert.False(load.CreatesBorrowAlias);
-        Assert.IsType<MirPlace>(argument);
+        Assert.Equal(PlaceKind.Index, argument.Kind);
+        Assert.Equal(MirIndexAccessKind.RuntimeArray, argument.IndexAccessKind);
+        Assert.Equal(PlaceKind.Deref, derefBase.Kind);
+        Assert.Equal(PlaceKind.Local, localBase.Kind);
     }
 
     [Fact]
