@@ -20,12 +20,14 @@ Queue :: module {
         values => Queue{items: Deque.from_seq(values)}
     }
 
-    len[T] :: Queue[T] -> Int
+    len[T] :: Ref[Queue[T]] -> Int
     {
-        Queue{items: items} => Deque.len(items)
+        queue => match *queue {
+            Queue{items: items} => Deque.len(ref items)
+        }
     }
 
-    is_empty[T] :: Queue[T] -> Bool
+    is_empty[T] :: Ref[Queue[T]] -> Bool
     {
         queue => Queue.len(queue) == 0
     }

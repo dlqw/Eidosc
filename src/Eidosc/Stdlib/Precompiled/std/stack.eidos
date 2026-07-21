@@ -19,12 +19,14 @@ Stack :: module {
         values => Stack{items: Seq.reverse(values)}
     }
 
-    len[T] :: Stack[T] -> Int
+    len[T] :: Ref[Stack[T]] -> Int
     {
-        Stack{items: items} => Seq.len(ref items)
+        stack => match *stack {
+            Stack{items: items} => Seq.len(ref items)
+        }
     }
 
-    is_empty[T] :: Stack[T] -> Bool
+    is_empty[T] :: Ref[Stack[T]] -> Bool
     {
         stack => Stack.len(stack) == 0
     }

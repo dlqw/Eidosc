@@ -21,12 +21,14 @@ Deque :: module {
         values => Deque{front: values, back: []}
     }
 
-    len[T] :: Deque[T] -> Int
+    len[T] :: Ref[Deque[T]] -> Int
     {
-        Deque{front: f, back: b} => Seq.len(ref f) + Seq.len(ref b)
+        deque => match *deque {
+            Deque{front: f, back: b} => Seq.len(ref f) + Seq.len(ref b)
+        }
     }
 
-    is_empty[T] :: Deque[T] -> Bool
+    is_empty[T] :: Ref[Deque[T]] -> Bool
     {
         deque => Deque.len(deque) == 0
     }

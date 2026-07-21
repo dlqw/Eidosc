@@ -59,12 +59,14 @@ SeqBuilder :: module {
     }
 
     // Number of elements currently stored.
-    len[T] :: SeqBuilder[T] -> Int
+    len[T] :: Ref[SeqBuilder[T]] -> Int
     {
-        SeqBuilder(buf) => Seq.len(ref buf)
+        builder => match *builder {
+            SeqBuilder(buf) => Seq.len(ref buf)
+        }
     }
 
-    is_empty[T] :: SeqBuilder[T] -> Bool
+    is_empty[T] :: Ref[SeqBuilder[T]] -> Bool
     {
         builder => SeqBuilder.len(builder) == 0
     }
@@ -122,7 +124,7 @@ SeqBuilder :: module {
     get_opt[T] :: SeqBuilder[T] -> Int -> Option[T]
     {
         builder => index => {
-            len := SeqBuilder.len(builder)
+            len := SeqBuilder.len(ref builder)
             if index < 0 || index >= len then { None() } else { Some(SeqBuilder.get(builder)(index)) }
         }
     }

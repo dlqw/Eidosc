@@ -56,7 +56,7 @@ main :: Unit -> Int
     _ => {
         xs := SeqBuilder.push(SeqBuilder.push(SeqBuilder.with_capacity[Int](3))(10))(20);
         shrunk := SeqBuilder.pop_last(xs);
-        if SeqBuilder.len(shrunk) == 1 && SeqBuilder.get(shrunk)(0) == 10 then { 0 } else { 99 }
+        if SeqBuilder.len(ref shrunk) == 1 && SeqBuilder.get(shrunk)(0) == 10 then { 0 } else { 99 }
     }
 }
 """;
