@@ -141,7 +141,8 @@ main :: Unit -> Int
 {
     _ => {
         xs := append([1, 2])([3]);
-        len(reverse(xs))
+        reversed := reverse(xs);
+        len(ref reversed)
     }
 }
 """;
@@ -669,7 +670,7 @@ main :: Unit -> Int
 {
     _ => {
         xs := [1, 2, 3];
-        len(xs)
+        len(ref xs)
     }
 }
 """;
@@ -1098,4 +1099,3 @@ main :: Unit -> Int
                 .Select(static counter => $"{counter.Key}={counter.Value}"));
     }
 }
-
