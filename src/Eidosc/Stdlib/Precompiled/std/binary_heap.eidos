@@ -73,7 +73,7 @@ BinaryHeap :: module {
                 if index <= 0 then { break } else {
                     parent := BinaryHeap.parent_index(index)
                     if heap[index] > heap[parent] then {
-                        RuntimeArray.swap(heap, index, parent)
+                        RuntimeArray.swap(mref heap, index, parent)
                         index := parent
                     } else { break }
                 }
@@ -99,7 +99,7 @@ BinaryHeap :: module {
                         largest := right
                     } else { () }
                     if heap[largest] > heap[index] then {
-                        RuntimeArray.swap(heap, largest, index)
+                        RuntimeArray.swap(mref heap, largest, index)
                         index := largest
                     } else { break }
                 }
@@ -135,7 +135,7 @@ BinaryHeap :: module {
                                 largest := right
                             } else { () }
                             if heap[largest] > heap[current] then {
-                                RuntimeArray.swap(heap, largest, current)
+                                RuntimeArray.swap(mref heap, largest, current)
                                 current := largest
                             } else { break }
                         }
@@ -147,29 +147,15 @@ BinaryHeap :: module {
         }
     }
 
-    peek[T: Traits.Clone] :: BinaryHeap[T] -> Option[T]
+    peek[T] :: BinaryHeap[T] -> Option[T]
     {
-        BinaryHeap{items: items} =>
-            if Seq.len(items) == 0 then { None() }
-            else { Some(TraitInvoke.clone_value(ref items[0])) }
+        BinaryHeap{items: []} => None(),
+        BinaryHeap{items: [top, ..]} => Some(top)
     }
 
-    pop[T: Traits.Ord + Traits.Clone] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
+    pop[T: Traits.Ord] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
     {
-        BinaryHeap{items: items} => {
-            len := Seq.len(items)
-            if len == 0 then { None() }
-            else {
-                top := TraitInvoke.clone_value(ref items[0])
-                if len == 1 then {
-                Some((top, BinaryHeap.empty(())))
-                } else {
-                    last_index := len - 1
-                    RuntimeArray.swap(items, 0, last_index)
-                    RuntimeArray.pop_last(items)
-                    Some((top, BinaryHeap{items: BinaryHeap.sift_down_from(items)(0)}))
-                }
-            }
-        }
+        BinaryHeap{items: []} => None(),
+        BinaryHeap{items: [top, ..rest]} => Some((top, BinaryHeap.from_seq(rest)))
     }
 }

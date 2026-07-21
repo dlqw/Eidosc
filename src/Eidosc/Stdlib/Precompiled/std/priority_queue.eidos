@@ -5,6 +5,7 @@ PriorityQueue :: module {
     import Ordering
     import Traits
     import TraitInvoke
+    import RuntimeArray
 
     PriorityQueue[T] :: type {heap:: BinaryHeap[T]}
 
@@ -58,15 +59,19 @@ PriorityQueue :: module {
 
     enqueue[T: Traits.Ord] :: PriorityQueue[T] -> T -> PriorityQueue[T]
     {
-        PriorityQueue{heap: heap} => value => PriorityQueue{heap: BinaryHeap.push(heap)(value)}
+        PriorityQueue{heap: heap} => value => {
+            values := BinaryHeap.to_seq(heap);
+            extended := RuntimeArray.push(values)(value);
+            PriorityQueue.from_seq(extended)
+        }
     }
 
-    peek[T: Traits.Clone] :: PriorityQueue[T] -> Option[T]
+    peek[T] :: PriorityQueue[T] -> Option[T]
     {
         PriorityQueue{heap: heap} => BinaryHeap.peek(heap)
     }
 
-    dequeue[T: Traits.Ord + Traits.Clone] :: PriorityQueue[T] -> Option[(T, PriorityQueue[T])]
+    dequeue[T: Traits.Ord] :: PriorityQueue[T] -> Option[(T, PriorityQueue[T])]
     {
         PriorityQueue{heap: heap} => match BinaryHeap.pop(heap) {
             Some((value, rest)) => Some((value, PriorityQueue{heap: rest})),
@@ -100,7 +105,7 @@ PriorityQueue :: module {
             MinPriorityQueue{heap: BinaryHeap.push(heap)(MinPriorityEntry(priority, value))}
     }
 
-    min_peek[V: Traits.Clone] :: MinPriorityQueue[V] -> Option[(Int, V)]
+    min_peek[V] :: MinPriorityQueue[V] -> Option[(Int, V)]
     {
         MinPriorityQueue{heap: heap} => match BinaryHeap.peek(heap) {
             Some(MinPriorityEntry(priority, value)) => Some((priority, value)),
@@ -108,7 +113,7 @@ PriorityQueue :: module {
         }
     }
 
-    min_dequeue[V: Traits.Clone] :: MinPriorityQueue[V] -> Option[(Int, V, MinPriorityQueue[V])]
+    min_dequeue[V] :: MinPriorityQueue[V] -> Option[(Int, V, MinPriorityQueue[V])]
     {
         MinPriorityQueue{heap: heap} => match BinaryHeap.pop(heap) {
             Some((MinPriorityEntry(priority, value), rest)) => Some((priority, value, MinPriorityQueue{heap: rest})),

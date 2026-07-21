@@ -12,15 +12,17 @@ public partial class LlvmPipelineIntegrationTests
     {
         const string source = """
 import std.RuntimeArray
+import std.Seq
 
 main :: Unit -> Int
 {
     _ => {
-        xs := RuntimeArray.push(RuntimeArray.with_capacity[Int](1))(41);
-        ys := RuntimeArray.push(xs)(1);
-        RuntimeArray.swap(ys)(0)(1);
-        RuntimeArray.pop_last(ys);
-        RuntimeArray.get(ys)(0) + RuntimeArray.len(ys)
+        mut ys := RuntimeArray.push(RuntimeArray.with_capacity[Int](1))(41);
+        ys := RuntimeArray.push(ys)(1);
+        RuntimeArray.swap(mref ys, 0, 1);
+        RuntimeArray.pop_last(mref ys);
+        len := RuntimeArray.len(Seq.clone(ref ys));
+        RuntimeArray.get(ys)(0) + len
     }
 }
 """;
