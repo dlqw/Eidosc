@@ -55,8 +55,8 @@ main :: Unit -> Int
 {
     _ => {
         xs := SeqBuilder.push(SeqBuilder.push(SeqBuilder.with_capacity[Int](3))(10))(20);
-        SeqBuilder.pop_last(xs);
-        if SeqBuilder.len(xs) == 1 && SeqBuilder.get(xs)(0) == 10 then { 0 } else { 99 }
+        shrunk := SeqBuilder.pop_last(xs);
+        if SeqBuilder.len(shrunk) == 1 && SeqBuilder.get(shrunk)(0) == 10 then { 0 } else { 99 }
     }
 }
 """;
@@ -79,10 +79,12 @@ main :: Unit -> Int
 {
     _ => {
         xs := SeqBuilder.push(SeqBuilder.push(SeqBuilder.with_capacity[(Int, Int)](2))((1, 10)))((2, 20));
-        SeqBuilder.swap(xs)(0)(1);
-        (a, b) := SeqBuilder.get(xs)(0);
-        (c, d) := SeqBuilder.get(xs)(1);
-        if a == 2 && b == 20 && c == 1 && d == 10 then { 0 } else { 99 }
+        swapped := SeqBuilder.swap(xs)(0)(1);
+        match SeqBuilder.freeze(swapped)
+        {
+            [(a, b), (c, d)] => if a == 2 && b == 20 && c == 1 && d == 10 then { 0 } else { 99 },
+            _ => 99
+        }
     }
 }
 """;

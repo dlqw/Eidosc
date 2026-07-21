@@ -2,6 +2,8 @@ AsyncExtra :: module {
     import Task
     import Seq
     import Option
+    import Traits
+    import TraitInvoke
 
     /// Map a spawning function over each element of a Seq.
     distribute[A, B, E: effects] :: Seq[A] -> (A -> Task[B] need E) -> Seq[Task[B]] need E
@@ -41,13 +43,28 @@ AsyncExtra :: module {
     }
 
 
+    split_at[A] :: Seq[A] -> Int -> (Seq[A], Seq[A])
+     compiler(internal)
+{
+        xs => n =>
+            if n <= 0 then { ([], xs) }
+            else {
+                match xs {
+                    [] => ([], []),
+                    [head, ..tail] => match AsyncExtra.split_at(tail)(n - 1) {
+                        (prefix, suffix) => ([head, ..prefix], suffix)
+                    }
+                }
+            }
+    }
+
     chunk_positive[A] :: Seq[A] -> Int -> Seq[Seq[A]]
      compiler(internal)
 {
         [] => _ => [],
-        xs => n => Seq.append(
-            [Seq.take(xs)(n)]
-        )(AsyncExtra.chunk_positive(Seq.drop(xs)(n))(n))
+        xs => n => match AsyncExtra.split_at(xs)(n) {
+            (prefix, suffix) => Seq.append([prefix])(AsyncExtra.chunk_positive(suffix)(n))
+        }
     }
 
     /// Pair each element with its index.
@@ -65,17 +82,29 @@ AsyncExtra :: module {
     }
 
     /// Select elements at the given indices from a Seq.
-    select_at[A] :: Seq[A] -> Seq[Int] -> Seq[A]
+    select_at[A: Traits.Clone] :: Seq[A] -> Seq[Int] -> Seq[A]
     {
-        xs => indices => AsyncExtra.select_at_inner(xs)(indices)
+        xs => indices => AsyncExtra.select_at_inner(ref xs)(indices)
     }
 
 
-    select_at_inner[A] :: Seq[A] -> Seq[Int] -> Seq[A]
+    get_from_ref[A: Traits.Clone] :: Ref[Seq[A]] -> Int -> Option[A]
+     compiler(internal)
+{
+        xs => index => {
+            values := *xs
+            len := Seq.len(values)
+            if index < 0 || index >= len then { None() }
+            else { Some(TraitInvoke.clone_value(ref values[index])) }
+        }
+    }
+
+
+    select_at_inner[A: Traits.Clone] :: Ref[Seq[A]] -> Seq[Int] -> Seq[A]
      compiler(internal)
 {
         xs => [] => [],
-        xs => [index, ..rest] => match Seq.get_opt(xs)(index)
+        xs => [index, ..rest] => match AsyncExtra.get_from_ref(xs)(index)
         {
             Some(value) => Seq.append([value])(AsyncExtra.select_at_inner(xs)(rest)),
             None() => AsyncExtra.select_at_inner(xs)(rest)
@@ -112,10 +141,10 @@ AsyncExtra :: module {
     }
 
     /// Take the first `n` elements that satisfy a predicate.
-    take_while[A, E: effects] :: Seq[A] -> (A -> Bool need E) -> Seq[A] need E
+    take_while[A: Traits.Clone, E: effects] :: Seq[A] -> (A -> Bool need E) -> Seq[A] need E
     {
         [] => _ => [],
-        [head, ..tail] => pred => if pred(head) then {
+        [head, ..tail] => pred => if pred(TraitInvoke.clone_value(ref head)) then {
             Seq.append([head])(AsyncExtra.take_while(tail)(pred))
         } else { [] }
     }

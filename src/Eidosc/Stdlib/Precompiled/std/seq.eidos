@@ -246,36 +246,26 @@ Seq :: module {
 
     take[T] :: Seq[T] -> Int -> Seq[T]
     {
-        xs => n => {
-            len := Seq.len(xs)
-            count := if n < 0 then 0 else if n > len then len else n
-            mut acc: Seq[T] := []
-            mut index := 0
-            loop {
-                if index >= count then { break } else {
-                    acc = RuntimeArray.push(acc)(xs[index])
-                    index = index + 1
+        xs => n =>
+            if n <= 0 then { [] }
+            else {
+                match xs {
+                    [] => [],
+                    [head, ..tail] => [head, ..Seq.take(tail)(n - 1)]
                 }
             }
-            acc
-        }
     }
 
     drop[T] :: Seq[T] -> Int -> Seq[T]
     {
-        xs => n => {
-            len := Seq.len(xs)
-            start := if n < 0 then 0 else if n > len then len else n
-            mut acc: Seq[T] := []
-            mut index := start
-            loop {
-                if index >= len then { break } else {
-                    acc = RuntimeArray.push(acc)(xs[index])
-                    index = index + 1
+        xs => n =>
+            if n <= 0 then { xs }
+            else {
+                match xs {
+                    [] => [],
+                    [_, ..tail] => Seq.drop(tail)(n - 1)
                 }
             }
-            acc
-        }
     }
 
     count[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Int need E
@@ -352,17 +342,9 @@ Seq :: module {
 
     reverse[T] :: Seq[T] -> Seq[T]
     {
-        xs => {
-            len := Seq.len(xs)
-            mut acc: Seq[T] := []
-            mut index := len - 1
-            loop {
-                if index < 0 then { break } else {
-                    acc = RuntimeArray.push(acc)(xs[index])
-                    index = index - 1
-                }
-            }
-            acc
+        xs => match xs {
+            [] => [],
+            [head, ..tail] => Seq.append(Seq.reverse(tail))([head])
         }
     }
 
@@ -440,22 +422,19 @@ Seq :: module {
             }
     }
 
+    clone_items[T: Traits.Clone] :: Ref[Seq[T]] -> Seq[T]
+    {
+        xs => match *xs
+        {
+            [] => [],
+            [head, ..tail] => [TraitInvoke.clone_value(ref head), ..Seq.clone_items(ref tail)]
+        }
+    }
+
     CloneSeqT :: instance Traits.Clone {
         clone[T: Traits.Clone] :: Ref[Seq[T]] -> Seq[T]
             {
-                xs => {
-                    seq := *xs
-                    len := Seq.len(seq)
-                    mut acc: Seq[T] := []
-                    mut index := 0
-                    loop {
-                        if index >= len then { break } else {
-                            acc = RuntimeArray.push(acc)(TraitInvoke.clone_value(ref seq[index]))
-                            index = index + 1
-                        }
-                    }
-                    acc
-                }
+                xs => Seq.clone_items(xs)
             }
     }
 

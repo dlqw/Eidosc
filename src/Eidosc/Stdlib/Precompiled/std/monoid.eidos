@@ -6,6 +6,7 @@ Monoid :: module {
         empty :: Unit -> Self
     }
 
+    @[derive(Copy, Clone)]
     LawUnit :: type { LawUnit :: type {} }
 
     law_unit :: Unit -> LawUnit

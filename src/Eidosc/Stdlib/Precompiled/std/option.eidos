@@ -131,9 +131,12 @@ Option :: module {
         None() => _ => false
     }
 
-    filter[T, E: effects] :: Option[T] -> (T -> Bool need E) -> Option[T] need E
+    filter[T: Traits.Clone, E: effects] :: Option[T] -> (T -> Bool need E) -> Option[T] need E
     {
-        Some(value) => predicate => if predicate(value) then { Some(value) } else { None() },
+        Some(value) => predicate => {
+            candidate := TraitInvoke.clone_value(ref value);
+            if predicate(candidate) then { Some(value) } else { None() }
+        },
         None() => _ => None()
     }
 

@@ -13,6 +13,16 @@ Result :: module {
     Result[T, E] :: type { Ok:: type(T) , Err:: type(E) }
     With[E, T] :: type = Result[T, E];
 
+    CloneResultT :: instance Traits.Clone {
+        clone[T: Traits.Clone, E: Traits.Clone] :: Ref[Result[T, E]] -> Result[T, E]
+        {
+            value => match *value {
+                Ok(item) => Ok(TraitInvoke.clone_value(ref item)),
+                Err(error) => Err(TraitInvoke.clone_value(ref error))
+            }
+        }
+    }
+
 
     identity[T] :: T -> T
      compiler(internal)

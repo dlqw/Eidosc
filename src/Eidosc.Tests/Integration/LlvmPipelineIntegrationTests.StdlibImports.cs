@@ -247,10 +247,10 @@ public partial class LlvmPipelineIntegrationTests
             function => function.Name.Contains("std__Seq__filter", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__fold_left", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Seq__FoldableSeq__fold_left", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__fold_right", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Seq__FoldableSeq__fold_right", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Seq__count", StringComparison.Ordinal));

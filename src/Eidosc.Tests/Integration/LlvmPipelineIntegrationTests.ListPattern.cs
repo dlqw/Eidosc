@@ -79,10 +79,16 @@ sum_by_match :: Seq[(Int, Int)] -> Int
 main :: Unit -> Int
 {
     _ => {
-        adjacency := build_adjacency({});
-        first := sum_by_destructure(SeqBuilder.get(adjacency, 0));
-        second := sum_by_match(SeqBuilder.get(adjacency, 1));
-        if first == 110 && second == 114 then { 0 } else { 99 }
+        adjacency := SeqBuilder.freeze(build_adjacency(()));
+        match adjacency
+        {
+            [first, second, .._] => {
+                first_sum := sum_by_destructure(first);
+                second_sum := sum_by_match(second);
+                if first_sum == 110 && second_sum == 114 then { 0 } else { 99 }
+            },
+            _ => 99
+        }
     }
 }
 """;

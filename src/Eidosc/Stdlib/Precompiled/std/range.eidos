@@ -1,6 +1,7 @@
 Range :: module {
     import Option
 
+    @[derive(Copy, Clone)]
     Range :: type {start:: Int, end:: Int}
 
     make :: Int -> Int -> Range

@@ -24,7 +24,7 @@ PersistentMap :: module {
      compiler(internal)
 {
         Empty() => Empty(),
-        Link(node) => Link(Shared.clone(node))
+        Link(node) => Link(Shared.clone(ref node))
     }
 
 
@@ -109,7 +109,7 @@ PersistentMap :: module {
                             PersistentMap.clone_link(left_right))(
                             PersistentMap.clone_link(right)))
             },
-            _ => Link(Shared.clone(node))
+            _ => Link(Shared.clone(ref node))
         },
         Empty() => Empty()
     }
@@ -134,7 +134,7 @@ PersistentMap :: module {
                             PersistentMap.clone_link(right_left)))(
                         PersistentMap.clone_link(right_right))
             },
-            _ => Link(Shared.clone(node))
+            _ => Link(Shared.clone(ref node))
         },
         Empty() => Empty()
     }

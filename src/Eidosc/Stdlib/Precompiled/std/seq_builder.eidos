@@ -41,17 +41,14 @@ SeqBuilder :: module {
 
     filled[T: Traits.Clone] :: Int -> T -> SeqBuilder[T]
     {
-        count => value => {
-            mut values := SeqBuilder.with_capacity[T](count)
-            mut index := 0
-            loop {
-                if index >= count then { break } else {
-                    values = SeqBuilder.push(values)(TraitInvoke.clone_value(ref value))
-                    index = index + 1
+        count => value =>
+            if count <= 0 then { SeqBuilder.empty(()) }
+            else {
+                cloned := TraitInvoke.clone_value(ref value)
+                match SeqBuilder.filled(count - 1)(value) {
+                    SeqBuilder(rest) => SeqBuilder([cloned, ..rest])
                 }
             }
-            values
-        }
     }
 
     // Build a SeqBuilder from an existing Seq (copies element ownership; safe because
@@ -85,22 +82,34 @@ SeqBuilder :: module {
     }
 
     // Remove the last element in place. Calling this on an empty SeqBuilder is a no-op.
-    pop_last[T] :: SeqBuilder[T] -> Unit
+    pop_last[T] :: SeqBuilder[T] -> SeqBuilder[T]
     {
-        SeqBuilder(buf) => RuntimeArray.pop_last(buf)
+        SeqBuilder(buf) => {
+            mut values := buf
+            RuntimeArray.pop_last(mref values)
+            SeqBuilder(values)
+        }
     }
 
     // Swap two slots in place without cloning either element.
-    swap[T] :: SeqBuilder[T] -> Int -> Int -> Unit
+    swap[T] :: SeqBuilder[T] -> Int -> Int -> SeqBuilder[T]
     {
-        SeqBuilder(buf) => left => right => RuntimeArray.swap(buf, left, right)
+        SeqBuilder(buf) => left => right => {
+            mut values := buf
+            RuntimeArray.swap(mref values, left, right)
+            SeqBuilder(values)
+        }
     }
 
     // In-place write at index. Bounds are the caller's responsibility (mirrors
     // Seq indexing semantics); intended for builder-phase slot mutation only.
-    set[T] :: SeqBuilder[T] -> Int -> T -> Unit
+    set[T] :: SeqBuilder[T] -> Int -> T -> SeqBuilder[T]
     {
-        SeqBuilder(buf) => index => value => RuntimeArray.set(buf)(index)(value)
+        SeqBuilder(buf) => index => value => {
+            mut values := buf
+            RuntimeArray.set(mref values)(index)(value)
+            SeqBuilder(values)
+        }
     }
 
     // Read the element at index (O(1)).
@@ -128,6 +137,6 @@ SeqBuilder :: module {
     // Use this when the builder may be further mutated after handing off a Seq.
     to_seq[T: Traits.Clone] :: SeqBuilder[T] -> Seq[T]
     {
-        SeqBuilder(buf) => Seq.clone(buf)
+        SeqBuilder(buf) => Seq.clone(ref buf)
     }
 }
