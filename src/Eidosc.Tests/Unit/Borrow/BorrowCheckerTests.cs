@@ -90,7 +90,7 @@ import std.Seq
 replace_bucket :: Seq[Seq[(Int, Int)]] -> Int -> Seq[(Int, Int)] -> Seq[Seq[(Int, Int)]]
 {
     buckets => index => newBucket => {
-        len := Seq.len(buckets)
+        len := Seq.len(ref buckets)
         mut built := RuntimeArray.empty[Seq[(Int, Int)]]()
         mut i := 0
         loop {

@@ -19,7 +19,7 @@ Seq :: module {
     }
 
 
-    len[T] :: Seq[T] -> Int compiler(intrinsic: "array_length");
+    len[T] :: Ref[Seq[T]] -> Int compiler(intrinsic: "array_length");
 
     len_ref[T] :: Ref[Seq[T]] -> Int compiler(internal, intrinsic: "array_length");
 
@@ -32,10 +32,12 @@ Seq :: module {
         [_, ..tail] => acc => Seq.len_from(tail)(acc + 1)
     }
 
-    is_empty[T] :: Seq[T] -> Bool
+    is_empty[T] :: Ref[Seq[T]] -> Bool
     {
-        [] => true,
-        [head, ..tail] => false
+        xs => match *xs {
+            [] => true,
+            [head, ..tail] => false
+        }
     }
 
     head[T] :: Seq[T] -> Option[T]

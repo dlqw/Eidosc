@@ -287,25 +287,31 @@ HashMap :: module {
         HashMap{buckets: buckets, size: _, capacity: _} => HashMap.collect_values(buckets)
     }
 
-    len[K, V] :: HashMap[K, V] -> Int
+    len[K, V] :: Ref[HashMap[K, V]] -> Int
     {
-        HashMap{buckets: _, size: s, capacity: _} => s
+        self => match *self {
+            HashMap{buckets: _, size: s, capacity: _} => s
+        }
     }
 
-    is_empty[K, V] :: HashMap[K, V] -> Bool
+    is_empty[K, V] :: Ref[HashMap[K, V]] -> Bool
     {
-        HashMap{buckets: _, size: s, capacity: _} => s == 0
+        self => HashMap.len(self) == 0
     }
 
-    capacity[K, V] :: HashMap[K, V] -> Int
+    capacity[K, V] :: Ref[HashMap[K, V]] -> Int
     {
-        HashMap{buckets: _, size: _, capacity: c} => c
+        self => match *self {
+            HashMap{buckets: _, size: _, capacity: c} => c
+        }
     }
 
-    load_factor_percent[K, V] :: HashMap[K, V] -> Int
+    load_factor_percent[K, V] :: Ref[HashMap[K, V]] -> Int
     {
-        HashMap{buckets: _, size: s, capacity: c} =>
-            if c <= 0 then { 0 } else { (s * 100) / c }
+        self => match *self {
+            HashMap{buckets: _, size: s, capacity: c} =>
+                if c <= 0 then { 0 } else { (s * 100) / c }
+        }
     }
 
     // ── Internal collection helpers ──────────────────────────
@@ -315,13 +321,13 @@ HashMap :: module {
      compiler(internal)
 {
         buckets => {
-            bucket_count := Seq.len(buckets)
+            bucket_count := Seq.len(ref buckets)
             mut acc: Seq[K] := []
             mut bi := 0
             loop {
                 if bi >= bucket_count then { break } else {
                     bucket := buckets[bi]
-                    len := Seq.len(bucket)
+                    len := Seq.len(ref bucket)
                     mut pi := 0
                     loop {
                         if pi >= len then { break } else {
@@ -343,13 +349,13 @@ HashMap :: module {
      compiler(internal)
 {
         buckets => {
-            bucket_count := Seq.len(buckets)
+            bucket_count := Seq.len(ref buckets)
             mut acc: Seq[V] := []
             mut bi := 0
             loop {
                 if bi >= bucket_count then { break } else {
                     bucket := buckets[bi]
-                    len := Seq.len(bucket)
+                    len := Seq.len(ref bucket)
                     mut pi := 0
                     loop {
                         if pi >= len then { break } else {
@@ -454,7 +460,7 @@ HashMap :: module {
      compiler(internal)
 {
         pairs => acc => {
-            len := Seq.len(pairs)
+            len := Seq.len(ref pairs)
             mut result := acc
             mut index := 0
             loop {
@@ -583,7 +589,7 @@ HashMap :: module {
      compiler(internal)
 {
         pairs => f => {
-            len := Seq.len(pairs)
+            len := Seq.len(ref pairs)
             mut acc: Seq[(K, U)] := []
             mut index := 0
             loop {
@@ -610,7 +616,7 @@ HashMap :: module {
      compiler(internal)
 {
         pairs => acc => f => {
-            len := Seq.len(pairs)
+            len := Seq.len(ref pairs)
             mut result := acc
             mut index := 0
             loop {

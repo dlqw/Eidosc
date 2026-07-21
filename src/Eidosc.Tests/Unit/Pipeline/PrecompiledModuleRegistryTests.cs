@@ -322,7 +322,7 @@ App :: module {
 
         Assert.True(loaded);
         Assert.Contains("Seq :: module", source, StringComparison.Ordinal);
-        Assert.Contains("len[T] :: Seq[T] -> Int", source, StringComparison.Ordinal);
+        Assert.Contains("len[T] :: Ref[Seq[T]] -> Int", source, StringComparison.Ordinal);
     }
 
     [Fact]

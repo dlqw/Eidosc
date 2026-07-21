@@ -69,14 +69,16 @@ HashSet :: module {
 
     // ── Query operations ─────────────────────────────────────
 
-    len[K] :: HashSet[K] -> Int
+    len[K] :: Ref[HashSet[K]] -> Int
     {
-        HashSet{inner: m} => HashMap.len(m)
+        self => match *self {
+            HashSet{inner: m} => HashMap.len(ref m)
+        }
     }
 
-    is_empty[K] :: HashSet[K] -> Bool
+    is_empty[K] :: Ref[HashSet[K]] -> Bool
     {
-        HashSet{inner: m} => HashMap.is_empty(m)
+        self => HashSet.len(self) == 0
     }
 
     // ── Set operations ───────────────────────────────────────

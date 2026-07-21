@@ -115,7 +115,7 @@ main :: Unit -> Int
         xs := build_aa[Int](4)
         builder := SeqBuilder.push(xs)((1, 2))
         ys := SeqBuilder.freeze(builder)
-        Seq.len(ys)
+        Seq.len(ref ys)
     }
 }
 """;

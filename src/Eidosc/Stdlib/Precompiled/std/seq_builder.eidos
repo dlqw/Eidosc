@@ -61,7 +61,7 @@ SeqBuilder :: module {
     // Number of elements currently stored.
     len[T] :: SeqBuilder[T] -> Int
     {
-        SeqBuilder(buf) => Seq.len(buf)
+        SeqBuilder(buf) => Seq.len(ref buf)
     }
 
     is_empty[T] :: SeqBuilder[T] -> Bool

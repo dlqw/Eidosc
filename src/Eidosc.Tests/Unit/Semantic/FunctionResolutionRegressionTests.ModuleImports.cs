@@ -37,7 +37,8 @@ main :: Unit -> Int
 
         viaOption := Option.unwrap_or(Option.map(Some(1))(inc))(0);
         viaResult := Result.unwrap_or(Result.map(resultBase)(inc))(0);
-        viaList := Seq.len(Seq.map(xs)(inc));
+        mapped := Seq.map(xs)(inc);
+        viaList := Seq.len(ref mapped);
         viaText := Text.len(clone_text("ab"));
 
         viaOption + viaResult + viaList + viaText
@@ -265,7 +266,7 @@ main :: Unit -> Int
     _ => {
         first := append([1])([2]);
         second := append([3])([4]);
-        std.Seq.len(first) + std.Seq.len(second)
+        std.Seq.len(ref first) + std.Seq.len(ref second)
     }
 }
 """;
@@ -336,7 +337,7 @@ main :: Unit -> Int
 {
     _ => {
         xs := append([1])([2]);
-        Seq.len(xs)
+        Seq.len(ref xs)
     }
 }
 """;

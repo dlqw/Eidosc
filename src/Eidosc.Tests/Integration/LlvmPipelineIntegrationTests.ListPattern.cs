@@ -47,7 +47,7 @@ sum_by_destructure :: Seq[(Int, Int)] -> Int
         mut total := 0;
         mut index := 0;
         loop {
-            if index >= Seq.len(edges) then { break } else {
+            if index >= Seq.len(ref edges) then { break } else {
                 (to, weight) := edges[index];
                 total := total + to + weight;
                 index := index + 1
@@ -63,7 +63,7 @@ sum_by_match :: Seq[(Int, Int)] -> Int
         mut total := 0;
         mut index := 0;
         loop {
-            if index >= Seq.len(edges) then { break } else {
+            if index >= Seq.len(ref edges) then { break } else {
                 match edges[index] {
                     (to, weight) => {
                         total := total + to + weight;
@@ -113,10 +113,10 @@ Tok :: type {
 
 classify :: Seq[Tok] -> Int
 {
-    [TkKeyword("int"), TkIdent(name), ..rest] => 10 + Seq.len(rest),
-    [TkKeyword("return"), ..rest] => 20 + Seq.len(rest),
-    [TkIdent(name), ..rest] => 30 + Seq.len(rest),
-    [TkEof(), ..rest] => 40 + Seq.len(rest),
+    [TkKeyword("int"), TkIdent(name), ..rest] => 10 + Seq.len(ref rest),
+    [TkKeyword("return"), ..rest] => 20 + Seq.len(ref rest),
+    [TkIdent(name), ..rest] => 30 + Seq.len(ref rest),
+    [TkEof(), ..rest] => 40 + Seq.len(ref rest),
     [] => 0
 }
 
@@ -180,13 +180,13 @@ import std.Seq
 
 score :: Seq[Int] -> Int
 {
-    [head, ..middle, last] => head * 100 + Seq.len(middle) * 10 + last,
+    [head, ..middle, last] => head * 100 + Seq.len(ref middle) * 10 + last,
     _ => 0
 }
 
 score_init :: Seq[Int] -> Int
 {
-    [..init, last] => Seq.len(init) * 10 + last,
+    [..init, last] => Seq.len(ref init) * 10 + last,
     _ => 0
 }
 

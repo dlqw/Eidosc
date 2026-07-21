@@ -23,7 +23,7 @@ Deque :: module {
 
     len[T] :: Deque[T] -> Int
     {
-        Deque{front: f, back: b} => Seq.len(f) + Seq.len(b)
+        Deque{front: f, back: b} => Seq.len(ref f) + Seq.len(ref b)
     }
 
     is_empty[T] :: Deque[T] -> Bool

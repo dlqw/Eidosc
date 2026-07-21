@@ -250,7 +250,7 @@ public partial class LlvmPipelineIntegrationTests
                 _ => {
                     pieces := Seq.partition([1, 2, 3, 4])(is_small);
                     (left, right) := pieces;
-                    Seq.len(left) + Seq.len(right)
+                    Seq.len(ref left) + Seq.len(ref right)
                 }
             }
             """;

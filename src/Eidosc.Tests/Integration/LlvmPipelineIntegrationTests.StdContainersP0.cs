@@ -95,9 +95,9 @@ main :: Unit -> Int
         map2 := HashMap.insert(map1)("beta")("two")
         map3 := HashMap.insert(map2)("alpha")("uno")
         set0 := HashSet.from_seq[String](["alpha", "beta", "alpha"])
-        if HashMap.len(map3) == 2 &&
+        if HashMap.len(ref map3) == 2 &&
            HashMap.get_or(map3)("alpha")("missing") == "uno" &&
-           HashSet.len(set0) == 2 &&
+           HashSet.len(ref set0) == 2 &&
            HashSet.contains(set0)("beta")
         then { 42 }
         else { 1 }

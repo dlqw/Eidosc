@@ -20,18 +20,22 @@ TreeMap :: module {
         key => value => Node{key: key, value: value, left: Empty(), right: Empty(), size: 1, height: 1}
     }
 
-    len_value[K, V] :: TreeMap[K, V] -> Int
+    len_value[K, V] :: Ref[TreeMap[K, V]] -> Int
      compiler(internal)
 {
-        Empty() => 0,
-        Node{key: _, value: _, left: _, right: _, size: size, height: _} => size
+        map => match *map {
+            Empty() => 0,
+            Node{key: _, value: _, left: _, right: _, size: size, height: _} => size
+        }
     }
 
-    height_value[K, V] :: TreeMap[K, V] -> Int
+    height_value[K, V] :: Ref[TreeMap[K, V]] -> Int
      compiler(internal)
 {
-        Empty() => 0,
-        Node{key: _, value: _, left: _, right: _, size: _, height: height} => height
+        map => match *map {
+            Empty() => 0,
+            Node{key: _, value: _, left: _, right: _, size: _, height: height} => height
+        }
     }
 
     len[K, V] :: Ref[TreeMap[K, V]] -> Int
@@ -67,8 +71,8 @@ TreeMap :: module {
      compiler(internal)
 {
         key => value => left => right => {
-            size := 1 + TreeMap.len_value(left) + TreeMap.len_value(right)
-            height := 1 + TreeMap.max_int(TreeMap.height_value(left))(TreeMap.height_value(right))
+            size := 1 + TreeMap.len_value(ref left) + TreeMap.len_value(ref right)
+            height := 1 + TreeMap.max_int(TreeMap.height_value(ref left))(TreeMap.height_value(ref right))
             Node{
                 key: key,
                 value: value,
@@ -81,42 +85,44 @@ TreeMap :: module {
     }
 
 
-    balance_factor[K, V] :: TreeMap[K, V] -> Int
+    balance_factor[K, V] :: Ref[TreeMap[K, V]] -> Int
      compiler(internal)
 {
-        Empty() => 0,
-        Node{
-            key: _,
-            value: _,
-            left: Empty(),
-            right: Empty(),
-            size: _,
-            height: _
-        } => 0,
-        Node{
-            key: _,
-            value: _,
-            left: Node{height: left_height, key: _, value: _, left: _, right: _, size: _},
-            right: Empty(),
-            size: _,
-            height: _
-        } => left_height,
-        Node{
-            key: _,
-            value: _,
-            left: Empty(),
-            right: Node{height: right_height, key: _, value: _, left: _, right: _, size: _},
-            size: _,
-            height: _
-        } => 0 - right_height,
-        Node{
-            key: _,
-            value: _,
-            left: Node{height: left_height, key: _, value: _, left: _, right: _, size: _},
-            right: Node{height: right_height, key: _, value: _, left: _, right: _, size: _},
-            size: _,
-            height: _
-        } => left_height - right_height
+        map => match *map {
+            Empty() => 0,
+            Node{
+                key: _,
+                value: _,
+                left: Empty(),
+                right: Empty(),
+                size: _,
+                height: _
+            } => 0,
+            Node{
+                key: _,
+                value: _,
+                left: Node{height: left_height, key: _, value: _, left: _, right: _, size: _},
+                right: Empty(),
+                size: _,
+                height: _
+            } => left_height,
+            Node{
+                key: _,
+                value: _,
+                left: Empty(),
+                right: Node{height: right_height, key: _, value: _, left: _, right: _, size: _},
+                size: _,
+                height: _
+            } => 0 - right_height,
+            Node{
+                key: _,
+                value: _,
+                left: Node{height: left_height, key: _, value: _, left: _, right: _, size: _},
+                right: Node{height: right_height, key: _, value: _, left: _, right: _, size: _},
+                size: _,
+                height: _
+            } => left_height - right_height
+        }
     }
 
 
@@ -154,15 +160,15 @@ TreeMap :: module {
      compiler(internal)
 {
         key => value => left => right => {
-            balance := TreeMap.height_value(left) - TreeMap.height_value(right)
+            balance := TreeMap.height_value(ref left) - TreeMap.height_value(ref right)
             if balance > 1 then {
-                if TreeMap.balance_factor(left) < 0 then {
+                if TreeMap.balance_factor(ref left) < 0 then {
                     TreeMap.rotate_right(TreeMap.make_node(key)(value)(TreeMap.rotate_left(left))(right))
                 } else {
                     TreeMap.rotate_right(TreeMap.make_node(key)(value)(left)(right))
                 }
             } else if balance < -1 then {
-                if TreeMap.balance_factor(right) > 0 then {
+                if TreeMap.balance_factor(ref right) > 0 then {
                     TreeMap.rotate_left(TreeMap.make_node(key)(value)(left)(TreeMap.rotate_right(right)))
                 } else {
                     TreeMap.rotate_left(TreeMap.make_node(key)(value)(left)(right))

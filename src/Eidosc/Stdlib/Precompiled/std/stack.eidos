@@ -21,7 +21,7 @@ Stack :: module {
 
     len[T] :: Stack[T] -> Int
     {
-        Stack{items: items} => Seq.len(items)
+        Stack{items: items} => Seq.len(ref items)
     }
 
     is_empty[T] :: Stack[T] -> Bool
