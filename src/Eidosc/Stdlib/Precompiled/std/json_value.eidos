@@ -7,6 +7,8 @@ JsonValue :: module {
 
     string_equals :: String -> String -> Bool compiler(internal, intrinsic: "string_equals");
 
+    string_equals_ref :: Ref[String] -> Ref[String] -> Bool compiler(internal, intrinsic: "string_equals");
+
 
     // JSON value ADT — represents any valid JSON value.
     // Objects are represented as Seq[(String, JsonValue)] (association Seq).
@@ -136,13 +138,13 @@ JsonValue :: module {
 
     array_len :: JsonValue -> Int
     {
-        JsonArray(items) => Seq.len(items),
+        JsonArray(items) => Seq.len(ref items),
         _ => 0
     }
 
     object_len :: JsonValue -> Int
     {
-        JsonObject(fields) => Seq.len(fields),
+        JsonObject(fields) => Seq.len(ref fields),
         _ => 0
     }
 
@@ -154,7 +156,7 @@ JsonValue :: module {
 {
         [] => _ => None(),
         [(key, value), ..tail] => target =>
-            if string_equals(key, target) then { Some(value) }
+            if string_equals_ref(ref key)(ref target) then { Some(value) }
             else { JsonValue.find_field(tail)(target) }
     }
 
@@ -180,7 +182,7 @@ JsonValue :: module {
 {
         [] => key => value => [(key, value)],
         [(field_key, field_value), ..tail] => key => value =>
-            if string_equals(field_key, key)
+            if string_equals_ref(ref field_key)(ref key)
                 then { Seq.append([(field_key, value)])(tail) }
                 else { Seq.append([(field_key, field_value)])(JsonValue.upsert_field(tail)(key)(value)) }
     }
@@ -191,7 +193,7 @@ JsonValue :: module {
 {
         [] => _ => [],
         [(field_key, field_value), ..tail] => key =>
-            if string_equals(field_key, key)
+            if string_equals_ref(ref field_key)(ref key)
                 then { JsonValue.remove_field_from(tail)(key) }
                 else { Seq.append([(field_key, field_value)])(JsonValue.remove_field_from(tail)(key)) }
     }

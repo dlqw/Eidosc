@@ -6,10 +6,14 @@ Binary :: module {
 
     string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
+    string_length_ref :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
+
 
 
 
     string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+
+    string_char_at_ref :: Ref[String] -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
 
@@ -321,17 +325,17 @@ Binary :: module {
     }
 
 
-    string_to_bytes_loop :: String -> Int -> Seq[Int]
+    string_to_bytes_loop :: Ref[String] -> Int -> Seq[Int]
      compiler(internal)
 {
         src => index =>
-            if index >= string_length(src) then { [] }
-            else { Binary.append([string_char_at(src, index)])(Binary.string_to_bytes_loop(src)(index + 1)) }
+            if index >= string_length_ref(src) then { [] }
+            else { Binary.append([string_char_at_ref(src)(index)])(Binary.string_to_bytes_loop(src)(index + 1)) }
     }
 
     string_to_bytes :: String -> Seq[Int]
     {
-        src => Binary.string_to_bytes_loop(src)(0)
+        src => Binary.string_to_bytes_loop(ref src)(0)
     }
 
     bytes_to_string :: Seq[Int] -> String
@@ -386,6 +390,6 @@ Binary :: module {
 
     encode_string :: String -> Seq[Int]
     {
-        src => Binary.append(Binary.encode_u32_le(string_length(src)))(Binary.string_to_bytes(src))
+        src => Binary.append(Binary.encode_u32_le(string_length_ref(ref src)))(Binary.string_to_bytes(src))
     }
 }

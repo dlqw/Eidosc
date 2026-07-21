@@ -140,14 +140,14 @@ Time :: module {
 
     duration_min :: Duration -> Duration -> Duration
     {
-        left => right =>
-            if Time.to_seconds(left) <= Time.to_seconds(right) then { left } else { right }
+        Duration{seconds: left} => Duration{seconds: right} =>
+            if left <= right then { Duration{seconds: left} } else { Duration{seconds: right} }
     }
 
     duration_max :: Duration -> Duration -> Duration
     {
-        left => right =>
-            if Time.to_seconds(left) >= Time.to_seconds(right) then { left } else { right }
+        Duration{seconds: left} => Duration{seconds: right} =>
+            if left >= right then { Duration{seconds: left} } else { Duration{seconds: right} }
     }
 
     duration_clamp :: Duration -> Duration -> Duration -> Duration

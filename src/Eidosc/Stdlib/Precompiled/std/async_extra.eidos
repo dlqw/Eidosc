@@ -92,10 +92,9 @@ AsyncExtra :: module {
      compiler(internal)
 {
         xs => index => {
-            values := *xs
-            len := Seq.len(values)
+            len := Seq.len_ref(xs)
             if index < 0 || index >= len then { None() }
-            else { Some(TraitInvoke.clone_value(ref values[index])) }
+            else { Some(TraitInvoke.clone_value(ref xs[index])) }
         }
     }
 

@@ -7,10 +7,14 @@ Hash :: module {
 
     string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
+    string_length_ref :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
+
 
 
 
     string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+
+    string_char_at_ref :: Ref[String] -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
     int :: Int -> Int
@@ -30,7 +34,7 @@ Hash :: module {
 
     string_with_seed :: String -> Int -> Int
     {
-        s => seed => Hash.hash_string_loop(s)(0)(seed)
+        s => seed => Hash.hash_string_loop(ref s)(0)(seed)
     }
 
     normalize :: Int -> Int
@@ -122,18 +126,18 @@ Hash :: module {
     HashString :: instance Traits.Hash {
         hash :: String -> Int
             {
-                s => Hash.hash_string_loop(s)(0)(16777619)
+                s => Hash.hash_string_loop(ref s)(0)(16777619)
             }
     }
 
 
-    hash_string_loop :: String -> Int -> Int -> Int
+    hash_string_loop :: Ref[String] -> Int -> Int -> Int
      compiler(internal)
 {
         s => idx => h =>
-            if idx >= string_length(s) then { h }
+            if idx >= string_length_ref(s) then { h }
             else {
-                c := string_char_at(s, idx);
+                c := string_char_at_ref(s)(idx);
                 Hash.hash_string_loop(s)(idx + 1)((h + c) * 16777619)
             }
     }
