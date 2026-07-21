@@ -20,11 +20,13 @@ PersistentMap :: module {
     }
 
 
-    clone_link[K, V] :: Link[K, V] -> Link[K, V]
+    clone_link[K, V] :: Ref[Link[K, V]] -> Link[K, V]
      compiler(internal)
 {
-        Empty() => Empty(),
-        Link(node) => Link(Shared.clone(ref node))
+        link => match *link {
+            Empty() => Empty(),
+            Link(node) => Link(Shared.clone(ref node))
+        }
     }
 
 
@@ -54,12 +56,12 @@ PersistentMap :: module {
         }
     }
 
-    len[K, V] :: PersistentMap[K, V] -> Int
+    len[K, V] :: Ref[PersistentMap[K, V]] -> Int
     {
-        PersistentMap{root: root} => PersistentMap.len_link(root)
+        map => PersistentMap.len_link(PersistentMap.clone_link(ref map.root))
     }
 
-    is_empty[K, V] :: PersistentMap[K, V] -> Bool
+    is_empty[K, V] :: Ref[PersistentMap[K, V]] -> Bool
     {
         map => PersistentMap.len(map) == 0
     }
@@ -68,14 +70,22 @@ PersistentMap :: module {
     make_link[K, V] :: K -> V -> Link[K, V] -> Link[K, V] -> Link[K, V]
      compiler(internal)
 {
-        key => value => left => right => Link(Shared.new(Node{
-            key: key,
-            value: value,
-            left: left,
-            right: right,
-            size: 1 + PersistentMap.len_link(left) + PersistentMap.len_link(right),
-            height: 1 + PersistentMap.max_int(PersistentMap.height_link(left))(PersistentMap.height_link(right))
-        }))
+        key => value => left => right => {
+            size := 1 +
+                PersistentMap.len_link(PersistentMap.clone_link(ref left)) +
+                PersistentMap.len_link(PersistentMap.clone_link(ref right))
+            height := 1 + PersistentMap.max_int(
+                PersistentMap.height_link(PersistentMap.clone_link(ref left)))(
+                PersistentMap.height_link(PersistentMap.clone_link(ref right)))
+            Link(Shared.new(Node{
+                key: key,
+                value: value,
+                left: left,
+                right: right,
+                size: size,
+                height: height
+            }))
+        }
     }
 
 
@@ -85,7 +95,8 @@ PersistentMap :: module {
         Empty() => 0,
         Link(node) => match *Shared.borrow(ref node) {
             Node{key: _, value: _, left: left, right: right, size: _, height: _} =>
-                PersistentMap.height_link(left) - PersistentMap.height_link(right)
+                PersistentMap.height_link(PersistentMap.clone_link(ref left)) -
+                PersistentMap.height_link(PersistentMap.clone_link(ref right))
         }
     }
 
@@ -104,10 +115,10 @@ PersistentMap :: module {
             } => match *Shared.borrow(ref left_node) {
                 Node{key: left_key, value: left_value, left: left_left, right: left_right, size: _, height: _} =>
                     PersistentMap.make_link(TraitInvoke.clone_value(ref left_key))(TraitInvoke.clone_value(ref left_value))(
-                        PersistentMap.clone_link(left_left))(
+                        PersistentMap.clone_link(ref left_left))(
                         PersistentMap.make_link(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
-                            PersistentMap.clone_link(left_right))(
-                            PersistentMap.clone_link(right)))
+                            PersistentMap.clone_link(ref left_right))(
+                            PersistentMap.clone_link(ref right)))
             },
             _ => Link(Shared.clone(ref node))
         },
@@ -130,9 +141,9 @@ PersistentMap :: module {
                 Node{key: right_key, value: right_value, left: right_left, right: right_right, size: _, height: _} =>
                     PersistentMap.make_link(TraitInvoke.clone_value(ref right_key))(TraitInvoke.clone_value(ref right_value))(
                         PersistentMap.make_link(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
-                            PersistentMap.clone_link(left))(
-                            PersistentMap.clone_link(right_left)))(
-                        PersistentMap.clone_link(right_right))
+                            PersistentMap.clone_link(ref left))(
+                            PersistentMap.clone_link(ref right_left)))(
+                        PersistentMap.clone_link(ref right_right))
             },
             _ => Link(Shared.clone(ref node))
         },
@@ -144,15 +155,17 @@ PersistentMap :: module {
      compiler(internal)
 {
         key => value => left => right => {
-            balance := PersistentMap.height_link(left) - PersistentMap.height_link(right)
+            balance :=
+                PersistentMap.height_link(PersistentMap.clone_link(ref left)) -
+                PersistentMap.height_link(PersistentMap.clone_link(ref right))
             if balance > 1 then {
-                if PersistentMap.balance_factor(left) < 0 then {
+                if PersistentMap.balance_factor(PersistentMap.clone_link(ref left)) < 0 then {
                     PersistentMap.rotate_right(PersistentMap.make_link(key)(value)(PersistentMap.rotate_left(left))(right))
                 } else {
                     PersistentMap.rotate_right(PersistentMap.make_link(key)(value)(left)(right))
                 }
             } else if balance < -1 then {
-                if PersistentMap.balance_factor(right) > 0 then {
+                if PersistentMap.balance_factor(PersistentMap.clone_link(ref right)) > 0 then {
                     PersistentMap.rotate_left(PersistentMap.make_link(key)(value)(left)(PersistentMap.rotate_right(right)))
                 } else {
                     PersistentMap.rotate_left(PersistentMap.make_link(key)(value)(left)(right))
@@ -173,33 +186,38 @@ PersistentMap :: module {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
                     Less() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
-                        PersistentMap.insert_link(PersistentMap.clone_link(left))(key)(value))(
-                        PersistentMap.clone_link(right)),
+                        PersistentMap.insert_link(PersistentMap.clone_link(ref left))(key)(value))(
+                        PersistentMap.clone_link(ref right)),
                     Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
-                        PersistentMap.clone_link(left))(
-                        PersistentMap.insert_link(PersistentMap.clone_link(right))(key)(value)),
+                        PersistentMap.clone_link(ref left))(
+                        PersistentMap.insert_link(PersistentMap.clone_link(ref right))(key)(value)),
                     Equal() => PersistentMap.make_link(key)(value)(
-                        PersistentMap.clone_link(left))(
-                        PersistentMap.clone_link(right))
+                        PersistentMap.clone_link(ref left))(
+                        PersistentMap.clone_link(ref right))
                 }
             }
         }
     }
 
-    insert[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> V -> PersistentMap[K, V]
+    insert[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> V -> PersistentMap[K, V]
     {
-        PersistentMap{root: root} => key => value => PersistentMap{root: PersistentMap.insert_link(root)(key)(value)}
+        map => key => value => PersistentMap{
+            root: PersistentMap.insert_link(PersistentMap.clone_link(ref map.root))(key)(value)
+        }
     }
 
     singleton[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: K -> V -> PersistentMap[K, V]
     {
-        key => value => PersistentMap.insert(PersistentMap.empty(()))(key)(value)
+        key => value => {
+            map := PersistentMap.empty(())
+            PersistentMap.insert(ref map)(key)(value)
+        }
     }
 
     from_seq[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> PersistentMap[K, V]
     {
         entries => Seq.fold_left(entries)(PersistentMap.empty(()))(map => entry =>
-            match entry { (key, value) => PersistentMap.insert(map)(key)(value) })
+            match entry { (key, value) => PersistentMap.insert(ref map)(key)(value) })
     }
 
 
@@ -211,20 +229,20 @@ PersistentMap :: module {
             Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
-                    Less() => PersistentMap.get_link(PersistentMap.clone_link(left))(key),
-                    Greater() => PersistentMap.get_link(PersistentMap.clone_link(right))(key),
+                    Less() => PersistentMap.get_link(PersistentMap.clone_link(ref left))(key),
+                    Greater() => PersistentMap.get_link(PersistentMap.clone_link(ref right))(key),
                     Equal() => Some(TraitInvoke.clone_value(ref node_value))
                 }
             }
         }
     }
 
-    get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> Option[V]
+    get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> Option[V]
     {
-        PersistentMap{root: root} => key => PersistentMap.get_link(root)(key)
+        map => key => PersistentMap.get_link(PersistentMap.clone_link(ref map.root))(key)
     }
 
-    get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> V -> V
+    get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> V -> V
     {
         map => key => fallback => Option.unwrap_or(PersistentMap.get(map)(key))(fallback)
     }
@@ -238,17 +256,17 @@ PersistentMap :: module {
             Node{key: node_key, value: _, left: left, right: right, size: _, height: _} => {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
-                    Less() => PersistentMap.contains_link(PersistentMap.clone_link(left))(key),
-                    Greater() => PersistentMap.contains_link(PersistentMap.clone_link(right))(key),
+                    Less() => PersistentMap.contains_link(PersistentMap.clone_link(ref left))(key),
+                    Greater() => PersistentMap.contains_link(PersistentMap.clone_link(ref right))(key),
                     Equal() => true
                 }
             }
         }
     }
 
-    contains_key[K: Traits.Ord + Traits.Clone, V] :: PersistentMap[K, V] -> K -> Bool
+    contains_key[K: Traits.Ord + Traits.Clone, V] :: Ref[PersistentMap[K, V]] -> K -> Bool
     {
-        PersistentMap{root: root} => key => PersistentMap.contains_link(root)(key)
+        map => key => PersistentMap.contains_link(PersistentMap.clone_link(ref map.root))(key)
     }
 
 
@@ -260,7 +278,7 @@ PersistentMap :: module {
             Node{key: key, value: value, left: Empty(), right: _, size: _, height: _} =>
                 Some((TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))),
             Node{key: _, value: _, left: left, right: _, size: _, height: _} =>
-                PersistentMap.min_entry(PersistentMap.clone_link(left))
+                PersistentMap.min_entry(PersistentMap.clone_link(ref left))
         }
     }
 
@@ -271,11 +289,11 @@ PersistentMap :: module {
         Empty() => Empty(),
         Link(node) => match *Shared.borrow(ref node) {
             Node{key: _, value: _, left: Empty(), right: right, size: _, height: _} =>
-                PersistentMap.clone_link(right),
+                PersistentMap.clone_link(ref right),
             Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
                 PersistentMap.balance_node(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref value))(
-                    PersistentMap.remove_min(PersistentMap.clone_link(left)))(
-                    PersistentMap.clone_link(right))
+                    PersistentMap.remove_min(PersistentMap.clone_link(ref left)))(
+                    PersistentMap.clone_link(ref right))
         }
     }
 
@@ -283,13 +301,12 @@ PersistentMap :: module {
     merge_children[K: Traits.Clone, V: Traits.Clone] :: Link[K, V] -> Link[K, V] -> Link[K, V]
      compiler(internal)
 {
-        Empty() => right => PersistentMap.clone_link(right),
-        left => Empty() => PersistentMap.clone_link(left),
-        left => right => match PersistentMap.min_entry(PersistentMap.clone_link(right)) {
-            Some((key, value)) => PersistentMap.balance_node(key)(value)(
-                PersistentMap.clone_link(left))(
-                PersistentMap.remove_min(PersistentMap.clone_link(right))),
-            None() => PersistentMap.clone_link(left)
+        Empty() => right => right,
+        left => Empty() => left,
+        left => right => match PersistentMap.min_entry(PersistentMap.clone_link(ref right)) {
+            Some((key, value)) => PersistentMap.balance_node(key)(value)(left)(
+                PersistentMap.remove_min(right)),
+            None() => left
         }
     }
 
@@ -303,20 +320,24 @@ PersistentMap :: module {
                 cmp := TraitInvoke.compare_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref node_key))
                 match cmp {
                     Less() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
-                        PersistentMap.remove_link(PersistentMap.clone_link(left))(key))(
-                        PersistentMap.clone_link(right)),
+                        PersistentMap.remove_link(PersistentMap.clone_link(ref left))(key))(
+                        PersistentMap.clone_link(ref right)),
                     Greater() => PersistentMap.balance_node(TraitInvoke.clone_value(ref node_key))(TraitInvoke.clone_value(ref node_value))(
-                        PersistentMap.clone_link(left))(
-                        PersistentMap.remove_link(PersistentMap.clone_link(right))(key)),
-                    Equal() => PersistentMap.merge_children(left)(right)
+                        PersistentMap.clone_link(ref left))(
+                        PersistentMap.remove_link(PersistentMap.clone_link(ref right))(key)),
+                    Equal() => PersistentMap.merge_children(
+                        PersistentMap.clone_link(ref left))(
+                        PersistentMap.clone_link(ref right))
                 }
             }
         }
     }
 
-    remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> K -> PersistentMap[K, V]
+    remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> PersistentMap[K, V]
     {
-        PersistentMap{root: root} => key => PersistentMap{root: PersistentMap.remove_link(root)(key)}
+        map => key => PersistentMap{
+            root: PersistentMap.remove_link(PersistentMap.clone_link(ref map.root))(key)
+        }
     }
 
 
@@ -326,23 +347,23 @@ PersistentMap :: module {
         Empty() => [],
         Link(node) => match *Shared.borrow(ref node) {
             Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
-                Seq.append(PersistentMap.to_seq_link(PersistentMap.clone_link(left)))(
+                Seq.append(PersistentMap.to_seq_link(PersistentMap.clone_link(ref left)))(
                     Seq.append([(TraitInvoke.clone_value(ref key), TraitInvoke.clone_value(ref value))])(
-                        PersistentMap.to_seq_link(PersistentMap.clone_link(right))))
+                        PersistentMap.to_seq_link(PersistentMap.clone_link(ref right))))
         }
     }
 
-    to_seq[K: Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> Seq[(K, V)]
+    to_seq[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[(K, V)]
     {
-        PersistentMap{root: root} => PersistentMap.to_seq_link(root)
+        map => PersistentMap.to_seq_link(PersistentMap.clone_link(ref map.root))
     }
 
-    keys[K: Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> Seq[K]
+    keys[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[K]
     {
         map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (key, _) => key })
     }
 
-    values[K: Traits.Clone, V: Traits.Clone] :: PersistentMap[K, V] -> Seq[V]
+    values[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[V]
     {
         map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (_, value) => value })
     }
