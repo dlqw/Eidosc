@@ -348,6 +348,26 @@ public partial class LlvmPipelineIntegrationTests
     }
 
     [Fact]
+    public void StdAsyncExtraImportFixture_ResolvesBuiltinCloneThroughRefReceiver()
+    {
+        var result = RunFixtureAtLlvm(Fx("stdlib/std_async_extra_import.eidos"));
+
+        Assert.True(result.Success, $"Phase: {result.CompletedPhase}, Errors: {string.Join("; ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => $"{d.Code}: {d.Message}"))}");
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code is "E5304" or "E5305");
+    }
+
+    [Fact]
+    public void StdVecBuilderImportFixture_SpecializesAggregateLocalsAndRecursiveCalls()
+    {
+        var result = RunFixtureAtLlvm(Fx("stdlib/std_vec_builder_import.eidos"));
+
+        Assert.True(result.Success, $"Phase: {result.CompletedPhase}, Errors: {string.Join("; ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => $"{d.Code}: {d.Message}"))}");
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code is "E5304" or "E5305");
+    }
+
+    [Fact]
     public void StdTextImportFixture_CompilesThroughLlvm()
     {
         var result = RunFixtureAtLlvm(Fx("stdlib/std_text_import.eidos"));

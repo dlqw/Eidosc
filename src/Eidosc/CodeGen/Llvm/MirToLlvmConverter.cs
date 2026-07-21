@@ -1046,6 +1046,13 @@ public sealed partial class MirToLlvmConverter
 
         ClearGenericLocal(load.Target.Local);
 
+        if (load.Source is MirPlace { Kind: PlaceKind.Deref } derefSource &&
+            ResolveDerefValueType(derefSource) is LlvmPointerType)
+        {
+            AssignPlaceFromValue(load.Target, ConvertPlace(derefSource));
+            return null;
+        }
+
         if (load.Source is MirPlace { Kind: PlaceKind.Index, IndexAccessKind: MirIndexAccessKind.RuntimeArray } indexSource &&
             indexSource.Base != null &&
             indexSource.Index != null)

@@ -1618,10 +1618,12 @@ public sealed class Substitution
             TyCon con => InstantiateCon(con, varMap, valueVarMap),
             TyFun fun => InstantiateFun(fun, varMap, valueVarMap),
             TyTuple tuple => InstantiateTuple(tuple, varMap, valueVarMap),
+            TyRef reference => InstantiateRef(reference, varMap, valueVarMap),
+            TyMutRef mutableReference => InstantiateMutRef(mutableReference, varMap, valueVarMap),
             TyShared shared => InstantiateShared(shared, varMap, valueVarMap),
             EffectRow abilitySet => InstantiateEffectRow(abilitySet, varMap, valueVarMap),
             EffectTag abilityType => InstantiateEffectTag(abilityType, varMap, valueVarMap),
-            _ => type // TyRef/TyMutRef: Apply() at entry already handles substitution
+            _ => type
         };
     }
 
@@ -1748,6 +1750,28 @@ public sealed class Substitution
             Result = newResult,
             Effects = newAbilities
         };
+    }
+
+    private Type InstantiateRef(
+        TyRef reference,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
+    {
+        var newInner = InstantiateType(reference.Inner, varMap, valueVarMap);
+        return newInner == reference.Inner
+            ? reference
+            : reference with { Inner = newInner };
+    }
+
+    private Type InstantiateMutRef(
+        TyMutRef mutableReference,
+        Dictionary<int, Type> varMap,
+        Dictionary<ValueInstantiationKey, int> valueVarMap)
+    {
+        var newInner = InstantiateType(mutableReference.Inner, varMap, valueVarMap);
+        return newInner == mutableReference.Inner
+            ? mutableReference
+            : mutableReference with { Inner = newInner };
     }
 
     private Type InstantiateShared(

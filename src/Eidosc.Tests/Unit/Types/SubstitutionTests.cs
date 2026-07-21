@@ -45,6 +45,37 @@ public class SubstitutionTests
     }
 
     [Fact]
+    public void Instantiate_ReferenceWrappedTypeVariable_FreshensEachInstanceIndependently()
+    {
+        var substitution = new Substitution();
+        var typeParameter = new TyVar { Index = 100 };
+        var scheme = new TypeScheme
+        {
+            ForAll = [typeParameter.Index],
+            Type = new TyFun
+            {
+                Params =
+                [
+                    new TyRef { Inner = typeParameter },
+                    new TyMutRef { Inner = typeParameter }
+                ],
+                Result = typeParameter
+            }
+        };
+
+        var first = Assert.IsType<TyFun>(substitution.Instantiate(scheme));
+        var second = Assert.IsType<TyFun>(substitution.Instantiate(scheme));
+
+        substitution.Unify(first.Result, BaseTypes.String);
+        substitution.Unify(second.Result, BaseTypes.Int);
+
+        var resolvedFirst = Assert.IsType<TyFun>(substitution.Apply(first));
+        var resolvedSecond = Assert.IsType<TyFun>(substitution.Apply(second));
+        Assert.Equal("(Ref[String], MRef[String]) -> String", resolvedFirst.ToString());
+        Assert.Equal("(Ref[Int], MRef[Int]) -> Int", resolvedSecond.ToString());
+    }
+
+    [Fact]
     public void Unify_DistinctConcreteValueGenericArguments_RejectsNominalMatch()
     {
         var substitution = new Substitution();

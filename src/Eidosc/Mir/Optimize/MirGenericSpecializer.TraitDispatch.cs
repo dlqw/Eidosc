@@ -71,7 +71,8 @@ public sealed partial class MirGenericSpecializer
                 continue;
             }
 
-            var receiverTypeId = ResolveOperandType(call.Arguments[parameterIndex], localTypes);
+            var receiverTypeId = ResolveTraitDispatchCarrierType(
+                ResolveOperandType(call.Arguments[parameterIndex], localTypes));
             if (IsConcreteTraitDispatchType(receiverTypeId))
             {
                 hasConcreteDispatchType = true;
@@ -232,7 +233,17 @@ public sealed partial class MirGenericSpecializer
             resultType.IsValid &&
             resultType != typeId)
         {
-            return resultType;
+            return ResolveTraitDispatchCarrierType(resultType);
+        }
+
+        if (TryGetTypeDescriptor(typeId, out var descriptor))
+        {
+            return descriptor switch
+            {
+                TypeDescriptor.Ref reference => reference.Inner,
+                TypeDescriptor.MutRef reference => reference.Inner,
+                _ => typeId
+            };
         }
 
         return typeId;

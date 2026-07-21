@@ -56,7 +56,22 @@ public sealed partial class MirGenericSpecializer
 
         if (!TryGetTypeDescriptor(concreteType, out var concreteDescriptor))
         {
-            return false;
+            return templateDescriptor switch
+            {
+                TypeDescriptor.Ref reference => TryCollectTypeBindings(reference.Inner, concreteType, bindings),
+                TypeDescriptor.MutRef reference => TryCollectTypeBindings(reference.Inner, concreteType, bindings),
+                _ => false
+            };
+        }
+
+        if (templateDescriptor is TypeDescriptor.Ref templateReference && concreteDescriptor is not TypeDescriptor.Ref)
+        {
+            return TryCollectTypeBindings(templateReference.Inner, concreteType, bindings);
+        }
+
+        if (templateDescriptor is TypeDescriptor.MutRef templateMutableReference && concreteDescriptor is not TypeDescriptor.MutRef)
+        {
+            return TryCollectTypeBindings(templateMutableReference.Inner, concreteType, bindings);
         }
 
         return TryCollectTypeBindings(templateDescriptor, concreteDescriptor, bindings);

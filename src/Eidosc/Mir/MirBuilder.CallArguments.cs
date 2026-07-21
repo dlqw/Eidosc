@@ -156,6 +156,25 @@ public sealed partial class MirBuilder
                 };
                 return true;
 
+            case HirUnaryOp
+            {
+                Operator: Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef or Eidosc.Hir.UnaryOp.AddressOf
+            } unaryOp:
+            {
+                if (!TryConvertPlaceShapedExprPlace(unaryOp.Operand, out var referencedPlace))
+                {
+                    place = null!;
+                    return false;
+                }
+
+                place = referencedPlace with
+                {
+                    TypeId = unaryOp.TypeId.IsValid ? unaryOp.TypeId : referencedPlace.TypeId,
+                    Span = unaryOp.Span
+                };
+                return true;
+            }
+
             case HirUnaryOp { Operator: Eidosc.Hir.UnaryOp.Deref } unaryOp:
             {
                 var derefOperand = TryConvertPlaceShapedExprPlace(unaryOp.Operand, out var derefBasePlace)
@@ -280,6 +299,14 @@ public sealed partial class MirBuilder
         if (!TryResolveOperandTypeId(place, fallbackType, span, "projected call argument", out var typeId))
         {
             return CreatePoisonOperand(TypeId.None, span, DiagnosticMessages.MissingMirTypeForProjectedCallArgumentReason);
+        }
+
+        // A reference argument needs the projected place itself. Loading the
+        // indexed value first turns a scalar into an integer-to-pointer cast and
+        // loses the address required by Ref[T].
+        if (IsFirstClassReferenceType(typeId))
+        {
+            return place with { TypeId = typeId };
         }
 
         var temp = NewTemp(typeId);
