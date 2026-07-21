@@ -7,17 +7,17 @@ JsonParser :: module {
 
 
 
-    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
+    string_length :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
 
 
 
 
-    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+    string_char_at :: Ref[String] -> Int -> Int compiler(internal, intrinsic: "string_char_at");
 
 
 
 
-    string_slice :: String -> Int -> Int -> String compiler(internal, intrinsic: "string_slice");
+    string_slice :: Ref[String] -> Int -> Int -> String compiler(internal, intrinsic: "string_slice");
 
 
 
@@ -68,7 +68,7 @@ JsonParser :: module {
     // ── Skip whitespace ──
 
 
-    skip_whitespace :: String -> Int -> Int
+    skip_whitespace :: Ref[String] -> Int -> Int
      compiler(internal)
 {
         src => index =>
@@ -84,7 +84,7 @@ JsonParser :: module {
     // ── String to Int conversion (for integer part of numbers) ──
 
 
-    parse_int_digits :: String -> Int -> Int -> Int
+    parse_int_digits :: Ref[String] -> Int -> Int -> Int
      compiler(internal)
 {
         src => index => acc =>
@@ -100,7 +100,7 @@ JsonParser :: module {
     // ── Parse null ──
 
 
-    parse_null :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_null :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -113,7 +113,7 @@ JsonParser :: module {
     // ── Parse true ──
 
 
-    parse_true :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_true :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -126,7 +126,7 @@ JsonParser :: module {
     // ── Parse false ──
 
 
-    parse_false :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_false :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -141,7 +141,7 @@ JsonParser :: module {
     // and converts to Float via string_to_float.
 
 
-    parse_number :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_number :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -161,7 +161,7 @@ JsonParser :: module {
     }
 
 
-    skip_past_digits :: String -> Int -> Int -> Int
+    skip_past_digits :: Ref[String] -> Int -> Int -> Int
      compiler(internal)
 {
         src => index => len =>
@@ -175,7 +175,7 @@ JsonParser :: module {
     }
 
 
-    skip_fractional :: String -> Int -> Int -> Int
+    skip_fractional :: Ref[String] -> Int -> Int -> Int
      compiler(internal)
 {
         src => index => len =>
@@ -191,7 +191,7 @@ JsonParser :: module {
     }
 
 
-    skip_exponent :: String -> Int -> Int -> Int
+    skip_exponent :: Ref[String] -> Int -> Int -> Int
      compiler(internal)
 {
         src => index => len =>
@@ -224,7 +224,7 @@ JsonParser :: module {
     }
 
 
-    parse_string_chars :: String -> Int -> String -> Result[(String, Int), String]
+    parse_string_chars :: Ref[String] -> Int -> String -> Result[(String, Int), String]
      compiler(internal)
 {
         src => index => acc =>
@@ -239,7 +239,7 @@ JsonParser :: module {
     }
 
 
-    parse_escape :: String -> Int -> String -> Result[(String, Int), String]
+    parse_escape :: Ref[String] -> Int -> String -> Result[(String, Int), String]
      compiler(internal)
 {
         src => index => acc =>
@@ -260,7 +260,7 @@ JsonParser :: module {
     }
 
 
-    parse_unicode_escape :: String -> Int -> String -> Result[(String, Int), String]
+    parse_unicode_escape :: Ref[String] -> Int -> String -> Result[(String, Int), String]
      compiler(internal)
 {
         src => index => acc =>
@@ -276,7 +276,7 @@ JsonParser :: module {
     }
 
 
-    parse_string_value :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_string_value :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -297,7 +297,7 @@ JsonParser :: module {
     // ── Parse array ──
 
 
-    parse_array_elements :: String -> Int -> Seq[JsonValue] -> Result[(Seq[JsonValue], Int), String]
+    parse_array_elements :: Ref[String] -> Int -> Seq[JsonValue] -> Result[(Seq[JsonValue], Int), String]
      compiler(internal)
 {
         src => index => acc =>
@@ -331,7 +331,7 @@ JsonParser :: module {
     }
 
 
-    parse_array :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_array :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -352,7 +352,7 @@ JsonParser :: module {
     // ── Parse object ──
 
 
-    parse_object_fields :: String -> Int -> Seq[(String, JsonValue)] -> Result[(Seq[(String, JsonValue)], Int), String]
+    parse_object_fields :: Ref[String] -> Int -> Seq[(String, JsonValue)] -> Result[(Seq[(String, JsonValue)], Int), String]
      compiler(internal)
 {
         src => index => acc =>
@@ -407,7 +407,7 @@ JsonParser :: module {
     }
 
 
-    parse_object :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_object :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -428,7 +428,7 @@ JsonParser :: module {
     // ── Parse any value ──
 
 
-    parse_value :: String -> Int -> Result[(JsonValue, Int), String]
+    parse_value :: Ref[String] -> Int -> Result[(JsonValue, Int), String]
      compiler(internal)
 {
         src => index =>
@@ -452,12 +452,12 @@ JsonParser :: module {
     parse :: String -> Result[JsonValue, String]
     {
         src => {
-            start := JsonParser.skip_whitespace(src)(0);
-            match JsonParser.parse_value(src)(start)
+            start := JsonParser.skip_whitespace(ref src)(0);
+            match JsonParser.parse_value(ref src)(start)
             {
                 Ok((value, next)) => {
-                    rest := JsonParser.skip_whitespace(src)(next);
-                    if rest >= string_length(src)
+                    rest := JsonParser.skip_whitespace(ref src)(next);
+                    if rest >= string_length(ref src)
                         then { Ok(value) }
                         else { Err("Unexpected trailing characters after position " ++ int_to_string(rest)) }
                 },

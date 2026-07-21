@@ -181,6 +181,7 @@ main :: Unit -> Int need io
         acceptResponse := Network.send(Network.with_accept_json(Network.get_request("{{server.BaseUrl}}accept")));
         replyHeaderResponse := Network.http_get_response("{{server.BaseUrl}}reply-header");
         replyHeaderLowerResponse := Network.http_get_response("{{server.BaseUrl}}reply-header");
+        rawHeadersResponse := Network.http_get_response("{{server.BaseUrl}}reply-header");
         timeoutRequest := Network.with_total_timeout(Network.with_connect_timeout(Network.get_request("{{server.BaseUrl}}slow"))(2))(1);
         timeoutConfigBit := if Network.connect_timeout_seconds(timeoutRequest) == 2 &&
             Network.total_timeout_seconds(timeoutRequest) == 1
@@ -206,13 +207,27 @@ main :: Unit -> Int need io
             Network.request("POST")("{{server.BaseUrl}}echo-binary")("application.custom")(""))([9, 8]);
         customBinaryTextResponse := Network.send_with_bytes_body(
             Network.request("POST")("{{server.BaseUrl}}echo")("application.octet-stream")(""))([111, 107]);
-        okBit := if Network.ok(response) then { 1 } else { 0 };
-        statusBit := if Network.status(response) == 200 then { 1 } else { 0 };
-        bodyBit := if Network.body(response) == "hello-from-eidos" then { 1 } else { 0 };
-        urlBit := if Text.ends_with(Network.effective_url(response))("/ok") then { 1 } else { 0 };
-        contentTypeBit := if Text.starts_with(Network.content_type(response))("text.plain") then { 1 } else { 0 };
-        errorBit := if Text.len(Network.error(response)) == 0 then { 1 } else { 0 };
-        successBit := if Network.is_success_status(response) then { 1 } else { 0 };
+        responseBits := match response
+        {
+            HttpResponse{
+                ok: response_ok,
+                status: response_status,
+                body: response_body,
+                headers: _,
+                effective_url: response_effective_url,
+                content_type: response_content_type,
+                error: response_error
+            } => {
+                ok_bit := if response_ok then { 1 } else { 0 };
+                status_bit := if response_status == 200 then { 1 } else { 0 };
+                body_bit := if response_body == "hello-from-eidos" then { 1 } else { 0 };
+                url_bit := if Text.ends_with(response_effective_url)("/ok") then { 1 } else { 0 };
+                content_type_bit := if Text.starts_with(response_content_type)("text.plain") then { 1 } else { 0 };
+                error_bit := if Text.len(response_error) == 0 then { 1 } else { 0 };
+                success_bit := if response_status >= 200 && response_status < 300 then { 1 } else { 0 };
+                ok_bit + status_bit + body_bit + url_bit + content_type_bit + error_bit + success_bit
+            }
+        };
         resultBit := match result
         {
             Ok(body) => if body == "hello-from-eidos" then { 1 } else { 0 },
@@ -233,9 +248,20 @@ main :: Unit -> Int need io
             Ok(body) => if body == "ping" then { 1 } else { 0 },
             Err(message) => 0
         };
-        jsonBit := if Network.body(jsonResponse) == "{\"ok\":true}" &&
-            Text.starts_with(Network.content_type(jsonResponse))("application.json")
-            then { 1 } else { 0 };
+        jsonBit := match jsonResponse
+        {
+            HttpResponse{
+                ok: _,
+                status: _,
+                body: json_body,
+                headers: _,
+                effective_url: _,
+                content_type: json_content_type,
+                error: _
+            } => if json_body == "{\"ok\":true}" &&
+                Text.starts_with(json_content_type)("application.json")
+                then { 1 } else { 0 }
+        };
         headerBit := if Network.body(headerResponse) == "header-value" then { 1 } else { 0 };
         acceptBit := if Network.body(acceptResponse) == "application.json" then { 1 } else { 0 };
         replyHeaderBit := match Network.header_value_opt(replyHeaderResponse)("X-Reply")
@@ -248,10 +274,20 @@ main :: Unit -> Int need io
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        rawHeadersBit := if Text.contains(Network.headers(replyHeaderResponse))("X-Reply: server-value") then { 1 } else { 0 };
-        timeoutBit := if !Network.ok(timeoutResponse) &&
-            Text.contains(Network.error(timeoutResponse))("timed out")
-            then { 1 } else { 0 };
+        rawHeadersBit := if Text.contains(Network.headers(rawHeadersResponse))("X-Reply: server-value") then { 1 } else { 0 };
+        timeoutBit := match timeoutResponse
+        {
+            HttpResponse{
+                ok: timeout_ok,
+                status: _,
+                body: _,
+                headers: _,
+                effective_url: _,
+                content_type: _,
+                error: timeout_error
+            } => if !timeout_ok && Text.contains(timeout_error)("timed out")
+                then { 1 } else { 0 }
+        };
         putBit := match putResult
         {
             Ok(body) => if body == "pong" then { 1 } else { 0 },
@@ -324,7 +360,7 @@ main :: Unit -> Int need io
         customBinaryTypeBit := if Text.starts_with(Network.bytes_content_type(customBinaryTypeResponse))("application.custom") then { 1 } else { 0 };
         customBinaryTextBit := if Network.body(customBinaryTextResponse) == "ok" then { 1 } else { 0 };
 
-        if okBit + statusBit + bodyBit + urlBit + contentTypeBit + errorBit + successBit + resultBit + optBit + queryBit + postBit + jsonBit + headerBit + acceptBit + replyHeaderBit + replyHeaderLowerBit + rawHeadersBit + timeoutConfigBit + timeoutBit + putBit + deleteBit + binaryBodyBit + binaryStatusBit + binaryContentTypeBit + binaryUrlBit + binaryErrorBit + binaryHeaderBit + binaryResultBit + binaryOptBit + postBinaryBodyBit + postBinaryTypeBit + putBinaryResultBit + postBinaryTextBit + customBinaryBodyBit + customBinaryTypeBit + customBinaryTextBit == 31
+        if responseBits + resultBit + optBit + queryBit + postBit + jsonBit + headerBit + acceptBit + replyHeaderBit + replyHeaderLowerBit + rawHeadersBit + timeoutConfigBit + timeoutBit + putBit + deleteBit + binaryBodyBit + binaryStatusBit + binaryContentTypeBit + binaryUrlBit + binaryErrorBit + binaryHeaderBit + binaryResultBit + binaryOptBit + postBinaryBodyBit + postBinaryTypeBit + putBinaryResultBit + postBinaryTextBit + customBinaryBodyBit + customBinaryTypeBit + customBinaryTextBit == 31
             then { 0 }
             else { 1 }
     }

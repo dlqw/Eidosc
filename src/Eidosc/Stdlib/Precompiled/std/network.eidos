@@ -116,10 +116,10 @@ Network :: module {
      compiler(internal)
 {
         src => index =>
-            if index >= Text.len(src) then { "" }
+            if index >= Text.len(Text.clone(ref src)) then { "" }
             else
             {
-                code := Text.char_code_at(src)(index);
+                code := Text.char_code_at(Text.clone(ref src))(index);
                 encoded := if Network.is_unreserved_char_code(code)
                     then { string_from_char(code) }
                     else { Network.percent_encode_byte(code) };
@@ -135,7 +135,7 @@ Network :: module {
     add_query_param :: String -> String -> String -> String
     {
         url => key => value => {
-            separator := if Text.contains(url)("?") then { "&" } else { "?" };
+            separator := if Text.contains(Text.clone(ref url))("?") then { "&" } else { "?" };
             url ++ separator ++ Network.url_encode_component(key) ++ "=" ++ Network.url_encode_component(value)
         }
     }
@@ -146,7 +146,7 @@ Network :: module {
 {
         headers => key => value => {
             line := key ++ ": " ++ value;
-            if Text.len(headers) == 0 then { line } else { headers ++ "\n" ++ line }
+            if Text.len(Text.clone(ref headers)) == 0 then { line } else { headers ++ "\n" ++ line }
         }
     }
 
@@ -200,7 +200,7 @@ Network :: module {
      compiler(internal)
 {
         text => index =>
-            if index + 1 >= Text.len(text) then { None() }
+            if index + 1 >= Text.len(Text.clone(ref text)) then { None() }
             else {
                 match Network.hex_digit_value(Text.char_code_at(Text.clone(ref text))(index))
                 {
@@ -221,7 +221,7 @@ Network :: module {
      compiler(internal)
 {
         text => index =>
-            if index >= Text.len(text) then { Some([]) }
+            if index >= Text.len(Text.clone(ref text)) then { Some([]) }
             else {
                 match Network.decode_hex_byte_from(Text.clone(ref text))(index)
                 {
@@ -816,9 +816,9 @@ Network :: module {
      compiler(internal)
 {
         text => index =>
-            if index >= Text.len(text) then { "" }
+            if index >= Text.len(Text.clone(ref text)) then { "" }
             else {
-                Network.normalize_header_char(Text.char_code_at(text)(index)) ++
+                Network.normalize_header_char(Text.char_code_at(Text.clone(ref text))(index)) ++
                     Network.normalize_header_name_from(text)(index + 1)
             }
     }
@@ -835,9 +835,9 @@ Network :: module {
      compiler(internal)
 {
         text => index =>
-            if index >= Text.len(text) then { "" }
+            if index >= Text.len(Text.clone(ref text)) then { "" }
             else {
-                code := Text.char_code_at(text)(index);
+                code := Text.char_code_at(Text.clone(ref text))(index);
                 if code == 32 || code == 9
                     then { Network.drop_header_value_padding(text)(index + 1) }
                     else { Text.drop(text)(index) }
@@ -849,8 +849,8 @@ Network :: module {
      compiler(internal)
 {
         text => index =>
-            if index >= Text.len(text) then { index }
-            else if Text.char_code_at(text)(index) == 10 then { index }
+            if index >= Text.len(Text.clone(ref text)) then { index }
+            else if Text.char_code_at(Text.clone(ref text))(index) == 10 then { index }
             else { Network.find_line_end(text)(index + 1) }
     }
 
@@ -859,7 +859,7 @@ Network :: module {
      compiler(internal)
 {
         text => prefix => start =>
-            if start >= Text.len(text) then { None() }
+            if start >= Text.len(Text.clone(ref text)) then { None() }
             else {
                 line_end := Network.find_line_end(Text.clone(ref text))(start);
                 line := Text.slice(Text.clone(ref text))(start)(line_end - start);
