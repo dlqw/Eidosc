@@ -55,8 +55,7 @@ public sealed class DependencyAliasRenamePlannerTests
                 color => RayLib.graphics.keep(color)
             }
 
-            User :: type
-                derive RayLib.meta.Derive
+            @[derive(RayLib.meta.Derive)] User :: type
             {
                 value :: Int,
             }
@@ -97,7 +96,7 @@ public sealed class DependencyAliasRenamePlannerTests
             Assert.Contains("import ray_lib.graphics", rewrittenApp, StringComparison.Ordinal);
             Assert.Contains("ray_lib.graphics.Color", rewrittenApp, StringComparison.Ordinal);
             Assert.Contains("ray_lib.graphics.keep", rewrittenApp, StringComparison.Ordinal);
-            Assert.Contains("derive ray_lib.meta.Derive", rewrittenApp, StringComparison.Ordinal);
+            Assert.Contains("@[derive(ray_lib.meta.Derive)]", rewrittenApp, StringComparison.Ordinal);
             Assert.Contains("// RayLib.graphics in a comment", rewrittenApp, StringComparison.Ordinal);
             Assert.Contains("\"RayLib.graphics\"", rewrittenApp, StringComparison.Ordinal);
 

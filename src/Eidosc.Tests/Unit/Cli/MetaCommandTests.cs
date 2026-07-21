@@ -9,24 +9,20 @@ namespace Eidosc.Tests.Unit.Cli;
 public sealed class MetaCommandTests
 {
     [Fact]
-    public async Task Expand_RejectsRemovedLegacyTransformationSurface()
+    public async Task Expand_UsesTypedDeriveProtocolAndEmitsGeneratedDocument()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_meta_cli_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
         var sourcePath = Path.Combine(tempDir, "main.eidos");
         var generatedDir = Path.Combine(tempDir, "generated");
         await File.WriteAllTextAsync(sourcePath, """
-deriveAnswer :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation {
-    input => {
-        meta.warning(meta.span_of(input), "trace warning");
-        meta.add_after(input, [meta.function("answer", [], Int, meta.expr_int(42))])
-    }
+derive_answer :: comptime meta.Type -> meta.Items {
+    _ => [meta.function("answer", [], Int, meta.expr_int(42))]
 }
 
-
-Subject :: type  expand deriveAnswer
-{
-    value:: Int
+@[expand(derive_answer)]
+Subject :: type {
+    value :: Int
 }
 """);
 
@@ -51,7 +47,7 @@ Subject :: type  expand deriveAnswer
                 "--no-color"
             ]);
 
-            Assert.NotEqual(0, exitCode);
+            Assert.Equal(0, exitCode);
         }
         finally
         {
@@ -59,10 +55,10 @@ Subject :: type  expand deriveAnswer
             Console.SetError(originalError);
         }
 
-        Assert.Contains("Target", stderr.ToString(), StringComparison.Ordinal);
-        Assert.Contains("Transformation", stderr.ToString(), StringComparison.Ordinal);
-        Assert.NotEmpty(stdout.ToString());
-
+        Assert.DoesNotContain("Target", stderr.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Transformation", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("answer", stdout.ToString(), StringComparison.Ordinal);
+        Assert.NotEmpty(Directory.EnumerateFiles(generatedDir, "*", SearchOption.AllDirectories));
         Directory.Delete(tempDir, recursive: true);
     }
 

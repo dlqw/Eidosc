@@ -65,7 +65,7 @@ internal sealed class MetaExpansionMaterializer(
             !transformation.TryGet("edits", out var editValues) ||
             editValues is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } edits)
         {
-            reason = "target generator must return an opaque meta.Transformation created by meta transformation helpers";
+            reason = "generator must return typed meta.Items or a category-preserving meta.Syntax value";
             return false;
         }
 
@@ -79,7 +79,7 @@ internal sealed class MetaExpansionMaterializer(
             if (edits.Elements[editIndex] is not ComptimeMetaObjectValue { SchemaKind: "transformation-edit" } edit ||
                 !TryGetString(edit, "kind", out var editKind, out reason))
             {
-                reason = $"transformation edit {editIndex} is not a valid opaque edit";
+                reason = $"generator output {editIndex} is not a valid typed item";
                 return false;
             }
 
@@ -157,7 +157,7 @@ internal sealed class MetaExpansionMaterializer(
                 !TryGetSequence(edit, "syntax", out var syntaxValues, out reason))
             {
                 reason = string.IsNullOrWhiteSpace(reason)
-                    ? $"unsupported transformation edit '{editKind}'"
+                    ? $"unsupported generator output operation '{editKind}'"
                     : reason;
                 return false;
             }
@@ -321,7 +321,7 @@ internal sealed class MetaExpansionMaterializer(
             targetDeclaration is not ComptimeDeclValue declaration ||
             declaration.SymbolId != _target.SymbolId)
         {
-            reason = "transformation edit target is outside the authorized meta.Target";
+            reason = "generator output target is outside the compiler-authorized declaration";
             return false;
         }
 
@@ -342,7 +342,7 @@ internal sealed class MetaExpansionMaterializer(
         {
             if (generationSlotIdentity != null)
             {
-                reason = $"transformation output {outputIndex} cannot nest meta.with_slot wrappers";
+                reason = $"generator output {outputIndex} cannot nest manual identity wrappers";
                 return false;
             }
             if (!slotted.TryGet("output", out declaration) ||
@@ -351,7 +351,7 @@ internal sealed class MetaExpansionMaterializer(
                 !TryGetString(slot, "identity", out generationSlotIdentity, out reason))
             {
                 reason = string.IsNullOrWhiteSpace(reason)
-                    ? $"transformation output {outputIndex} has an invalid generation slot"
+                    ? $"generator output {outputIndex} has an invalid generated identity"
                     : reason;
                 return false;
             }
@@ -375,7 +375,7 @@ internal sealed class MetaExpansionMaterializer(
 
         if (declaration is not ComptimeMetaObjectValue structured)
         {
-            reason = $"transformation output {outputIndex} is not typed meta.Syntax";
+            reason = $"generator output {outputIndex} is not a typed syntax or declaration value";
             return false;
         }
 

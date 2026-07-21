@@ -720,6 +720,7 @@ public static partial class SyntaxMigrationPlanner
         Declaration declaration,
         List<SyntaxMigrationEdit> edits)
     {
+        AddInterimAttachmentEdits(source, declaration, edits);
         if (declaration.Attributes.Count == 0)
         {
             return;
@@ -756,6 +757,54 @@ public static partial class SyntaxMigrationPlanner
             $" {string.Join(" ", signatureClauses)}{terminator}\n",
             "declaration-signature-clauses",
             "Attach migrated signature components to the declaration."));
+    }
+
+    private static void AddInterimAttachmentEdits(
+        string source,
+        Declaration declaration,
+        List<SyntaxMigrationEdit> edits)
+    {
+        var clauses = declaration.Clauses
+            .Where(static clause => clause.ClauseKind is
+                DeclarationClauseKind.Derive or
+                DeclarationClauseKind.Expand or
+                DeclarationClauseKind.Repr or
+                DeclarationClauseKind.Extern)
+            .ToArray();
+        if (clauses.Length == 0)
+        {
+            return;
+        }
+
+        var tags = clauses.Select(clause =>
+        {
+            var raw = source[clause.Span.Position..clause.Span.EndPosition].Trim();
+            var keyword = clause.Keyword;
+            var arguments = raw.Length > keyword.Length
+                ? raw[keyword.Length..].Trim()
+                : string.Empty;
+            if (arguments.StartsWith("(", StringComparison.Ordinal))
+            {
+                return $"{keyword}{arguments}";
+            }
+
+            return $"{keyword}({arguments})";
+        });
+        edits.Add(new SyntaxMigrationEdit(
+            declaration.Span.Position,
+            0,
+            $"@[{string.Join(", ", tags)}]\n",
+            "interim-attachments",
+            "Move interim pre-body attachments to typed declaration tags."));
+        foreach (var clause in clauses)
+        {
+            edits.Add(new SyntaxMigrationEdit(
+                clause.Span.Position,
+                clause.Span.Length,
+                string.Empty,
+                "remove-interim-attachment",
+                $"Remove interim pre-body '{clause.Keyword}' attachment."));
+        }
     }
 
     private static void ConvertAttributeToAttachments(

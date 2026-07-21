@@ -127,6 +127,48 @@ main :: Unit -> Int {
     }
 
     [Fact]
+    public void Package_extension_emits_typed_items_without_query_or_transformation_values()
+    {
+        const string source = """
+extend_root :: comptime meta.Package -> meta.Items {
+    _ => [meta.function("generated_answer", [], Int, meta.expr_int(42))]
+}
+
+main :: Unit -> Int { _ => 0 }
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "meta-package-extension.eidos",
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = false,
+            UseColors = false,
+            MetaConfiguration = new EidosMetaConfiguration
+            {
+                Extensions =
+                [
+                    new EidosMetaExtensionConfiguration
+                    {
+                        Name = "typed-items",
+                        Entry = "extend_root"
+                    }
+                ]
+            }
+        }).Run();
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var generated = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            function => function.Name == "generated_answer");
+        Assert.NotEmpty(generated.GeneratedOriginChain);
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("Query", StringComparison.Ordinal) ||
+            diagnostic.Message.Contains("Transformation", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Typed_tags_are_the_only_declaration_attachment_form_for_generators()
     {
         const string source = """

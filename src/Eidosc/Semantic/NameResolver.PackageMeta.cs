@@ -34,7 +34,8 @@ public sealed partial class NameResolver
                     [],
                     functions,
                     comptimeValues,
-                    expectedTransformation: false,
+                    expectedExtension: false,
+                    out _,
                     out var result,
                     out var pendingUserDiagnostics,
                     out var trace,
@@ -84,13 +85,12 @@ public sealed partial class NameResolver
             return true;
         }
 
-        var selected = configuration.Extensions
-            .Where(extension => ParsePackageMetaStage(extension.Stage) == stage)
-            .ToArray();
-        if (selected.Length == 0)
+        if (stage != ClauseStage.Syntax)
         {
             return true;
         }
+
+        var selected = configuration.Extensions;
 
         ResolveExpansionComptimeDependencies(root);
         var functions = CreatePackageMetaFunctionMap();
@@ -107,7 +107,8 @@ public sealed partial class NameResolver
                     extension.Resources,
                     functions,
                     comptimeValues,
-                    expectedTransformation: true,
+                    expectedExtension: true,
+                    out var protocol,
                     out var transformation,
                     out var pendingUserDiagnostics,
                     out var trace,
@@ -121,15 +122,10 @@ public sealed partial class NameResolver
                     continue;
             }
 
-            if (transformation is ComptimeSequenceValue { Kind: ComptimeSequenceKind.List })
-            {
-                continue;
-            }
-
-            if (!TryApplyPackageTransformation(
+            if (!TryApplyPackageProtocolOutput(
                     root,
                     extension,
-                    stage,
+                    protocol.Kind,
                     transformation,
                     pendingUserDiagnostics,
                     trace,
@@ -163,16 +159,18 @@ public sealed partial class NameResolver
         IReadOnlyList<EidosMetaResourceConfiguration> resources,
         IReadOnlyDictionary<SymbolId, FuncDef> functions,
         IReadOnlyDictionary<SymbolId, ComptimeValue> comptimeValues,
-        bool expectedTransformation,
+        bool expectedExtension,
+        out CompilerMetaProtocolMatch protocol,
         out ComptimeValue result,
         out IReadOnlyList<PendingMetaUserDiagnostic> pendingUserDiagnostics,
         out string trace,
         out string reason)
     {
+        protocol = null!;
         result = ComptimeUnitValue.Instance;
         pendingUserDiagnostics = [];
         trace = $"package meta program {entry} at {stage}";
-        if (!TryResolvePackageMetaFunction(entry, functions, expectedTransformation, out var generator, out var symbol, out var protocol, out reason))
+        if (!TryResolvePackageMetaFunction(entry, functions, expectedExtension, out var generator, out var symbol, out protocol, out reason))
         {
             return false;
         }
@@ -194,30 +192,16 @@ public sealed partial class NameResolver
             ExpansionTrace: trace,
             ResourceBudget: ComptimeExecution.CreateBudget(),
             Trace: ComptimeExecution.Trace,
-            TracePhase: expectedTransformation ? "namer.package-extension" : "types.package-analyzer",
+            TracePhase: expectedExtension ? "namer.package-extension" : "types.package-analyzer",
             Declarations: _declarationsBySymbol,
             QueryAccess: access,
             DefinitionSiteResolver: CreateDefinitionSiteSyntaxResolver(generatorModuleId));
-        ComptimeValue input;
-        if (protocol.Kind is CompilerMetaProtocolKind.Analyzer or
-            CompilerMetaProtocolKind.ExtensionItems or
-            CompilerMetaProtocolKind.ExtensionModules)
+        if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
         {
-            if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
-            {
-                reason = "package analyzer requires a root module";
-                return false;
-            }
-            input = MetaComptimeIntrinsics.CreatePackageHandle(rootModule);
+            reason = "package meta protocol requires a root module";
+            return false;
         }
-        else
-        {
-            if (!TryCreatePackageQuery(root, stage, capabilities, resources, context, out var query, out reason))
-            {
-                return false;
-            }
-            input = query;
-        }
+        ComptimeValue input = MetaComptimeIntrinsics.CreatePackageHandle(rootModule);
 
         if (!ComptimeEvaluator.TryInvoke(
                 generator,
@@ -245,7 +229,7 @@ public sealed partial class NameResolver
     private bool TryResolvePackageMetaFunction(
         string entry,
         IReadOnlyDictionary<SymbolId, FuncDef> functions,
-        bool expectedTransformation,
+        bool expectedExtension,
         out FuncDef generator,
         out FuncSymbol symbol,
         out CompilerMetaProtocolMatch protocol,
@@ -275,7 +259,7 @@ public sealed partial class NameResolver
         }
 
         if (!CompilerMetaProtocolRegistry.TryClassify(generator, 0, _symbolTable, out protocol, out var protocolReason) ||
-            (expectedTransformation
+            (expectedExtension
                 ? protocol.Kind is not (CompilerMetaProtocolKind.ExtensionItems or CompilerMetaProtocolKind.ExtensionModules)
                 : protocol.Kind != CompilerMetaProtocolKind.Analyzer))
         {
@@ -298,87 +282,10 @@ public sealed partial class NameResolver
             .DistinctBy(static function => function.SymbolId)
             .ToDictionary(static function => function.SymbolId);
 
-    private bool TryCreatePackageQuery(
-        ModuleDecl root,
-        ClauseStage stage,
-        IReadOnlyList<string> capabilities,
-        IReadOnlyList<EidosMetaResourceConfiguration> resources,
-        MetaComptimeContext context,
-        out ComptimeMetaObjectValue query,
-        out string reason)
-    {
-        query = null!;
-        if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
-        {
-            reason = "package query requires a root module";
-            return false;
-        }
-
-        var package = MetaComptimeIntrinsics.CreatePackageHandle(rootModule);
-        if (!MetaComptimeIntrinsics.TryCreateScopeForPackageQuery(package, context, out var scope, out reason))
-        {
-            return false;
-        }
-
-        var resourceValues = resources.Select(resource => (ComptimeValue)new ComptimeMetaObjectValue(
-            "resource",
-            [
-                new ComptimeNamedValue("declaredInput", new ComptimeStringValue(resource.DeclaredInput)),
-                new ComptimeNamedValue("path", new ComptimeStringValue(resource.RelativePath)),
-                new ComptimeNamedValue("exists", new ComptimeBoolValue(resource.Exists)),
-                new ComptimeNamedValue("content", new ComptimeStringValue(resource.Content ?? string.Empty)),
-                new ComptimeNamedValue("contentHash", new ComptimeStringValue(resource.ContentHash))
-            ])
-        {
-            StaticType = MetaSchemaRegistry.MetaType(
-                WellKnownStrings.Meta.Types.Resource,
-                WellKnownTypeIds.MetaResourceId)
-        }).ToArray();
-        var capabilityValues = capabilities
-            .Select(static capability => (ComptimeValue)new ComptimeStringValue(capability))
-            .ToArray();
-        var packageScopeKind = _symbolTable.Symbols.Values
-            .OfType<AdtSymbol>()
-            .FirstOrDefault(symbol =>
-                string.Equals(symbol.Name, "Package", StringComparison.Ordinal) &&
-                symbol.ParentAdt.IsValid &&
-                _symbolTable.GetSymbol<AdtSymbol>(symbol.ParentAdt)?.TypeId.Value == WellKnownTypeIds.MetaScopeKindId);
-        query = new ComptimeMetaObjectValue(
-            "package-query",
-            [
-                new ComptimeNamedValue("identity", new ComptimeStringValue(
-                    HashIdentity($"package-query|{PackageMetaConfiguration?.Fingerprint}|{stage}|{string.Join(',', capabilities)}"))),
-                new ComptimeNamedValue("package", package),
-                new ComptimeNamedValue("scope", scope),
-                new ComptimeNamedValue("stage", new ComptimeStringValue(stage.ToString().ToLowerInvariant())),
-                new ComptimeNamedValue("capabilities", new ComptimeSequenceValue(ComptimeSequenceKind.List, capabilityValues)),
-                new ComptimeNamedValue("resources", new ComptimeSequenceValue(ComptimeSequenceKind.List, resourceValues)),
-                new ComptimeNamedValue("root", MetaComptimeIntrinsics.CreateDeclValue(
-                    _symbolTable.GetSymbol(root.SymbolId)!,
-                    _symbolTable))
-            ])
-        {
-            StaticType = MetaSchemaRegistry.MetaType(
-                WellKnownStrings.Meta.Types.Query,
-                WellKnownTypeIds.MetaQueryId)
-                with
-                {
-                    Args =
-                    [
-                        packageScopeKind == null
-                            ? MetaSchemaRegistry.MetaType("Package", WellKnownTypeIds.MetaScopeKindId)
-                            : new TyCon { Name = packageScopeKind.Name, Id = packageScopeKind.TypeId }
-                    ]
-                }
-        };
-        reason = string.Empty;
-        return true;
-    }
-
-    private bool TryApplyPackageTransformation(
+    private bool TryApplyPackageProtocolOutput(
         ModuleDecl root,
         EidosMetaExtensionConfiguration extension,
-        ClauseStage stage,
+        CompilerMetaProtocolKind protocolKind,
         ComptimeValue value,
         IReadOnlyList<PendingMetaUserDiagnostic> pendingUserDiagnostics,
         string trace,
@@ -387,127 +294,60 @@ public sealed partial class NameResolver
     {
         changed = false;
         reason = string.Empty;
-        if (value is not ComptimeMetaObjectValue { SchemaKind: "transformation" } transformation ||
-            !transformation.TryGet("edits", out var editValue) ||
-            editValue is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } edits)
+        if (protocolKind is not (CompilerMetaProtocolKind.ExtensionItems or CompilerMetaProtocolKind.ExtensionModules))
         {
-            reason = "extension must return an opaque meta.Transformation";
+            reason = $"unsupported package extension protocol '{protocolKind}'";
+            return false;
+        }
+
+        var materializer = new MetaExpansionMaterializer(
+            _symbolTable,
+            root,
+            _rootModule,
+            root.Span);
+        if (!materializer.TryMaterializeItems(value, out var output, out reason))
+        {
+            reason = $"package extension must return typed {(protocolKind == CompilerMetaProtocolKind.ExtensionModules ? "meta.Modules" : "meta.Items")}: {reason}";
+            return false;
+        }
+        if (output.Diagnostics.Count > 0)
+        {
+            reason = "package extensions are emit-only; return diagnostics from a meta.Package -> Seq[meta.Diagnostic] analyzer";
             return false;
         }
 
         var modules = new List<ModuleDecl>();
         var itemTargets = new Dictionary<SymbolId, ModuleDecl>();
         var itemsByModule = new Dictionary<SymbolId, List<Declaration>>();
-        var diagnostics = new List<ComptimeMetaObjectValue>();
-        var materializer = new MetaExpansionMaterializer(
-            _symbolTable,
-            root,
-            _rootModule,
-            root.Span);
-        foreach (var editValueItem in edits.Elements)
+        foreach (var generated in output.Nodes.OrderBy(static node => node.OutputIndex))
         {
-            if (editValueItem is not ComptimeMetaObjectValue { SchemaKind: "transformation-edit" } edit ||
-                !edit.TryGet("kind", out var kindValue) ||
-                kindValue is not ComptimeStringValue kind)
+            if (protocolKind == CompilerMetaProtocolKind.ExtensionModules)
             {
-                reason = "package transformation contains an invalid edit";
-                return false;
-            }
-
-            if (kind.Value == "report-diagnostic")
-            {
-                if (!extension.Capabilities.Contains("emit-diagnostics", StringComparer.Ordinal) ||
-                    !edit.TryGet("diagnostics", out var diagnosticValue) ||
-                    diagnosticValue is not ComptimeSequenceValue diagnosticSequence ||
-                    diagnosticSequence.Elements.Any(static element =>
-                        element is not ComptimeMetaObjectValue { SchemaKind: "diagnostic" }))
+                if (generated.Node is not ModuleDecl module)
                 {
-                    reason = "package diagnostic edit requires emit-diagnostics and typed diagnostics";
+                    reason = "meta.Package -> meta.Modules may emit only module declarations";
                     return false;
                 }
-                diagnostics.AddRange(diagnosticSequence.Elements.Cast<ComptimeMetaObjectValue>());
-                continue;
-            }
-
-            if (kind.Value is "add-module" or "add-items" && stage > ClauseStage.Semantic)
-            {
-                reason = $"package extension {kind.Value} edits are not permitted after the Semantic stage; current stage is {stage}";
-                return false;
-            }
-
-            if (kind.Value == "add-items")
-            {
-                if (!extension.Capabilities.Contains("emit-items", StringComparer.Ordinal) ||
-                    !edit.TryGet("module", out var moduleValue) ||
-                    !MetaComptimeIntrinsics.TryResolveModuleHandle(moduleValue, _symbolTable, out var moduleSymbol) ||
-                    !_moduleDeclarations.TryGetValue(moduleSymbol.Id, out var targetModule) ||
-                    !IsCurrentPackageModule(moduleSymbol) ||
-                    !edit.TryGet("syntax", out var syntaxValue) ||
-                    syntaxValue is not ComptimeSequenceValue { Kind: ComptimeSequenceKind.List } itemSyntax)
-                {
-                    reason = "package extension add-items edit requires emit-items, a current-package module, and typed item syntax";
-                    return false;
-                }
-
-                if (!itemsByModule.TryGetValue(moduleSymbol.Id, out var declarations))
-                {
-                    declarations = [];
-                    itemsByModule[moduleSymbol.Id] = declarations;
-                    itemTargets[moduleSymbol.Id] = targetModule;
-                }
-
-                foreach (var itemValue in itemSyntax.Elements)
-                {
-                    if (itemValue is not ComptimeSyntaxValue syntax ||
-                        !materializer.TryMaterializeSyntax(
-                            syntax,
-                            SyntaxCategory.Item,
-                            SyntaxMemberGrammar.Any,
-                            out var nodes,
-                            out reason) ||
-                        nodes.Any(static node => node is not Declaration or ModuleDecl))
-                    {
-                        reason = string.IsNullOrWhiteSpace(reason)
-                            ? "package extension add-items edit must contain non-module item declarations"
-                            : reason;
-                        return false;
-                    }
-
-                    declarations.AddRange(nodes.Cast<Declaration>());
-                }
-                continue;
-            }
-
-            if (kind.Value == "add-module" &&
-                extension.Capabilities.Contains("emit-modules", StringComparer.Ordinal) &&
-                edit.TryGet("syntax", out var moduleSyntaxValue) &&
-                moduleSyntaxValue is ComptimeSyntaxValue moduleSyntax &&
-                materializer.TryMaterializeSyntax(
-                    moduleSyntax,
-                    SyntaxCategory.Item,
-                    SyntaxMemberGrammar.Any,
-                    out var moduleNodes,
-                    out reason) &&
-                moduleNodes.Count == 1 &&
-                moduleNodes[0] is ModuleDecl module)
-            {
                 modules.Add(module);
                 continue;
             }
 
-            reason = string.IsNullOrWhiteSpace(reason)
-                ? $"package extension contains unsupported or unauthorized edit '{kind.Value}'"
-                : reason;
-            return false;
+            if (generated.Node is not Declaration declaration || declaration is ModuleDecl)
+            {
+                reason = "meta.Package -> meta.Items may emit only non-module declarations";
+                return false;
+            }
+            if (!itemsByModule.TryGetValue(_rootModule, out var declarations))
+            {
+                declarations = [];
+                itemsByModule[_rootModule] = declarations;
+                itemTargets[_rootModule] = root;
+            }
+            declarations.Add(declaration);
         }
 
         var materialized = modules.Select((module, index) => new MaterializedMetaNode(module, index)).ToArray();
-        if (!TryValidateGeneratedMembers(root, materialized, out reason) ||
-            !TryValidateGeneratedModuleDeclarationCollisions(
-                _rootModule,
-                modules.Cast<Declaration>().ToArray(),
-                null,
-                out reason))
+        if (!TryValidateGeneratedMembers(root, materialized, out reason))
         {
             return false;
         }
@@ -517,12 +357,7 @@ public sealed partial class NameResolver
             var itemNodes = declarations
                 .Select((declaration, index) => new MaterializedMetaNode(declaration, index))
                 .ToArray();
-            if (!TryValidateGeneratedMembers(targetModule, itemNodes, out reason) ||
-                !TryValidateGeneratedModuleDeclarationCollisions(
-                    moduleId,
-                    declarations,
-                    null,
-                    out reason))
+            if (!TryValidateGeneratedMembers(targetModule, itemNodes, out reason))
             {
                 return false;
             }
@@ -606,7 +441,6 @@ public sealed partial class NameResolver
         root.SetDeclarations([.. root.Declarations, .. modules]);
         foreach (var module in modules)
         {
-            RegisterGeneratedItemDeclaration(module, _rootModule);
             if (module.SymbolId.IsValid)
             {
                 ProcessImportsRecursive(module, module.SymbolId);
@@ -618,10 +452,6 @@ public sealed partial class NameResolver
             var targetModule = itemTargets[moduleId];
             var itemStartIndex = targetModule.Declarations.Count;
             targetModule.SetDeclarations([.. targetModule.Declarations, .. declarations]);
-            foreach (var declaration in declarations)
-            {
-                RegisterGeneratedItemDeclaration(declaration, moduleId);
-            }
             if (declarations.Any(static declaration => declaration is ImportDecl))
             {
                 ProcessImportsRecursive(targetModule, moduleId);
@@ -632,29 +462,9 @@ public sealed partial class NameResolver
         {
             AddMetaUserDiagnostic(pending.Level, pending.Span, pending.Message, trace);
         }
-        foreach (var diagnostic in diagnostics)
-        {
-            if (!TryAddPackageDiagnostic(diagnostic, trace, out reason))
-            {
-                throw new InvalidOperationException($"validated package diagnostic commit failed: {reason}");
-            }
-        }
-
         changed = modules.Count > 0 || itemsByModule.Values.Any(static declarations => declarations.Count > 0);
         reason = string.Empty;
         return true;
-    }
-
-    private bool IsCurrentPackageModule(ModuleSymbol module)
-    {
-        if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
-        {
-            return false;
-        }
-
-        var rootPackage = rootModule.PackageInstanceKey ?? rootModule.PackageAlias ?? ModuleIdentity.CurrentPackageInstanceKey;
-        var modulePackage = module.PackageInstanceKey ?? module.PackageAlias ?? ModuleIdentity.CurrentPackageInstanceKey;
-        return string.Equals(rootPackage, modulePackage, StringComparison.Ordinal);
     }
 
     private bool TryAddPackageDiagnostic(
@@ -738,11 +548,4 @@ public sealed partial class NameResolver
         return result;
     }
 
-    private static ClauseStage ParsePackageMetaStage(string stage) => stage switch
-    {
-        "syntax" => ClauseStage.Syntax,
-        "body" => ClauseStage.Body,
-        "layout" => ClauseStage.Layout,
-        _ => ClauseStage.Semantic
-    };
 }

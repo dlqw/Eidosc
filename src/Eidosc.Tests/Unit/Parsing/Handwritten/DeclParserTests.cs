@@ -1248,7 +1248,7 @@ public sealed class DeclParserTests
     }
 
     [Fact]
-    public void Parse_type_pre_body_clauses_are_typed_and_source_ordered()
+    public void Parse_type_pre_body_attachment_clauses_are_rejected()
     {
         var ctx = MakeNameFirstCtx(TypeId("Player"), "::", "type",
             "derive", TypeId("Eq"), ",", TypeId("Show"),
@@ -1258,27 +1258,14 @@ public sealed class DeclParserTests
 
         var adt = Assert.IsType<AdtDef>(parser.ParseTopLevel());
 
-        Assert.Collection(
-            adt.Clauses,
-            derive =>
-            {
-                Assert.Equal(DeclarationClauseKind.Derive, derive.ClauseKind);
-                Assert.Equal(["Eq", "Show"], derive.ArgumentTokens);
-            },
-            expand =>
-            {
-                Assert.Equal(DeclarationClauseKind.Expand, expand.ClauseKind);
-                Assert.Equal("derive_json(JsonOptions{})", Assert.Single(expand.ArgumentTokens));
-                var invocation = Assert.IsType<MetaInvocationSyntax>(expand.MetaInvocation);
-                Assert.Equal(["derive_json"], invocation.GeneratorPath);
-                Assert.Single(invocation.ExplicitArguments);
-                Assert.IsType<CtorExpr>(invocation.ExplicitArguments[0]);
-            });
-        Assert.Empty(ctx.Diagnostics);
+        Assert.Empty(adt.Clauses);
+        Assert.Equal(2, ctx.Diagnostics.Count);
+        Assert.All(ctx.Diagnostics, diagnostic =>
+            Assert.Contains("typed declaration tag", diagnostic.Message, StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Parse_foreign_function_uses_pre_body_clauses()
+    public void Parse_foreign_function_rejects_pre_body_extern_clause()
     {
         var ctx = MakeNameFirstCtx(Ident("puts"), "::", TypeId("String"), "->", TypeId("Int"),
             "need", Ident("ffi"),
@@ -1289,16 +1276,10 @@ public sealed class DeclParserTests
 
         var function = Assert.IsType<FuncDecl>(parser.ParseTopLevel());
 
-        Assert.Equal(2, function.Clauses.Count);
-        Assert.Equal(
-            [DeclarationClauseKind.Need, DeclarationClauseKind.Extern],
-            function.Clauses.Select(static clause => clause.ClauseKind).ToArray());
-        Assert.True(ForeignContractIR.TryCreate(function.Clauses[1], out var contract, out var errors));
-        Assert.Empty(errors);
-        Assert.Equal("c", contract.Abi);
-        Assert.Equal("libc", contract.Library);
-        Assert.Equal("puts", contract.Name);
-        Assert.Empty(ctx.Diagnostics);
+        Assert.Single(function.Clauses);
+        Assert.Equal(DeclarationClauseKind.Need, function.Clauses[0].ClauseKind);
+        Assert.Contains(ctx.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("typed declaration tag", StringComparison.Ordinal));
     }
 
     [Fact]

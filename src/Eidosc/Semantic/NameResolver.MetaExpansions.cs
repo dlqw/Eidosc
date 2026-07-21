@@ -361,7 +361,7 @@ public sealed partial class NameResolver
             {
                 AddMetaExpansionDiagnostic(
                     invocation.Clause.Span,
-                    $"meta generator '{generator.Name}' returned an invalid transformation: {reason}",
+                    $"meta generator '{generator.Name}' returned an invalid typed output: {reason}",
                     "E3602");
                 continue;
             }

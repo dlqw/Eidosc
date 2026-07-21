@@ -156,12 +156,13 @@ logging :: Unit -> Unit
     _ => ()
 }
 
-deriveMarker :: comptime meta.Target[meta.Stage.Semantic] -> meta.Transformation {
-    input => meta.keep()
+deriveMarker :: comptime Meta.DeriveInput -> Meta.Expansion {
+    input => Meta.keep(input)
 }
 
 
-OptionI :: type  expand deriveMarker
+@[expand(deriveMarker)]
+OptionI :: type
 {
     Some:: type(Int),
     None :: type {},
@@ -173,10 +174,11 @@ OptionI :: type  expand deriveMarker
 
         Assert.Contains("import std.Option", rewritten, StringComparison.Ordinal);
         Assert.Contains("need io, ffi", rewritten, StringComparison.Ordinal);
-        Assert.Contains("meta.Target[meta.Stage.Semantic]", rewritten, StringComparison.Ordinal);
-        Assert.Contains("meta.Transformation", rewritten, StringComparison.Ordinal);
-        Assert.Contains("meta.keep()", rewritten, StringComparison.Ordinal);
-        Assert.Contains("OptionI :: type  expand deriveMarker", rewritten, StringComparison.Ordinal);
+        Assert.Contains("meta.Type -> meta.Items", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("Target[", rewritten, StringComparison.Ordinal);
+        Assert.DoesNotContain("Transformation", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@[expand(deriveMarker)]", rewritten, StringComparison.Ordinal);
+        Assert.Contains("OptionI :: type", rewritten, StringComparison.Ordinal);
         Assert.Contains("Some:: type(Int)", rewritten, StringComparison.Ordinal);
         Assert.Contains("None :: type {}", rewritten, StringComparison.Ordinal);
     }
@@ -201,16 +203,7 @@ OptionI :: type  expand deriveMarker
         const string source = """
 import std.Option
 
-User :: type
-    derive Eq
-{
-    name :: String,
-}
-
-OptionI :: type {
-    Some :: type(String),
-    None :: type {},
-}
+main :: Unit -> Int { _ => 0 }
 """;
 
         var (plan, _) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
