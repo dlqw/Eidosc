@@ -911,6 +911,48 @@ use :: Int -> Int
     }
 
     [Fact]
+    public void Types_GenericCall_ExplicitTypeArgsPreserveDeclarationOrderAfterConstraintInference()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_types_explicit_order_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var entryFile = Path.Combine(tempDir, "main.eidos");
+        const string source = """
+import std.Traits
+import std.TraitInvoke
+
+pair_clone[A: Traits.Clone + Traits.Eq, B] :: A -> B -> (A, B)
+{
+    a => b => if TraitInvoke.eq_value(TraitInvoke.clone_value(ref a))(TraitInvoke.clone_value(ref a))
+        then { (a, b) }
+        else { (a, b) }
+}
+
+main :: Unit -> Int
+{
+    _ => match pair_clone[Int, Bool](41)(true)
+    {
+        (value, ok) => if ok then { value } else { 0 }
+    }
+}
+""";
+
+        File.WriteAllText(entryFile, source);
+        try
+        {
+            var result = RunPipeline(source, CompilationPhase.Types, options => options.InputFile = entryFile);
+
+            Assert.True(
+                result.Success,
+                string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
+            Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E4000");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Types_GenericCall_ExplicitTypeArg_ArityMismatch_Fails()
     {
         const string source = """

@@ -469,7 +469,11 @@ public sealed partial class TypeInferer
             {
                 return ApplyImplicitFunctionEffects(
                     path.SymbolId,
-                    InstantiateSchemeWithExplicitTypeArgsAndConstraints(scheme, path.TypeArgs, path.Span));
+                    InstantiateSchemeWithExplicitTypeArgsAndConstraints(
+                        scheme,
+                        path.TypeArgs,
+                        path.Span,
+                        path.SymbolId));
             }
 
             return ApplyImplicitFunctionEffects(

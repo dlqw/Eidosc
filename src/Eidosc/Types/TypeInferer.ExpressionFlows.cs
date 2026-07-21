@@ -1664,7 +1664,11 @@ public sealed partial class TypeInferer
                 targetSymbolId,
                 index,
                 index.Span)
-            : InstantiateSchemeWithExplicitTypeArgsAndConstraints(scheme, index.TypeArgs, index.Span);
+            : InstantiateSchemeWithExplicitTypeArgsAndConstraints(
+                scheme,
+                index.TypeArgs,
+                index.Span,
+                targetSymbolId);
         return true;
     }
 
@@ -1844,7 +1848,7 @@ public sealed partial class TypeInferer
         var kindEnvByTypeVar = new Dictionary<int, Kind>();
 
         RegisterSignatureTypeParams(funcDef.TypeParams, kindEnvByName, typeVarEnv, kindEnvByTypeVar);
-        ResolveValueGenericParameterTypes(funcDef.TypeParams, typeVarEnv);
+        var valueGenericParameterTypes = ResolveValueGenericParameterTypes(funcDef.TypeParams, typeVarEnv);
 
         _typeParamKindStack.Push(kindEnvByName);
         _typeParamVarKindStack.Push(kindEnvByTypeVar);
@@ -1874,7 +1878,9 @@ public sealed partial class TypeInferer
                 functionType,
                 ResolveRequiredAbilities(funcDef.RequiredAbilities ?? [], typeVarEnv));
 
-            return _env.Generalize(functionType, signatureConstraintGenerator.Constraints.Constraints.ToList());
+            var scheme = _env.Generalize(functionType, signatureConstraintGenerator.Constraints.Constraints.ToList());
+            RegisterFunctionGenericParameterTypes(funcDef, typeVarEnv, valueGenericParameterTypes);
+            return scheme;
         }
         finally
         {
