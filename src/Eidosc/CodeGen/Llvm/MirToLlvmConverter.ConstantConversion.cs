@@ -100,6 +100,12 @@ public sealed partial class MirToLlvmConverter
             return false;
         }
 
+        if (_typeLowering.TryGetTypeDescriptor(typeId, out var descriptor) &&
+            descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef)
+        {
+            return false;
+        }
+
         if (IsFfiNonRcPointerType(typeId))
         {
             return false;

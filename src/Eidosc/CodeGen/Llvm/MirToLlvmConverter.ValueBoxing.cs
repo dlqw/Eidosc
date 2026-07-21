@@ -190,7 +190,8 @@ public sealed partial class MirToLlvmConverter
         }
 
         var sourceValue = CoerceToPointer(ConvertOperand(call.Arguments[0]));
-        var alias = EmitSharedAlias(sourceValue, "shared_borrow");
+        var borrowedValue = ResolveSharedBorrowPayload(sourceValue, call.Arguments[0].TypeId);
+        var alias = EmitSharedAlias(borrowedValue, "shared_borrow");
         ClearGenericLocal(targetPlace.Local);
         _locals.LocalMap[targetPlace.Local] = new LlvmLocal
         {
@@ -198,6 +199,59 @@ public sealed partial class MirToLlvmConverter
             Type = LlvmPointerType.VoidPtr()
         };
         return null;
+    }
+
+    private LlvmValue ResolveSharedBorrowPayload(LlvmValue sharedValue, TypeId argumentTypeId)
+    {
+        if (!TryGetSharedPayloadTypeId(argumentTypeId, out var payloadTypeId) ||
+            LowerStorageTypeIdOrReport(payloadTypeId, "shared borrow payload") is not LlvmPointerType)
+        {
+            return sharedValue;
+        }
+
+        var load = new LlvmLoad
+        {
+            Pointer = sharedValue,
+            LoadType = LlvmPointerType.VoidPtr(),
+            ResultName = _nameMangler.NewTempName("shared_borrow_payload")
+        };
+        _currentBlock?.Instructions.Add(load);
+        return new LlvmInstructionRef
+        {
+            Instruction = load,
+            Type = LlvmPointerType.VoidPtr()
+        };
+    }
+
+    private bool TryGetSharedPayloadTypeId(TypeId argumentTypeId, out TypeId payloadTypeId)
+    {
+        payloadTypeId = TypeId.None;
+        if (!_typeLowering.TryGetTypeDescriptor(argumentTypeId, out var descriptor))
+        {
+            return false;
+        }
+
+        if (descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef)
+        {
+            var inner = descriptor switch
+            {
+                TypeDescriptor.Ref reference => reference.Inner,
+                TypeDescriptor.MutRef mutableReference => mutableReference.Inner,
+                _ => TypeId.None
+            };
+            if (!_typeLowering.TryGetTypeDescriptor(inner, out descriptor))
+            {
+                return false;
+            }
+        }
+
+        if (descriptor is not TypeDescriptor.Shared shared)
+        {
+            return false;
+        }
+
+        payloadTypeId = shared.Inner;
+        return payloadTypeId.IsValid;
     }
 
     private LlvmCall? ConvertSharedClone(MirCall call)

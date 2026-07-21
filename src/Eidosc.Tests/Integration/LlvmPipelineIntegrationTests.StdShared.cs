@@ -64,4 +64,53 @@ main :: Unit -> Int
             mirModule.Functions.Where(function => function.ReturnType != new TypeId(BaseTypes.UnitId)),
             function => function.BasicBlocks.Any(block => block.Terminator is MirReturn { Value: null }));
     }
+
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void StdShared_BorrowedRecursivePayload_NativeSmoke_DoesNotReleaseBorrowedReference()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string source = """
+import std.Shared
+
+Entry :: type {
+    value :: Int,
+    left :: Tree,
+    right :: Tree
+}
+
+Tree :: type {
+    Empty :: type {},
+    Node :: type(Shared[Entry])
+}
+
+read_tree :: Tree -> Int
+{
+    Empty() => 0,
+    Node(ref node) => match *Shared.borrow(node) {
+        Entry{value: value, left: _, right: _} => value
+    }
+}
+
+main :: Unit -> Int
+{
+    _ => {
+        entry := Entry{value: 42, left: Empty(), right: Empty()}
+        tree := Node(Shared.new(entry))
+        read_tree(tree)
+    }
+}
+""";
+
+        var execution = CompileAndRunSourceAtNativeWithContext(
+            source,
+            StdlibListImportInputFile(),
+            "std_shared_recursive_payload_borrow_native_smoke");
+
+        Assert.Equal(42, execution.ExitCode);
+    }
 }
