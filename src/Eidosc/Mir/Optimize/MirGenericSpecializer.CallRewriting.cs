@@ -484,12 +484,7 @@ public sealed partial class MirGenericSpecializer
     {
         rewrittenCall = null!;
         if (!IsGeneratedSpecialization(containingFunction.Name) ||
-            !string.Equals(
-                containingFunction.SourceName,
-                string.IsNullOrWhiteSpace(template.TemplateSource.SourceName)
-                    ? template.TemplateSource.Name
-                    : template.TemplateSource.SourceName,
-                StringComparison.Ordinal))
+            !IsSpecializationOfTemplate(containingFunction, template.TemplateSource))
         {
             return false;
         }
@@ -522,5 +517,22 @@ public sealed partial class MirGenericSpecializer
                 containingFunction.ReturnType)
         };
         return true;
+    }
+
+    private static bool IsSpecializationOfTemplate(MirFunc specialization, MirFunc template)
+    {
+        if (MirFunctionIdentity.TryGetStableKey(specialization.FunctionId, out var specializationKey) &&
+            MirFunctionIdentity.TryGetStableKey(template.FunctionId, out var templateKey))
+        {
+            var specializationPrefix = $"{templateKey}\0specialization\0";
+            return specializationKey.StartsWith(specializationPrefix, StringComparison.Ordinal);
+        }
+
+        return string.Equals(
+            specialization.SourceName,
+            string.IsNullOrWhiteSpace(template.SourceName) ? template.Name : template.SourceName,
+            StringComparison.Ordinal) &&
+               string.Equals(specialization.FunctionId.ModuleIdentityKey, template.FunctionId.ModuleIdentityKey, StringComparison.Ordinal) &&
+               string.Equals(specialization.FunctionId.Module, template.FunctionId.Module, StringComparison.Ordinal);
     }
 }

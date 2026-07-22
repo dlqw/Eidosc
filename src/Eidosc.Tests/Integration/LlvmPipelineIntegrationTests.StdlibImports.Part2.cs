@@ -1132,7 +1132,7 @@ main :: Unit -> Int
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Task__try_await_value_or_else", StringComparison.Ordinal));
-        Assert.DoesNotContain("eidos_task_spawn_closure_value", result.LlvmIrText, StringComparison.Ordinal);
+        Assert.Contains("eidos_task_spawn_closure_value", result.LlvmIrText, StringComparison.Ordinal);
         Assert.Contains("eidos_task_await_closure_value", result.LlvmIrText, StringComparison.Ordinal);
     }
 

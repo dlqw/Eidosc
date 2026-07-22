@@ -16,17 +16,18 @@ public sealed partial class MirGenericSpecializerTests
         var callerSymbol = new SymbolId(1303);
         var intType = new TypeId(BaseTypes.IntId);
         var unitType = new TypeId(BaseTypes.UnitId);
+        var typeVariable = new TypeId(1304);
 
-        var taskArgument = LocalPlace(1, TypeId.None);
+        var taskArgument = LocalPlace(1, typeVariable);
         var taskSpawn = BuildFunction(
-            returnType: TypeId.None,
+            returnType: typeVariable,
             locals:
             [
                 new MirLocal
                 {
                     Id = taskArgument.Local,
                     Name = "thunk",
-                    TypeId = TypeId.None,
+                    TypeId = typeVariable,
                     IsParameter = true
                 }
             ],
@@ -35,26 +36,28 @@ public sealed partial class MirGenericSpecializerTests
             name: "std__Task__spawn_raw",
             symbolId: taskSpawnSymbol,
             functionId: BuildFunctionId(taskSpawnSymbol, "spawn_raw", "Std.Task.spawn_raw"),
-            sourceName: "spawn_raw");
+            sourceName: "spawn_raw",
+            genericParameterCount: 1,
+            genericTypeParameterIds: [typeVariable]);
 
-        var asyncArgument = LocalPlace(1, TypeId.None);
-        var asyncResult = LocalPlace(2, TypeId.None);
+        var asyncArgument = LocalPlace(1, typeVariable);
+        var asyncResult = LocalPlace(2, typeVariable);
         var asyncSpawn = BuildFunction(
-            returnType: TypeId.None,
+            returnType: typeVariable,
             locals:
             [
                 new MirLocal
                 {
                     Id = asyncArgument.Local,
                     Name = "thunk",
-                    TypeId = TypeId.None,
+                    TypeId = typeVariable,
                     IsParameter = true
                 },
                 new MirLocal
                 {
                     Id = asyncResult.Local,
                     Name = "task",
-                    TypeId = TypeId.None
+                    TypeId = typeVariable
                 }
             ],
             instructions:
@@ -67,7 +70,8 @@ public sealed partial class MirGenericSpecializerTests
                         Name = "std__Task__spawn_raw",
                         SymbolId = taskSpawnSymbol,
                         FunctionId = BuildFunctionId(taskSpawnSymbol, "spawn_raw", "Std.Task.spawn_raw"),
-                        TypeId = TypeId.None
+                        TypeId = typeVariable,
+                        TypeArgumentIds = [typeVariable]
                     },
                     Arguments = [asyncArgument]
                 }
@@ -76,7 +80,9 @@ public sealed partial class MirGenericSpecializerTests
             name: "std__Async__spawn_raw",
             symbolId: asyncSpawnSymbol,
             functionId: BuildFunctionId(asyncSpawnSymbol, "spawn_raw", "Std.Async.spawn_raw"),
-            sourceName: "spawn_raw");
+            sourceName: "spawn_raw",
+            genericParameterCount: 1,
+            genericTypeParameterIds: [typeVariable]);
 
         var callerArgument = LocalPlace(1, intType);
         var callerResult = LocalPlace(2, intType);
@@ -108,7 +114,8 @@ public sealed partial class MirGenericSpecializerTests
                         Name = "std__Async__spawn_raw",
                         SymbolId = asyncSpawnSymbol,
                         FunctionId = BuildFunctionId(asyncSpawnSymbol, "spawn_raw", "Std.Async.spawn_raw"),
-                        TypeId = TypeId.None
+                        TypeId = intType,
+                        TypeArgumentIds = [intType]
                     },
                     Arguments = [callerArgument]
                 }
