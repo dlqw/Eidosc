@@ -335,6 +335,22 @@ public sealed class EidosFormatterTests
         Assert.Contains("@[derive(Show)]", result.FormattedText, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Format_DecisionTable_PreservesRowsAndProducesParseableSource()
+    {
+        const string source = "choose :: Int->Int{fallback=>decide fallback{is_even(_):2|4=>20,6 when enabled=>60}}";
+
+        var result = EidosFormatter.Format(source, options: NameFirstValidation());
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
+        Assert.Contains("decide fallback", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("is_even(_):", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("2 | 4 => 20", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("6 when enabled => 60", result.FormattedText, StringComparison.Ordinal);
+    }
+
     private static EidosFormatterOptions NoValidation() => new()
     {
         ValidateSyntax = false,

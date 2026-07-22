@@ -487,6 +487,55 @@ public sealed class ExprParserTests
     }
 
     [Fact]
+    public void Parse_decide_expr_warns_for_duplicate_literal_key_in_same_template_group()
+    {
+        var ctx = MakeNameFirstCtx(
+            "decide", Ident("fallback"), "{",
+            Ident("key_down"), "(", "_", ")", ":",
+            Num("87"), "|", Num("265"), "=>", Ident("north"), ",",
+            Num("87"), "=>", Ident("south"),
+            "}");
+        var parser = new ExprParser(ctx);
+
+        _ = parser.ParseExpr();
+
+        var warning = Assert.Single(ctx.Diagnostics, diagnostic => diagnostic.Code == "W4301");
+        Assert.Equal(Eidosc.Diagnostic.DiagnosticLevel.Warning, warning.Level);
+        Assert.Contains("duplicate decision key", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_decide_expr_warns_for_duplicate_literal_tuple_key()
+    {
+        var ctx = MakeNameFirstCtx(
+            "decide", Ident("fallback"), "{",
+            Ident("same"), "(", "_", ",", "_", ")", ":",
+            "(", Num("1"), ",", Num("2"), ")", "=>", Ident("first"), ",",
+            "(", Num("1"), ",", Num("2"), ")", "=>", Ident("second"),
+            "}");
+
+        _ = new ExprParser(ctx).ParseExpr();
+
+        Assert.Contains(ctx.Diagnostics, diagnostic => diagnostic.Code == "W4301");
+    }
+
+    [Fact]
+    public void Parse_decide_expr_allows_same_literal_key_in_different_template_groups()
+    {
+        var ctx = MakeNameFirstCtx(
+            "decide", Ident("fallback"), "{",
+            Ident("keyboard"), "(", "_", ")", ":",
+            Num("1"), "=>", Ident("first"), ",",
+            Ident("gamepad"), "(", "_", ")", ":",
+            Num("1"), "=>", Ident("second"),
+            "}");
+
+        _ = new ExprParser(ctx).ParseExpr();
+
+        Assert.DoesNotContain(ctx.Diagnostics, diagnostic => diagnostic.Code == "W4301");
+    }
+
+    [Fact]
     public void Parse_match_expr()
     {
         var ctx = MakeCtx("match", Ident("x"), "{", TypeId("Some"), "(", Ident("v"), ")", "=>", Ident("v"), ",", TypeId("None"), "(", ")", "=>", Num("0"), "}");

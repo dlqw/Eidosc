@@ -7,6 +7,8 @@ namespace Eidosc.Parsing.Handwritten;
 
 public sealed partial class ExprParser
 {
+    private const string DuplicateDecisionKeyWarningCode = "W4301";
+
     private EidosAstNode ParseDecideExpr()
     {
         var startToken = ctx.Current;
@@ -64,6 +66,7 @@ public sealed partial class ExprParser
 
     private void ParseDecisionRows(EidosAstNode template, List<DecisionRow> rows)
     {
+        var literalKeys = new Dictionary<string, SourceSpan>(StringComparer.Ordinal);
         while (!ctx.Check("}") && !ctx.IsEof)
         {
             if (IsNextDecisionGroupStart())
@@ -87,6 +90,11 @@ public sealed partial class ExprParser
             }
             else
             {
+                foreach (var key in keys)
+                {
+                    ReportDuplicateDecisionLiteralKey(key, literalKeys);
+                }
+
                 var condition = BuildDecisionCondition(template, keys);
                 if (guard != null)
                 {
@@ -106,6 +114,70 @@ public sealed partial class ExprParser
                 return;
             }
         }
+    }
+
+    private void ReportDuplicateDecisionLiteralKey(
+        EidosAstNode key,
+        Dictionary<string, SourceSpan> literalKeys)
+    {
+        if (!TryBuildDecisionLiteralKey(key, out var canonicalKey, out var displayText) ||
+            literalKeys.TryAdd(canonicalKey, key.Span))
+        {
+            return;
+        }
+
+        var diagnostic = Diagnostic.Diagnostic.Warning(
+                $"duplicate decision key '{displayText}' in the same template group",
+                DuplicateDecisionKeyWarningCode)
+            .WithLabel(key.Span, "duplicate key")
+            .WithLabel(literalKeys[canonicalKey], "first checked here")
+            .WithNote("decision rows are tested in source order, so the later key is unreachable");
+        ctx.AddDiagnostic(diagnostic);
+    }
+
+    private static bool TryBuildDecisionLiteralKey(
+        EidosAstNode key,
+        out string canonicalKey,
+        out string displayText)
+    {
+        if (key is LiteralExpr literal && !literal.IsRecoveredError)
+        {
+            var valueText = literal.Value switch
+            {
+                IFormattable formattable => formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                null => "<null>",
+                _ => literal.Value.ToString() ?? ""
+            };
+            canonicalKey = $"literal:{literal.Kind}:{valueText.Length}:{valueText}";
+            displayText = literal.RawText;
+            return true;
+        }
+
+        if (key is TupleExpr tuple)
+        {
+            var canonicalParts = new List<string>(tuple.Elements.Count);
+            var displayParts = new List<string>(tuple.Elements.Count);
+            foreach (var element in tuple.Elements)
+            {
+                if (!TryBuildDecisionLiteralKey(element, out var canonicalPart, out var displayPart))
+                {
+                    canonicalKey = "";
+                    displayText = "";
+                    return false;
+                }
+
+                canonicalParts.Add($"{canonicalPart.Length}:{canonicalPart}");
+                displayParts.Add(displayPart);
+            }
+
+            canonicalKey = $"tuple:{tuple.Elements.Count}:{string.Concat(canonicalParts)}";
+            displayText = $"({string.Join(", ", displayParts)})";
+            return true;
+        }
+
+        canonicalKey = "";
+        displayText = "";
+        return false;
     }
 
     private List<EidosAstNode> ParseDecisionKeyList()
