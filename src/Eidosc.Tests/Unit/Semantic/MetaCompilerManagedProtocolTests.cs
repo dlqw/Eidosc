@@ -2,6 +2,7 @@ using System.Text.Json;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
+using Eidosc.Ast.Patterns;
 using Eidosc.Ide;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
@@ -360,6 +361,67 @@ Bad :: comptime quote item { $(42) };
         Assert.Contains(result.Diagnostics, static diagnostic =>
             diagnostic.Message.Contains("quote item", StringComparison.OrdinalIgnoreCase) ||
             diagnostic.Message.Contains("item syntax", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Typed_derive_quote_keeps_local_bindings_hygienic()
+    {
+        const string source = """
+derive_answer :: comptime meta.Type -> meta.Items {
+    _ => quote items {
+        generated_answer :: Unit -> Int {
+            _ => {
+                local := 41;
+                local + 1
+            }
+        }
+    }
+}
+
+@[expand(derive_answer)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var answer = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "generated_answer");
+        var block = Assert.IsType<BlockExpr>(Assert.Single(answer.Body).Expression);
+        var local = Assert.IsType<LetDecl>(block.Statements[0]);
+        var binding = Assert.IsType<VarPattern>(local.Pattern);
+        var binary = Assert.IsType<BinaryExpr>(block.Statements[1]);
+        var reference = Assert.IsType<IdentifierExpr>(binary.Left);
+        Assert.Equal(binding.SymbolId, reference.SymbolId);
+        Assert.Equal(binding.AttachedSyntaxIdentity?.StableIdentity, reference.AttachedSyntaxIdentity?.StableIdentity);
+        Assert.Equal(SyntaxIdentityKind.Hygiene, reference.AttachedSyntaxIdentity?.Kind);
+    }
+
+    [Fact]
+    public void Typed_derive_rejects_duplicate_public_generated_identity_atomically()
+    {
+        const string source = """
+derive_duplicate :: comptime meta.Type -> meta.Items {
+    _ => [
+        meta.function("answer", [], Int, meta.expr_int(1)),
+        meta.function("answer", [], Int, meta.expr_int(2))
+    ]
+}
+
+@[expand(derive_duplicate)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3616" &&
+            diagnostic.Message.Contains("answer", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "answer");
     }
 
     [Fact]
