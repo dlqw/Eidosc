@@ -618,10 +618,37 @@ public sealed class EidosBuildHostTests
             VolatileCapabilities = ["clock"]
         };
 
+        var development = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration));
         var result = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration, releaseProfile: true));
 
+        Assert.True(development.Success, FormatDiagnostics(development));
+        var volatileProvenance = Assert.IsType<EidosBuildProvenance>(development.Provenance);
+        Assert.False(volatileProvenance.Reproducible);
+        Assert.Equal(["clock"], volatileProvenance.VolatileCapabilities);
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "E5035");
+        Assert.Null(result.Provenance);
+        Assert.Null(result.Sbom);
+    }
+
+    [Fact]
+    public async Task RunAsync_ReleaseProfileEmitsReproducibleProvenanceAndSbom()
+    {
+        using var workspace = TestTempWorkspace.Create("eidos_build_release_attestations");
+        var program = workspace.WriteText(
+            "build.eidos",
+            "Session :: comptime build.session();\nEmit :: comptime build.emit(Session);\nBuildGraph :: comptime build.graph(Emit, [], []);\n");
+        var configuration = new EidosBuildConfiguration
+        {
+            Program = program,
+            OutputRoots = [workspace.Path("build")]
+        };
+
+        var result = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration, releaseProfile: true));
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.True(Assert.IsType<EidosBuildProvenance>(result.Provenance).Reproducible);
+        Assert.IsType<EidosBuildSbom>(result.Sbom);
     }
 
     [Fact]
