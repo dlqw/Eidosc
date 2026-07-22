@@ -132,6 +132,60 @@ Subject :: type {}
     }
 
     [Fact]
+    public void Typed_derive_materializes_high_level_semantic_instance()
+    {
+        const string source = """
+Marker :: trait {
+    marker :: Self -> String
+}
+
+derive_marker :: comptime meta.Type -> meta.Items {
+    target => {
+        parameter := meta.parameter("value", target);
+        method := meta.function(
+            "marker",
+            [parameter],
+            String,
+            meta.expr_string(meta.name_of(target))
+        );
+        [meta.instance(meta.declaration_of(Marker), target, [method])]
+    }
+}
+
+@[expand(derive_marker)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instance = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<InstanceDecl>(),
+            static declaration => declaration.Name.Contains("Marker", StringComparison.Ordinal));
+        Assert.NotEmpty(instance.GeneratedOriginChain);
+        Assert.Single(instance.Methods, static method => method.Name == "marker");
+    }
+
+    [Fact]
+    public void Removed_meta_implementation_builder_is_not_a_compatibility_alias()
+    {
+        const string source = """
+Marker :: trait { marker :: Self -> String }
+derive_marker :: comptime meta.Type -> meta.Items {
+    target => [meta.implementation(meta.declaration_of(Marker), target, [])]
+}
+@[expand(derive_marker)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("implementation", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Typed_quote_values_cover_every_public_grammar_category()
     {
         const string source = """

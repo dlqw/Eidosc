@@ -140,7 +140,7 @@ internal static class MetaSchemaRegistry
         new("warning", 2),
         new("with_body", 2),
         new("function", 4),
-        new("implementation", 3),
+        new("instance", 3),
         new("comptime_value", 3),
         new("test", 2),
         new("module_member", 1),
@@ -358,7 +358,7 @@ internal static class MetaSchemaRegistry
         "is_subtype" or "join_type_of" => argumentIndex is 0 or 1,
         "references_to" or "callers_of" or "implementations_of" => argumentIndex == 0,
         "function" => argumentIndex == 2,
-        "implementation" or "comptime_value" or "parameter" => argumentIndex == 1,
+        "instance" or "comptime_value" or "parameter" => argumentIndex == 1,
         _ => false
     };
 
@@ -450,7 +450,7 @@ internal static class MetaSchemaRegistry
             "resolve_at" => [site, BaseTypes.String],
             "parse_items" or "parse_expr" => [BaseTypes.String, origin],
             "function" => [BaseTypes.String, ListOf(symbolTable, parameter), typeValue, expr],
-            "implementation" => [decl, typeValue, ListOf(symbolTable, declaration)],
+            "instance" => [decl, typeValue, ListOf(symbolTable, declaration)],
             "comptime_value" => [BaseTypes.String, typeValue, expr],
             "test" => [BaseTypes.String, expr],
             "module_member" => [declaration],
@@ -531,7 +531,7 @@ internal static class MetaSchemaRegistry
             "origin_of" => origin,
             "parse_items" => ResultOf(symbolTable, ListOf(symbolTable, declaration), parseFailure),
             "parse_expr" => ResultOf(symbolTable, expressionSyntax, parseFailure),
-            "function" or "implementation" or "comptime_value" or "test" or
+            "function" or "instance" or "comptime_value" or "test" or
                 "module_member" => declaration,
             "diagnostic" => diagnostic,
             "fix" => fix,

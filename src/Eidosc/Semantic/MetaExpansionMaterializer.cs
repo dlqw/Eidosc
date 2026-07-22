@@ -394,7 +394,7 @@ internal sealed class MetaExpansionMaterializer(
                     GenerationSlotIdentity: generationSlotIdentity));
                 return true;
 
-            case "declaration.implementation":
+            case "declaration.instance":
                 return TryCreateImplementation(
                     structured,
                     outputIndex,
@@ -784,7 +784,7 @@ internal sealed class MetaExpansionMaterializer(
         reason = string.Empty;
         if (_target is not (AdtDef or CaseTypeDef))
         {
-            reason = "Meta.implementation can only target a type or case-type declaration";
+            reason = "meta.instance can only target a type or case-type declaration";
             return false;
         }
 
@@ -792,7 +792,7 @@ internal sealed class MetaExpansionMaterializer(
             _symbolTable.GetSymbol<TraitSymbol>(trait.SymbolId) == null)
         {
             reason = string.IsNullOrWhiteSpace(reason)
-                ? "Meta.implementation requires a trait declaration handle"
+                ? "meta.instance requires a trait declaration handle"
                 : reason;
             return false;
         }
@@ -803,7 +803,7 @@ internal sealed class MetaExpansionMaterializer(
                 MetaComptimeIntrinsics.CreateTypeTargetValue(_target, _symbolTable, _targetPath).TypeRef.StableIdentity,
                 StringComparison.Ordinal))
         {
-            reason = "Meta.implementation target must be the current derive target";
+            reason = "meta.instance target must be the current derive target";
             return false;
         }
 

@@ -83,7 +83,7 @@ internal static partial class MetaComptimeIntrinsics
             "parse_items" => TryParseTextSyntax(arguments, QuoteKind.Items, context, out value, out reason),
             "parse_expr" => TryParseTextSyntax(arguments, QuoteKind.Expression, context, out value, out reason),
             "function" => TryObject("declaration.function", arguments, ["name", "parameters", "result", "body"], out value, out reason),
-            "implementation" => TryObject("declaration.implementation", arguments, ["trait", "target", "methods"], out value, out reason),
+            "instance" => TryObject("declaration.instance", arguments, ["trait", "target", "methods"], out value, out reason),
             "comptime_value" => TryObject("declaration.comptime-value", arguments, ["name", "type", "value"], out value, out reason),
             "test" => TryObject("declaration.test", arguments, ["name", "body"], out value, out reason),
             "module_member" => TryObject("declaration.module-member", arguments, ["declaration"], out value, out reason),
