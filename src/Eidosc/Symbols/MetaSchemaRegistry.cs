@@ -143,6 +143,7 @@ internal static class MetaSchemaRegistry
         new("instance", 3),
         new("comptime_value", 3),
         new("test", 2),
+        new("module", 2),
         new("module_member", 1),
         new("diagnostic", 3),
         new("fix", 2),
@@ -199,7 +200,7 @@ internal static class MetaSchemaRegistry
         var resolveFailureId = SymbolId.None;
         foreach (var typeSpec in s_types)
         {
-            var registeredTypeId = typeSpec.Name == WellKnownStrings.Meta.Types.Items
+            var registeredTypeId = typeSpec.Name is WellKnownStrings.Meta.Types.Items or WellKnownStrings.Meta.Types.Modules
                 ? symbolTable.GetSymbol(symbolTable.LookupType(WellKnownStrings.BuiltinTypes.Seq) ?? SymbolId.None)?.TypeId.Value ?? typeSpec.TypeId
                 : typeSpec.Name == WellKnownStrings.Meta.Types.Function
                     ? WellKnownTypeIds.MetaDeclarationId
@@ -453,6 +454,7 @@ internal static class MetaSchemaRegistry
             "instance" => [decl, typeValue, ListOf(symbolTable, declaration)],
             "comptime_value" => [BaseTypes.String, typeValue, expr],
             "test" => [BaseTypes.String, expr],
+            "module" => [BaseTypes.String, ListOf(symbolTable, declaration)],
             "module_member" => [declaration],
             "diagnostic" => [BaseTypes.String, span, BaseTypes.String],
             "fix" => [span, BaseTypes.String],
@@ -531,7 +533,7 @@ internal static class MetaSchemaRegistry
             "origin_of" => origin,
             "parse_items" => ResultOf(symbolTable, ListOf(symbolTable, declaration), parseFailure),
             "parse_expr" => ResultOf(symbolTable, expressionSyntax, parseFailure),
-            "function" or "instance" or "comptime_value" or "test" or
+            "function" or "instance" or "comptime_value" or "test" or "module" or
                 "module_member" => declaration,
             "diagnostic" => diagnostic,
             "fix" => fix,

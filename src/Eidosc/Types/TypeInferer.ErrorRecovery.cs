@@ -200,7 +200,7 @@ public sealed partial class TypeInferer
         var resolvedActual = _substitution.Apply(actual);
         if (resolvedExpected is TyCon expectedConstructor &&
             resolvedActual is TyCon actualConstructor &&
-            IsMetaItemsSequence(expectedConstructor, actualConstructor))
+            IsMetaSequenceDomain(expectedConstructor, actualConstructor))
         {
             return true;
         }
@@ -243,12 +243,16 @@ public sealed partial class TypeInferer
         return false;
     }
 
-    private static bool IsMetaItemsSequence(TyCon left, TyCon right) =>
+    private static bool IsMetaSequenceDomain(TyCon left, TyCon right) =>
         ((left.Id == new TypeId(WellKnownTypeIds.MetaItemsId) ||
-          string.Equals(left.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal)) &&
+          left.Id == new TypeId(WellKnownTypeIds.MetaModulesId) ||
+          string.Equals(left.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal) ||
+          string.Equals(left.Name, WellKnownStrings.Meta.Types.Modules, StringComparison.Ordinal)) &&
          string.Equals(right.Name, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal)) ||
         ((right.Id == new TypeId(WellKnownTypeIds.MetaItemsId) ||
-          string.Equals(right.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal)) &&
+          right.Id == new TypeId(WellKnownTypeIds.MetaModulesId) ||
+          string.Equals(right.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal) ||
+          string.Equals(right.Name, WellKnownStrings.Meta.Types.Modules, StringComparison.Ordinal)) &&
          string.Equals(left.Name, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal));
 
     private static bool HaveSameTypeConstructorIdentity(TyCon left, TyCon right)

@@ -138,6 +138,8 @@ internal static class CompilerMetaProtocolRegistry
         (symbolTable.GetSymbol(path.SymbolId)?.TypeId == new TypeId(typeId) ||
          typeId == WellKnownTypeIds.MetaItemsId &&
          string.Equals(symbolTable.GetSymbol(path.SymbolId)?.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal) ||
+         typeId == WellKnownTypeIds.MetaModulesId &&
+         string.Equals(symbolTable.GetSymbol(path.SymbolId)?.Name, WellKnownStrings.Meta.Types.Modules, StringComparison.Ordinal) ||
          typeId == WellKnownTypeIds.MetaFunctionId &&
          string.Equals(symbolTable.GetSymbol(path.SymbolId)?.Name, WellKnownStrings.Meta.Types.Function, StringComparison.Ordinal));
 }

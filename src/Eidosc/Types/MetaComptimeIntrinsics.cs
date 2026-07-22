@@ -86,6 +86,7 @@ internal static partial class MetaComptimeIntrinsics
             "instance" => TryObject("declaration.instance", arguments, ["trait", "target", "methods"], out value, out reason),
             "comptime_value" => TryObject("declaration.comptime-value", arguments, ["name", "type", "value"], out value, out reason),
             "test" => TryObject("declaration.test", arguments, ["name", "body"], out value, out reason),
+            "module" => TryObject("declaration.module", arguments, ["name", "items"], out value, out reason),
             "module_member" => TryObject("declaration.module-member", arguments, ["declaration"], out value, out reason),
             "diagnostic" => TryObject("diagnostic", arguments, ["level", "span", "message"], out value, out reason),
             "fix" => TryObject("fix", arguments, ["span", "replacement"], out value, out reason),

@@ -839,12 +839,11 @@ public sealed class Substitution
         var left = (TyCon)ApplyCon(con1);
         var right = (TyCon)ApplyCon(con2);
 
-        // `meta.Items` is the compiler-owned typed list domain. Its runtime
-        // representation is the ordinary `Seq[T]` constructor, so list
-        // literals and sequence-producing helpers can satisfy the protocol
-        // without exposing an implementation-specific wrapper type.
-        if (IsMetaItems(left) && IsBuiltinSequence(right) ||
-            IsMetaItems(right) && IsBuiltinSequence(left))
+        // The compiler-owned Meta list domains use the ordinary `Seq[T]`
+        // runtime representation, so list literals can satisfy their public
+        // protocol types without exposing implementation-specific wrappers.
+        if (IsMetaSequenceDomain(left) && IsBuiltinSequence(right) ||
+            IsMetaSequenceDomain(right) && IsBuiltinSequence(left))
         {
             return;
         }
@@ -899,9 +898,11 @@ public sealed class Substitution
         }
     }
 
-    private static bool IsMetaItems(TyCon type) =>
+    private static bool IsMetaSequenceDomain(TyCon type) =>
         type.Id == new TypeId(WellKnownTypeIds.MetaItemsId) ||
-        string.Equals(type.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal);
+        type.Id == new TypeId(WellKnownTypeIds.MetaModulesId) ||
+        string.Equals(type.Name, WellKnownStrings.Meta.Types.Items, StringComparison.Ordinal) ||
+        string.Equals(type.Name, WellKnownStrings.Meta.Types.Modules, StringComparison.Ordinal);
 
     private static bool IsBuiltinSequence(TyCon type) =>
         string.Equals(type.Name, WellKnownStrings.BuiltinTypes.Seq, StringComparison.Ordinal);

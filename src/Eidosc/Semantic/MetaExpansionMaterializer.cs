@@ -429,6 +429,19 @@ internal sealed class MetaExpansionMaterializer(
                     GenerationSlotIdentity: generationSlotIdentity));
                 return true;
 
+            case "declaration.module":
+                if (!TryCreateModule(structured, outputIndex, diagnostics, out var module, out reason))
+                {
+                    return false;
+                }
+
+                nodes.Add(new MaterializedMetaNode(
+                    module,
+                    outputIndex,
+                    Placement: placement,
+                    GenerationSlotIdentity: generationSlotIdentity));
+                return true;
+
             case "declaration.module-member":
                 if (!TryGetValue(structured, "declaration", out var nested, out reason))
                 {
@@ -851,6 +864,67 @@ internal sealed class MetaExpansionMaterializer(
             Placement: placement,
             GenerationSlotIdentity: generationSlotIdentity));
 
+        return true;
+    }
+
+    private bool TryCreateModule(
+        ComptimeMetaObjectValue declaration,
+        int outputIndex,
+        List<MetaExpansionDiagnostic> diagnostics,
+        out ModuleDecl module,
+        out string reason)
+    {
+        module = new ModuleDecl();
+        if (!TryGetString(declaration, "name", out var name, out reason) ||
+            !TryGetSequence(declaration, "items", out var itemValues, out reason))
+        {
+            return false;
+        }
+
+        var path = name
+            .Split(WellKnownStrings.Separators.Path, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        if (path.Count == 0 || path.Any(static segment =>
+                segment.StartsWith("__", StringComparison.Ordinal) ||
+                segment.Contains("__spec_", StringComparison.Ordinal) ||
+                segment.Any(static character => !(char.IsLetterOrDigit(character) || character == '_')) ||
+                !string.Equals(
+                    segment,
+                    NamingStyleDiagnosticBuilder.Normalize(
+                        segment,
+                        NamingStyleDiagnosticBuilder.NamingConvention.UpperCamelCase),
+                    StringComparison.Ordinal)))
+        {
+            reason = $"generated module path '{name}' must contain UpperCamelCase segments outside the reserved namespace";
+            return false;
+        }
+
+        var declarations = new List<Declaration>(itemValues.Count);
+        for (var itemIndex = 0; itemIndex < itemValues.Count; itemIndex++)
+        {
+            var materialized = new List<MaterializedMetaNode>();
+            if (!TryMaterializeDeclaration(
+                    itemValues[itemIndex],
+                    outputIndex,
+                    materialized,
+                    diagnostics,
+                    MetaDeclarationPlacement.AfterTarget,
+                    out reason) ||
+                materialized.Any(static item => item.Node is not Declaration))
+            {
+                reason = string.IsNullOrWhiteSpace(reason)
+                    ? $"meta.module item {itemIndex} is not a declaration"
+                    : reason;
+                return false;
+            }
+
+            declarations.AddRange(materialized.Select(static item => (Declaration)item.Node));
+        }
+
+        module.SetSpan(_invocationSpan);
+        module.SetPath(path);
+        module.SetDeclarations(declarations);
+        reason = string.Empty;
         return true;
     }
 

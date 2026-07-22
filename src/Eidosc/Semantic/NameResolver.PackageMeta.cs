@@ -441,22 +441,41 @@ public sealed partial class NameResolver
         root.SetDeclarations([.. root.Declarations, .. modules]);
         foreach (var module in modules)
         {
+            RegisterGeneratedItemDeclaration(module, _rootModule);
             if (module.SymbolId.IsValid)
             {
                 ProcessImportsRecursive(module, module.SymbolId);
             }
         }
         ResolveModuleDeclarationRange(root, startIndex);
+        foreach (var module in modules)
+        {
+            if (module.GeneratedOriginChain.LastOrDefault() is { } origin)
+            {
+                SetGeneratedOriginOnOwnedDeclarationSymbols(module, origin);
+            }
+        }
         foreach (var (moduleId, declarations) in itemsByModule.OrderBy(static entry => entry.Key.Value))
         {
             var targetModule = itemTargets[moduleId];
             var itemStartIndex = targetModule.Declarations.Count;
             targetModule.SetDeclarations([.. targetModule.Declarations, .. declarations]);
+            foreach (var declaration in declarations)
+            {
+                RegisterGeneratedItemDeclaration(declaration, moduleId);
+            }
             if (declarations.Any(static declaration => declaration is ImportDecl))
             {
                 ProcessImportsRecursive(targetModule, moduleId);
             }
             ResolveModuleDeclarationRange(targetModule, itemStartIndex);
+            foreach (var declaration in declarations)
+            {
+                if (declaration.GeneratedOriginChain.LastOrDefault() is { } origin)
+                {
+                    SetGeneratedOriginOnOwnedDeclarationSymbols(declaration, origin);
+                }
+            }
         }
         foreach (var pending in pendingUserDiagnostics)
         {

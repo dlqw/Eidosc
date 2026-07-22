@@ -155,7 +155,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             }
 
             // Field access / method call: expr.ident
-            if (ctx.Check(".") && TokenKind.IsAnyIdentifier(ctx.Peek(1)))
+            if (ctx.Check(".") && IsPostfixMemberName(left, ctx.Peek(1)))
             {
                 if (ctx.IsNameFirstSyntax && TryParseAssociatedConstExpr(left, out var associatedConst))
                 {
@@ -220,6 +220,11 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
 
         return left;
     }
+
+    private bool IsPostfixMemberName(EidosAstNode receiver, Token token) =>
+        TokenKind.IsAnyIdentifier(token) ||
+        receiver is IdentifierExpr { Name: WellKnownStrings.Meta.Module } &&
+        string.Equals(ctx.GetText(token), WellKnownStrings.Keywords.Module, StringComparison.Ordinal);
 
     private bool TryParseAssociatedConstExpr(EidosAstNode left, out AssociatedConstExpr associatedConst)
     {

@@ -726,6 +726,47 @@ main :: Unit -> Int { _ => 0 }
     }
 
     [Fact]
+    public void Package_extension_emits_typed_generated_module_with_high_level_constructor()
+    {
+        const string source = """
+generate_schema :: comptime meta.Package -> meta.Modules {
+    _ => [meta.module("Generated.Schema", quote items {
+        answer :: Unit -> Int { _ => 42 }
+    })]
+}
+
+main :: Unit -> Int { _ => 0 }
+""";
+
+        var result = Compile(source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Extensions =
+                [
+                    new EidosMetaExtensionConfiguration
+                    {
+                        Name = "schema",
+                        Entry = "generate_schema"
+                    }
+                ]
+            };
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var generated = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<ModuleDecl>(),
+            static module => module.Path.SequenceEqual(["Generated", "Schema"]));
+        Assert.NotEmpty(generated.GeneratedOriginChain);
+        Assert.Single(generated.Declarations.OfType<FuncDef>(), static function => function.Name == "answer");
+        var snapshot = IdeSemanticSnapshotBuilder.Build(result);
+        Assert.Contains(
+            snapshot.GeneratedDocuments,
+            document => document.TargetIdentity.Contains("module", StringComparison.OrdinalIgnoreCase) ||
+                        document.Content.Contains("answer", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Typed_tags_are_the_only_declaration_attachment_form_for_generators()
     {
         const string source = """
