@@ -56,6 +56,7 @@ public sealed record EidosBuildHostResult(
     EidosBuildGraph? Graph,
     EidosBuildGraphExecutionResult? Execution,
     IReadOnlyList<EidosBuildDependency> Dependencies,
+    EidosBuildProvenance? Provenance,
     IReadOnlyList<EidosBuildCapabilityTrace> CapabilityTrace,
     IReadOnlyList<ComptimeTraceEntry> ComptimeTrace,
     IReadOnlyList<string> GeneratedSourceFiles,
@@ -603,6 +604,17 @@ public static class EidosBuildHost
                 capability,
                 HashText(capability))))
             .ToArray();
+        var provenance = execution?.Success == true && graph != null
+            ? EidosBuildProvenance.Create(
+                hostTriple,
+                options.TargetTriple,
+                options.TargetName,
+                programHash,
+                graph,
+                cacheFingerprint,
+                dependencies,
+                execution.Outputs)
+            : null;
         return new EidosBuildHostResult(
             Success: execution?.Success == true && diagnostics.All(static diagnostic => diagnostic.Level != DiagnosticLevel.Error),
             ProgramPath: programPath,
@@ -613,6 +625,7 @@ public static class EidosBuildHost
             Graph: graph,
             Execution: execution,
             Dependencies: dependencies,
+            Provenance: provenance,
             CapabilityTrace: context.Accesses.Select(static access => new EidosBuildCapabilityTrace(
                 access.Sequence,
                 access.Kind,
@@ -640,6 +653,7 @@ public static class EidosBuildHost
             Graph: null,
             Execution: null,
             Dependencies: [],
+            Provenance: null,
             CapabilityTrace: [],
             ComptimeTrace: [],
             GeneratedSourceFiles: [],

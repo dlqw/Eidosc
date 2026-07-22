@@ -727,6 +727,37 @@ public sealed class EidosBuildHostTests
             Assert.Single(linuxTarget.Execution.Outputs).Sha256);
     }
 
+    [Fact]
+    public async Task RunAsync_EmitsDeterministicSlsaProvenanceForCleanAndCachedBuilds()
+    {
+        using var workspace = TestTempWorkspace.Create("eidos_build_provenance");
+        var input = workspace.WriteText("tools/Generated.eidos", "Generated :: type { Ready }\n");
+        var (toolPath, arguments) = CreateCopyCommand(
+            "tools/Generated.eidos",
+            "build/generated/Generated.eidos");
+        var program = workspace.WriteText("build.eidos", CreateGraphProgram(arguments, target: "main"));
+        var configuration = CreateConfiguration(workspace, program, input, toolPath);
+
+        var clean = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration));
+        var cached = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration));
+
+        Assert.True(clean.Success, FormatDiagnostics(clean));
+        Assert.True(cached.Success, FormatDiagnostics(cached));
+        Assert.False(clean.Execution!.CacheHit);
+        Assert.True(cached.Execution!.CacheHit);
+        var cleanProvenance = Assert.IsType<EidosBuildProvenance>(clean.Provenance);
+        var cachedProvenance = Assert.IsType<EidosBuildProvenance>(cached.Provenance);
+        Assert.Equal(EidosBuildProvenance.InTotoStatementType, cleanProvenance.StatementType);
+        Assert.Equal(EidosBuildProvenance.SlsaPredicateType, cleanProvenance.PredicateType);
+        Assert.True(cleanProvenance.Reproducible);
+        Assert.Empty(cleanProvenance.VolatileCapabilities);
+        Assert.Contains(cleanProvenance.Materials, static material => material.Uri == "eidos:file:tools/Generated.eidos");
+        Assert.Contains(cleanProvenance.Materials, static material => material.Uri == "eidos:tool:copy");
+        Assert.Contains(cleanProvenance.Subjects, static subject => subject.Name == "build/generated/Generated.eidos");
+        Assert.Equal(cleanProvenance.CanonicalHash, cachedProvenance.CanonicalHash);
+        Assert.Equal(cleanProvenance.ToCanonicalJson(), cachedProvenance.ToCanonicalJson());
+    }
+
     private static EidosBuildHostOptions CreateOptions(
         TestTempWorkspace workspace,
         EidosBuildConfiguration configuration,
