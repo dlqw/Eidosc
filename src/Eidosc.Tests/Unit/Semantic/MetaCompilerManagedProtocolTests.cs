@@ -9,6 +9,7 @@ using Eidosc.ProjectSystem;
 using Eidosc.Semantic;
 using Eidosc.Symbols;
 using Eidosc.Syntax;
+using Eidosc.Types;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Semantic;
@@ -629,6 +630,60 @@ answer :: Int = {
     }
 
     [Fact]
+    public void Meta_query_cache_records_hits_and_round_trips_canonical_dependencies()
+    {
+        const string source = """
+work :: Int -> Int { value => value }
+WorkDecl :: comptime meta.declaration_of(work);
+FirstName :: comptime meta.name_of(WorkDecl);
+SecondName :: comptime meta.name_of(WorkDecl);
+""";
+
+        var result = Compile(source, static options =>
+        {
+            options.TraceComptime = true;
+            options.EnableIncrementalCompilation = true;
+            options.EnableLiveStateCache = true;
+            options.EnableDetailedProfiling = true;
+            options.StopAtPhase = CompilationPhase.Mir;
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var cacheTrace = result.ComptimeTrace
+            .Where(static entry => entry.Kind == "query-cache" && entry.Operation == "meta.name_of")
+            .ToArray();
+        Assert.Contains(cacheTrace, static entry => entry.Outcome == "cache-miss");
+        Assert.Contains(cacheTrace, static entry => entry.Outcome == "cache-hit");
+
+        var modulePayload = Assert.Single(
+            Assert.IsAssignableFrom<IReadOnlyList<ModuleTypesStatePayload>>(result.ModuleTypesStatePayloads)
+                .Select(static payload => payload.MetaQueries)
+                .Where(static payload => payload.Dependencies.Any(dependency => dependency.CacheHit))
+                .DistinctBy(static payload => payload.Hash));
+        Assert.True(modulePayload.HasValidHash());
+        Assert.NotEmpty(modulePayload.CacheEntries);
+        Assert.True(modulePayload.TryRestoreState(
+            null,
+            out var restoredEntries,
+            out var restoredDependencies,
+            out var failure), failure);
+        var restoredState = new MetaQueryState();
+        Assert.True(restoredState.TryRestoreState(restoredEntries, restoredDependencies, out failure), failure);
+        Assert.Equal(modulePayload.CacheEntries.Count, restoredState.SnapshotCacheEntries().Count);
+        Assert.Contains(restoredState.SnapshotDependencies(), static dependency => dependency.CacheHit);
+
+        var livePayload = Assert.IsType<CompilationLiveStatePayload>(result.CompilationLiveStatePayload);
+        Assert.True(livePayload.MetaQueries.HasValidHash());
+        Assert.Equal(
+            modulePayload.CacheEntries
+                .Select(static entry => $"{entry.Key}:{entry.ResultHash}:{entry.ResultBytes}")
+                .Order(StringComparer.Ordinal),
+            livePayload.MetaQueries.CacheEntries
+                .Select(static entry => $"{entry.Key}:{entry.ResultHash}:{entry.ResultBytes}")
+                .Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Package_extension_emits_typed_items_without_query_or_transformation_values()
     {
         const string source = """
@@ -699,6 +754,21 @@ Subject :: type {}
             NoImplicitPrelude = false,
             UseColors = false
         }).Run();
+
+    private static CompilationResult Compile(string source, Action<CompilationOptions> configure)
+    {
+        var options = new CompilationOptions
+        {
+            InputFile = "meta-compiler-managed.eidos",
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = false,
+            UseColors = false
+        };
+        configure(options);
+        return new CompilationPipeline(source, options).Run();
+    }
 
     private static void AssertProtocol(
         ModuleDecl module,
