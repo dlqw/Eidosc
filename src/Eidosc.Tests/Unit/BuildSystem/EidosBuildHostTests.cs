@@ -648,6 +648,48 @@ public sealed class EidosBuildHostTests
         Assert.False(second.Execution!.CacheHit);
     }
 
+    [Fact]
+    public async Task RunAsync_ExecutesToolsWithOnlyDeclaredEnvironmentVariables()
+    {
+        using var workspace = TestTempWorkspace.Create("eidos_build_clean_environment");
+        var variableName = $"EIDOS_BUILD_AMBIENT_{Guid.NewGuid():N}";
+        var (toolPath, arguments, probeScript) = CreateEnvironmentProbeCommand(
+            workspace,
+            variableName,
+            "build/environment.txt");
+        var program = workspace.WriteText(
+            "build.eidos",
+            $$"""
+            Session :: comptime build.session();
+            Process :: comptime build.process(Session);
+            Emit :: comptime build.emit(Session);
+            Probe :: comptime build.command(Process, "probe", "environment_probe", {{FormatEidosList(arguments)}}, ["{{probeScript}}"], ["build/environment.txt"], []);
+            BuildGraph :: comptime build.graph(Emit, [Probe], []);
+            """);
+        var configuration = new EidosBuildConfiguration
+        {
+            Program = program,
+            FileInputs = [workspace.Path(probeScript)],
+            OutputRoots = [workspace.Path("build")],
+            Tools = [new EidosBuildToolConfiguration { Name = "environment_probe", Path = toolPath }]
+        };
+
+        Environment.SetEnvironmentVariable(variableName, "ambient-secret");
+        try
+        {
+            var result = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration));
+
+            Assert.True(result.Success, FormatDiagnostics(result));
+            Assert.Equal("clean", File.ReadAllText(workspace.Path("build/environment.txt")).Trim());
+            Assert.DoesNotContain(result.Dependencies, dependency =>
+                dependency.Kind == "environment" && dependency.Name == variableName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variableName, null);
+        }
+    }
+
     private static EidosBuildHostOptions CreateOptions(
         TestTempWorkspace workspace,
         EidosBuildConfiguration configuration,
@@ -700,6 +742,34 @@ public sealed class EidosBuildHostTests
         }
 
         return ("/bin/cp", [input, output]);
+    }
+
+    private static (string ToolPath, IReadOnlyList<string> Arguments, string ScriptPath) CreateEnvironmentProbeCommand(
+        TestTempWorkspace workspace,
+        string variableName,
+        string output)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            const string scriptPath = "tools/environment-probe.cmd";
+            workspace.WriteText(
+                scriptPath,
+                "@echo off\r\nif defined %1 (echo leaked>%2) else (echo clean>%2)\r\n");
+            var windowsOutput = output.Replace('/', '\\');
+            return (
+                Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                ["/d", "/c", scriptPath.Replace('/', '\\'), variableName, windowsOutput],
+                scriptPath);
+        }
+
+        const string unixScriptPath = "tools/environment-probe.sh";
+        workspace.WriteText(
+            unixScriptPath,
+            "if printenv \"$1\" >/dev/null 2>&1; then printf leaked > \"$2\"; else printf clean > \"$2\"; fi\n");
+        return (
+            "/bin/sh",
+            [unixScriptPath, variableName, output],
+            unixScriptPath);
     }
 
     private static string FormatEidosList(IEnumerable<string> values) =>
