@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Eidosc.BuildSystem;
+using Eidosc.CodeGen;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Tests.Fixtures;
@@ -690,15 +691,53 @@ public sealed class EidosBuildHostTests
         }
     }
 
+    [Fact]
+    public async Task RunAsync_CrossTargetBuildsKeepHostExecutionAndTargetIdentitySeparate()
+    {
+        using var workspace = TestTempWorkspace.Create("eidos_build_cross_target");
+        var input = workspace.WriteText("tools/Generated.eidos", "Generated :: type { Ready }\n");
+        var (toolPath, arguments) = CreateCopyCommand(
+            "tools/Generated.eidos",
+            "build/generated/Generated.eidos");
+        var program = workspace.WriteText("build.eidos", CreateGraphProgram(arguments, target: "main"));
+        var configuration = CreateConfiguration(workspace, program, input, toolPath);
+
+        var windowsTarget = await EidosBuildHost.RunAsync(CreateOptions(
+            workspace,
+            configuration,
+            targetTriple: TargetInfo.X86_64Windows.Triple));
+        var linuxTarget = await EidosBuildHost.RunAsync(CreateOptions(
+            workspace,
+            configuration,
+            targetTriple: TargetInfo.Arm64Linux.Triple));
+
+        Assert.True(windowsTarget.Success, FormatDiagnostics(windowsTarget));
+        Assert.True(linuxTarget.Success, FormatDiagnostics(linuxTarget));
+        Assert.Equal(windowsTarget.HostTriple, linuxTarget.HostTriple);
+        Assert.Equal(TargetInfo.X86_64Windows.Triple, windowsTarget.TargetTriple);
+        Assert.Equal(TargetInfo.Arm64Linux.Triple, linuxTarget.TargetTriple);
+        Assert.Equal(windowsTarget.TargetTriple, windowsTarget.Graph!.TargetTriple);
+        Assert.Equal(linuxTarget.TargetTriple, linuxTarget.Graph!.TargetTriple);
+        Assert.NotEqual(windowsTarget.Graph.CanonicalHash, linuxTarget.Graph.CanonicalHash);
+        Assert.NotEqual(windowsTarget.CacheFingerprint, linuxTarget.CacheFingerprint);
+        Assert.False(windowsTarget.Execution!.CacheHit);
+        Assert.False(linuxTarget.Execution!.CacheHit);
+        Assert.Equal(
+            Assert.Single(windowsTarget.Execution.Outputs).Sha256,
+            Assert.Single(linuxTarget.Execution.Outputs).Sha256);
+    }
+
     private static EidosBuildHostOptions CreateOptions(
         TestTempWorkspace workspace,
         EidosBuildConfiguration configuration,
-        bool releaseProfile = false) => new()
+        bool releaseProfile = false,
+        string? targetTriple = null) => new()
         {
             ProjectDirectory = workspace.Root,
             Configuration = configuration,
             LanguageVersion = EidosLanguageVersions.Current,
             TargetName = "main",
+            TargetTriple = targetTriple ?? TargetInfo.Default.Triple,
             TraceBuild = true,
             UseCache = true,
             ReleaseProfile = releaseProfile,
