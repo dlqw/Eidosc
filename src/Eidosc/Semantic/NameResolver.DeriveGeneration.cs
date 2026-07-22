@@ -165,21 +165,6 @@ public sealed partial class NameResolver
         CollectDeclaration(instance);
     }
 
-    private static string? NormalizeBuiltinDeriveTraitName(string name)
-    {
-        var trimmed = name.Trim();
-        return trimmed switch
-        {
-            "Eq" => "Eq",
-            "Show" => "Show",
-            "Ord" => "Ord",
-            "Hash" => "Hash",
-            "Clone" => "Clone",
-            "Copy" => "Copy",
-            _ => null
-        };
-    }
-
     private static bool ContainsEffectfulTypeNode(TypeNode type)
     {
         return type switch

@@ -1822,7 +1822,11 @@ public sealed partial class NameResolver
         }
 
         var traitName = string.Join(WellKnownStrings.Separators.Path, invocation.Invocation.GeneratorPath);
-        if (NormalizeBuiltinDeriveTraitName(traitName) is not { } normalizedTrait)
+        if (!CompilerMetaProtocolRegistry.TryClassifyBuiltinDerive(
+                traitName,
+                out var protocol,
+                out var normalizedTrait) ||
+            protocol.Kind != CompilerMetaProtocolKind.Derive)
         {
             AddError(invocation.Invocation.Span, DiagnosticMessages.DeriveUnsupportedTrait(traitName));
             return;

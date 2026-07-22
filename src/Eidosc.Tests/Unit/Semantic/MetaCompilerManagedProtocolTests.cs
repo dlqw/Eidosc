@@ -40,6 +40,39 @@ build_pass :: comptime build.Inputs -> build.Graph { _ => build.graph(build.emit
         AssertProtocol(module, symbolTable, "build_pass", CompilerMetaProtocolKind.BuildHost);
     }
 
+    [Theory]
+    [InlineData("Eq")]
+    [InlineData("Show")]
+    [InlineData("Ord")]
+    [InlineData("Hash")]
+    [InlineData("Clone")]
+    [InlineData("Copy")]
+    public void Protocol_registry_classifies_builtin_and_user_derive_through_one_kind(string traitName)
+    {
+        Assert.True(CompilerMetaProtocolRegistry.TryClassifyBuiltinDerive(
+            traitName,
+            out var builtin,
+            out var normalizedTrait));
+        Assert.Equal(CompilerMetaProtocolKind.Derive, builtin.Kind);
+        Assert.Equal(ClauseStage.Semantic, builtin.EarliestStage);
+        Assert.Equal(traitName, normalizedTrait);
+
+        const string source = "derive_pass :: comptime meta.Type -> meta.Items { _ => [] }";
+        var result = Compile(source, CompilationPhase.Namer);
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        AssertProtocol(module, symbolTable, "derive_pass", builtin.Kind);
+    }
+
+    [Fact]
+    public void Protocol_registry_rejects_unknown_builtin_derive()
+    {
+        Assert.False(CompilerMetaProtocolRegistry.TryClassifyBuiltinDerive(
+            "Unknown",
+            out _,
+            out _));
+    }
+
     [Fact]
     public void Legacy_target_transformation_and_query_fixture_is_rejected()
     {

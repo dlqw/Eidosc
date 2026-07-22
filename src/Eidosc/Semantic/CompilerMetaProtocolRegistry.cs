@@ -22,6 +22,33 @@ internal sealed record CompilerMetaProtocolMatch(
 
 internal static class CompilerMetaProtocolRegistry
 {
+    private static readonly IReadOnlyDictionary<string, string> BuiltinDeriveTraits =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Eq"] = "Eq",
+            ["Show"] = "Show",
+            ["Ord"] = "Ord",
+            ["Hash"] = "Hash",
+            ["Clone"] = "Clone",
+            ["Copy"] = "Copy"
+        };
+
+    public static bool TryClassifyBuiltinDerive(
+        string traitName,
+        out CompilerMetaProtocolMatch match,
+        out string normalizedTrait)
+    {
+        if (BuiltinDeriveTraits.TryGetValue(traitName.Trim(), out normalizedTrait!))
+        {
+            match = new CompilerMetaProtocolMatch(CompilerMetaProtocolKind.Derive, ClauseStage.Semantic);
+            return true;
+        }
+
+        match = null!;
+        normalizedTrait = string.Empty;
+        return false;
+    }
+
     public static bool TryClassify(
         FuncDef function,
         int explicitArgumentCount,
