@@ -3,8 +3,8 @@
   "component": "eidosc",
   "version": "0.4.0-alpha.3",
   "language": {
-    "default": "0.6.0-alpha.1",
-    "supported": ">=0.6.0-alpha.1 <0.7.0"
+    "default": "0.7.0-alpha.1",
+    "supported": ">=0.7.0-alpha.1 <0.8.0"
   },
   "manifestSchemas": [3],
   "stdlib": "0.1.0-alpha.1",
