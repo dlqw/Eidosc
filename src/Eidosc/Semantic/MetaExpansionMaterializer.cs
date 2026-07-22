@@ -918,7 +918,12 @@ internal sealed class MetaExpansionMaterializer(
                 return false;
             }
 
-            declarations.AddRange(materialized.Select(static item => (Declaration)item.Node));
+            foreach (var item in materialized)
+            {
+                var generatedDeclaration = (Declaration)item.Node;
+                PromotePublishedDeclarationIdentity(generatedDeclaration);
+                declarations.Add(generatedDeclaration);
+            }
         }
 
         module.SetSpan(_invocationSpan);
@@ -926,6 +931,43 @@ internal sealed class MetaExpansionMaterializer(
         module.SetDeclarations(declarations);
         reason = string.Empty;
         return true;
+    }
+
+    private static void PromotePublishedDeclarationIdentity(Declaration declaration)
+    {
+        if (declaration.AttachedSyntaxIdentity is not
+            {
+                Kind: SyntaxIdentityKind.Hygiene,
+                StableIdentity.Length: > 0
+            } bindingIdentity)
+        {
+            return;
+        }
+
+        var pending = new Stack<EidosAstNode>();
+        var visited = new HashSet<EidosAstNode>(ReferenceEqualityComparer.Instance);
+        pending.Push(declaration);
+        while (pending.TryPop(out var node))
+        {
+            if (!visited.Add(node))
+            {
+                continue;
+            }
+
+            if (node.AttachedSyntaxIdentity is
+                {
+                    Kind: SyntaxIdentityKind.Hygiene
+                } identity &&
+                string.Equals(identity.StableIdentity, bindingIdentity.StableIdentity, StringComparison.Ordinal))
+            {
+                node.AttachSyntaxIdentity(identity with { Kind = SyntaxIdentityKind.Identifier });
+            }
+
+            foreach (var child in AstStableNodeTraversal.GetStructuralChildren(node))
+            {
+                pending.Push(child);
+            }
+        }
     }
 
     private bool TryCreateComptimeValue(

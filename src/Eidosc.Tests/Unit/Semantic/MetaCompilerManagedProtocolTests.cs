@@ -883,12 +883,33 @@ main :: Unit -> Int { _ => 0 }
             Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<ModuleDecl>(),
             static module => module.Path.SequenceEqual(["Generated", "Schema"]));
         Assert.NotEmpty(generated.GeneratedOriginChain);
-        Assert.Single(generated.Declarations.OfType<FuncDef>(), static function => function.Name == "answer");
+        var generatedFunction = Assert.Single(
+            generated.Declarations.OfType<FuncDef>(),
+            static function => function.Name == "answer");
+        Assert.True(generatedFunction.SymbolId.IsValid, "generated function has no symbol");
+        var generatedSymbol = Assert.IsType<SymbolTable>(result.SymbolTable)
+            .GetSymbol(generatedFunction.SymbolId);
+        Assert.Equal("answer", generatedSymbol?.Name);
+        Assert.NotNull(generatedSymbol?.GeneratedOrigin);
         var snapshot = IdeSemanticSnapshotBuilder.Build(result);
+        Assert.Contains(
+            snapshot.Symbols,
+            symbol => symbol.SymbolId == generatedFunction.SymbolId.Value && symbol.IsGenerated);
         Assert.Contains(
             snapshot.GeneratedDocuments,
             document => document.TargetIdentity.Contains("module", StringComparison.OrdinalIgnoreCase) ||
                         document.Content.Contains("answer", StringComparison.Ordinal));
+        var completion = Assert.Single(snapshot.Completions, static item => item.Label == "answer" && item.IsGenerated);
+        Assert.Equal("Unit -> Int", completion.TypeText);
+        var hoverSymbol = Assert.Single(
+            snapshot.Symbols,
+            symbol => symbol.SymbolId == generatedFunction.SymbolId.Value && symbol.IsGenerated);
+        Assert.Equal("Unit -> Int", hoverSymbol.TypeText);
+        Assert.NotNull(hoverSymbol.GeneratedOrigin);
+        var definition = Assert.Single(
+            snapshot.Occurrences,
+            occurrence => occurrence.SymbolId == generatedFunction.SymbolId.Value && occurrence.Role == "definition");
+        Assert.Equal(snapshot.GeneratedDocuments.Single().Uri, definition.Span.FilePath);
     }
 
     [Fact]
