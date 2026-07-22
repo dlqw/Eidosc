@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
@@ -233,6 +234,66 @@ Subject :: type {}
     }
 
     [Fact]
+    public void Typed_derive_generated_identity_is_deterministic_and_includes_explicit_arguments()
+    {
+        const string sourceTemplate = """
+generate_answer :: comptime Int -> meta.Type -> meta.Items {
+    answer => _ => [meta.function("generated_answer", [], Int, meta.expr_int(answer))]
+}
+
+@[expand(generate_answer(ARGUMENT))]
+Subject :: type {}
+""";
+
+        var first = Compile(sourceTemplate.Replace("ARGUMENT", "1", StringComparison.Ordinal), CompilationPhase.Types);
+        var repeated = Compile(sourceTemplate.Replace("ARGUMENT", "1", StringComparison.Ordinal), CompilationPhase.Types);
+        var changed = Compile(sourceTemplate.Replace("ARGUMENT", "2", StringComparison.Ordinal), CompilationPhase.Types);
+
+        Assert.True(first.Success, FormatDiagnostics(first));
+        Assert.True(repeated.Success, FormatDiagnostics(repeated));
+        Assert.True(changed.Success, FormatDiagnostics(changed));
+        var firstOrigin = GetGeneratedFunctionOrigin(first, "generated_answer");
+        var repeatedOrigin = GetGeneratedFunctionOrigin(repeated, "generated_answer");
+        var changedOrigin = GetGeneratedFunctionOrigin(changed, "generated_answer");
+        Assert.Equal(firstOrigin.CanonicalArgumentsHash, repeatedOrigin.CanonicalArgumentsHash);
+        Assert.Equal(firstOrigin.GenerationSlotIdentity, repeatedOrigin.GenerationSlotIdentity);
+        Assert.Equal(firstOrigin.StableIdentity, repeatedOrigin.StableIdentity);
+        Assert.NotEqual(firstOrigin.CanonicalArgumentsHash, changedOrigin.CanonicalArgumentsHash);
+        Assert.Equal(firstOrigin.GenerationSlotIdentity, changedOrigin.GenerationSlotIdentity);
+        Assert.NotEqual(firstOrigin.StableIdentity, changedOrigin.StableIdentity);
+    }
+
+    [Fact]
+    public void Typed_derive_generated_origin_round_trips_through_symbol_cache_payload()
+    {
+        const string source = """
+derive_answer :: comptime meta.Type -> meta.Items {
+    _ => [meta.function("generated_answer", [], Int, meta.expr_int(42))]
+}
+
+@[expand(derive_answer)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var generated = Assert.Single(
+            symbolTable.Symbols.Values.OfType<FuncSymbol>(),
+            static symbol => symbol.Name == "generated_answer" && symbol.GeneratedOrigin != null);
+        var payload = SymbolPayload.Create(generated);
+        var restored = JsonSerializer.Deserialize<SymbolPayload>(JsonSerializer.Serialize(payload));
+        var originalOrigin = Assert.IsType<GeneratedDeclarationOrigin>(generated.GeneratedOrigin);
+        var restoredOrigin = Assert.IsType<GeneratedDeclarationOriginPayload>(restored?.GeneratedOrigin);
+        Assert.Equal(originalOrigin.StableIdentity, restoredOrigin.StableIdentity);
+        Assert.Equal(originalOrigin.GenerationSlotIdentity, restoredOrigin.GenerationSlotIdentity);
+        Assert.Equal(originalOrigin.CanonicalArgumentsHash, restoredOrigin.CanonicalArgumentsHash);
+        Assert.Equal(originalOrigin.VirtualDocumentPath, restoredOrigin.VirtualDocumentPath);
+        Assert.Equal(originalOrigin.MetaSchemaVersion, restoredOrigin.MetaSchemaVersion);
+    }
+
+    [Fact]
     public void Typed_quote_rejects_non_syntax_splice_in_item_slot()
     {
         const string source = """
@@ -363,6 +424,15 @@ Subject :: type {}
             CompilerMetaProtocolRegistry.TryClassify(function, 0, symbolTable, out var protocol, out var reason),
             reason);
         Assert.Equal(expected, protocol.Kind);
+    }
+
+    private static GeneratedDeclarationOrigin GetGeneratedFunctionOrigin(CompilationResult result, string name)
+    {
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var function = Assert.Single(
+            symbolTable.Symbols.Values.OfType<FuncSymbol>(),
+            symbol => symbol.Name == name && symbol.GeneratedOrigin != null);
+        return Assert.IsType<GeneratedDeclarationOrigin>(function.GeneratedOrigin);
     }
 
     private static string FormatDiagnostics(CompilationResult result) =>
