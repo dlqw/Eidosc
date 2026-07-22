@@ -726,6 +726,66 @@ main :: Unit -> Int { _ => 0 }
     }
 
     [Fact]
+    public void Package_analyzer_emits_structured_diagnostic_with_fix()
+    {
+        const string source = """
+check_package :: comptime meta.Package -> Seq[meta.Diagnostic] {
+    _ => [meta.diagnostic_with_fix(
+        "warning",
+        meta.span_of(meta.declaration_of(Subject)),
+        "package analyzer finding",
+        meta.fix(meta.span_of(meta.declaration_of(Subject)), "main"))]
+}
+
+Subject :: type {}
+main :: Unit -> Int { _ => 0 }
+""";
+
+        var result = Compile(source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Checks = ["check_package"]
+            };
+        });
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var diagnostic = Assert.Single(result.Diagnostics, static candidate => candidate.Code == "W3632");
+        Assert.Equal("package analyzer finding", diagnostic.Message);
+        var fix = Assert.Single(diagnostic.Suggestions);
+        Assert.Equal("main", fix.Replacement);
+        Assert.True(fix.Span.HasValue);
+        Assert.EndsWith("meta-compiler-managed.eidos", fix.Span.Value.FilePath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Package_analyzer_rejects_emit_protocol_without_mutating_package()
+    {
+        const string source = """
+mutate_package :: comptime meta.Package -> meta.Items {
+    _ => [meta.function("forbidden", [], Int, meta.expr_int(1))]
+}
+
+main :: Unit -> Int { _ => 0 }
+""";
+
+        var result = Compile(source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Checks = ["mutate_package"]
+            };
+        });
+
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3630" &&
+            diagnostic.Message.Contains("compiler-managed package protocol", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "forbidden");
+    }
+
+    [Fact]
     public void Package_extension_emits_typed_generated_module_with_high_level_constructor()
     {
         const string source = """
