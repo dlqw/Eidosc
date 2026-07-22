@@ -726,6 +726,71 @@ main :: Unit -> Int { _ => 0 }
     }
 
     [Fact]
+    public void Package_extension_reads_only_declared_resources_and_invalidates_generated_identity()
+    {
+        const string source = """
+generate_resource :: comptime meta.Package -> meta.Items {
+    package => {
+        resources := meta.resources_of(package);
+        resource := resources[0];
+        [meta.function(meta.resource_content_of(resource), [], Int, meta.expr_int(1))]
+    }
+}
+
+main :: Unit -> Int { _ => 0 }
+""";
+
+        static EidosMetaConfiguration Configuration(string content, string contentHash, bool allowResourceRead) => new()
+        {
+            Extensions =
+            [
+                new EidosMetaExtensionConfiguration
+                {
+                    Name = "resource",
+                    Entry = "generate_resource",
+                    Capabilities = allowResourceRead ? ["read-declared-resources", "emit-items"] : ["emit-items"],
+                    Resources =
+                    [
+                        new EidosMetaResourceConfiguration
+                        {
+                            DeclaredInput = "schema/name.txt",
+                            RelativePath = "schema/name.txt",
+                            Content = content,
+                            ContentHash = contentHash,
+                            Exists = true
+                        }
+                    ]
+                }
+            ]
+        };
+
+        var first = Compile(source, options =>
+            options.MetaConfiguration = Configuration("first_generated", "hash-first", allowResourceRead: true));
+        var changed = Compile(source, options =>
+            options.MetaConfiguration = Configuration("second_generated", "hash-second", allowResourceRead: true));
+        var denied = Compile(source, options =>
+            options.MetaConfiguration = Configuration("forbidden_generated", "hash-denied", allowResourceRead: false));
+
+        Assert.True(first.Success, FormatDiagnostics(first));
+        Assert.True(changed.Success, FormatDiagnostics(changed));
+        Assert.Contains(
+            Assert.IsType<ModuleDecl>(first.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "first_generated");
+        Assert.Contains(
+            Assert.IsType<ModuleDecl>(changed.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "second_generated");
+        Assert.NotEqual(
+            GetGeneratedFunctionOrigin(first, "first_generated").StableIdentity,
+            GetGeneratedFunctionOrigin(changed, "second_generated").StableIdentity);
+        Assert.Contains(denied.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3631" &&
+            diagnostic.Message.Contains("read-declared-resources", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            Assert.IsType<ModuleDecl>(denied.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "forbidden_generated");
+    }
+
+    [Fact]
     public void Package_analyzer_emits_structured_diagnostic_with_fix()
     {
         const string source = """

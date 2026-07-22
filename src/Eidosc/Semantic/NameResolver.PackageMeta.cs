@@ -196,12 +196,16 @@ public sealed partial class NameResolver
             Declarations: _declarationsBySymbol,
             QueryAccess: access,
             DefinitionSiteResolver: CreateDefinitionSiteSyntaxResolver(generatorModuleId));
-        if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
+        if (!TryCreatePackageProtocolInput(
+                stage,
+                capabilities,
+                resources,
+                context,
+                out var input,
+                out reason))
         {
-            reason = "package meta protocol requires a root module";
             return false;
         }
-        ComptimeValue input = MetaComptimeIntrinsics.CreatePackageHandle(rootModule);
 
         if (!ComptimeEvaluator.TryInvoke(
                 generator,
@@ -223,6 +227,70 @@ public sealed partial class NameResolver
         }
 
         pendingUserDiagnostics = pending;
+        return true;
+    }
+
+    private bool TryCreatePackageProtocolInput(
+        ClauseStage stage,
+        IReadOnlyList<string> capabilities,
+        IReadOnlyList<EidosMetaResourceConfiguration> resources,
+        MetaComptimeContext context,
+        out ComptimeMetaObjectValue input,
+        out string reason)
+    {
+        input = null!;
+        if (_symbolTable.Modules.GetModule(_rootModule) is not { } rootModule)
+        {
+            reason = "package meta protocol requires a root module";
+            return false;
+        }
+
+        var package = MetaComptimeIntrinsics.CreatePackageHandle(rootModule);
+        if (!MetaComptimeIntrinsics.TryCreateScopeForPackageProtocol(package, context, out var scope, out reason))
+        {
+            return false;
+        }
+
+        var resourceValues = resources.Select(resource => (ComptimeValue)new ComptimeMetaObjectValue(
+            "resource",
+            [
+                new ComptimeNamedValue("declaredInput", new ComptimeStringValue(resource.DeclaredInput)),
+                new ComptimeNamedValue("path", new ComptimeStringValue(resource.RelativePath)),
+                new ComptimeNamedValue("exists", new ComptimeBoolValue(resource.Exists)),
+                new ComptimeNamedValue("content", new ComptimeStringValue(resource.Content ?? string.Empty)),
+                new ComptimeNamedValue("contentHash", new ComptimeStringValue(resource.ContentHash))
+            ])
+        {
+            StaticType = MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.Resource,
+                WellKnownTypeIds.MetaResourceId)
+        }).ToArray();
+        var capabilityValues = capabilities
+            .Select(static capability => (ComptimeValue)new ComptimeStringValue(capability))
+            .ToArray();
+
+        package.TryGet("identity", out var identity);
+        package.TryGet("name", out var name);
+        input = new ComptimeMetaObjectValue(
+            "package-handle",
+            [
+                new ComptimeNamedValue("identity", identity),
+                new ComptimeNamedValue("name", name),
+                new ComptimeNamedValue("scope", scope),
+                new ComptimeNamedValue("stage", new ComptimeStringValue(stage.ToString().ToLowerInvariant())),
+                new ComptimeNamedValue(
+                    "capabilities",
+                    new ComptimeSequenceValue(ComptimeSequenceKind.List, capabilityValues)),
+                new ComptimeNamedValue(
+                    "resources",
+                    new ComptimeSequenceValue(ComptimeSequenceKind.List, resourceValues))
+            ])
+        {
+            StaticType = MetaSchemaRegistry.MetaType(
+                WellKnownStrings.Meta.Types.Package,
+                WellKnownTypeIds.MetaPackageId)
+        };
+        reason = string.Empty;
         return true;
     }
 

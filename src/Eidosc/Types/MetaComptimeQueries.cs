@@ -309,14 +309,6 @@ internal static partial class MetaComptimeIntrinsics
             return Fail("meta.package_of expects one module or declaration entity", out value, out reason);
         }
 
-        if (arguments[0] is ComptimeMetaObjectValue { SchemaKind: "package-query" } query &&
-            query.TryGet("package", out var queryPackage))
-        {
-            value = queryPackage;
-            reason = string.Empty;
-            return true;
-        }
-
         if (arguments[0] is ComptimeMetaObjectValue { SchemaKind: "package-handle" } package)
         {
             value = package;
@@ -340,8 +332,8 @@ internal static partial class MetaComptimeIntrinsics
         out string reason)
     {
         if (arguments.Count != 1 ||
-            arguments[0] is not ComptimeMetaObjectValue { SchemaKind: "package-query" } query ||
-            !query.TryGet("capabilities", out var capabilityValue) ||
+            arguments[0] is not ComptimeMetaObjectValue { SchemaKind: "package-handle" } package ||
+            !package.TryGet("capabilities", out var capabilityValue) ||
             capabilityValue is not ComptimeSequenceValue capabilities ||
             !capabilities.Elements.OfType<ComptimeStringValue>()
                 .Any(static capability => capability.Value == "read-declared-resources"))
@@ -352,7 +344,7 @@ internal static partial class MetaComptimeIntrinsics
                 out reason);
         }
 
-        if (!query.TryGet("resources", out value))
+        if (!package.TryGet("resources", out value))
         {
             return Fail("package query has no declared resource set", out value, out reason);
         }
@@ -1150,7 +1142,7 @@ internal static partial class MetaComptimeIntrinsics
             ("name", new ComptimeStringValue(module.PackageAlias ?? "current"))
         ]);
 
-    internal static bool TryCreateScopeForPackageQuery(
+    internal static bool TryCreateScopeForPackageProtocol(
         ComptimeMetaObjectValue package,
         MetaComptimeContext meta,
         out ComptimeMetaObjectValue scope,
@@ -1225,8 +1217,8 @@ internal static partial class MetaComptimeIntrinsics
             return true;
         }
 
-        if (value is ComptimeMetaObjectValue { SchemaKind: "package-query" } query &&
-            query.TryGet("scope", out var scopeValue) &&
+        if (value is ComptimeMetaObjectValue { SchemaKind: "package-handle" } package &&
+            package.TryGet("scope", out var scopeValue) &&
             scopeValue is ComptimeMetaObjectValue { SchemaKind: "scope" } queryScope)
         {
             scope = queryScope;

@@ -132,6 +132,7 @@ internal static class MetaSchemaRegistry
         new("calls_from", 1),
         new("callers_of", 2),
         new("implementations_of", 2),
+        new("resources_of", 1),
         new("resource_path_of", 1),
         new("resource_content_of", 1),
         new("resource_exists", 1),
@@ -347,6 +348,7 @@ internal static class MetaSchemaRegistry
             or "syntax_of" or "arguments_of" or "module_of" or "package_of" or "workspace_of"
             or "modules_of" or "imports_of" or "exports_of" or "body_of" or "nodes_of"
             or "value_of" or "calls_from"
+            or "resources_of"
             or "resource_path_of" or "resource_content_of" or "resource_exists" or "resource_hash_of"
             or "site_of" or "origin_of"
             => argumentIndex == 0,
@@ -432,6 +434,7 @@ internal static class MetaSchemaRegistry
             "syntax_of" or "arguments_of" or "module_of" or "package_of" or "workspace_of" or
                 "modules_of" or "imports_of" or "exports_of" or "body_of" or "nodes_of" or
                 "value_of" or "calls_from" => [any],
+            "resources_of" => [package],
             "resource_path_of" or "resource_content_of" or "resource_exists" or "resource_hash_of" => [resource],
             "references_to" or "callers_of" or "implementations_of" =>
                 [substitution.FreshTypeVariable(), substitution.FreshTypeVariable()],
@@ -513,6 +516,7 @@ internal static class MetaSchemaRegistry
             "references_to" => ListOf(symbolTable, referenceInfo),
             "calls_from" or "callers_of" => ListOf(symbolTable, callInfo),
             "implementations_of" => ListOf(symbolTable, implementationInfo),
+            "resources_of" => ListOf(symbolTable, resource),
             "resource_path_of" or "resource_content_of" or "resource_hash_of" => BaseTypes.String,
             "resource_exists" => BaseTypes.Bool,
             "effects_of" or "constraints_of" => ListOf(symbolTable, BaseTypes.String),

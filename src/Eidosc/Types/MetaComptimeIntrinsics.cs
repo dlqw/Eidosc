@@ -167,7 +167,7 @@ internal static partial class MetaComptimeIntrinsics
             "join_type_of" or "syntax_of" or "arguments_of" or "module_of" or "package_of" or
             "workspace_of" or "modules_of" or "imports_of" or "exports_of" or "body_of" or
             "nodes_of" or "value_of" or "references_to" or "calls_from" or "callers_of" or
-            "implementations_of" or "declaration_of" => "query",
+            "implementations_of" or "resources_of" or "declaration_of" => "query",
             "resource_path_of" or "resource_content_of" or "resource_exists" or "resource_hash_of" => "query",
             "error" or "warning" or "diagnostic" => "diagnostic",
             "identifier" or "site_of" or "resolve_at" or "origin_of" or "parse_items" or "parse_expr" => "syntax",
