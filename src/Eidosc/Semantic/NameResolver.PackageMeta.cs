@@ -419,6 +419,14 @@ public sealed partial class NameResolver
         {
             return false;
         }
+        if (!TryValidateGeneratedModuleDeclarationCollisions(
+                _rootModule,
+                modules,
+                replacedSymbols: null,
+                out reason))
+        {
+            return false;
+        }
         foreach (var (moduleId, declarations) in itemsByModule)
         {
             var targetModule = itemTargets[moduleId];
@@ -426,6 +434,14 @@ public sealed partial class NameResolver
                 .Select((declaration, index) => new MaterializedMetaNode(declaration, index))
                 .ToArray();
             if (!TryValidateGeneratedMembers(targetModule, itemNodes, out reason))
+            {
+                return false;
+            }
+            if (!TryValidateGeneratedModuleDeclarationCollisions(
+                    moduleId,
+                    declarations,
+                    replacedSymbols: null,
+                    out reason))
             {
                 return false;
             }

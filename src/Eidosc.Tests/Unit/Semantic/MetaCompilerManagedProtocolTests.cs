@@ -851,6 +851,85 @@ main :: Unit -> Int { _ => 0 }
     }
 
     [Fact]
+    public void Package_extension_rejects_item_batch_that_would_mutate_existing_declaration()
+    {
+        const string source = """
+emit_conflict :: comptime meta.Package -> meta.Items {
+    _ => [
+        meta.function("fresh_generated", [], Int, meta.expr_int(1)),
+        meta.function("main", [], Int, meta.expr_int(2))
+    ]
+}
+
+main :: Unit -> Int { _ => 0 }
+""";
+
+        var result = Compile(source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Extensions =
+                [
+                    new EidosMetaExtensionConfiguration
+                    {
+                        Name = "conflict",
+                        Entry = "emit_conflict"
+                    }
+                ]
+            };
+        });
+
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3631" &&
+            diagnostic.Message.Contains("main", StringComparison.Ordinal) &&
+            diagnostic.Message.Contains("collides", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "fresh_generated");
+    }
+
+    [Fact]
+    public void Package_extension_rejects_generated_module_that_would_replace_existing_module()
+    {
+        const string source = """
+emit_conflict :: comptime meta.Package -> meta.Modules {
+    _ => [meta.module("Existing", quote items {
+        forbidden :: Unit -> Int { _ => 1 }
+    })]
+}
+
+Existing :: module {
+    keep :: Unit -> Int { _ => 0 }
+}
+""";
+
+        var result = Compile(source, options =>
+        {
+            options.MetaConfiguration = new EidosMetaConfiguration
+            {
+                Extensions =
+                [
+                    new EidosMetaExtensionConfiguration
+                    {
+                        Name = "module-conflict",
+                        Entry = "emit_conflict"
+                    }
+                ]
+            };
+        });
+
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3631" &&
+            diagnostic.Message.Contains("Existing", StringComparison.Ordinal) &&
+            diagnostic.Message.Contains("collides", StringComparison.Ordinal));
+        var existing = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<ModuleDecl>(),
+            static module => module.Path.SequenceEqual(["Existing"]));
+        Assert.Contains(existing.Declarations.OfType<FuncDef>(), static function => function.Name == "keep");
+        Assert.DoesNotContain(existing.Declarations.OfType<FuncDef>(), static function => function.Name == "forbidden");
+    }
+
+    [Fact]
     public void Package_extension_emits_typed_generated_module_with_high_level_constructor()
     {
         const string source = """

@@ -565,6 +565,11 @@ public sealed partial class NameResolver
             .Where(symbol => replacedSymbols == null || !replacedSymbols.Contains(symbol.Id))
             .GroupBy(static symbol => symbol.Name, StringComparer.Ordinal)
             .ToDictionary(static group => group.Key, static group => group.ToArray(), StringComparer.Ordinal);
+        var existingFunctionIds = existingByName.Values
+            .SelectMany(static symbols => symbols)
+            .OfType<FuncSymbol>()
+            .Select(static function => function.Id)
+            .ToHashSet();
         var prospectiveByName = new Dictionary<string, List<Declaration>>(StringComparer.Ordinal);
         var overloadKeys = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
@@ -602,12 +607,17 @@ public sealed partial class NameResolver
                 if (!overloadKeys.TryGetValue(name, out var keys))
                 {
                     keys = new HashSet<string>(StringComparer.Ordinal);
-                    if (_symbolTable.CurrentScope is { } scope &&
-                        _functionOverloadDeclarations.TryGetValue(scope, out var byName) &&
-                        byName.TryGetValue(name, out var overloads))
+                    foreach (var byName in _functionOverloadDeclarations.Values)
                     {
+                        if (!byName.TryGetValue(name, out var overloads))
+                        {
+                            continue;
+                        }
+
                         keys.UnionWith(overloads
-                            .Where(overload => replacedSymbols == null || !replacedSymbols.Contains(overload.SymbolId))
+                            .Where(overload =>
+                                existingFunctionIds.Contains(overload.SymbolId) &&
+                                (replacedSymbols == null || !replacedSymbols.Contains(overload.SymbolId)))
                             .Select(static overload => overload.SignatureKey));
                     }
                     overloadKeys[name] = keys;
@@ -619,7 +629,7 @@ public sealed partial class NameResolver
                     function.TypeParams);
                 if (!keys.Add(signature))
                 {
-                    reason = $"generated function '{name}' duplicates an existing overload '{signature}'";
+                    reason = $"generated function '{name}' collides with an existing overload '{signature}'";
                     return false;
                 }
             }
