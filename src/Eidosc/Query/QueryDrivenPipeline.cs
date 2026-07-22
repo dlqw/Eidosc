@@ -33,6 +33,7 @@ public sealed partial class QueryDrivenPipeline
     private readonly Dictionary<CompilationPhase, long> _phaseAllocations = new();
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
     private readonly IDictionary<string, (string Stamp, string SourceText)> _importSourceCache;
+    private readonly IReadOnlyDictionary<string, (string Stamp, string SourceText)> _sourceOverlays;
     private readonly ComptimeExecutionOptions _comptimeExecution;
     private readonly HashSet<string> _compilerOwnedSourcePaths = new(StringComparer.OrdinalIgnoreCase);
 
@@ -69,6 +70,18 @@ public sealed partial class QueryDrivenPipeline
         QueryEngine? sharedEngine,
         IDictionary<string, (string Stamp, string SourceText)>? importSourceCache,
         CancellationToken cancellationToken)
+        : this(sourcePath, sourceText, options, sharedEngine, importSourceCache, null, cancellationToken)
+    {
+    }
+
+    public QueryDrivenPipeline(
+        string sourcePath,
+        string sourceText,
+        CompilationOptions options,
+        QueryEngine? sharedEngine,
+        IDictionary<string, (string Stamp, string SourceText)>? importSourceCache,
+        IReadOnlyDictionary<string, (string Stamp, string SourceText)>? sourceOverlays,
+        CancellationToken cancellationToken)
     {
         _sourcePath = sourcePath;
         _sourceText = sourceText;
@@ -76,6 +89,7 @@ public sealed partial class QueryDrivenPipeline
         _comptimeExecution = ComptimeExecutionOptions.Create(options);
         _cancellationToken = cancellationToken;
         _importSourceCache = importSourceCache ?? new Dictionary<string, (string Stamp, string SourceText)>(StringComparer.OrdinalIgnoreCase);
+        _sourceOverlays = sourceOverlays ?? new Dictionary<string, (string Stamp, string SourceText)>(StringComparer.OrdinalIgnoreCase);
         _compilerOwnedSourcePaths.UnionWith(options.ToolchainOwnedSourcePaths);
         if (CompilerOwnedSourceGrant.IsVerifiedStdlibSource(sourcePath, sourceText))
         {
@@ -1000,6 +1014,12 @@ public sealed partial class QueryDrivenPipeline
     {
         var absolutePath = Path.GetFullPath(filePath);
         var normalizedPath = SourcePathNormalizer.NormalizeForCacheKey(absolutePath);
+        if (_sourceOverlays.TryGetValue(normalizedPath, out var overlay))
+        {
+            _importSourceCache[normalizedPath] = overlay;
+            return overlay.SourceText;
+        }
+
         var fileInfo = new FileInfo(absolutePath);
         var fingerprint = $"{fileInfo.LastWriteTimeUtc.Ticks}:{fileInfo.Length}";
         if (_importSourceCache.TryGetValue(normalizedPath, out var cached) &&

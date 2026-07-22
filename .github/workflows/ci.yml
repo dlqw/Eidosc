@@ -74,6 +74,14 @@ jobs:
           /p:UseSharedCompilation=false
           /nr:false
 
+      - name: Run LSP performance gate
+        run: >
+          dotnet test Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          --no-build
+          --filter "FullyQualifiedName~LspPerformanceGateTests"
+          /p:UseSharedCompilation=false
+          /nr:false
+
       - name: Run performance profile gate
         if: runner.os == 'Windows'
         shell: pwsh

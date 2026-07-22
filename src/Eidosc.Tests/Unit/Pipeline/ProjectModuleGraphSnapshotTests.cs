@@ -7,6 +7,23 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public sealed class ProjectModuleGraphSnapshotTests
 {
     [Fact]
+    public void DependencyGraph_TransitiveDependencies_FollowsForwardImportClosure()
+    {
+        var graph = new ModuleDependencyGraph();
+        graph.AddDependency("App", "Feature");
+        graph.AddDependency("Feature", "Core");
+        graph.AddDependency("Unrelated", "Core");
+
+        var dependencies = graph.GetTransitiveDependencies(["App"]);
+
+        Assert.Equal(3, dependencies.Count);
+        Assert.Contains("App", dependencies);
+        Assert.Contains("Feature", dependencies);
+        Assert.Contains("Core", dependencies);
+        Assert.DoesNotContain("Unrelated", dependencies);
+    }
+
+    [Fact]
     public void FromDependencyGraph_BuildsTopologicalLayers()
     {
         var graph = new ModuleDependencyGraph();

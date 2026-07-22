@@ -20,8 +20,7 @@ public sealed class LspServer : IDisposable
         LspSemanticMapper.SnapshotIndex Index,
         int Version,
         string ContentHash,
-        string DependencyFingerprint,
-        DependencyStamp DependencyStamp,
+        DependencyState DependencyState,
         SnapshotDerivedCache DerivedCache);
 
     private sealed class SnapshotDerivedCache
@@ -59,10 +58,11 @@ public sealed class LspServer : IDisposable
         }
     }
 
-    private readonly record struct DependencyStamp(
-        int DirectoryChangeStamp,
-        int OpenDocumentStamp,
-        string DirectFileFingerprint);
+    private readonly record struct DependencyStamp(string RelevantInputFingerprint);
+
+    private sealed record DependencyState(
+        DependencyStamp Stamp,
+        IReadOnlyDictionary<string, string> ImportedSourceFingerprints);
 
     private readonly Stream _input;
     private readonly Stream _output;
@@ -77,11 +77,10 @@ public sealed class LspServer : IDisposable
     private readonly PipelineQuerySession _querySession = new();
     private readonly Dictionary<string, SnapshotEntry> _snapshots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, object> _snapshotBuildLocks = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, LspProjectWorkspaceState> _workspaceStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CancellationTokenSource> _diagnosticCancellations = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Task> _diagnosticTasks = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeSpan _diagnosticDebounce;
-    private int _openDocumentStamp;
+    private readonly LspPerformanceMetrics _performanceMetrics = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -266,7 +265,7 @@ public sealed class LspServer : IDisposable
         var version = textDoc.GetProperty("version").GetInt32();
 
         _documents.OpenDocument(uri, text, version);
-        BumpOpenDocumentStamp();
+        UpdateSourceOverlayAndInvalidate(uri, text, version);
         ScheduleDiagnostics(uri, text, version, ct);
     }
 
@@ -294,7 +293,7 @@ public sealed class LspServer : IDisposable
         }
 
         _documents.UpdateDocument(uri, text, version);
-        BumpOpenDocumentStamp();
+        UpdateSourceOverlayAndInvalidate(uri, text, version);
         ScheduleDiagnostics(uri, text, version, ct);
     }
 
@@ -303,9 +302,7 @@ public sealed class LspServer : IDisposable
         var textDoc = message.GetProperty("params").GetProperty("textDocument");
         var uri = textDoc.GetProperty("uri").GetString() ?? "";
         _documents.CloseDocument(uri);
-        BumpOpenDocumentStamp();
-        InvalidateDocumentDependencyRoots(uri);
-        _querySession.InvalidateSource(UriToFilePath(uri));
+        RemoveSourceOverlayAndInvalidate(uri);
         CancelPendingDiagnostics(uri);
         lock (_snapshotLock)
         {
@@ -520,42 +517,53 @@ public sealed class LspServer : IDisposable
 
     private SnapshotEntry? GetOrCompileSnapshotEntry(string uri)
     {
-        if (!_documents.TryGetDocument(uri, out var document) || document == null)
+        var accessStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
         {
-            return null;
-        }
-
-        var buildLock = GetSnapshotBuildLock(uri);
-        lock (buildLock)
-        {
-            var dependencyStamp = CreateDependencyStamp(uri);
-            if (TryGetCurrentSnapshotEntry(uri, document.Version, document.ContentHash, dependencyStamp, out var cached))
+            if (!_documents.TryGetDocument(uri, out var document) || document == null)
             {
-                return cached;
+                return null;
             }
 
-            var dependencyFingerprint = CreateDependencyFingerprint(uri);
-            var compiled = CompileDocument(uri, document.Text, document.Version);
-            var compiledEntry = new SnapshotEntry(
-                compiled,
-                new LspSemanticMapper.SnapshotIndex(compiled),
-                document.Version,
-                document.ContentHash,
-                dependencyFingerprint,
-                dependencyStamp,
-                new SnapshotDerivedCache());
-            if (_documents.TryGetDocument(uri, out var currentDocument) &&
-                currentDocument != null &&
-                currentDocument.Version == document.Version &&
-                string.Equals(currentDocument.ContentHash, document.ContentHash, StringComparison.Ordinal))
+            var buildLock = GetSnapshotBuildLock(uri);
+            lock (buildLock)
             {
-                lock (_snapshotLock)
+                var dependencyState = CreateDependencyState(uri);
+                if (TryGetCurrentSnapshotEntry(uri, document.Version, document.ContentHash, dependencyState.Stamp, out var cached))
                 {
-                    _snapshots[uri] = compiledEntry;
+                    _performanceMetrics.RecordCacheHit();
+                    return cached;
                 }
-            }
 
-            return compiledEntry;
+                InvalidateChangedImportedSources(uri, dependencyState);
+                var compiled = CompileDocument(uri, document.Text, document.Version);
+                _performanceMetrics.RecordCompile();
+                dependencyState = CreateDependencyState(uri);
+                var compiledEntry = new SnapshotEntry(
+                    compiled,
+                    new LspSemanticMapper.SnapshotIndex(compiled),
+                    document.Version,
+                    document.ContentHash,
+                    dependencyState,
+                    new SnapshotDerivedCache());
+                if (_documents.TryGetDocument(uri, out var currentDocument) &&
+                    currentDocument != null &&
+                    currentDocument.Version == document.Version &&
+                    string.Equals(currentDocument.ContentHash, document.ContentHash, StringComparison.Ordinal))
+                {
+                    lock (_snapshotLock)
+                    {
+                        _snapshots[uri] = compiledEntry;
+                    }
+                }
+
+                return compiledEntry;
+            }
+        }
+        finally
+        {
+            _performanceMetrics.RecordSnapshotAccess(
+                System.Diagnostics.Stopwatch.GetElapsedTime(accessStarted));
         }
     }
 
@@ -586,7 +594,7 @@ public sealed class LspServer : IDisposable
             if (_snapshots.TryGetValue(uri, out var current) &&
                 current.Version == version &&
                 string.Equals(current.ContentHash, contentHash, StringComparison.Ordinal) &&
-                current.DependencyStamp == dependencyStamp)
+                current.DependencyState.Stamp == dependencyStamp)
             {
                 entry = current;
                 return true;
@@ -597,11 +605,68 @@ public sealed class LspServer : IDisposable
         return false;
     }
 
-    private void BumpOpenDocumentStamp()
+    private void InvalidateChangedImportedSources(string uri, DependencyState currentState)
     {
-        unchecked
+        SnapshotEntry? previous;
+        lock (_snapshotLock)
         {
-            Interlocked.Increment(ref _openDocumentStamp);
+            _snapshots.TryGetValue(uri, out previous);
+        }
+
+        if (previous == null)
+        {
+            return;
+        }
+
+        var previousFingerprints = previous.DependencyState.ImportedSourceFingerprints;
+        foreach (var sourcePath in previousFingerprints.Keys
+                     .Concat(currentState.ImportedSourceFingerprints.Keys)
+                     .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal))
+        {
+            previousFingerprints.TryGetValue(sourcePath, out var previousFingerprint);
+            currentState.ImportedSourceFingerprints.TryGetValue(sourcePath, out var currentFingerprint);
+            if (!string.Equals(previousFingerprint, currentFingerprint, StringComparison.Ordinal))
+            {
+                _querySession.InvalidateSource(sourcePath);
+            }
+        }
+    }
+
+    private void UpdateSourceOverlayAndInvalidate(string uri, string text, int version)
+    {
+        var filePath = UriToFilePath(uri);
+        var affected = _querySession.GetAffectedModules(filePath);
+        _querySession.SetSourceOverlay(filePath, text, version);
+        _querySession.InvalidateSource(filePath);
+        InvalidateSnapshots(affected);
+    }
+
+    internal LspPerformanceSnapshot GetPerformanceSnapshot() =>
+        _performanceMetrics.CreateSnapshot(_dependencyFingerprintCache.DirectoryScanCount);
+
+    private void RemoveSourceOverlayAndInvalidate(string uri)
+    {
+        var filePath = UriToFilePath(uri);
+        var affected = _querySession.GetAffectedModules(filePath);
+        _querySession.RemoveSourceOverlay(filePath);
+        _querySession.InvalidateSource(filePath);
+        InvalidateSnapshots(affected);
+    }
+
+    private void InvalidateSnapshots(IReadOnlySet<string> affectedSourcePaths)
+    {
+        var comparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var affected = new HashSet<string>(affectedSourcePaths, comparer);
+        lock (_snapshotLock)
+        {
+            foreach (var uri in _snapshots.Keys
+                         .Where(uri => affected.Contains(SourcePathNormalizer.Normalize(UriToFilePath(uri))))
+                         .ToArray())
+            {
+                _snapshots.Remove(uri);
+            }
         }
     }
 
@@ -716,197 +781,52 @@ public sealed class LspServer : IDisposable
         await PublishDiagnosticsAsync(uri, snapshotEntry.DerivedCache.GetDiagnostics(snapshotEntry.Snapshot), version, ct);
     }
 
-    private string CreateDependencyFingerprint(string uri)
+    private DependencyState CreateDependencyState(string uri)
     {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         var builder = new System.Text.StringBuilder();
+        var importedSourceFingerprints = new Dictionary<string, string>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var filePath = UriToFilePath(uri);
-
-        AppendOpenDocumentFingerprints(builder, uri);
-        AppendFileFingerprint(builder, filePath);
 
         var project = EidosProjectConfigurationLoader.TryLoadNearest(filePath);
         if (project != null)
         {
             AppendFileFingerprint(builder, project.FilePath);
             AppendFileFingerprint(builder, Path.Combine(project.ProjectDirectory, "eidos.lock.json"));
-            AppendDirectoryFingerprints(builder, project.Configuration.SourceRoots, project.ProjectDirectory);
-            AppendDirectoryFingerprints(builder, project.Configuration.ImportRoots, project.ProjectDirectory);
             AppendBuildDependencyFingerprints(builder, project);
         }
 
-        try
+        foreach (var importedSourcePath in _querySession.GetImportedSourcePaths(filePath)
+                     .Order(StringComparer.Ordinal))
         {
-            var inputResolution = ResolveLspDocumentInput(filePath);
-            var workspaceState = GetOrCreateWorkspaceState(filePath, inputResolution);
-            var searchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
-                              inputResolution.ImportResolution.EffectiveSearchRoots;
-            builder.Append("workspace:");
-            builder.AppendLine(workspaceState.Key);
-            builder.Append("workspace-files:");
-            builder.AppendLine(workspaceState.IndexedFiles.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            builder.Append("stdlib-image:");
-            builder.AppendLine(workspaceState.StdlibImageFingerprint);
-            AppendDirectoryFingerprints(builder, searchRoots, Directory.GetCurrentDirectory());
-
-            if (inputResolution.ProjectTarget?.PackageImportRoots is { Count: > 0 } packageImportRoots)
+            builder.Append("import:");
+            builder.AppendLine(importedSourcePath);
+            string fingerprint;
+            if (_querySession.TryGetSourceOverlayStamp(importedSourcePath, out var overlayStamp))
             {
-                foreach (var roots in packageImportRoots.Values)
-                {
-                    AppendDirectoryFingerprints(builder, roots, Directory.GetCurrentDirectory());
-                }
+                fingerprint = overlayStamp;
             }
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
-        {
-            builder.Append("resolution-error:");
-            builder.AppendLine(ex.Message);
+            else
+            {
+                fingerprint = CreateFileFingerprint(importedSourcePath);
+            }
+
+            importedSourceFingerprints[importedSourcePath] = fingerprint;
+            builder.AppendLine(fingerprint);
         }
 
-        AppendDirectoryFingerprints(builder, _importRoots, Path.GetDirectoryName(Path.GetFullPath(filePath)) ?? Directory.GetCurrentDirectory());
+        var stamp = new DependencyStamp(builder.ToString());
+        _performanceMetrics.RecordDependencyFingerprint(
+            System.Diagnostics.Stopwatch.GetElapsedTime(started));
+        return new DependencyState(stamp, importedSourceFingerprints);
+    }
+
+    private static string CreateFileFingerprint(string filePath)
+    {
+        var builder = new System.Text.StringBuilder();
+        AppendFileFingerprint(builder, filePath);
         return builder.ToString();
-    }
-
-    private DependencyStamp CreateDependencyStamp(string uri)
-    {
-        var builder = new System.Text.StringBuilder();
-        var filePath = UriToFilePath(uri);
-        AppendFileFingerprint(builder, filePath);
-
-        var project = EidosProjectConfigurationLoader.TryLoadNearest(filePath);
-        if (project != null)
-        {
-            AppendFileFingerprint(builder, project.FilePath);
-            AppendFileFingerprint(builder, Path.Combine(project.ProjectDirectory, "eidos.lock.json"));
-            AppendBuildDependencyFingerprints(builder, project);
-        }
-
-        return new DependencyStamp(
-            _dependencyFingerprintCache.ChangeStamp,
-            Volatile.Read(ref _openDocumentStamp),
-            builder.ToString());
-    }
-
-    private LspProjectWorkspaceState GetOrCreateWorkspaceState(string filePath, ProjectCommandInputResolution inputResolution)
-    {
-        var packageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                 new Dictionary<string, string[]>(StringComparer.Ordinal);
-        var candidate = LspProjectWorkspaceState.Create(
-            filePath,
-            inputResolution,
-            packageImportRoots,
-            _importRoots,
-            _dependencyFingerprintCache);
-        lock (_snapshotLock)
-        {
-            if (_workspaceStates.TryGetValue(candidate.Key, out var existing))
-            {
-                return existing;
-            }
-
-            _workspaceStates[candidate.Key] = candidate;
-            return candidate;
-        }
-    }
-
-    private void AppendOpenDocumentFingerprints(System.Text.StringBuilder builder, string currentUri)
-    {
-        foreach (var (documentUri, document) in _documents.GetOpenDocuments()
-                     .OrderBy(static entry => entry.Uri, StringComparer.OrdinalIgnoreCase))
-        {
-            if (string.Equals(documentUri, currentUri, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            builder.Append("open:");
-            builder.Append(documentUri);
-            builder.Append(':');
-            builder.Append(document.Version);
-            builder.Append(':');
-            builder.AppendLine(document.ContentHash);
-        }
-    }
-
-    private void InvalidateDocumentDependencyRoots(string uri)
-    {
-        var filePath = UriToFilePath(uri);
-        lock (_snapshotLock)
-        {
-            _workspaceStates.Clear();
-        }
-
-        try
-        {
-            var project = EidosProjectConfigurationLoader.TryLoadNearest(filePath);
-            if (project != null)
-            {
-                foreach (var root in project.Configuration.SourceRoots)
-                {
-                    _dependencyFingerprintCache.InvalidateDirectory(root, project.ProjectDirectory);
-                }
-
-                foreach (var root in project.Configuration.ImportRoots)
-                {
-                    _dependencyFingerprintCache.InvalidateDirectory(root, project.ProjectDirectory);
-                }
-
-                foreach (var input in project.Configuration.Build?.FileInputs ?? [])
-                {
-                    if (Directory.Exists(input))
-                    {
-                        _dependencyFingerprintCache.InvalidateDirectory(input, project.ProjectDirectory);
-                    }
-                }
-            }
-
-            var inputResolution = ResolveLspDocumentInput(filePath);
-            var baseDirectory = Path.GetDirectoryName(Path.GetFullPath(filePath)) ?? Directory.GetCurrentDirectory();
-            foreach (var root in inputResolution.ProjectTarget?.EffectiveSearchRoots ??
-                                  inputResolution.ImportResolution.EffectiveSearchRoots)
-            {
-                _dependencyFingerprintCache.InvalidateDirectory(root, Directory.GetCurrentDirectory());
-            }
-
-            if (inputResolution.ProjectTarget?.PackageImportRoots is { Count: > 0 } packageImportRoots)
-            {
-                foreach (var roots in packageImportRoots.Values)
-                {
-                    foreach (var root in roots)
-                    {
-                        _dependencyFingerprintCache.InvalidateDirectory(root, Directory.GetCurrentDirectory());
-                    }
-                }
-            }
-
-            foreach (var root in _importRoots)
-            {
-                _dependencyFingerprintCache.InvalidateDirectory(root, baseDirectory);
-            }
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                _dependencyFingerprintCache.InvalidateDirectory(directory);
-            }
-        }
-    }
-
-    private void AppendDirectoryFingerprints(
-        System.Text.StringBuilder builder,
-        IEnumerable<string>? roots,
-        string baseDirectory)
-    {
-        if (roots == null)
-        {
-            return;
-        }
-
-        foreach (var root in roots.Where(static root => !string.IsNullOrWhiteSpace(root)))
-        {
-            builder.Append(_dependencyFingerprintCache.GetDirectoryFingerprint(root, baseDirectory));
-        }
     }
 
     private static void AppendFileFingerprint(System.Text.StringBuilder builder, string filePath)
