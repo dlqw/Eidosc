@@ -57,6 +57,7 @@ public sealed record EidosBuildHostResult(
     EidosBuildGraphExecutionResult? Execution,
     IReadOnlyList<EidosBuildDependency> Dependencies,
     EidosBuildProvenance? Provenance,
+    EidosBuildSbom? Sbom,
     IReadOnlyList<EidosBuildCapabilityTrace> CapabilityTrace,
     IReadOnlyList<ComptimeTraceEntry> ComptimeTrace,
     IReadOnlyList<string> GeneratedSourceFiles,
@@ -615,6 +616,14 @@ public static class EidosBuildHost
                 dependencies,
                 execution.Outputs)
             : null;
+        var sbom = execution?.Success == true && graph != null
+            ? EidosBuildSbom.Create(
+                options.TargetName,
+                programHash,
+                graph,
+                dependencies,
+                execution.Outputs)
+            : null;
         return new EidosBuildHostResult(
             Success: execution?.Success == true && diagnostics.All(static diagnostic => diagnostic.Level != DiagnosticLevel.Error),
             ProgramPath: programPath,
@@ -626,6 +635,7 @@ public static class EidosBuildHost
             Execution: execution,
             Dependencies: dependencies,
             Provenance: provenance,
+            Sbom: sbom,
             CapabilityTrace: context.Accesses.Select(static access => new EidosBuildCapabilityTrace(
                 access.Sequence,
                 access.Kind,
@@ -654,6 +664,7 @@ public static class EidosBuildHost
             Execution: null,
             Dependencies: [],
             Provenance: null,
+            Sbom: null,
             CapabilityTrace: [],
             ComptimeTrace: [],
             GeneratedSourceFiles: [],

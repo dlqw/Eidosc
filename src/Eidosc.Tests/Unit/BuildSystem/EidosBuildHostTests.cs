@@ -758,6 +758,39 @@ public sealed class EidosBuildHostTests
         Assert.Equal(cleanProvenance.ToCanonicalJson(), cachedProvenance.ToCanonicalJson());
     }
 
+    [Fact]
+    public async Task RunAsync_EmitsDeterministicCycloneDxSbomForMaterialsAndOutputs()
+    {
+        using var workspace = TestTempWorkspace.Create("eidos_build_sbom");
+        var input = workspace.WriteText("tools/Generated.eidos", "Generated :: type { Ready }\n");
+        var (toolPath, arguments) = CreateCopyCommand(
+            "tools/Generated.eidos",
+            "build/generated/Generated.eidos");
+        var program = workspace.WriteText("build.eidos", CreateGraphProgram(arguments, target: "main"));
+        var configuration = CreateConfiguration(workspace, program, input, toolPath);
+
+        var clean = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration));
+        var cached = await EidosBuildHost.RunAsync(CreateOptions(workspace, configuration));
+
+        Assert.True(clean.Success, FormatDiagnostics(clean));
+        Assert.True(cached.Success, FormatDiagnostics(cached));
+        var cleanSbom = Assert.IsType<EidosBuildSbom>(clean.Sbom);
+        var cachedSbom = Assert.IsType<EidosBuildSbom>(cached.Sbom);
+        Assert.Equal(EidosBuildSbom.CycloneDxFormat, cleanSbom.Format);
+        Assert.Equal(EidosBuildSbom.CycloneDxSpecVersion, cleanSbom.SpecVersion);
+        Assert.StartsWith("urn:uuid:", cleanSbom.SerialNumber, StringComparison.Ordinal);
+        Assert.Contains(cleanSbom.Components, static component =>
+            component.Kind == "file" && component.Name == "tools/Generated.eidos" && component.Role == "material");
+        Assert.Contains(cleanSbom.Components, static component =>
+            component.Kind == "tool" && component.Name == "copy" && component.Role == "material");
+        Assert.Contains(cleanSbom.Components, static component =>
+            component.Kind == "output" && component.Name == "build/generated/Generated.eidos" && component.Role == "subject");
+        Assert.Equal(cleanSbom.CanonicalHash, cachedSbom.CanonicalHash);
+        var cleanJson = cleanSbom.ToCanonicalJson();
+        Assert.Contains("\"bom-ref\":", cleanJson, StringComparison.Ordinal);
+        Assert.Equal(cleanJson, cachedSbom.ToCanonicalJson());
+    }
+
     private static EidosBuildHostOptions CreateOptions(
         TestTempWorkspace workspace,
         EidosBuildConfiguration configuration,
