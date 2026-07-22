@@ -1032,6 +1032,63 @@ use :: Int -> Int { x => LibB.one(x) }
     }
 
     [Fact]
+    public void SourceOverlay_UsesUnsavedImportedContentAndReportsExactImportClosure()
+    {
+        using var workspace = TemporaryWorkspace.Create();
+        var entryFile = workspace.WriteFile("Main.eidos", """
+import Lib
+
+main :: Unit -> Int
+{
+    _ => Lib.parse("ok")
+}
+""");
+        var libFile = workspace.WriteFile("Lib.eidos", """
+Lib :: module {
+    export parse :: Int -> Int { value => value }
+}
+""");
+        var unrelatedFile = workspace.WriteFile("Other.eidos", """
+Other :: module {
+    export value :: 1;
+}
+""");
+        const string unsavedLib = """
+Lib :: module {
+    export parse :: Int -> Int { value => value }
+    export parse :: String -> Int { _ => 2 }
+}
+""";
+
+        var session = new PipelineQuerySession();
+        session.SetSourceOverlay(libFile, unsavedLib, documentVersion: 2);
+        var options = CreateWorkspaceOptions(entryFile, workspace.Root);
+        options.StopAtPhase = CompilationPhase.Types;
+
+        var withOverlay = session.Compile(entryFile, File.ReadAllText(entryFile), options);
+
+        Assert.True(withOverlay.Success, FormatDiagnostics(withOverlay));
+        var importedSources = session.GetImportedSourcePaths(entryFile);
+        Assert.True(
+            importedSources.Contains(
+                NormalizeQueryPath(libFile),
+                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal),
+            $"Expected {NormalizeQueryPath(libFile)} in: {string.Join(", ", importedSources)}");
+        Assert.DoesNotContain(
+            importedSources,
+            path => string.Equals(
+                path,
+                NormalizeQueryPath(unrelatedFile),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+
+        session.RemoveSourceOverlay(libFile);
+        session.InvalidateSource(libFile);
+        var fromDisk = session.Compile(entryFile, File.ReadAllText(entryFile), options);
+
+        Assert.False(fromDisk.Success);
+    }
+
+    [Fact]
     public void Recompile_Invalidates_CallSites_When_Local_Overload_Group_Changes()
     {
         var session = new PipelineQuerySession();

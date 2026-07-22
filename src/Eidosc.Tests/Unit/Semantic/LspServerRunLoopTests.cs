@@ -137,6 +137,52 @@ public sealed class LspServerRunLoopTests
     }
 
     [Fact]
+    public async Task RunAsync_UnrelatedOpenDocumentChange_DoesNotInvalidateCurrentSnapshot()
+    {
+        using var input = new MemoryStream();
+        using var output = new MemoryStream();
+        var currentUri = new Uri(Path.GetFullPath("current_snapshot.eidos")).AbsoluteUri;
+        var unrelatedUri = new Uri(Path.GetFullPath("unrelated_snapshot.eidos")).AbsoluteUri;
+        using var openCurrent = CreateDidOpen(currentUri, 1, "value :: 1;");
+        using var hoverCurrent = CreateHover(currentUri, 2);
+        using var openUnrelated = CreateDidOpen(unrelatedUri, 1, "other :: 1;");
+        using var changeUnrelated = CreateDidChange(unrelatedUri, 2, "other :: 2;");
+        using var shutdown = JsonDocument.Parse("""{"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}""");
+        using var exit = JsonDocument.Parse("""{"jsonrpc":"2.0","method":"exit","params":null}""");
+
+        await JsonRpc.WriteMessageAsync(input, openCurrent.RootElement);
+        await JsonRpc.WriteMessageAsync(input, hoverCurrent.RootElement);
+        await JsonRpc.WriteMessageAsync(input, openUnrelated.RootElement);
+        await JsonRpc.WriteMessageAsync(input, changeUnrelated.RootElement);
+        await JsonRpc.WriteMessageAsync(input, hoverCurrent.RootElement);
+        await JsonRpc.WriteMessageAsync(input, shutdown.RootElement);
+        await JsonRpc.WriteMessageAsync(input, exit.RootElement);
+        input.Position = 0;
+
+        var compileCount = 0;
+        using var server = new LspServer(
+            input,
+            output,
+            [],
+            compileDocumentOverride: (path, _) =>
+            {
+                Interlocked.Increment(ref compileCount);
+                return new IdeSemanticSnapshot
+                {
+                    Success = true,
+                    InputFile = path,
+                    CompletedPhase = "types"
+                };
+            },
+            diagnosticDebounce: TimeSpan.FromMinutes(5));
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await server.RunAsync(timeout.Token);
+
+        Assert.Equal(1, compileCount);
+    }
+
+    [Fact]
     public async Task RunAsync_EofWithPendingDiagnostics_DoesNotHang()
     {
         using var input = new MemoryStream();
@@ -492,4 +538,48 @@ version = "0.7.0-alpha.1"
         var action = Assert.Single(response.Value.GetProperty("result").EnumerateArray());
         Assert.Equal("Rename Acme.Core to acme.core", action.GetProperty("title").GetString());
     }
+
+    private static JsonDocument CreateDidOpen(string uri, int version, string text) =>
+        JsonDocument.Parse($$"""
+        {
+          "jsonrpc": "2.0",
+          "method": "textDocument/didOpen",
+          "params": {
+            "textDocument": {
+              "uri": {{JsonSerializer.Serialize(uri)}},
+              "languageId": "eidos",
+              "version": {{version}},
+              "text": {{JsonSerializer.Serialize(text)}}
+            }
+          }
+        }
+        """);
+
+    private static JsonDocument CreateDidChange(string uri, int version, string text) =>
+        JsonDocument.Parse($$"""
+        {
+          "jsonrpc": "2.0",
+          "method": "textDocument/didChange",
+          "params": {
+            "textDocument": {
+              "uri": {{JsonSerializer.Serialize(uri)}},
+              "version": {{version}}
+            },
+            "contentChanges": [{ "text": {{JsonSerializer.Serialize(text)}} }]
+          }
+        }
+        """);
+
+    private static JsonDocument CreateHover(string uri, int id) =>
+        JsonDocument.Parse($$"""
+        {
+          "jsonrpc": "2.0",
+          "id": {{id}},
+          "method": "textDocument/hover",
+          "params": {
+            "textDocument": { "uri": {{JsonSerializer.Serialize(uri)}} },
+            "position": { "line": 0, "character": 0 }
+          }
+        }
+        """);
 }

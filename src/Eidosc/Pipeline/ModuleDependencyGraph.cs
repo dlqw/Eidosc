@@ -7,9 +7,12 @@ namespace Eidosc.Pipeline;
 /// </summary>
 public sealed class ModuleDependencyGraph
 {
+    private static readonly StringComparer SourcePathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
     private readonly Dictionary<string, HashSet<string>> _forwardEdges = new(StringComparer.Ordinal);
     private readonly Dictionary<string, HashSet<string>> _reverseEdges = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string> _moduleKeysBySourcePath = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _moduleKeysBySourcePath = new(SourcePathComparer);
     private readonly Dictionary<string, HashSet<string>> _sourcePathsByModuleKey = new(StringComparer.Ordinal);
 
     public void RegisterModuleIdentity(string sourcePath, string moduleKey)
@@ -36,7 +39,7 @@ public sealed class ModuleDependencyGraph
         _moduleKeysBySourcePath[sourcePath] = moduleKey;
         if (!_sourcePathsByModuleKey.TryGetValue(moduleKey, out var sourcePaths))
         {
-            sourcePaths = new HashSet<string>(StringComparer.Ordinal);
+            sourcePaths = new HashSet<string>(SourcePathComparer);
             _sourcePathsByModuleKey[moduleKey] = sourcePaths;
         }
 
@@ -147,6 +150,33 @@ public sealed class ModuleDependencyGraph
         }
 
         return affected;
+    }
+
+    /// <summary>
+    /// 计算依赖闭包：从给定模块集合出发，返回它们及其传递导入的模块。
+    /// </summary>
+    public HashSet<string> GetTransitiveDependencies(IEnumerable<string> modules)
+    {
+        var dependencies = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<string>();
+
+        foreach (var module in modules)
+        {
+            if (dependencies.Add(module))
+                queue.Enqueue(module);
+        }
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var dependency in GetDependencies(current))
+            {
+                if (dependencies.Add(dependency))
+                    queue.Enqueue(dependency);
+            }
+        }
+
+        return dependencies;
     }
 
     /// <summary>

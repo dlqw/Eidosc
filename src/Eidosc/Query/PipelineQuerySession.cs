@@ -8,11 +8,15 @@ namespace Eidosc.Query;
 
 public sealed class PipelineQuerySession
 {
+    private static readonly StringComparer SourcePathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
     private readonly Dictionary<string, QueryEngine> _engines = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CompilationResult> _results = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<CachedCompilationResult>> _resultHistory = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QueryInputIdentity> _inputIdentities = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Stamp, string SourceText)> _importSourceCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string Stamp, string SourceText)> _sourceOverlays = new(StringComparer.OrdinalIgnoreCase);
     private readonly ModuleDependencyGraph _importGraph = new();
     private const int MaxResultHistoryPerSource = 4;
 
@@ -71,7 +75,14 @@ public sealed class PipelineQuerySession
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var pipeline = new QueryDrivenPipeline(sourceKey, sourceText, options, engine, _importSourceCache, cancellationToken);
+        var pipeline = new QueryDrivenPipeline(
+            sourceKey,
+            sourceText,
+            options,
+            engine,
+            _importSourceCache,
+            _sourceOverlays,
+            cancellationToken);
         var result = pipeline.Run();
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -101,7 +112,7 @@ public sealed class PipelineQuerySession
 
         foreach (var dependent in ExpandGraphKeysToSourcePaths(affected))
         {
-            if (dependent == normalizedSourcePath) continue;
+            if (SourcePathComparer.Equals(dependent, normalizedSourcePath)) continue;
 
             if (_engines.TryGetValue(dependent, out var depEngine))
                 depEngine.InvalidateKey(dependent, DepKind.ParseModule);
@@ -117,6 +128,45 @@ public sealed class PipelineQuerySession
         var sourceKey = ResolveKnownModuleKey(NormalizeSessionSourcePath(sourcePath));
         var affectedKeys = _importGraph.GetTransitiveDependents([sourceKey]);
         return ExpandGraphKeysToSourcePaths(affectedKeys);
+    }
+
+    public IReadOnlySet<string> GetImportedSourcePaths(string sourcePath)
+    {
+        var normalizedSourcePath = NormalizeSessionSourcePath(sourcePath);
+        var sourceKey = ResolveKnownModuleKey(normalizedSourcePath);
+        var dependencyKeys = _importGraph.GetTransitiveDependencies([sourceKey]);
+        var sourcePaths = new HashSet<string>(
+            ExpandGraphKeysToSourcePaths(dependencyKeys),
+            SourcePathComparer);
+        sourcePaths.Remove(normalizedSourcePath);
+        return sourcePaths;
+    }
+
+    public void SetSourceOverlay(string sourcePath, string sourceText, long? documentVersion = null)
+    {
+        var normalizedSourcePath = NormalizeSessionSourcePath(sourcePath);
+        var contentHash = ContentHash.ComputeHash(sourceText);
+        var stamp = documentVersion.HasValue
+            ? $"overlay:{documentVersion.Value}:{contentHash}"
+            : $"overlay:{contentHash}";
+        _sourceOverlays[normalizedSourcePath] = (stamp, sourceText);
+    }
+
+    public void RemoveSourceOverlay(string sourcePath)
+    {
+        _sourceOverlays.Remove(NormalizeSessionSourcePath(sourcePath));
+    }
+
+    public bool TryGetSourceOverlayStamp(string sourcePath, out string stamp)
+    {
+        if (_sourceOverlays.TryGetValue(NormalizeSessionSourcePath(sourcePath), out var overlay))
+        {
+            stamp = overlay.Stamp;
+            return true;
+        }
+
+        stamp = string.Empty;
+        return false;
     }
 
     public bool IsUpToDate(string sourcePath, string sourceText)
@@ -152,6 +202,7 @@ public sealed class PipelineQuerySession
         _resultHistory.Clear();
         _inputIdentities.Clear();
         _importSourceCache.Clear();
+        _sourceOverlays.Clear();
         _importGraph.Clear();
     }
 
@@ -214,7 +265,7 @@ public sealed class PipelineQuerySession
 
     private IReadOnlySet<string> ExpandGraphKeysToSourcePaths(IEnumerable<string> graphKeys)
     {
-        var expanded = new HashSet<string>(StringComparer.Ordinal);
+        var expanded = new HashSet<string>(SourcePathComparer);
         foreach (var graphKey in graphKeys)
         {
             var sourcePaths = _importGraph.GetSourcePathsForModuleKey(graphKey);
