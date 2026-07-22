@@ -27,7 +27,10 @@ public sealed partial class CompilationPipeline
             };
             _options.BuildComptimeContext?.AttachSymbolTable(_symbolTable!);
             BuiltinTraits.RegisterBuiltinTraits(_symbolTable!);
-            CaptureTypesEntrySymbolState();
+            if (ShouldCreateModuleStatePayloads())
+            {
+                CaptureTypesEntrySymbolState();
+            }
         }
 
         bool inferSuccess;
@@ -49,7 +52,10 @@ public sealed partial class CompilationPipeline
             inferSuccess &= bodyStageSuccess;
             if (bodyStageSuccess && _nameResolver.LastMetaExpansionChanged)
             {
-                CaptureTypesEntrySymbolState();
+                if (ShouldCreateModuleStatePayloads())
+                {
+                    CaptureTypesEntrySymbolState();
+                }
                 using (MeasureSubphase(CompilationPhase.Types, "infer_after_meta_body"))
                 {
                     inferSuccess = _typeInferer.Infer(_ast!);

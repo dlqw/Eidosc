@@ -383,7 +383,10 @@ public sealed partial class NameResolver
 
         using (MeasurePass("discover_meta_syntax_sites"))
         {
-            ResolveProvisionalReferencesForSyntaxSites(module);
+            if (MayContainMetaSyntaxSite(module))
+            {
+                ResolveProvisionalReferencesForSyntaxSites(module);
+            }
         }
 
         using (MeasurePass("meta_syntax_sites"))
@@ -433,6 +436,76 @@ public sealed partial class NameResolver
         if (_diagnostics.Count > diagnosticCheckpoint)
         {
             _diagnostics.RemoveRange(diagnosticCheckpoint, _diagnostics.Count - diagnosticCheckpoint);
+        }
+    }
+
+    private bool MayContainMetaSyntaxSite(ModuleDecl root)
+    {
+        var scannedFiles = new HashSet<string>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (var module in _moduleDeclarations.Values.Append(root))
+        {
+            if (PrecompiledModuleRegistry.IsStdlibSourcePath(module.Span.FilePath) &&
+                PrecompiledModuleRegistry.TryGetSource(module.Path, out var precompiledSource))
+            {
+                if (precompiledSource.Contains("expand", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+                continue;
+            }
+
+            var filePath = module.Span.FilePath;
+            if (string.Equals(filePath, _rootInputFilePath, StringComparison.Ordinal))
+            {
+                if (_sourceText.Contains("expand", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return true;
+            }
+            if (!scannedFiles.Add(filePath))
+            {
+                continue;
+            }
+            if (!File.Exists(filePath))
+            {
+                return true;
+            }
+            if (FileContainsMetaSyntaxMarker(filePath))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool FileContainsMetaSyntaxMarker(string filePath)
+    {
+        ReadOnlySpan<byte> marker = "expand"u8;
+        Span<byte> buffer = stackalloc byte[4096];
+        var carry = 0;
+        using var stream = File.OpenRead(filePath);
+        while (true)
+        {
+            var read = stream.Read(buffer[carry..]);
+            var length = carry + read;
+            if (buffer[..length].IndexOf(marker) >= 0)
+            {
+                return true;
+            }
+            if (read == 0)
+            {
+                return false;
+            }
+
+            carry = Math.Min(marker.Length - 1, length);
+            buffer[(length - carry)..length].CopyTo(buffer);
         }
     }
 

@@ -63,15 +63,24 @@ public sealed partial class NameResolver
 
     private bool ProcessMetaExpansionStage(ModuleDecl root, ClauseStage stage)
     {
+        if (!_metaInvocationOccurrences.Any(occurrence => occurrence.Invocation.Stage == stage))
+        {
+            return false;
+        }
+
         var previousDiagnosticCount = _diagnostics.Count;
         var changed = false;
         var processedExpansionCount = 0;
         var generatedDeclarationCount = 0;
         var emittedDiagnosticCount = 0;
-        var canonicalGraphs = new HashSet<string>(StringComparer.Ordinal)
-        {
-            CreateMetaCanonicalGraphFingerprint(root)
-        };
+        var canonicalGraphs = _metaInvocationOccurrences.Any(occurrence =>
+                occurrence.Invocation.Stage == stage &&
+                occurrence.Invocation.Owner != MetaInvocationOwner.CompilerDerive)
+            ? new HashSet<string>(StringComparer.Ordinal)
+            {
+                CreateMetaCanonicalGraphFingerprint(root)
+            }
+            : null;
 
         for (var round = 1; round <= MaxMetaExpansionRoundCount; round++)
         {
@@ -85,6 +94,11 @@ public sealed partial class NameResolver
             if (!roundChanged || _diagnostics
                 .Skip(previousDiagnosticCount)
                 .Any(static diagnostic => diagnostic.Level == EidoscDiagnosticLevel.Error))
+            {
+                return changed;
+            }
+
+            if (canonicalGraphs == null)
             {
                 return changed;
             }
@@ -1986,9 +2000,33 @@ public sealed partial class NameResolver
             .Where(distinctModules.Add)
             .OrderBy(static module => string.Join(WellKnownStrings.Separators.Path, module.Path), StringComparer.Ordinal)
             .ThenBy(static module => module.Span.FilePath, StringComparer.Ordinal)
-            .ThenBy(static module => module.Span.Position)
-            .Select(module => module.ToXmlElement(document).OuterXml);
-        return HashIdentity(string.Join("\n", modules));
+            .ThenBy(static module => module.Span.Position);
+
+        using var sha256 = SHA256.Create();
+        using var hashStream = new CryptoStream(Stream.Null, sha256, CryptoStreamMode.Write);
+        using (var writer = XmlWriter.Create(
+                   hashStream,
+                   new XmlWriterSettings
+                   {
+                       Encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+                       OmitXmlDeclaration = true,
+                       ConformanceLevel = ConformanceLevel.Fragment,
+                       CloseOutput = false
+                   }))
+        {
+            var first = true;
+            foreach (var module in modules)
+            {
+                if (!first)
+                {
+                    writer.WriteRaw("\n");
+                }
+                module.ToXmlElement(document).WriteTo(writer);
+                first = false;
+            }
+        }
+        hashStream.FlushFinalBlock();
+        return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
     }
 
     private void AddNonConvergentMetaExpansionDiagnostic(
