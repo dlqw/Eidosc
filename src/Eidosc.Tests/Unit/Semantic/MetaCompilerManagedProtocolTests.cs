@@ -458,6 +458,105 @@ main :: Unit -> Int {
     }
 
     [Fact]
+    public void Syntax_expand_materializes_every_contextual_site_category()
+    {
+        var cases = new (string Name, string Source)[]
+        {
+            ("item", """
+make_item :: comptime meta.Syntax[meta.Item] -> meta.Syntax[meta.Item] {
+    _ => quote item { generated :: Unit -> Int { _ => 42 } }
+}
+expand make_item();
+"""),
+            ("member", """
+make_member :: comptime meta.Syntax[meta.Member] -> meta.Syntax[meta.Member] {
+    _ => quote member { generated :: Int }
+}
+Subject :: type { expand make_member(); }
+"""),
+            ("statement", """
+make_statement :: comptime meta.Syntax[meta.Stmt] -> meta.Syntax[meta.Stmt] {
+    _ => quote stmt { 20; }
+}
+answer :: Int = { expand make_statement(); 22 };
+"""),
+            ("expression", """
+make_expression :: comptime meta.Syntax[meta.Expr] -> meta.Syntax[meta.Expr] {
+    _ => quote expr { 42 }
+}
+answer :: Int = expand make_expression();
+"""),
+            ("pattern", """
+make_pattern :: comptime meta.Syntax[meta.Pattern] -> meta.Syntax[meta.Pattern] {
+    _ => quote pattern { _ }
+}
+is_zero :: Int -> Bool { expand make_pattern() => false }
+"""),
+            ("type", """
+make_type :: comptime meta.Syntax[meta.TypeSyntax] -> meta.Syntax[meta.TypeSyntax] {
+    _ => quote type { Int }
+}
+answer :: expand make_type() = 42;
+""")
+        };
+
+        foreach (var (name, source) in cases)
+        {
+            var result = Compile(source, CompilationPhase.Types);
+            Assert.True(result.Success, $"{name}: {FormatDiagnostics(result)}");
+        }
+    }
+
+    [Fact]
+    public void Syntax_expand_rejects_cross_category_protocol_without_partial_output()
+    {
+        const string source = """
+wrong_category :: comptime meta.Syntax[meta.Expr] -> meta.Syntax[meta.Pattern] {
+    _ => quote pattern { _ }
+}
+answer :: Int = expand wrong_category();
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Code == "E3620" &&
+            diagnostic.Message.Contains("wrong_category", StringComparison.Ordinal) &&
+            diagnostic.Message.Contains("meta.Syntax", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Body_expand_emits_origin_and_virtual_document_for_revalidated_body()
+    {
+        const string source = """
+replace_body :: comptime meta.Function -> meta.Function {
+    function => function.with_body(quote expr { 42 })
+}
+
+@[expand(replace_body)]
+work[T] :: Ref[T] -> Int {
+    _ => 1
+}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var work = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "work");
+        Assert.Single(work.TypeParams);
+        var body = Assert.IsType<LiteralExpr>(Assert.Single(work.Body).Expression);
+        var origin = Assert.Single(body.GeneratedOriginChain);
+        Assert.StartsWith("eidos-generated://", origin.VirtualDocumentPath, StringComparison.Ordinal);
+        Assert.Contains(
+            IdeSemanticSnapshotBuilder.Build(result).GeneratedDocuments,
+            document => document.Uri == origin.VirtualDocumentPath &&
+                        document.Content.Contains("42", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Package_extension_emits_typed_items_without_query_or_transformation_values()
     {
         const string source = """
