@@ -33,7 +33,7 @@ public sealed class EidosFormatterTests
         Assert.True(result.Success);
         Assert.Equal(
             """
-            result::items |> Seq.map({
+            result :: items |> Seq.map({
                 x => x + 1
             }) |> Seq.count;
 
@@ -51,7 +51,7 @@ public sealed class EidosFormatterTests
         Assert.True(result.Success);
         Assert.Equal(
             """
-            next::if new_dir == opposite(current) then current else new_dir;
+            next :: if new_dir == opposite(current) then current else new_dir;
 
             """.ReplaceLineEndings("\n"),
             result.FormattedText.ReplaceLineEndings("\n"));
@@ -100,7 +100,7 @@ public sealed class EidosFormatterTests
         Assert.True(result.Success);
         Assert.Equal(
             """
-            next::if ok
+            next :: if ok
             then
             {
                 x := 1;
@@ -117,7 +117,7 @@ public sealed class EidosFormatterTests
     {
         const string source =
             """
-            next::if ok
+            next :: if ok
             then
             {
                 x := 1;
@@ -131,7 +131,7 @@ public sealed class EidosFormatterTests
         Assert.True(result.Success);
         Assert.Equal(
             """
-            next::if ok
+            next :: if ok
             then
             {
                 x := 1;
@@ -153,7 +153,7 @@ public sealed class EidosFormatterTests
         Assert.True(result.Success);
         Assert.Equal(
             """
-            next::if ok then ready
+            next :: if ok then ready
             else
             {
                 x := 1;
@@ -207,18 +207,18 @@ public sealed class EidosFormatterTests
     [Fact]
     public void Format_Imports_PreservesLineBoundaries()
     {
-        const string source = "import Std.Option\nimport Std.Seq\nDirection :: type {North,South}";
+        const string source = "import std.Option\nimport std.Seq\nDirection :: type {North :: type {},South :: type {}}";
 
         var result = EidosFormatter.Format(source, options: NoValidation());
 
         Assert.True(result.Success);
         Assert.Equal(
             """
-            import Std.Option
-            import Std.Seq
+            import std.Option
+            import std.Seq
             Direction :: type {
-                North,
-                South
+                North :: type {},
+                South :: type {}
             }
 
             """.ReplaceLineEndings("\n"),
@@ -230,7 +230,7 @@ public sealed class EidosFormatterTests
     {
         const string source =
             """
-            Direction :: type { North, South }
+            Direction :: type { North :: type {}, South :: type {} }
             same :: Direction -> Direction -> Bool {
             North() => North() => true,
             South() => South() => true,
@@ -250,7 +250,7 @@ public sealed class EidosFormatterTests
     {
         const string source =
             """
-            Pos :: type { Pos { x: Int, y: Int } }
+            Pos :: type { x:: Int, y:: Int }
             make_pos :: Int -> Int -> Pos {
             x => y => Pos { x: x, y: y }
             }
@@ -307,6 +307,32 @@ public sealed class EidosFormatterTests
             string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
         Assert.Contains("Main :: module", result.FormattedText, StringComparison.Ordinal);
         Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void Format_InterleavedMetaClauses_PreservesObservableSourceOrder()
+    {
+        const string source = "@[derive(Eq), expand(inspect), derive(Show)] Subject :: type {}";
+
+        var result = EidosFormatter.Format(source, options: NameFirstValidation());
+
+        Assert.True(result.Success);
+        var deriveEq = result.FormattedText.IndexOf("derive(Eq)", StringComparison.Ordinal);
+        var expand = result.FormattedText.IndexOf("expand(inspect)", StringComparison.Ordinal);
+        var deriveShow = result.FormattedText.IndexOf("derive(Show)", StringComparison.Ordinal);
+        Assert.True(deriveEq >= 0 && deriveEq < expand && expand < deriveShow, result.FormattedText);
+    }
+
+    [Fact]
+    public void Format_ClauseBoundaryAfterClosedArgument_UsesSchemaSeparator()
+    {
+        const string source = "@[derive(Show)] Subject :: type where Eq[T] {}";
+
+        var result = EidosFormatter.Format(source, options: NoValidation());
+
+        Assert.True(result.Success);
+        Assert.Contains("where Eq[T]", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("@[derive(Show)]", result.FormattedText, StringComparison.Ordinal);
     }
 
     private static EidosFormatterOptions NoValidation() => new()

@@ -67,7 +67,8 @@ internal sealed class MirConstructorLayoutSpecializer(
             var specializedTypeName = BuildSpecializedTypeName(
                 ResolveConstructorDisplayName(tyCon.Constructor),
                 tyCon.TypeArgs,
-                tyCon.ValueArgs);
+                tyCon.ValueArgs,
+                tyCon.EffectArgs);
 
             foreach (var layout in baseMatch.Layouts)
             {
@@ -169,7 +170,8 @@ internal sealed class MirConstructorLayoutSpecializer(
                         .Select(static typeParameterId => new TypeId(typeParameterId.Value))
                         .ToArray())
                 {
-                    ValueArgs = existingTyCon.ValueArgs
+                    ValueArgs = existingTyCon.ValueArgs,
+                    EffectArgs = existingTyCon.EffectArgs
                 };
                 return true;
             }
@@ -282,9 +284,10 @@ internal sealed class MirConstructorLayoutSpecializer(
     private static string BuildSpecializedTypeName(
         string constructorDescriptor,
         IReadOnlyList<TypeId> typeArgs,
-        IReadOnlyList<GenericValueArgumentDescriptor> valueArgs)
+        IReadOnlyList<GenericValueArgumentDescriptor> valueArgs,
+        IReadOnlyList<GenericEffectArgumentDescriptor> effectArgs)
     {
-        if (typeArgs.Count == 0 && valueArgs.Count == 0)
+        if (typeArgs.Count == 0 && valueArgs.Count == 0 && effectArgs.Count == 0)
         {
             return constructorDescriptor;
         }
@@ -294,7 +297,8 @@ internal sealed class MirConstructorLayoutSpecializer(
             typeArgs.Select(static type => $"t{type.Value}")
                 .Concat(valueArgs.Select(static value => value.ValueVariableIndex >= 0
                     ? $"vv{value.ValueVariableIndex}"
-                    : $"v{value.CanonicalHash[..Math.Min(12, value.CanonicalHash.Length)]}")));
+                    : $"v{value.CanonicalHash[..Math.Min(12, value.CanonicalHash.Length)]}"))
+                .Concat(effectArgs.Select(static effect => $"e{effect.TypeId.Value}")));
         return $"{constructorDescriptor}_{argTokens}";
     }
 

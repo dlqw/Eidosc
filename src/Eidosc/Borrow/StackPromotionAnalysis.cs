@@ -135,6 +135,10 @@ public sealed class StackPromotionAnalyzer
                 AddAlias(move.Source, move.Target, aliases);
                 break;
 
+            case MirCaseInject injection:
+                AddAlias(injection.Operand, injection.Target, aliases);
+                break;
+
             // Transitive escape: MirLoad establishes an alias between source and target.
             // If the load target later escapes (via MirCall, MirReturn, etc.),
             // the source is also marked as escaped through alias propagation.

@@ -167,6 +167,9 @@ public sealed class PerceusAnalyzer
         return instr switch
         {
             MirAssign assign => assign.Target is MirPlace { Kind: PlaceKind.Local, Local: var assignLocal } ? assignLocal : null,
+            MirCaseInject injection => injection.Target is MirPlace { Kind: PlaceKind.Local, Local: var injectionLocal }
+                ? injectionLocal
+                : null,
             MirCall call => call.Target is MirPlace { Kind: PlaceKind.Local, Local: var callLocal } ? callLocal : null,
             MirBinOp binOp => binOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var binOpLocal } ? binOpLocal : null,
             MirUnaryOp unaryOp => unaryOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var unaryOpLocal } ? unaryOpLocal : null,
@@ -187,6 +190,10 @@ public sealed class PerceusAnalyzer
         {
             case MirAssign assign:
                 CollectUsedVariables(assign.Source, result);
+                break;
+
+            case MirCaseInject injection:
+                CollectUsedVariables(injection.Operand, result);
                 break;
 
             case MirCall call:

@@ -183,6 +183,22 @@ public record ModuleDecl : Declaration
         UsesExplicitExports = Declarations.Any(static declaration => declaration.IsExported);
     }
 
+    internal bool ReplaceDeclaration(
+        Declaration declaration,
+        IReadOnlyList<Declaration> replacements)
+    {
+        var index = Declarations.FindIndex(candidate => ReferenceEquals(candidate, declaration));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Declarations.RemoveAt(index);
+        Declarations.InsertRange(index, replacements);
+        UsesExplicitExports = Declarations.Any(static candidate => candidate.IsExported);
+        return true;
+    }
+
     public override XmlElement ToXmlElement(XmlDocument doc)
     {
         var element = CreateDeclarationElement(doc, WellKnownStrings.XmlElements.ModuleDecl);

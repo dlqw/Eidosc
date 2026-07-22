@@ -19,7 +19,7 @@ public sealed class BuildCommandBuildHostTests
             manifestSchema = 3
 
             [language]
-            version = "0.6.0-alpha.1"
+            version = "0.7.0-alpha.1"
 
             [package]
             name = "dev.eidos.test.build-host-cli"
@@ -32,9 +32,9 @@ public sealed class BuildCommandBuildHostTests
         workspace.WriteText(
             "build.eidos",
             """
-            Context :: comptime Build.context();
-            Emit :: comptime Build.emit(Context);
-            BuildGraph :: comptime Build.graph(Emit, [], []);
+            Session :: comptime build.session();
+            Emit :: comptime build.emit(Session);
+            BuildGraph :: comptime build.graph(Emit, [], []);
             """);
         workspace.WriteText(
             "src/Main.eidos",
@@ -75,10 +75,86 @@ public sealed class BuildCommandBuildHostTests
 
         Assert.True(File.Exists(graphPath));
         using var graph = JsonDocument.Parse(await File.ReadAllTextAsync(graphPath));
-        Assert.Equal(1, graph.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, graph.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Empty(graph.RootElement.GetProperty("steps").EnumerateArray());
         var trace = stdout.ToString() + stderr.ToString();
         Assert.Contains("Build host", trace, StringComparison.Ordinal);
         Assert.Contains("BuildGraph", trace, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Build_TypedGeneratedModuleJoinsTheTargetImportGraph()
+    {
+        using var workspace = TestTempWorkspace.Create("eidos_build_generated_module_cli");
+        workspace.WriteText(
+            "eidos.toml",
+            """
+            manifestSchema = 3
+
+            [language]
+            version = "0.7.0-alpha.1"
+
+            [package]
+            name = "dev.eidos.test.generated-module-cli"
+            version = "0.1.0"
+
+            [build]
+            program = "build.eidos"
+            outputRoots = ["build/generated"]
+            """);
+        workspace.WriteText(
+            "build.eidos",
+            """
+            Session :: comptime build.session();
+            Emit :: comptime build.emit(Session);
+            Generated :: comptime build.generated_module(Emit, "generated.schema", quote items {
+                answer :: Int = 42;
+            }, "main");
+            BuildGraph :: comptime build.graph(Emit, [], [Generated]);
+            """);
+        workspace.WriteText(
+            "src/Main.eidos",
+            """
+            import generated.schema
+
+            main :: Unit -> Int
+            {
+                _ => generated.schema.answer
+            }
+            """);
+
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
+        try
+        {
+            Console.SetOut(new StringWriter());
+            Console.SetError(new StringWriter());
+            var firstExitCode = await BuildCommand.Create().InvokeAsync([
+                "--project",
+                workspace.Root,
+                "--target",
+                "Typed",
+                "--no-color"
+            ]);
+            var secondExitCode = await BuildCommand.Create().InvokeAsync([
+                "--project",
+                workspace.Root,
+                "--target",
+                "Typed",
+                "--no-color"
+            ]);
+
+            Assert.Equal(0, firstExitCode);
+            Assert.Equal(0, secondExitCode);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.SetError(originalError);
+        }
+
+        var generatedPath = workspace.Path("build", "generated", "generated", "schema.eidos");
+        Assert.True(File.Exists(generatedPath));
+        Assert.Contains("answer :: Int = 42", await File.ReadAllTextAsync(generatedPath), StringComparison.Ordinal);
     }
 }

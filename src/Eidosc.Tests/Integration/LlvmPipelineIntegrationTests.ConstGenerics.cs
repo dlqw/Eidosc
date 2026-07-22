@@ -13,7 +13,7 @@ public partial class LlvmPipelineIntegrationTests
         const string source = """
 Buffer[comptime N: Int, comptime T: Type] :: type
 {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 make4 :: Int -> Buffer[4, Int]

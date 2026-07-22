@@ -1332,9 +1332,11 @@ public sealed partial class MirBuilder
             return false;
         }
 
-        if ((TryParseWrappedTypeId(typeKey, "Ref(", out var referencedTypeId) ||
-             TryParseWrappedTypeId(typeKey, "MRef(", out referencedTypeId)) &&
-            TryResolveListElementTypeFromListType(referencedTypeId, out elementTypeId))
+        if (TypeKeyParsing.TryParseTypeDescriptor(typeKey, out var parsedDescriptor) &&
+            parsedDescriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef &&
+            TryResolveListElementTypeFromListType(
+                parsedDescriptor is TypeDescriptor.Ref reference ? reference.Inner : ((TypeDescriptor.MutRef)parsedDescriptor).Inner,
+                out elementTypeId))
         {
             return true;
         }

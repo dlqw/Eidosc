@@ -89,7 +89,7 @@ public partial class LlvmPipelineIntegrationTests
     {
         const string source = """
             Pair :: type {
-                Pair(Int, Int)
+                Pair:: type(Int, Int)
             }
 
             pair_score :: Int -> Int -> Int
@@ -177,10 +177,11 @@ public partial class LlvmPipelineIntegrationTests
     public void CallSyntax_FfiUnitParameterEmptyCall_LowersAsCZeroArgumentCall()
     {
         const string source = """
-            @ffi("eidos_test_ping")
-            ping :: Unit -> Int need FFI;
 
-            main :: Unit -> Int need FFI
+            @[extern(c, name: "eidos_test_ping")]
+            ping :: Unit -> Int need ffi
+
+            main :: Unit -> Int need ffi
             {
                 _ => ping()
             }
@@ -281,10 +282,11 @@ public partial class LlvmPipelineIntegrationTests
     public void CallSyntax_EffectfulUnitIfCanOmitElse()
     {
         const string source = """
-            @ffi("eidos_test_ping")
-            ping :: Unit -> Unit need FFI;
 
-            draw_if :: Bool -> Unit need FFI
+            @[extern(c, name: "eidos_test_ping")]
+            ping :: Unit -> Unit need ffi
+
+            draw_if :: Bool -> Unit need ffi
             {
                 alive => if !alive
                 then
@@ -293,7 +295,7 @@ public partial class LlvmPipelineIntegrationTests
                 }
             }
 
-            main :: Unit -> Int need FFI
+            main :: Unit -> Int need ffi
             {
                 _ => {
                     draw_if(false);

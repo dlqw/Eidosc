@@ -61,7 +61,7 @@ public class RefTypeParserTests
     {
         const string source = """
 ReaderBox[T] :: type {
-    reader: Ref[T], tag: Int
+    reader:: Ref[T], tag:: Int
 }
 """;
 
@@ -90,7 +90,7 @@ ReaderBox[T] :: type {
     {
         const string source = """
 WriterBox[T] :: type {
-    writer: MRef[T], tag: Int
+    writer:: MRef[T], tag:: Int
 }
 """;
 

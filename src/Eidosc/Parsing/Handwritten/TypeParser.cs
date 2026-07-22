@@ -1,3 +1,4 @@
+using Eidosc.Ast;
 using Eidosc.Ast.Types;
 using Eidosc.Ast.Declarations;
 using Eidosc.Diagnostic;
@@ -57,7 +58,7 @@ public sealed class TypeParser(ParserContext ctx)
     private List<EffectRequirementNode> ParseEffectRequirements()
     {
         var requirements = new List<EffectRequirementNode>();
-        if (!TokenKind.IsTypeIdentifier(ctx.Current))
+        if (!IsEffectIdentifier(ctx.Current))
         {
             ctx.Error(DiagnosticMessages.ParserNeedClauseRequiresEffectPath);
             return requirements;
@@ -66,7 +67,7 @@ public sealed class TypeParser(ParserContext ctx)
         requirements.Add(ParseEffectRequirement());
         while (ctx.Match(","))
         {
-            if (!TokenKind.IsTypeIdentifier(ctx.Current))
+            if (!IsEffectIdentifier(ctx.Current))
             {
                 ctx.Error(DiagnosticMessages.ParserNeedClauseRequiresEffectPath);
                 break;
@@ -83,7 +84,7 @@ public sealed class TypeParser(ParserContext ctx)
         var startToken = ctx.Current;
         var path = QualifiedPathParser.Parse(
             ctx,
-            TokenKind.IsTypeIdentifier,
+            IsEffectIdentifier,
             DiagnosticMessages.ParserExpectedTypeIdentifierAfterQualifiedSeparator);
 
         if (ctx.Check("(") || ctx.Check("["))
@@ -98,6 +99,9 @@ public sealed class TypeParser(ParserContext ctx)
         };
     }
 
+    private static bool IsEffectIdentifier(Token token) =>
+        TokenKind.IsIdentifier(token) || TokenKind.IsAnyIdentifier(token);
+
     private TypeNode ParseFunctionTypeHead()
     {
         return ParsePostfixType(ParseTypeAtom());
@@ -105,6 +109,21 @@ public sealed class TypeParser(ParserContext ctx)
 
     private TypeNode ParseTypeAtom()
     {
+        if (ctx.Match("expand"))
+        {
+            var start = ctx.Peek(-1);
+            var invocation = MetaInvocationSyntaxParser.Parse(
+                ctx,
+                () => ParseType(),
+                "type expand");
+            var expansion = new ExpandType();
+            expansion.SetInvocation(invocation);
+            expansion.SetSpan(new SourceSpan(
+                start.Location,
+                Math.Max(0, invocation.Span.EndPosition - start.Location.Position)));
+            return expansion;
+        }
+
         if (ctx.Check("("))
         {
             var savedPos = ctx.SavePosition();
@@ -164,7 +183,7 @@ public sealed class TypeParser(ParserContext ctx)
     {
         var memberToken = ctx.Current;
         var memberName = ctx.GetText();
-        if (!TokenKind.IsTypeIdentifier(ctx.Current))
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
         {
             ctx.Error(DiagnosticMessages.ParserExpectedTypeIdentifierAfterQualifiedSeparator);
         }
@@ -173,11 +192,17 @@ public sealed class TypeParser(ParserContext ctx)
             ctx.Advance();
         }
 
+        var genericArguments = TryParseGenericArguments();
+
         var projection = new AssociatedTypeProjection();
         projection.SetTarget(target);
         projection.SetMemberName(memberName);
+        if (genericArguments != null)
+        {
+            projection.SetGenericArguments(genericArguments);
+        }
         projection.SetSpan(target.Span.Position >= 0
-            ? new SourceSpan(target.Span.Location, Math.Max(0, memberToken.Location.Position + memberToken.Length - target.Span.Position))
+            ? new SourceSpan(target.Span.Location, Math.Max(0, ctx.Peek(-1).Location.Position + ctx.Peek(-1).Length - target.Span.Position))
             : ctx.SpanFrom(memberToken));
         return projection;
     }
@@ -189,7 +214,7 @@ public sealed class TypeParser(ParserContext ctx)
             ModulePath = ["Option"],
             TypeArgs = [innerType]
         };
-        optionType.SetPackageAlias("Std");
+        optionType.SetPackageAlias(WellKnownStrings.Std.Module);
         optionType.SetTypeName("Option");
 
         var length = innerType.Span.Position >= 0
@@ -206,7 +231,7 @@ public sealed class TypeParser(ParserContext ctx)
             return new WildcardType { Span = ctx.SpanFrom(ctx.Peek(-1)) };
         }
 
-        if (TokenKind.IsTypeIdentifier(ctx.Current) ||
+        if (TokenKind.IsAnyIdentifier(ctx.Current) ||
             (TokenKind.IsAnyIdentifier(ctx.Current) && QualifiedPathParser.IsPackageQualifiedItemLookahead(ctx)))
         {
             return ParseTypePath();
@@ -221,7 +246,7 @@ public sealed class TypeParser(ParserContext ctx)
         var startToken = ctx.Current;
         var parsedPath = QualifiedPathParser.ParseItemPath(
             ctx,
-            TokenKind.IsTypeIdentifier,
+            TokenKind.IsAnyIdentifier,
             DiagnosticMessages.ParserExpectedTypeIdentifierAfterQualifiedSeparator);
 
         var genericArguments = TryParseGenericArguments();
@@ -290,20 +315,41 @@ public sealed class TypeParser(ParserContext ctx)
         return new UnresolvedGenericArgumentNode
         {
             TypeCandidate = type,
+            ValueCandidate = CreateValueCandidate(type),
             Span = type.Span
         };
+    }
+
+    private static EidosAstNode? CreateValueCandidate(TypeNode type)
+    {
+        if (type is not TypePath path)
+        {
+            return null;
+        }
+
+        var expression = new Ast.Expressions.PathExpr();
+        expression.SetSpan(path.Span);
+        expression.SetPackageAlias(path.PackageAlias);
+        expression.SetModulePath(path.ModulePath);
+        expression.SetName(path.TypeName);
+        expression.SetGenericArguments(path.GenericArguments);
+        return expression;
     }
 
     private bool IsClearlyValueGenericArgument()
     {
         var token = ctx.Current;
-        if (TokenKind.IsAnyLiteral(token) || TokenKind.IsIdentifier(token) ||
+        var startsQualifiedTypePath = TokenKind.IsIdentifier(token) &&
+                                      QualifiedPathParser.IsPackageQualifiedItemLookahead(
+                                          ctx,
+                                          TokenKind.IsAnyIdentifier);
+        if (TokenKind.IsAnyLiteral(token) ||
             ctx.Check("-") || ctx.Check("!") || ctx.Check("[") || ctx.Check("{") || ctx.Check("ref") || ctx.Check("mref"))
         {
             return true;
         }
 
-        if (!TokenKind.IsTypeIdentifier(token) && !ctx.Check("("))
+        if (!TokenKind.IsAnyIdentifier(token) && !startsQualifiedTypePath && !ctx.Check("("))
         {
             return true;
         }
@@ -478,9 +524,9 @@ public sealed class TypeParser(ParserContext ctx)
         if (!InternalNameParser.TryParseLeadingDoubleUnderscoreName(ctx, out name))
         {
             name = ctx.GetText();
-            if (!TokenKind.IsTypeIdentifier(ctx.Current))
+            if (!TokenKind.IsAnyIdentifier(ctx.Current))
             {
-                ctx.Error(DiagnosticMessages.ParserTypeParameterNameMustStartWithUppercase);
+                ctx.Error(DiagnosticMessages.ParserUnexpectedToken(name));
             }
 
             if (!ctx.IsEof)
@@ -569,11 +615,6 @@ public sealed class TypeParser(ParserContext ctx)
             }
 
             var targetName = ctx.GetText();
-            if (!TokenKind.IsTypeIdentifier(targetToken))
-            {
-                ctx.Error(DiagnosticMessages.ParserGenericWhereTargetMustStartWithUppercase);
-            }
-
             ctx.Advance();
             ctx.Expect(":");
 
@@ -661,12 +702,12 @@ public sealed class TypeParser(ParserContext ctx)
         var startToken = ctx.Current;
         var parts = new List<string>();
 
-        if (TokenKind.IsTypeIdentifier(ctx.Current) ||
-            (TokenKind.IsAnyIdentifier(ctx.Current) && QualifiedPathParser.IsPackageQualifiedItemLookahead(ctx, TokenKind.IsTypeIdentifier)))
+        if (TokenKind.IsAnyIdentifier(ctx.Current) ||
+            (TokenKind.IsAnyIdentifier(ctx.Current) && QualifiedPathParser.IsPackageQualifiedItemLookahead(ctx, TokenKind.IsAnyIdentifier)))
         {
             var parsedPath = QualifiedPathParser.ParseItemPath(
                 ctx,
-                TokenKind.IsTypeIdentifier,
+                TokenKind.IsAnyIdentifier,
                 DiagnosticMessages.ParserExpectedTypeIdentifierAfterQualifiedSeparator);
             parts = parsedPath.ToPathParts();
         }

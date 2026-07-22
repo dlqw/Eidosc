@@ -22,7 +22,7 @@ public sealed class MigrateManifestCommandTests
 
         Assert.Contains("manifestSchema = 3", migrated, StringComparison.Ordinal);
         Assert.Contains("[language]", migrated, StringComparison.Ordinal);
-        Assert.Contains("version = \"0.6.0-alpha.1\"", migrated, StringComparison.Ordinal);
+        Assert.Contains("version = \"0.7.0-alpha.1\"", migrated, StringComparison.Ordinal);
         Assert.DoesNotContain("eidosVersion", migrated, StringComparison.Ordinal);
         Assert.DoesNotContain("syntax =", migrated, StringComparison.Ordinal);
     }
@@ -39,6 +39,19 @@ public sealed class MigrateManifestCommandTests
 
         Assert.StartsWith("manifestSchema = 3", migrated, StringComparison.Ordinal);
         Assert.Contains("[language]", migrated, StringComparison.Ordinal);
-        Assert.Contains("version = \"0.6.0-alpha.1\"", migrated, StringComparison.Ordinal);
+        Assert.Contains("version = \"0.7.0-alpha.1\"", migrated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MigrateText_NormalizesPackageIdWithoutChangingDependencyIdentity()
+    {
+        var migrated = MigrateManifestCommand.MigrateText(
+            """
+            [package]
+            name = "Dev.Eidos.http_client"
+            version = "0.1.0"
+            """);
+
+        Assert.Contains("name = \"dev.eidos.http-client\"", migrated, StringComparison.Ordinal);
     }
 }

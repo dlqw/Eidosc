@@ -31,6 +31,9 @@ public sealed record EidosBuildGraphExecutionResult(
 
 internal static class EidosBuildGraphExecutor
 {
+    private const long MaxFetchBytes = 256L * 1024 * 1024;
+    private static readonly HttpClient FetchClient = new();
+
     private sealed record CacheManifest(
         int SchemaVersion,
         string ExecutionKey,
@@ -44,7 +47,8 @@ internal static class EidosBuildGraphExecutor
         TimeSpan processTimeout,
         CancellationToken cancellationToken)
     {
-        var executionKey = HashText($"eidos-build-execution-v1\0{context.CapabilityIdentity}\0{graph.CanonicalHash}");
+        useCache &= graph.IsReproducible;
+        var executionKey = HashText($"eidos-build-execution-v2\0{context.CapabilityIdentity}\0{graph.CanonicalHash}");
         var cachePath = Path.Combine(cacheRoot, "build-host", $"{executionKey}.json");
         if (useCache && TryRestoreCache(cachePath, executionKey, context, out var cachedOutputs))
         {
@@ -73,17 +77,12 @@ internal static class EidosBuildGraphExecutor
         foreach (var step in order)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!context.TryGetTool(step.Tool, out var tool, out var reason))
-            {
-                return Failure(reason, "E5020", stepExecutions);
-            }
-
             var declaredOutputPaths = new List<string>(step.Outputs.Count);
             foreach (var relativeOutput in step.Outputs)
             {
-                if (!context.TryResolveProjectPath(relativeOutput, out var outputPath, out reason))
+                if (!context.TryResolveProjectPath(relativeOutput, out var outputPath, out var pathReason))
                 {
-                    return Failure(reason, "E5021", stepExecutions);
+                    return Failure(pathReason, "E5021", stepExecutions);
                 }
 
                 var directory = Path.GetDirectoryName(outputPath);
@@ -98,6 +97,45 @@ internal static class EidosBuildGraphExecutor
                 }
 
                 declaredOutputPaths.Add(outputPath);
+            }
+
+            if (step.Kind == "fetch")
+            {
+                var fetchStopwatch = Stopwatch.StartNew();
+                var fetchResult = await TryExecuteFetchAsync(
+                        step,
+                        declaredOutputPaths[0],
+                        cancellationToken).ConfigureAwait(false);
+                if (!fetchResult.Success)
+                {
+                    var fetchReason = fetchResult.Reason;
+                    fetchStopwatch.Stop();
+                    stepExecutions.Add(new EidosBuildStepExecution(
+                        step.Name,
+                        step.Url,
+                        -1,
+                        CacheHit: false,
+                        fetchStopwatch.Elapsed,
+                        string.Empty,
+                        fetchReason));
+                    return Failure(fetchReason, "E5026", stepExecutions);
+                }
+
+                fetchStopwatch.Stop();
+                stepExecutions.Add(new EidosBuildStepExecution(
+                    step.Name,
+                    step.Url,
+                    0,
+                    CacheHit: false,
+                    fetchStopwatch.Elapsed,
+                    string.Empty,
+                    string.Empty));
+                continue;
+            }
+
+            if (!context.TryGetHostTool(step.Tool, out var tool, out var reason))
+            {
+                return Failure(reason, "E5020", stepExecutions);
             }
 
             var processStartInfo = new ProcessStartInfo
@@ -200,10 +238,31 @@ internal static class EidosBuildGraphExecutor
             }
         }
 
+        foreach (var artifact in graph.Artifacts.Where(static artifact => artifact.Kind == "generated-module"))
+        {
+            if (!TryWriteEmbeddedArtifact(artifact, context, out var reason))
+            {
+                return Failure(reason, "E5027", stepExecutions);
+            }
+        }
+
+        foreach (var artifact in graph.Artifacts.Where(static artifact => !string.IsNullOrEmpty(artifact.ExpectedSha256)))
+        {
+            if (!context.TryResolveProjectPath(artifact.Path, out var fullPath, out var reason) ||
+                !File.Exists(fullPath) ||
+                !string.Equals(HashFile(fullPath), artifact.ExpectedSha256, StringComparison.Ordinal))
+            {
+                var detail = string.IsNullOrWhiteSpace(reason)
+                    ? $"Build artifact '{artifact.Name}' did not match pinned SHA-256 '{artifact.ExpectedSha256}'."
+                    : reason;
+                return Failure(detail, "E5028", stepExecutions);
+            }
+        }
+
         var outputs = SnapshotOutputs(graph, context);
         if (useCache)
         {
-            StoreCache(cachePath, new CacheManifest(1, executionKey, outputs));
+            StoreCache(cachePath, new CacheManifest(2, executionKey, outputs));
         }
 
         return new EidosBuildGraphExecutionResult(
@@ -236,7 +295,7 @@ internal static class EidosBuildGraphExecutor
             return false;
         }
 
-        if (manifest is not { SchemaVersion: 1 } ||
+        if (manifest is not { SchemaVersion: 2 } ||
             !string.Equals(manifest.ExecutionKey, executionKey, StringComparison.Ordinal))
         {
             return false;
@@ -268,6 +327,7 @@ internal static class EidosBuildGraphExecutor
     {
         return graph.Steps
             .SelectMany(static step => step.Outputs)
+            .Concat(graph.Artifacts.Select(static artifact => artifact.Path))
             .Distinct(context.PathComparer)
             .OrderBy(static path => path, StringComparer.Ordinal)
             .Select(path =>
@@ -277,6 +337,107 @@ internal static class EidosBuildGraphExecutor
                 return new EidosBuildOutput(path, HashFile(fullPath), info.Length);
             })
             .ToArray();
+    }
+
+    private static async Task<(bool Success, string Reason)> TryExecuteFetchAsync(
+        EidosBuildStep step,
+        string outputPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, step.Url);
+            using var response = await FetchClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return (false, $"Pinned build fetch '{step.Url}' failed with HTTP {(int)response.StatusCode}.");
+            }
+
+            if (response.Content.Headers.ContentLength is > MaxFetchBytes)
+            {
+                return (false, $"Pinned build fetch '{step.Url}' exceeds the {MaxFetchBytes}-byte limit.");
+            }
+
+            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using var content = new MemoryStream();
+            var buffer = new byte[64 * 1024];
+            long total = 0;
+            while (true)
+            {
+                var read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    break;
+                }
+                total += read;
+                if (total > MaxFetchBytes)
+                {
+                    return (false, $"Pinned build fetch '{step.Url}' exceeds the {MaxFetchBytes}-byte limit.");
+                }
+                await content.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            }
+
+            var bytes = content.ToArray();
+            var actual = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            if (!string.Equals(actual, step.ExpectedSha256, StringComparison.Ordinal))
+            {
+                return (
+                    false,
+                    $"Pinned build fetch '{step.Url}' produced SHA-256 '{actual}', expected '{step.ExpectedSha256}'.");
+            }
+
+            WriteFileAtomically(outputPath, bytes);
+            return (true, string.Empty);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException)
+        {
+            return (false, $"Pinned build fetch '{step.Url}' failed: {ex.Message}");
+        }
+    }
+
+    private static bool TryWriteEmbeddedArtifact(
+        EidosBuildArtifact artifact,
+        BuildComptimeContext context,
+        out string reason)
+    {
+        if (!context.TryResolveProjectPath(artifact.Path, out var outputPath, out reason))
+        {
+            return false;
+        }
+
+        try
+        {
+            WriteFileAtomically(outputPath, Encoding.UTF8.GetBytes(artifact.EmbeddedSource));
+            reason = string.Empty;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            reason = $"Typed generated module '{artifact.Name}' could not be written: {ex.Message}";
+            return false;
+        }
+    }
+
+    private static void WriteFileAtomically(string path, ReadOnlySpan<byte> content)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(directory);
+        var temporaryPath = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, content.ToArray());
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
     }
 
     private static void StoreCache(string cachePath, CacheManifest manifest)

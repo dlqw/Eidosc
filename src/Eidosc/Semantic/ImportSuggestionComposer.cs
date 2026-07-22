@@ -206,7 +206,7 @@ internal static class ImportSuggestionComposer
     private static string NormalizeImportModuleKey(string modulePath)
     {
         var normalized = modulePath.Replace('\\', '/');
-        const string stdPrefix = "Std/";
+        const string stdPrefix = "std/";
         if (!normalized.StartsWith(stdPrefix, StringComparison.Ordinal))
         {
             return normalized;
@@ -214,7 +214,7 @@ internal static class ImportSuggestionComposer
 
         var moduleSegments = normalized[stdPrefix.Length..]
             .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return ModuleRegistry.ToModuleKey("Std", moduleSegments);
+        return ModuleRegistry.ToModuleKey(WellKnownStrings.Std.Module, moduleSegments);
     }
 
     private static string FormatImportPath(ImportDecl import)
@@ -230,10 +230,10 @@ internal static class ImportSuggestionComposer
     private static string FormatImportPath(string modulePath)
     {
         var normalized = modulePath.Replace('\\', '/');
-        const string stdPrefix = "Std/";
+        const string stdPrefix = "std/";
         if (normalized.StartsWith(stdPrefix, StringComparison.Ordinal))
         {
-            return $"Std{WellKnownStrings.Separators.Path}{normalized[stdPrefix.Length..]}";
+            return $"std{WellKnownStrings.Separators.Path}{normalized[stdPrefix.Length..]}";
         }
 
         return normalized;

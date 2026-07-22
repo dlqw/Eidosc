@@ -27,6 +27,28 @@ public sealed class MirFunctionFingerprintTests
     }
 
     [Fact]
+    public void Compute_CaseInjectionIgnoresTransientSymbolIds()
+    {
+        var first = MirFunctionFingerprintBuilder.Compute(
+            CreateCaseInjectionFunction(new SymbolId(101), new SymbolId(102), new TypeId(201), new TypeId(202)));
+        var second = MirFunctionFingerprintBuilder.Compute(
+            CreateCaseInjectionFunction(new SymbolId(301), new SymbolId(302), new TypeId(201), new TypeId(202)));
+
+        Assert.Equal(first.BodyHash, second.BodyHash);
+    }
+
+    [Fact]
+    public void Compute_CaseInjectionChangesWhenNominalTypeIdentityChanges()
+    {
+        var first = MirFunctionFingerprintBuilder.Compute(
+            CreateCaseInjectionFunction(new SymbolId(101), new SymbolId(102), new TypeId(201), new TypeId(202)));
+        var second = MirFunctionFingerprintBuilder.Compute(
+            CreateCaseInjectionFunction(new SymbolId(101), new SymbolId(102), new TypeId(301), new TypeId(202)));
+
+        Assert.NotEqual(first.BodyHash, second.BodyHash);
+    }
+
+    [Fact]
     public void ComputeModule_SortsByFunctionKey()
     {
         var module = new MirModule
@@ -55,7 +77,7 @@ public sealed class MirFunctionFingerprintTests
             Functions = [CreateFunction(BinaryOp.Add)]
         });
 
-        Assert.Equal("mir-function-fingerprint-snapshot-v1", first.SchemaVersion);
+        Assert.Equal("mir-function-fingerprint-snapshot-v2", first.SchemaVersion);
         Assert.Equal(first.ModuleFingerprint, second.ModuleFingerprint);
         Assert.NotEmpty(first.ModuleFingerprint);
     }
@@ -157,6 +179,59 @@ public sealed class MirFunctionFingerprintTests
                         }
                     ],
                     Terminator = new MirReturn { Value = result }
+                }
+            ]
+        };
+    }
+
+    private static MirFunc CreateCaseInjectionFunction(
+        SymbolId sourceCase,
+        SymbolId targetAncestor,
+        TypeId sourceType,
+        TypeId targetType)
+    {
+        var source = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 1 },
+            TypeId = sourceType
+        };
+        var target = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 2 },
+            TypeId = targetType
+        };
+
+        return new MirFunc
+        {
+            Name = "inject",
+            ReturnType = targetType,
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = source.Local, Name = "source", TypeId = sourceType },
+                new MirLocal { Id = target.Local, Name = "target", TypeId = targetType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCaseInject
+                        {
+                            Target = target,
+                            Operand = source,
+                            SourceCase = sourceCase,
+                            TargetAncestor = targetAncestor,
+                            SourceTypeId = sourceType,
+                            TargetTypeId = targetType
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = target }
                 }
             ]
         };

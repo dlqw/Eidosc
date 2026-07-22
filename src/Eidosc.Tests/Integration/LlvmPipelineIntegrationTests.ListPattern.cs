@@ -8,7 +8,8 @@ public partial class LlvmPipelineIntegrationTests
     public void ListPattern_TupleElementsFromVecFreeze_NativeSmoke_IndexAndMatchStayStable()
     {
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
+import std.Seq
 
 make_edges :: Int -> Seq[(Int, Int)]
 {
@@ -46,7 +47,7 @@ sum_by_destructure :: Seq[(Int, Int)] -> Int
         mut total := 0;
         mut index := 0;
         loop {
-            if index >= Seq.len(edges) then { break } else {
+            if index >= Seq.len(ref edges) then { break } else {
                 (to, weight) := edges[index];
                 total := total + to + weight;
                 index := index + 1
@@ -62,7 +63,7 @@ sum_by_match :: Seq[(Int, Int)] -> Int
         mut total := 0;
         mut index := 0;
         loop {
-            if index >= Seq.len(edges) then { break } else {
+            if index >= Seq.len(ref edges) then { break } else {
                 match edges[index] {
                     (to, weight) => {
                         total := total + to + weight;
@@ -78,10 +79,16 @@ sum_by_match :: Seq[(Int, Int)] -> Int
 main :: Unit -> Int
 {
     _ => {
-        adjacency := build_adjacency({});
-        first := sum_by_destructure(SeqBuilder.get(adjacency, 0));
-        second := sum_by_match(SeqBuilder.get(adjacency, 1));
-        if first == 110 && second == 114 then { 0 } else { 99 }
+        adjacency := SeqBuilder.freeze(build_adjacency(()));
+        match adjacency
+        {
+            [first, second, .._] => {
+                first_sum := sum_by_destructure(first);
+                second_sum := sum_by_match(second);
+                if first_sum == 110 && second_sum == 114 then { 0 } else { 99 }
+            },
+            _ => 99
+        }
     }
 }
 """;
@@ -98,16 +105,18 @@ main :: Unit -> Int
     public void ListPattern_NestedAdtConstructor_NativeSmoke_MatchesElementFieldsAndRest()
     {
         const string source = """
+import std.Seq
+
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 classify :: Seq[Tok] -> Int
 {
-    [TkKeyword("int"), TkIdent(name), ..rest] => 10 + Seq.len(rest),
-    [TkKeyword("return"), ..rest] => 20 + Seq.len(rest),
-    [TkIdent(name), ..rest] => 30 + Seq.len(rest),
-    [TkEof(), ..rest] => 40 + Seq.len(rest),
+    [TkKeyword("int"), TkIdent(name), ..rest] => 10 + Seq.len(ref rest),
+    [TkKeyword("return"), ..rest] => 20 + Seq.len(ref rest),
+    [TkIdent(name), ..rest] => 30 + Seq.len(ref rest),
+    [TkEof(), ..rest] => 40 + Seq.len(ref rest),
     [] => 0
 }
 
@@ -135,7 +144,7 @@ main :: Unit -> Int
     {
         const string source = """
 Tok :: type {
-    TkKeyword(String) , TkIdent(String) , TkEof
+    TkKeyword:: type(String) , TkIdent:: type(String) , TkEof :: type {}
 }
 
 reclassify :: Seq[Tok] -> Int
@@ -167,15 +176,17 @@ main :: Unit -> Int
     public void ListPattern_MiddleRestAndSuffix_NativeSmoke_MatchesAndBindsMiddleSlice()
     {
         const string source = """
+import std.Seq
+
 score :: Seq[Int] -> Int
 {
-    [head, ..middle, last] => head * 100 + Seq.len(middle) * 10 + last,
+    [head, ..middle, last] => head * 100 + Seq.len(ref middle) * 10 + last,
     _ => 0
 }
 
 score_init :: Seq[Int] -> Int
 {
-    [..init, last] => Seq.len(init) * 10 + last,
+    [..init, last] => Seq.len(ref init) * 10 + last,
     _ => 0
 }
 

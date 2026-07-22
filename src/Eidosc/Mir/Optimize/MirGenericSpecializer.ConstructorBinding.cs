@@ -407,14 +407,14 @@ public sealed partial class MirGenericSpecializer
     {
         if (string.IsNullOrWhiteSpace(key.Text) ||
             !key.TypeArguments.IsDefaultOrEmpty ||
-            !ImplTypeShapeFactory.IsVariableLikeName(key.Text))
+            !ImplTypeShapeFactory.TryGetExplicitVariableIdentity(key.Text, out var variableIdentity))
         {
             return false;
         }
 
-        if (!fixedTextConcreteTypes.TryGetValue(key.Text, out var existingConcreteType))
+        if (!fixedTextConcreteTypes.TryGetValue(variableIdentity, out var existingConcreteType))
         {
-            fixedTextConcreteTypes[key.Text] = concreteType;
+            fixedTextConcreteTypes[variableIdentity] = concreteType;
             return true;
         }
 

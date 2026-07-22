@@ -6,6 +6,7 @@ using Eidosc.CodeFormatting;
 using Eidosc.Ide;
 using Eidosc.Pipeline;
 using Eidosc.Query;
+using Eidosc.BuildSystem;
 
 namespace Eidosc.Cli.Lsp;
 
@@ -330,7 +331,10 @@ public sealed class LspServer : IDisposable
     {
         var (uri, line, character) = GetTextDocumentPosition(message);
         var snapshot = GetOrCompileSnapshotEntry(uri);
-        var hover = snapshot != null ? LspSemanticMapper.MapHover(snapshot.Snapshot, snapshot.Index, line, character) : null;
+        var text = _documents.GetDocumentText(uri);
+        var hover = snapshot != null
+            ? LspSemanticMapper.MapHover(snapshot.Snapshot, snapshot.Index, line, character, text)
+            : null;
         await SendResponseAsync(id, hover, ct);
     }
 
@@ -365,6 +369,25 @@ public sealed class LspServer : IDisposable
     {
         var params_ = message.GetProperty("params");
         var uri = params_.GetProperty("textDocument").GetProperty("uri").GetString() ?? "";
+        if (string.Equals(Path.GetFileName(UriToFilePath(uri)), EidosProjectConfigurationLoader.DefaultFileName, StringComparison.OrdinalIgnoreCase) &&
+            _documents.GetDocumentText(uri) is { } manifestText &&
+            TryGetRange(params_, out var manifestRange))
+        {
+            var manifestActions = LspManifestNamingMapper.MapCodeActions(
+                manifestText,
+                UriToFilePath(uri),
+                uri,
+                manifestRange,
+                _documents.GetOpenDocuments().ToDictionary(
+                    static document => Path.GetFullPath(UriToFilePath(document.Uri)),
+                    static document => document.Document.Text,
+                    OperatingSystem.IsWindows()
+                        ? StringComparer.OrdinalIgnoreCase
+                        : StringComparer.Ordinal));
+            await SendResponseAsync(id, manifestActions, ct);
+            return;
+        }
+
         var snapshot = GetOrCompileSnapshot(uri);
         var actions = snapshot != null && TryGetRange(params_, out var range)
             ? LspSemanticMapper.MapCodeActions(snapshot, uri, UriToFilePath(uri), range)
@@ -672,6 +695,13 @@ public sealed class LspServer : IDisposable
             return;
         }
 
+        var filePath = UriToFilePath(uri);
+        if (string.Equals(Path.GetFileName(filePath), EidosProjectConfigurationLoader.DefaultFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            await PublishDiagnosticsAsync(uri, LspManifestNamingMapper.Map(text, filePath), version, ct);
+            return;
+        }
+
         var snapshotEntry = GetOrCompileSnapshotEntry(uri);
         if (snapshotEntry == null)
         {
@@ -701,6 +731,7 @@ public sealed class LspServer : IDisposable
             AppendFileFingerprint(builder, Path.Combine(project.ProjectDirectory, "eidos.lock.json"));
             AppendDirectoryFingerprints(builder, project.Configuration.SourceRoots, project.ProjectDirectory);
             AppendDirectoryFingerprints(builder, project.Configuration.ImportRoots, project.ProjectDirectory);
+            AppendBuildDependencyFingerprints(builder, project);
         }
 
         try
@@ -746,6 +777,7 @@ public sealed class LspServer : IDisposable
         {
             AppendFileFingerprint(builder, project.FilePath);
             AppendFileFingerprint(builder, Path.Combine(project.ProjectDirectory, "eidos.lock.json"));
+            AppendBuildDependencyFingerprints(builder, project);
         }
 
         return new DependencyStamp(
@@ -817,6 +849,14 @@ public sealed class LspServer : IDisposable
                 {
                     _dependencyFingerprintCache.InvalidateDirectory(root, project.ProjectDirectory);
                 }
+
+                foreach (var input in project.Configuration.Build?.FileInputs ?? [])
+                {
+                    if (Directory.Exists(input))
+                    {
+                        _dependencyFingerprintCache.InvalidateDirectory(input, project.ProjectDirectory);
+                    }
+                }
             }
 
             var inputResolution = ResolveLspDocumentInput(filePath);
@@ -874,6 +914,60 @@ public sealed class LspServer : IDisposable
         LspDependencyFingerprintCache.AppendFileFingerprint(builder, filePath);
     }
 
+    private void AppendBuildDependencyFingerprints(
+        System.Text.StringBuilder builder,
+        LoadedEidosProjectConfiguration project)
+    {
+        var build = project.Configuration.Build;
+        if (build == null)
+        {
+            return;
+        }
+
+        builder.AppendLine("build-host-v2");
+        AppendFileFingerprint(builder, build.Program);
+        foreach (var input in build.FileInputs.Order(StringComparer.Ordinal))
+        {
+            if (Directory.Exists(input))
+            {
+                builder.Append(_dependencyFingerprintCache.GetDirectoryFingerprint(input, project.ProjectDirectory));
+            }
+            else
+            {
+                AppendFileFingerprint(builder, input);
+            }
+        }
+
+        foreach (var name in build.Environment.Order(StringComparer.Ordinal))
+        {
+            builder.Append("build-env:");
+            builder.Append(name);
+            builder.Append(':');
+            builder.AppendLine(Environment.GetEnvironmentVariable(name) ?? "<absent>");
+        }
+
+        foreach (var tool in build.Tools.OrderBy(static tool => tool.Name, StringComparer.Ordinal))
+        {
+            builder.Append("build-tool:");
+            builder.Append(tool.Name);
+            builder.Append(':');
+            builder.AppendLine(tool.Execution);
+            AppendFileFingerprint(builder, tool.Path);
+        }
+
+        foreach (var url in build.NetworkInputs.Order(StringComparer.Ordinal))
+        {
+            builder.Append("build-network:");
+            builder.AppendLine(url);
+        }
+
+        foreach (var capability in build.VolatileCapabilities.Order(StringComparer.Ordinal))
+        {
+            builder.Append("build-volatile:");
+            builder.AppendLine(capability);
+        }
+    }
+
     private IdeSemanticSnapshot CompileDocument(string uri, string text, int? version = null)
     {
         var filePath = UriToFilePath(uri);
@@ -885,6 +979,15 @@ public sealed class LspServer : IDisposable
             }
 
             var inputResolution = ResolveLspDocumentInput(filePath);
+            var project = EidosProjectConfigurationLoader.TryLoadNearest(filePath);
+            var buildHostResult = RunBuildHost(project, inputResolution);
+            if (buildHostResult is { Success: false })
+            {
+                return CreateBuildHostErrorSnapshot(filePath, buildHostResult);
+            }
+
+            var baseImportRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
+                                  inputResolution.ImportResolution.EffectiveSearchRoots;
 
             var options = new CompilationOptions
             {
@@ -893,18 +996,110 @@ public sealed class LspServer : IDisposable
                 StopAtPhase = CompilationPhase.Types,
                 DebugLevel = Eidosc.Debug.DebugLevel.Minimal,
                 UseColors = false,
-                ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
-                                    inputResolution.ImportResolution.EffectiveSearchRoots,
+                ImportSearchRoots = baseImportRoots
+                    .Concat(buildHostResult?.GeneratedSourceRoots ?? [])
+                    .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+                    .ToArray(),
                 PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                     new Dictionary<string, string[]>(StringComparer.Ordinal)
+                                     new Dictionary<string, string[]>(StringComparer.Ordinal),
+                NoImplicitPrelude = project?.Configuration.NoImplicitStdlib ?? false,
+                BuildHostFingerprint = buildHostResult?.CacheFingerprint,
+                BuildGraphFingerprint = buildHostResult?.Graph?.CanonicalHash,
+                GeneratedSourceUriMap = buildHostResult?.GeneratedSourceUris ?? new Dictionary<string, string>(),
+                MetaConfiguration = project?.Configuration.Meta
             };
 
             var result = _querySession.Compile(filePath, text, options, version);
-            return IdeSemanticSnapshotBuilder.Build(result);
+            var snapshot = IdeSemanticSnapshotBuilder.Build(result);
+            AddBuildGeneratedDocuments(snapshot, buildHostResult);
+            return snapshot;
         }
         catch (Exception ex)
         {
             return CreateServerErrorSnapshot(filePath, ex);
+        }
+    }
+
+    private static EidosBuildHostResult? RunBuildHost(
+        LoadedEidosProjectConfiguration? project,
+        ProjectCommandInputResolution inputResolution)
+    {
+        if (project?.Configuration.Build == null)
+        {
+            return null;
+        }
+
+        return EidosBuildHost.RunAsync(new EidosBuildHostOptions
+        {
+            ProjectDirectory = project.ProjectDirectory,
+            Configuration = project.Configuration.Build,
+            LanguageVersion = inputResolution.GetLanguageVersion(),
+            TargetName = inputResolution.ProjectTarget?.TargetName ?? "main",
+            TargetTriple = Eidosc.CodeGen.TargetInfo.Default.Triple,
+            ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
+                                inputResolution.ImportResolution.EffectiveSearchRoots,
+            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
+                                 new Dictionary<string, string[]>(StringComparer.Ordinal),
+            NoImplicitPrelude = project.Configuration.NoImplicitStdlib,
+            UseCache = true,
+            ReleaseProfile = false,
+            TraceBuild = false
+        }).GetAwaiter().GetResult();
+    }
+
+    private static IdeSemanticSnapshot CreateBuildHostErrorSnapshot(
+        string filePath,
+        EidosBuildHostResult buildHostResult) => new()
+        {
+            Success = false,
+            InputFile = filePath,
+            CompletedPhase = "Build",
+            SnapshotConfidence = "Fresh",
+            Diagnostics = buildHostResult.Diagnostics.Select(static diagnostic => new IdeDiagnosticEntry
+            {
+                Severity = diagnostic.Level.ToString().ToLowerInvariant(),
+                Code = diagnostic.Code,
+                Message = $"Build host: {diagnostic.Message}",
+                Metadata = new Dictionary<string, string>(diagnostic.Metadata, StringComparer.Ordinal)
+                {
+                    ["build.host"] = "true"
+                },
+                Notes = diagnostic.Notes.ToList(),
+                Helps = diagnostic.Helps.ToList()
+            }).ToList()
+        };
+
+    private static void AddBuildGeneratedDocuments(
+        IdeSemanticSnapshot snapshot,
+        EidosBuildHostResult? buildHostResult)
+    {
+        if (buildHostResult?.Graph == null)
+        {
+            return;
+        }
+
+        var existingUris = snapshot.GeneratedDocuments
+            .Select(static document => document.Uri)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var artifact in buildHostResult.Graph.Artifacts
+                     .Where(static artifact =>
+                         artifact.Kind == "generated-module" &&
+                         !string.IsNullOrWhiteSpace(artifact.SourceUri))
+                     .OrderBy(static artifact => artifact.SourceUri, StringComparer.Ordinal))
+        {
+            if (!existingUris.Add(artifact.SourceUri))
+            {
+                continue;
+            }
+
+            snapshot.GeneratedDocuments.Add(new IdeGeneratedDocumentEntry
+            {
+                Uri = artifact.SourceUri,
+                StableIdentity = $"build:{buildHostResult.Graph.CanonicalHash}:{artifact.ExpectedSha256}",
+                GeneratorIdentity = $"build:{buildHostResult.ProgramHash}",
+                TargetIdentity = artifact.Target,
+                Content = artifact.EmbeddedSource
+            });
         }
     }
 

@@ -11,25 +11,112 @@ namespace Eidosc.Tests.Unit.Semantic;
 public class DeriveGenerationTests
 {
     [Fact]
+    public void CaseSpecificDerive_GeneratesAnExactCaseImplementation()
+    {
+        const string source = """
+Choice :: type {
+    @[derive(Eq)]
+    Selected :: type {},
+    Unselected :: type {},
+}
+""";
+
+        var result = Compile("derive_exact_case.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Eq");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "eq");
+        var signature = Assert.IsType<Eidosc.Ast.Types.ArrowType>(generated.Signature.Single());
+        var firstParameter = Assert.IsType<Eidosc.Ast.Types.TypePath>(signature.ParamType);
+        Assert.Equal("Selected", firstParameter.TypeName);
+        Assert.Single(generated.Body);
+    }
+
+    [Fact]
+    public void IntermediateCaseDerive_CoversOnlyItsDescendantConstructors()
+    {
+        const string source = """
+Choice :: type {
+    @[derive(Show)]
+    Active :: type {
+        Selected :: type {},
+        Pending :: type {},
+    },
+    Inactive :: type {},
+}
+""";
+
+        var result = Compile("derive_intermediate_case.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Show");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "show");
+        Assert.Equal(2, generated.Body.Count);
+    }
+
+    [Fact]
     public void DeriveCopy_SingleConstructor_Compiles()
     {
         const string source = """
-@derive(Copy)
-Point :: type {
-    Point(Int, Int)
+
+@[derive(Copy)]
+
+Point :: type
+{
+    Point:: type(Int, Int)
 }
 """;
         var result = Compile("derive_copy_single.eidos", source);
         Assert.True(result.Success, FormatDiagnostics(result));
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var copyTraitId = Assert.IsType<SymbolId>(symbolTable.LookupTrait("Copy"));
+        var pointId = Assert.IsType<SymbolId>(symbolTable.LookupType("Point"));
+        var pointType = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(pointId));
+        var copyImpl = Assert.IsType<ImplSymbol>(symbolTable.LookupImplForTrait(pointType.TypeId, copyTraitId));
+        Assert.False(copyImpl.HasRuntimeMethods);
+    }
+
+    [Fact]
+    public void DeriveCopy_PhantomGeneric_DoesNotRequireUnusedTypeParameter()
+    {
+        const string source = """
+@[derive(Copy)]
+Handle[A] :: type { handle :: RawPtr }
+""";
+
+        var result = Compile("derive_copy_phantom_generic.eidos", source);
+        Assert.True(result.Success, FormatDiagnostics(result));
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var handleId = Assert.IsType<SymbolId>(symbolTable.LookupType("Handle"));
+        var handle = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(handleId));
+        var specialized = new TypeId(9001);
+        var descriptors = new Dictionary<int, Eidosc.Types.TypeDescriptor>
+        {
+            [specialized.Value] = new Eidosc.Types.TypeDescriptor.TyCon(
+                Eidosc.Types.TypeConstructorKey.FromSymbol(handleId),
+                [new TypeId(Eidosc.Types.BaseTypes.StringId)])
+        };
+        var resolver = Eidosc.Types.CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable, descriptors);
+
+        Assert.True(resolver(specialized));
     }
 
     [Fact]
     public void DeriveClone_SingleConstructor_Compiles()
     {
         const string source = """
-@derive(Clone)
-Box :: type {
-    Box(String)
+
+@[derive(Clone)]
+
+Box :: type
+{
+    Box:: type(String)
 }
 """;
         var result = Compile("derive_clone_single.eidos", source);
@@ -37,12 +124,40 @@ Box :: type {
     }
 
     [Fact]
+    public void DeriveClone_GeneratesSharedReferenceReceiver()
+    {
+        const string source = """
+
+@[derive(Clone)]
+
+Box :: type
+{
+    Box:: type(String)
+}
+""";
+        var result = Compile("derive_clone_receiver.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Clone");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "clone");
+        var signature = Assert.IsType<Eidosc.Ast.Types.ArrowType>(generated.Signature.Single());
+        var receiver = Assert.IsType<Eidosc.Ast.Types.TypePath>(signature.ParamType);
+        Assert.Equal("Ref", receiver.TypeName);
+        Assert.Single(receiver.TypeArgs);
+    }
+
+    [Fact]
     public void DeriveEq_SingleConstructor_Compiles()
     {
         const string source = """
-@derive(Eq)
-Pair :: type {
-    Pair(Int, Int)
+
+@[derive(Eq)]
+
+Pair :: type
+{
+    Pair:: type(Int, Int)
 }
 """;
         var result = Compile("derive_eq_single.eidos", source);
@@ -53,9 +168,12 @@ Pair :: type {
     public void DeriveShow_SingleConstructor_Compiles()
     {
         const string source = """
-@derive(Show)
-Wrapper :: type {
-    Wrapper(Int)
+
+@[derive(Show)]
+
+Wrapper :: type
+{
+    Wrapper:: type(Int)
 }
 """;
         var result = Compile("derive_show_single.eidos", source);
@@ -66,11 +184,12 @@ Wrapper :: type {
     public void DeriveCopy_MultiConstructor_Compiles()
     {
         const string source = """
-@derive(Copy)
-@derive(Clone)
-@derive(Show)
-Shape :: type {
-    Circle(Int) , Rect(Int, Int)
+
+@[derive(Copy, Clone, Show)]
+
+Shape :: type
+{
+    Circle:: type(Int) , Rect:: type(Int, Int)
 }
 """;
         var result = Compile("derive_copy_multi.eidos", source);
@@ -81,11 +200,12 @@ Shape :: type {
     public void DeriveEq_MultiConstructor_Compiles()
     {
         const string source = """
-@derive(Eq)
-@derive(Copy)
-@derive(Clone)
-Color :: type {
-    Red , Green , Blue
+
+@[derive(Eq, Copy, Clone)]
+
+Color :: type
+{
+    Red :: type {} , Green :: type {} , Blue :: type {}
 }
 """;
         var result = Compile("derive_eq_multi.eidos", source);
@@ -96,12 +216,12 @@ Color :: type {
     public void DeriveOrd_MultiConstructor_Compiles()
     {
         const string source = """
-@derive(Eq)
-@derive(Ord)
-@derive(Copy)
-@derive(Clone)
-Ordering2 :: type {
-    Less2 , Equal2 , Greater2
+
+@[derive(Eq, Ord, Copy, Clone)]
+
+Ordering2 :: type
+{
+    Less2 :: type {} , Equal2 :: type {} , Greater2 :: type {}
 }
 """;
         var result = Compile("derive_ord_multi.eidos", source);
@@ -112,12 +232,12 @@ Ordering2 :: type {
     public void DeriveAllOnGenericType_Compiles()
     {
         const string source = """
-@derive(Copy)
-@derive(Clone)
-@derive(Eq)
-@derive(Show)
-Maybe[T] :: type {
-    Just(T) , Nothing
+
+@[derive(Copy, Clone, Eq, Show)]
+
+Maybe[T] :: type
+{
+    Just:: type(T) , Nothing :: type {}
 }
 """;
         var result = Compile("derive_all_generic.eidos", source);
@@ -128,9 +248,12 @@ Maybe[T] :: type {
     public void DeriveUnsupportedTrait_ReportsDiagnostic()
     {
         const string source = """
-@derive(Debug)
-Point :: type {
-    Point(Int)
+
+@[derive(Debug)]
+
+Point :: type
+{
+    Point:: type(Int)
 }
 """;
 
@@ -153,10 +276,10 @@ DirectionVector :: trait {
 }
 
 Direction :: type {
-    North ,
-    South ,
-    East ,
-    West
+    North :: type {} ,
+    South :: type {} ,
+    East :: type {} ,
+    West :: type {}
 }
 
 DirectionVectorDirection :: instance DirectionVector for Direction {
@@ -189,7 +312,7 @@ read_dx :: Direction -> Int
     {
         const string source = """
 Axis :: type {
-    Vertical , Horizontal
+    Vertical :: type {} , Horizontal :: type {}
 }
 
 DirectionVector :: trait {
@@ -198,10 +321,10 @@ DirectionVector :: trait {
 }
 
 Direction[A] :: type {
-    North -> Direction[Vertical] ,
-    South -> Direction[Vertical] ,
-    East -> Direction[Horizontal] ,
-    West -> Direction[Horizontal]
+    North :: type case Direction[Vertical] {},
+    South :: type case Direction[Vertical] {},
+    East :: type case Direction[Horizontal] {},
+    West :: type case Direction[Horizontal] {}
 }
 
 DirectionVectorDirection[A] :: instance DirectionVector for Direction[A] {
@@ -230,10 +353,12 @@ DirectionFacts :: trait {
     opposite :: Self -> Self
 }
 
-@derive(Eq)
-Direction :: type {
-    North ,
-    South
+@[derive(Eq)]
+
+Direction :: type
+{
+    North :: type {} ,
+    South :: type {}
 }
 
 DirectionFactsDirection :: instance DirectionFacts for Direction {
@@ -256,7 +381,7 @@ read_opposite :: Direction -> Direction
     public void ConstructorBridgeFacts_PathValueReferences_GeneratesTraitImpl()
     {
         const string source = """
-import Std.GameMath
+import std.GameMath
 
 Pos :: type = GameMath.IVec2;
 
@@ -265,8 +390,8 @@ DirectionFacts :: trait {
 }
 
 Direction :: type {
-    North ,
-    East
+    North :: type {} ,
+    East :: type {}
 }
 
 DirectionFactsDirection :: instance DirectionFacts for Direction {
@@ -294,8 +419,8 @@ DirectionVector :: trait {
 }
 
 Direction :: type {
-    North ,
-    South
+    North :: type {} ,
+    South :: type {}
 }
 
 DirectionVectorDirection :: instance DirectionVector for Direction {
@@ -321,7 +446,7 @@ DirectionVector :: trait {
 }
 
 Direction :: type {
-    North
+    North :: type {}
 }
 
 DirectionVectorDirection :: instance DirectionVector for Direction {
@@ -347,7 +472,7 @@ DirectionVector :: trait {
 }
 
 Direction :: type {
-    North
+    North :: type {}
 }
 
 DirectionVectorDirection :: instance DirectionVector for Direction {
@@ -369,7 +494,7 @@ DirectionVectorDirection :: instance DirectionVector for Direction {
     {
         const string source = """
 Direction :: type {
-    North { dx = 0 }
+    North :: type {} :: type:: type{ dx = 0 }
 }
 """;
 
@@ -379,38 +504,44 @@ Direction :: type {
         Assert.Contains(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message.Contains("constructor named blocks no longer accept", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("expected a field declaration", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void DeriveOnTypeWithoutConstructors_ReportsDiagnostic()
+    public void DeriveOnEmptyProduct_UsesSyntheticConstructor()
     {
         const string source = """
-@derive(Eq)
-Empty :: type {
+
+@[derive(Eq)]
+
+Empty :: type
+{
 }
 """;
 
         var result = Compile("derive_empty_type.eidos", source);
 
-        Assert.False(result.Success);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
-                          diagnostic.Message == DiagnosticMessages.DeriveTypeHasNoConstructors("Eq", "Empty"));
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instance = Assert.Single(
+            result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Eq");
+        var generated = Assert.Single(instance.Methods, function => function.Name == "eq");
+        Assert.Single(generated.Body);
     }
 
     [Fact]
-    public void DeriveCopy_GeneratesCopyMarkerFunction()
+    public void DeriveCopy_GeneratesCopyMarkerInstance()
     {
         const string source = """
-@derive(Copy)
-Unit2 :: type {
-    Unit2
+
+@[derive(Copy)]
+
+Unit2 :: type
+{
+    Unit2 :: type {}
 }
 """;
-        // Derive-generated @impl(Copy) functions are resolved during type inference,
-        // so we compile through to that phase. The compilation must succeed.
+        // Derive-generated Copy evidence is a method-free named instance.
         var result = CompileThroughTypeInference("derive_copy_impl.eidos", source);
         Assert.True(result.Success, FormatDiagnostics(result));
     }
@@ -424,13 +555,14 @@ MyClone :: trait {
 }
 
 Wrapper[T] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
-@impl(MyClone)
-my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
-{
-    Wrap(v) => Wrap(my_clone(v))
+MyCloneWrapper :: instance MyClone {
+    my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
+    {
+        Wrap(v) => Wrap(my_clone(v))
+    }
 }
 """;
         var result = CompileThroughTypeInference("impl_generic_constraint.eidos", source);
@@ -452,10 +584,12 @@ my_clone[T: MyClone] :: Wrapper[T] -> Wrapper[T]
     public void DeriveClone_MultiConstructor_Compiles()
     {
         const string source = """
-@derive(Clone)
-@derive(Show)
-Result2[T, E] :: type {
-    Ok(T) , Err(E)
+
+@[derive(Clone, Show)]
+
+Result2[T, E] :: type
+{
+    Ok:: type(T) , Err:: type(E)
 }
 """;
         var result = CompileThroughTypeInference("derive_clone_result.eidos", source);
@@ -469,11 +603,13 @@ Result2[T, E] :: type {
         // is synthesized before derive processing, so @derive must behave exactly
         // like the equivalent explicit single-constructor form.
         const string source = """
-@derive(Eq)
-@derive(Show)
-Point :: type {
-    x: Int,
-    y: Int
+
+@[derive(Eq, Show)]
+
+Point :: type
+{
+    x:: Int,
+    y:: Int
 }
 """;
         var result = CompileThroughTypeInference("derive_eq_bare_product.eidos", source);
@@ -525,9 +661,9 @@ Point :: type {
     private static string WithStdTraitImports(string source)
     {
         return """
-import Std.Trait
-import Std.TraitInvoke
-import Std.Ordering
+import std.Traits
+import std.TraitInvoke
+import std.Ordering
 
 """ + source;
     }

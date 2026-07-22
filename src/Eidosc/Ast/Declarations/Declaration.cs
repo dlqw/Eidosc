@@ -7,10 +7,35 @@ namespace Eidosc.Ast.Declarations;
 /// </summary>
 public abstract record Declaration : EidosAstNode
 {
+    private List<DeclarationClause> _typedTagClauses = [];
+    private List<DeclarationClause> _sourceClauses = [];
+
     /// <summary>
     /// 属性列表
     /// </summary>
     public List<Attribute> Attributes { get; protected set; } = [];
+
+    /// <summary>
+    /// Normalized source declaration attachments in source order. Signature
+    /// components and typed tags share this internal representation; Attributes
+    /// only represents legacy input.
+    /// </summary>
+    public List<DeclarationClause> Clauses { get; protected set; } = [];
+
+    /// <summary>
+    /// Versioned, typed clause occurrences produced by ClauseBinder in source order.
+    /// </summary>
+    public IReadOnlyList<ClauseIR> BoundClauses { get; private set; } = [];
+
+    /// <summary>
+    /// Unified derive/expand invocations lowered from <see cref="BoundClauses"/>.
+    /// </summary>
+    public IReadOnlyList<MetaInvocationIR> MetaInvocations { get; private set; } = [];
+
+    /// <summary>
+    /// Unified versioned attachment consumed by semantic and meta phases.
+    /// </summary>
+    public DeclarationAttachmentIR Attachment { get; private set; } = DeclarationAttachmentIR.Empty;
 
     /// <summary>
     /// 是否显式标记为 export。
@@ -28,6 +53,15 @@ public abstract record Declaration : EidosAstNode
                 attrsElement.AppendChild(attr.ToXmlElement(doc));
             }
             element.AppendChild(attrsElement);
+        }
+        if (Clauses.Count > 0)
+        {
+            var clausesElement = doc.CreateElement("Clauses");
+            foreach (var clause in Clauses)
+            {
+                clausesElement.AppendChild(clause.ToXmlElement(doc));
+            }
+            element.AppendChild(clausesElement);
         }
         return element;
     }
@@ -54,7 +88,32 @@ public abstract record Declaration : EidosAstNode
     }
 
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
-    internal void SetAttributes(List<Attribute> attrs) => Attributes = attrs;
+    internal void SetAttributes(List<Attribute> attrs)
+    {
+        Attributes = attrs.Where(static attribute => attribute.TypedClause == null).ToList();
+        _typedTagClauses = attrs
+            .Select(static attribute => attribute.TypedClause)
+            .Where(static clause => clause != null)
+            .Cast<DeclarationClause>()
+            .ToList();
+        RebuildSourceAttachments();
+    }
+
+    internal void SetClauses(List<DeclarationClause> clauses)
+    {
+        _sourceClauses = clauses;
+        RebuildSourceAttachments();
+    }
+
+    private void RebuildSourceAttachments() => Clauses = [.. _typedTagClauses, .. _sourceClauses];
+    internal void SetBoundClauses(
+        IReadOnlyList<ClauseIR> clauses,
+        IReadOnlyList<MetaInvocationIR> invocations)
+    {
+        BoundClauses = clauses;
+        MetaInvocations = invocations;
+        Attachment = DeclarationAttachmentIR.Create(clauses, invocations, Clauses);
+    }
     internal void SetExported(bool exported) => IsExported = exported;
 
     protected static bool ContainsKeyword(NonTerminalCstNode node, string keyword)

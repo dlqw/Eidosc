@@ -1,4 +1,5 @@
 using Eidosc.Utils;
+using Eidosc.Types;
 
 namespace Eidosc.Borrow;
 
@@ -22,10 +23,6 @@ public enum ParamBorrowMode
     /// </summary>
     BorrowMutable,
 
-    /// <summary>
-    /// 复制语义（Copy 类型）
-    /// </summary>
-    Copy
 }
 
 /// <summary>
@@ -72,7 +69,6 @@ public sealed class ParamBorrowRequirement
         ParamBorrowMode.Own => $"{Name}: own",
         ParamBorrowMode.BorrowShared => $"{Name}: &'{Lifetime.Value}",
         ParamBorrowMode.BorrowMutable => $"{Name}: &mut '{Lifetime.Value}",
-        ParamBorrowMode.Copy => $"{Name}: copy",
         _ => $"{Name}: ?"
     };
 }
@@ -173,6 +169,8 @@ public sealed class LifetimeParam
 /// </summary>
 public sealed class LoanSignature
 {
+    internal OwnershipContract OwnershipContract { get; init; } = OwnershipContract.Empty;
+
     /// <summary>
     /// 函数名
     /// </summary>

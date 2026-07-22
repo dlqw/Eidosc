@@ -16,7 +16,7 @@ public sealed record MirFunctionFingerprintSnapshot(
     string SchemaVersion,
     IReadOnlyList<MirFunctionFingerprint> Functions)
 {
-    public const string CurrentSchemaVersion = "mir-function-fingerprint-snapshot-v1";
+    public const string CurrentSchemaVersion = "mir-function-fingerprint-snapshot-v2";
 
     public static MirFunctionFingerprintSnapshot FromModule(MirModule module) =>
         new(
@@ -28,7 +28,7 @@ public sealed record MirFunctionFingerprintSnapshot(
 
 public static class MirFunctionFingerprintBuilder
 {
-    private const string Schema = "mir-function-fingerprint-v1";
+    private const string Schema = "mir-function-fingerprint-v2";
 
     public static MirFunctionFingerprint Compute(MirFunc function)
     {
@@ -118,6 +118,12 @@ public static class MirFunctionFingerprintBuilder
             case MirAssign assign:
                 AddPlace(writer, assign.Target);
                 AddOperand(writer, assign.Source);
+                break;
+            case MirCaseInject injection:
+                AddOperand(writer, injection.Target);
+                AddOperand(writer, injection.Operand);
+                writer.Add(injection.SourceTypeId.Value);
+                writer.Add(injection.TargetTypeId.Value);
                 break;
             case MirCall call:
                 AddPlace(writer, call.Target);

@@ -1,0 +1,144 @@
+Hash :: module {
+    import Seq
+    import Traits
+    import TraitInvoke
+
+
+
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
+
+    string_length_ref :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
+
+
+
+
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+
+    string_char_at_ref :: Ref[String] -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+
+
+    int :: Int -> Int
+    {
+        n => n
+    }
+
+    bool :: Bool -> Int
+    {
+        b => if b then { 1 } else { 0 }
+    }
+
+    string :: String -> Int
+    {
+        s => Hash.string_with_seed(s)(16777619)
+    }
+
+    string_with_seed :: String -> Int -> Int
+    {
+        s => seed => Hash.hash_string_loop(ref s)(0)(seed)
+    }
+
+    normalize :: Int -> Int
+    {
+        h => if h < 0 then { 0 - h } else { h }
+    }
+
+    bucket_index :: Int -> Int -> Int
+    {
+        h => capacity =>
+            if capacity <= 0 then { 0 }
+            else { Hash.normalize(h) % capacity }
+    }
+
+    mix :: Int -> Int -> Int
+    {
+        seed => value => (seed + value) * 16777619
+    }
+
+    mix_int :: Int -> Int -> Int
+    {
+        seed => value => Hash.mix(seed)(Hash.int(value))
+    }
+
+    mix_bool :: Int -> Bool -> Int
+    {
+        seed => value => Hash.mix(seed)(Hash.bool(value))
+    }
+
+    mix_string :: Int -> String -> Int
+    {
+        seed => value => Hash.string_with_seed(value)(seed)
+    }
+
+    combine2 :: Int -> Int -> Int
+    {
+        first => second => Hash.mix(first)(second)
+    }
+
+    combine3 :: Int -> Int -> Int -> Int
+    {
+        first => second => third => Hash.mix(Hash.mix(first)(second))(third)
+    }
+
+    combine_all :: Seq[Int] -> Int -> Int
+    {
+        [] => seed => seed,
+        [head, ..tail] => seed => Hash.combine_all(tail)(Hash.mix(seed)(head))
+    }
+
+    combine_seq :: Seq[Int] -> Int
+    {
+        values => Hash.combine_all(values)(16777619)
+    }
+
+    seq_with_seed[T: Traits.Hash] :: Seq[T] -> Int -> Int
+    {
+        [] => seed => seed,
+        [head, ..tail] => seed => Hash.seq_with_seed(tail)(Hash.mix(seed)(TraitInvoke.hash_value(head)))
+    }
+
+    seq[T: Traits.Hash] :: Seq[T] -> Int
+    {
+        values => Hash.seq_with_seed(values)(16777619)
+    }
+
+    pair_with_seed[A: Traits.Hash, B: Traits.Hash] :: A -> B -> Int -> Int
+    {
+        left => right => seed =>
+            Hash.mix(Hash.mix(seed)(TraitInvoke.hash_value(left)))(TraitInvoke.hash_value(right))
+    }
+
+    pair[A: Traits.Hash, B: Traits.Hash] :: A -> B -> Int
+    {
+        left => right => Hash.pair_with_seed(left)(right)(16777619)
+    }
+
+    // Int hash — identity
+    HashInt :: instance Traits.Hash {
+        hash :: Int -> Int { n => n }
+    }
+
+    // Bool hash — 1 for true, 0 for false
+    HashBool :: instance Traits.Hash {
+        hash :: Bool -> Int { b => if b then { 1 } else { 0 } }
+    }
+
+    // String hash — FNV-1a variant (uses multiply-add instead of XOR)
+    HashString :: instance Traits.Hash {
+        hash :: String -> Int
+            {
+                s => Hash.hash_string_loop(ref s)(0)(16777619)
+            }
+    }
+
+
+    hash_string_loop :: Ref[String] -> Int -> Int -> Int
+     compiler(internal)
+{
+        s => idx => h =>
+            if idx >= string_length_ref(s) then { h }
+            else {
+                c := string_char_at_ref(s)(idx);
+                Hash.hash_string_loop(s)(idx + 1)((h + c) * 16777619)
+            }
+    }
+}

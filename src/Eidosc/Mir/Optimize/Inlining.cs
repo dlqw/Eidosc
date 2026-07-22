@@ -386,6 +386,11 @@ public sealed class Inlining : IMirOptimizationPass
                 Target = RemapPlace(assign.Target, map),
                 Source = RemapOperand(assign.Source, map)
             },
+            MirCaseInject injection => injection with
+            {
+                Target = RemapOperand(injection.Target, map),
+                Operand = RemapOperand(injection.Operand, map)
+            },
             MirCall call => call with
             {
                 Target = call.Target != null ? RemapPlace(call.Target, map) : null,

@@ -37,6 +37,8 @@ public record TraitDef : Declaration
 
     public List<AssociatedConstDecl> AssociatedConsts { get; private set; } = [];
 
+    public List<EidosAstNode> Members { get; private set; } = [];
+
     /// <summary>
     /// Trait proof member list.
     /// </summary>
@@ -52,6 +54,7 @@ public record TraitDef : Declaration
         Methods.Clear();
         AssociatedTypes.Clear();
         AssociatedConsts.Clear();
+        Members.Clear();
 
         if (node is NonTerminalCstNode ntNode)
         {
@@ -143,6 +146,20 @@ public record TraitDef : Declaration
     internal void SetMethods(List<FuncDef> methods) => Methods = methods;
     internal void SetAssociatedTypes(List<AssociatedTypeDecl> associatedTypes) => AssociatedTypes = associatedTypes;
     internal void SetAssociatedConsts(List<AssociatedConstDecl> associatedConsts) => AssociatedConsts = associatedConsts;
+    internal void SetMembers(List<EidosAstNode> members) => Members = members;
+    internal void AppendMember(EidosAstNode member) => Members.Add(member);
+    internal bool ReplaceMemberExpansion(ExpandDeclaration expansion, IReadOnlyList<EidosAstNode> members)
+    {
+        var index = Members.FindIndex(member => ReferenceEquals(member, expansion));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Members.RemoveAt(index);
+        Members.InsertRange(index, members);
+        return true;
+    }
     // SetProofs removed during migration
 
     public override XmlElement ToXmlElement(XmlDocument doc)

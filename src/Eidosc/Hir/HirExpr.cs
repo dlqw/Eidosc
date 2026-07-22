@@ -1,5 +1,6 @@
 using Eidosc.Utils;
 using Eidosc.Types;
+using Eidosc.Symbols;
 
 namespace Eidosc.Hir;
 
@@ -19,6 +20,18 @@ public sealed record HirError : HirNode
     public override string ToString() => string.IsNullOrWhiteSpace(Reason)
         ? "<hir-error>"
         : $"<hir-error: {Reason}>";
+}
+
+public sealed record HirCaseInject : HirNode
+{
+    public HirCaseInject() : base(HirKind.Expr) { }
+
+    public HirNode Operand { get; init; } = null!;
+    public SymbolId SourceCase { get; init; } = SymbolId.None;
+    public SymbolId TargetAncestor { get; init; } = SymbolId.None;
+    public TypeId SourceTypeId { get; init; } = TypeId.None;
+
+    public override string ToString() => $"CaseInject({SourceCase} -> {TargetAncestor}, {Operand})";
 }
 
 /// <summary>
@@ -784,6 +797,8 @@ public abstract record HirPattern
     /// 模式类型
     /// </summary>
     public TypeId TypeId { get; init; } = TypeId.None;
+
+    public IReadOnlyList<GeneratedDeclarationOrigin> GeneratedOriginChain { get; internal set; } = [];
 }
 
 /// <summary>

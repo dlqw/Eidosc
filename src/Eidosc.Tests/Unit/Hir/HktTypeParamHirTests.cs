@@ -85,11 +85,11 @@ ho[F, G: kind2] :: F[G] -> F[G]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 UseK[K] :: type {
-    UseK(K[Box])
+    UseK:: type(K[Box])
 }
 
 HK :: effect;
@@ -132,7 +132,7 @@ Functor[F: kind2] :: trait {
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 HK[K] :: trait {
@@ -155,7 +155,7 @@ HK[K] :: trait {
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Functor[F: kind2] :: trait {

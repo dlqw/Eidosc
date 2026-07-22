@@ -6,13 +6,99 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public class EidosProjectConfigurationLoaderTests
 {
     [Fact]
+    public void LoadFromPath_MetaExtensionsResolveDeclaredResourcesAndStableFingerprint()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_project_meta_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(tempDir, "src"));
+        Directory.CreateDirectory(Path.Combine(tempDir, "schemas", "nested"));
+        var projectFile = Path.Combine(tempDir, "eidos.toml");
+        File.WriteAllText(Path.Combine(tempDir, "src", "main.eidos"), "main :: Unit -> Int { _ => 0 }");
+        File.WriteAllText(Path.Combine(tempDir, "schemas", "root.json"), "{\"root\":true}");
+        File.WriteAllText(Path.Combine(tempDir, "schemas", "nested", "leaf.json"), "{\"leaf\":true}");
+        File.WriteAllText(projectFile, """
+            [meta]
+            checks = ["quality.enforce_api_names"]
+
+            [[meta.extensions]]
+            name = "routes"
+            entry = "routes.generate"
+            stage = "semantic"
+            scope = "package"
+            inputs = ["schemas/**/*.json", "schemas/missing.json"]
+            capabilities = ["read-semantics", "read-declared-resources", "emit-modules"]
+            """);
+
+        try
+        {
+            var first = EidosProjectConfigurationLoader.LoadFromPath(projectFile).Configuration.Meta!;
+            var second = EidosProjectConfigurationLoader.LoadFromPath(projectFile).Configuration.Meta!;
+
+            Assert.Equal(["quality.enforce_api_names"], first.Checks);
+            var extension = Assert.Single(first.Extensions);
+            Assert.Equal("routes.generate", extension.Entry);
+            Assert.Equal(
+                ["schemas/nested/leaf.json", "schemas/root.json", "schemas/missing.json"],
+                extension.Resources.Select(static resource => resource.RelativePath));
+            Assert.Equal([true, true, false], extension.Resources.Select(static resource => resource.Exists));
+            Assert.All(extension.Resources, static resource => Assert.NotEmpty(resource.ContentHash));
+            Assert.Equal(first.Fingerprint, second.Fingerprint);
+
+            File.WriteAllText(Path.Combine(tempDir, "schemas", "root.json"), "{\"root\":false}");
+            var changed = EidosProjectConfigurationLoader.LoadFromPath(projectFile).Configuration.Meta!;
+            Assert.NotEqual(first.Fingerprint, changed.Fingerprint);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadFromPath_MetaExtensionsRejectUnknownCapabilitiesAndEscapingInputs()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_project_meta_invalid_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var projectFile = Path.Combine(tempDir, "eidos.toml");
+
+        try
+        {
+            File.WriteAllText(projectFile, """
+                [[meta.extensions]]
+                name = "routes"
+                entry = "routes.generate"
+                inputs = ["../secret.json"]
+                capabilities = ["ambient-filesystem"]
+                """);
+
+            var error = Assert.Throws<InvalidOperationException>(
+                () => EidosProjectConfigurationLoader.LoadFromPath(projectFile));
+            Assert.Contains("unknown capability", error.Message, StringComparison.Ordinal);
+
+            File.WriteAllText(projectFile, """
+                [[meta.extensions]]
+                name = "routes"
+                entry = "routes.generate"
+                inputs = ["../secret.json"]
+                capabilities = []
+                """);
+            error = Assert.Throws<InvalidOperationException>(
+                () => EidosProjectConfigurationLoader.LoadFromPath(projectFile));
+            Assert.Contains("project root", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void LoadFromPath_MinimalManifest_UsesDefaultSourceRootsAndInfersMainTarget()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_project_config_{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(tempDir, "src"));
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
-        var mainFile = Path.Combine(tempDir, "src", "Main.eidos");
+        var mainFile = Path.Combine(tempDir, "src", "main.eidos");
         File.WriteAllText(projectFile, """
             [package]
             name = "dev.eidos.app"
@@ -46,13 +132,13 @@ public class EidosProjectConfigurationLoaderTests
         Directory.CreateDirectory(Path.Combine(tempDir, "src"));
 
         var projectFile = Path.Combine(tempDir, "eidos.toml");
-        var libFile = Path.Combine(tempDir, "src", "Lib.eidos");
+        var libFile = Path.Combine(tempDir, "src", "lib.eidos");
         File.WriteAllText(projectFile, """
             [package]
             name = "dev.eidos.lib"
             version = "0.1.0"
             """);
-        File.WriteAllText(libFile, "Lib :: module { id :: Int -> Int { x => x } }");
+        File.WriteAllText(libFile, "lib :: module { id :: Int -> Int { x => x } }");
 
         try
         {

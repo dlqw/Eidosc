@@ -55,7 +55,21 @@ public enum CompilationTarget
 /// </summary>
 public sealed class CompilationOptions
 {
+    /// <summary>
+    /// Internal migration-fixture switch. It is not a language compatibility mode and must not
+    /// be enabled by normal compiler clients.
+    /// </summary>
+
     internal Types.BuildComptimeContext? BuildComptimeContext { get; set; }
+
+    /// <summary>
+    /// Exact compiler-owned source inputs. This capability is internal so source text cannot
+    /// mint privilege by choosing a path or spelling a private clause.
+    /// </summary>
+    internal IReadOnlyList<string> ToolchainOwnedSourcePaths { get; set; } = [];
+
+    /// <summary>Manifest-declared package analyzers and capability-constrained compiler extensions.</summary>
+    public ProjectSystem.EidosMetaConfiguration? MetaConfiguration { get; set; }
 
     /// <summary>输入文件路径</summary>
     public string InputFile { get; set; } = "";
@@ -116,6 +130,13 @@ public sealed class CompilationOptions
     /// <summary>Canonical BuildGraph fingerprint.</summary>
     public string? BuildGraphFingerprint { get; set; }
 
+    /// <summary>
+    /// Maps physical generated source paths to stable logical document URIs used by diagnostics and IDE output.
+    /// Physical paths remain authoritative for module discovery and file access.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> GeneratedSourceUriMap { get; set; } =
+        new Dictionary<string, string>();
+
     /// <summary>本地可执行文件链接模式。</summary>
     public CodeGen.NativeLinkMode NativeLinkMode { get; set; } = CodeGen.NativeLinkMode.NonPieExecutable;
 
@@ -159,6 +180,9 @@ public sealed class CompilationOptions
 
     /// <summary>将所有 warning 视为 error。</summary>
     public bool TreatWarningsAsErrors { get; set; }
+
+    /// <summary>将带有 style metadata 的诊断视为 error。</summary>
+    public bool DenyStyle { get; set; }
 
     /// <summary>将指定 warning code 视为 error。</summary>
     public HashSet<string> WarningCodesAsErrors { get; set; } = new(StringComparer.Ordinal);

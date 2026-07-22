@@ -216,6 +216,37 @@ public sealed class Scope
     public IReadOnlyDictionary<string, SymbolId> GetLocalAbilities() => _abilities;
 
     public IReadOnlyDictionary<string, SymbolId> GetLocalConstructors() => _constructors;
+
+    internal void RemoveSymbol(SymbolId symbolId)
+    {
+        RemoveValue(_bindings, symbolId);
+        RemoveValue(_types, symbolId);
+        RemoveValue(_traits, symbolId);
+        RemoveValue(_abilities, symbolId);
+        RemoveValue(_constructors, symbolId);
+
+        foreach (var name in _functionOverloads.Keys.ToArray())
+        {
+            var overloads = _functionOverloads[name];
+            overloads.RemoveAll(candidate => candidate == symbolId);
+            if (overloads.Count == 0)
+            {
+                _functionOverloads.Remove(name);
+            }
+            else if (!_bindings.ContainsKey(name))
+            {
+                _bindings[name] = overloads[0];
+            }
+        }
+
+        static void RemoveValue(Dictionary<string, SymbolId> bindings, SymbolId id)
+        {
+            foreach (var name in bindings.Where(entry => entry.Value == id).Select(static entry => entry.Key).ToArray())
+            {
+                bindings.Remove(name);
+            }
+        }
+    }
 }
 
 /// <summary>

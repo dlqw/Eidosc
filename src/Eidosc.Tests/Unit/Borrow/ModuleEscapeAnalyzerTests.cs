@@ -106,6 +106,55 @@ public class ModuleEscapeAnalyzerTests
         Assert.Contains(0, summary.EscapingParams);
     }
 
+    [Fact]
+    public void ReturnClosedCaseInjection_PreservesParameterEscapeOrigin()
+    {
+        var parameter = new LocalId { Value = 1 };
+        var injected = new LocalId { Value = 2 };
+        var exactType = new TypeId(100);
+        var parentType = new TypeId(101);
+        var parameterPlace = new MirPlace { Kind = PlaceKind.Local, Local = parameter, TypeId = exactType };
+        var injectedPlace = new MirPlace { Kind = PlaceKind.Local, Local = injected, TypeId = parentType };
+        var function = new MirFunc
+        {
+            Name = "inject_and_return",
+            SymbolId = new SymbolId(11),
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = parameter, Name = "value", TypeId = exactType, IsParameter = true },
+                new MirLocal { Id = injected, Name = "parent", TypeId = parentType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCaseInject
+                        {
+                            Target = injectedPlace,
+                            Operand = parameterPlace,
+                            SourceCase = new SymbolId(100),
+                            TargetAncestor = new SymbolId(101),
+                            SourceTypeId = exactType,
+                            TargetTypeId = parentType
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = injectedPlace }
+                }
+            ]
+        };
+        var module = new MirModule { Name = "test", Functions = [function] };
+
+        var analyzer = new ModuleEscapeAnalyzer(module);
+        analyzer.Analyze();
+
+        Assert.Contains(0, GetSummary(analyzer, function).EscapingParams);
+    }
+
     /// <summary>
     /// 函数通过 MirStore 存储参数 → 参数逃逸
     /// </summary>

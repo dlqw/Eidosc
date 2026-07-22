@@ -52,8 +52,21 @@ public static class TypeDescriptorRewriter
             changed |= typeId != valueArgument.TypeId;
         }
 
+        var effectArgs = new GenericEffectArgumentDescriptor[tyCon.EffectArgs.Length];
+        for (var index = 0; index < tyCon.EffectArgs.Length; index++)
+        {
+            var effectArgument = tyCon.EffectArgs[index];
+            var typeId = rewriteTypeId(effectArgument.TypeId);
+            effectArgs[index] = effectArgument with { TypeId = typeId };
+            changed |= typeId != effectArgument.TypeId;
+        }
+
         return changed
-            ? new TypeDescriptor.TyCon(tyCon.Constructor, typeArgs) { ValueArgs = valueArgs }
+            ? new TypeDescriptor.TyCon(tyCon.Constructor, typeArgs)
+            {
+                ValueArgs = valueArgs,
+                EffectArgs = effectArgs
+            }
             : tyCon;
     }
 

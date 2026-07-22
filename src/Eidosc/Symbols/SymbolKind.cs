@@ -56,6 +56,16 @@ public enum SymbolKind
     Field,
 
     /// <summary>
+    /// Trait or instance associated type.
+    /// </summary>
+    AssociatedType,
+
+    /// <summary>
+    /// Trait or instance associated constant.
+    /// </summary>
+    AssociatedConst,
+
+    /// <summary>
     /// Trait 实现 (impl 块)
     /// </summary>
     Impl,

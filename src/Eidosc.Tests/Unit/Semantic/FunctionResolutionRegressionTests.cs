@@ -16,7 +16,7 @@ public partial class FunctionResolutionRegressionTests
     {
         const string source = """
 S3 :: type {
-    S3(Int, Int, Int)
+    S3:: type(Int, Int, Int)
 }
 
 roundTrip :: S3 -> S3
@@ -87,7 +87,7 @@ main :: String -> Int
     public void CompilationPipeline_BuiltinPrintFunctions_AreResolvedWithoutDeclarations()
     {
         const string source = """
-main :: String -> Unit need IO
+main :: String -> Unit need io
 {
     src => { print_string(src); print_int(42) }
 }
@@ -108,7 +108,7 @@ main :: String -> Unit need IO
     public void CompilationPipeline_MultipleWhenGuards_AreLoweredInOrder()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) , NoneInt }
+OptionInt :: type { SomeInt:: type(Int) , NoneInt :: type {} }
 
 addIfPositive :: Int -> OptionInt -> Int
 {

@@ -300,7 +300,7 @@ classify :: Int -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 to_digit :: Int -> Int
@@ -639,7 +639,7 @@ classify :: Bool -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -683,7 +683,7 @@ classify :: OptionI -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -725,7 +725,7 @@ classify :: OptionI -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 first_from_pair :: (OptionI, Int) -> Int
@@ -771,7 +771,7 @@ first_from_pair :: (OptionI, Int) -> Int
     {
         const string source = """
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -852,7 +852,7 @@ sum_pair :: (Int, Int) -> Int
     public void Parser_IfLetPattern_ParsesPatternScrutineeAndBranches()
     {
         const string source = """
-Option[T] :: type { Some(T) , None }
+Option[T] :: type { Some:: type(T) , None :: type {} }
 
 unwrap_or_zero :: Option[Int] -> Int
 {
@@ -894,7 +894,7 @@ unwrap_or_zero :: Option[Int] -> Int
     public void Parser_WhileLetPattern_ParsesPatternScrutineeAndBody()
     {
         const string source = """
-Option[T] :: type { Some(T) , None }
+Option[T] :: type { Some:: type(T) , None :: type {} }
 
 sum_if_some :: Option[Int] -> Int
 {

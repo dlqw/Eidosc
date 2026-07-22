@@ -119,6 +119,11 @@ public sealed record HirFunc : HirDecl
     public TypeId ReturnType { get; init; } = TypeId.None;
 
     /// <summary>
+    /// Signature-derived ownership authority attached before MIR and borrow analysis.
+    /// </summary>
+    internal OwnershipContract OwnershipContract { get; init; } = OwnershipContract.Empty;
+
+    /// <summary>
     /// 函数体（抽象函数为 null）
     /// </summary>
     public HirNode? Body { get; init; }

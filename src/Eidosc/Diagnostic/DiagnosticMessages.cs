@@ -1292,6 +1292,11 @@ internal static partial class DiagnosticMessages
 
     public static string BorrowUseAfterMoveCannotRead => Get(nameof(BorrowUseAfterMoveCannotRead));
 
+    public static string BorrowValueAlreadyConsumedCannotDrop =>
+        Get(nameof(BorrowValueAlreadyConsumedCannotDrop));
+
+    public static string BorrowDropExactlyOnceHint => Get(nameof(BorrowDropExactlyOnceHint));
+
     public static string BorrowCannotMoveBorrowedValue => Get(nameof(BorrowCannotMoveBorrowedValue));
 
     public static string BorrowReturnedBorrowMustComeFromInputParameter =>
@@ -1583,6 +1588,9 @@ internal static partial class DiagnosticMessages
 
     public static string UnsupportedAstExpressionDuringHirLowering(string nodeType) =>
         Format(nameof(UnsupportedAstExpressionDuringHirLowering), nodeType);
+
+    public static string QuoteExpressionCrossedHirBoundary =>
+        Get(nameof(QuoteExpressionCrossedHirBoundary));
 
     public static string UnsupportedAstPatternDuringHirLowering(string patternType) =>
         Format(nameof(UnsupportedAstPatternDuringHirLowering), patternType);

@@ -49,12 +49,12 @@ public partial class LlvmPipelineIntegrationTests
     public void Operators_ComplexStdlibOperators_NativeSmoke_ReturnsExpectedValue()
     {
         const string source = """
-            import Std.Applicative
-            import Std.Fn
-            import Std.Functor
-            import Std.Monad
-            import Std.Option
-            import Std.Semigroup
+            import std.Applicative
+            import std.Functions
+            import std.Functor
+            import std.Monad
+            import std.Option
+            import std.Semigroup
 
             inc :: Int -> Int
             {

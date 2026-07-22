@@ -281,6 +281,13 @@ public sealed partial class CompilationPipeline
                 HashPlace(ref h, assign.Target);
                 HashOperand(ref h, assign.Source);
                 break;
+            case MirCaseInject injection:
+                h.Add(16);
+                HashOperand(ref h, injection.Target);
+                HashOperand(ref h, injection.Operand);
+                h.Add(injection.SourceTypeId.Value);
+                h.Add(injection.TargetTypeId.Value);
+                break;
             case MirCall call:
                 h.Add(2);
                 HashPlace(ref h, call.Target);

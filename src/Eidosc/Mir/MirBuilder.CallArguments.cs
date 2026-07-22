@@ -1,5 +1,6 @@
 using Eidosc.Diagnostic;
 using Eidosc.Hir;
+using Eidosc.Types;
 using Eidosc.Utilities;
 using Eidosc.Utils;
 
@@ -53,6 +54,11 @@ public sealed partial class MirBuilder
                 return CreatePoisonOperand(TypeId.None, span, DiagnosticMessages.MissingMirTypeForCallArgumentReason);
             }
 
+            if (IsFirstClassReferenceType(typeId))
+            {
+                return place with { TypeId = typeId };
+            }
+
             var temp = NewTemp(typeId);
 
             if (ShouldCopyLocalValue(place.Local, typeId))
@@ -101,6 +107,11 @@ public sealed partial class MirBuilder
                     DiagnosticMessages.MissingMirTypeForForcedCopyCallArgumentReason);
             }
 
+            if (IsFirstClassReferenceType(typeId))
+            {
+                return place with { TypeId = typeId };
+            }
+
             var temp = NewTemp(typeId);
             _currentBlock!.Instructions.Add(new MirCopy
             {
@@ -144,6 +155,25 @@ public sealed partial class MirBuilder
                     Span = variable.Span
                 };
                 return true;
+
+            case HirUnaryOp
+            {
+                Operator: Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef or Eidosc.Hir.UnaryOp.AddressOf
+            } unaryOp:
+            {
+                if (!TryConvertPlaceShapedExprPlace(unaryOp.Operand, out var referencedPlace))
+                {
+                    place = null!;
+                    return false;
+                }
+
+                place = referencedPlace with
+                {
+                    TypeId = unaryOp.TypeId.IsValid ? unaryOp.TypeId : referencedPlace.TypeId,
+                    Span = unaryOp.Span
+                };
+                return true;
+            }
 
             case HirUnaryOp { Operator: Eidosc.Hir.UnaryOp.Deref } unaryOp:
             {
@@ -223,33 +253,36 @@ public sealed partial class MirBuilder
     private bool TryResolveReferenceInnerTypeId(TypeId referenceTypeId, out TypeId innerTypeId)
     {
         innerTypeId = TypeId.None;
-        if (!referenceTypeId.IsValid ||
-            !_dynamicTypeKeysById.TryGetValue(referenceTypeId.Value, out var typeKey))
+        if (!referenceTypeId.IsValid)
         {
             return false;
         }
 
-        return TryParseWrappedTypeId(typeKey, "Ref(", out innerTypeId) ||
-               TryParseWrappedTypeId(typeKey, "MRef(", out innerTypeId);
-    }
+        if (_typeDescriptorsById.TryGetValue(referenceTypeId.Value, out var descriptor))
+        {
+            switch (descriptor)
+            {
+                case TypeDescriptor.Ref reference:
+                    innerTypeId = reference.Inner;
+                    return true;
+                case TypeDescriptor.MutRef mutableReference:
+                    innerTypeId = mutableReference.Inner;
+                    return true;
+            }
+        }
 
-    private static bool TryParseWrappedTypeId(string typeKey, string prefix, out TypeId wrappedTypeId)
-    {
-        wrappedTypeId = TypeId.None;
-        if (!typeKey.StartsWith(prefix, StringComparison.Ordinal) ||
-            !typeKey.EndsWith(")", StringComparison.Ordinal))
+        if (!_dynamicTypeKeysById.TryGetValue(referenceTypeId.Value, out var typeKey) ||
+            !TypeKeyParsing.TryParseTypeDescriptor(typeKey, out descriptor))
         {
             return false;
         }
 
-        var innerText = typeKey[prefix.Length..^1];
-        if (!int.TryParse(innerText, out var parsedTypeId))
+        return descriptor switch
         {
-            return false;
-        }
-
-        wrappedTypeId = new TypeId(parsedTypeId);
-        return wrappedTypeId.IsValid;
+            TypeDescriptor.Ref reference => (innerTypeId = reference.Inner).IsValid,
+            TypeDescriptor.MutRef mutableReference => (innerTypeId = mutableReference.Inner).IsValid,
+            _ => false
+        };
     }
 
     private MirOperand PrepareProjectedCallArgument(
@@ -266,6 +299,14 @@ public sealed partial class MirBuilder
         if (!TryResolveOperandTypeId(place, fallbackType, span, "projected call argument", out var typeId))
         {
             return CreatePoisonOperand(TypeId.None, span, DiagnosticMessages.MissingMirTypeForProjectedCallArgumentReason);
+        }
+
+        // A reference argument needs the projected place itself. Loading the
+        // indexed value first turns a scalar into an integer-to-pointer cast and
+        // loses the address required by Ref[T].
+        if (IsFirstClassReferenceType(typeId))
+        {
+            return place with { TypeId = typeId };
         }
 
         var temp = NewTemp(typeId);
@@ -299,9 +340,11 @@ public sealed partial class MirBuilder
     private bool IsFirstClassReferenceType(TypeId typeId)
     {
         return typeId.IsValid &&
-               _dynamicTypeKeysById.TryGetValue(typeId.Value, out var typeKey) &&
-               (typeKey.StartsWith("Ref(", StringComparison.Ordinal) ||
-                typeKey.StartsWith("MRef(", StringComparison.Ordinal));
+               ((_typeDescriptorsById.TryGetValue(typeId.Value, out var descriptor) &&
+                 descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef) ||
+                (_dynamicTypeKeysById.TryGetValue(typeId.Value, out var typeKey) &&
+                 TypeKeyParsing.TryParseTypeDescriptor(typeKey, out descriptor) &&
+                 descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef));
     }
 
     private MirOperand PrepareReadonlyStringEqualsArgument(
@@ -343,28 +386,4 @@ public sealed partial class MirBuilder
         return temp;
     }
 
-    private bool ShouldPassCallArgumentByCopy(MirOperand functionOperand, int argumentIndex)
-    {
-        if (functionOperand is MirFunctionRef { Name: var funcName, SymbolId: { IsValid: true } symbolId })
-        {
-            if (_parameterEffects != null &&
-                _parameterEffects.TryGetEffects(funcName, symbolId.Value, out var effects) &&
-                effects != null)
-            {
-                return argumentIndex < effects.Count && effects[argumentIndex] == ParameterEffect.Read;
-            }
-
-            if (_copyFirstArgumentFunctionSymbols.Contains(symbolId.Value) && argumentIndex == 0)
-            {
-                return true;
-            }
-
-            // No known effects for this function — default to Read (MirCopy).
-        }
-
-        // Unknown or untracked functions default to Read (MirCopy).
-        // Extra copy/incref is always safe; only wasteful.
-        // Functions that consume have effects tracked in _parameterEffects.
-        return true;
-    }
 }

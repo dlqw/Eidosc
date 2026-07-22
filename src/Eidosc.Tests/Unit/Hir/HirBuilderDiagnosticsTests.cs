@@ -21,6 +21,35 @@ public class HirBuilderDiagnosticsTests
     private static readonly TestPathConfig Paths = TestPathConfig.Current;
 
     [Fact]
+    public void Build_QuoteExpressionCrossingTypesBoundary_ReportsDedicatedInvariantDiagnostic()
+    {
+        var span = new SourceSpan(new SourceLocation(position: 0, line: 0, column: 0), length: 12);
+        var quote = new QuoteExpr();
+        quote.SetKind(QuoteKind.Expression);
+        quote.SetParts([]);
+        quote.SetSpan(span);
+
+        var pattern = new VarPattern();
+        pattern.SetSpan(span);
+        pattern.SetName("escaped_quote");
+        var declaration = new LetDecl();
+        declaration.SetSpan(span);
+        declaration.SetPattern(pattern);
+        declaration.SetValue(quote);
+        var module = new ModuleDecl();
+        module.SetPath(["Main"]);
+        module.SetDeclarations([declaration]);
+
+        var builder = new HirBuilder(new SymbolTable());
+        _ = builder.Build(module);
+
+        var diagnostic = Assert.Single(builder.Diagnostics, diagnostic => diagnostic.Code == "E5121");
+        Assert.Equal("hir", diagnostic.Metadata["phase"]);
+        Assert.Equal("quote-crossed-types-hir-boundary", diagnostic.Metadata["reason"]);
+        Assert.Equal(nameof(QuoteExpr), diagnostic.Metadata["astNodeKind"]);
+    }
+
+    [Fact]
     public void Build_MissingFunctionBranchBody_ReportsStructuredHirFallbackMetadata()
     {
         var span = new SourceSpan(new SourceLocation(position: 0, line: 0, column: 0), length: 5);
@@ -230,7 +259,7 @@ classify :: Int -> Int
         const string source = """
 OptionI :: type
 {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -294,7 +323,7 @@ abs :: Int -> Int
         const string source = """
 OptionI :: type
 {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -674,7 +703,7 @@ classify :: Int -> Int
     public void Build_IfLetExpression_LowersToHirMatchWithWildcardElse()
     {
         const string source = """
-Option[T] :: type { Some(T) , None }
+Option[T] :: type { Some:: type(T) , None :: type {} }
 
 unwrap_or_zero :: Option[Int] -> Int
 {
@@ -703,7 +732,7 @@ unwrap_or_zero :: Option[Int] -> Int
     public void Build_WhileLetExpression_LowersToHirLoopWithMatchAndBreakFallback()
     {
         const string source = """
-Option[T] :: type { Some(T) , None }
+Option[T] :: type { Some:: type(T) , None :: type {} }
 
 accumulate :: Option[Int] -> Int
 {
@@ -922,7 +951,7 @@ demo :: Int -> MRef[Int]
     public void Build_AdtConstructorWithNamedField_PreservesHirCtorFieldMetadata()
     {
         const string source = """
-Option :: type { None , Some{value: Int} }
+Option :: type { None :: type {} , Some:: type{value:: Int} }
 """;
 
         var result = RunSource(source, CompilationPhase.Hir);
@@ -973,8 +1002,8 @@ main :: Unit -> Int
     public void Build_DoExpression_SyntheticContinuationLambdasCarryCallableTypes()
     {
         const string source = """
-import Std.Option
-import Std.Monad
+import std.Option
+import std.Monad
 
 main :: Unit -> Int
 {
@@ -1149,7 +1178,7 @@ use :: Int -> Int
         const string source = """
 Range :: type
 {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 read :: Ref[Range] -> Int

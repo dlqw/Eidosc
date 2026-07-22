@@ -4,16 +4,31 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
+    internal static void RehydrateNamerStructuralRewrites(ModuleDecl root)
+    {
+        foreach (var declaration in root.Declarations)
+        {
+            switch (declaration)
+            {
+                case AdtDef adt:
+                    SynthesizeDefaultConstructorIfBareProduct(adt);
+                    break;
+                case ModuleDecl module:
+                    RehydrateNamerStructuralRewrites(module);
+                    break;
+            }
+        }
+    }
+
     /// <summary>
-    /// For a bare product-type ADT (fields but no constructor variants), synthesize a
-    /// default constructor named after the type so that `T :: type { a: A, b: B }` behaves
-    /// exactly like `T :: type { T { a: A, b: B } }`. The synthesized constructor shares the
+    /// For a product-type ADT without explicit case types, synthesize a default constructor
+    /// named after the type. The synthesized constructor shares the
     /// type's fields by reference; downstream phases treat constructors as read-only after
     /// name resolution. This is the single desugaring point for bare product types.
     /// </summary>
     private static void SynthesizeDefaultConstructorIfBareProduct(AdtDef adt)
     {
-        if (adt.Constructors.Count > 0 || adt.Fields.Count == 0)
+        if (adt.IsTypeAlias || adt.Constructors.Count > 0 || adt.Cases.Count > 0)
         {
             return;
         }

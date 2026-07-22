@@ -48,6 +48,11 @@ public abstract record Symbol
     /// </summary>
     public TypeId TypeId { get; init; } = TypeId.None;
 
+    /// <summary>
+    /// The module that originally declared this symbol. Imports and re-exports must not change it.
+    /// </summary>
+    public SymbolId DefinitionModuleId { get; init; } = SymbolId.None;
+
     public GeneratedDeclarationOrigin? GeneratedOrigin { get; init; }
 
     public override string ToString() => $"{Kind}:{Name}${Id.Value}";
@@ -57,6 +62,8 @@ public sealed record GeneratedDeclarationOrigin
 {
     public required string StableIdentity { get; init; }
 
+    public required string GenerationSlotIdentity { get; init; }
+
     public required string GeneratorIdentity { get; init; }
 
     public required string TargetIdentity { get; init; }
@@ -65,7 +72,11 @@ public sealed record GeneratedDeclarationOrigin
 
     public SymbolId TargetSymbolId { get; init; } = SymbolId.None;
 
-    public int AttributeOccurrenceIndex { get; init; }
+    public int ClauseOccurrenceIndex { get; init; }
+
+    public string ClauseOccurrenceIdentity { get; init; } = string.Empty;
+
+    public int ClauseArgumentSubIndex { get; init; } = -1;
 
     public int ExpansionOutputIndex { get; init; }
 
@@ -73,7 +84,7 @@ public sealed record GeneratedDeclarationOrigin
 
     public int MetaSchemaVersion { get; init; }
 
-    public SourceSpan AttributeSpan { get; init; }
+    public SourceSpan ClauseSpan { get; init; }
 
     public string VirtualDocumentPath { get; init; } = string.Empty;
 }

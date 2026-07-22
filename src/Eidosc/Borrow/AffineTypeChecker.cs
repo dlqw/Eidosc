@@ -68,6 +68,8 @@ public sealed class AffineTypeChecker
     /// </summary>
     private readonly SourceSpan[] _moveSpans;
     private readonly bool[] _hasMoveInfo;
+    private readonly Dictionary<string, (BlockId Block, int Index, SourceSpan Span)> _movedPlaces = [];
+    private readonly Dictionary<int, Dictionary<string, (BlockId Block, int Index, SourceSpan Span)>> _blockOutMovedPlaces = [];
 
     /// <summary>
     /// 诊断信息
@@ -114,6 +116,8 @@ public sealed class AffineTypeChecker
         Array.Clear(_moveLocations);
         Array.Clear(_moveSpans);
         Array.Clear(_hasMoveInfo);
+        _movedPlaces.Clear();
+        _blockOutMovedPlaces.Clear();
 
         var initialStates = CreateInitialVariableStates();
         var cfg = _precomputedCfg ?? new ControlFlowGraph(_function);
@@ -125,6 +129,8 @@ public sealed class AffineTypeChecker
         for (int blockIndex = 0; blockIndex < _blocks.Length; blockIndex++)
         {
             var block = _blocks[blockIndex];
+
+            SetIncomingMovedPlaces(blockIndex, predecessorIndices);
 
             // 检查是否达到错误限制
             if (_recoveryContext.HasReachedLimit)
@@ -373,6 +379,11 @@ public sealed class AffineTypeChecker
                 CheckAssign(assign, blockId, index);
                 break;
 
+            case MirCaseInject injection:
+                CheckOperandUse(injection.Operand, blockId, index);
+                MarkInitialized(injection.Target);
+                break;
+
             case MirCall call:
                 CheckCall(call, blockId, index);
                 break;
@@ -455,6 +466,7 @@ public sealed class AffineTypeChecker
         int[][] predecessorIndices,
         int[][] successorIndices)
     {
+        _blockOutMovedPlaces.Clear();
         var blockOutStates = new VariableState[_blocks.Length][];
         var pendingBlocks = new Queue<int>(_blocks.Length);
         var queuedBlocks = new bool[_blocks.Length];
@@ -474,15 +486,23 @@ public sealed class AffineTypeChecker
             {
                 continue;
             }
-            foreach (var instr in block.Instructions)
+            SetIncomingMovedPlaces(blockIndex, predecessorIndices);
+            for (var instructionIndex = 0; instructionIndex < block.Instructions.Count; instructionIndex++)
             {
-                SimulateInstruction(instr);
+                SimulateInstruction(block.Instructions[instructionIndex], block.Id, instructionIndex);
             }
 
             var existingState = blockOutStates[blockIndex];
-            if (existingState == null || !StatesEqual(existingState, _variableStates))
+            var existingPlaces = _blockOutMovedPlaces.TryGetValue(blockIndex, out var savedPlaces)
+                ? savedPlaces
+                : null;
+            if (existingState == null ||
+                !StatesEqual(existingState, _variableStates) ||
+                existingPlaces == null ||
+                !MovedPlacesEqual(existingPlaces, _movedPlaces))
             {
                 blockOutStates[blockIndex] = CloneStates(_variableStates);
+                _blockOutMovedPlaces[blockIndex] = CloneMovedPlaces(_movedPlaces);
                 foreach (var successorIndex in successorIndices[blockIndex])
                 {
                     if (!queuedBlocks[successorIndex])
@@ -495,6 +515,46 @@ public sealed class AffineTypeChecker
         }
 
         return blockOutStates;
+    }
+
+    private void SetIncomingMovedPlaces(int blockIndex, int[][] predecessorIndices)
+    {
+        _movedPlaces.Clear();
+        if (_blocks[blockIndex].Id.Equals(_function.EntryBlockId))
+        {
+            return;
+        }
+
+        foreach (var predecessorIndex in predecessorIndices[blockIndex])
+        {
+            if (!_blockOutMovedPlaces.TryGetValue(predecessorIndex, out var predecessorPlaces))
+            {
+                continue;
+            }
+
+            foreach (var (key, location) in predecessorPlaces)
+            {
+                _movedPlaces.TryAdd(key, location);
+            }
+        }
+    }
+
+    private static Dictionary<string, (BlockId Block, int Index, SourceSpan Span)> CloneMovedPlaces(
+        IReadOnlyDictionary<string, (BlockId Block, int Index, SourceSpan Span)> places)
+    {
+        return places.ToDictionary(static entry => entry.Key, static entry => entry.Value, StringComparer.Ordinal);
+    }
+
+    private static bool MovedPlacesEqual(
+        IReadOnlyDictionary<string, (BlockId Block, int Index, SourceSpan Span)> left,
+        IReadOnlyDictionary<string, (BlockId Block, int Index, SourceSpan Span)> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        return left.Keys.All(right.ContainsKey);
     }
 
     private int[][] BuildEdgeIndexArray(Func<BlockId, IReadOnlySet<BlockId>> edgeProvider)
@@ -518,12 +578,16 @@ public sealed class AffineTypeChecker
         return edges;
     }
 
-    private void SimulateInstruction(MirInstruction instr)
+    private void SimulateInstruction(MirInstruction instr, BlockId blockId, int instructionIndex)
     {
         switch (instr)
         {
             case MirAssign assign:
                 MarkInitialized(assign.Target);
+                break;
+
+            case MirCaseInject injection:
+                MarkInitialized(injection.Target);
                 break;
 
             case MirCall call:
@@ -567,12 +631,18 @@ public sealed class AffineTypeChecker
                 {
                     SetState(moveBinding.Source, VariableState.Moved);
                     SetState(moveBinding.Target, VariableState.Initialized);
+                    ClearMovedDescendants(new MirPlace { Kind = PlaceKind.Local, Local = moveBinding.Source });
                 }
                 else
                 {
-                    if (move.Source?.Kind == PlaceKind.Local)
+                    if (move.Source is MirPlace { Kind: PlaceKind.Local, Local: var sourceLocal })
                     {
-                        SetState(move.Source.Local, VariableState.Moved);
+                        SetState(sourceLocal, VariableState.Moved);
+                        ClearMovedDescendants(move.Source);
+                    }
+                    else if (move.Source is MirPlace projectedSource)
+                    {
+                        MarkMovedPlace(projectedSource, blockId, instructionIndex, move.Span);
                     }
 
                     MarkInitialized(move.Target);
@@ -584,6 +654,10 @@ public sealed class AffineTypeChecker
                 if (store.Target is { Kind: PlaceKind.Local, Local: var storeTarget })
                 {
                     SetState(storeTarget, VariableState.Initialized);
+                }
+                else if (store.Target != null)
+                {
+                    ClearMovedPlace(store.Target);
                 }
 
                 break;
@@ -642,6 +716,11 @@ public sealed class AffineTypeChecker
                 blockId,
                 index,
                 ResolveSpan((load.Source as MirPlace)?.Span ?? SourceSpan.Empty, load.Source.Span, load.Span));
+            CheckPartialMoveUse(
+                BorrowTarget.ForLocal(binding.Source),
+                blockId,
+                index,
+                ResolveSpan((load.Source as MirPlace)?.Span ?? SourceSpan.Empty, load.Source.Span, load.Span));
             SetState(binding.Target, VariableState.Initialized);
             return;
         }
@@ -662,7 +741,7 @@ public sealed class AffineTypeChecker
 
         if (store.Target is not null)
         {
-            CheckOperandUse(store.Target, blockId, index);
+            ClearMovedPlace(store.Target);
         }
     }
 
@@ -685,10 +764,7 @@ public sealed class AffineTypeChecker
         }
 
         // Copy 不改变源变量状态
-        if (copy.Source?.Kind == PlaceKind.Local)
-        {
-            CheckVariableUse(copy.Source.Local, blockId, index, ResolveSpan(copy.Source.Span, copy.Span));
-        }
+        CheckOperandUse(copy.Source, blockId, index);
 
         MarkInitialized(copy.Target);
     }
@@ -703,9 +779,15 @@ public sealed class AffineTypeChecker
         }
 
         // Move 将源标记为已移动
-        if (move.Source?.Kind == PlaceKind.Local)
+        if (move.Source is MirPlace sourcePlace && sourcePlace.Kind == PlaceKind.Local)
         {
-            CheckMoveSource(move.Source.Local, ResolveSpan(move.Source.Span, move.Span), blockId, index);
+            CheckMoveSource(sourcePlace.Local, ResolveSpan(move.Source.Span, move.Span), blockId, index);
+            ClearMovedDescendants(sourcePlace);
+        }
+        else if (move.Source is MirPlace projectedSource)
+        {
+            CheckOperandUse(projectedSource, blockId, index);
+            MarkMovedPlace(projectedSource, blockId, index, ResolveSpan(move.Source.Span, move.Span));
         }
 
         // 标记目标为已初始化
@@ -767,10 +849,105 @@ public sealed class AffineTypeChecker
 
     private void CheckOperandUse(MirOperand? operand, BlockId blockId, int index)
     {
-        if (operand is MirPlace place && place.Kind == PlaceKind.Local)
+        if (operand is not MirPlace place)
         {
-            CheckVariableUse(place.Local, blockId, index, ResolveSpan(place.Span, operand.Span));
+            return;
         }
+
+        if (place.Kind == PlaceKind.Local)
+        {
+            var useSpan = ResolveSpan(place.Span, operand.Span);
+            CheckVariableUse(place.Local, blockId, index, useSpan);
+            CheckPartialMoveUse(BorrowTarget.ForLocal(place.Local), blockId, index, useSpan);
+            return;
+        }
+
+        if (!BorrowTarget.TryResolve(place, out var target))
+        {
+            return;
+        }
+
+        CheckPartialMoveUse(target, blockId, index, ResolveSpan(place.Span, operand.Span));
+    }
+
+    private void CheckPartialMoveUse(BorrowTarget target, BlockId blockId, int index, SourceSpan span)
+    {
+        if (!TryGetMovedPlace(target, out var moved))
+        {
+            return;
+        }
+
+        AddDiagnostic(new AffineDiagnostic
+        {
+            Kind = AffineErrorKind.UseAfterPartialMove,
+            Variable = target.BaseLocal,
+            FirstLocation = (moved.Block, moved.Index),
+            SecondLocation = (blockId, index),
+            Span = span,
+            RelatedSpan = moved.Span,
+            Message = "value is used after one of its places was moved"
+        });
+    }
+
+    private void MarkMovedPlace(MirPlace place, BlockId blockId, int index, SourceSpan span)
+    {
+        if (BorrowTarget.TryResolve(place, out var target))
+        {
+            _movedPlaces[target.StableKey] = (blockId, index, span);
+        }
+    }
+
+    private bool TryGetMovedPlace(BorrowTarget target, out (BlockId Block, int Index, SourceSpan Span) moved)
+    {
+        foreach (var (key, location) in _movedPlaces)
+        {
+            if (!key.StartsWith($"{target.BaseLocal.Value}:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var separator = key.IndexOf(':');
+            var movedTarget = new BorrowTarget
+            {
+                BaseLocal = target.BaseLocal,
+                PathKey = separator >= 0 ? key[(separator + 1)..] : "root"
+            };
+            if (movedTarget.OverlapsWith(target))
+            {
+                moved = location;
+                return true;
+            }
+        }
+
+        moved = default;
+        return false;
+    }
+
+    private void ClearMovedPlace(MirOperand operand)
+    {
+        if (operand is not MirPlace place || !BorrowTarget.TryResolve(place, out var target))
+        {
+            return;
+        }
+
+        foreach (var key in _movedPlaces.Keys.ToArray())
+        {
+            var separator = key.IndexOf(':');
+            var movedTarget = new BorrowTarget
+            {
+                BaseLocal = target.BaseLocal,
+                PathKey = separator >= 0 ? key[(separator + 1)..] : "root"
+            };
+            if (movedTarget.OverlapsWith(target))
+            {
+                _movedPlaces.Remove(key);
+            }
+        }
+    }
+
+    private void ClearMovedDescendants(MirPlace place)
+    {
+        ClearMovedPlace(place);
     }
 
     private void CheckVariableUse(LocalId localId, BlockId blockId, int index, SourceSpan useSpan)
@@ -915,6 +1092,11 @@ public enum AffineErrorKind
     /// 移动后使用
     /// </summary>
     UseAfterMove,
+
+    /// <summary>
+    /// 部分移动后使用
+    /// </summary>
+    UseAfterPartialMove,
 
     /// <summary>
     /// 重复移动

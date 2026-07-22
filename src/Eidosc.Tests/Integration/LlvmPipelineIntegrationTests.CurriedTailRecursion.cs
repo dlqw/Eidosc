@@ -64,7 +64,7 @@ public partial class LlvmPipelineIntegrationTests
                 n => acc => if n == 0 then { acc } else { count_down(n - 1)(acc + 1) }
             }
 
-            main :: Unit -> Int need FFI, IO
+            main :: Unit -> Int need ffi, io
             {
                 _ => {
                     print_string("result=");
@@ -99,7 +99,7 @@ public partial class LlvmPipelineIntegrationTests
 
         const string Source = """
             Acc :: type {
-                Acc(Int)
+                Acc:: type(Int)
             }
 
             acc_value :: Acc -> Int
@@ -114,7 +114,7 @@ public partial class LlvmPipelineIntegrationTests
                 n => total => if n == 0 then { total } else { build_acc(n - 1)(total + acc_value(Acc(n))) }
             }
 
-            main :: Unit -> Int need FFI, IO
+            main :: Unit -> Int need ffi, io
             {
                 _ => {
                     print_string("result=");

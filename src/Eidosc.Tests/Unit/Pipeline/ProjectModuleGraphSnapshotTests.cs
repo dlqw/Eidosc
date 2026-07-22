@@ -84,14 +84,14 @@ public sealed class ProjectModuleGraphSnapshotTests
     public void SemanticSignatureSnapshot_ChangesWhenExportedFunctionTypeChanges()
     {
         var before = CompileSemanticSnapshot(
-            "Lib.eidos",
+            "lib.eidos",
             """
 Lib :: module {
     export id :: Int -> Int { value => value }
 }
 """);
         var after = CompileSemanticSnapshot(
-            "Lib.eidos",
+            "lib.eidos",
             """
 Lib :: module {
     export id :: Int -> Bool { value => true }
@@ -106,7 +106,7 @@ Lib :: module {
     public void SemanticSignatureSnapshot_IgnoresUnexportedFunctionBodyInExplicitExportMode()
     {
         var before = CompileSemanticSnapshot(
-            "Lib.eidos",
+            "lib.eidos",
             """
 Lib :: module {
     export id :: Int -> Int { value => value }
@@ -114,7 +114,7 @@ Lib :: module {
 }
 """);
         var after = CompileSemanticSnapshot(
-            "Lib.eidos",
+            "lib.eidos",
             """
 Lib :: module {
     export id :: Int -> Int { value => value }
@@ -134,7 +134,7 @@ Lib :: module {
         {
             Directory.CreateDirectory(tempDir);
             var mainFile = Path.Combine(tempDir, "Main.eidos");
-            var libFile = Path.Combine(tempDir, "Lib.eidos");
+            var libFile = Path.Combine(tempDir, "lib.eidos");
             File.WriteAllText(mainFile, """
 Main :: module {
     import Lib
@@ -179,7 +179,7 @@ Lib :: module {
         {
             Directory.CreateDirectory(tempDir);
             var mainFile = Path.Combine(tempDir, "Main.eidos");
-            var libFile = Path.Combine(tempDir, "Lib.eidos");
+            var libFile = Path.Combine(tempDir, "lib.eidos");
             File.WriteAllText(mainFile, """
 Main :: module {
     import Lib
@@ -235,8 +235,8 @@ Lib :: module {
         {
             Directory.CreateDirectory(tempDir);
             var mainFile = Path.Combine(tempDir, "Main.eidos");
-            var libAFile = Path.Combine(tempDir, "LibA.eidos");
-            var libBFile = Path.Combine(tempDir, "LibB.eidos");
+            var libAFile = Path.Combine(tempDir, "lib_a.eidos");
+            var libBFile = Path.Combine(tempDir, "lib_b.eidos");
             File.WriteAllText(mainFile, """
 Main :: module {
     import LibA
@@ -289,7 +289,7 @@ LibB :: module {
         {
             Directory.CreateDirectory(tempDir);
             var mainFile = Path.Combine(tempDir, "Main.eidos");
-            var libFile = Path.Combine(tempDir, "Lib.eidos");
+            var libFile = Path.Combine(tempDir, "lib.eidos");
             File.WriteAllText(mainFile, """
 Main :: module {
     import Lib
@@ -334,7 +334,7 @@ Lib :: module {
     {
         const string source = """
 Main :: module {
-    import Std.GameMath
+    import std.GameMath
 
     main :: Unit -> Unit { _ => () }
 }
@@ -422,10 +422,12 @@ Main :: module {
     {
         var result = CompileToTypes("""
 Main :: module {
-    @cstruct
-    Point :: type {
-        x: Float,
-        y: Float
+
+    @[repr(c)]
+    Point :: type
+{
+        x:: Float,
+        y:: Float
     }
 
     Show :: trait {
@@ -471,7 +473,7 @@ Main :: module {
     {
         const string source = """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     Show :: trait {
         show :: Self -> String
@@ -513,7 +515,7 @@ Main :: module {
     {
         var result = CompileToTypes("""
 Main :: module {
-    export Box :: type { Box(Int) }
+    export Box :: type { Box:: type(Int) }
 
     export make :: Int -> Box
     {
@@ -580,7 +582,7 @@ Main :: module {
         {
             Directory.CreateDirectory(tempDir);
             var mainFile = Path.Combine(tempDir, "Main.eidos");
-            var libFile = Path.Combine(tempDir, "Lib.eidos");
+            var libFile = Path.Combine(tempDir, "lib.eidos");
             File.WriteAllText(mainFile, """
 Main :: module {
     import Lib

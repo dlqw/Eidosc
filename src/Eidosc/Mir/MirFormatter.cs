@@ -180,6 +180,8 @@ public static class MirFormatter
 
             // 表达式
             LiteralExpr l => $"value=\"{EscapeString(l.Value?.ToString() ?? "")}\" kind={l.Kind}",
+            QuoteExpr q => $"kind={q.Kind?.ToString() ?? "inferred"} parts={q.Parts.Count}",
+            ExpandExpr e => $"generator={e.Invocation.GeneratorDisplayName} materialized={e.ExpandedExpression != null}",
             IdentifierExpr i => $"name=\"{i.Name}\"",
             PathExpr p => $"path=\"{(p.ModulePath.Count > 0 ? string.Join(WellKnownStrings.Separators.Path, p.ModulePath) + WellKnownStrings.Separators.Path : "")}{p.Name}\"{(p.TypeArgs.Count > 0 ? $" args={p.TypeArgs.Count}" : "")}",
             BinaryExpr b => $"op={b.Operator} ({b.Operator.ToSymbol()})",

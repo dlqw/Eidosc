@@ -6,6 +6,7 @@ using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
 using Eidosc.ErrorRecovery;
 using Eidosc.Semantic;
+using Eidosc.Utils;
 using System.Diagnostics;
 using EidoscDiagnostic = Eidosc.Diagnostic.Diagnostic;
 using EidoscDiagnosticLevel = Eidosc.Diagnostic.DiagnosticLevel;
@@ -51,7 +52,9 @@ public sealed partial class TypeInferer
     private readonly Dictionary<SymbolId, CtorTypeBinding> _ctorTypeBindings = [];
     private readonly Dictionary<SymbolId, AdtDef> _adtDefinitionsBySymbol = [];
     private readonly Dictionary<SymbolId, TraitDef> _traitDefinitionsBySymbol = [];
+    private readonly Dictionary<SymbolId, ClosedCaseDefinition> _closedCaseDefinitionsBySymbol = [];
     private readonly Dictionary<SymbolId, FuncDef> _functionDefinitionsBySymbol = [];
+    private readonly Dictionary<SymbolId, Declaration> _declarationsBySymbol = [];
     private readonly Dictionary<SymbolId, TypeNode> _valueTypeAnnotationsBySymbol = [];
     private readonly Dictionary<SymbolId, TypeParamKindBinding> _typeParamKindBindingsBySymbol = [];
     private readonly Dictionary<SymbolId, Kind> _typeConstructorKindsBySymbol = [];
@@ -64,6 +67,7 @@ public sealed partial class TypeInferer
         _valueGenericArgumentsByTypeEnv = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<EidosAstNode, List<GenericValueArgument>>
         _valueGenericArgumentsByApplication = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<SourceSpan, ClosedCaseInjectionFact> _closedCaseInjections = [];
     private readonly Dictionary<(SymbolId ImplId, string AssociatedTypeName), TypeNode> _associatedTypeImplementations = [];
     private readonly Dictionary<(SymbolId ImplId, string AssociatedConstName), AssociatedConstDecl> _associatedConstImplementations = [];
     private readonly Dictionary<SymbolId, ComptimeValue> _comptimeValues = [];
@@ -87,6 +91,7 @@ public sealed partial class TypeInferer
     private sealed record CtorTypeBinding(
         SymbolId CtorId,
         SymbolId AdtId,
+        SymbolId ResultAdtId,
         List<TypeParam> AdtGenericParameters,
         List<TypeParam> CtorGenericParameters,
         List<string> AdtTypeParamNames,
@@ -94,6 +99,37 @@ public sealed partial class TypeInferer
         List<TypeNode> PositionalArgTypes,
         Dictionary<string, TypeNode> NamedArgTypes,
         TypeNode? ReturnType);
+
+    private sealed record ClosedCaseDefinition(
+        AdtDef Root,
+        CaseTypeDef Definition,
+        IReadOnlyList<CaseTypeDef> Path);
+
+    internal sealed record ClosedCaseInjectionFact(
+        SymbolId SourceCase,
+        SymbolId TargetAncestor,
+        TyCon SourceType,
+        TyCon TargetType);
+
+    internal bool TryGetClosedCaseInjection(SourceSpan span, out ClosedCaseInjectionFact injection) =>
+        _closedCaseInjections.TryGetValue(span, out injection!);
+
+    internal IReadOnlyList<KeyValuePair<SourceSpan, ClosedCaseInjectionFact>> GetClosedCaseInjectionSnapshot() =>
+        _closedCaseInjections
+            .OrderBy(static entry => entry.Key.FilePath, StringComparer.Ordinal)
+            .ThenBy(static entry => entry.Key.Position)
+            .ToArray();
+
+    internal void RestoreClosedCaseInjections(
+        IEnumerable<KeyValuePair<SourceSpan, ClosedCaseInjectionFact>> injections)
+    {
+        ArgumentNullException.ThrowIfNull(injections);
+        _closedCaseInjections.Clear();
+        foreach (var (span, injection) in injections)
+        {
+            _closedCaseInjections[span] = injection;
+        }
+    }
 
     private sealed record AdtTypeParamTraitRequirement(
         SymbolId TraitId,
@@ -346,6 +382,7 @@ public sealed partial class TypeInferer
         _valueGenericParameterOrdinalsBySymbol.Clear();
         _valueGenericArgumentsByTypeEnv.Clear();
         _valueGenericArgumentsByApplication.Clear();
+        _closedCaseInjections.Clear();
         foreach (var (symbol, parameters) in functionTypeParameters.OrderBy(static binding => binding.Key.Value))
         {
             _functionTypeParametersBySymbol[symbol] = parameters.ToArray();
@@ -443,6 +480,7 @@ public sealed partial class TypeInferer
         _adtDefinitionsBySymbol.Clear();
         _traitDefinitionsBySymbol.Clear();
         _functionDefinitionsBySymbol.Clear();
+        _declarationsBySymbol.Clear();
         _valueTypeAnnotationsBySymbol.Clear();
         _typeParamKindBindingsBySymbol.Clear();
         _typeConstructorKindsBySymbol.Clear();
@@ -451,6 +489,7 @@ public sealed partial class TypeInferer
         _functionTypeParametersBySymbol.Clear();
         _associatedTypeImplementations.Clear();
         _associatedConstImplementations.Clear();
+        _closedCaseInjections.Clear();
         _comptimeValues.Clear();
         _precompiledCallableCandidateCache.Clear();
         _typeDirectedCallableResolutionCache.Clear();
@@ -458,6 +497,10 @@ public sealed partial class TypeInferer
         _associatedTypeProjectionCache.Clear();
         _associatedTypeProjectionSnapshotEntries.Clear();
         _rootInputFilePath = module.Span.FilePath;
+        if (module.SymbolId.IsValid)
+        {
+            _declarationsBySymbol[module.SymbolId] = module;
+        }
         using (MeasureTypesStep("index_declarations"))
         {
             IndexAdtConstructorBindings(module);
@@ -550,6 +593,11 @@ public sealed partial class TypeInferer
     {
         foreach (var declaration in module.Declarations)
         {
+            if (declaration.SymbolId.IsValid)
+            {
+                _declarationsBySymbol[declaration.SymbolId] = declaration;
+            }
+
             switch (declaration)
             {
                 case ModuleDecl nestedModule:
@@ -576,6 +624,7 @@ public sealed partial class TypeInferer
                     foreach (var method in trait.Methods.Where(method => method.SymbolId.IsValid))
                     {
                         _functionDefinitionsBySymbol[method.SymbolId] = method;
+                        _declarationsBySymbol[method.SymbolId] = method;
                     }
                     break;
                 case InstanceDecl instance:
@@ -584,6 +633,7 @@ public sealed partial class TypeInferer
                     foreach (var method in instance.Methods.Where(method => method.SymbolId.IsValid))
                     {
                         _functionDefinitionsBySymbol[method.SymbolId] = method;
+                        _declarationsBySymbol[method.SymbolId] = method;
                     }
                     break;
             }
@@ -637,11 +687,13 @@ public sealed partial class TypeInferer
         }
 
         _adtDefinitionsBySymbol[adt.SymbolId] = adt;
+        RegisterClosedCaseDefinitions(adt, adt.Cases, []);
         var typeParamNames = GetAdtTypeParamNames(adt);
         var adtTypeVarEnv = typeParamNames.ToDictionary(
             static name => name,
             _ => (Type)_substitution.FreshTypeVariable(),
             StringComparer.Ordinal);
+        PopulateEffectGenericArgumentEnv(adtTypeVarEnv, adt.TypeParams);
         ResolveValueGenericParameterTypes(adt.TypeParams, adtTypeVarEnv);
         RegisterAdtTypeParamKinds(adt, typeParamNames);
         RegisterAdtTypeParamConstraints(adt, typeParamNames);
@@ -668,6 +720,7 @@ public sealed partial class TypeInferer
             {
                 ctorValueTypeEnv[ctorTypeParamName] = _substitution.FreshTypeVariable();
             }
+            PopulateEffectGenericArgumentEnv(ctorValueTypeEnv, ctor.TypeParams);
             ResolveValueGenericParameterTypes(ctor.TypeParams, ctorValueTypeEnv);
             RegisterConstructorTypeParamKinds(adt, ctor, typeParamNames, ctorTypeParamNames);
             RegisterConstructorTypeParamConstraints(ctor, ctorTypeParamNames);
@@ -675,6 +728,7 @@ public sealed partial class TypeInferer
             _ctorTypeBindings[ctor.SymbolId] = new CtorTypeBinding(
                 ctor.SymbolId,
                 adt.SymbolId,
+                _symbolTable.GetSymbol<CtorSymbol>(ctor.SymbolId)?.OwnerAdt ?? adt.SymbolId,
                 [.. adt.TypeParams],
                 [.. ctor.TypeParams],
                 typeParamNames,
@@ -684,6 +738,25 @@ public sealed partial class TypeInferer
                 ctor.ReturnType);
 
             UpdateConstructorSymbolSignature(ctor, adt, typeParamNames, ctorTypeParamNames);
+        }
+    }
+
+    private void RegisterClosedCaseDefinitions(
+        AdtDef root,
+        IReadOnlyList<CaseTypeDef> cases,
+        IReadOnlyList<CaseTypeDef> parentPath)
+    {
+        foreach (var caseType in cases)
+        {
+            if (!caseType.SymbolId.IsValid)
+            {
+                continue;
+            }
+
+            var path = parentPath.Append(caseType).ToArray();
+            _closedCaseDefinitionsBySymbol[caseType.SymbolId] = new ClosedCaseDefinition(root, caseType, path);
+            _declarationsBySymbol[caseType.SymbolId] = caseType;
+            RegisterClosedCaseDefinitions(root, caseType.Cases, path);
         }
     }
 
@@ -712,35 +785,77 @@ public sealed partial class TypeInferer
 
         PopulateValueGenericArgumentEnv(typeVarEnv, adt.TypeParams);
         PopulateValueGenericArgumentEnv(typeVarEnv, ctor.TypeParams);
+        PopulateEffectGenericArgumentEnv(typeVarEnv, adt.TypeParams);
+        PopulateEffectGenericArgumentEnv(typeVarEnv, ctor.TypeParams);
 
         var kindEnvByName = CreateTypeParamKindMapForCtorBinding(adt.SymbolId, typeParamNames, ctor.SymbolId, ctorTypeParamNames);
-        var returnType = ctor.ReturnType != null
-            ? ConvertTypeWithAdditionalKindContext(ctor.ReturnType, typeVarEnv, kindEnvByName)
-            : new TyCon
-            {
-                Name = adt.Name,
-                Symbol = adt.SymbolId,
-                Args = typeParamNames
-                    .Select(name => typeVarEnv.TryGetValue(name, out var type) ? type : _substitution.FreshTypeVariable())
-                    .ToList(),
-                ValueArgs = _valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var valueArguments)
-                    ? adt.TypeParams
-                        .Select((parameter, index) => (parameter, index))
-                        .Where(static entry => entry.parameter.ParameterKind == GenericParameterKind.Value)
-                        .Select(entry => valueArguments.TryGetValue(entry.parameter.SymbolId, out var argument)
-                            ? argument with { ParameterIndex = entry.index }
-                            : CreateValueGenericArgumentTemplate(
-                                entry.parameter.Name,
-                                new TyCon { Id = _symbolTable.GetSymbol<TypeParamSymbol>(entry.parameter.SymbolId)?.TypeId ?? TypeId.None },
-                                entry.index))
-                        .ToList()
-                    : []
-            };
+        var rootType = new TyCon
+        {
+            Name = adt.Name,
+            Symbol = adt.SymbolId,
+            Id = _symbolTable.GetSymbol<AdtSymbol>(adt.SymbolId)?.TypeId ?? TypeId.None,
+            Args = typeParamNames
+                .Select(name => typeVarEnv.TryGetValue(name, out var type) ? type : _substitution.FreshTypeVariable())
+                .ToList(),
+            ValueArgs = _valueGenericArgumentsByTypeEnv.TryGetValue(typeVarEnv, out var valueArguments)
+                ? adt.TypeParams
+                    .Select((parameter, index) => (parameter, index))
+                    .Where(static entry => entry.parameter.ParameterKind == GenericParameterKind.Value)
+                    .Select(entry => valueArguments.TryGetValue(entry.parameter.SymbolId, out var argument)
+                        ? argument with { ParameterIndex = entry.index }
+                        : CreateValueGenericArgumentTemplate(
+                            entry.parameter.Name,
+                            new TyCon { Id = _symbolTable.GetSymbol<TypeParamSymbol>(entry.parameter.SymbolId)?.TypeId ?? TypeId.None },
+                            entry.index))
+                    .ToList()
+                : [],
+            EffectArgs = adt.TypeParams
+                .Select((parameter, index) => (parameter, index))
+                .Where(static entry => entry.parameter.ParameterKind == GenericParameterKind.EffectRow)
+                .Select(entry => new GenericEffectArgument(
+                    entry.index,
+                    typeVarEnv.TryGetValue(entry.parameter.Name, out var argument)
+                        ? argument
+                        : _substitution.FreshTypeVariable()))
+                .ToList()
+        };
+        Type returnType;
+        if (symbol.OwnerAdt != adt.SymbolId &&
+            _closedCaseDefinitionsBySymbol.TryGetValue(symbol.OwnerAdt, out var caseDefinition))
+        {
+            returnType = CreateExactClosedCaseType(
+                caseDefinition,
+                rootType,
+                typeVarEnv,
+                kindEnvByName,
+                ctor.Span);
+        }
+        else
+        {
+            returnType = ctor.ReturnType != null
+                ? ConvertTypeWithAdditionalKindContext(ctor.ReturnType, typeVarEnv, kindEnvByName)
+                : rootType;
+        }
 
         _symbolTable.UpdateSymbol(symbol with
         {
             SignatureText = FormatConstructorSignature(ctor.Name, ctorTypeParamNames, ctor.PositionalArgs, returnType)
         });
+    }
+
+    private string GetQualifiedCaseTypeName(SymbolId caseTypeId)
+    {
+        var names = new Stack<string>();
+        var current = caseTypeId;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid && visited.Add(current) &&
+               _symbolTable.GetSymbol<AdtSymbol>(current) is { } symbol)
+        {
+            names.Push(symbol.Name);
+            current = symbol.ParentAdt;
+        }
+
+        return string.Join(WellKnownStrings.Separators.Path, names);
     }
 
     private static string FormatConstructorSignature(

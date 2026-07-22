@@ -11,7 +11,7 @@ public class StackPromotionAnalyzerTests
     public void NonEscapingConstructor_GetsPromoted()
     {
         const string source = """
-Pair :: type { MkPair(Int, Int) }
+Pair :: type { MkPair:: type(Int, Int) }
 
 main :: Int -> Int {
     _ => {
@@ -30,7 +30,7 @@ main :: Int -> Int {
     public void EscapingViaReturn_NotPromoted()
     {
         const string source = """
-Pair :: type { MkPair(Int, Int) }
+Pair :: type { MkPair:: type(Int, Int) }
 
 make :: Int -> Pair {
     x => MkPair(x, x)
@@ -53,7 +53,7 @@ main :: Int -> Int {
     public void EscapingViaCallArg_NotPromoted()
     {
         const string source = """
-Pair :: type { MkPair(Int, Int) }
+Pair :: type { MkPair:: type(Int, Int) }
 
 consume :: Pair -> Int {
     _ => 0
@@ -77,7 +77,7 @@ main :: Int -> Int {
     public void ManagedFieldConstructor_NotPromoted()
     {
         const string source = """
-Holder :: type { MkHolder(String) }
+Holder :: type { MkHolder:: type(String) }
 
 main :: Int -> Int {
     _ => {
@@ -96,7 +96,7 @@ main :: Int -> Int {
     public void MultipleNonEscapingConstructors_BothPromoted()
     {
         const string source = """
-Pair :: type { MkPair(Int, Int) }
+Pair :: type { MkPair:: type(Int, Int) }
 
 main :: Int -> Int {
     _ => {

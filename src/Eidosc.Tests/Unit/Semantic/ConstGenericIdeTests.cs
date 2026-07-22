@@ -10,7 +10,7 @@ public sealed class ConstGenericIdeTests
     private const string Source = """
 Vector[comptime N: Int, comptime T: Type] :: type
 {
-    Vector(T)
+    Vector:: type(T)
 }
 
 identity[comptime N: Int, comptime T: Type] :: Vector[N, T] -> Vector[N, T]

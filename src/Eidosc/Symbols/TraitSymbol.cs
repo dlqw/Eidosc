@@ -42,6 +42,11 @@ public sealed record TraitSymbol : Symbol
     public List<SymbolId> AssociatedTypes { get; init; } = [];
 
     /// <summary>
+    /// 关联常量
+    /// </summary>
+    public List<SymbolId> AssociatedConsts { get; init; } = [];
+
+    /// <summary>
     /// 父 Trait（继承）
     /// </summary>
     public List<SymbolId> ParentTraits { get; init; } = [];

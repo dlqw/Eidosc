@@ -18,7 +18,7 @@ normalizeBool :: Bool -> Bool
 }
 
 PairB :: type {
-    PairB{flag: Bool, right: Int} , None
+    PairB:: type{flag:: Bool, right:: Int} , None :: type {}
 }
 
 classify :: PairB -> Int
@@ -59,7 +59,7 @@ normalizeBool :: Bool -> Bool
 }
 
 PairB :: type {
-    PairB{flag: Bool, right: Int} , None
+    PairB:: type{flag:: Bool, right:: Int} , None :: type {}
 }
 
 classify :: PairB -> Int
@@ -99,7 +99,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} , None
+    PairC:: type{tag:: Char, right:: Int} , None :: type {}
 }
 
 classify :: PairC -> Int
@@ -140,7 +140,7 @@ normalizeChar :: Char -> Char
 }
 
 PairC :: type {
-    PairC{tag: Char, right: Int} , None
+    PairC:: type{tag:: Char, right:: Int} , None :: type {}
 }
 
 classify :: PairC -> Int
@@ -180,7 +180,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -224,7 +224,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -262,7 +262,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -302,7 +302,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -342,7 +342,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -382,7 +382,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -422,7 +422,7 @@ probe :: Bool -> Bool
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -466,7 +466,7 @@ probe :: Bool -> Bool
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int
@@ -505,7 +505,7 @@ normalize :: Int -> Int
 }
 
 OptionI :: type {
-    Some(Int) , None
+    Some:: type(Int) , None :: type {}
 }
 
 classify :: OptionI -> Int

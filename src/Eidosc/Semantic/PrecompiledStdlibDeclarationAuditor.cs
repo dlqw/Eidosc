@@ -77,12 +77,12 @@ public static class PrecompiledStdlibDeclarationAuditor
         string modulePath,
         List<PrecompiledStdlibDeclarationAuditIssue> issues)
     {
-        if (!HasImplementationAttribute(funcDecl))
+        if (!HasImplementationClause(funcDecl))
         {
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
                 funcDecl.Name,
-                "bodyless top-level precompiled Std function declarations must declare their implementation with @ffi or @intrinsic"));
+                "bodyless top-level precompiled std function declarations must declare their implementation with extern or intrinsic"));
         }
     }
 
@@ -91,43 +91,40 @@ public static class PrecompiledStdlibDeclarationAuditor
         string modulePath,
         List<PrecompiledStdlibDeclarationAuditIssue> issues)
     {
-        if (funcDef.Body.Count == 0 && !HasImplementationAttribute(funcDef))
+        if (funcDef.Body.Count == 0 && !HasImplementationClause(funcDef))
         {
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
                 funcDef.Name,
-                "bodyless top-level precompiled Std function definitions must declare their implementation with @ffi or @intrinsic"));
+                "bodyless top-level precompiled std function definitions must declare their implementation with extern or intrinsic"));
             return;
         }
 
-        if (HasAttribute(funcDef, WellKnownStrings.Keywords.Ffi) && funcDef.Body.Count > 0)
+        if (HasClause(funcDef, DeclarationClauseKind.Extern) && funcDef.Body.Count > 0)
         {
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
                 funcDef.Name,
-                "@ffi precompiled Std declarations must not provide an Eidos function body"));
+                "extern precompiled std declarations must not provide an Eidos function body"));
         }
 
-        if (HasAttribute(funcDef, WellKnownStrings.SpecialNames.Intrinsic) && funcDef.Body.Count > 0)
+        if (CompilerDirectiveIR.FromDeclaration(funcDef) is { Intrinsic: not null } && funcDef.Body.Count > 0)
         {
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
                 funcDef.Name,
-                "@intrinsic precompiled Std declarations must not provide an Eidos function body"));
+                "intrinsic precompiled std declarations must not provide an Eidos function body"));
         }
     }
 
-    private static bool HasImplementationAttribute(Declaration declaration)
+    private static bool HasImplementationClause(Declaration declaration)
     {
-        return HasAttribute(declaration, WellKnownStrings.Keywords.Ffi) ||
-               HasAttribute(declaration, WellKnownStrings.SpecialNames.Intrinsic);
+        return HasClause(declaration, DeclarationClauseKind.Extern) ||
+               CompilerDirectiveIR.FromDeclaration(declaration) is { Intrinsic: not null };
     }
 
-    private static bool HasAttribute(Declaration declaration, string name)
-    {
-        return declaration.Attributes.Any(attribute =>
-            string.Equals(attribute.Name, name, StringComparison.Ordinal));
-    }
+    private static bool HasClause(Declaration declaration, DeclarationClauseKind kind) =>
+        declaration.Clauses.Any(clause => clause.ClauseKind == kind);
 
     private static void AuditCompilerImplementedHelperUses(
         string source,
@@ -148,7 +145,7 @@ public static class PrecompiledStdlibDeclarationAuditor
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
                 helperName,
-                "precompiled Std uses compiler-implemented helper without a local @ffi or @intrinsic declaration"));
+                "precompiled std uses compiler-implemented helper without a local extern or intrinsic declaration"));
         }
 
         foreach (var mathName in EnumerateMathHelperUses(source))
@@ -161,7 +158,7 @@ public static class PrecompiledStdlibDeclarationAuditor
             issues.Add(new PrecompiledStdlibDeclarationAuditIssue(
                 modulePath,
                 mathName,
-                "precompiled Std uses compiler-implemented math helper without a local @intrinsic declaration"));
+                "precompiled std uses compiler-implemented math helper without a local intrinsic declaration"));
         }
     }
 
@@ -175,11 +172,11 @@ public static class PrecompiledStdlibDeclarationAuditor
                     CollectDeclaredCompilerImplementedHelpers(nested, declaredHelpers);
                     break;
 
-                case FuncDecl funcDecl when HasImplementationAttribute(funcDecl):
+                case FuncDecl funcDecl when HasImplementationClause(funcDecl):
                     AddDeclaredHelperNames(funcDecl, declaredHelpers);
                     break;
 
-                case FuncDef funcDef when HasImplementationAttribute(funcDef):
+                case FuncDef funcDef when HasImplementationClause(funcDef):
                     AddDeclaredHelperNames(funcDef, declaredHelpers);
                     break;
             }
@@ -199,20 +196,12 @@ public static class PrecompiledStdlibDeclarationAuditor
                 break;
         }
 
-        foreach (var attribute in declaration.Attributes)
+        if (CompilerDirectiveIR.FromDeclaration(declaration) is { Intrinsic: { } intrinsic })
         {
-            if (!string.Equals(attribute.Name, WellKnownStrings.SpecialNames.Intrinsic, StringComparison.Ordinal))
+            var helperName = TrimStringLiteralQuotes(intrinsic);
+            if (!string.IsNullOrWhiteSpace(helperName))
             {
-                continue;
-            }
-
-            foreach (var argument in attribute.ArgumentTexts)
-            {
-                var helperName = TrimStringLiteralQuotes(argument);
-                if (!string.IsNullOrWhiteSpace(helperName))
-                {
-                    declaredHelpers.Add(helperName);
-                }
+                declaredHelpers.Add(helperName);
             }
         }
     }

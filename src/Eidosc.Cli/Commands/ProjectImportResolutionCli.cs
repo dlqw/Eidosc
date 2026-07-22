@@ -18,6 +18,27 @@ internal static class ProjectImportResolutionCli
                 DiagnosticLevel.Note,
                 CliMessages.ProjectConfigSummary(resolution.ProjectFilePath),
                 useColors);
+
+            try
+            {
+                var manifest = EidosProjectManifestDocument.Load(resolution.ProjectFilePath);
+                var projectDirectory = Path.GetDirectoryName(resolution.ProjectFilePath) ?? Directory.GetCurrentDirectory();
+                foreach (var diagnostic in ManifestNamingRules.Analyze(manifest, projectDirectory))
+                {
+                    var suggestion = string.IsNullOrWhiteSpace(diagnostic.SuggestedName)
+                        ? string.Empty
+                        : $" (suggested: {diagnostic.SuggestedName})";
+                    CliOutput.WriteStatus(
+                        DiagnosticLevel.Warning,
+                        $"{diagnostic.Code}: {diagnostic.Message}{suggestion}",
+                        useColors);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // The command's normal input-resolution path reports manifest
+                // failures; style reporting must not mask that diagnostic.
+            }
         }
 
         if (resolution.SourceSearchRoots.Length > 0)

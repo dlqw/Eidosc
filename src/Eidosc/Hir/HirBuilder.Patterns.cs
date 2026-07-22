@@ -38,6 +38,8 @@ public sealed partial class HirBuilder
 
         return pattern switch
         {
+            Ast.Patterns.ExpandPattern { ExpandedPattern: not null } expansion =>
+                ConvertPattern(expansion.ExpandedPattern),
             Ast.Patterns.VarPattern varPat => new HirVarPattern
             {
                 Name = varPat.Name,

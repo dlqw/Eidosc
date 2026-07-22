@@ -16,7 +16,7 @@ public partial class TypeInferencePipelineTests
     {
         const string source = """
 Box[T] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 hkId[F: kind2, A] :: F[A] -> F[A]
@@ -79,7 +79,7 @@ bad[F: kind2] :: F[Int, String] -> Int
     {
         const string source = """
 Pair[A, B] :: type {
-    Pair(A, B)
+    Pair:: type(A, B)
 }
 
 hk2Id[F: kind3, A, B] :: F[A, B] -> F[A, B]
@@ -144,7 +144,7 @@ bad[F: kind2, G: kind2] :: F[G] -> F[G]
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 hkId[F, A] :: F[A] -> F[A]
@@ -211,11 +211,11 @@ bad[F, A] :: F[A] -> F[Int, String] -> Int
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 ApplyToInt[F: kind2] :: type {
-    ApplyToInt(F[Int])
+    ApplyToInt:: type(F[Int])
 }
 
 ho[F: kind2 -> kind1, G: kind2] :: F[G] -> F[G]
@@ -287,7 +287,7 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -333,13 +333,14 @@ Applicative[F: kind2] :: trait {
 }
 
 Either[A, B] :: type {
-    Left(A) , Right(B)
+    Left:: type(A) , Right:: type(B)
 }
 
-@impl(Applicative[Either[String]])
-pure[A] :: A -> Either[String, A]
-{
-    value => Right(value)
+
+ApplicativeEitherString :: instance Applicative[Either[String]] {
+    pure[A] :: A -> Either[String, A] {
+        value => Right(value)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -386,17 +387,18 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
 BoxedResult[E, T] :: type = ResultWith[E, T];
 DeepBoxedResult[E, T] :: type = BoxedResult[E, T];
 
-@impl(Applicative[DeepBoxedResult[String]])
-pure[A] :: A -> DeepBoxedResult[String, A]
-{
-    value => Ok(value)
+
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -443,15 +445,16 @@ Applicative[F: kind2] :: trait {
 }
 
 Triple[A, B, C] :: type {
-    Triple(A, B, C)
+    Triple:: type(A, B, C)
 }
 
 KeepEdges[L, R, X] :: type = Triple[L, X, R];
 
-@impl(Applicative[KeepEdges[String, Bool]])
-pure[A] :: A -> KeepEdges[String, Bool, A]
-{
-    value => Triple("ctx", value, true)
+
+ApplicativeKeepEdgesStringBool :: instance Applicative[KeepEdges[String, Bool]] {
+    pure[A] :: A -> KeepEdges[String, Bool, A] {
+        value => Triple("ctx", value, true)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -498,17 +501,18 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
 BoxedResult[E, T] :: type = ResultWith[E, T];
 DeepBoxedResult[E, T] :: type = BoxedResult[E, T];
 
-@impl(Applicative[DeepBoxedResult[String]])
-pure[A] :: A -> DeepBoxedResult[String, A]
-{
-    value => Ok(value)
+
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -551,15 +555,16 @@ Applicative[F: kind2] :: trait {
 }
 
 Triple[A, B, C] :: type {
-    Triple(A, B, C)
+    Triple:: type(A, B, C)
 }
 
 KeepEdges[L, R, X] :: type = Triple[L, X, R];
 
-@impl(Applicative[KeepEdges[String, Bool]])
-pure[A] :: A -> KeepEdges[String, Bool, A]
-{
-    value => Triple("ctx", value, true)
+
+ApplicativeKeepEdgesStringBool :: instance Applicative[KeepEdges[String, Bool]] {
+    pure[A] :: A -> KeepEdges[String, Bool, A] {
+        value => Triple("ctx", value, true)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -602,22 +607,24 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 DeepBoxedResult[E, T] :: type = Result[T, E];
 AlsoResult[E, T] :: type = Result[T, E];
 
-@impl(Applicative[DeepBoxedResult[String]])
-pure[A] :: A -> DeepBoxedResult[String, A]
-{
-    value => Ok(value)
+
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
-@impl(Applicative[AlsoResult[String]])
-pure[A] :: A -> AlsoResult[String, A]
-{
-    value => Ok(value)
+
+ApplicativeAlsoResultString :: instance Applicative[AlsoResult[String]] {
+    pure[A] :: A -> AlsoResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 use[A, B, G: kind2 : Applicative[G]] :: (A -> G[B]) -> A -> G[B]
@@ -646,9 +653,9 @@ main :: Unit -> Int
         var diagnostic = Assert.Single(
             result.Diagnostics,
             item => item.Code == "E3004" &&
-                    item.Message.Contains("Ambiguous overlapping impl registration", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested impl head: @impl(Applicative[AlsoResult[String]])", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing impl head: @impl(Applicative[DeepBoxedResult[String]])", StringComparison.Ordinal));
+                    item.Message.Contains("Ambiguous overlapping instance registration", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested instance head: instance Applicative[AlsoResult[String]]", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing instance head: instance Applicative[DeepBoxedResult[String]]", StringComparison.Ordinal));
         Assert.Contains(diagnostic.Notes, note => note.Contains("canonical head", StringComparison.Ordinal) &&
                                                   note.Contains("Applicative", StringComparison.Ordinal));
         Assert.Single(diagnostic.Related);
@@ -663,22 +670,24 @@ Applicative[F: kind2] :: trait {
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 DeepBoxedResult[E, T] :: type = Result[T, E];
 AlsoResult[E, T] :: type = Result[T, E];
 
-@impl(Applicative[DeepBoxedResult[String]])
-pure[A] :: A -> DeepBoxedResult[String, A]
-{
-    value => Ok(value)
+
+ApplicativeDeepBoxedResultString :: instance Applicative[DeepBoxedResult[String]] {
+    pure[A] :: A -> DeepBoxedResult[String, A] {
+        value => Ok(value)
+    }
 }
 
-@impl(Applicative[AlsoResult[String]])
-pure[A] :: A -> AlsoResult[String, A]
-{
-    value => Ok(value)
+
+ApplicativeAlsoResultString :: instance Applicative[AlsoResult[String]] {
+    pure[A] :: A -> AlsoResult[String, A] {
+        value => Ok(value)
+    }
 }
 
 make :: Unit -> Result[Int, String]
@@ -693,9 +702,9 @@ make :: Unit -> Result[Int, String]
         var diagnostic = Assert.Single(
             result.Diagnostics,
             item => item.Code == "E3004" &&
-                    item.Message.Contains("Ambiguous overlapping impl registration", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested impl head: @impl(Applicative[AlsoResult[String]])", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing impl head: @impl(Applicative[DeepBoxedResult[String]])", StringComparison.Ordinal));
+                    item.Message.Contains("Ambiguous overlapping instance registration", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested instance head: instance Applicative[AlsoResult[String]]", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing instance head: instance Applicative[DeepBoxedResult[String]]", StringComparison.Ordinal));
         Assert.Contains(diagnostic.Notes, note => note.Contains("canonical head", StringComparison.Ordinal) &&
                                                   note.Contains("Applicative", StringComparison.Ordinal));
         Assert.Single(diagnostic.Related);
@@ -710,19 +719,21 @@ Show :: trait {
 }
 
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
-@impl(Show)
-show[T] :: Option[T] -> Int
-{
-    _ => 0
+
+ShowOption[T] :: instance Show {
+    show :: Option[T] -> Int {
+        _ => 0
+    }
 }
 
-@impl(Show)
-show :: Option[Int] -> Int
-{
-    _ => 1
+
+ShowOptionInt :: instance Show {
+    show :: Option[Int] -> Int {
+        _ => 1
+    }
 }
 
 render :: Option[Int] -> Int

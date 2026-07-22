@@ -95,16 +95,78 @@ public sealed partial class NameResolver
         {
             if (structuredTraitTypeArgKeys != null &&
                 index < structuredTraitTypeArgKeys.Count &&
-                structuredTraitTypeArgKeys[index].ValueArgument != null)
+                (structuredTraitTypeArgKeys[index].ValueArgument != null ||
+                 structuredTraitTypeArgKeys[index].SymbolId.IsValid &&
+                 _symbolTable.GetSymbol<TypeParamSymbol>(structuredTraitTypeArgKeys[index].SymbolId) != null))
             {
                 result.Add(structuredTraitTypeArgKeys[index]);
                 continue;
             }
 
-            result.Add(BuildCanonicalImplTypeRefKey(canonicalTraitTypeArgs[index]));
+            var canonicalKey = BuildCanonicalImplTypeRefKey(canonicalTraitTypeArgs[index]);
+            if (structuredTraitTypeArgKeys != null && index < structuredTraitTypeArgKeys.Count)
+            {
+                canonicalKey = RestoreStructuredVariableIdentities(
+                    canonicalKey,
+                    structuredTraitTypeArgKeys[index]);
+            }
+
+            result.Add(canonicalKey);
         }
 
         return result;
+    }
+
+    private ImplTypeRefKey RestoreStructuredVariableIdentities(
+        ImplTypeRefKey canonical,
+        ImplTypeRefKey structured)
+    {
+        if (structured.SymbolId.IsValid &&
+            _symbolTable.GetSymbol<TypeParamSymbol>(structured.SymbolId) != null)
+        {
+            return new ImplTypeRefKey(
+                structured.SymbolId,
+                TypeId.None,
+                $"var:{structured.SymbolId.Value}",
+                []);
+        }
+
+        if (canonical.TypeArguments.IsDefaultOrEmpty || structured.TypeArguments.IsDefaultOrEmpty)
+        {
+            return canonical;
+        }
+
+        if (!HaveSameImplTypeRefHead(canonical, structured))
+        {
+            return canonical;
+        }
+
+        var arguments = canonical.TypeArguments
+            .Select((argument, index) => index < structured.TypeArguments.Length
+                ? RestoreStructuredVariableIdentities(argument, structured.TypeArguments[index])
+                : argument)
+            .ToImmutableArray();
+        return canonical with { TypeArguments = arguments };
+    }
+
+    private static bool HaveSameImplTypeRefHead(ImplTypeRefKey left, ImplTypeRefKey right)
+    {
+        if (left.SymbolId.IsValid && right.SymbolId.IsValid)
+        {
+            return left.SymbolId == right.SymbolId;
+        }
+
+        if (left.TypeId.IsValid && right.TypeId.IsValid)
+        {
+            return left.TypeId == right.TypeId;
+        }
+
+        if (left.SymbolId.IsValid || right.SymbolId.IsValid || left.TypeId.IsValid || right.TypeId.IsValid)
+        {
+            return false;
+        }
+
+        return string.Equals(left.Text, right.Text, StringComparison.Ordinal);
     }
 
     private ImplTypeRefKey BuildImplGenericArgumentKey(GenericArgumentNode argument, int parameterIndex)
@@ -130,7 +192,7 @@ public sealed partial class NameResolver
         var bracketIndex = trimmed.IndexOf('[');
         if (bracketIndex <= 0 || !trimmed.EndsWith("]", StringComparison.Ordinal))
         {
-            return BuildCanonicalSimpleTypeRefKey(trimmed);
+            return BuildCanonicalSimpleTypeRefKey(trimmed, unresolvedIsVariable: true);
         }
 
         var head = trimmed[..bracketIndex];
@@ -139,11 +201,13 @@ public sealed partial class NameResolver
             .Select(BuildCanonicalImplTypeRefKey)
             .Where(static key => !key.IsEmpty)
             .ToImmutableArray();
-        var headKey = BuildCanonicalSimpleTypeRefKey(head);
+        var headKey = BuildCanonicalSimpleTypeRefKey(head, unresolvedIsVariable: false);
         return new ImplTypeRefKey(headKey.SymbolId, headKey.TypeId, headKey.Text, typeArguments);
     }
 
-    private ImplTypeRefKey BuildCanonicalSimpleTypeRefKey(string name)
+    private ImplTypeRefKey BuildCanonicalSimpleTypeRefKey(
+        string name,
+        bool unresolvedIsVariable)
     {
         var trimmed = name.Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
@@ -157,13 +221,20 @@ public sealed partial class NameResolver
             return new ImplTypeRefKey(SymbolId.None, builtInTypeId, trimmed, []);
         }
 
-        if (_symbolTable.LookupType(trimmed) is { IsValid: true } symbolId &&
-            _symbolTable.GetSymbol(symbolId) is { TypeId: { IsValid: true } typeId })
+        if (_symbolTable.LookupType(trimmed) is { IsValid: true } symbolId)
         {
-            return new ImplTypeRefKey(symbolId, typeId, trimmed, []);
+            if (_symbolTable.GetSymbol<TypeParamSymbol>(symbolId) != null)
+            {
+                return new ImplTypeRefKey(symbolId, TypeId.None, $"var:{symbolId.Value}", []);
+            }
+
+            if (_symbolTable.GetSymbol(symbolId) is { TypeId: { IsValid: true } typeId })
+            {
+                return new ImplTypeRefKey(symbolId, typeId, trimmed, []);
+            }
         }
 
-        return ImplTypeRefKey.FromText(trimmed);
+        return ImplTypeRefKey.FromText(unresolvedIsVariable ? $"var:{trimmed}" : trimmed);
     }
 
     private ImplTypeRefKey BuildImplTypeRefKey(TypeNode node)
@@ -190,13 +261,17 @@ public sealed partial class NameResolver
     private ImplTypeRefKey BuildTypePathRefKey(TypePath typePath)
     {
         var symbolId = ResolveTypePathSymbolIdForImplKey(typePath);
-        var typeId = symbolId.IsValid && _symbolTable.GetSymbol(symbolId) is { TypeId.IsValid: true } symbol
+        var symbol = symbolId.IsValid ? _symbolTable.GetSymbol(symbolId) : null;
+        var typeId = symbol is { TypeId.IsValid: true }
             ? symbol.TypeId
             : TypeId.None;
+        var text = symbol is TypeParamSymbol
+            ? $"var:{symbolId.Value}"
+            : CanonicalizeTypePathForImplHead(typePath);
         return new ImplTypeRefKey(
             symbolId,
             typeId,
-            CanonicalizeTypePathForImplHead(typePath),
+            text,
             BuildImplGenericArgumentKeys(typePath).ToImmutableArray());
     }
 

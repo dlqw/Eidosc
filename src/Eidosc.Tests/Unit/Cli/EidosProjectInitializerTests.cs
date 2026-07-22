@@ -26,9 +26,9 @@ public class EidosProjectInitializerTests
 
             Assert.Equal(0, result);
             Assert.True(Directory.Exists(Path.Combine(tempDir, "src")));
-            var mainPath = Path.Combine(tempDir, "src", "Main.eidos");
+            var mainPath = Path.Combine(tempDir, "src", "main.eidos");
             Assert.True(File.Exists(mainPath));
-            Assert.Contains("Main :: module", File.ReadAllText(mainPath), StringComparison.Ordinal);
+            Assert.Contains("main :: module", File.ReadAllText(mainPath), StringComparison.Ordinal);
             Assert.Contains("main :: Unit -> Int", File.ReadAllText(mainPath), StringComparison.Ordinal);
 
             var document = LoadManifest(tempDir);
@@ -40,7 +40,7 @@ public class EidosProjectInitializerTests
             Assert.Equal(EidosLanguageVersions.Current, loaded.Configuration.LanguageVersion);
             Assert.Equal(Path.GetFullPath(Path.Combine(tempDir, "src")), Assert.Single(loaded.Configuration.SourceRoots));
             Assert.Equal(
-                Path.GetFullPath(Path.Combine(tempDir, "src", "Main.eidos")),
+                Path.GetFullPath(Path.Combine(tempDir, "src", "main.eidos")),
                 loaded.Configuration.Targets[0].Entry);
 
             var manifestText = File.ReadAllText(Path.Combine(tempDir, EidosProjectConfigurationLoader.DefaultFileName));
@@ -49,7 +49,7 @@ public class EidosProjectInitializerTests
                 manifestSchema = 3
 
                 [language]
-                version = "0.6.0-alpha.1"
+                version = "0.7.0-alpha.1"
 
                 [package]
                 name = "dev.eidos.app"
@@ -87,13 +87,13 @@ public class EidosProjectInitializerTests
             Assert.Equal(0, result);
             Assert.True(Directory.Exists(Path.Combine(tempDir, "app")));
             Assert.True(Directory.Exists(Path.Combine(tempDir, "generated")));
-            Assert.True(File.Exists(Path.Combine(tempDir, "app", "Main.eidos")));
-            Assert.False(File.Exists(Path.Combine(tempDir, "generated", "Main.eidos")));
+            Assert.True(File.Exists(Path.Combine(tempDir, "app", "main.eidos")));
+            Assert.False(File.Exists(Path.Combine(tempDir, "generated", "main.eidos")));
 
             var document = LoadManifest(tempDir);
             Assert.NotNull(document.SourceRoots);
             Assert.Equal(["app", "generated"], document.SourceRoots!);
-            Assert.Equal("app/Main.eidos", document.Targets![0].Entry);
+            Assert.Equal("app/main.eidos", document.Targets![0].Entry);
         }
         finally
         {

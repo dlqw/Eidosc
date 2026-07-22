@@ -9,7 +9,9 @@ public static class MigrateCommand
         return new Command("migrate", "Migration tools for Eidos projects and source files.")
         {
             MigrateSyntaxCommand.Create(),
-            MigrateManifestCommand.Create()
+            MigrateAttachmentsCommand.Create(),
+            MigrateManifestCommand.Create(),
+            MigrateNamesCommand.Create()
         };
     }
 }

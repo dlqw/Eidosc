@@ -67,7 +67,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            allocate :: comptime Int -> Int need FFI { size => size }
+            allocate :: comptime Int -> Int need ffi { size => size }
             DefaultCapacity :: comptime allocate(8);
             main :: Unit -> Int { _ => 0 }
             """,
@@ -85,7 +85,9 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            @ffi("malloc") malloc :: Int -> RawPtr;
+             @[extern(c, name: "malloc")]
+             malloc :: Int -> RawPtr need ffi
+            ;
             allocate :: comptime Int -> RawPtr { size => malloc(size) }
             main :: Unit -> Int { _ => 0 }
             """,
@@ -326,7 +328,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            MaybeInt :: type { Some(Int), None }
+            MaybeInt :: type { Some:: type(Int), None :: type {} }
             unwrap :: comptime MaybeInt -> Int {
                 Some(value) => value,
                 None() => 0
@@ -347,7 +349,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            Point :: type { x: Int, y: Int }
+            Point :: type { x:: Int, y:: Int }
             sumPoint :: comptime Point -> Int {
                 Point { x: x, y: y } => x + y
             }
@@ -410,7 +412,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            Box[T] :: type { Box(T) }
+            Box[T] :: type { Box:: type(T) }
             Nested :: comptime Box(Box(42));
             main :: Unit -> Box[Box[Int]] { _ => Nested }
             """,
@@ -419,10 +421,14 @@ public sealed class ComptimeBindingTests
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
         var module = Assert.IsType<HirModule>(result.HirModule);
         var main = Assert.Single(module.Declarations.OfType<HirFunc>(), function => function.Name == "main");
-        var outer = Assert.IsType<HirCall>(main.Body);
+        var outerInjection = Assert.IsType<HirCaseInject>(main.Body);
+        var outer = Assert.IsType<HirCall>(outerInjection.Operand);
         var inner = Assert.IsType<HirCall>(Assert.Single(outer.Arguments));
         var scalar = Assert.IsType<HirLiteral>(Assert.Single(inner.Arguments));
 
+        Assert.True(outerInjection.SourceCase.IsValid);
+        Assert.True(outerInjection.TargetAncestor.IsValid);
+        Assert.True(outerInjection.SourceTypeId.IsValid);
         Assert.Equal(CallConvention.Constructor, outer.Convention);
         Assert.Equal(CallConvention.Constructor, inner.Convention);
         Assert.True(outer.TypeId.IsValid);
@@ -436,7 +442,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            Box[T] :: type { Box(T) }
+            Box[T] :: type { Box:: type(T) }
             Nested :: comptime Box(Box(42));
             main :: Unit -> Box[Box[Int]] { _ => Nested }
             """,
@@ -454,7 +460,7 @@ public sealed class ComptimeBindingTests
     {
         var result = RunNameFirst(
             """
-            Point :: type { x: Int, y: Int }
+            Point :: type { x:: Int, y:: Int }
             Value :: comptime Point { y: 22, x: 20 };
             main :: Unit -> Point { _ => Value }
             """,
@@ -754,7 +760,7 @@ public sealed class ComptimeBindingTests
     }
 
     [Fact]
-    public void Types_ComptimeCallExpression_Fails()
+    public void Types_ComptimeCallExpression_EvaluatesPureOrdinaryFunction()
     {
         var result = RunNameFirst(
             """
@@ -764,11 +770,7 @@ public sealed class ComptimeBindingTests
             """,
             CompilationPhase.Types);
 
-        Assert.False(result.Success);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Message.Contains("comptime binding RHS must be evaluable", StringComparison.Ordinal) &&
-                diagnostic.Message.Contains("not a comptime-only function", StringComparison.Ordinal));
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
     }
 
     [Fact]
@@ -785,6 +787,46 @@ public sealed class ComptimeBindingTests
         Assert.Contains(
             result.Diagnostics,
             diagnostic => diagnostic.Message.Contains("integer division by zero", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Types_ComptimeLogicalOperators_ShortCircuitUnselectedOperands()
+    {
+        var result = RunNameFirst(
+            """
+            ShortCircuitAnd :: comptime false && (1 / 0 == 0);
+            ShortCircuitOr :: comptime true || (1 / 0 == 0);
+            main :: Unit -> Int { _ => 0 }
+            """,
+            CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var inferer = Assert.IsType<TypeInferer>(result.TypeInferer);
+        var andSymbol = Assert.NotNull(symbolTable.LookupValue("ShortCircuitAnd"));
+        var orSymbol = Assert.NotNull(symbolTable.LookupValue("ShortCircuitOr"));
+        Assert.False(Assert.IsType<ComptimeBoolValue>(inferer.ComptimeValues[new SymbolId(andSymbol.Value)]).Value);
+        Assert.True(Assert.IsType<ComptimeBoolValue>(inferer.ComptimeValues[new SymbolId(orSymbol.Value)]).Value);
+    }
+
+    [Fact]
+    public void ComptimeAdtValues_UseStableConstructorIdentityInCanonicalPayloads()
+    {
+        var left = new ComptimeAdtValue(SymbolId.None, "Leaf", [], [])
+        {
+            ConstructorIdentity = "pkg.left.Root.Leaf"
+        };
+        var right = new ComptimeAdtValue(SymbolId.None, "Leaf", [], [])
+        {
+            ConstructorIdentity = "pkg.right.Root.Leaf"
+        };
+
+        Assert.False(left.StructuralEquals(right));
+        Assert.NotEqual(left.CanonicalHash, right.CanonicalHash);
+        Assert.True(ComptimeValuePayload.TryCreate(left, out var payload));
+        Assert.Equal(left.ConstructorIdentity, payload.ConstructorIdentity);
+        Assert.True(payload.TryRestoreValue(remapper: null, out var restored));
+        Assert.Equal(left.CanonicalText, restored.CanonicalText);
     }
 
     [Fact]

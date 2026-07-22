@@ -37,12 +37,18 @@ public sealed record BorrowCodegenHintsSnapshot(
             functions);
     }
 
-    public ModuleBorrowCheckResult ToBorrowCheckResult()
+    public ModuleBorrowCheckResult ToBorrowCheckResult(BorrowDiagnosticSnapshot? diagnostics = null)
     {
         var result = new ModuleBorrowCheckResult();
+        var diagnosticsByFunction = diagnostics?.Functions.ToDictionary(
+            static function => function.FunctionKey,
+            StringComparer.Ordinal);
         foreach (var function in Functions)
         {
-            result.AddResult(function.ToBorrowCheckResult());
+            BorrowDiagnosticFunctionSnapshot? diagnostic = null;
+            _ = diagnosticsByFunction?.TryGetValue(function.FunctionKey, out diagnostic);
+            result.AddResult(function.ToBorrowCheckResult(
+                loanSignature: diagnostic?.LoanSummary?.Restore()));
         }
 
         return result;
@@ -80,12 +86,16 @@ public sealed record BorrowCodegenHintsFunctionSnapshot(
             unifiedStackPromotionHints == null ? null : UnifiedStackPromotionHintsSnapshot.FromHints(unifiedStackPromotionHints));
     }
 
-    public BorrowCheckResult ToBorrowCheckResult(string? functionName = null, SymbolId? functionSymbolId = null)
+    public BorrowCheckResult ToBorrowCheckResult(
+        string? functionName = null,
+        SymbolId? functionSymbolId = null,
+        LoanSignature? loanSignature = null)
     {
         return new BorrowCheckResult
         {
             FunctionName = functionName ?? FunctionName,
             FunctionSymbolId = functionSymbolId ?? new SymbolId(FunctionSymbolId),
+            LoanSignature = loanSignature,
             PerceusHints = Perceus?.ToHints(),
             ReuseHints = Reuse?.ToHints(),
             StackPromotionHints = StackPromotion?.ToHints(),

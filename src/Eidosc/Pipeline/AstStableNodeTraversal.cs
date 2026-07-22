@@ -7,6 +7,7 @@ using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Mir;
+using Eidosc.ProjectSystem;
 using Eidosc.Symbols;
 
 internal sealed record AstStableNodeEntry(
@@ -213,7 +214,16 @@ internal static class AstStableNodeTraversal
     }
 
     private static bool IsSemanticAttachment(EidosAstNode node, string propertyName) =>
+        (node is AdtDef { Members.Count: > 0 } &&
+         propertyName is nameof(AdtDef.Fields) or nameof(AdtDef.Cases)) ||
+        (node is CaseTypeDef { Members.Count: > 0 } &&
+         propertyName is nameof(CaseTypeDef.Fields) or nameof(CaseTypeDef.Cases)) ||
+        (node is TraitDef { Members.Count: > 0 } &&
+         propertyName is nameof(TraitDef.Methods) or nameof(TraitDef.AssociatedTypes) or nameof(TraitDef.AssociatedConsts)) ||
+        (node is InstanceDecl { Members.Count: > 0 } &&
+         propertyName is nameof(InstanceDecl.Methods) or nameof(InstanceDecl.AssociatedTypes) or nameof(InstanceDecl.AssociatedConsts)) ||
         (node is BlockExpr && propertyName == nameof(BlockExpr.ResultExpression)) ||
+        (node is MethodCallExpr && propertyName == nameof(MethodCallExpr.ResolvedStaticExpression)) ||
         (node is AssociatedConstExpr && propertyName == nameof(AssociatedConstExpr.ImplementationValue)) ||
         (node is ContextualRecordLiteralExpr && propertyName == nameof(ContextualRecordLiteralExpr.DesugaredCtor)) ||
         (node is RecordUpdateExpr &&
@@ -284,7 +294,8 @@ internal static class AstStableNodeTraversal
             var sourceName = Path.GetFileNameWithoutExtension(sourcePath);
             if (!string.IsNullOrWhiteSpace(sourceName))
             {
-                return string.Equals(moduleName, sourceName, StringComparison.OrdinalIgnoreCase);
+                var semanticSourceName = ManifestNamingRules.NormalizeModulePathSegment(sourceName);
+                return string.Equals(moduleName, semanticSourceName, StringComparison.Ordinal);
             }
         }
         return false;

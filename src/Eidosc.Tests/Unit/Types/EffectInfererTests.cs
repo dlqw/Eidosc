@@ -26,9 +26,9 @@ identity :: Int -> Int
     public void Infer_DeclaredNeed_RemainsSeparateFromPureImplementation()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }
@@ -40,7 +40,7 @@ write :: Int -> Int need IO
         var function = Assert.Single(result.Ast!.Declarations.OfType<FuncDef>());
         var summary = inferer.FunctionSummaries[function];
 
-        Assert.True(summary.DeclaredUpperBound.ContainsName("IO"));
+        Assert.True(summary.DeclaredUpperBound.ContainsName("io"));
         Assert.True(summary.InferredEffects.IsPure);
     }
 
@@ -48,9 +48,9 @@ write :: Int -> Int need IO
     public void Infer_FunctionCallToPureImplementation_KeepsActualSummaryPure()
     {
         const string source = """
-IO :: effect;
+io :: effect;
 
-write :: Int -> Int need IO
+write :: Int -> Int need io
 {
     value => value
 }
@@ -76,9 +76,9 @@ caller :: Int -> Int
 
         File.WriteAllText(moduleFile, """
 Cap :: module {
-    IO :: effect;
+    io :: effect;
 
-    write :: Int -> Int need IO
+    write :: Int -> Int need io
     {
         value => value
     }

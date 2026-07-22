@@ -128,6 +128,7 @@ public sealed class IdeSymbolEntry
     public string? DefinitionFingerprint { get; init; }
     public string? DefinitionFingerprintScope { get; init; }
     public string? BindingMode { get; init; }
+    public IdeOwnershipContractEntry? OwnershipContract { get; init; }
     public IdeSpan? VisibilitySpan { get; init; }
     public bool IsBuiltin { get; init; }
     public bool IsGenerated { get; init; }
@@ -136,18 +137,39 @@ public sealed class IdeSymbolEntry
     public IdeSpan? Span { get; init; }
 }
 
+public sealed class IdeOwnershipContractEntry
+{
+    public string SchemaVersion { get; init; } = "";
+    public string CanonicalIdentity { get; init; } = "";
+    public List<IdeOwnershipSlotEntry> Parameters { get; init; } = [];
+    public IdeOwnershipSlotEntry Result { get; init; } = new();
+}
+
+public sealed class IdeOwnershipSlotEntry
+{
+    public int Ordinal { get; init; }
+    public string Name { get; init; } = "";
+    public int TypeId { get; init; }
+    public string TypeIdentity { get; init; } = "";
+    public string Kind { get; init; } = "byValue";
+    public bool IsDeferred { get; init; }
+}
+
 public sealed class IdeGeneratedOriginEntry
 {
     public string StableIdentity { get; init; } = "";
+    public string GenerationSlotIdentity { get; init; } = "";
     public string GeneratorIdentity { get; init; } = "";
     public string TargetIdentity { get; init; } = "";
     public int GeneratorSymbolId { get; init; }
     public int TargetSymbolId { get; init; }
-    public int AttributeOccurrenceIndex { get; init; }
+    public int ClauseOccurrenceIndex { get; init; }
+    public string ClauseOccurrenceIdentity { get; init; } = "";
+    public int ClauseArgumentSubIndex { get; init; } = -1;
     public int ExpansionOutputIndex { get; init; }
     public string CanonicalArgumentsHash { get; init; } = "";
     public int MetaSchemaVersion { get; init; }
-    public IdeSpan? AttributeSpan { get; init; }
+    public IdeSpan? ClauseSpan { get; init; }
     public string VirtualDocumentPath { get; init; } = "";
 }
 
@@ -347,17 +369,6 @@ public static partial class IdeSemanticSnapshotBuilder
         WellKnownStrings.AdditionalKeywords.Break, WellKnownStrings.AdditionalKeywords.Continue, WellKnownStrings.AdditionalKeywords.As, WellKnownStrings.Operators.Ref, WellKnownStrings.Operators.MRef, WellKnownStrings.Keywords.Resume, WellKnownStrings.Keywords.Requires, WellKnownStrings.Keywords.Self
     ];
 
-    private static readonly string[] AttributeCompletions =
-    [
-        "@derive",
-        "@impl",
-        "@operator",
-        "@ffi",
-        "@borrow",
-        "@transparent",
-        "@cstruct"
-    ];
-
     private static readonly string[] DeriveTraitCompletions =
     [
         "Eq",
@@ -374,7 +385,8 @@ public static partial class IdeSemanticSnapshotBuilder
             ? CollectSymbolMetadata(result.Ast)
             : new Dictionary<int, IdeSymbolMetadata>();
         var canBuildFingerprints = CanBuildDefinitionFingerprints(result);
-        var symbols = BuildSymbols(result.SymbolTable, symbolMetadata, canBuildFingerprints);
+        var ownershipContracts = BuildOwnershipContracts(result);
+        var symbols = BuildSymbols(result.SymbolTable, symbolMetadata, ownershipContracts, canBuildFingerprints);
         var overloadGroups = BuildOverloadGroups(result.SymbolTable, symbols);
         var modulePathSymbolIds = AddSyntheticModulePrefixSymbols(result.SymbolTable, symbols);
         var importedModuleAliases = result.Ast != null
@@ -398,8 +410,9 @@ public static partial class IdeSemanticSnapshotBuilder
         var completions = BuildCompletions(result.SymbolTable, symbols, overloadGroups);
         var generatedDocuments = symbols
             .Where(static symbol => symbol.IsGenerated && symbol.GeneratedOrigin != null)
-            .OrderBy(static symbol => symbol.GeneratedOrigin!.StableIdentity, StringComparer.Ordinal)
-            .Select(GeneratedDocumentRenderer.Create)
+            .GroupBy(static symbol => symbol.GeneratedOrigin!.VirtualDocumentPath, StringComparer.Ordinal)
+            .OrderBy(static group => group.Key, StringComparer.Ordinal)
+            .Select(static group => GeneratedDocumentRenderer.Create(group.ToArray()))
             .ToList();
         var borrowCapabilities = BuildBorrowCapabilities(result.BorrowCheckResult);
 
@@ -976,7 +989,11 @@ public static partial class IdeSemanticSnapshotBuilder
         var previewMetadata = preview.Ast != null
             ? CollectSymbolMetadata(preview.Ast)
             : new Dictionary<int, IdeSymbolMetadata>();
-        var previewSymbols = BuildSymbols(preview.SymbolTable, previewMetadata, canBuildDefinitionFingerprints: true);
+        var previewSymbols = BuildSymbols(
+            preview.SymbolTable,
+            previewMetadata,
+            BuildOwnershipContracts(preview),
+            canBuildDefinitionFingerprints: true);
         var replacementSymbol = previewSymbols.FirstOrDefault(symbol => symbol.SymbolId == replacementSymbolId);
         if (replacementSymbol == null)
         {
@@ -1113,6 +1130,7 @@ public static partial class IdeSemanticSnapshotBuilder
     private static List<IdeSymbolEntry> BuildSymbols(
         SymbolTable? symbolTable,
         IReadOnlyDictionary<int, IdeSymbolMetadata> symbolMetadata,
+        IReadOnlyDictionary<int, OwnershipContract> ownershipContracts,
         bool canBuildDefinitionFingerprints)
     {
         if (symbolTable == null)
@@ -1139,6 +1157,7 @@ public static partial class IdeSemanticSnapshotBuilder
             var definitionFingerprint = canBuildDefinitionFingerprints
                 ? BuildDefinitionFingerprint(symbol, metadata, modulePathsBySymbolId)
                 : null;
+            ownershipContracts.TryGetValue(symbol.Id.Value, out var ownershipContract);
             symbols.Add(new IdeSymbolEntry
             {
                 SymbolId = symbol.Id.Value,
@@ -1158,6 +1177,7 @@ public static partial class IdeSemanticSnapshotBuilder
                     ? DefinitionFingerprintScope
                     : null,
                 BindingMode = metadata?.BindingMode,
+                OwnershipContract = CreateOwnershipContractEntry(ownershipContract),
                 VisibilitySpan = symbol.IsModuleLevel
                     ? null
                     : TryConvertIdeSpan(metadata?.VisibilitySpan),
@@ -1185,6 +1205,71 @@ public static partial class IdeSemanticSnapshotBuilder
         return symbols;
     }
 
+    private static IReadOnlyDictionary<int, OwnershipContract> BuildOwnershipContracts(CompilationResult result)
+    {
+        var contracts = new Dictionary<int, OwnershipContract>();
+        if (result.HirModule != null)
+        {
+            foreach (var function in result.HirModule.Declarations.OfType<Eidosc.Hir.HirFunc>())
+            {
+                AddOwnershipContract(function.SymbolId, function.OwnershipContract, contracts);
+            }
+        }
+
+        if (result.MirModule != null)
+        {
+            foreach (var function in result.MirModule.Functions)
+            {
+                AddOwnershipContract(function.SymbolId, function.OwnershipContract, contracts);
+            }
+        }
+
+        return contracts;
+    }
+
+    private static void AddOwnershipContract(
+        SymbolId symbolId,
+        OwnershipContract contract,
+        Dictionary<int, OwnershipContract> contracts)
+    {
+        if (symbolId.IsValid && !string.IsNullOrEmpty(contract.CanonicalIdentity))
+        {
+            contracts[symbolId.Value] = contract;
+        }
+    }
+
+    private static IdeOwnershipContractEntry? CreateOwnershipContractEntry(OwnershipContract? contract)
+    {
+        if (contract == null || string.IsNullOrEmpty(contract.CanonicalIdentity))
+        {
+            return null;
+        }
+
+        return new IdeOwnershipContractEntry
+        {
+            SchemaVersion = contract.SchemaVersion,
+            CanonicalIdentity = contract.CanonicalIdentity,
+            Parameters = contract.Parameters.Select(CreateOwnershipSlotEntry).ToList(),
+            Result = CreateOwnershipSlotEntry(contract.Result)
+        };
+    }
+
+    private static IdeOwnershipSlotEntry CreateOwnershipSlotEntry(OwnershipSlot slot) =>
+        new()
+        {
+            Ordinal = slot.Ordinal,
+            Name = slot.Name,
+            TypeId = slot.TypeId.Value,
+            TypeIdentity = slot.TypeIdentity,
+            Kind = slot.Projection.Kind switch
+            {
+                OwnershipPassingKind.SharedBorrow => "sharedBorrow",
+                OwnershipPassingKind.MutableBorrow => "mutableBorrow",
+                _ => "byValue"
+            },
+            IsDeferred = slot.Projection.IsDeferred
+        };
+
     private static IdeGeneratedOriginEntry? CreateGeneratedOriginEntry(GeneratedDeclarationOrigin? origin)
     {
         if (origin == null)
@@ -1195,15 +1280,18 @@ public static partial class IdeSemanticSnapshotBuilder
         return new IdeGeneratedOriginEntry
         {
             StableIdentity = origin.StableIdentity,
+            GenerationSlotIdentity = origin.GenerationSlotIdentity,
             GeneratorIdentity = origin.GeneratorIdentity,
             TargetIdentity = origin.TargetIdentity,
             GeneratorSymbolId = origin.GeneratorSymbolId.Value,
             TargetSymbolId = origin.TargetSymbolId.Value,
-            AttributeOccurrenceIndex = origin.AttributeOccurrenceIndex,
+            ClauseOccurrenceIndex = origin.ClauseOccurrenceIndex,
+            ClauseOccurrenceIdentity = origin.ClauseOccurrenceIdentity,
+            ClauseArgumentSubIndex = origin.ClauseArgumentSubIndex,
             ExpansionOutputIndex = origin.ExpansionOutputIndex,
             CanonicalArgumentsHash = origin.CanonicalArgumentsHash,
             MetaSchemaVersion = origin.MetaSchemaVersion,
-            AttributeSpan = IdeSpan.TryFrom(origin.AttributeSpan, out var attributeSpan) ? attributeSpan : null,
+            ClauseSpan = IdeSpan.TryFrom(origin.ClauseSpan, out var clauseSpan) ? clauseSpan : null,
             VirtualDocumentPath = origin.VirtualDocumentPath
         };
     }
@@ -1939,13 +2027,14 @@ public static partial class IdeSemanticSnapshotBuilder
                 ? context.GetName(con.ConstructorVarIndex.Value)
                 : "<type>";
 
-        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0 && con.EffectArgs.Count == 0)
         {
             return constructorName;
         }
 
         var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
-        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var effectArguments = con.EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count + con.EffectArgs.Count;
         var typeArgumentIndex = 0;
         var arguments = new List<string>(argumentCount);
         for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
@@ -1953,6 +2042,10 @@ public static partial class IdeSemanticSnapshotBuilder
             if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
             {
                 arguments.Add(valueArgument.DisplayText);
+            }
+            else if (effectArguments.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                arguments.Add(FormatTypeForIde(effectArgument.Argument, context));
             }
             else if (typeArgumentIndex < con.Args.Count)
             {

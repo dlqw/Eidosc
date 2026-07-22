@@ -1,44 +1,33 @@
 using Eidosc.Symbols;
-using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Pipeline;
 using Eidosc.Semantic;
 using Eidosc.Tests.Fixtures;
 using Eidosc.Utils;
 using Xunit;
-using EidosAttribute = Eidosc.Ast.Attribute;
 
 namespace Eidosc.Tests.Unit.Semantic;
 
 public sealed class NameResolverBoundaryTests
 {
     [Fact]
-    public void AttributeBinder_BindsFfiLibraryQualifiedSymbol()
+    public void ClauseBinder_BindsFfiLibraryAndLinkName()
     {
         var func = CreateFunction(
             "easyInit",
-            CreateAttribute(WellKnownStrings.Keywords.Ffi, "\"curl/curl_easy_init\""));
+            CreateClause(DeclarationClauseKind.Need, "need", "ffi"),
+            CreateClause(
+                DeclarationClauseKind.Extern,
+                "extern",
+                "c",
+                "library: \"curl\"",
+                "name: \"curl_easy_init\""));
 
-        var result = new AttributeBinder().BindDeclarationAttributes(func, func.Name);
+        var result = new DeclarationClauseSemanticBinder().Bind(func, func.Name);
 
         Assert.NotNull(result.Ffi);
         Assert.Equal("curl_easy_init", result.Ffi.SymbolName);
         Assert.Equal("curl", result.Ffi.LibraryName);
-        Assert.Empty(result.Diagnostics);
-    }
-
-    [Fact]
-    public void AttributeBinder_BindsOperatorMetadata()
-    {
-        var func = CreateFunction(
-            "append",
-            CreateAttribute("operator", "infixr", "5"));
-
-        var result = new AttributeBinder().BindDeclarationAttributes(func, func.Name);
-
-        var operatorInfo = Assert.Single(result.Operators);
-        Assert.Equal(CustomOperatorFixity.InfixR, operatorInfo.Fixity);
-        Assert.Equal(5, operatorInfo.Precedence);
         Assert.Empty(result.Diagnostics);
     }
 
@@ -91,12 +80,12 @@ public sealed class NameResolverBoundaryTests
     public void CompilationPipeline_ImportedModuleQualifiedType_PrefersModuleAliasOverGlobalModulePath()
     {
         const string source = """
-import Std.Task
-import Std.HashMap
+import std.Task
+import std.HashMap
 
 keep_task[A] :: Task.Task[A] -> Task.Task[A] { task => task }
 keep_map :: HashMap.HashMap[Int, Int] -> HashMap.HashMap[Int, Int] { map => map }
-keep_package_task[A] :: Std.Task.Task[A] -> Std.Task.Task[A] { task => task }
+keep_package_task[A] :: std.Task.Task[A] -> std.Task.Task[A] { task => task }
 """;
 
         var result = new CompilationPipeline(source, new CompilationOptions
@@ -117,24 +106,28 @@ keep_package_task[A] :: Std.Task.Task[A] -> Std.Task.Task[A] { task => task }
         Assert.True(result.Success, FormatDiagnostics(result));
     }
 
-    private static FuncDef CreateFunction(string name, params EidosAttribute[] attributes)
+    private static FuncDef CreateFunction(string name, params DeclarationClause[] clauses)
     {
         var func = new FuncDef();
         func.SetName(name);
-        func.SetAttributes(attributes.ToList());
+        func.SetClauses(clauses.ToList());
         return func;
     }
 
-    private static EidosAttribute CreateAttribute(string name, params string[] arguments)
+    private static DeclarationClause CreateClause(
+        DeclarationClauseKind kind,
+        string keyword,
+        params string[] arguments)
     {
-        var attribute = new EidosAttribute();
-        attribute.SetName(name);
+        var clause = new DeclarationClause();
+        clause.SetKind(kind, keyword);
+        clause.SetSpan(SourceSpan.Empty);
         foreach (var argument in arguments)
         {
-            attribute.AddArgumentText(argument);
+            clause.AddArgument(argument);
         }
 
-        return attribute;
+        return clause;
     }
 
     private static string FormatDiagnostics(CompilationResult result)

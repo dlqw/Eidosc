@@ -336,7 +336,7 @@ public sealed partial class HirBuilder
     private HirNode BuildAppendLastCall(BinaryExpr bin)
     {
         var listArg = ConvertExprOrFallback(bin.Left, "operator left operand", bin.Span);
-        var singletonFunc = BuildStdlibFunctionVar("Std.Seq", "singleton", bin.Span);
+        var singletonFunc = BuildStdlibFunctionVar("std.Seq", "singleton", bin.Span);
         var singletonCall = BuildCallableApplication(
             singletonFunc,
             [ConvertExprOrFallback(bin.Right, "operator right operand", bin.Span)],
@@ -344,7 +344,7 @@ public sealed partial class HirBuilder
             bin.Span,
             TypeId.None,
             HirCallSurfaceSyntax.OperatorDesugaring);
-        var appendFunc = BuildStdlibFunctionVar("Std.Seq", "append", bin.Span);
+        var appendFunc = BuildStdlibFunctionVar("std.Seq", "append", bin.Span);
         return BuildCallableApplication(
             appendFunc,
             [listArg, singletonCall],

@@ -182,12 +182,19 @@ public static partial class BuildCommand
         yield return $"stop={compileOptions.StopAtPhase?.ToString() ?? ""}";
         yield return $"noImplicitPrelude={compileOptions.NoImplicitPrelude}";
         yield return $"mirOpt={compileOptions.EnableMirOptimizations}";
+        yield return $"werrorAll={compileOptions.TreatWarningsAsErrors}";
+        yield return $"denyStyle={compileOptions.DenyStyle}";
+        foreach (var warningCode in compileOptions.WarningCodesAsErrors.Order(StringComparer.Ordinal))
+        {
+            yield return $"werror={warningCode}";
+        }
         yield return $"optimizationLevel={optimizationLevel}";
         yield return $"lto={options.Lto}";
         yield return $"nativeCpu={options.NativeCpu}";
         yield return $"targetTriple={targetInfo?.Triple ?? compileOptions.LlvmTargetTriple ?? TargetInfo.Default.Triple}";
         yield return $"buildHost={compileOptions.BuildHostFingerprint ?? ""}";
         yield return $"buildGraph={compileOptions.BuildGraphFingerprint ?? ""}";
+        yield return $"metaConfiguration={compileOptions.MetaConfiguration?.Fingerprint ?? ""}";
         yield return $"nativeLinkMode={compileOptions.NativeLinkMode}";
         yield return $"codegenMode={ResolveNativeCodegenMode(options.BuildMode, options.CodegenMode)}";
         yield return $"maxObjectGroups={ResolveMaxObjectGroups(options.BuildMode, options.CodegenMode, options.MaxObjectGroups)}";

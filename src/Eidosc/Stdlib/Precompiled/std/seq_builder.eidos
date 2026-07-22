@@ -1,0 +1,144 @@
+SeqBuilder :: module {
+    // SeqBuilder[T] — a mutable, contiguous growable buffer builder.
+    //
+    // SeqBuilder is the write side of the Builder→Freeze container architecture. It
+    // wraps a reference-counted contiguous array (the same storage that backs
+    // Seq[T]) and mutates it in place via the push/set intrinsics exported by
+    // the RuntimeArray module. When Perceus sees the unique-owner pattern
+    // (`builder := SeqBuilder.push(builder)(x)`), the allocation is reused rather than copied,
+    // giving amortized O(1) append.
+    //
+    // When construction is done, call SeqBuilder.freeze to obtain a read-only Seq[T]
+    // view. The freeze is a structural no-op (Seq shares the same buffer); the
+    // type distinction is what carries the "do not mutate" intent.
+    //
+    // SeqBuilder is intentionally small: heavy algorithmic operations belong on Seq
+    // (the read side), which has the O(1) indexing fast path. SeqBuilder's job is
+    // efficient construction and in-place slot writes.
+    import RuntimeArray
+    import Seq
+    import Option
+    import Traits
+    import TraitInvoke
+
+    SeqBuilder[T] :: type { SeqBuilder:: type(Seq[T]) }
+
+    // Construct an empty SeqBuilder with the given reserved capacity.
+    with_capacity[T] :: Int -> SeqBuilder[T]
+    {
+        capacity => SeqBuilder(RuntimeArray.with_capacity[T](capacity))
+    }
+
+    empty[T] :: Unit -> SeqBuilder[T]
+    {
+        _ => SeqBuilder.with_capacity[T](0)
+    }
+
+    singleton[T] :: T -> SeqBuilder[T]
+    {
+        value => SeqBuilder(RuntimeArray.singleton(value))
+    }
+
+    filled[T: Traits.Clone] :: Int -> T -> SeqBuilder[T]
+    {
+        count => value =>
+            if count <= 0 then { SeqBuilder.empty(()) }
+            else {
+                cloned := TraitInvoke.clone_value(ref value)
+                match SeqBuilder.filled(count - 1)(value) {
+                    SeqBuilder(rest) => SeqBuilder([cloned, ..rest])
+                }
+            }
+    }
+
+    // Build a SeqBuilder from an existing Seq (copies element ownership; safe because
+    // the source Seq is not mutated afterwards).
+    from_seq[T] :: Seq[T] -> SeqBuilder[T]
+    {
+        values => SeqBuilder(values)
+    }
+
+    // Number of elements currently stored.
+    len[T] :: Ref[SeqBuilder[T]] -> Int
+    {
+        builder => match *builder {
+            SeqBuilder(buf) => Seq.len(ref buf)
+        }
+    }
+
+    is_empty[T] :: Ref[SeqBuilder[T]] -> Bool
+    {
+        builder => SeqBuilder.len(builder) == 0
+    }
+
+    // Append one element. Reuses the buffer in place under unique ownership.
+    push[T] :: SeqBuilder[T] -> T -> SeqBuilder[T]
+    {
+        SeqBuilder(buf) => value => SeqBuilder(RuntimeArray.push(buf)(value))
+    }
+
+    // Append all elements from another Seq. Reuses the buffer in place.
+    push_seq[T] :: SeqBuilder[T] -> Seq[T] -> SeqBuilder[T]
+    {
+        SeqBuilder(buf) => values => SeqBuilder(RuntimeArray.extend(buf)(values))
+    }
+
+    // Remove the last element in place. Calling this on an empty SeqBuilder is a no-op.
+    pop_last[T] :: SeqBuilder[T] -> SeqBuilder[T]
+    {
+        SeqBuilder(buf) => {
+            mut values := buf
+            RuntimeArray.pop_last(mref values)
+            SeqBuilder(values)
+        }
+    }
+
+    // Swap two slots in place without cloning either element.
+    swap[T] :: SeqBuilder[T] -> Int -> Int -> SeqBuilder[T]
+    {
+        SeqBuilder(buf) => left => right => {
+            mut values := buf
+            RuntimeArray.swap(mref values, left, right)
+            SeqBuilder(values)
+        }
+    }
+
+    // In-place write at index. Bounds are the caller's responsibility (mirrors
+    // Seq indexing semantics); intended for builder-phase slot mutation only.
+    set[T] :: SeqBuilder[T] -> Int -> T -> SeqBuilder[T]
+    {
+        SeqBuilder(buf) => index => value => {
+            mut values := buf
+            RuntimeArray.set(mref values)(index)(value)
+            SeqBuilder(values)
+        }
+    }
+
+    // Read the element at index (O(1)).
+    get[T] :: SeqBuilder[T] -> Int -> T
+    {
+        SeqBuilder(buf) => index => buf[index]
+    }
+
+    // Read the element at index, or None if out of range.
+    get_opt[T] :: SeqBuilder[T] -> Int -> Option[T]
+    {
+        builder => index => {
+            len := SeqBuilder.len(ref builder)
+            if index < 0 || index >= len then { None() } else { Some(SeqBuilder.get(builder)(index)) }
+        }
+    }
+
+    // Freeze into a read-only Seq view. Shares the buffer (no copy).
+    freeze[T] :: SeqBuilder[T] -> Seq[T]
+    {
+        SeqBuilder(buf) => buf
+    }
+
+    // Materialize the SeqBuilder into a fresh Seq (eager snapshot of current contents).
+    // Use this when the builder may be further mutated after handing off a Seq.
+    to_seq[T: Traits.Clone] :: SeqBuilder[T] -> Seq[T]
+    {
+        SeqBuilder(buf) => Seq.clone(ref buf)
+    }
+}

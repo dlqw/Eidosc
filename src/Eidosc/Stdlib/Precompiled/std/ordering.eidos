@@ -1,0 +1,240 @@
+Ordering :: module {
+    import Traits
+    import Semigroup
+
+    Ordering :: type { Less :: type {} , Equal :: type {} , Greater :: type {} }
+
+    is_lt :: Ordering -> Bool
+    {
+        Less() => true,
+        Equal() => false,
+        Greater() => false
+    }
+
+    is_eq :: Ordering -> Bool
+    {
+        Less() => false,
+        Equal() => true,
+        Greater() => false
+    }
+
+    is_gt :: Ordering -> Bool
+    {
+        Less() => false,
+        Equal() => false,
+        Greater() => true
+    }
+
+    is_le :: Ordering -> Bool
+    {
+        Less() => true,
+        Equal() => true,
+        Greater() => false
+    }
+
+    is_ge :: Ordering -> Bool
+    {
+        Less() => false,
+        Equal() => true,
+        Greater() => true
+    }
+
+    is_ne :: Ordering -> Bool
+    {
+        ordering => !Ordering.is_eq(ordering)
+    }
+
+    to_int :: Ordering -> Int
+    {
+        Less() => -1,
+        Equal() => 0,
+        Greater() => 1
+    }
+
+    from_int :: Int -> Ordering
+    {
+        value =>
+            if value < 0 then { Less() }
+            else if value > 0 then { Greater() }
+            else { Equal() }
+    }
+
+    fold[A] :: Ordering -> A -> A -> A -> A
+    {
+        Less() => less_value => _ => _ => less_value,
+        Equal() => _ => equal_value => _ => equal_value,
+        Greater() => _ => _ => greater_value => greater_value
+    }
+
+    select_le[A] :: Ordering -> A -> A -> A
+    {
+        Less() => left => _ => left,
+        Equal() => left => _ => left,
+        Greater() => _ => right => right
+    }
+
+    select_ge[A] :: Ordering -> A -> A -> A
+    {
+        Less() => _ => right => right,
+        Equal() => left => _ => left,
+        Greater() => left => _ => left
+    }
+
+    reverse :: Ordering -> Ordering
+    {
+        Less() => Greater(),
+        Equal() => Equal(),
+        Greater() => Less()
+    }
+
+    then_with :: Ordering -> Ordering -> Ordering
+    {
+        Less() => _ => Less(),
+        Equal() => next => next,
+        Greater() => _ => Greater()
+    }
+
+    then_compare_int :: Ordering -> Int -> Int -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_int(left)(right))
+    }
+
+    then_compare_char :: Ordering -> Char -> Char -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_char(left)(right))
+    }
+
+    then_compare_bool :: Ordering -> Bool -> Bool -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_bool(left)(right))
+    }
+
+    then_compare_ordering :: Ordering -> Ordering -> Ordering -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare(left)(right))
+    }
+
+    compare :: Ordering -> Ordering -> Ordering
+    {
+        (Less(), Less()) => Equal(),
+        (Less(), _) => Less(),
+        (Equal(), Less()) => Greater(),
+        (Equal(), Equal()) => Equal(),
+        (Equal(), Greater()) => Less(),
+        (Greater(), Greater()) => Equal(),
+        (Greater(), _) => Greater()
+    }
+
+    compare_int :: Int -> Int -> Ordering
+    {
+        (left, right) when left < right => Less(),
+        (left, right) when left > right => Greater(),
+        _ => Equal()
+    }
+
+    compare_char :: Char -> Char -> Ordering
+    {
+        (left, right) when left < right => Less(),
+        (left, right) when left > right => Greater(),
+        _ => Equal()
+    }
+
+    compare_bool :: Bool -> Bool -> Ordering
+    {
+        left => right =>
+            if left == right then { Equal() }
+            else if left then { Greater() }
+            else { Less() }
+    }
+
+    compare_int_desc :: Int -> Int -> Ordering
+    {
+        left => right => Ordering.reverse(Ordering.compare_int(left)(right))
+    }
+
+    compare_char_desc :: Char -> Char -> Ordering
+    {
+        left => right => Ordering.reverse(Ordering.compare_char(left)(right))
+    }
+
+    compare_bool_desc :: Bool -> Bool -> Ordering
+    {
+        left => right => Ordering.reverse(Ordering.compare_bool(left)(right))
+    }
+
+    EqOrdering :: instance Traits.Eq {
+        eq :: Ordering -> Ordering -> Bool
+            {
+                (Less(), Less()) => true,
+                (Equal(), Equal()) => true,
+                (Greater(), Greater()) => true,
+                _ => false
+            }
+    }
+
+    EqBool :: instance Traits.Eq {
+        eq :: Bool -> Bool -> Bool
+            {
+                left => right => left == right
+            }
+    }
+
+    OrdOrdering :: instance Traits.Ord {
+        compare :: Ordering -> Ordering -> Ordering
+            {
+                left => right => Ordering.compare(left)(right)
+            }
+    }
+
+    OrdBool :: instance Traits.Ord {
+        compare :: Bool -> Bool -> Ordering
+            {
+                false => false => Equal(),
+                false => true => Less(),
+                true => false => Greater(),
+                true => true => Equal()
+            }
+    }
+
+    ShowOrdering :: instance Traits.Show {
+        show :: Ordering -> String
+            {
+                Less() => "Less",
+                Equal() => "Equal",
+                Greater() => "Greater"
+            }
+    }
+
+    ShowBool :: instance Traits.Show {
+        show :: Bool -> String
+            {
+                true => "true",
+                false => "false"
+            }
+    }
+
+    SemigroupOrdering :: instance Semigroup.Semigroup {
+        append :: Ordering -> Ordering -> Ordering
+            {
+                left => right => Ordering.then_with(left)(right)
+            }
+    }
+
+    CloneOrdering :: instance Traits.Clone {
+        clone :: Ref[Ordering] -> Ordering
+            {
+                value => match *value {
+                    Less() => Less(),
+                    Equal() => Equal(),
+                    Greater() => Greater()
+                }
+            }
+    }
+
+    CloneBool :: instance Traits.Clone {
+        clone :: Ref[Bool] -> Bool
+            {
+                value => *value
+            }
+    }
+}

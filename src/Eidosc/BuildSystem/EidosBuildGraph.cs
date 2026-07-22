@@ -13,14 +13,22 @@ public sealed record EidosBuildStep(
     IReadOnlyList<string> Arguments,
     IReadOnlyList<string> Inputs,
     IReadOnlyList<string> Outputs,
-    IReadOnlyList<string> Dependencies);
+    IReadOnlyList<string> Dependencies,
+    string Kind = "command",
+    string Url = "",
+    string ExpectedSha256 = "",
+    string ExecutionPlatform = "host");
 
 public sealed record EidosBuildArtifact(
     string Kind,
     string Name,
     string Path,
     string Producer,
-    string Target);
+    string Target,
+    string ExpectedSha256 = "",
+    string EmbeddedSource = "",
+    string SourceUri = "",
+    string ImportRoot = "");
 
 public sealed record EidosBuildGraph(
     int SchemaVersion,
@@ -29,9 +37,11 @@ public sealed record EidosBuildGraph(
     string TargetName,
     IReadOnlyList<EidosBuildStep> Steps,
     IReadOnlyList<EidosBuildArtifact> Artifacts,
+    bool IsReproducible,
+    IReadOnlyList<string> VolatileCapabilities,
     string CanonicalHash)
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public string ToCanonicalJson()
     {
@@ -46,7 +56,11 @@ public sealed record EidosBuildGraph(
                 .Select(static step => new
                 {
                     name = step.Name,
+                    kind = step.Kind,
                     tool = step.Tool,
+                    executionPlatform = step.ExecutionPlatform,
+                    url = step.Url,
+                    expectedSha256 = step.ExpectedSha256,
                     arguments = step.Arguments,
                     inputs = step.Inputs.OrderBy(static value => value, StringComparer.Ordinal),
                     outputs = step.Outputs.OrderBy(static value => value, StringComparer.Ordinal),
@@ -56,9 +70,28 @@ public sealed record EidosBuildGraph(
                 .OrderBy(static artifact => artifact.Kind, StringComparer.Ordinal)
                 .ThenBy(static artifact => artifact.Name, StringComparer.Ordinal)
                 .ThenBy(static artifact => artifact.Path, StringComparer.Ordinal)
+                .Select(static artifact => new
+                {
+                    artifact.Kind,
+                    artifact.Name,
+                    artifact.Path,
+                    artifact.Producer,
+                    artifact.Target,
+                    artifact.ExpectedSha256,
+                    artifact.SourceUri,
+                    artifact.ImportRoot,
+                    embeddedSourceSha256 = string.IsNullOrEmpty(artifact.EmbeddedSource)
+                        ? string.Empty
+                        : HashCanonicalText(artifact.EmbeddedSource)
+                }),
+            reproducible = IsReproducible,
+            volatileCapabilities = VolatileCapabilities.Order(StringComparer.Ordinal)
         };
         return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
     }
+
+    private static string HashCanonicalText(string text) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 }
 
 internal static class EidosBuildGraphMaterializer
@@ -77,6 +110,8 @@ internal static class EidosBuildGraphMaterializer
             targetName,
             [],
             [],
+            context.IsReproducible,
+            context.VolatileCapabilities,
             string.Empty);
         var errors = new List<Diagnostic.Diagnostic>();
         if (value is not ComptimeMetaObjectValue { SchemaKind: "build.graph" } graphValue ||
@@ -103,15 +138,25 @@ internal static class EidosBuildGraphMaterializer
         }
 
         var artifacts = new List<EidosBuildArtifact>(artifactValues.Count);
-        foreach (var artifactValue in artifactValues)
+        foreach (var (artifactValue, index) in artifactValues.Select(static (value, index) => (value, index)))
         {
-            if (!TryMaterializeArtifact(artifactValue, out var artifact, out var reason))
+            if (!TryMaterializeArtifact(
+                    artifactValue,
+                    context,
+                    index,
+                    out var artifact,
+                    out var implicitStep,
+                    out var reason))
             {
                 errors.Add(Error(reason, "E5003"));
                 continue;
             }
 
             artifacts.Add(artifact);
+            if (implicitStep != null)
+            {
+                steps.Add(implicitStep);
+            }
         }
 
         if (errors.Count > 0)
@@ -140,6 +185,8 @@ internal static class EidosBuildGraphMaterializer
             targetName,
             validatedSteps,
             validatedArtifacts,
+            context.IsReproducible,
+            context.VolatileCapabilities,
             string.Empty);
         var canonicalHash = HashText(graphWithoutHash.ToCanonicalJson());
         graph = graphWithoutHash with { CanonicalHash = canonicalHash };
@@ -172,29 +219,127 @@ internal static class EidosBuildGraphMaterializer
 
     private static bool TryMaterializeArtifact(
         ComptimeValue value,
+        BuildComptimeContext context,
+        int artifactIndex,
         out EidosBuildArtifact artifact,
+        out EidosBuildStep? implicitStep,
         out string reason)
     {
         artifact = new EidosBuildArtifact("", "", "", "", "");
-        if (value is not ComptimeMetaObjectValue artifactValue ||
-            artifactValue.SchemaKind is not ("build.artifact.generated-source" or "build.artifact.file") ||
-            !TryGetString(artifactValue, "path", out var path) ||
-            !TryGetString(artifactValue, "producer", out var producer) ||
-            !TryGetString(artifactValue, "target", out var target))
+        implicitStep = null;
+        if (value is not ComptimeMetaObjectValue artifactValue)
         {
-            reason = "Build graph contains a malformed Build artifact value.";
+            reason = "build graph contains a malformed build artifact value.";
+            return false;
+        }
+
+        if (artifactValue.SchemaKind == "build.artifact.generated-module")
+        {
+            if (!TryGetString(artifactValue, "module", out var moduleName) ||
+                !TryGetString(artifactValue, "target", out var moduleTarget) ||
+                !TryGetList(artifactValue, "syntax", out var syntaxItems) ||
+                syntaxItems.Any(static item => item is not ComptimeSyntaxValue { Category: Eidosc.Syntax.SyntaxCategory.Item }) ||
+                context.OutputRoots.Count == 0)
+            {
+                reason = "build.generated_module contains malformed typed item syntax.";
+                return false;
+            }
+
+            var importRoot = context.ToRelativePath(context.OutputRoots[0]);
+            var relativeModulePath = string.Join(
+                '/',
+                moduleName.Split('.', StringSplitOptions.RemoveEmptyEntries)) + ".eidos";
+            var path = $"{importRoot.TrimEnd('/')}/{relativeModulePath}";
+            var items = string.Concat(syntaxItems.Cast<ComptimeSyntaxValue>().Select(static syntax => syntax.Render()));
+            var source = $"{moduleName} :: module {{\n{items}\n}}\n";
+            var digest = HashText(source);
+            artifact = new EidosBuildArtifact(
+                "generated-module",
+                moduleName,
+                path,
+                "",
+                moduleTarget,
+                digest,
+                source,
+                $"eidos-generated://build/{digest}/{relativeModulePath}",
+                importRoot);
+            reason = string.Empty;
+            return true;
+        }
+
+        if (artifactValue.SchemaKind == "build.artifact.fetch")
+        {
+            if (!TryGetString(artifactValue, "url", out var url) ||
+                !TryGetString(artifactValue, "sha256", out var sha256) ||
+                !IsSha256(sha256) ||
+                context.OutputRoots.Count == 0)
+            {
+                reason = "build.fetch contains a malformed URL or SHA-256 digest.";
+                return false;
+            }
+
+            var outputRoot = context.ToRelativePath(context.OutputRoots[0]).TrimEnd('/');
+            var path = $"{outputRoot}/.fetch/{sha256}";
+            var producer = $"fetch_{sha256[..12]}_{artifactIndex}";
+            implicitStep = new EidosBuildStep(
+                producer,
+                "",
+                [],
+                [],
+                [path],
+                [],
+                Kind: "fetch",
+                Url: url,
+                ExpectedSha256: sha256);
+            artifact = new EidosBuildArtifact(
+                "fetch",
+                sha256,
+                path,
+                producer,
+                "",
+                sha256);
+            reason = string.Empty;
+            return true;
+        }
+
+        if (artifactValue.SchemaKind is not (
+                "build.artifact.generated-source" or
+                "build.artifact.file" or
+                "build.artifact.content-addressed") ||
+            !TryGetString(artifactValue, "path", out var declaredPath) ||
+            !TryGetString(artifactValue, "producer", out var declaredProducer) ||
+            !TryGetString(artifactValue, "target", out var declaredTarget))
+        {
+            reason = "build graph contains a malformed build artifact value.";
             return false;
         }
 
         var kind = artifactValue.SchemaKind == "build.artifact.generated-source"
             ? "generated-source"
-            : "file";
+            : artifactValue.SchemaKind == "build.artifact.content-addressed"
+                ? "content-addressed"
+                : "file";
         var name = kind == "generated-source"
-            ? path
+            ? declaredPath
             : TryGetString(artifactValue, "name", out var declaredName)
                 ? declaredName
                 : string.Empty;
-        artifact = new EidosBuildArtifact(kind, name, path, producer, target);
+        var expectedSha256 = string.Empty;
+        if (kind == "content-addressed" &&
+            (!artifactValue.TryGet("sha256", out var sha256Value) ||
+             !TryGetSha256(sha256Value, out expectedSha256)))
+        {
+            reason = "build.content_addressed_artifact requires a valid build.Sha256 value.";
+            return false;
+        }
+
+        artifact = new EidosBuildArtifact(
+            kind,
+            name,
+            declaredPath,
+            declaredProducer,
+            declaredTarget,
+            expectedSha256);
         reason = string.Empty;
         return true;
     }
@@ -251,6 +396,27 @@ internal static class EidosBuildGraphMaterializer
 
     private static string HashText(string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+
+    private static bool IsSha256(string value) =>
+        value.Length == 64 && value.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static bool TryGetSha256(ComptimeValue value, out string digest)
+    {
+        digest = string.Empty;
+        if (value is not ComptimeAdtValue
+            {
+                ConstructorName: var constructorName,
+                PositionalValues: [ComptimeStringValue digestString]
+            } ||
+            !constructorName.EndsWith("Sha256", StringComparison.Ordinal) ||
+            !IsSha256(digestString.Value))
+        {
+            return false;
+        }
+
+        digest = digestString.Value;
+        return true;
+    }
 }
 
 internal static class EidosBuildGraphValidator
@@ -283,9 +449,33 @@ internal static class EidosBuildGraphValidator
                 continue;
             }
 
-            if (!context.TryGetTool(step.Tool, out _, out var toolReason))
+            if (step.Kind == "command" &&
+                !context.TryGetHostTool(step.Tool, out _, out var toolReason))
             {
                 errors.Add(Error(toolReason, "E5005"));
+            }
+            else if (step.Kind == "fetch")
+            {
+                if (!context.NetworkCapabilities.Any(capability =>
+                        string.Equals(capability.Url, step.Url, StringComparison.Ordinal)) ||
+                    !IsSha256(step.ExpectedSha256))
+                {
+                    errors.Add(Error(
+                        $"BuildGraph fetch step '{step.Name}' is not backed by a declared URL and pinned SHA-256 digest.",
+                        "E5005"));
+                }
+                if (step.Outputs.Count != 1)
+                {
+                    errors.Add(Error(
+                        $"BuildGraph fetch step '{step.Name}' must declare exactly one content-addressed output.",
+                        "E5006"));
+                }
+            }
+            else if (step.Kind is not ("command" or "fetch"))
+            {
+                errors.Add(Error(
+                    $"BuildGraph step '{step.Name}' has unsupported kind '{step.Kind}'.",
+                    "E5003"));
             }
 
             if (step.Outputs.Count == 0)
@@ -398,27 +588,46 @@ internal static class EidosBuildGraphValidator
                     "E5014"));
             }
 
-            if (!stepByName.TryGetValue(artifact.Producer, out var producer) ||
-                !producer.Outputs.Contains(path, context.PathComparer))
+            var directGeneratedModule = artifact.Kind == "generated-module";
+            if (!directGeneratedModule &&
+                (!stepByName.TryGetValue(artifact.Producer, out var producer) ||
+                 !producer.Outputs.Contains(path, context.PathComparer)))
             {
                 errors.Add(Error(
                     $"Build artifact '{artifact.Name}' is not a declared output of producer '{artifact.Producer}'.",
                     "E5015"));
             }
 
-            if (!string.Equals(artifact.Target, targetName, StringComparison.Ordinal))
+            if (artifact.Kind != "fetch" &&
+                !string.Equals(artifact.Target, targetName, StringComparison.Ordinal))
             {
                 errors.Add(Error(
                     $"Build artifact '{artifact.Name}' targets '{artifact.Target}', but the selected target is '{targetName}'.",
                     "E5016"));
             }
 
-            if (artifact.Kind == "generated-source" &&
+            if (artifact.Kind is "generated-source" or "generated-module" &&
                 !string.Equals(Path.GetExtension(path), ".eidos", StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add(Error(
                     $"Generated source artifact '{artifact.Name}' must use the .eidos extension.",
                     "E5017"));
+            }
+
+            if (!string.IsNullOrEmpty(artifact.ExpectedSha256) && !IsSha256(artifact.ExpectedSha256))
+            {
+                errors.Add(Error(
+                    $"Build artifact '{artifact.Name}' has an invalid expected SHA-256 digest.",
+                    "E5018"));
+            }
+
+            if (directGeneratedModule &&
+                (string.IsNullOrEmpty(artifact.EmbeddedSource) ||
+                 !string.Equals(HashText(artifact.EmbeddedSource), artifact.ExpectedSha256, StringComparison.Ordinal)))
+            {
+                errors.Add(Error(
+                    $"Typed generated module '{artifact.Name}' has inconsistent embedded source provenance.",
+                    "E5018"));
             }
 
             normalizedArtifacts.Add(artifact with { Path = path });
@@ -651,4 +860,10 @@ internal static class EidosBuildGraphValidator
 
     private static Diagnostic.Diagnostic Error(string message, string code) =>
         Diagnostic.Diagnostic.Error(message, code).WithLabel(SourceSpan.Empty, message);
+
+    private static bool IsSha256(string value) =>
+        value.Length == 64 && value.All(static character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+
+    private static string HashText(string text) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 }

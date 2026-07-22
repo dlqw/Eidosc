@@ -125,7 +125,7 @@ public static class ImplLookupCanonicalizer
         Func<Type, Type>? apply)
     {
         var constructorName = ResolveCanonicalTypeName(symbolTable, con);
-        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0 && con.EffectArgs.Count == 0)
         {
             return constructorName;
         }
@@ -133,7 +133,8 @@ public static class ImplLookupCanonicalizer
         var args = BuildOrderedGenericArguments(
             con,
             typeArgument => ResolveCanonicalImplementingType(symbolTable, typeArgument, apply),
-            static valueArgument => valueArgument.DisplayText);
+            static valueArgument => valueArgument.DisplayText,
+            effectArgument => ResolveCanonicalImplementingType(symbolTable, effectArgument.Argument, apply));
         return $"{constructorName}[{string.Join(",", args)}]";
     }
 
@@ -162,17 +163,20 @@ public static class ImplLookupCanonicalizer
             BuildOrderedGenericArguments(
                     con,
                     typeArgument => BuildTypeRefKey(symbolTable, typeArgument, apply),
-                    ImplTypeRefKey.FromValueArgument)
+                    ImplTypeRefKey.FromValueArgument,
+                    effectArgument => BuildTypeRefKey(symbolTable, effectArgument.Argument, apply))
                 .ToImmutableArray());
     }
 
     private static List<TResult> BuildOrderedGenericArguments<TResult>(
         TyCon constructor,
         Func<Type, TResult> buildTypeArgument,
-        Func<GenericValueArgument, TResult> buildValueArgument)
+        Func<GenericValueArgument, TResult> buildValueArgument,
+        Func<GenericEffectArgument, TResult> buildEffectArgument)
     {
         var valueArguments = constructor.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
-        var argumentCount = constructor.Args.Count + constructor.ValueArgs.Count;
+        var effectArguments = constructor.EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = constructor.Args.Count + constructor.ValueArgs.Count + constructor.EffectArgs.Count;
         var typeArgumentIndex = 0;
         var arguments = new List<TResult>(argumentCount);
         for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
@@ -180,6 +184,10 @@ public static class ImplLookupCanonicalizer
             if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
             {
                 arguments.Add(buildValueArgument(valueArgument));
+            }
+            else if (effectArguments.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                arguments.Add(buildEffectArgument(effectArgument));
             }
             else if (typeArgumentIndex < constructor.Args.Count)
             {

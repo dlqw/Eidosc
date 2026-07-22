@@ -69,7 +69,13 @@ public sealed partial class CompilationPipeline
             {
                 var cfg = new ControlFlowGraph(func);
                 cfgByFunc[func] = cfg;
-                var inferer = new LoanSignatureInferer(func, signatureCache, _symbolTable!, borrowModule.DynamicTypeKeys, cfg);
+                var inferer = new LoanSignatureInferer(
+                    func,
+                    signatureCache,
+                    _symbolTable!,
+                    borrowModule.DynamicTypeKeys,
+                    cfg,
+                    borrowModule.TypeDescriptors);
                 inferers.Add((func, inferer));
                 infererByFunc[func] = inferer;
                 inferer.Infer(includeCallConstraints: false, force: true);
@@ -403,6 +409,7 @@ public sealed partial class CompilationPipeline
 
         using (MeasureSubphase(CompilationPhase.Borrow, "restore_borrow_diagnostics_from_previous_snapshot"))
         {
+            _borrowCheckResult = previous.ToBorrowCheckResult();
             _borrowDiagnosticSnapshot = previous;
         }
 
@@ -569,9 +576,13 @@ public sealed partial class CompilationPipeline
                 ? new BorrowCheckResult
                 {
                     FunctionName = func.Name,
-                    FunctionSymbolId = func.SymbolId
+                    FunctionSymbolId = func.SymbolId,
+                    LoanSignature = previous.LoanSummary?.Restore()
                 }
-                : previousHints.ToBorrowCheckResult(func.Name, func.SymbolId);
+                : previousHints.ToBorrowCheckResult(
+                    func.Name,
+                    func.SymbolId,
+                    previous.LoanSummary?.Restore());
         }
 
         if (previousHints != null)
@@ -665,7 +676,7 @@ public sealed partial class CompilationPipeline
 
         using (MeasureSubphase(CompilationPhase.Borrow, "restore_borrow_codegen_hints_from_previous_snapshot"))
         {
-            _borrowCheckResult = hints.ToBorrowCheckResult();
+            _borrowCheckResult = hints.ToBorrowCheckResult(diagnostics);
             _borrowDiagnosticSnapshot = diagnostics;
             _borrowCodegenHintsSnapshot = hints;
         }
@@ -1421,6 +1432,7 @@ public sealed partial class CompilationPipeline
     private static readonly FrozenDictionary<AffineErrorKind, string> AffineCodeMapping = new Dictionary<AffineErrorKind, string>
     {
         [AffineErrorKind.UseAfterMove] = "E1001",
+        [AffineErrorKind.UseAfterPartialMove] = "E1001",
         [AffineErrorKind.DoubleMove] = "E1001",
         [AffineErrorKind.AffineReuse] = "E1001",
     }.ToFrozenDictionary();

@@ -155,16 +155,11 @@ public static class SymbolTableStateBuilder
         }
 
         var primaryPayload = orderedPayloads[0];
-        var restoredPayloadScopes = RestoreScopes(primaryPayload.SymbolTable.Scopes, symbolRemap, allowedSymbolIds);
-        var restoredScopeSignatures = restoredPayloadScopes
-            .Where(static scope => scope.Kind == ScopeKind.Module)
-            .Select(CreateScopeBindingSignature)
-            .ToHashSet(StringComparer.Ordinal);
-        var syntheticModuleScopes = CreateModuleSurfaceScopes(symbolTable, modulePayloads, identitiesByModule, symbolRemap)
-            .Where(scope => !restoredScopeSignatures.Contains(CreateScopeBindingSignature(scope)));
-        var restoredScopes = restoredPayloadScopes
-            .Concat(syntheticModuleScopes)
-            .ToArray();
+        var restoredScopes = CreateModuleSurfaceScopes(
+            symbolTable,
+            modulePayloads,
+            identitiesByModule,
+            symbolRemap);
         var globalTypes = RestoreGlobalMap(primaryPayload.SymbolTable.GlobalTypes, symbolRemap, allowedSymbolIds);
         var globalTraits = RestoreGlobalMap(primaryPayload.SymbolTable.GlobalTraits, symbolRemap, allowedSymbolIds);
         var globalConstructors = RestoreGlobalMap(primaryPayload.SymbolTable.GlobalConstructors, symbolRemap, allowedSymbolIds);
@@ -198,7 +193,7 @@ public static class SymbolTableStateBuilder
             AppliedModules: modulePayloads.Count,
             AppliedModuleMembers: modulePayloads.Sum(static module => module.Members.Count),
             AppliedExports: modulePayloads.Sum(static module => module.Exports.Count),
-            AppliedScopes: restoredScopes.Length,
+            AppliedScopes: restoredScopes.Count,
             AppliedGlobalBindings: globalTypes.Count() + globalTraits.Count() + globalConstructors.Count() + globalAbilities.Count(),
             []);
     }
@@ -714,9 +709,10 @@ public static class SymbolTableStateBuilder
             {
                 "typeParams" or "parameters" =>
                     NormalizePositionalSymbolFact(value, symbolIdMap),
-                "ownerEffect" or "ownerTrait" or "constructors" or
-                    "fields" or "ownerAdt" or "namedFields" or "ownerType" or "methods" or
-                    "associatedTypes" or "parentTraits" or "operations" or "requiredAbilities" or
+                "definitionModule" or "ownerEffect" or "ownerTrait" or "ownerImpl" or "constructors" or
+                    "fields" or "directCases" or "parentAdt" or "caseConstructor" or
+                    "ownerAdt" or "namedFields" or "ownerType" or "methods" or
+                    "associatedTypes" or "associatedConsts" or "parentTraits" or "operations" or "requiredAbilities" or
                     "traitConstraints" or "trait" =>
                     NormalizeSymbolFact(value, symbolIdMap),
                 "members" or "imports" or "parentModule" =>
@@ -727,7 +723,7 @@ public static class SymbolTableStateBuilder
                     NormalizeSymbolPairFact(value, symbolIdMap),
                 "positionalArgs" or "paramTypes" =>
                     NormalizePositionalTypeFact(value, typeIdMap),
-                "returnType" or "type" or "aliasTarget" or "fieldType" or "implementingType" =>
+                "returnType" or "type" or "aliasTarget" or "fieldType" or "valueType" or "implementingType" =>
                     NormalizeTypeFact(value, typeIdMap),
                 "typeArguments" =>
                     NormalizeTypePairFact(value, typeIdMap),
@@ -749,6 +745,7 @@ public static class SymbolTableStateBuilder
                 case "aliasTarget":
                 case "positionalArgs":
                 case "fieldType":
+                case "valueType":
                 case "implementingType":
                 case "paramTypes":
                     foreach (var id in ParseInts(value))
@@ -1022,17 +1019,23 @@ public static class SymbolTableStateBuilder
         {
             switch (name)
             {
+                case "definitionModule":
                 case "typeParams":
                 case "parameters":
                 case "ownerEffect":
                 case "ownerTrait":
+                case "ownerImpl":
                 case "constructors":
                 case "fields":
+                case "directCases":
+                case "parentAdt":
+                case "caseConstructor":
                 case "ownerAdt":
                 case "namedFields":
                 case "ownerType":
                 case "methods":
                 case "associatedTypes":
+                case "associatedConsts":
                 case "parentTraits":
                 case "operations":
                 case "requiredAbilities":
@@ -1232,43 +1235,6 @@ public static class SymbolTableStateBuilder
                 };
             })
             .ToArray();
-    }
-
-    private static IReadOnlyList<RestoredScopeBinding> RestoreScopes(
-        IReadOnlyList<ScopePayload> scopes,
-        IReadOnlyDictionary<int, SymbolId> symbolRemap,
-        IReadOnlySet<int> allowedSymbolIds) =>
-        scopes
-            .OrderBy(static scope => scope.Index)
-            .Select(scope => new RestoredScopeBinding(
-                scope.Index,
-                scope.ParentIndex,
-                ParseEnum(scope.Kind, ScopeKind.Block),
-                RestoreMap(scope.Bindings, symbolRemap, allowedSymbolIds),
-                RestoreFunctionOverloads(scope.FunctionOverloads, symbolRemap, allowedSymbolIds),
-                RestoreMap(scope.Types, symbolRemap, allowedSymbolIds),
-                RestoreMap(scope.Traits, symbolRemap, allowedSymbolIds),
-                RestoreMap(scope.Effects, symbolRemap, allowedSymbolIds),
-                RestoreMap(scope.Constructors, symbolRemap, allowedSymbolIds)))
-            .Where(static scope => scope.Bindings.Count > 0 ||
-                                   scope.FunctionOverloads.Count > 0 ||
-                                   scope.Types.Count > 0 ||
-                                   scope.Traits.Count > 0 ||
-                                   scope.Effects.Count > 0 ||
-                                   scope.Constructors.Count > 0)
-            .ToArray();
-
-    private static string CreateScopeBindingSignature(RestoredScopeBinding scope)
-    {
-        static string FormatMap(IReadOnlyDictionary<string, SymbolId> map) =>
-            string.Join(",", map
-                .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
-                .Select(static entry => $"{entry.Key}:{entry.Value.Value}"));
-
-        var overloads = string.Join(",", scope.FunctionOverloads
-            .OrderBy(static entry => entry.Key, StringComparer.Ordinal)
-            .Select(static entry => $"{entry.Key}:[{string.Join("|", entry.Value.Select(static id => id.Value).Order())}]"));
-        return $"{scope.Kind}|v={FormatMap(scope.Bindings)}|o={overloads}|t={FormatMap(scope.Types)}|tr={FormatMap(scope.Traits)}|a={FormatMap(scope.Effects)}|c={FormatMap(scope.Constructors)}";
     }
 
     private static IReadOnlyList<RestoredScopeBinding> CreateModuleSurfaceScopes(
@@ -1474,6 +1440,8 @@ public static class SymbolTableStateBuilder
             nameof(SymbolKind.Adt) => CreateAdtSymbol(payload, id, span, typeId, symbolRemap, typeRemap),
             nameof(SymbolKind.Constructor) => CreateCtorSymbol(payload, id, span, typeId, symbolRemap, typeRemap),
             nameof(SymbolKind.Field) => CreateFieldSymbol(payload, id, span, typeId, symbolRemap, typeRemap),
+            nameof(SymbolKind.AssociatedType) => CreateAssociatedTypeSymbol(payload, id, span, typeId, symbolRemap),
+            nameof(SymbolKind.AssociatedConst) => CreateAssociatedConstSymbol(payload, id, span, typeId, symbolRemap, typeRemap),
             nameof(SymbolKind.Trait) => CreateTraitSymbol(payload, id, span, typeId, symbolRemap),
             nameof(SymbolKind.Effect) => CreateEffectSymbol(payload, id, span, typeId, symbolRemap),
             nameof(SymbolKind.TypeParameter) => CreateTypeParamSymbol(payload, id, span, typeId, symbolRemap),
@@ -1487,11 +1455,15 @@ public static class SymbolTableStateBuilder
             return false;
         }
 
-        if (payload.GeneratedOrigin != null)
+        var definitionModuleId = RemapSymbolId(GetFactInt(payload, "definitionModule", SymbolId.None.Value), symbolRemap);
+        if (definitionModuleId.IsValid || payload.GeneratedOrigin != null)
         {
             symbol = symbol with
             {
-                GeneratedOrigin = RestoreGeneratedOrigin(payload.GeneratedOrigin, symbolRemap)
+                DefinitionModuleId = definitionModuleId,
+                GeneratedOrigin = payload.GeneratedOrigin == null
+                    ? null
+                    : RestoreGeneratedOrigin(payload.GeneratedOrigin, symbolRemap)
             };
         }
 
@@ -1504,15 +1476,18 @@ public static class SymbolTableStateBuilder
         IReadOnlyDictionary<int, SymbolId> symbolRemap) => new()
     {
         StableIdentity = origin.StableIdentity,
+        GenerationSlotIdentity = origin.GenerationSlotIdentity,
         GeneratorIdentity = origin.GeneratorIdentity,
         TargetIdentity = origin.TargetIdentity,
         GeneratorSymbolId = RemapSymbolId(origin.GeneratorSymbolId, symbolRemap),
         TargetSymbolId = RemapSymbolId(origin.TargetSymbolId, symbolRemap),
-        AttributeOccurrenceIndex = origin.AttributeOccurrenceIndex,
+        ClauseOccurrenceIndex = origin.ClauseOccurrenceIndex,
+        ClauseOccurrenceIdentity = origin.ClauseOccurrenceIdentity,
+        ClauseArgumentSubIndex = origin.ClauseArgumentSubIndex,
         ExpansionOutputIndex = origin.ExpansionOutputIndex,
         CanonicalArgumentsHash = origin.CanonicalArgumentsHash,
         MetaSchemaVersion = origin.MetaSchemaVersion,
-        AttributeSpan = CreateSourceSpan(origin.AttributeSpan),
+        ClauseSpan = CreateSourceSpan(origin.ClauseSpan),
         VirtualDocumentPath = origin.VirtualDocumentPath
     };
 
@@ -1627,6 +1602,10 @@ public static class SymbolTableStateBuilder
             TypeParams = RemapPositionalSymbolIds(GetFact(payload, "typeParams"), symbolRemap).ToList(),
             Constructors = RemapSymbolIds(GetFact(payload, "constructors"), symbolRemap).ToList(),
             Fields = RemapSymbolIds(GetFact(payload, "fields"), symbolRemap).ToList(),
+            DirectCases = RemapSymbolIds(GetFact(payload, "directCases"), symbolRemap).ToList(),
+            ParentAdt = RemapSymbolId(GetFactInt(payload, "parentAdt"), symbolRemap),
+            CaseConstructor = RemapSymbolId(GetFactInt(payload, "caseConstructor"), symbolRemap),
+            CanonicalParentSpecialization = GetFact(payload, "canonicalParentSpecialization"),
             AliasTarget = aliasTarget.IsValid ? aliasTarget : null,
             IsCStruct = ParseBool(GetFact(payload, "isCStruct"))
         };
@@ -1694,8 +1673,50 @@ public static class SymbolTableStateBuilder
             TypeParams = RemapPositionalSymbolIds(GetFact(payload, "typeParams"), symbolRemap).ToList(),
             Methods = RemapSymbolIds(GetFact(payload, "methods"), symbolRemap).ToList(),
             AssociatedTypes = RemapSymbolIds(GetFact(payload, "associatedTypes"), symbolRemap).ToList(),
+            AssociatedConsts = RemapSymbolIds(GetFact(payload, "associatedConsts"), symbolRemap).ToList(),
             ParentTraits = RemapSymbolIds(GetFact(payload, "parentTraits"), symbolRemap).ToList(),
             SelfPosition = ParseEnum(GetFact(payload, "selfPosition"), SelfPosition.Unknown)
+        };
+
+    private static AssociatedTypeSymbol CreateAssociatedTypeSymbol(
+        SymbolPayload payload,
+        SymbolId id,
+        SourceSpan span,
+        TypeId typeId,
+        IReadOnlyDictionary<int, SymbolId> symbolRemap) =>
+        new()
+        {
+            Id = id,
+            Name = payload.Name,
+            Span = span,
+            IsTypeResolved = payload.IsTypeResolved,
+            IsModuleLevel = payload.IsModuleLevel,
+            IsPublic = payload.IsPublic,
+            TypeId = typeId,
+            OwnerTrait = RemapSymbolId(GetFactInt(payload, "ownerTrait"), symbolRemap),
+            OwnerImpl = RemapSymbolId(GetFactInt(payload, "ownerImpl"), symbolRemap),
+            TypeParams = RemapPositionalSymbolIds(GetFact(payload, "typeParams"), symbolRemap).ToList()
+        };
+
+    private static AssociatedConstSymbol CreateAssociatedConstSymbol(
+        SymbolPayload payload,
+        SymbolId id,
+        SourceSpan span,
+        TypeId typeId,
+        IReadOnlyDictionary<int, SymbolId> symbolRemap,
+        IReadOnlyDictionary<int, TypeId> typeRemap) =>
+        new()
+        {
+            Id = id,
+            Name = payload.Name,
+            Span = span,
+            IsTypeResolved = payload.IsTypeResolved,
+            IsModuleLevel = payload.IsModuleLevel,
+            IsPublic = payload.IsPublic,
+            TypeId = typeId,
+            OwnerTrait = RemapSymbolId(GetFactInt(payload, "ownerTrait"), symbolRemap),
+            OwnerImpl = RemapSymbolId(GetFactInt(payload, "ownerImpl"), symbolRemap),
+            ValueType = RemapTypeId(GetFactInt(payload, "valueType"), typeRemap)
         };
 
     private static EffectSymbol CreateEffectSymbol(
@@ -1764,6 +1785,8 @@ public static class SymbolTableStateBuilder
             ImplementingTypeDisplay = GetFact(payload, "implementingTypeDisplay"),
             ImplementingTypeKey = ParseImplTypeRefKey(GetFact(payload, "implementingTypeKey")),
             Methods = RemapSymbolIds(GetFact(payload, "methods"), symbolRemap).ToList(),
+            AssociatedTypes = RemapSymbolIds(GetFact(payload, "associatedTypes"), symbolRemap).ToList(),
+            AssociatedConsts = RemapSymbolIds(GetFact(payload, "associatedConsts"), symbolRemap).ToList(),
             TraitTypeArgs = SplitList(GetFact(payload, "traitTypeArgs"), ',').ToList(),
             TraitTypeArgKeys = ParseImplTypeRefKeys(GetFact(payload, "traitTypeArgKeys")).ToList(),
             CanonicalTraitTypeArgs = SplitList(GetFact(payload, "canonicalTraitTypeArgs"), ',').ToList(),

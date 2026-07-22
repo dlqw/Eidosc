@@ -26,6 +26,8 @@ public sealed partial class TypeInferer
     {
         return typeNode switch
         {
+            ExpandType { ExpandedType: not null } expansion =>
+                ConvertExpandedType(expansion, typeVarEnv, allowTypeConstructorReference),
             TypePath path => ConvertTypePath(path, typeVarEnv, allowTypeConstructorReference),
             AssociatedTypeProjection projection => ConvertAssociatedTypeProjection(projection, typeVarEnv, allowTypeConstructorReference),
             ArrowType arrow => ConvertArrowType(arrow, typeVarEnv),
@@ -47,6 +49,52 @@ public sealed partial class TypeInferer
         }
 
         var targetType = ConvertType(projection.Target, typeVarEnv, allowTypeConstructorReference: true);
+        if (projection.SymbolId.IsValid &&
+            _symbolTable.GetSymbol<AdtSymbol>(projection.SymbolId) is { ParentAdt.IsValid: true } caseType &&
+            targetType is TyCon targetConstructor &&
+            targetConstructor.Symbol == caseType.ParentAdt)
+        {
+            var localPath = new TypePath();
+            localPath.SetTypeName(caseType.Name);
+            localPath.SetSpan(projection.Span);
+            localPath.SymbolId = caseType.Id;
+            localPath.SetGenericArguments(projection.GenericArguments);
+            var localType = ConvertTypePath(localPath, typeVarEnv, allowTypeConstructorReference);
+            if (localType is not TyCon localConstructor)
+            {
+                return localType;
+            }
+
+            var parentGenericCount = GetClosedCaseEffectiveGenericParameterCount(caseType.ParentAdt);
+            var valueArguments = targetConstructor.ValueArgs
+                .Concat(localConstructor.ValueArgs.Select(argument => argument with
+                {
+                    ParameterIndex = argument.ParameterIndex + parentGenericCount
+                }))
+                .ToList();
+            var effectArguments = targetConstructor.EffectArgs
+                .Concat(localConstructor.EffectArgs.Select(argument => argument with
+                {
+                    ParameterIndex = argument.ParameterIndex + parentGenericCount
+                }))
+                .ToList();
+            var exactType = new TyCon
+            {
+                Name = $"{targetConstructor.Name}.{caseType.Name}",
+                Symbol = caseType.Id,
+                Id = caseType.TypeId,
+                Args = targetConstructor.Args.Concat(localConstructor.Args).ToList(),
+                ValueArgs = valueArguments,
+                EffectArgs = effectArguments
+            };
+            if (!ValidateClosedCaseParentSpecialization(projection, targetConstructor, exactType))
+            {
+                return CreateErrorRecoveryType();
+            }
+            projection.InferredType = exactType;
+            return exactType;
+        }
+
         if (TryReduceAssociatedTypeProjection(projection, typeVarEnv, allowTypeConstructorReference, out var reducedType))
         {
             projection.InferredType = reducedType;
@@ -66,6 +114,68 @@ public sealed partial class TypeInferer
         };
         projection.InferredType = projected;
         return projected;
+    }
+
+    private bool ValidateClosedCaseParentSpecialization(
+        AssociatedTypeProjection projection,
+        TyCon lexicalParent,
+        TyCon exactType)
+    {
+        if (!_closedCaseDefinitionsBySymbol.TryGetValue(projection.SymbolId, out var definition) ||
+            definition.Definition.ParentSpecialization == null)
+        {
+            return true;
+        }
+
+        var typeVarEnv = CreateClosedCaseTypeVarEnv(
+            definition.Root,
+            definition.Path,
+            exactType.Args,
+            exactType.ValueArgs,
+            exactType.EffectArgs);
+        var kindEnvByName = CreateTypeParamKindMapForOwner(
+            definition.Root.SymbolId,
+            GetAdtTypeParamNames(definition.Root));
+        var declaredParent = _substitution.Apply(ConvertTypeWithAdditionalKindContext(
+            definition.Definition.ParentSpecialization,
+            typeVarEnv,
+            kindEnvByName,
+            allowTypeConstructorReference: false));
+        if (declaredParent is not TyCon declaredParentConstructor ||
+            declaredParentConstructor.Symbol != lexicalParent.Symbol)
+        {
+            AddError(
+                projection.Span,
+                DiagnosticMessages.GadtConstructorReturnTypeMustTargetOwnAdt(
+                    _symbolTable.GetSymbol<AdtSymbol>(lexicalParent.Symbol)?.Name ?? lexicalParent.Name));
+            return false;
+        }
+
+        try
+        {
+            _substitution.Unify(lexicalParent, declaredParentConstructor);
+            return true;
+        }
+        catch (TypeInferenceException ex)
+        {
+            AddError(projection.Span, $"Closed case parent specialization mismatch: {ex.Message}");
+            return false;
+        }
+    }
+
+    private int GetClosedCaseEffectiveGenericParameterCount(SymbolId symbolId)
+    {
+        var count = 0;
+        var current = symbolId;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid && visited.Add(current) &&
+               _symbolTable.GetSymbol<AdtSymbol>(current) is { } symbol)
+        {
+            count += symbol.TypeParams.Count;
+            current = symbol.ParentAdt;
+        }
+
+        return count;
     }
 
     private bool TryReduceAssociatedTypeProjection(
@@ -708,7 +818,7 @@ public sealed partial class TypeInferer
         }
 
         if (path.TypeName == WellKnownStrings.BuiltinTypes.Shared &&
-            (path.ModulePath.Count == 0 || path.ModulePath.SequenceEqual(["Std", "Shared"]) || path.ModulePath.SequenceEqual(["Shared"])))
+            (path.ModulePath.Count == 0 || path.ModulePath.SequenceEqual([WellKnownStrings.Std.Module, "Shared"]) || path.ModulePath.SequenceEqual(["Shared"])))
         {
             if (path.TypeArgs.Count != 1)
             {
@@ -758,13 +868,25 @@ public sealed partial class TypeInferer
             };
         }
 
+        if (!path.SymbolId.IsValid)
+        {
+            var resolvedSymbol = path.ModulePath.Count == 0 && string.IsNullOrWhiteSpace(path.PackageAlias)
+                ? _symbolTable.LookupType(path.TypeName)
+                : _symbolTable.ResolvePath(path.ToQualifiedPathParts());
+            if (resolvedSymbol is { IsValid: true } symbolId)
+            {
+                path.SymbolId = symbolId;
+            }
+        }
+
         var name = path.TypeName;
         var args = ConvertTypeArgs(path.TypeArgs, typeVarEnv);
         var valueArgs = ConvertValueGenericArguments(path, args, typeVarEnv);
+        var effectArgs = ConvertEffectGenericArguments(path, typeVarEnv);
         var genericArityIsValid = ValidateGenericArgumentArity(path, allowTypeConstructorReference);
         var arityIsValid = ValidateTypePathArity(path, args.Count, allowTypeConstructorReference);
         var kindArgumentsAreValid = ValidateTypePathKindArguments(path, args);
-        if (!genericArityIsValid || !arityIsValid || !kindArgumentsAreValid || valueArgs == null)
+        if (!genericArityIsValid || !arityIsValid || !kindArgumentsAreValid || valueArgs == null || effectArgs == null)
         {
             return CreateErrorRecoveryType();
         }
@@ -775,6 +897,7 @@ public sealed partial class TypeInferer
                 path,
                 args,
                 valueArgs,
+                effectArgs,
                 typeVarEnv,
                 allowTypeConstructorReference,
                 out var expandedAliasType))
@@ -787,8 +910,52 @@ public sealed partial class TypeInferer
             Name = name,
             Symbol = path.SymbolId,
             Args = args,
-            ValueArgs = valueArgs
+            ValueArgs = valueArgs,
+            EffectArgs = effectArgs
         };
+    }
+
+    private Type ConvertExpandedType(
+        ExpandType expansion,
+        Dictionary<string, Type> typeVarEnv,
+        bool allowTypeConstructorReference)
+    {
+        var converted = ConvertType(expansion.ExpandedType!, typeVarEnv, allowTypeConstructorReference);
+        expansion.InferredType = converted;
+        return converted;
+    }
+
+    private List<GenericEffectArgument>? ConvertEffectGenericArguments(
+        TypePath path,
+        Dictionary<string, Type> typeVarEnv)
+    {
+        if (path.GenericArguments.Count == 0 ||
+            !path.GenericArguments.Any(static argument => argument is EffectGenericArgumentNode))
+        {
+            return [];
+        }
+
+        var result = new List<GenericEffectArgument>();
+        for (var parameterIndex = 0; parameterIndex < path.GenericArguments.Count; parameterIndex++)
+        {
+            if (path.GenericArguments[parameterIndex] is not EffectGenericArgumentNode effectArgument)
+            {
+                continue;
+            }
+
+            var argument = ConvertType(
+                effectArgument.EffectRow,
+                typeVarEnv,
+                allowTypeConstructorReference: false);
+            if (ContainsErrorRecoveryType(argument))
+            {
+                return null;
+            }
+
+            result.Add(new GenericEffectArgument(parameterIndex, argument));
+        }
+
+        return result;
     }
 
     private List<GenericValueArgument>? ConvertValueGenericArguments(
@@ -866,6 +1033,12 @@ public sealed partial class TypeInferer
             if (value is ComptimeFloatValue)
             {
                 AddError(valueArgument.Span, "Floating-point values cannot be used as specialization keys.");
+                return null;
+            }
+
+            if (!ComptimePhaseValueValidator.TryValidate(value, out reason))
+            {
+                AddError(valueArgument.Span, $"Value generic argument {parameterIndex + 1} cannot cross the comptime phase boundary: {reason}");
                 return null;
             }
 
@@ -948,7 +1121,7 @@ public sealed partial class TypeInferer
     private bool ValidateGenericArgumentArity(TypePath path, bool allowTypeConstructorReference)
     {
         if (path.GenericArguments.Count == 0 ||
-            !path.GenericArguments.Any(static argument => argument is ValueGenericArgumentNode) ||
+            !path.GenericArguments.Any(static argument => argument is ValueGenericArgumentNode or EffectGenericArgumentNode) ||
             !path.SymbolId.IsValid)
         {
             return true;
@@ -985,6 +1158,7 @@ public sealed partial class TypeInferer
         TypePath path,
         IReadOnlyList<Type> args,
         IReadOnlyList<GenericValueArgument> valueArgs,
+        IReadOnlyList<GenericEffectArgument> effectArgs,
         Dictionary<string, Type> typeVarEnv,
         bool allowTypeConstructorReference,
         out Type expandedAliasType)
@@ -998,7 +1172,7 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var aliasTypeVarEnv = CreateAliasTypeVarEnv(typeVarEnv, adtDefinition, args, valueArgs);
+        var aliasTypeVarEnv = CreateAliasTypeVarEnv(typeVarEnv, adtDefinition, args, valueArgs, effectArgs);
         var aliasKindEnvByName = CreateTypeParamKindMapForOwner(path.SymbolId, GetAdtTypeParamNames(adtDefinition));
         expandedAliasType = ConvertTypeWithAdditionalKindContext(
             adtDefinition.AliasTarget,
@@ -1008,17 +1182,80 @@ public sealed partial class TypeInferer
         return true;
     }
 
+    private Type ExpandInferredTypeAliases(Type type)
+    {
+        var current = _substitution.Apply(type);
+        var visited = new HashSet<SymbolId>();
+        while (current is TyCon constructor)
+        {
+            var aliasSymbol = constructor.Symbol.IsValid
+                ? constructor.Symbol
+                : ResolveInferredAliasSymbol(constructor.Name);
+            if (!aliasSymbol.IsValid ||
+                !visited.Add(aliasSymbol) ||
+                !_adtDefinitionsBySymbol.TryGetValue(aliasSymbol, out var aliasDefinition) ||
+                !IsTypeAliasDefinition(aliasDefinition) ||
+                aliasDefinition.AliasTarget == null)
+            {
+                break;
+            }
+
+            var aliasTypeVarEnv = CreateAliasTypeVarEnv(
+                new Dictionary<string, Type>(StringComparer.Ordinal),
+                aliasDefinition,
+                constructor.Args,
+                constructor.ValueArgs,
+                constructor.EffectArgs);
+            var aliasKindEnvByName = CreateTypeParamKindMapForOwner(
+                aliasSymbol,
+                GetAdtTypeParamNames(aliasDefinition));
+            current = _substitution.Apply(ConvertTypeWithAdditionalKindContext(
+                aliasDefinition.AliasTarget,
+                aliasTypeVarEnv,
+                aliasKindEnvByName,
+                allowTypeConstructorReference: true));
+        }
+
+        return current;
+    }
+
+    private SymbolId ResolveInferredAliasSymbol(string typeName)
+    {
+        if (_symbolTable.LookupType(typeName) is { IsValid: true } scopedSymbol)
+        {
+            return scopedSymbol;
+        }
+
+        var simpleName = typeName.Split(
+                WellKnownStrings.Separators.Path,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .LastOrDefault() ?? typeName;
+        var candidates = _adtDefinitionsBySymbol
+            .Where(pair =>
+                string.Equals(pair.Value.Name, simpleName, StringComparison.Ordinal) &&
+                IsTypeAliasDefinition(pair.Value))
+            .Select(static pair => pair.Key)
+            .Distinct()
+            .Take(2)
+            .ToArray();
+        return candidates.Length == 1 ? candidates[0] : SymbolId.None;
+    }
+
     private Dictionary<string, Type> CreateAliasTypeVarEnv(
         Dictionary<string, Type> typeVarEnv,
         AdtDef adtDefinition,
         IReadOnlyList<Type> args,
-        IReadOnlyList<GenericValueArgument> valueArgs)
+        IReadOnlyList<GenericValueArgument> valueArgs,
+        IReadOnlyList<GenericEffectArgument> effectArgs)
     {
         var aliasTypeVarEnv = new Dictionary<string, Type>(typeVarEnv, StringComparer.Ordinal);
         var valueArgumentsByParameterIndex = valueArgs.ToDictionary(
             static argument => argument.ParameterIndex,
             static argument => argument);
         var scopedValueArguments = new Dictionary<SymbolId, GenericValueArgument>();
+        var effectArgumentsByParameterIndex = effectArgs.ToDictionary(
+            static argument => argument.ParameterIndex,
+            static argument => argument.Argument);
         var typeArgumentIndex = 0;
         for (var parameterIndex = 0; parameterIndex < adtDefinition.TypeParams.Count; parameterIndex++)
         {
@@ -1037,6 +1274,14 @@ public sealed partial class TypeInferer
                     scopedValueArguments[parameter.SymbolId] = valueArgument;
                 }
 
+                continue;
+            }
+
+            if (parameter.ParameterKind == GenericParameterKind.EffectRow)
+            {
+                aliasTypeVarEnv[typeParamName] = effectArgumentsByParameterIndex.TryGetValue(parameterIndex, out var effectArgument)
+                    ? effectArgument
+                    : _substitution.FreshTypeVariable();
                 continue;
             }
 

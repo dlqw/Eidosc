@@ -226,7 +226,7 @@ appended :: left <> right;
     }
 
     [Fact]
-    public void Parser_ExplicitTypeApplication_WithTupleTypeArgument_ParsesAsTypeApplication()
+    public void Parser_BracketedTupleArgument_RemainsNeutralUntilNameResolution()
     {
         const string source = """
 boxed :: box_value[(Int, Int)]((1, 2));
@@ -236,13 +236,13 @@ boxed :: box_value[(Int, Int)]((1, 2));
 
         Assert.True(result.Success);
         var call = Assert.IsType<CallExpr>(GetLetValue(result, "boxed"));
-        var typeApplication = Assert.IsType<IndexExpr>(call.Function);
-        Assert.True(typeApplication.IsTypeApplication);
-        Assert.Null(typeApplication.Index);
+        var application = Assert.IsType<IndexExpr>(call.Function);
+        Assert.False(application.IsTypeApplication);
+        Assert.Empty(application.TypeArgs);
 
-        var tupleType = Assert.IsType<TupleType>(Assert.Single(typeApplication.TypeArgs));
-        Assert.Equal(2, tupleType.Elements.Count);
-        Assert.All(tupleType.Elements, element => Assert.Equal("Int", Assert.IsType<TypePath>(element).TypeName));
+        var tuple = Assert.IsType<TupleExpr>(application.Index);
+        Assert.Equal(2, tuple.Elements.Count);
+        Assert.All(tuple.Elements, element => Assert.Equal("Int", Assert.IsType<IdentifierExpr>(element).Name));
     }
 
     [Fact]

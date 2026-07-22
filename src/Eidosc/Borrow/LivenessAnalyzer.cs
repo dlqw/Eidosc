@@ -141,6 +141,15 @@ public sealed class LivenessAnalyzer
                 }
                 break;
 
+            case MirCaseInject injection:
+                CollectOperandUse(injection.Operand, use, def);
+                if (injection.Target is MirPlace { Kind: PlaceKind.Local, Local: var injectionLocal } &&
+                    TryGetLocalIndex(injectionLocal, out var injectionTargetIndex))
+                {
+                    def.Add(injectionTargetIndex);
+                }
+                break;
+
             case MirCall call:
                 // 函数和参数是 use
                 CollectOperandUse(call.Function, use, def);

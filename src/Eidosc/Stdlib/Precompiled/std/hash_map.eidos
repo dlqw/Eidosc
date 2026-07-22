@@ -1,0 +1,645 @@
+HashMap :: module {
+    import Traits
+    import TraitInvoke
+    import Hash
+    import Option
+    import Seq
+    import RuntimeArray
+    import Math
+
+    HashMap[K, V] :: type {buckets:: Seq[Seq[(K, V)]], size:: Int, capacity:: Int}
+
+    // ── Constructors ──────────────────────────────────────────
+
+    empty[K, V] :: Unit -> HashMap[K, V]
+    {
+        _ => HashMap{
+            buckets: HashMap.make_empty_buckets(16),
+            size: 0,
+            capacity: 16
+        }
+    }
+
+    new[K, V] :: Int -> HashMap[K, V]
+    {
+        cap => {
+            c := if cap < 4 then { 4 } else { cap };
+            HashMap{
+                buckets: HashMap.make_empty_buckets(c),
+                size: 0,
+                capacity: c
+            }
+        }
+    }
+
+    // ── Internal helpers ──────────────────────────────────────
+
+
+    make_empty_buckets[K, V] :: Int -> Seq[Seq[(K, V)]]
+     compiler(internal)
+{
+        n => {
+            count := if n < 0 then 0 else n
+            mut acc: Seq[Seq[(K, V)]] := []
+            mut index := 0
+            loop {
+                if index >= count then { break } else {
+                    acc = RuntimeArray.push(acc)([])
+                    index = index + 1
+                }
+            }
+            acc
+        }
+    }
+
+
+    bucket_index[K: Traits.Hash, V] :: HashMap[K, V] -> K -> Int
+     compiler(internal)
+{
+        HashMap{buckets: _, size: _, capacity: cap} => key =>
+            Math.abs(TraitInvoke.hash_value(key)) % cap
+    }
+
+
+    get_bucket[K, V] :: Seq[Seq[(K, V)]] -> Int -> Seq[(K, V)]
+     compiler(internal)
+{
+        buckets => index => {
+            if index < 0 then { [] } else { buckets[index] }
+        }
+    }
+
+
+    set_bucket[K, V] :: Seq[Seq[(K, V)]] -> Int -> Seq[(K, V)] -> Seq[Seq[(K, V)]]
+     compiler(internal)
+{
+        // Rebuild the buckets Seq with the target index replaced by newBucket.
+        // fold_left over a (acc, index) pair; fold_left is borrow-safe in this
+        // module context (the conditional-push index loop is rejected by CPS).
+        buckets => index => new_bucket => {
+            pair := Seq.fold_left(buckets)(([], 0))(acc => bucket =>
+                match acc {
+                    (built, i) =>
+                        (RuntimeArray.push(built)(if i == index then new_bucket else bucket), i + 1)
+                })
+            match pair { (built, _) => built }
+        }
+    }
+
+
+    find_in_bucket[K: Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> K -> Option[(K, V)]
+     compiler(internal)
+{
+        [] => _ => None(),
+        [(k, v), ..rest] => key =>
+            if TraitInvoke.eq_value(TraitInvoke.clone_value(ref k))(TraitInvoke.clone_value(ref key))
+            then { Some((k, v)) }
+            else { HashMap.find_in_bucket(rest)(key) }
+    }
+
+
+    find_in_buckets[K: Traits.Eq + Traits.Clone, V] :: Seq[Seq[(K, V)]] -> Int -> K -> Option[V]
+     compiler(internal)
+{
+        buckets => index => key => {
+            bucket := HashMap.get_bucket(buckets)(index)
+            match HashMap.find_in_bucket[K, V](bucket)(key)
+            {
+                Some((_, value)) => Some(value),
+                None() => None()
+            }
+        }
+    }
+
+
+    replace_in_bucket[K: Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> K -> V -> Seq[(K, V)]
+     compiler(internal)
+{
+        bucket => key => value => match HashMap.replace_in_bucket_with_flag[K, V](bucket)(key)(value) {
+            (updated, _) => updated
+        }
+    }
+
+
+    replace_in_bucket_with_flag[K: Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> K -> V -> (Seq[(K, V)], Bool)
+     compiler(internal)
+{
+        [] => key => value => ([(key, value)], true),
+        [(k, v), ..rest] => key => value =>
+            if TraitInvoke.eq_value(TraitInvoke.clone_value(ref k))(TraitInvoke.clone_value(ref key))
+            then { ([(key, value), ..rest], false) }
+            else {
+                match HashMap.replace_in_bucket_with_flag(rest)(key)(value) {
+                    (updated_rest, inserted) => ([(k, v), ..updated_rest], inserted)
+                }
+            }
+    }
+
+
+    insert_bucket_at[K: Traits.Eq + Traits.Clone, V] :: Seq[Seq[(K, V)]] -> Int -> K -> V -> (Seq[Seq[(K, V)]], Bool)
+     compiler(internal)
+{
+        [] => _ => key => value => ([[(key, value)]], true),
+        [bucket, ..rest] => index => key => value =>
+            if index == 0
+            then {
+                match HashMap.replace_in_bucket_with_flag[K, V](bucket)(key)(value)
+                {
+                    (new_bucket, inserted) => ([new_bucket, ..rest], inserted)
+                }
+            }
+            else {
+                match HashMap.insert_bucket_at(rest)(index - 1)(key)(value)
+                {
+                    (new_rest, inserted) => ([bucket, ..new_rest], inserted)
+                }
+            }
+    }
+
+
+    remove_from_bucket[K: Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> K -> Seq[(K, V)]
+     compiler(internal)
+{
+        bucket => key => match HashMap.remove_from_bucket_with_flag[K, V](bucket)(key) {
+            (updated, _) => updated
+        }
+    }
+
+
+    remove_from_bucket_with_flag[K: Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> K -> (Seq[(K, V)], Bool)
+     compiler(internal)
+{
+        [] => _ => ([], false),
+        [(k, v), ..rest] => key =>
+            if TraitInvoke.eq_value(TraitInvoke.clone_value(ref k))(TraitInvoke.clone_value(ref key))
+            then { (rest, true) }
+            else {
+                match HashMap.remove_from_bucket_with_flag(rest)(key) {
+                    (updated_rest, removed) => ([(k, v), ..updated_rest], removed)
+                }
+            }
+    }
+
+
+    remove_bucket_at[K: Traits.Eq + Traits.Clone, V] :: Seq[Seq[(K, V)]] -> Int -> K -> (Seq[Seq[(K, V)]], Bool)
+     compiler(internal)
+{
+        [] => _ => _ => ([], false),
+        [bucket, ..rest] => index => key =>
+            if index == 0
+            then {
+                match HashMap.remove_from_bucket_with_flag[K, V](bucket)(key)
+                {
+                    (new_bucket, removed) => ([new_bucket, ..rest], removed)
+                }
+            }
+            else {
+                match HashMap.remove_bucket_at(rest)(index - 1)(key)
+                {
+                    (new_rest, removed) => ([bucket, ..new_rest], removed)
+                }
+            }
+    }
+
+    // ── Core operations ──────────────────────────────────────
+
+    insert[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> K -> V -> HashMap[K, V]
+    {
+        HashMap{buckets: buckets, size: size, capacity: capacity} => key => value => {
+            idx := Math.abs(TraitInvoke.hash_value(TraitInvoke.clone_value(ref key))) % capacity;
+            match HashMap.insert_bucket_at(buckets)(idx)(key)(value)
+            {
+                (new_buckets, inserted) => {
+                    new_size := if inserted then { size + 1 } else { size };
+                    result := HashMap{buckets: new_buckets, size: new_size, capacity: capacity};
+                    HashMap.maybe_resize[K, V](result)
+                }
+            }
+        }
+    }
+
+    get[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> K -> Option[V]
+    {
+        HashMap{buckets: buckets, size: _, capacity: capacity} => key => {
+            idx := Math.abs(TraitInvoke.hash_value(TraitInvoke.clone_value(ref key))) % capacity;
+            HashMap.find_in_buckets(buckets)(idx)(key)
+        }
+    }
+
+    get_or[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> K -> V -> V
+    {
+        self => key => fallback => Option.unwrap_or(HashMap.get(self)(key))(fallback)
+    }
+
+    contains_key[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> K -> Bool
+    {
+        self => key => Option.is_some(HashMap.get(self)(key))
+    }
+
+    contains_value[K, V: Traits.Eq + Traits.Clone] :: HashMap[K, V] -> V -> Bool
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => value => HashMap.buckets_contain_value[K, V](buckets)(value)
+    }
+
+    contains_all_keys[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> Seq[K] -> Bool
+    {
+        self => keys => HashMap.all_keys_contained(keys)(self)
+    }
+
+    contains_any_key[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> Seq[K] -> Bool
+    {
+        self => keys => HashMap.any_key_contained(keys)(self)
+    }
+
+    remove[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> K -> HashMap[K, V]
+    {
+        HashMap{buckets: buckets, size: size, capacity: capacity} => key => {
+            idx := Math.abs(TraitInvoke.hash_value(TraitInvoke.clone_value(ref key))) % capacity;
+            match HashMap.remove_bucket_at(buckets)(idx)(key)
+            {
+                (new_buckets, removed) => {
+                    new_size := if removed then { size - 1 } else { size };
+                    HashMap{buckets: new_buckets, size: new_size, capacity: capacity}
+                }
+            }
+        }
+    }
+
+    insert_all[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> Seq[(K, V)] -> HashMap[K, V]
+    {
+        self => pairs => HashMap.insert_pairs[K, V](pairs)(self)
+    }
+
+    remove_all[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> Seq[K] -> HashMap[K, V]
+    {
+        self => keys => HashMap.remove_keys[K, V](keys)(self)
+    }
+
+    // ── Query operations ─────────────────────────────────────
+
+    keys[K, V] :: HashMap[K, V] -> Seq[K]
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => HashMap.collect_keys(buckets)
+    }
+
+    values[K, V] :: HashMap[K, V] -> Seq[V]
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => HashMap.collect_values(buckets)
+    }
+
+    len[K, V] :: Ref[HashMap[K, V]] -> Int
+    {
+        self => match *self {
+            HashMap{buckets: _, size: s, capacity: _} => s
+        }
+    }
+
+    is_empty[K, V] :: Ref[HashMap[K, V]] -> Bool
+    {
+        self => HashMap.len(self) == 0
+    }
+
+    capacity[K, V] :: Ref[HashMap[K, V]] -> Int
+    {
+        self => match *self {
+            HashMap{buckets: _, size: _, capacity: c} => c
+        }
+    }
+
+    load_factor_percent[K, V] :: Ref[HashMap[K, V]] -> Int
+    {
+        self => match *self {
+            HashMap{buckets: _, size: s, capacity: c} =>
+                if c <= 0 then { 0 } else { (s * 100) / c }
+        }
+    }
+
+    // ── Internal collection helpers ──────────────────────────
+
+
+    collect_keys[K, V] :: Seq[Seq[(K, V)]] -> Seq[K]
+     compiler(internal)
+{
+        buckets => {
+            bucket_count := Seq.len(ref buckets)
+            mut acc: Seq[K] := []
+            mut bi := 0
+            loop {
+                if bi >= bucket_count then { break } else {
+                    bucket := buckets[bi]
+                    len := Seq.len(ref bucket)
+                    mut pi := 0
+                    loop {
+                        if pi >= len then { break } else {
+                            match bucket[pi] {
+                                (k, _) => { acc = RuntimeArray.push(acc)(k) }
+                            }
+                            pi = pi + 1
+                        }
+                    }
+                    bi = bi + 1
+                }
+            }
+            acc
+        }
+    }
+
+
+    collect_values[K, V] :: Seq[Seq[(K, V)]] -> Seq[V]
+     compiler(internal)
+{
+        buckets => {
+            bucket_count := Seq.len(ref buckets)
+            mut acc: Seq[V] := []
+            mut bi := 0
+            loop {
+                if bi >= bucket_count then { break } else {
+                    bucket := buckets[bi]
+                    len := Seq.len(ref bucket)
+                    mut pi := 0
+                    loop {
+                        if pi >= len then { break } else {
+                            match bucket[pi] {
+                                (_, v) => { acc = RuntimeArray.push(acc)(v) }
+                            }
+                            pi = pi + 1
+                        }
+                    }
+                    bi = bi + 1
+                }
+            }
+            acc
+        }
+    }
+
+
+    bucket_contains_value[K, V: Traits.Eq + Traits.Clone] :: Seq[(K, V)] -> V -> Bool
+     compiler(internal)
+{
+        [] => _ => false,
+        [(_, current), ..rest] => value =>
+            if TraitInvoke.eq_value(current)(TraitInvoke.clone_value(ref value))
+            then { true }
+            else { HashMap.bucket_contains_value(rest)(value) }
+    }
+
+
+    buckets_contain_value[K, V: Traits.Eq + Traits.Clone] :: Seq[Seq[(K, V)]] -> V -> Bool
+     compiler(internal)
+{
+        [] => _ => false,
+        [bucket, ..rest] => value =>
+            if HashMap.bucket_contains_value[K, V](bucket)(TraitInvoke.clone_value(ref value))
+            then { true }
+            else { HashMap.buckets_contain_value(rest)(value) }
+    }
+
+    // ── Resize ───────────────────────────────────────────────
+
+
+    maybe_resize[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> HashMap[K, V]
+     compiler(internal)
+{
+        HashMap{buckets: buckets, size: size, capacity: capacity} => {
+            load_factor_num := size * 100;
+            threshold := capacity * 75;
+            if load_factor_num > threshold
+            then { HashMap.resize_to(HashMap{buckets: buckets, size: size, capacity: capacity})(capacity * 2) }
+            else { HashMap{buckets: buckets, size: size, capacity: capacity} }
+        }
+    }
+
+
+    resize_to[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> Int -> HashMap[K, V]
+     compiler(internal)
+{
+        HashMap{buckets: buckets, size: size, capacity: _} => new_capacity => {
+            all_pairs := HashMap.collect_pairs(buckets);
+            fresh_buckets := HashMap.make_empty_buckets(new_capacity);
+            rehashed := HashMap.rehash_all[K, V](all_pairs)(fresh_buckets)(new_capacity);
+            HashMap{buckets: rehashed, size: size, capacity: new_capacity}
+        }
+    }
+
+
+    collect_pairs[K, V] :: Seq[Seq[(K, V)]] -> Seq[(K, V)]
+     compiler(internal)
+{
+        // Flatten buckets via flat_map (comprehension); each bucket is already a
+        // Seq[(K, V)], so the identity function concatenates them.
+        buckets => Seq.flat_map(buckets)(bucket => bucket)
+    }
+
+
+    append_bucket_at[K, V] :: Seq[Seq[(K, V)]] -> Int -> K -> V -> Seq[Seq[(K, V)]]
+     compiler(internal)
+{
+        [] => _ => key => value => [[(key, value)]],
+        [bucket, ..rest] => index => key => value =>
+            if index <= 0
+            then { [Seq.append(bucket)([(key, value)]), ..rest] }
+            else { [bucket, ..HashMap.append_bucket_at(rest)(index - 1)(key)(value)] }
+    }
+
+
+    rehash_all[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> Seq[Seq[(K, V)]] -> Int -> Seq[Seq[(K, V)]]
+     compiler(internal)
+{
+        [] => buckets => _ => buckets,
+        [(key, value), ..rest] => buckets => new_capacity => {
+            idx := Math.abs(TraitInvoke.hash_value(TraitInvoke.clone_value(ref key))) % new_capacity
+            updated := HashMap.append_bucket_at[K, V](buckets)(idx)(key)(value)
+            HashMap.rehash_all(rest)(updated)(new_capacity)
+        }
+    }
+
+    // ── Conversion ───────────────────────────────────────────────
+
+
+    insert_pairs[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> HashMap[K, V] -> HashMap[K, V]
+     compiler(internal)
+{
+        pairs => acc => {
+            len := Seq.len(ref pairs)
+            mut result := acc
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    match pairs[index] {
+                        (key, value) => { result = HashMap.insert(result)(key)(value) }
+                    }
+                    index = index + 1
+                }
+            }
+            result
+        }
+    }
+
+    from_seq[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: Seq[(K, V)] -> HashMap[K, V]
+    {
+        pairs => HashMap.insert_pairs(pairs)(HashMap.empty(()))
+    }
+
+
+    remove_keys[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: Seq[K] -> HashMap[K, V] -> HashMap[K, V]
+     compiler(internal)
+{
+        [] => acc => acc,
+        [key, ..rest] => acc => HashMap.remove_keys(rest)(HashMap.remove(acc)(key))
+    }
+
+
+    key_in_seq[K: Traits.Eq + Traits.Clone] :: K -> Seq[K] -> Bool
+     compiler(internal)
+{
+        key => values => match HashMap.key_in_seq_preserve[K](key)(values)
+        {
+            (found, _) => found
+        }
+    }
+
+
+    key_in_seq_preserve[K: Traits.Eq + Traits.Clone] :: K -> Seq[K] -> (Bool, Seq[K])
+     compiler(internal)
+{
+        _ => [] => (false, []),
+        key => [current, ..rest] =>
+            if TraitInvoke.eq_value(TraitInvoke.clone_value(ref key))(TraitInvoke.clone_value(ref current))
+            then { (true, [current, ..rest]) }
+            else {
+                match HashMap.key_in_seq_preserve(key)(rest)
+                {
+                    (found, rebuilt) => (found, [current, ..rebuilt])
+                }
+            }
+    }
+
+
+    all_keys_in_available[K: Traits.Eq + Traits.Clone] :: Seq[K] -> Seq[K] -> Bool
+     compiler(internal)
+{
+        keys => available => match HashMap.all_keys_in_available_preserve[K](keys)(available)
+        {
+            (contained, _) => contained
+        }
+    }
+
+
+    all_keys_in_available_preserve[K: Traits.Eq + Traits.Clone] :: Seq[K] -> Seq[K] -> (Bool, Seq[K])
+     compiler(internal)
+{
+        [] => available => (true, available),
+        [key, ..rest] => available =>
+            match HashMap.key_in_seq_preserve[K](key)(available)
+            {
+                (false, rebuilt) => (false, rebuilt),
+                (true, rebuilt) => HashMap.all_keys_in_available_preserve(rest)(rebuilt)
+            }
+    }
+
+
+    any_key_in_available[K: Traits.Eq + Traits.Clone] :: Seq[K] -> Seq[K] -> Bool
+     compiler(internal)
+{
+        keys => available => match HashMap.any_key_in_available_preserve[K](keys)(available)
+        {
+            (contained, _) => contained
+        }
+    }
+
+
+    any_key_in_available_preserve[K: Traits.Eq + Traits.Clone] :: Seq[K] -> Seq[K] -> (Bool, Seq[K])
+     compiler(internal)
+{
+        [] => available => (false, available),
+        [key, ..rest] => available =>
+            match HashMap.key_in_seq_preserve[K](key)(available)
+            {
+                (true, rebuilt) => (true, rebuilt),
+                (false, rebuilt) => HashMap.any_key_in_available_preserve(rest)(rebuilt)
+            }
+    }
+
+
+    all_keys_contained[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: Seq[K] -> HashMap[K, V] -> Bool
+     compiler(internal)
+{
+        keys => self => HashMap.all_keys_in_available[K](keys)(HashMap.keys[K, V](self))
+    }
+
+
+    any_key_contained[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: Seq[K] -> HashMap[K, V] -> Bool
+     compiler(internal)
+{
+        keys => self => HashMap.any_key_in_available[K](keys)(HashMap.keys[K, V](self))
+    }
+
+    to_seq[K, V] :: HashMap[K, V] -> Seq[(K, V)]
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => HashMap.collect_pairs(buckets)
+    }
+
+    merge[K: Traits.Hash + Traits.Eq + Traits.Clone, V] :: HashMap[K, V] -> HashMap[K, V] -> HashMap[K, V]
+    {
+        left => right => HashMap.insert_pairs(HashMap.to_seq(right))(left)
+    }
+
+
+    map_pair_values[K, V, U, E: effects] :: Seq[(K, V)] -> (V -> U need E) -> Seq[(K, U)] need E
+     compiler(internal)
+{
+        pairs => f => {
+            len := Seq.len(ref pairs)
+            mut acc: Seq[(K, U)] := []
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    match pairs[index] {
+                        (key, value) => { acc = RuntimeArray.push(acc)((key, f(value))) }
+                    }
+                    index = index + 1
+                }
+            }
+            acc
+        }
+    }
+
+    map_values[K: Traits.Hash + Traits.Eq + Traits.Clone, V, U, E: effects] :: HashMap[K, V] -> (V -> U need E) -> HashMap[K, U] need E
+    {
+        self => f => HashMap.from_seq(HashMap.map_pair_values(HashMap.to_seq(self))(f))
+    }
+
+    // ── Fold ─────────────────────────────────────────────────────
+
+
+    fold_pairs[K, V, A, E: effects] :: Seq[(K, V)] -> A -> (A -> K -> V -> A need E) -> A need E
+     compiler(internal)
+{
+        pairs => acc => f => {
+            len := Seq.len(ref pairs)
+            mut result := acc
+            mut index := 0
+            loop {
+                if index >= len then { break } else {
+                    match pairs[index] {
+                        (k, v) => { result = f(result)(k)(v) }
+                    }
+                    index = index + 1
+                }
+            }
+            result
+        }
+    }
+
+
+    fold_buckets[K, V, A, E: effects] :: Seq[Seq[(K, V)]] -> A -> (A -> K -> V -> A need E) -> A need E
+     compiler(internal)
+{
+        buckets => acc => f => HashMap.fold_pairs[K, V, A, E](HashMap.collect_pairs[K, V](buckets))(acc)(f)
+    }
+
+    fold[K, V, A, E: effects] :: HashMap[K, V] -> A -> (A -> K -> V -> A need E) -> A need E
+    {
+        HashMap{buckets: buckets, size: _, capacity: _} => acc => f => HashMap.fold_buckets(buckets)(acc)(f)
+    }
+}

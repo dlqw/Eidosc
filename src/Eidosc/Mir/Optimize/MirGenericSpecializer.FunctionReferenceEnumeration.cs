@@ -121,6 +121,9 @@ public sealed partial class MirGenericSpecializer
             MirAssign assign =>
                 OperandHasReferenceRequiringSpecialization(assign.Target, includeKnownTemplateReferences) ||
                 OperandHasReferenceRequiringSpecialization(assign.Source, includeKnownTemplateReferences),
+            MirCaseInject injection =>
+                OperandHasReferenceRequiringSpecialization(injection.Target, includeKnownTemplateReferences) ||
+                OperandHasReferenceRequiringSpecialization(injection.Operand, includeKnownTemplateReferences),
             MirCall call =>
                 CallFunctionHasReferenceRequiringSpecialization(function, call, ref localTypes, includeKnownTemplateReferences) ||
                 call.Target != null && OperandHasReferenceRequiringSpecialization(call.Target, includeKnownTemplateReferences) ||
@@ -292,6 +295,10 @@ public sealed partial class MirGenericSpecializer
                 VisitFunctionRefs(assign.Target, visitor);
                 VisitFunctionRefs(assign.Source, visitor);
                 break;
+            case MirCaseInject injection:
+                VisitFunctionRefs(injection.Target, visitor);
+                VisitFunctionRefs(injection.Operand, visitor);
+                break;
             case MirCall call:
                 VisitFunctionRefs(call.Function, visitor);
                 if (call.Target != null)
@@ -411,6 +418,8 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => AnyFunctionRef(assign.Target, predicate) || AnyFunctionRef(assign.Source, predicate),
+            MirCaseInject injection =>
+                AnyFunctionRef(injection.Target, predicate) || AnyFunctionRef(injection.Operand, predicate),
             MirCall call =>
                 AnyFunctionRef(call.Function, predicate) ||
                 call.Target != null && AnyFunctionRef(call.Target, predicate) ||
@@ -509,6 +518,9 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => AnyFunctionRefReferencesKnownTemplate(assign.Target) || AnyFunctionRefReferencesKnownTemplate(assign.Source),
+            MirCaseInject injection =>
+                AnyFunctionRefReferencesKnownTemplate(injection.Target) ||
+                AnyFunctionRefReferencesKnownTemplate(injection.Operand),
             MirCall call =>
                 AnyFunctionRefReferencesKnownTemplate(call.Function) ||
                 call.Target != null && AnyFunctionRefReferencesKnownTemplate(call.Target) ||

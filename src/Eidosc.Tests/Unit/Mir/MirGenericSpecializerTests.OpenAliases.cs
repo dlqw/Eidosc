@@ -264,7 +264,6 @@ public sealed partial class MirGenericSpecializerTests
     public void Run_TraitAliasConstructorBinding_UsesMirAliasMetadataWithoutSymbolTable()
     {
         var intType = new TypeId(BaseTypes.IntId);
-        var stringType = new TypeId(BaseTypes.StringId);
         var boolType = new TypeId(BaseTypes.BoolId);
         var itemType = new TypeId(1930);
         var openResultType = new TypeId(1931);
@@ -356,7 +355,7 @@ public sealed partial class MirGenericSpecializerTests
                     [new TypeId(leftParam.Value), new TypeId(itemParam.Value), new TypeId(rightParam.Value)]),
                 [concreteTripleType.Value] = new TypeDescriptor.TyCon(
                     tripleConstructorDescriptor,
-                    [stringType, intType, boolType])
+                    [intType, intType, boolType])
             },
             TypeAliases =
             [
@@ -384,7 +383,7 @@ public sealed partial class MirGenericSpecializerTests
                             aliasType,
                             "KeepEdges",
                             [
-                                new ImplTypeRefKey(SymbolId.None, stringType, "String", []),
+                                new ImplTypeRefKey(SymbolId.None, intType, "Int", []),
                                 new ImplTypeRefKey(SymbolId.None, boolType, "Bool", [])
                             ])
                     ]

@@ -53,6 +53,49 @@ public sealed class ModuleHirStatePayloadTests
     }
 
     [Fact]
+    public void Create_RestoresFunctionOwnershipContractThroughJson()
+    {
+        var valueType = Tid(BaseTypes.StringId);
+        var sharedType = Tid(9001);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [valueType.Value] = new TypeDescriptor.Builtin(valueType.Value),
+            [sharedType.Value] = new TypeDescriptor.Ref(valueType)
+        };
+        var contract = OwnershipContract.Create(
+            Sid(41),
+            "borrow_text",
+            [("value", valueType)],
+            sharedType,
+            descriptors);
+        var module = new HirModule
+        {
+            Name = "ownership_contract_restore",
+            Declarations =
+            [
+                new HirFunc
+                {
+                    Name = "borrow_text",
+                    SymbolId = Sid(41),
+                    Parameters = [new HirParam { Name = "value", TypeId = valueType }],
+                    ReturnType = sharedType,
+                    OwnershipContract = contract
+                }
+            ]
+        };
+
+        var payload = ModuleHirStatePayload.Create(module);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = JsonSerializer.Deserialize<ModuleHirStatePayload>(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped!.TryRestore(out var restored));
+        var restoredContract = Assert.IsType<HirFunc>(Assert.Single(restored.Declarations)).OwnershipContract;
+        Assert.Equal(contract.CanonicalIdentity, restoredContract.CanonicalIdentity);
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, restoredContract.Result.Projection.Kind);
+    }
+
+    [Fact]
     public void Create_RoundTripsAttachedHirStateThroughJson()
     {
         var parameterEffects = new ParameterEffectMap();
@@ -82,6 +125,10 @@ public sealed class ModuleHirStatePayloadTests
                         Tid(BaseTypes.IntId),
                         ReferencedParameterIndex: 0,
                         ValueVariableIndex: 7)
+                ],
+                EffectArgs =
+                [
+                    new GenericEffectArgumentDescriptor(1, "symbol:88", Tid(88))
                 ]
             },
             [5] = new TypeDescriptor.Ref(Tid(16)),
@@ -173,6 +220,14 @@ public sealed class ModuleHirStatePayloadTests
         var allExpressions = new List<HirNode>
         {
             new HirError { Reason = "synthetic", IsRecovered = true },
+            new HirCaseInject
+            {
+                Operand = Int(0) with { TypeId = Tid(701) },
+                SourceCase = Sid(702),
+                TargetAncestor = Sid(703),
+                SourceTypeId = Tid(701),
+                TypeId = Tid(704)
+            },
             Int(1),
             new HirLiteral { LiteralKind = LiteralKind.Float, Value = 1.25d },
             new HirLiteral { LiteralKind = LiteralKind.String, Value = "text" },

@@ -77,7 +77,7 @@ Parser :: import Compiler.Parse.Decl;
     }
 
     [Fact]
-    public void Parser_ImportModuleAlias_Lowercase_Fails()
+    public void Parser_ImportModuleAlias_Lowercase_ParsesModuleAlias()
     {
         const string source = """
 c :: import Core;
@@ -85,8 +85,12 @@ c :: import Core;
 
         var result = RunParser(source, "import_lowercase_module_alias_parser_tests.eidos");
 
-        Assert.False(result.Success);
-        Assert.Equal(CompilationPhase.Parser, result.CompletedPhase);
+        Assert.True(result.Success);
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var import = Assert.Single(module.Declarations.OfType<ImportDecl>());
+        Assert.Equal(ImportKind.Module, import.Kind);
+        Assert.Equal(["Core"], import.ModulePath);
+        Assert.Equal("c", import.Alias);
     }
 
     [Fact]
@@ -118,7 +122,7 @@ import Core as C
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Message.Contains("Eidos 0.6.0-alpha.1", StringComparison.Ordinal));
+            diagnostic.Message.Contains("Eidos 0.7.0-alpha.1", StringComparison.Ordinal));
     }
 
     [Fact]

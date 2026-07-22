@@ -214,6 +214,13 @@ public sealed partial class CompilationPipeline
                 AppendPlace(builder, assign.Target);
                 AppendOperand(builder, assign.Source);
                 break;
+            case MirCaseInject injection:
+                Append(builder, nameof(MirCaseInject));
+                AppendOperand(builder, injection.Target);
+                AppendOperand(builder, injection.Operand);
+                Append(builder, injection.SourceTypeId.Value);
+                Append(builder, injection.TargetTypeId.Value);
+                break;
             case MirCall call:
                 Append(builder, nameof(MirCall));
                 AppendPlace(builder, call.Target);
@@ -457,6 +464,8 @@ public sealed partial class CompilationPipeline
                 Append(builder, nameof(TypeDescriptor.TyCon));
                 Append(builder, tyCon.ConstructorDescriptor);
                 AppendTypeIds(builder, tyCon.TypeArgs);
+                AppendValueArguments(builder, tyCon.ValueArgs);
+                AppendEffectArguments(builder, tyCon.EffectArgs);
                 break;
             case TypeDescriptor.Ref reference:
                 Append(builder, nameof(TypeDescriptor.Ref));
@@ -521,6 +530,20 @@ public sealed partial class CompilationPipeline
             Append(builder, argument.TypeId.Value);
             Append(builder, argument.ReferencedParameterIndex);
             Append(builder, argument.ValueVariableIndex);
+        }
+        builder.Append(']');
+    }
+
+    private static void AppendEffectArguments(
+        StringBuilder builder,
+        IEnumerable<GenericEffectArgumentDescriptor> arguments)
+    {
+        builder.Append('[');
+        foreach (var argument in arguments)
+        {
+            Append(builder, argument.ParameterIndex);
+            Append(builder, argument.CanonicalText);
+            Append(builder, argument.TypeId.Value);
         }
         builder.Append(']');
     }

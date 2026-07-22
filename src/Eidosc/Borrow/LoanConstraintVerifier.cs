@@ -14,6 +14,7 @@ public enum LoanConstraintViolation
     LifetimeTooShort,
     ReturnBorrowOutlivesBorrowee,
     UseAfterMove,
+    DoubleMove,
     MutateWhileBorrowed,
     MultipleMutableBorrows,
     SharedBorrowWhileMutable,
@@ -220,12 +221,17 @@ public sealed partial class LoanConstraintVerifier
                 break;
 
             case MirDrop drop:
-                VerifyDrop(drop, blockId, instructionIndex, state);
+                VerifyDrop(drop, blockId, instructionIndex, state, results);
                 break;
 
             case MirAssign assign when assign.Target.Kind == PlaceKind.Local:
                 PrepareWrite(assign.Target.Local, assign.Span, blockId, instructionIndex, state, results);
                 ValidateReadOperand(assign.Source, assign.Span, blockId, instructionIndex, state, results);
+                break;
+
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target } injection:
+                PrepareWrite(target.Local, injection.Span, blockId, instructionIndex, state, results);
+                ValidateReadOperand(injection.Operand, injection.Span, blockId, instructionIndex, state, results);
                 break;
 
             case MirBinOp binOp when binOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var targetLocal }:
@@ -384,7 +390,6 @@ public sealed partial class LoanConstraintVerifier
             ParamBorrowMode.Own => VerifyOwnership(place.Local, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowShared => VerifySharedBorrow(place.Local, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowMutable => VerifyMutableBorrow(place.Local, span, blockId, instructionIndex, state),
-            ParamBorrowMode.Copy => VerifyCopyArgument(place.Local, span, blockId, instructionIndex, state),
             _ => LoanConstraintResult.Success()
         };
     }
@@ -417,15 +422,6 @@ public sealed partial class LoanConstraintVerifier
                 instructionIndex,
                 state,
                 readAction: DiagnosticMessages.BorrowActionCreateSharedBorrowThroughCallArgument,
-                mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
-            ParamBorrowMode.Copy => RequireCallArgumentLoadCapability(
-                place,
-                isMutableBorrow: false,
-                span,
-                blockId,
-                instructionIndex,
-                state,
-                readAction: DiagnosticMessages.BorrowActionReadThroughCallArgument,
                 mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
             _ => LoanConstraintResult.Success()
         };
@@ -522,7 +518,6 @@ public sealed partial class LoanConstraintVerifier
             ParamBorrowMode.Own => ValidateMoveOfOwnedTarget(target, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowShared => VerifySharedBorrowTarget(target, span, blockId, instructionIndex, state),
             ParamBorrowMode.BorrowMutable => VerifyMutableBorrowTarget(target, span, blockId, instructionIndex, state),
-            ParamBorrowMode.Copy => ValidateReadLocal(target.BaseLocal, span, blockId, instructionIndex, state, null),
             _ => LoanConstraintResult.Success()
         };
     }
@@ -787,16 +782,6 @@ public sealed partial class LoanConstraintVerifier
         }
 
         return LoanConstraintResult.Success();
-    }
-
-    private LoanConstraintResult VerifyCopyArgument(
-        LocalId localId,
-        SourceSpan span,
-        BlockId blockId,
-        int instructionIndex,
-        LoanVerifierState state)
-    {
-        return ValidateReadLocal(localId, span, blockId, instructionIndex, state, null);
     }
 
     private LoanConstraintResult VerifyReturnConstraints(
@@ -1210,11 +1195,30 @@ public sealed partial class LoanConstraintVerifier
         MirDrop drop,
         BlockId blockId,
         int instructionIndex,
-        LoanVerifierState state)
+        LoanVerifierState state,
+        List<LoanConstraintResult> results)
     {
         if (drop.Value is not MirPlace dropPlace ||
             !BorrowTarget.TryResolve(dropPlace, out var dropTarget))
         {
+            return;
+        }
+
+        if (dropPlace.Kind == PlaceKind.Local && state.MovedVars.Contains(dropPlace.Local))
+        {
+            AddDiagnostic(new BorrowDiagnostic
+            {
+                Kind = BorrowErrorKind.DoubleMove,
+                Message = DiagnosticMessages.BorrowValueAlreadyConsumedCannotDrop,
+                Span = drop.Span,
+                Location = (blockId, instructionIndex),
+                Hint = DiagnosticMessages.BorrowDropExactlyOnceHint
+            });
+            results.Add(LoanConstraintResult.Failure(
+                LoanConstraintViolation.DoubleMove,
+                DiagnosticMessages.BorrowValueAlreadyConsumedCannotDrop,
+                drop.Span,
+                hint: DiagnosticMessages.BorrowDropExactlyOnceHint));
             return;
         }
 

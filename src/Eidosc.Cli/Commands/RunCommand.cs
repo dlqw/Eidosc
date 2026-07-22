@@ -41,6 +41,7 @@ public static class RunCommand
             new Option<string>("--target-triple", CliMessages.BuildTargetTripleOptionDescription),
             new Option<string[]>("--werror", CliMessages.WerrorOptionDescription),
             new Option<bool>("--werror-all", CliMessages.WerrorAllOptionDescription),
+            DenyOptionParser.Create(),
             new Option<int>("-O", () => 2, CliMessages.BuildOptimizationLevelOptionDescription),
             new Option<bool>("--lto", CliMessages.BuildLtoOptionDescription),
             new Option<bool>("--native-cpu", CliMessages.BuildNativeCpuOptionDescription),
@@ -70,6 +71,7 @@ public static class RunCommand
         public string? TargetTriple { get; set; }
         public string[] Werror { get; set; } = [];
         public bool WerrorAll { get; set; }
+        public string[] Deny { get; set; } = [];
         public int O { get; set; } = 2;
         public bool Lto { get; set; }
         public bool NativeCpu { get; set; }
@@ -173,6 +175,7 @@ public static class RunCommand
             LlvmOptimizationLevel = options.O,
             LlvmEnableLto = options.Lto,
             TreatWarningsAsErrors = options.WerrorAll,
+            DenyStyle = DenyOptionParser.IncludesStyle(options.Deny),
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
@@ -181,7 +184,8 @@ public static class RunCommand
             ConfigFfiLibraryPaths = ffiConfig?.LibraryPaths ?? [],
             ConfigFfiIncludePaths = ffiConfig?.IncludePaths ?? [],
             ConfigFfiNativeSources = ffiConfig?.NativeSources ?? [],
-            ConfigFfiLinkerFlags = ffiConfig?.LinkerFlags ?? []
+            ConfigFfiLinkerFlags = ffiConfig?.LinkerFlags ?? [],
+            MetaConfiguration = projectConfig?.Meta
         };
 
         CliOutput.WriteAction(CliMessages.CompilingAction, CliMessages.RunActionSubject(inputResolution.SourceFilePath), !options.NoColor);

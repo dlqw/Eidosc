@@ -11,7 +11,7 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private void ResolveInstanceDeclReferences(InstanceDecl instance)
+    private void ResolveInstanceDeclReferences(InstanceDecl instance, bool resolveBodies = true)
     {
         var hasTypeParams = instance.TypeParams.Count > 0;
         using var scopeGuard = hasTypeParams ? _symbolTable.PushScopeGuard(ScopeKind.Module) : default;
@@ -45,6 +45,12 @@ public sealed partial class NameResolver
             GenerateConstructorBridgeInstanceMethods(instance, traitId);
         }
 
+        if (instance.Members.Count > 0)
+        {
+            ResolveInstanceMemberRange(instance, 0, traitId, traitRef, resolveBodies);
+            return;
+        }
+
         foreach (var associatedType in instance.AssociatedTypes)
         {
             ResolveAssociatedTypeReferences(associatedType);
@@ -52,20 +58,84 @@ public sealed partial class NameResolver
 
         foreach (var associatedConst in instance.AssociatedConsts)
         {
-            ResolveAssociatedConstReferences(associatedConst);
+            ResolveAssociatedConstReferences(associatedConst, resolveValue: resolveBodies);
         }
 
         foreach (var method in instance.Methods)
         {
-            ResolveInstanceMethodReferences(method);
+            ResolveInstanceMethodReferences(method, resolveBodies);
+        }
+
+        if ((_isProvisionalSyntaxDiscovery || !resolveBodies) &&
+            instance.MetaInvocations.Any(static invocation =>
+                invocation.Stage <= ClauseStage.Semantic))
+        {
+            return;
         }
 
         ValidateAssociatedMemberImplementations(instance, traitId);
         RegisterNamedInstanceImpl(instance, traitId, traitRef);
     }
 
+    private bool ResolveInstanceMemberRange(InstanceDecl instance, int startIndex, bool resolveBodies = true)
+    {
+        if (instance.Trait == null)
+        {
+            AddError(instance.Span, DiagnosticMessages.UndefinedTraitInImpl("<missing>"));
+            return false;
+        }
+
+        ResolveInstanceTraitReference(instance.Trait);
+        if (!TryResolveTraitFromInstance(instance.Trait, out var traitId, out var traitRef))
+        {
+            AddUndefinedImplTraitError(
+                instance.Trait.Span,
+                traitRef,
+                DiagnosticMessages.UndefinedTraitInImpl(FormatTraitReferenceDisplay(traitRef)));
+            return false;
+        }
+
+        return ResolveInstanceMemberRange(instance, startIndex, traitId, traitRef, resolveBodies);
+    }
+
+    private bool ResolveInstanceMemberRange(
+        InstanceDecl instance,
+        int startIndex,
+        SymbolId traitId,
+        ImplTraitReference traitRef,
+        bool resolveBodies = true)
+    {
+        for (var index = startIndex; index < instance.Members.Count; index++)
+        {
+            switch (instance.Members[index])
+            {
+                case ExpandDeclaration expansion:
+                    ResolveExpandMemberReferences(expansion, instance);
+                    return false;
+                case AssociatedTypeDecl associatedType:
+                    ResolveAssociatedTypeReferences(associatedType);
+                    break;
+                case AssociatedConstDecl associatedConst:
+                    ResolveAssociatedConstReferences(associatedConst, resolveValue: resolveBodies);
+                    break;
+                case FuncDef method:
+                    ResolveInstanceMethodReferences(method, resolveBodies);
+                    break;
+            }
+        }
+
+        ValidateAssociatedMemberImplementations(instance, traitId);
+        RegisterNamedInstanceImpl(instance, traitId, traitRef);
+        return true;
+    }
+
     private void GenerateConstructorBridgeInstanceMethods(InstanceDecl instance, SymbolId traitId)
     {
+        if (instance.Methods.Count > 0)
+        {
+            return;
+        }
+
         if (instance.TargetType == null)
         {
             AddError(instance.Span, "Constructor instance bridge requires an explicit target type.");
@@ -322,12 +392,12 @@ public sealed partial class NameResolver
         }
     }
 
-    private void ResolveInstanceMethodReferences(FuncDef method)
+    private void ResolveInstanceMethodReferences(FuncDef method, bool resolveBody = true)
     {
         _traitSignatureDepth++;
         try
         {
-            ResolveFuncDefReferences(method);
+            ResolveFuncDefReferences(method, resolveBody);
         }
         finally
         {
@@ -349,11 +419,11 @@ public sealed partial class NameResolver
         var genericArguments = trait.GenericArguments.ToList();
         var typeArgTexts = genericArguments.Count > 0
             ? genericArguments
-                .Select(RenderImplAttributeGenericArgText)
+                .Select(RenderImplClauseGenericArgumentText)
                 .Where(static text => !string.IsNullOrWhiteSpace(text))
                 .ToList()
             : trait.TypeArgs
-                .Select(RenderImplAttributeTypeArgText)
+                .Select(RenderImplClauseTypeArgumentText)
                 .Where(static text => !string.IsNullOrWhiteSpace(text))
                 .ToList();
         traitRef = new(path, typeArgTexts, trait.TypeArgs.ToList(), genericArguments);
@@ -390,6 +460,11 @@ public sealed partial class NameResolver
 
     private void RegisterNamedInstanceImpl(InstanceDecl instance, SymbolId traitId, ImplTraitReference traitRef)
     {
+        if (!_processedNamedInstanceDeclarations.Add(instance))
+        {
+            return;
+        }
+
         SymbolId implId = SymbolId.None;
         TypePath? registeredImplementingTypePath = null;
         TypeId registeredTargetTypeId = TypeId.None;
@@ -397,7 +472,22 @@ public sealed partial class NameResolver
 
         if (instance.Methods.Count == 0)
         {
-            if (TryGetImplTargetTypeFromTraitRef(instance.Trait, out var implementingTypePath, out var targetTypeId))
+            TypePath implementingTypePath = null!;
+            var targetTypeId = TypeId.None;
+            var hasTarget = instance.TargetType != null &&
+                            TryResolveImplTargetTypeNode(
+                                instance.TargetType,
+                                out implementingTypePath,
+                                out targetTypeId);
+            if (!hasTarget)
+            {
+                hasTarget = TryGetImplTargetTypeFromTraitRef(
+                    instance.Trait,
+                    out implementingTypePath,
+                    out targetTypeId);
+            }
+
+            if (hasTarget)
             {
                 implId = TryDeclareNamedInstanceImpl(
                     instance,
@@ -422,7 +512,11 @@ public sealed partial class NameResolver
 
         foreach (var method in instance.Methods)
         {
-            if (!TryGetImplTargetType(method, out var implementingTypePath, out var targetTypeId))
+            if (!TryGetImplTargetType(
+                    method,
+                    out var implementingTypePath,
+                    out var targetTypeId,
+                    cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
             {
                 AddError(method.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
                 continue;
@@ -652,7 +746,7 @@ public sealed partial class NameResolver
         string? requirementError = null;
         if (implementingTypeRequirements == null &&
             TryBuildImplTypeRequirements(
-                instance.Methods.FirstOrDefault() ?? new FuncDef(),
+                instance.TypeParams.Concat(instance.Methods.FirstOrDefault()?.TypeParams ?? []),
                 implementingTypePath,
                 out var builtRequirements,
                 out requirementError))
@@ -730,7 +824,9 @@ public sealed partial class NameResolver
             canonicalTraitTypeArgKeys,
             implementingTypeRequirements,
             requestedHeadShape,
-            BuildImplTypeRefKey(implementingTypePath));
+            BuildImplTypeRefKey(implementingTypePath),
+            instance.SymbolId,
+            GetSyntaxBindingName(instance, instance.Name));
         instance.SymbolId = implId;
         return implId;
     }

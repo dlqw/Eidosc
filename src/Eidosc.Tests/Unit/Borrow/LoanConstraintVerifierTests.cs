@@ -101,6 +101,154 @@ public partial class LoanConstraintVerifierTests
     }
 
     [Fact]
+    public void VerifyFunction_DropOwnedLocalTwice_ReportsDoubleMove()
+    {
+        var stringType = new TypeId(BaseTypes.StringId);
+        var value = new LocalId { Value = 1 };
+        var place = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = stringType };
+        var function = new MirFunc
+        {
+            Name = "drop_twice",
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals = [new MirLocal { Id = value, Name = "value", TypeId = stringType, IsParameter = true }],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirDrop { Value = place },
+                        new MirDrop { Value = place }
+                    ],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        var verifier = new LoanConstraintVerifier(new LoanSignatureCache(), new SymbolTable());
+        var results = verifier.VerifyFunction(function);
+
+        Assert.Contains(results, result => result.Violation == LoanConstraintViolation.DoubleMove);
+        Assert.Contains(verifier.Diagnostics, diagnostic => diagnostic.Kind == BorrowErrorKind.DoubleMove);
+    }
+
+    [Fact]
+    public void VerifyFunction_DropOwnedLocalAfterMove_ReportsDoubleMove()
+    {
+        var stringType = new TypeId(BaseTypes.StringId);
+        var source = new LocalId { Value = 1 };
+        var target = new LocalId { Value = 2 };
+        var sourcePlace = new MirPlace { Kind = PlaceKind.Local, Local = source, TypeId = stringType };
+        var function = new MirFunc
+        {
+            Name = "drop_after_move",
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = source, Name = "source", TypeId = stringType, IsParameter = true },
+                new MirLocal { Id = target, Name = "target", TypeId = stringType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirMove
+                        {
+                            Source = sourcePlace,
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = target, TypeId = stringType }
+                        },
+                        new MirDrop { Value = sourcePlace }
+                    ],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        var verifier = new LoanConstraintVerifier(new LoanSignatureCache(), new SymbolTable());
+        var results = verifier.VerifyFunction(function);
+
+        Assert.Contains(results, result => result.Violation == LoanConstraintViolation.DoubleMove);
+        Assert.Contains(verifier.Diagnostics, diagnostic => diagnostic.Kind == BorrowErrorKind.DoubleMove);
+    }
+
+    [Fact]
+    public void VerifyFunction_DropAfterConditionalDrop_ReportsDoubleMoveAtJoin()
+    {
+        var stringType = new TypeId(BaseTypes.StringId);
+        var intType = new TypeId(BaseTypes.IntId);
+        var value = new LocalId { Value = 1 };
+        var condition = new LocalId { Value = 2 };
+        var valuePlace = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = stringType };
+        var join = new BlockId { Value = 4 };
+        var function = new MirFunc
+        {
+            Name = "conditional_drop_then_drop",
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = value, Name = "value", TypeId = stringType, IsParameter = true },
+                new MirLocal { Id = condition, Name = "condition", TypeId = intType, IsParameter = true }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Terminator = new MirSwitch
+                    {
+                        Discriminant = new MirPlace { Kind = PlaceKind.Local, Local = condition, TypeId = intType },
+                        Branches =
+                        [
+                            new MirSwitchBranch
+                            {
+                                Value = new MirConstant
+                                {
+                                    Value = new MirConstantValue.IntValue(0),
+                                    TypeId = intType
+                                },
+                                Target = new BlockId { Value = 2 }
+                            }
+                        ],
+                        DefaultTarget = new BlockId { Value = 3 }
+                    }
+                },
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 2 },
+                    Instructions = [new MirDrop { Value = valuePlace }],
+                    Terminator = new MirGoto { Target = join }
+                },
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 3 },
+                    Terminator = new MirGoto { Target = join }
+                },
+                new MirBasicBlock
+                {
+                    Id = join,
+                    Instructions = [new MirDrop { Value = valuePlace }],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        var verifier = new LoanConstraintVerifier(new LoanSignatureCache(), new SymbolTable());
+        var results = verifier.VerifyFunction(function);
+
+        Assert.Contains(results, result => result.Violation == LoanConstraintViolation.DoubleMove);
+        Assert.Contains(
+            verifier.Diagnostics,
+            diagnostic => diagnostic.Kind == BorrowErrorKind.DoubleMove && diagnostic.Location.Block.Equals(join));
+    }
+
+    [Fact]
     public void VerifyFunction_BorrowedReturnBlocksMutation()
     {
         var stringType = new TypeId(BaseTypes.StringId);
@@ -1013,24 +1161,6 @@ public partial class LoanConstraintVerifierTests
 
         Assert.Contains(results, result => result.Violation == LoanConstraintViolation.WriteCapabilityDenied);
         Assert.Contains(verifier.Diagnostics, diagnostic => diagnostic.Kind == BorrowErrorKind.WriteCapabilityDenied);
-    }
-
-    [Fact]
-    public void VerifyFunction_CallCopyArgWithoutReadCapability_ReportsReadCapabilityDenied()
-    {
-        var (func, signatureCache, symbolTable) = CreateCallArgCapabilityFixture(
-            "loan_call_cap_copy_denied",
-            new SymbolId(933),
-            ParamBorrowMode.Copy);
-
-        var verifier = new LoanConstraintVerifier(
-            signatureCache,
-            symbolTable,
-            BorrowCapabilitySnapshot.Enforced(BorrowCapabilityKind.Move));
-        var results = verifier.VerifyFunction(func);
-
-        Assert.Contains(results, result => result.Violation == LoanConstraintViolation.ReadCapabilityDenied);
-        Assert.Contains(verifier.Diagnostics, diagnostic => diagnostic.Kind == BorrowErrorKind.ReadCapabilityDenied);
     }
 
     [Fact]

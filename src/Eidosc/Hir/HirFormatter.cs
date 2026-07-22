@@ -165,6 +165,11 @@ public static class HirFormatter
 
         switch (node)
         {
+            case HirCaseInject injection:
+                sb.AppendLine($"{prefix}CaseInject({injection.SourceCase}->{injection.TargetAncestor}, {injection.SourceTypeId}->{injection.TypeId})");
+                FormatHirNode(injection.Operand, indent + 1, sb);
+                break;
+
             case HirLiteral lit:
                 var kindStr = lit.LiteralKind.ToString().ToLower();
                 sb.AppendLine($"{prefix}Literal({kindStr}: {lit.Value ?? "null"})");

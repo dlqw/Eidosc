@@ -336,6 +336,7 @@ internal static class OneShotLoopMoveAnalysis
         MirPlace? target = instruction switch
         {
             MirAssign assign => assign.Target,
+            MirCaseInject injection => injection.Target as MirPlace,
             MirCall call => call.Target,
             MirLoad load => load.Target,
             MirCopy copy => copy.Target,

@@ -1,0 +1,312 @@
+JsonValue :: module {
+    import Option
+    import Result
+    import Seq
+
+
+
+    string_equals :: String -> String -> Bool compiler(internal, intrinsic: "string_equals");
+
+    string_equals_ref :: Ref[String] -> Ref[String] -> Bool compiler(internal, intrinsic: "string_equals");
+
+
+    // JSON value ADT — represents any valid JSON value.
+    // Objects are represented as Seq[(String, JsonValue)] (association Seq).
+    JsonValue :: type {
+        JsonNull :: type {} ,
+        JsonBool:: type(Bool) ,
+        JsonNumber:: type(Float) ,
+        JsonString:: type(String) ,
+        JsonArray:: type(Seq[JsonValue]) ,
+        JsonObject:: type(Seq[(String, JsonValue)])
+    }
+
+    // ── Constructors ──
+
+    null :: Unit -> JsonValue
+    {
+        _ => JsonNull()
+    }
+
+    bool :: Bool -> JsonValue
+    {
+        value => JsonBool(value)
+    }
+
+    number :: Float -> JsonValue
+    {
+        value => JsonNumber(value)
+    }
+
+    string :: String -> JsonValue
+    {
+        value => JsonString(value)
+    }
+
+    array :: Seq[JsonValue] -> JsonValue
+    {
+        items => JsonArray(items)
+    }
+
+    object :: Seq[(String, JsonValue)] -> JsonValue
+    {
+        fields => JsonObject(fields)
+    }
+
+    // ── Type checks ──
+
+    is_null :: JsonValue -> Bool
+    {
+        JsonNull() => true,
+        _ => false
+    }
+
+    is_bool :: JsonValue -> Bool
+    {
+        JsonBool(_) => true,
+        _ => false
+    }
+
+    is_number :: JsonValue -> Bool
+    {
+        JsonNumber(_) => true,
+        _ => false
+    }
+
+    is_string :: JsonValue -> Bool
+    {
+        JsonString(_) => true,
+        _ => false
+    }
+
+    is_array :: JsonValue -> Bool
+    {
+        JsonArray(_) => true,
+        _ => false
+    }
+
+    is_object :: JsonValue -> Bool
+    {
+        JsonObject(_) => true,
+        _ => false
+    }
+
+    // ── Safe accessors (return Option) ──
+
+    get_bool :: JsonValue -> Option[Bool]
+    {
+        JsonBool(value) => Some(value),
+        _ => None()
+    }
+
+    get_float :: JsonValue -> Option[Float]
+    {
+        JsonNumber(value) => Some(value),
+        _ => None()
+    }
+
+    get_string :: JsonValue -> Option[String]
+    {
+        JsonString(value) => Some(value),
+        _ => None()
+    }
+
+    get_array :: JsonValue -> Option[Seq[JsonValue]]
+    {
+        JsonArray(items) => Some(items),
+        _ => None()
+    }
+
+    get_object :: JsonValue -> Option[Seq[(String, JsonValue)]]
+    {
+        JsonObject(fields) => Some(fields),
+        _ => None()
+    }
+
+    // ── Array indexing ──
+
+    get :: JsonValue -> Int -> Option[JsonValue]
+    {
+        JsonArray(items) => index => Seq.get_opt(items)(index),
+        _ => _ => None()
+    }
+
+    get_or :: JsonValue -> Int -> JsonValue -> JsonValue
+    {
+        value => index => fallback => Option.unwrap_or(JsonValue.get(value)(index))(fallback)
+    }
+
+    array_len :: JsonValue -> Int
+    {
+        JsonArray(items) => Seq.len(ref items),
+        _ => 0
+    }
+
+    object_len :: JsonValue -> Int
+    {
+        JsonObject(fields) => Seq.len(ref fields),
+        _ => 0
+    }
+
+    // ── Object field lookup ──
+
+
+    find_field :: Seq[(String, JsonValue)] -> String -> Option[JsonValue]
+     compiler(internal)
+{
+        [] => _ => None(),
+        [(key, value), ..tail] => target =>
+            if string_equals_ref(ref key)(ref target) then { Some(value) }
+            else { JsonValue.find_field(tail)(target) }
+    }
+
+    field :: JsonValue -> String -> Option[JsonValue]
+    {
+        JsonObject(fields) => key => JsonValue.find_field(fields)(key),
+        _ => _ => None()
+    }
+
+    has_key :: JsonValue -> String -> Bool
+    {
+        JsonObject(fields) => key => match JsonValue.find_field(fields)(key)
+        {
+            Some(_) => true,
+            None() => false
+        },
+        _ => _ => false
+    }
+
+
+    upsert_field :: Seq[(String, JsonValue)] -> String -> JsonValue -> Seq[(String, JsonValue)]
+     compiler(internal)
+{
+        [] => key => value => [(key, value)],
+        [(field_key, field_value), ..tail] => key => value =>
+            if string_equals_ref(ref field_key)(ref key)
+                then { Seq.append([(field_key, value)])(tail) }
+                else { Seq.append([(field_key, field_value)])(JsonValue.upsert_field(tail)(key)(value)) }
+    }
+
+
+    remove_field_from :: Seq[(String, JsonValue)] -> String -> Seq[(String, JsonValue)]
+     compiler(internal)
+{
+        [] => _ => [],
+        [(field_key, field_value), ..tail] => key =>
+            if string_equals_ref(ref field_key)(ref key)
+                then { JsonValue.remove_field_from(tail)(key) }
+                else { Seq.append([(field_key, field_value)])(JsonValue.remove_field_from(tail)(key)) }
+    }
+
+
+    merge_fields :: Seq[(String, JsonValue)] -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
+     compiler(internal)
+{
+        left => [] => left,
+        left => [(key, value), ..tail] => JsonValue.merge_fields(JsonValue.upsert_field(left)(key)(value))(tail)
+    }
+
+    insert_field :: JsonValue -> String -> JsonValue -> JsonValue
+    {
+        JsonObject(fields) => key => value => JsonObject(JsonValue.upsert_field(fields)(key)(value)),
+        _ => key => value => JsonObject([(key, value)])
+    }
+
+    remove_field :: JsonValue -> String -> JsonValue
+    {
+        JsonObject(fields) => key => JsonObject(JsonValue.remove_field_from(fields)(key)),
+        value => _ => value
+    }
+
+    merge_objects :: JsonValue -> JsonValue -> JsonValue
+    {
+        JsonObject(left_fields) => right => match right
+        {
+            JsonObject(right_fields) => JsonObject(JsonValue.merge_fields(left_fields)(right_fields)),
+            _ => JsonObject(left_fields)
+        },
+        left => _ => left
+    }
+
+    // ── Convenience accessors with defaults ──
+
+    get_bool_or :: JsonValue -> Bool -> Bool
+    {
+        value => fallback => Option.unwrap_or(JsonValue.get_bool(value))(fallback)
+    }
+
+    get_float_or :: JsonValue -> Float -> Float
+    {
+        value => fallback => Option.unwrap_or(JsonValue.get_float(value))(fallback)
+    }
+
+    get_string_or :: JsonValue -> String -> String
+    {
+        value => fallback => Option.unwrap_or(JsonValue.get_string(value))(fallback)
+    }
+
+    get_array_or :: JsonValue -> Seq[JsonValue] -> Seq[JsonValue]
+    {
+        value => fallback => Option.unwrap_or(JsonValue.get_array(value))(fallback)
+    }
+
+    get_object_or :: JsonValue -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
+    {
+        value => fallback => Option.unwrap_or(JsonValue.get_object(value))(fallback)
+    }
+
+    field_or :: JsonValue -> String -> JsonValue -> JsonValue
+    {
+        value => key => fallback => Option.unwrap_or(JsonValue.field(value)(key))(fallback)
+    }
+
+    field_string :: JsonValue -> String -> Option[String]
+    {
+        value => key => Option.and_then(JsonValue.field(value)(key))(JsonValue.get_string)
+    }
+
+    field_float :: JsonValue -> String -> Option[Float]
+    {
+        value => key => Option.and_then(JsonValue.field(value)(key))(JsonValue.get_float)
+    }
+
+    field_bool :: JsonValue -> String -> Option[Bool]
+    {
+        value => key => Option.and_then(JsonValue.field(value)(key))(JsonValue.get_bool)
+    }
+
+    field_array :: JsonValue -> String -> Option[Seq[JsonValue]]
+    {
+        value => key => Option.and_then(JsonValue.field(value)(key))(JsonValue.get_array)
+    }
+
+    field_object :: JsonValue -> String -> Option[Seq[(String, JsonValue)]]
+    {
+        value => key => Option.and_then(JsonValue.field(value)(key))(JsonValue.get_object)
+    }
+
+    field_bool_or :: JsonValue -> String -> Bool -> Bool
+    {
+        value => key => fallback => Option.unwrap_or(JsonValue.field_bool(value)(key))(fallback)
+    }
+
+    field_float_or :: JsonValue -> String -> Float -> Float
+    {
+        value => key => fallback => Option.unwrap_or(JsonValue.field_float(value)(key))(fallback)
+    }
+
+    field_string_or :: JsonValue -> String -> String -> String
+    {
+        value => key => fallback => Option.unwrap_or(JsonValue.field_string(value)(key))(fallback)
+    }
+
+    field_array_or :: JsonValue -> String -> Seq[JsonValue] -> Seq[JsonValue]
+    {
+        value => key => fallback => Option.unwrap_or(JsonValue.field_array(value)(key))(fallback)
+    }
+
+    field_object_or :: JsonValue -> String -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
+    {
+        value => key => fallback => Option.unwrap_or(JsonValue.field_object(value)(key))(fallback)
+    }
+}

@@ -53,7 +53,7 @@ internal static class FunctionSignatureBuilder
         }
 
         if (node is TerminalCstNode terminal &&
-            terminal.Terminal?.ToString() is WellKnownStrings.Terminals.TypeIdentifier or WellKnownStrings.Terminals.Identifier)
+            terminal.Terminal?.ToString() is WellKnownStrings.Terminals.Identifier or WellKnownStrings.Terminals.Identifier)
         {
             var typePath = new TypePath();
             typePath.SetSpan(terminal.Span);

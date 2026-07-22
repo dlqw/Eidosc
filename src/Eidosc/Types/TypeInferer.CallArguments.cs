@@ -203,11 +203,6 @@ public sealed partial class TypeInferer
         return _substitution.Apply(currentType);
     }
 
-    private static bool IsLowerIdentifierName(string name)
-    {
-        return !string.IsNullOrWhiteSpace(name) && char.IsLower(name[0]);
-    }
-
     private static bool IsPrecompiledSymbol(FuncSymbol symbol)
     {
         var filePath = symbol.Span.FilePath;

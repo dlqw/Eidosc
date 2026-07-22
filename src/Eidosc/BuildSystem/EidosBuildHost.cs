@@ -24,6 +24,7 @@ public sealed class EidosBuildHostOptions
         new Dictionary<string, string[]>(StringComparer.Ordinal);
     public bool NoImplicitPrelude { get; init; }
     public bool UseCache { get; init; } = true;
+    public bool ReleaseProfile { get; init; }
     public bool TraceBuild { get; init; }
     public string? CacheRoot { get; init; }
     public TimeSpan ProcessTimeout { get; init; } = TimeSpan.FromMinutes(10);
@@ -55,10 +56,13 @@ public sealed record EidosBuildHostResult(
     EidosBuildGraph? Graph,
     EidosBuildGraphExecutionResult? Execution,
     IReadOnlyList<EidosBuildDependency> Dependencies,
+    EidosBuildProvenance? Provenance,
+    EidosBuildSbom? Sbom,
     IReadOnlyList<EidosBuildCapabilityTrace> CapabilityTrace,
     IReadOnlyList<ComptimeTraceEntry> ComptimeTrace,
     IReadOnlyList<string> GeneratedSourceFiles,
     IReadOnlyList<string> GeneratedSourceRoots,
+    IReadOnlyDictionary<string, string> GeneratedSourceUris,
     IReadOnlyList<Diagnostic.Diagnostic> Diagnostics);
 
 public static class EidosBuildHost
@@ -108,6 +112,14 @@ public static class EidosBuildHost
             return EmptyResult(options, programPath, hostTriple, diagnostics);
         }
 
+        if (options.ReleaseProfile && options.Configuration.VolatileCapabilities.Length > 0)
+        {
+            diagnostics.Add(Error(
+                $"Release profile rejects volatile build capabilities: {string.Join(", ", options.Configuration.VolatileCapabilities)}.",
+                "E5035"));
+            return EmptyResult(options, programPath, hostTriple, diagnostics);
+        }
+
         byte[] programBytes;
         try
         {
@@ -126,6 +138,7 @@ public static class EidosBuildHost
                 out var files,
                 out var environment,
                 out var tools,
+                out var network,
                 out var snapshotDiagnostics))
         {
             diagnostics.AddRange(snapshotDiagnostics);
@@ -138,7 +151,8 @@ public static class EidosBuildHost
             programHash,
             files,
             environment,
-            tools);
+            tools,
+            network);
         var traceCollector = new ComptimeTraceCollector(options.TraceBuild);
         var buildContext = new BuildComptimeContext(
             projectDirectory,
@@ -148,6 +162,8 @@ public static class EidosBuildHost
             files,
             environment,
             tools,
+            network,
+            options.Configuration.VolatileCapabilities,
             options.Configuration.OutputRoots,
             new ComptimeResourceBudget(
                 options.ComptimeFuelBudget,
@@ -280,16 +296,26 @@ public static class EidosBuildHost
         var cacheFingerprint = execution.Success
             ? ComputeFinalFingerprint(capabilityIdentity, graph, execution.Outputs)
             : string.Empty;
-        var generatedSourceFiles = graph.Artifacts
-            .Where(static artifact => artifact.Kind == "generated-source")
+        var generatedArtifacts = graph.Artifacts
+            .Where(static artifact => artifact.Kind is "generated-source" or "generated-module")
+            .ToArray();
+        var generatedSourceFiles = generatedArtifacts
             .Select(artifact => Path.GetFullPath(artifact.Path, projectDirectory))
             .OrderBy(static path => path, StringComparer.Ordinal)
             .ToArray();
-        var generatedSourceRoots = generatedSourceFiles
-            .Select(static path => Path.GetDirectoryName(path)!)
+        var generatedSourceRoots = generatedArtifacts
+            .Select(artifact => string.IsNullOrEmpty(artifact.ImportRoot)
+                ? Path.GetDirectoryName(Path.GetFullPath(artifact.Path, projectDirectory))!
+                : Path.GetFullPath(artifact.ImportRoot, projectDirectory))
             .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
             .OrderBy(static path => path, StringComparer.Ordinal)
             .ToArray();
+        var generatedSourceUris = generatedArtifacts
+            .Where(static artifact => !string.IsNullOrWhiteSpace(artifact.SourceUri))
+            .ToDictionary(
+                artifact => Path.GetFullPath(artifact.Path, projectDirectory),
+                static artifact => artifact.SourceUri,
+                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         return CreateResult(
             options,
             programPath,
@@ -305,7 +331,8 @@ public static class EidosBuildHost
             compilation.ComptimeTrace,
             diagnostics,
             generatedSourceFiles,
-            generatedSourceRoots);
+            generatedSourceRoots,
+            generatedSourceUris);
     }
 
     private static bool TrySnapshotCapabilities(
@@ -314,6 +341,7 @@ public static class EidosBuildHost
         out IReadOnlyList<BuildFileCapability> files,
         out IReadOnlyList<BuildEnvironmentCapability> environment,
         out IReadOnlyList<BuildToolCapability> tools,
+        out IReadOnlyList<BuildNetworkCapability> network,
         out IReadOnlyList<Diagnostic.Diagnostic> diagnostics)
     {
         var errors = new List<Diagnostic.Diagnostic>();
@@ -419,7 +447,11 @@ public static class EidosBuildHost
 
             try
             {
-                toolResults.Add(new BuildToolCapability(tool.Name, tool.Path, HashFile(tool.Path)));
+                toolResults.Add(new BuildToolCapability(
+                    tool.Name,
+                    tool.Path,
+                    HashFile(tool.Path),
+                    tool.Execution));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -432,6 +464,10 @@ public static class EidosBuildHost
         files = fileResults.Values.OrderBy(static file => file.RelativePath, StringComparer.Ordinal).ToArray();
         environment = environmentResults;
         tools = toolResults.OrderBy(static tool => tool.Name, StringComparer.Ordinal).ToArray();
+        network = configuration.NetworkInputs
+            .Select(static url => new BuildNetworkCapability(url))
+            .OrderBy(static capability => capability.Url, StringComparer.Ordinal)
+            .ToArray();
         diagnostics = errors;
         return errors.Count == 0;
     }
@@ -479,7 +515,8 @@ public static class EidosBuildHost
         string programHash,
         IReadOnlyList<BuildFileCapability> files,
         IReadOnlyList<BuildEnvironmentCapability> environment,
-        IReadOnlyList<BuildToolCapability> tools)
+        IReadOnlyList<BuildToolCapability> tools,
+        IReadOnlyList<BuildNetworkCapability> network)
     {
         var payload = new
         {
@@ -497,7 +534,9 @@ public static class EidosBuildHost
                 variable.IsPresent,
                 valueHash = HashText(variable.Value)
             }),
-            tools = tools.Select(static tool => new { tool.Name, tool.FullPath, tool.Sha256 })
+            tools = tools.Select(static tool => new { tool.Name, tool.FullPath, tool.Sha256, tool.ExecutionPlatform }),
+            network = network.Select(static capability => capability.Url),
+            volatileCapabilities = options.Configuration.VolatileCapabilities.Order(StringComparer.Ordinal)
         };
         return HashText(JsonSerializer.Serialize(payload));
     }
@@ -531,8 +570,16 @@ public static class EidosBuildHost
         IReadOnlyList<ComptimeTraceEntry> comptimeTrace,
         IReadOnlyList<Diagnostic.Diagnostic> diagnostics,
         IReadOnlyList<string>? generatedSourceFiles = null,
-        IReadOnlyList<string>? generatedSourceRoots = null)
+        IReadOnlyList<string>? generatedSourceRoots = null,
+        IReadOnlyDictionary<string, string>? generatedSourceUris = null)
     {
+        var accessedNetworkFingerprints = context.Accesses
+            .Where(static access => access.Kind == "network")
+            .GroupBy(static access => access.Name, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.OrderByDescending(static access => access.Sequence).First().Fingerprint,
+                StringComparer.Ordinal);
         var dependencies = files.Select(static file => new EidosBuildDependency(
                 "file",
                 file.RelativePath,
@@ -546,8 +593,37 @@ public static class EidosBuildHost
             .Concat(tools.Select(static tool => new EidosBuildDependency(
                 "tool",
                 tool.Name,
-                tool.Sha256)))
+                HashText($"{tool.ExecutionPlatform}\0{tool.Sha256}"))))
+            .Concat(context.NetworkCapabilities.Select(capability => new EidosBuildDependency(
+                "network",
+                capability.Url,
+                accessedNetworkFingerprints.TryGetValue(capability.Url, out var fingerprint)
+                    ? fingerprint
+                    : HashText(capability.Url))))
+            .Concat(context.VolatileCapabilities.Select(static capability => new EidosBuildDependency(
+                "volatile",
+                capability,
+                HashText(capability))))
             .ToArray();
+        var provenance = execution?.Success == true && graph != null
+            ? EidosBuildProvenance.Create(
+                hostTriple,
+                options.TargetTriple,
+                options.TargetName,
+                programHash,
+                graph,
+                cacheFingerprint,
+                dependencies,
+                execution.Outputs)
+            : null;
+        var sbom = execution?.Success == true && graph != null
+            ? EidosBuildSbom.Create(
+                options.TargetName,
+                programHash,
+                graph,
+                dependencies,
+                execution.Outputs)
+            : null;
         return new EidosBuildHostResult(
             Success: execution?.Success == true && diagnostics.All(static diagnostic => diagnostic.Level != DiagnosticLevel.Error),
             ProgramPath: programPath,
@@ -558,6 +634,8 @@ public static class EidosBuildHost
             Graph: graph,
             Execution: execution,
             Dependencies: dependencies,
+            Provenance: provenance,
+            Sbom: sbom,
             CapabilityTrace: context.Accesses.Select(static access => new EidosBuildCapabilityTrace(
                 access.Sequence,
                 access.Kind,
@@ -566,6 +644,7 @@ public static class EidosBuildHost
             ComptimeTrace: comptimeTrace,
             GeneratedSourceFiles: generatedSourceFiles ?? [],
             GeneratedSourceRoots: generatedSourceRoots ?? [],
+            GeneratedSourceUris: generatedSourceUris ?? new Dictionary<string, string>(),
             Diagnostics: diagnostics);
     }
 
@@ -584,10 +663,13 @@ public static class EidosBuildHost
             Graph: null,
             Execution: null,
             Dependencies: [],
+            Provenance: null,
+            Sbom: null,
             CapabilityTrace: [],
             ComptimeTrace: [],
             GeneratedSourceFiles: [],
             GeneratedSourceRoots: [],
+            GeneratedSourceUris: new Dictionary<string, string>(),
             Diagnostics: diagnostics);
 
     private static bool IsPhysicallyContained(string projectDirectory, string path, out string reason)

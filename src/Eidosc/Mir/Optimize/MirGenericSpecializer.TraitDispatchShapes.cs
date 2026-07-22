@@ -8,9 +8,24 @@ public sealed partial class MirGenericSpecializer
 {
     private List<ImplSymbol> ResolveApplicableImplsForReceiverType(SymbolId ownerTrait, TypeId receiverTypeId)
     {
-        var requestedCanonicalShapes = EnumerateImplementingTypeCandidateShapes(ownerTrait, receiverTypeId)
-            .ToList();
         var lookupTypeId = ResolveImplLookupTypeId(receiverTypeId);
+        var requestedCanonicalShapes = EnumerateImplementingTypeCandidateShapes(ownerTrait, receiverTypeId).ToList();
+
+        return !lookupTypeId.IsValid || requestedCanonicalShapes.Count == 0
+            ? []
+            : ResolveApplicableImplsForReceiverCandidate(
+                ownerTrait,
+                receiverTypeId,
+                lookupTypeId,
+                requestedCanonicalShapes);
+    }
+
+    private List<ImplSymbol> ResolveApplicableImplsForReceiverCandidate(
+        SymbolId ownerTrait,
+        TypeId receiverTypeId,
+        TypeId lookupTypeId,
+        IReadOnlyList<ImplTypeShapeNode> requestedCanonicalShapes)
+    {
         var applicable = new Dictionary<SymbolId, ImplSymbol>();
         foreach (var impl in EnumerateTraitImpls(ownerTrait))
         {
@@ -78,7 +93,7 @@ public sealed partial class MirGenericSpecializer
 
     /// <summary>
     /// Falls back to finding impls for child traits that extend the requested parent trait
-    /// via supertrait chains. E.g., if requesting Eq and no @impl(Eq) exists, finds @impl(Ord)
+    /// via supertrait chains. E.g., if requesting Eq and no Eq instance exists, finds an Ord instance
     /// where Ord: Eq.
     /// </summary>
     private List<ImplSymbol> ResolveApplicableImplsViaSupertraitChain(

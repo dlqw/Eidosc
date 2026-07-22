@@ -71,7 +71,8 @@ public sealed partial class MirGenericSpecializer
                 continue;
             }
 
-            var receiverTypeId = ResolveOperandType(call.Arguments[parameterIndex], localTypes);
+            var receiverTypeId = ResolveTraitDispatchCarrierType(
+                ResolveOperandType(call.Arguments[parameterIndex], localTypes));
             if (IsConcreteTraitDispatchType(receiverTypeId))
             {
                 hasConcreteDispatchType = true;
@@ -84,7 +85,7 @@ public sealed partial class MirGenericSpecializer
                      call,
                      localTypes,
                      includeFirstArgument,
-                     includeTargetType))
+                     includeTargetType && !hasConcreteDispatchType))
         {
             if (IsConcreteTraitDispatchType(inferredDispatchTypeId))
             {
@@ -95,7 +96,7 @@ public sealed partial class MirGenericSpecializer
 
         // 2. 返回值/目标类型 — 适用于高阶 trait（如 Applicative[F], Functor[F]），
         //    其中实现类型构造器 F 只出现在返回类型 F[A] 中
-        if (includeTargetType && call.Target != null)
+        if (includeTargetType && !hasConcreteDispatchType && call.Target != null)
         {
             var targetTypeId = ResolvePlaceType(call.Target, localTypes);
             var targetCarrierTypeId = ResolveTraitDispatchCarrierType(targetTypeId);
@@ -110,6 +111,7 @@ public sealed partial class MirGenericSpecializer
         // 3. 当返回值类型包含开放变量时，尝试通过匹配函数类型参数推断返回类型，
         //    再从推断后的返回类型中提取具体的 trait dispatch 类型
         if (includeTargetType &&
+            !hasConcreteDispatchType &&
             !hasConcreteTargetCarrierType &&
             call.Target != null &&
             TryResolveFunctionRefType(functionRef, out var functionTypeId) &&
@@ -186,21 +188,34 @@ public sealed partial class MirGenericSpecializer
             functionRef,
             call,
             localTypes);
-        if (allCandidateDispatchTypeIds.Count <= 1)
+        var resolvableCandidateDispatchTypeIds = allCandidateDispatchTypeIds
+            .Where(typeId =>
+                TryResolveTraitDispatchTarget(functionRef, typeId, out _, out _) ||
+                TryResolveTraitInvokeHelperDispatchTarget(
+                    containingFunction,
+                    functionRef,
+                    typeId,
+                    out _,
+                    out _))
+            .ToList();
+        var candidateDispatchTypeIds = resolvableCandidateDispatchTypeIds.Count > 0
+            ? resolvableCandidateDispatchTypeIds
+            : allCandidateDispatchTypeIds;
+        if (candidateDispatchTypeIds.Count <= 1)
         {
-            return allCandidateDispatchTypeIds;
+            return candidateDispatchTypeIds;
         }
 
         List<TypeId>? filtered = null;
-        for (var i = 0; i < allCandidateDispatchTypeIds.Count; i++)
+        for (var i = 0; i < candidateDispatchTypeIds.Count; i++)
         {
-            var typeId = allCandidateDispatchTypeIds[i];
-            if (!IsMostSpecificTraitDispatchType(typeId, allCandidateDispatchTypeIds))
+            var typeId = candidateDispatchTypeIds[i];
+            if (!IsMostSpecificTraitDispatchType(typeId, candidateDispatchTypeIds))
             {
                 continue;
             }
 
-            filtered ??= new List<TypeId>(allCandidateDispatchTypeIds.Count);
+            filtered ??= new List<TypeId>(candidateDispatchTypeIds.Count);
             filtered.Add(typeId);
         }
 
@@ -218,7 +233,17 @@ public sealed partial class MirGenericSpecializer
             resultType.IsValid &&
             resultType != typeId)
         {
-            return resultType;
+            return ResolveTraitDispatchCarrierType(resultType);
+        }
+
+        if (TryGetTypeDescriptor(typeId, out var descriptor))
+        {
+            return descriptor switch
+            {
+                TypeDescriptor.Ref reference => reference.Inner,
+                TypeDescriptor.MutRef reference => reference.Inner,
+                _ => typeId
+            };
         }
 
         return typeId;
@@ -763,12 +788,6 @@ public sealed partial class MirGenericSpecializer
             return true;
         }
 
-        if (TryGetTraitSelfParameterIndices(functionRef, out var selfParameterIndices) &&
-            selfParameterIndices.Count > 0)
-        {
-            return false;
-        }
-
         if (TryGetTraitSelfPosition(functionRef, out var selfPosition))
         {
             return selfPosition switch
@@ -781,7 +800,7 @@ public sealed partial class MirGenericSpecializer
             };
         }
 
-        return false;
+        return functionRef.TraitSelfInResult;
     }
 
     private bool ShouldUseParameterPositionForTraitDispatch(MirFunctionRef functionRef, int parameterIndex)
@@ -1311,7 +1330,7 @@ public sealed partial class MirGenericSpecializer
 
         // Supertrait chain fallback: if no direct impl found, try child traits
         // whose supertrait chain includes ownerTrait.
-        // E.g., looking up Eq for a type that has @impl(Ord) where Ord: Eq.
+        // E.g., looking up Eq for a type that has an Ord instance where Ord: Eq.
         if (applicableImpls.Count == 0)
         {
             applicableImpls = ResolveApplicableImplsViaSupertraitChain(ownerTrait, receiverTypeId);

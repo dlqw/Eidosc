@@ -1,0 +1,312 @@
+Json :: module {
+    import Seq
+    import Option
+
+
+
+    string_length :: String -> Int compiler(internal, intrinsic: "string_length");
+
+    string_length_ref :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
+
+
+
+
+    string_char_at :: String -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+
+    string_char_at_ref :: Ref[String] -> Int -> Int compiler(internal, intrinsic: "string_char_at");
+
+
+
+
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
+
+
+
+
+    int_to_string :: Int -> String compiler(internal, intrinsic: "int_to_string");
+
+
+
+    hex_digit :: Int -> String
+     compiler(internal)
+{
+        0 => "0",
+        1 => "1",
+        2 => "2",
+        3 => "3",
+        4 => "4",
+        5 => "5",
+        6 => "6",
+        7 => "7",
+        8 => "8",
+        9 => "9",
+        10 => "A",
+        11 => "B",
+        12 => "C",
+        13 => "D",
+        14 => "E",
+        _ => "F"
+    }
+
+
+    escape_control_byte :: Int -> String
+     compiler(internal)
+{
+        value => "\\u00" ++ Json.hex_digit(value / 16) ++ Json.hex_digit(value % 16)
+    }
+
+
+    escape_byte :: Int -> String
+     compiler(internal)
+{
+        value when value == 34 => "\\\"",
+        value when value == 92 => "\\\\",
+        value when value == 10 => "\\n",
+        value when value == 13 => "\\r",
+        value when value == 9 => "\\t",
+        value when value < 32 => Json.escape_control_byte(value),
+        value => string_from_char(value)
+    }
+
+
+    escape_loop :: Ref[String] -> Int -> String
+     compiler(internal)
+{
+        src => index =>
+            if index >= string_length_ref(src) then { "" }
+            else { Json.escape_byte(string_char_at_ref(src)(index)) ++ Json.escape_loop(src)(index + 1) }
+    }
+
+    escape_string :: String -> String
+    {
+        src => Json.escape_loop(ref src)(0)
+    }
+
+    string :: String -> String
+    {
+        src => "\"" ++ Json.escape_string(src) ++ "\""
+    }
+
+    raw :: String -> String
+    {
+        value => value
+    }
+
+    bool :: Bool -> String
+    {
+        true => "true",
+        false => "false"
+    }
+
+    number_int :: Int -> String
+    {
+        value => int_to_string(value)
+    }
+
+    null :: Unit -> String
+    {
+        _ => "null"
+    }
+
+    string_or_null :: Option[String] -> String
+    {
+        Some(value) => Json.string(value),
+        None() => Json.null(())
+    }
+
+    bool_or_null :: Option[Bool] -> String
+    {
+        Some(value) => Json.bool(value),
+        None() => Json.null(())
+    }
+
+    number_int_or_null :: Option[Int] -> String
+    {
+        Some(value) => Json.number_int(value),
+        None() => Json.null(())
+    }
+
+
+    join_with :: Seq[String] -> String -> String
+     compiler(internal)
+{
+        [] => _ => "",
+        [head] => _ => head,
+        [head, ..tail] => sep => head ++ sep ++ Json.join_with(tail)(sep)
+    }
+
+    array :: Seq[String] -> String
+    {
+        items => "[" ++ Json.join_with(items)(", ") ++ "]"
+    }
+
+    array_compact :: Seq[String] -> String
+    {
+        items => "[" ++ Json.join_with(items)(",") ++ "]"
+    }
+
+    field :: String -> String -> String
+    {
+        key => value => Json.string(key) ++ ": " ++ value
+    }
+
+    field_compact :: String -> String -> String
+    {
+        key => value => Json.string(key) ++ ":" ++ value
+    }
+
+    string_field :: String -> String -> String
+    {
+        key => value => Json.field(key)(Json.string(value))
+    }
+
+    string_field_compact :: String -> String -> String
+    {
+        key => value => Json.field_compact(key)(Json.string(value))
+    }
+
+    bool_field :: String -> Bool -> String
+    {
+        key => value => Json.field(key)(Json.bool(value))
+    }
+
+    bool_field_compact :: String -> Bool -> String
+    {
+        key => value => Json.field_compact(key)(Json.bool(value))
+    }
+
+    number_int_field :: String -> Int -> String
+    {
+        key => value => Json.field(key)(Json.number_int(value))
+    }
+
+    number_int_field_compact :: String -> Int -> String
+    {
+        key => value => Json.field_compact(key)(Json.number_int(value))
+    }
+
+    null_field :: String -> String
+    {
+        key => Json.field(key)(Json.null(()))
+    }
+
+    null_field_compact :: String -> String
+    {
+        key => Json.field_compact(key)(Json.null(()))
+    }
+
+    field_or_null :: String -> Option[String] -> String
+    {
+        key => value => match value
+        {
+            Some(rendered) => Json.field(key)(rendered),
+            None() => Json.null_field(key)
+        }
+    }
+
+    field_or_null_compact :: String -> Option[String] -> String
+    {
+        key => value => match value
+        {
+            Some(rendered) => Json.field_compact(key)(rendered),
+            None() => Json.null_field_compact(key)
+        }
+    }
+
+    object :: Seq[String] -> String
+    {
+        fields => "{" ++ Json.join_with(fields)(", ") ++ "}"
+    }
+
+    object_compact :: Seq[String] -> String
+    {
+        fields => "{" ++ Json.join_with(fields)(",") ++ "}"
+    }
+
+    fields_from_options :: Seq[Option[String]] -> Seq[String]
+    {
+        [] => [],
+        [Some(field), ..tail] => Seq.append([field])(Json.fields_from_options(tail)),
+        [None(), ..tail] => Json.fields_from_options(tail)
+    }
+
+    object_from_options :: Seq[Option[String]] -> String
+    {
+        fields => Json.object(Json.fields_from_options(fields))
+    }
+
+    object_from_options_compact :: Seq[Option[String]] -> String
+    {
+        fields => Json.object_compact(Json.fields_from_options(fields))
+    }
+
+    fields_from_pairs :: Seq[(String, String)] -> Seq[String]
+    {
+        [] => [],
+        [(key, value), ..tail] => Seq.append([Json.field(key)(value)])(Json.fields_from_pairs(tail))
+    }
+
+    fields_from_pairs_compact :: Seq[(String, String)] -> Seq[String]
+    {
+        [] => [],
+        [(key, value), ..tail] => Seq.append([Json.field_compact(key)(value)])(Json.fields_from_pairs_compact(tail))
+    }
+
+    object_from_pairs :: Seq[(String, String)] -> String
+    {
+        fields => Json.object(Json.fields_from_pairs(fields))
+    }
+
+    object_from_pairs_compact :: Seq[(String, String)] -> String
+    {
+        fields => Json.object_compact(Json.fields_from_pairs_compact(fields))
+    }
+
+    string_values :: Seq[String] -> Seq[String]
+    {
+        [] => [],
+        [head, ..tail] => Seq.append([Json.string(head)])(Json.string_values(tail))
+    }
+
+    array_strings :: Seq[String] -> String
+    {
+        values => Json.array(Json.string_values(values))
+    }
+
+    array_strings_compact :: Seq[String] -> String
+    {
+        values => Json.array_compact(Json.string_values(values))
+    }
+
+    number_int_values :: Seq[Int] -> Seq[String]
+    {
+        [] => [],
+        [head, ..tail] => Seq.append([Json.number_int(head)])(Json.number_int_values(tail))
+    }
+
+    array_ints :: Seq[Int] -> String
+    {
+        values => Json.array(Json.number_int_values(values))
+    }
+
+    array_ints_compact :: Seq[Int] -> String
+    {
+        values => Json.array_compact(Json.number_int_values(values))
+    }
+
+    bool_values :: Seq[Bool] -> Seq[String]
+    {
+        [] => [],
+        [head, ..tail] => Seq.append([Json.bool(head)])(Json.bool_values(tail))
+    }
+
+    array_bools :: Seq[Bool] -> String
+    {
+        values => Json.array(Json.bool_values(values))
+    }
+
+    array_bools_compact :: Seq[Bool] -> String
+    {
+        values => Json.array_compact(Json.bool_values(values))
+    }
+}

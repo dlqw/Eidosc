@@ -17,6 +17,7 @@ public sealed record CompilationLiveStatePayload(
     ModuleRegistryPayload ModuleRegistry,
     TypeSubstitutionPayload TypeSubstitution,
     AstInferredTypeMapPayload AstInferredTypes,
+    MetaQueryStatePayload MetaQueries,
     HirGraphPayload HirGraph,
     ModuleHirStatePayload HirState,
     MirGraphPayload MirGraph,
@@ -24,7 +25,7 @@ public sealed record CompilationLiveStatePayload(
     LiveStateRemapPlan RemapPlan,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "compilation-live-state-payload-v3";
+    public const string CurrentSchemaVersion = "compilation-live-state-payload-v10";
 
     public static CompilationLiveStatePayload Create(
         string sourceText,
@@ -48,6 +49,7 @@ public sealed record CompilationLiveStatePayload(
             ModuleRegistryPayload.Create(symbolTable?.Modules),
             TypeSubstitutionPayload.Create(typeInferer?.Substitution),
             AstInferredTypeMapPayload.Create(ast, typeInferer),
+            MetaQueryStatePayload.Create(symbolTable),
             HirGraphPayload.Create(hirModule),
             ModuleHirStatePayload.Create(
                 hirModule,
@@ -77,6 +79,7 @@ public sealed record CompilationLiveStatePayload(
         AddFailureIfDifferent(failures, "moduleRegistry.hash", ModuleRegistry.Hash, current.ModuleRegistry.Hash);
         AddFailureIfDifferent(failures, "typeSubstitution.hash", TypeSubstitution.Hash, current.TypeSubstitution.Hash);
         AddFailureIfDifferent(failures, "astInferredTypes.hash", AstInferredTypes.Hash, current.AstInferredTypes.Hash);
+        AddFailureIfDifferent(failures, "metaQueries.hash", MetaQueries.Hash, current.MetaQueries.Hash);
         AddFailureIfDifferent(failures, "hirGraph.hash", HirGraph.Hash, current.HirGraph.Hash);
         AddFailureIfDifferent(failures, "hirState.hash", HirState.Hash, current.HirState.Hash);
         AddFailureIfDifferent(failures, "mirGraph.hash", MirGraph.Hash, current.MirGraph.Hash);
@@ -193,7 +196,7 @@ public sealed record SymbolTablePayload(
     IReadOnlyDictionary<string, int> GlobalAbilities,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "symbol-table-payload-v2";
+    public const string CurrentSchemaVersion = "symbol-table-payload-v7";
 
     public static SymbolTablePayload Create(SymbolTable? symbolTable)
     {
@@ -273,6 +276,7 @@ public sealed record SymbolPayload(
     private static IReadOnlyDictionary<string, string> CreateFacts(Symbol symbol)
     {
         var facts = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        facts["definitionModule"] = symbol.DefinitionModuleId.Value.ToString();
 
         switch (symbol)
         {
@@ -315,6 +319,10 @@ public sealed record SymbolPayload(
                 facts["typeParams"] = JoinSymbolIds(adt.TypeParams);
                 facts["constructors"] = JoinSymbolIds(adt.Constructors);
                 facts["fields"] = JoinSymbolIds(adt.Fields);
+                facts["directCases"] = JoinSymbolIds(adt.DirectCases);
+                facts["parentAdt"] = adt.ParentAdt.Value.ToString();
+                facts["caseConstructor"] = adt.CaseConstructor.Value.ToString();
+                facts["canonicalParentSpecialization"] = adt.CanonicalParentSpecialization;
                 facts["aliasTarget"] = (adt.AliasTarget?.Value ?? Eidosc.TypeId.None.Value).ToString();
                 facts["isCStruct"] = adt.IsCStruct.ToString();
                 facts["cStructLayout"] = adt.CStructLayoutInfo?.ToString() ?? "";
@@ -335,8 +343,19 @@ public sealed record SymbolPayload(
                 facts["typeParams"] = JoinSymbolIds(trait.TypeParams);
                 facts["methods"] = JoinSymbolIds(trait.Methods);
                 facts["associatedTypes"] = JoinSymbolIds(trait.AssociatedTypes);
+                facts["associatedConsts"] = JoinSymbolIds(trait.AssociatedConsts);
                 facts["parentTraits"] = JoinSymbolIds(trait.ParentTraits);
                 facts["selfPosition"] = trait.SelfPosition.ToString();
+                break;
+            case AssociatedTypeSymbol associatedType:
+                facts["ownerTrait"] = associatedType.OwnerTrait.Value.ToString();
+                facts["ownerImpl"] = associatedType.OwnerImpl.Value.ToString();
+                facts["typeParams"] = JoinSymbolIds(associatedType.TypeParams);
+                break;
+            case AssociatedConstSymbol associatedConst:
+                facts["ownerTrait"] = associatedConst.OwnerTrait.Value.ToString();
+                facts["ownerImpl"] = associatedConst.OwnerImpl.Value.ToString();
+                facts["valueType"] = associatedConst.ValueType.Value.ToString();
                 break;
             case EffectSymbol:
                 break;
@@ -354,6 +373,8 @@ public sealed record SymbolPayload(
                 facts["implementingTypeDisplay"] = impl.ImplementingTypeDisplay;
                 facts["implementingTypeKey"] = impl.ImplementingTypeKey.ToString() ?? "";
                 facts["methods"] = JoinSymbolIds(impl.Methods);
+                facts["associatedTypes"] = JoinSymbolIds(impl.AssociatedTypes);
+                facts["associatedConsts"] = JoinSymbolIds(impl.AssociatedConsts);
                 facts["traitTypeArgs"] = string.Join(",", impl.TraitTypeArgs);
                 facts["traitTypeArgKeys"] = string.Join("|", impl.TraitTypeArgKeys.Select(static key => key.ToString()));
                 facts["canonicalTraitTypeArgs"] = string.Join(",", impl.CanonicalTraitTypeArgs);
@@ -401,29 +422,53 @@ public sealed record SymbolPayload(
 
 public sealed record GeneratedDeclarationOriginPayload(
     string StableIdentity,
+    string GenerationSlotIdentity,
     string GeneratorIdentity,
     string TargetIdentity,
     int GeneratorSymbolId,
     int TargetSymbolId,
-    int AttributeOccurrenceIndex,
+    int ClauseOccurrenceIndex,
+    string ClauseOccurrenceIdentity,
+    int ClauseArgumentSubIndex,
     int ExpansionOutputIndex,
     string CanonicalArgumentsHash,
     int MetaSchemaVersion,
-    SourceSpanPayload AttributeSpan,
+    SourceSpanPayload ClauseSpan,
     string VirtualDocumentPath)
 {
     public static GeneratedDeclarationOriginPayload Create(GeneratedDeclarationOrigin origin) => new(
         origin.StableIdentity,
+        origin.GenerationSlotIdentity,
         origin.GeneratorIdentity,
         origin.TargetIdentity,
         origin.GeneratorSymbolId.Value,
         origin.TargetSymbolId.Value,
-        origin.AttributeOccurrenceIndex,
+        origin.ClauseOccurrenceIndex,
+        origin.ClauseOccurrenceIdentity,
+        origin.ClauseArgumentSubIndex,
         origin.ExpansionOutputIndex,
         origin.CanonicalArgumentsHash,
         origin.MetaSchemaVersion,
-        SourceSpanPayload.Create(origin.AttributeSpan),
+        SourceSpanPayload.Create(origin.ClauseSpan),
         origin.VirtualDocumentPath);
+
+    public GeneratedDeclarationOrigin Restore() => new()
+    {
+        StableIdentity = StableIdentity,
+        GenerationSlotIdentity = GenerationSlotIdentity,
+        GeneratorIdentity = GeneratorIdentity,
+        TargetIdentity = TargetIdentity,
+        GeneratorSymbolId = new SymbolId(GeneratorSymbolId),
+        TargetSymbolId = new SymbolId(TargetSymbolId),
+        ClauseOccurrenceIndex = ClauseOccurrenceIndex,
+        ClauseOccurrenceIdentity = ClauseOccurrenceIdentity,
+        ClauseArgumentSubIndex = ClauseArgumentSubIndex,
+        ExpansionOutputIndex = ExpansionOutputIndex,
+        CanonicalArgumentsHash = CanonicalArgumentsHash,
+        MetaSchemaVersion = MetaSchemaVersion,
+        ClauseSpan = ClauseSpan.ToSourceSpan(),
+        VirtualDocumentPath = VirtualDocumentPath
+    };
 }
 
 public sealed record ScopePayload(
@@ -569,7 +614,7 @@ public sealed record TypeSubstitutionPayload(
     IReadOnlyList<ValueSubstitutionBindingPayload> ValueBindings,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "type-substitution-payload-v2";
+    public const string CurrentSchemaVersion = "type-substitution-payload-v3";
 
     public static TypeSubstitutionPayload Create(Substitution? substitution)
     {
@@ -781,6 +826,12 @@ public sealed record GenericValueArgumentPayload(
             remapper?.RemapValueVariable(ValueVariableIndex) ?? ValueVariableIndex);
 }
 
+public sealed record GenericEffectArgumentPayload(int ParameterIndex, TypeShapePayload Argument)
+{
+    public GenericEffectArgumentPayload RemapIds(LiveStateIdRemapper remapper) =>
+        this with { Argument = Argument.RemapIds(remapper) };
+}
+
 public sealed record TypeShapePayload(
     string Kind,
     int TypeId,
@@ -795,6 +846,7 @@ public sealed record TypeShapePayload(
     int? ConstructorVarIndex = null,
     IReadOnlyList<TypeShapePayload>? Arguments = null,
     IReadOnlyList<GenericValueArgumentPayload>? ValueArguments = null,
+    IReadOnlyList<GenericEffectArgumentPayload>? EffectArguments = null,
     IReadOnlyList<TypeShapePayload>? Parameters = null,
     TypeShapePayload? Result = null,
     TypeShapePayload? Inner = null,
@@ -859,6 +911,9 @@ public sealed record TypeShapePayload(
                 : null,
             Arguments = RemapList(Arguments, remapper),
             ValueArguments = ValueArguments?
+                .Select(value => value.RemapIds(remapper))
+                .ToArray(),
+            EffectArguments = EffectArguments?
                 .Select(value => value.RemapIds(remapper))
                 .ToArray(),
             Parameters = RemapList(Parameters, remapper),
@@ -937,7 +992,12 @@ public sealed record TypeShapePayload(
                 Name: constructor.Name,
                 ConstructorVarIndex: constructor.ConstructorVarIndex,
                 Arguments: constructor.Args.Select(argument => Create(argument, visited)).ToArray(),
-                ValueArguments: constructor.ValueArgs.Select(GenericValueArgumentPayload.Create).ToArray()),
+                ValueArguments: constructor.ValueArgs.Select(GenericValueArgumentPayload.Create).ToArray(),
+                EffectArguments: constructor.EffectArgs
+                    .Select(argument => new GenericEffectArgumentPayload(
+                        argument.ParameterIndex,
+                        Create(argument.Argument, visited)))
+                    .ToArray()),
 
             TyReflProof proof => new TypeShapePayload(
                 nameof(TyReflProof),
@@ -1095,6 +1155,19 @@ public sealed record TypeShapePayload(
                     return false;
                 }
 
+                var effectArguments = new List<GenericEffectArgument>();
+                foreach (var effectArgument in payload.EffectArguments ?? [])
+                {
+                    if (!effectArgument.Argument.TryRestoreType(out var restoredArgument))
+                    {
+                        return false;
+                    }
+
+                    effectArguments.Add(new GenericEffectArgument(
+                        effectArgument.ParameterIndex,
+                        restoredArgument));
+                }
+
                 type = new TyCon
                 {
                     Id = new TypeId(payload.TypeId),
@@ -1104,7 +1177,8 @@ public sealed record TypeShapePayload(
                     Args = arguments,
                     ValueArgs = (payload.ValueArguments ?? [])
                         .Select(static value => value.Restore(remapper: null))
-                        .ToList()
+                        .ToList(),
+                    EffectArgs = effectArguments
                 };
                 return true;
 
@@ -1325,7 +1399,7 @@ public sealed record AstInferredTypeMapPayload(
     IReadOnlyList<AstInferredTypeEntryPayload> Entries,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "ast-inferred-type-map-payload-v6";
+    public const string CurrentSchemaVersion = "ast-inferred-type-map-payload-v7";
 
     public static AstInferredTypeMapPayload Create(
         ModuleDecl? ast,

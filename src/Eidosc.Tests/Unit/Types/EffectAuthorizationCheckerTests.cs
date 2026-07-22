@@ -64,11 +64,13 @@ helper :: Int -> Unit need Emitter
     public void CompilationPipeline_FfiCallInsideModuleInitializerWithoutCapability_ReportsE3003()
     {
         const string source = """
-@ffi("malloc") malloc :: Int -> RawPtr
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
+
 
 leaked :: malloc(8);
 
-main :: Unit -> RawPtr need FFI
+main :: Unit -> RawPtr need ffi
 {
     _ => malloc(8)
 }
@@ -85,16 +87,18 @@ main :: Unit -> RawPtr need FFI
         Assert.Contains(
             diagnostic.Notes,
             note => note.StartsWith("missing:", StringComparison.Ordinal) &&
-                    note.Contains("FFI", StringComparison.Ordinal));
+                    note.Contains("ffi", StringComparison.Ordinal));
     }
 
     [Fact]
     public void CompilationPipeline_FfiCallInsideEntryFunction_UsesRootCapability()
     {
         const string source = """
-@ffi("malloc") malloc :: Int -> RawPtr
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
-main :: Unit -> RawPtr need FFI
+
+main :: Unit -> RawPtr need ffi
 {
     _ => malloc(8)
 }
@@ -115,7 +119,8 @@ main :: Unit -> RawPtr need FFI
     public void CompilationPipeline_NameFirstFfiCallInsideEntryFunctionWithoutNeed_ReportsE3003()
     {
         const string source = """
-@ffi("malloc") malloc :: Int -> RawPtr;
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
 main :: Unit -> RawPtr
 {
@@ -137,16 +142,17 @@ main :: Unit -> RawPtr
         Assert.Contains(
             diagnostic.Notes,
             note => note.StartsWith("missing:", StringComparison.Ordinal) &&
-                    note.Contains("FFI", StringComparison.Ordinal));
+                    note.Contains("ffi", StringComparison.Ordinal));
     }
 
     [Fact]
     public void CompilationPipeline_NameFirstFfiCallInsideEntryFunctionWithNeed_Succeeds()
     {
         const string source = """
-@ffi("malloc") malloc :: Int -> RawPtr;
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
-main :: Unit -> RawPtr need FFI
+main :: Unit -> RawPtr need ffi
 {
     _ => malloc(8)
 }
@@ -170,19 +176,20 @@ main :: Unit -> RawPtr need FFI
     public void CompilationPipeline_NameFirstFfiHelperResultsCanFlowThroughBinaryWhenCallerHasNeed()
     {
         const string source = """
-@ffi("malloc") malloc :: Int -> RawPtr;
+ @[extern(c, name: "malloc")]
+ malloc :: Int -> RawPtr need ffi
 
-left :: Unit -> Int need FFI
+left :: Unit -> Int need ffi
 {
     _ => { p := malloc(8); 1 }
 }
 
-right :: Unit -> Int need FFI
+right :: Unit -> Int need ffi
 {
     _ => { p := malloc(8); 2 }
 }
 
-main :: Unit -> Int need FFI
+main :: Unit -> Int need ffi
 {
     _ => left(()) + right(())
 }
@@ -216,7 +223,7 @@ start :: Ref[Range] -> Unit need RangeOps
 
 Range :: type
 {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 read :: Ref[Range] -> Int
@@ -564,7 +571,7 @@ main :: Unit -> Int need Io.Writer
             importRoots = ["shared_modules"]
 
             [language]
-            version = "0.6.0-alpha.1"
+            version = "0.7.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);
@@ -637,7 +644,7 @@ main :: Unit -> Int need Io.Writer
             sourceRoots = ["src"]
 
             [language]
-            version = "0.6.0-alpha.1"
+            version = "0.7.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);

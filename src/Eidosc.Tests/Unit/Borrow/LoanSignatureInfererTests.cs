@@ -14,7 +14,7 @@ namespace Eidosc.Tests.Unit.Borrow;
 public class LoanSignatureInfererTests
 {
     [Fact]
-    public void Infer_CallPropagatesLifetimeConstraintsBetweenParams()
+    public void Infer_CallBorrowConstraints_DoNotRewriteOwnedSignature()
     {
         var stringType = new TypeId(BaseTypes.StringId);
         var calleeSymbol = new SymbolId(400);
@@ -103,16 +103,19 @@ public class LoanSignatureInfererTests
         var param0 = Assert.Single(signature.ParamRequirements, r => r.ParamIndex == 0);
         var param1 = Assert.Single(signature.ParamRequirements, r => r.ParamIndex == 1);
 
-        Assert.Equal(ParamBorrowMode.BorrowShared, param0.Mode);
-        Assert.Equal(ParamBorrowMode.BorrowShared, param1.Mode);
+        Assert.Equal(ParamBorrowMode.Own, param0.Mode);
+        Assert.Equal(ParamBorrowMode.Own, param1.Mode);
+        Assert.All(
+            signature.OwnershipContract.Parameters,
+            static parameter => Assert.Equal(OwnershipPassingKind.ByValue, parameter.Projection.Kind));
 
-        Assert.Contains(
+        Assert.DoesNotContain(
             signature.LifetimeConstraints,
             c => c.Sub.Equals(param0.Lifetime) && c.Sup.Equals(param1.Lifetime));
     }
 
     [Fact]
-    public void Infer_UserTypeWithCopyImpl_ParamModeIsCopy()
+    public void Infer_UserTypeWithCopyImpl_ParamModeRemainsOwnedByValue()
     {
         var symbolTable = new SymbolTable();
         var copyTraitId = symbolTable.DeclareTrait("Copy", SourceSpan.Empty);
@@ -152,7 +155,10 @@ public class LoanSignatureInfererTests
         var signature = inferer.Infer(force: true);
         var requirement = Assert.Single(signature.ParamRequirements);
 
-        Assert.Equal(ParamBorrowMode.Copy, requirement.Mode);
+        Assert.Equal(ParamBorrowMode.Own, requirement.Mode);
+        Assert.Equal(
+            OwnershipPassingKind.ByValue,
+            signature.OwnershipContract.GetParameter(0).Projection.Kind);
     }
 
     [Fact]
@@ -193,6 +199,9 @@ public class LoanSignatureInfererTests
         var requirement = Assert.Single(signature.ParamRequirements);
 
         Assert.Equal(ParamBorrowMode.Own, requirement.Mode);
+        Assert.Equal(
+            OwnershipPassingKind.ByValue,
+            signature.OwnershipContract.GetParameter(0).Projection.Kind);
     }
 
     [Fact]
@@ -229,15 +238,21 @@ public class LoanSignatureInfererTests
             ]
         };
 
-        var inferer = new LoanSignatureInferer(func, new LoanSignatureCache(), new SymbolTable(), dynamicTypeKeys);
+        var inferer = new LoanSignatureInferer(
+            func,
+            new LoanSignatureCache(),
+            new SymbolTable(),
+            dynamicTypeKeys,
+            typeDescriptors: ParseTypeDescriptors(dynamicTypeKeys));
         var signature = inferer.Infer(force: true);
         var requirement = Assert.Single(signature.ParamRequirements);
 
         Assert.Equal(ParamBorrowMode.BorrowShared, requirement.Mode);
         Assert.True(requirement.Lifetime.IsValid);
-        Assert.Contains(
-            "type-key-name-heuristic:Ref/MRef",
-            signature.ReturnConstraint.InternalNotes);
+        Assert.Equal(
+            OwnershipPassingKind.SharedBorrow,
+            signature.OwnershipContract.GetParameter(0).Projection.Kind);
+        Assert.Empty(signature.ReturnConstraint.InternalNotes);
     }
 
     [Fact]
@@ -274,15 +289,21 @@ public class LoanSignatureInfererTests
             ]
         };
 
-        var inferer = new LoanSignatureInferer(func, new LoanSignatureCache(), new SymbolTable(), dynamicTypeKeys);
+        var inferer = new LoanSignatureInferer(
+            func,
+            new LoanSignatureCache(),
+            new SymbolTable(),
+            dynamicTypeKeys,
+            typeDescriptors: ParseTypeDescriptors(dynamicTypeKeys));
         var signature = inferer.Infer(force: true);
         var requirement = Assert.Single(signature.ParamRequirements);
 
         Assert.Equal(ParamBorrowMode.BorrowMutable, requirement.Mode);
         Assert.True(requirement.Lifetime.IsValid);
-        Assert.Contains(
-            "type-key-name-heuristic:Ref/MRef",
-            signature.ReturnConstraint.InternalNotes);
+        Assert.Equal(
+            OwnershipPassingKind.MutableBorrow,
+            signature.OwnershipContract.GetParameter(0).Projection.Kind);
+        Assert.Empty(signature.ReturnConstraint.InternalNotes);
     }
 
     [Fact]
@@ -376,7 +397,7 @@ public class LoanSignatureInfererTests
     }
 
     [Fact]
-    public void Infer_ReturnBorrowLoadFromParam_BindsToSourceParam()
+    public void Infer_ReturnValueLoadFromParam_DoesNotInventBorrowContract()
     {
         var stringType = new TypeId(BaseTypes.StringId);
         var param = new LocalId { Value = 1 };
@@ -416,8 +437,8 @@ public class LoanSignatureInfererTests
         var inferer = new LoanSignatureInferer(func, new LoanSignatureCache(), new SymbolTable());
         var signature = inferer.Infer(force: true);
 
-        Assert.True(signature.ReturnConstraint.IsBorrow);
-        Assert.Equal([0], signature.ReturnConstraint.BoundToParams);
+        Assert.False(signature.ReturnConstraint.IsBorrow);
+        Assert.Empty(signature.ReturnConstraint.BoundToParams);
         Assert.Equal(LoanInferenceConfidence.High, signature.ReturnConstraint.Confidence);
     }
 
@@ -459,10 +480,8 @@ public class LoanSignatureInfererTests
 
         Assert.True(signature.ReturnConstraint.IsBorrow);
         Assert.Equal([0], signature.ReturnConstraint.BoundToParams);
-        Assert.Equal(LoanInferenceConfidence.Low, signature.ReturnConstraint.Confidence);
-        Assert.Contains(
-            "type-key-name-heuristic:Ref/MRef",
-            signature.ReturnConstraint.InternalNotes);
+        Assert.Equal(LoanInferenceConfidence.High, signature.ReturnConstraint.Confidence);
+        Assert.Empty(signature.ReturnConstraint.InternalNotes);
         Assert.Empty(inferer.Diagnostics);
     }
 
@@ -688,7 +707,7 @@ public class LoanSignatureInfererTests
         var signature = inferer.Infer(force: true);
         var diagnostic = Assert.Single(inferer.Diagnostics);
 
-        Assert.False(signature.ReturnConstraint.IsBorrow);
+        Assert.True(signature.ReturnConstraint.IsBorrow);
         Assert.Equal(BorrowErrorKind.BorrowedWhileReturned, diagnostic.Kind);
         Assert.Contains("返回借用必须直接来自输入参数", diagnostic.Message);
     }
@@ -742,8 +761,21 @@ public class LoanSignatureInfererTests
         var signature = inferer.Infer(force: true);
         var diagnostic = Assert.Single(inferer.Diagnostics);
 
-        Assert.False(signature.ReturnConstraint.IsBorrow);
+        Assert.True(signature.ReturnConstraint.IsBorrow);
         Assert.Equal(BorrowErrorKind.BorrowedWhileReturned, diagnostic.Kind);
         Assert.Contains("返回借用必须直接来自输入参数", diagnostic.Message);
+    }
+
+    private static IReadOnlyDictionary<int, TypeDescriptor> ParseTypeDescriptors(
+        IReadOnlyDictionary<int, string> dynamicTypeKeys)
+    {
+        var descriptors = new Dictionary<int, TypeDescriptor>();
+        foreach (var (typeId, typeKey) in dynamicTypeKeys)
+        {
+            Assert.True(TypeKeyParsing.TryParseTypeDescriptor(typeKey, out var descriptor));
+            descriptors[typeId] = descriptor;
+        }
+
+        return descriptors;
     }
 }

@@ -806,7 +806,7 @@ public sealed partial class MirToLlvmConverter
             (_funcCache.FunctionLlvmNameBySourceName.ContainsKey(funcRef.Name) ||
              _funcCache.AmbiguousFunctionSourceNames.Contains(funcRef.Name) ||
              _funcCache.FunctionTypeBySourceAndSignature.ContainsKey(funcRef.Name));
-        if (IsPermittedUnresolvedFunctionName(funcRef.Name) ||
+        if (IsPermittedUnresolvedFunction(funcRef) ||
             (!_funcCache.FunctionTypeByName.ContainsKey(defaultName) && !collidesWithInternalSourceName))
         {
             return defaultName;

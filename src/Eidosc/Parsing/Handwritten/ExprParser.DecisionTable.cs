@@ -12,7 +12,17 @@ public sealed partial class ExprParser
         var startToken = ctx.Current;
         ctx.Expect(WellKnownStrings.Keywords.Decide);
 
-        var fallback = ParseExpr();
+        EidosAstNode fallback;
+        var previousRecordConstructorMode = _allowRecordConstructor;
+        _allowRecordConstructor = false;
+        try
+        {
+            fallback = ParseExpr();
+        }
+        finally
+        {
+            _allowRecordConstructor = previousRecordConstructorMode;
+        }
         ctx.Expect("{");
 
         var rows = new List<DecisionRow>();
@@ -267,8 +277,49 @@ public sealed partial class ExprParser
             IndexExpr index => CloneIndexExpr(index, replaceIdentifier),
             RecordUpdateExpr update => CloneRecordUpdateExpr(update, replaceIdentifier),
             BlockExpr block => CloneBlockExpr(block, replaceIdentifier),
+            QuoteExpr quote => CloneQuoteExpr(quote, replaceIdentifier),
             _ => expr
         };
+    }
+
+    private static QuoteExpr CloneQuoteExpr(
+        QuoteExpr quote,
+        Func<IdentifierExpr, EidosAstNode?>? replaceIdentifier)
+    {
+        var clone = new QuoteExpr();
+        clone.SetSpan(quote.Span);
+        clone.SetKind(quote.Kind);
+        clone.SetTrailingTrivia(quote.TrailingTrivia);
+        clone.GrammarValidated = quote.GrammarValidated;
+        clone.SetParts(quote.Parts.Select(part => part switch
+        {
+            QuoteTokenPart token => CloneQuoteTokenPart(token),
+            QuoteSplicePart { Value: { } value } splice => CloneQuoteSplicePart(
+                splice,
+                CloneExpression(value, replaceIdentifier)),
+            _ => part
+        }).ToList());
+        return clone;
+    }
+
+    private static QuoteTokenPart CloneQuoteTokenPart(QuoteTokenPart token)
+    {
+        var clone = new QuoteTokenPart();
+        clone.Initialize(
+            token.TokenKind,
+            token.TerminalName,
+            token.TerminalFlags,
+            token.Spelling,
+            token.LeadingTrivia,
+            token.Span);
+        return clone;
+    }
+
+    private static QuoteSplicePart CloneQuoteSplicePart(QuoteSplicePart splice, EidosAstNode value)
+    {
+        var clone = new QuoteSplicePart();
+        clone.Initialize(splice.IsMany, value, splice.LeadingTrivia, splice.Span);
+        return clone;
     }
 
     private static LiteralExpr CloneLiteral(LiteralExpr literal)
@@ -357,6 +408,7 @@ public sealed partial class ExprParser
         var clone = new MethodCallExpr();
         clone.SetSpan(methodCall.Span);
         clone.SetMethodName(methodCall.MethodName);
+        clone.SetMemberNameSpan(methodCall.MemberNameSpan);
         if (methodCall.Receiver != null)
         {
             clone.SetReceiver(CloneExpression(methodCall.Receiver, replaceIdentifier));

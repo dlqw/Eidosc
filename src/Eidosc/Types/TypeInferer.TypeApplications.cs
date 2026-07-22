@@ -48,7 +48,10 @@ public sealed partial class TypeInferer
         try
         {
             instantiated = genericArguments.Count > 0
-                ? _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs)
+                ? InstantiateSchemeWithTypeArgsInDeclarationOrder(
+                    scheme,
+                    explicitTypeArgs,
+                    targetSymbolId)
                 : _substitution.InstantiateScheme(scheme);
         }
         catch (TypeInferenceException ex)
@@ -206,24 +209,33 @@ public sealed partial class TypeInferer
     private Type InstantiateSchemeWithExplicitTypeArgsAndConstraints(
         TypeScheme scheme,
         IReadOnlyList<TypeNode> explicitTypeArgNodes,
-        SourceSpan usageSpan)
+        SourceSpan usageSpan,
+        SymbolId targetSymbolId = default)
     {
         var explicitTypeArgs = explicitTypeArgNodes
             .Select(ConvertTypeInCurrentTypeParamContext)
             .ToList();
 
-        return InstantiateSchemeWithExplicitTypeArgsAndConstraints(scheme, explicitTypeArgs, usageSpan);
+        return InstantiateSchemeWithExplicitTypeArgsAndConstraints(
+            scheme,
+            explicitTypeArgs,
+            usageSpan,
+            targetSymbolId);
     }
 
     private Type InstantiateSchemeWithExplicitTypeArgsAndConstraints(
         TypeScheme scheme,
         IReadOnlyList<Type> explicitTypeArgs,
-        SourceSpan usageSpan)
+        SourceSpan usageSpan,
+        SymbolId targetSymbolId = default)
     {
         InstantiatedTypeScheme instantiated;
         try
         {
-            instantiated = _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
+            instantiated = InstantiateSchemeWithTypeArgsInDeclarationOrder(
+                scheme,
+                explicitTypeArgs,
+                targetSymbolId);
         }
         catch (TypeInferenceException ex)
         {
@@ -238,6 +250,51 @@ public sealed partial class TypeInferer
         }
 
         return instantiated.Type;
+    }
+
+    private InstantiatedTypeScheme InstantiateSchemeWithTypeArgsInDeclarationOrder(
+        TypeScheme scheme,
+        IReadOnlyList<Type> explicitTypeArgs,
+        SymbolId targetSymbolId)
+    {
+        if (!targetSymbolId.IsValid ||
+            !_functionTypeParametersBySymbol.TryGetValue(targetSymbolId, out var declaredParameters) ||
+            explicitTypeArgs.Count != scheme.ForAll.Count)
+        {
+            return _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
+        }
+
+        var quantifiedVariables = scheme.ForAll;
+        var declarationOrder = new List<int>(declaredParameters.Count);
+        foreach (var declaredParameter in declaredParameters)
+        {
+            var parameterVariables = _substitution
+                .Apply(declaredParameter)
+                .FreeTypeVariables()
+                .Where(quantifiedVariables.Contains)
+                .Distinct()
+                .ToArray();
+            if (parameterVariables.Length != 1 || declarationOrder.Contains(parameterVariables[0]))
+            {
+                continue;
+            }
+
+            declarationOrder.Add(parameterVariables[0]);
+        }
+
+        if (declarationOrder.Count != quantifiedVariables.Count)
+        {
+            return _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
+        }
+
+        var argumentByVariable = declarationOrder
+            .Select((variable, index) => (variable, argument: explicitTypeArgs[index]))
+            .ToDictionary(static item => item.variable, static item => item.argument);
+        var orderedArguments = quantifiedVariables
+            .OrderBy(static variable => variable)
+            .Select(variable => argumentByVariable[variable])
+            .ToArray();
+        return _substitution.InstantiateSchemeWithTypeArgs(scheme, orderedArguments);
     }
 
     private static TypeConstraint WithConstraintSpan(TypeConstraint constraint, SourceSpan span)
@@ -345,7 +402,9 @@ public sealed partial class TypeInferer
                 binding.PositionalArgTypes[i],
                 typeVarEnv,
                 kindEnvByName);
-            UnifyExpectedType(expectedType, positionalArgTypes[i]);
+            UnifyExpectedType(
+                expectedType,
+                NormalizeInferredConstructorArgument(expectedType, positionalArgTypes[i]));
         }
 
         foreach (var (fieldName, actualType) in namedArgTypes)
@@ -359,7 +418,21 @@ public sealed partial class TypeInferer
                 fieldType,
                 typeVarEnv,
                 kindEnvByName);
-            UnifyExpectedType(expectedFieldType, actualType);
+            UnifyExpectedType(
+                expectedFieldType,
+                NormalizeInferredConstructorArgument(expectedFieldType, actualType));
         }
+    }
+
+    private Type NormalizeInferredConstructorArgument(Type expected, Type actual)
+    {
+        if (_substitution.Apply(expected) is TyVar &&
+            _substitution.Apply(actual) is TyCon actualConstructor &&
+            TryPromoteClosedCaseToRoot(actualConstructor, out var promotedActual))
+        {
+            return promotedActual;
+        }
+
+        return actual;
     }
 }

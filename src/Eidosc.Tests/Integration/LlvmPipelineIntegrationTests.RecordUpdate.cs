@@ -15,29 +15,38 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Text
+import std.Text
 
 Direction :: type {
-    North ,
-    East
+    North :: type {} ,
+    East :: type {}
 }
 
 State :: type {
-    label: String,
-    dir: Direction,
-    food: String,
-    score: Int,
-    alive: Bool,
-    tick: Int
+    label:: String,
+    dir:: Direction,
+    food:: String,
+    score:: Int,
+    alive:: Bool,
+    tick:: Int
 }
 
 update_state :: State -> State
 {
-    state => {
-        state.{
-            dir: East(),
-            tick: 7
-        }
+    State{
+        label: label,
+        dir: _,
+        food: food,
+        score: score,
+        alive: alive,
+        tick: _
+    } => State{
+        label: label,
+        dir: East(),
+        food: food,
+        score: score,
+        alive: alive,
+        tick: 7
     }
 }
 
@@ -53,7 +62,9 @@ main :: Unit -> Int
             tick: 0
         };
         updated := update_state(state);
-        Text.len(updated.label) + Text.len(updated.food) + updated.score + updated.tick
+        Text.len(Text.clone(ref updated.label)) +
+            Text.len(Text.clone(ref updated.food)) +
+            updated.score + updated.tick
     }
 }
 """;

@@ -10,9 +10,10 @@ namespace Eidosc.Semantic;
 public sealed partial class NameResolver
 {
     private PatternCoverageContext CreatePatternCoverageContext(
-        IReadOnlyList<PatternUsefulnessBranchFact> branchFacts)
+        IReadOnlyList<PatternUsefulnessBranchFact> branchFacts,
+        SymbolId preferredAdt)
     {
-        var summary = PatternUsefulnessAnalyzer.Analyze(branchFacts, _symbolTable);
+        var summary = PatternUsefulnessAnalyzer.Analyze(branchFacts, _symbolTable, preferredAdt);
         var unresolvedGuardBranchIndices = branchFacts
             .Where(branch => IsUnresolvedGuardBranchForCoverageTarget(branch, summary.CoverageTarget))
             .Select(branch => branch.BranchIndex)
@@ -32,6 +33,7 @@ public sealed partial class NameResolver
             unresolvedGuardBranchIndices,
             unresolvedGuardBranchHints,
             summary.HasGuardedBranches || unresolvedGuardBranchIndices.Count > 0,
+            RequiresHiddenCaseWildcard(preferredAdt),
             branchFactsByIndex,
             [],
             []);
@@ -162,6 +164,19 @@ public sealed partial class NameResolver
             return;
         }
 
+        if (context.RequiresHiddenCaseWildcard)
+        {
+            AddPatternCoverageWarning(
+                ownerSpan,
+                DiagnosticMessages.NonExhaustivePatternMatchingAddWildcardBranch(ownerDescription),
+                context.HasGuardedBranchesForCoverage,
+                [new PatternWitness(PatternWitnessKind.Wildcard, "_", "wildcard:hidden-closed-case")],
+                context.UnresolvedGuardBranchIndices,
+                context.UnresolvedGuardBranchHints,
+                context.SuppressedCoveredWarnings);
+            return;
+        }
+
         AddPatternCoverageWarning(
             ownerSpan,
             GetNonExhaustivePatternCoverageMessage(ownerDescription, context.Summary),
@@ -170,6 +185,55 @@ public sealed partial class NameResolver
             context.UnresolvedGuardBranchIndices,
             context.UnresolvedGuardBranchHints,
             context.SuppressedCoveredWarnings);
+    }
+
+    private bool RequiresHiddenCaseWildcard(SymbolId preferredAdt)
+    {
+        if (!preferredAdt.IsValid ||
+            _symbolTable.GetSymbol<AdtSymbol>(preferredAdt) is not { } preferred ||
+            preferred.DirectCases.Count == 0)
+        {
+            return false;
+        }
+
+        var rootId = _symbolTable.GetClosedCaseRoot(preferredAdt);
+        var isInsideOwningModule = _symbolTable.Modules.GetOwningModuleIds(rootId).Contains(_currentModule);
+        if (isInsideOwningModule)
+        {
+            return false;
+        }
+
+        return HasHiddenLeaf(preferredAdt);
+
+        bool HasHiddenLeaf(SymbolId ownerId)
+        {
+            if (_symbolTable.GetSymbol<AdtSymbol>(ownerId) is not { } owner)
+            {
+                return false;
+            }
+
+            foreach (var caseId in owner.DirectCases)
+            {
+                if (_symbolTable.GetSymbol<AdtSymbol>(caseId) is not { } caseType)
+                {
+                    continue;
+                }
+
+                if (caseType.DirectCases.Count == 0)
+                {
+                    if (!caseType.IsPublic)
+                    {
+                        return true;
+                    }
+                }
+                else if (HasHiddenLeaf(caseId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     private static string GetNonExhaustivePatternCoverageMessage(

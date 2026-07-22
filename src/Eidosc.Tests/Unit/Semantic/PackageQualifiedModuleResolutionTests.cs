@@ -35,13 +35,13 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             File.WriteAllText(Path.Combine(aRoot, "Common", "Result.eidos"), """
                 Common.Result :: module {
-                    export Error :: type { AErr }
+                    export Error :: type { AErr :: type {} }
                 }
                 """);
 
             File.WriteAllText(Path.Combine(bRoot, "Common", "Result.eidos"), """
                 Common.Result :: module {
-                    export Error :: type { BErr }
+                    export Error :: type { BErr :: type {} }
                 }
                 """);
 
@@ -111,9 +111,9 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             File.WriteAllText(Path.Combine(packageRoot, "Feature.eidos"), """
                 Feature :: module {
-                    import Std.Seq
+                    import std.Seq
 
-                    export Marker :: type { Marker }
+                    export Marker :: type {}
                 }
                 """);
 
@@ -133,8 +133,8 @@ public sealed class PackageQualifiedModuleResolutionTests
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
             Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg.Feature"));
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
-            Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg.Std.Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.Seq"));
+            Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("pkg.std.Seq"));
         }
         finally
         {
@@ -245,13 +245,13 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             File.WriteAllText(Path.Combine(aRoot, "Common", "Box.eidos"), """
                 Common.Box :: module {
-                    export Box :: type { Same(Int) }
+                    export Box :: type { Same:: type(Int) }
                 }
                 """);
 
             File.WriteAllText(Path.Combine(bRoot, "Common", "Box.eidos"), """
                 Common.Box :: module {
-                    export Box :: type { Same(Int) }
+                    export Box :: type { Same:: type(Int) }
                 }
                 """);
 
@@ -301,7 +301,7 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(tempDir, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import Std.Seq
+                    import std.Seq
                 }
                 """);
 
@@ -316,7 +316,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.Seq"));
         }
         finally
         {
@@ -340,9 +340,9 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(srcDir, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import Std.Seq
+                    import std.Seq
 
-                    keep :: Std.Seq.Seq[Int] -> Std.Seq.Seq[Int] { xs => xs }
+                    keep :: std.Seq.Seq[Int] -> std.Seq.Seq[Int] { xs => xs }
                 }
                 """);
             File.WriteAllText(Path.Combine(projectDir, "eidos.toml"), """
@@ -366,7 +366,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.Seq"));
         }
         finally
         {
@@ -390,11 +390,11 @@ public sealed class PackageQualifiedModuleResolutionTests
             var entryFile = Path.Combine(srcDir, "Main.eidos");
             File.WriteAllText(entryFile, """
                 Main :: module {
-                    import Std.Ordering
+                    import std.Ordering
 
-                    keep :: Unit -> Std.Ordering.Ordering
+                    keep :: Unit -> std.Ordering.Ordering
                     {
-                        _ => Std.Ordering.Equal()
+                        _ => std.Ordering.Equal()
                     }
                 }
                 """);
@@ -456,7 +456,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
             Assert.True(result.Success, FormatDiagnostics(result));
             Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Seq"));
+            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.Seq"));
         }
         finally
         {
@@ -486,9 +486,9 @@ public sealed class PackageQualifiedModuleResolutionTests
                 }
                 """);
 
-            File.WriteAllText(Path.Combine(pkgRoot, "Seq.eidos"), """
+            File.WriteAllText(Path.Combine(pkgRoot, "seq.eidos"), """
                 Seq :: module {
-                    export Seq :: type { CustomSeq }
+                    export Seq :: type { CustomSeq :: type {} }
                 }
                 """);
 
@@ -508,7 +508,7 @@ public sealed class PackageQualifiedModuleResolutionTests
             Assert.False(result.Success);
             Assert.Contains(result.Diagnostics, diagnostic =>
                 diagnostic.Message.Contains("Ambiguous module path 'Seq'", StringComparison.Ordinal) &&
-                diagnostic.Message.Contains("Std.Seq", StringComparison.Ordinal) &&
+                diagnostic.Message.Contains("std.Seq", StringComparison.Ordinal) &&
                 diagnostic.Message.Contains("pkg.Seq", StringComparison.Ordinal));
         }
         finally
@@ -523,20 +523,20 @@ public sealed class PackageQualifiedModuleResolutionTests
     [Fact]
     public void CompilationPipeline_PrecompiledStdlibRootInput_UsesStdPackageIdentityForShortImports()
     {
-        var result = RunStdlibRootInput("Math.eidos", CompilationPhase.Namer);
+        var result = RunStdlibRootInput("math.eidos", CompilationPhase.Namer);
 
         Assert.True(result.Success, FormatDiagnostics(result));
         Assert.NotNull(result.SymbolTable);
-        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.Math"));
-        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("Std.FloatMath"));
-        Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("Math"));
-        Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("FloatMath"));
+        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.Math"));
+        Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.FloatMath"));
+        Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("math"));
+        Assert.False(result.SymbolTable.Modules.ModulePaths.ContainsKey("float_math"));
     }
 
     [Fact]
     public void CompilationPipeline_PrecompiledStdlibRootInput_TypesDoesNotUseImportedSignatureOnlyShortcut()
     {
-        var result = RunStdlibRootInput("GameMath.eidos", CompilationPhase.Types);
+        var result = RunStdlibRootInput("game_math.eidos", CompilationPhase.Types);
 
         Assert.True(result.Success, FormatDiagnostics(result));
         Assert.DoesNotContain("Namer.precompiledImportSignatureOnly.functions", result.ProfilingCounters.Keys);
@@ -552,7 +552,7 @@ public sealed class PackageQualifiedModuleResolutionTests
             Directory.CreateDirectory(tempDir);
             var entryFile = Path.Combine(tempDir, "Main.eidos");
             File.WriteAllText(entryFile, """
-                import Std.GameMath
+                import std.GameMath
 
                 main :: Unit -> Int
                 {
@@ -666,7 +666,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
     private static CompilationResult RunStdlibRootInput(string fileName, CompilationPhase phase)
     {
-        var stdlibFile = FindWorkspaceFile("src", "Eidosc", "Stdlib", "Precompiled", "Std", fileName);
+        var stdlibFile = FindWorkspaceFile("src", "Eidosc", "Stdlib", "Precompiled", "std", fileName);
         return new CompilationPipeline(File.ReadAllText(stdlibFile), new CompilationOptions
         {
             InputFile = stdlibFile,

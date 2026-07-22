@@ -15,6 +15,56 @@ namespace Eidosc.Tests.Unit.Semantic;
 public partial class TraitImplResolutionTests
 {
     [Fact]
+    public void CompilationPipeline_InstancePartialAlias_PreservesPlaceholderAndFixedVariableIdentities()
+    {
+        const string source = """
+Applicative[F: kind2] :: trait {
+    pure[A] :: A -> F[A]
+}
+
+Result[T, E] :: type { Ok:: type(T), Err:: type(E) }
+ResultWith[E, T] :: type = Result[T, E];
+
+ApplicativeResultWithE[E] :: instance Applicative[ResultWith[E]] {
+    pure[A, E] :: A -> ResultWith[E, A] {
+        value => Ok(value)
+    }
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "instance_partial_alias_variable_identity.eidos",
+            StopAtPhase = CompilationPhase.Namer,
+            LanguageVersion = EidosLanguageVersions.Current,
+            UseColors = false
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var traitId = symbolTable.LookupTrait("Applicative");
+        Assert.True(traitId.HasValue);
+        var impl = Assert.Single(symbolTable.GetImplsForTrait(traitId.Value));
+
+        var declaredAliasKey = Assert.Single(impl.TraitTypeArgKeys);
+        var fixedVariableKey = Assert.Single(declaredAliasKey.TypeArguments);
+        Assert.IsType<TypeParamSymbol>(symbolTable.GetSymbol(fixedVariableKey.SymbolId));
+        Assert.Equal($"var:{fixedVariableKey.SymbolId.Value}", fixedVariableKey.Text);
+
+        var canonicalResultKey = Assert.Single(impl.CanonicalTraitTypeArgKeys);
+        Assert.Equal(2, canonicalResultKey.TypeArguments.Length);
+        var placeholderKey = canonicalResultKey.TypeArguments[0];
+        var canonicalFixedVariableKey = canonicalResultKey.TypeArguments[1];
+        Assert.Equal("var:T", placeholderKey.Text);
+        Assert.False(placeholderKey.SymbolId.IsValid);
+        Assert.Equal(fixedVariableKey.SymbolId, canonicalFixedVariableKey.SymbolId);
+        Assert.NotEqual(placeholderKey, canonicalFixedVariableKey);
+    }
+
+    [Fact]
     public void NameResolver_ImplTypeRefKeyShape_PrefersStructuredIdentityOverText()
     {
         var resolver = new NameResolver(new SymbolTable());
@@ -36,7 +86,7 @@ public partial class TraitImplResolutionTests
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_RegistersTraitImplementation()
+    public void CompilationPipeline_FunctionLevelImplClause_IsRejected()
     {
         const string source = """
 Show :: trait {
@@ -44,11 +94,12 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Show)
+
 show :: Person -> String
+ impl Show
 {
     p => "person"
 }
@@ -61,21 +112,10 @@ show :: Person -> String
             UseColors = false
         }).Run();
 
-        Assert.True(result.Success);
-
-        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
-        var traitId = symbolTable.LookupType("Show");
-        var personId = symbolTable.LookupType("Person");
-        Assert.True(traitId.HasValue);
-        Assert.True(personId.HasValue);
-
-        var personSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(personId.Value));
-        var impl = symbolTable.LookupImplForTrait(personSymbol.TypeId, traitId.Value);
-
-        Assert.NotNull(impl);
-        var implementingShape = Assert.IsType<ImplConstructorShapeNode>(impl!.ImplementingTypeShape);
-        Assert.Equal("Person", implementingShape.Name);
-        Assert.Empty(impl.TraitTypeArgShapes);
+        Assert.False(result.Success);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("impl", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -89,7 +129,7 @@ Show :: trait
 
 Person :: type
 {
-    Person(String)
+    Person:: type(String)
 }
 
 ShowPerson :: instance Show
@@ -137,7 +177,7 @@ Show :: trait
 
 Buffer[comptime N: Int, comptime T: Type] :: type
 {
-    Buffer(T)
+    Buffer:: type(T)
 }
 
 ShowBufferN[comptime N: Int] :: instance Show
@@ -206,7 +246,7 @@ ShowBuffer5 :: instance Show
     {
         const string source = """
 Pos :: type {
-    Pos(Int, Int)
+    Pos:: type(Int, Int)
 }
 
 DirectionInfo :: trait
@@ -216,8 +256,8 @@ DirectionInfo :: trait
 
 Direction :: type
 {
-    North ,
-    South
+    North :: type {} ,
+    South :: type {}
 }
 
 DirectionInfoDirection :: instance DirectionInfo for Direction
@@ -266,13 +306,14 @@ Eq :: trait
 
 Box :: type
 {
-    Box(Int)
+    Box:: type(Int)
 }
 
-@impl(Eq)
-eq :: Box -> Box -> Bool
-{
-    _ => _ => true
+
+EqBox :: instance Eq {
+    eq :: Box -> Box -> Bool {
+        _ => _ => true
+    }
 }
 
 requires_eq[T: Eq] :: T -> T -> Bool
@@ -323,13 +364,14 @@ Eq :: trait
 
 Box :: type
 {
-    Box(Int)
+    Box:: type(Int)
 }
 
-@impl(Eq)
-eq :: Box -> Box -> Bool
-{
-    _ => _ => true
+
+EqBox :: instance Eq {
+    eq :: Box -> Box -> Bool {
+        _ => _ => true
+    }
 }
 """;
         var first = new CompilationPipeline(source, new CompilationOptions
@@ -368,21 +410,23 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 PersonAlias :: type = Person;
 
-@impl(Show)
-show :: Person -> String
-{
-    p => "person"
+
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
-@impl(Show)
-show :: PersonAlias -> String
-{
-    p => "alias"
+
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
         var first = new CompilationPipeline(source, new CompilationOptions
@@ -418,9 +462,9 @@ show :: PersonAlias -> String
         var diagnostic = Assert.Single(
             second.Diagnostics,
             item => item.Code == "E3004" &&
-                    item.Message.Contains("Ambiguous overlapping impl registration", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested impl head: @impl(Show) on PersonAlias", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing impl head: @impl(Show) on Person", StringComparison.Ordinal));
+                    item.Message.Contains("Ambiguous overlapping instance registration", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested instance head: instance Show for PersonAlias", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing instance head: instance Show for Person", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -432,49 +476,51 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 PersonAlias :: type = Person;
 
-@impl(Show)
-show :: Person -> String
-{
-    p => "person"
+
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
-@impl(Show)
-show :: PersonAlias -> String
-{
-    p => "alias"
+
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
 
         const string secondSource = """
-Unused :: type {
-    Unused
-}
+Unused :: type {}
 
 Show :: trait {
     show :: Self -> String
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 PersonAlias :: type = Person;
 
-@impl(Show)
-show :: Person -> String
-{
-    p => "person"
+
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
-@impl(Show)
-show :: PersonAlias -> String
-{
-    p => "alias"
+
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
 

@@ -1,0 +1,72 @@
+Traversable :: module {
+    import Applicative
+
+
+    identity[A] :: A -> A
+     compiler(internal)
+{
+        value => value
+    }
+
+
+    identity_applicative[A, G: kind2 : Applicative.Applicative[G]] :: G[A] -> G[A]
+     compiler(internal)
+{
+        value => value
+    }
+
+
+    lift_pure[A, G: kind2 : Applicative.Applicative[G]] :: A -> G[A]
+     compiler(internal)
+{
+        value => Applicative.lift(value)
+    }
+
+
+    map_applicative[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: (A -> B need E) -> G[A] -> G[B] need E
+     compiler(internal)
+{
+        f => lifted => Applicative.map(lifted)(f)
+    }
+
+
+    map2_applicative[A, B, C, G: kind2 : Applicative.Applicative[G], E: effects] :: (A -> B -> C need E) -> G[A] -> G[B] -> G[C] need E
+     compiler(internal)
+{
+        f => left => right => Applicative.apply(Applicative.map(left)(f))(right)
+    }
+
+    sequence[A, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G]] :: T[G[A]] -> G[T[A]]
+    {
+        values => Traversable.traverse(values)(identity_applicative)
+    }
+
+    for_each[A, B, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G], E: effects] :: (A -> G[B] need E) -> T[A] -> G[T[B]] need E
+    {
+        f => values => Traversable.traverse(values)(f)
+    }
+
+    sequence_map[A, B, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G], E: effects] :: T[G[A]] -> (T[A] -> B need E) -> G[B] need E
+    {
+        values => f => Applicative.map(Traversable.sequence(values))(f)
+    }
+
+    sequence_void[A, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G]] :: T[G[A]] -> G[Unit]
+    {
+        values => Applicative.map(Traversable.sequence(values))(_ => ())
+    }
+
+    traverse_map[A, B, C, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G], E1: effects, E2: effects] :: T[A] -> (A -> G[B] need E1) -> (T[B] -> C need E2) -> G[C] need E1, E2
+    {
+        values => f => mapper => Applicative.map(Traversable.traverse(values)(f))(mapper)
+    }
+
+    for_each_void[A, B, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G], E: effects] :: (A -> G[B] need E) -> T[A] -> G[Unit] need E
+    {
+        f => values => Applicative.map(Traversable.for_each(f)(values))(_ => ())
+    }
+
+    Traversable[T: kind2] :: trait {
+        traverse[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: T[A] -> (A -> G[B] need E) -> G[T[B]] need E
+    }
+}

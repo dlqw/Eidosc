@@ -1233,7 +1233,7 @@ public sealed class TypeInfererRecoveryTests
         Assert.True(declarationType.IsErrorRecovery);
         Assert.Contains(
             inferer.Diagnostics,
-            diagnostic => diagnostic.Message.Contains("ADT symbol is unavailable", StringComparison.Ordinal));
+            diagnostic => diagnostic.Message.Contains("Constructor pattern type mismatch", StringComparison.Ordinal));
     }
 
     private static ModuleDecl CreateModule(params Declaration[] declarations)

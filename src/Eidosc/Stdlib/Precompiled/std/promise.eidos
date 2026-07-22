@@ -1,0 +1,195 @@
+Promise :: module {
+    import Ffi
+    import Option
+    import Traits
+
+
+
+ptr_is_null :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_is_null");
+
+
+/// A write-once promise that can be awaited by multiple readers.
+@[derive(Copy)]
+Promise[A] :: type {promise:: RawPtr}
+
+/// Observable state of a runtime-backed Promise.
+@[derive(Copy)]
+Status :: type {
+    PromisePending :: type {} , PromiseFulfilled :: type {}
+}
+
+
+
+@[extern(c, name: "eidos_promise_new_raw_single")]
+new_runtime :: Unit -> RawPtr compiler(internal) need ffi;
+
+
+
+
+@[extern(c, name: "eidos_promise_new_single")]
+new_value_runtime :: Unit -> RawPtr compiler(internal) need ffi;
+
+
+
+
+@[extern(c, name: "eidos_promise_fulfill_raw")]
+fulfill_runtime :: RawPtr -> RawPtr -> Bool compiler(internal) need ffi;
+
+
+
+
+@[extern(c, name: "eidos_promise_try_get_raw")]
+try_get_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
+
+
+/// Create a runtime-backed RawPtr payload Promise.
+new[A] :: Unit -> Promise[A] need ffi
+{
+    _ => Promise{promise: Promise.new_runtime(())}
+}
+
+/// Create a runtime-backed promise that owns one boxed Eidos value.
+new_value[A] :: Unit -> Promise[A] need ffi
+{
+    _ => Promise{promise: Promise.new_value_runtime(())}
+}
+
+/// Fulfill the promise with a non-null raw pointer. Returns false after the first fulfillment.
+fulfill_raw[A] :: Promise[A] -> RawPtr -> Bool need ffi
+{
+    Promise{promise: promise} => value => Promise.fulfill_runtime(promise)(value)
+}
+
+/// Fulfill the promise only when the payload is non-null.
+fulfill_raw_if_non_null[A] :: Promise[A] -> RawPtr -> Bool need ffi
+{
+    promise => value => if ptr_is_null(value) then {
+        false
+    } else {
+        Promise.fulfill_raw(promise)(value)
+    }
+}
+
+/// Try to read a fulfilled raw pointer without suspending the caller.
+try_await_raw[A] :: Promise[A] -> Option[RawPtr] need ffi
+{
+    Promise{promise: promise} => {
+        value := Promise.try_get_runtime(promise);
+        if ptr_is_null(value) then { None() } else { Some(value) }
+    }
+}
+
+/// Fulfill the promise with an Eidos value by boxing it for the runtime.
+fulfill_value[A] :: Promise[A] -> A -> Bool need ffi
+{
+    Promise{promise: promise} => value => {
+        boxed := Ffi.box_value[A](value);
+        fulfilled := Promise.fulfill_runtime(promise)(boxed);
+        Ffi.free_boxed_value(boxed);
+        fulfilled
+    }
+}
+
+/// Try to read a fulfilled Eidos value without suspending the caller.
+try_await_value[A] :: Promise[A] -> Option[A] need ffi
+{
+    Promise{promise: promise} => {
+        boxed := Promise.try_get_runtime(promise);
+        if ptr_is_null(boxed) then {
+            None()
+        } else {
+            Some(Ffi.unbox_value[A](boxed))
+        }
+    }
+}
+
+/// Try to read a fulfilled raw pointer, returning the fallback while still pending.
+try_await_raw_or[A] :: Promise[A] -> RawPtr -> RawPtr need ffi
+{
+    promise => fallback => match Promise.try_await_raw(promise) { Some(value) => value, None() => fallback }
+}
+
+/// Try to read a fulfilled raw pointer, evaluating the fallback only while still pending.
+try_await_raw_or_else[A, E: effects] :: Promise[A] -> (Unit -> RawPtr need E) -> RawPtr need ffi, E
+{
+    promise => fallback => match Promise.try_await_raw(promise) { Some(value) => value, None() => fallback(()) }
+}
+
+/// Try to read a fulfilled Eidos value, returning the fallback while still pending.
+try_await_value_or[A] :: Promise[A] -> A -> A need ffi
+{
+    promise => fallback => match Promise.try_await_value(promise) { Some(value) => value, None() => fallback }
+}
+
+/// Try to read a fulfilled Eidos value, evaluating the fallback only while still pending.
+try_await_value_or_else[A, E: effects] :: Promise[A] -> (Unit -> A need E) -> A need ffi, E
+{
+    promise => fallback => match Promise.try_await_value(promise) { Some(value) => value, None() => fallback(()) }
+}
+
+/// Return true when the promise has already been fulfilled with a raw pointer.
+is_fulfilled[A] :: Promise[A] -> Bool need ffi
+{
+    promise => Option.is_some(Promise.try_await_raw(promise))
+}
+
+/// Return true while the promise has not yet been fulfilled.
+is_pending[A] :: Promise[A] -> Bool need ffi
+{
+    promise => Option.is_none(Promise.try_await_raw(promise))
+}
+
+/// Return a promise state snapshot.
+status[A] :: Promise[A] -> Status need ffi
+{
+    promise => if Promise.is_fulfilled(promise) then { PromiseFulfilled() } else { PromisePending() }
+}
+
+/// Return true when a promise status represents fulfillment.
+status_is_fulfilled :: Status -> Bool
+{
+    PromisePending() => false,
+    PromiseFulfilled() => true
+}
+
+/// Return true when a promise status represents a pending Promise.
+status_is_pending :: Status -> Bool
+{
+    status => !Promise.status_is_fulfilled(status)
+}
+
+/// Select a value from a promise status snapshot.
+status_value_or[A] :: Status -> A -> A -> A
+{
+    PromisePending() => pending_value => _ => pending_value,
+    PromiseFulfilled() => _ => fulfilled_value => fulfilled_value
+}
+
+/// Lazily select a value from a promise status snapshot.
+status_value_or_else[A, E1: effects, E2: effects] :: Status -> (Unit -> A need E1) -> (Unit -> A need E2) -> A need E1, E2
+{
+    PromisePending() => pending_value => _ => pending_value(()),
+    PromiseFulfilled() => _ => fulfilled_value => fulfilled_value(())
+}
+
+/// Fulfill the promise only when it is still pending.
+fulfill_raw_if_pending[A] :: Promise[A] -> RawPtr -> Bool need ffi
+{
+    promise => value => if Promise.is_pending(promise) then {
+        Promise.fulfill_raw(promise)(value)
+    } else {
+        false
+    }
+}
+
+/// Fulfill the promise with an Eidos value only when it is still pending.
+fulfill_value_if_pending[A] :: Promise[A] -> A -> Bool need ffi
+{
+    promise => value => if Promise.is_pending(promise) then {
+        Promise.fulfill_value(promise)(value)
+    } else {
+        false
+    }
+}
+
+}

@@ -209,6 +209,10 @@ public sealed class ParameterEffectAnalysis
                 MarkIfParameter(assign.Source, parameterIndices, effects, ParameterEffect.Consume);
                 break;
 
+            case MirCaseInject injection:
+                MarkIfParameter(injection.Operand, parameterIndices, effects, ParameterEffect.Consume);
+                break;
+
             default:
                 break;
         }

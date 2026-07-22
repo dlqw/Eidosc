@@ -17,7 +17,7 @@ public sealed record ModuleHirStatePayload(
     IReadOnlyList<string> UnsupportedNodeKinds,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-hir-state-payload-v6";
+    public const string CurrentSchemaVersion = "module-hir-state-payload-v10";
 
     public bool IsRestorable => Module != null &&
                                 AttachedState.HasValidHash() &&
@@ -115,6 +115,7 @@ public sealed record HirStateModulePayload(
             Span = Header.ToSourceSpan(),
             TypeId = new TypeId(Header.TypeId),
             SymbolId = new SymbolId(Header.SymbolId),
+            GeneratedOriginChain = Header.RestoreGeneratedOriginChain(),
             Name = Name,
             IsModuleLevel = Header.IsModuleLevel,
             PackageAlias = PackageAlias,
@@ -190,6 +191,9 @@ public sealed record HirStateDeclPayload(
     HirStateImplPayload? ImplMetadata,
     int TargetType)
 {
+    public MirStateOwnershipContractPayload OwnershipContract { get; init; } =
+        MirStateOwnershipContractPayload.Empty;
+
     public const string FuncKind = nameof(HirFunc);
     public const string ValKind = nameof(HirVal);
     public const string VarKind = nameof(HirVarDecl);
@@ -210,6 +214,7 @@ public sealed record HirStateDeclPayload(
                 TypeParams = func.TypeParams.Select(HirStateTypeParamPayload.Create).ToArray(),
                 Parameters = func.Parameters.Select(HirStateParamPayload.Create).ToArray(),
                 ReturnType = func.ReturnType.Value,
+                OwnershipContract = MirStateOwnershipContractPayload.Create(func.OwnershipContract),
                 Body = func.Body == null ? null : HirStateNodePayload.Create(func.Body, context),
                 RequiredAbilities = func.RequiredAbilities.Select(static id => id.Value).ToArray(),
                 IsComptime = func.IsComptime,
@@ -382,6 +387,7 @@ public sealed record HirStateDeclPayload(
             TypeParams = TypeParams.Select(static parameter => parameter.Restore()).ToList(),
             Parameters = Parameters.Select(static parameter => parameter.Restore()).ToList(),
             ReturnType = new TypeId(ReturnType),
+            OwnershipContract = OwnershipContract.Restore(),
             Body = body,
             RequiredAbilities = RequiredAbilities.Select(static id => new SymbolId(id)).ToList(),
             IsComptime = IsComptime,
@@ -402,6 +408,7 @@ public sealed record HirStateDeclPayload(
             Span = Header.ToSourceSpan(),
             TypeId = new TypeId(Header.TypeId),
             SymbolId = new SymbolId(Header.SymbolId),
+            GeneratedOriginChain = Header.RestoreGeneratedOriginChain(),
             Name = Name,
             IsModuleLevel = Header.IsModuleLevel
         };
@@ -511,9 +518,13 @@ public sealed record HirStateNodePayload(
     string FieldName,
     int FieldSymbolId,
     HirStateNodePayload? Index,
-    string TargetKind)
+    string TargetKind,
+    int SourceCaseSymbolId,
+    int TargetAncestorSymbolId,
+    int SourceTypeId)
 {
     public const string ErrorKind = nameof(HirError);
+    public const string CaseInjectKind = nameof(HirCaseInject);
     public const string LiteralKindName = nameof(HirLiteral);
     public const string VarKind = nameof(HirVar);
     public const string ConstGenericValueKind = nameof(HirConstGenericValue);
@@ -546,6 +557,13 @@ public sealed record HirStateNodePayload(
             {
                 Reason = error.Reason,
                 IsRecovered = error.IsRecovered
+            },
+            HirCaseInject injection => Empty(CaseInjectKind, injection) with
+            {
+                Operand = Create(injection.Operand, context),
+                SourceCaseSymbolId = injection.SourceCase.Value,
+                TargetAncestorSymbolId = injection.TargetAncestor.Value,
+                SourceTypeId = injection.SourceTypeId.Value
             },
             HirLiteral literal => Empty(LiteralKindName, literal) with
             {
@@ -672,6 +690,20 @@ public sealed record HirStateNodePayload(
         {
             case ErrorKind:
                 node = ApplyHeader(new HirError { Reason = Reason ?? "", IsRecovered = IsRecovered });
+                return true;
+            case CaseInjectKind:
+                if (Operand == null || !Operand.TryRestore(out var injectedOperand))
+                {
+                    return false;
+                }
+
+                node = ApplyHeader(new HirCaseInject
+                {
+                    Operand = injectedOperand,
+                    SourceCase = new SymbolId(SourceCaseSymbolId),
+                    TargetAncestor = new SymbolId(TargetAncestorSymbolId),
+                    SourceTypeId = new TypeId(SourceTypeId)
+                });
                 return true;
             case LiteralKindName:
                 if (!Enum.TryParse<LiteralKind>(LiteralKind, out var literalKind) ||
@@ -935,7 +967,8 @@ public sealed record HirStateNodePayload(
         {
             Span = Header.ToSourceSpan(),
             TypeId = new TypeId(Header.TypeId),
-            SymbolId = new SymbolId(Header.SymbolId)
+            SymbolId = new SymbolId(Header.SymbolId),
+            GeneratedOriginChain = Header.RestoreGeneratedOriginChain()
         };
 
     private static HirStateNodePayload Empty(string kind, HirNode node) =>
@@ -986,7 +1019,10 @@ public sealed record HirStateNodePayload(
             "",
             SymbolId.None.Value,
             null,
-            HirIndexAccessKind.Unknown.ToString());
+            HirIndexAccessKind.Unknown.ToString(),
+            SymbolId.None.Value,
+            SymbolId.None.Value,
+            TypeId.None.Value);
 
     private static HirStateNodePayload CreateUnsupported(HirNode node, HirStatePayloadCreateContext context)
     {
@@ -1279,7 +1315,8 @@ public sealed record HirStatePatternPayload(
         pattern with
         {
             Span = Header.ToSourceSpan(),
-            TypeId = new TypeId(Header.TypeId)
+            TypeId = new TypeId(Header.TypeId),
+            GeneratedOriginChain = Header.RestoreGeneratedOriginChain()
         };
 
     private bool TryRestoreBinaryPattern(
@@ -1460,24 +1497,38 @@ public sealed record HirStateNodeHeader(
     SourceSpanPayload Span,
     int TypeId,
     int SymbolId,
-    bool IsModuleLevel)
+    bool IsModuleLevel,
+    IReadOnlyList<GeneratedDeclarationOriginPayload> GeneratedOriginChain)
 {
     public static HirStateNodeHeader Create(HirNode node) =>
         new(
             SourceSpanPayload.Create(node.Span),
             node.TypeId.Value,
             node.SymbolId.Value,
-            node is HirDecl declaration && declaration.IsModuleLevel);
+            node is HirDecl declaration && declaration.IsModuleLevel,
+            node.GeneratedOriginChain.Select(GeneratedDeclarationOriginPayload.Create).ToArray());
 
     public SourceSpan ToSourceSpan() => Span.ToSourceSpan();
+
+    public IReadOnlyList<GeneratedDeclarationOrigin> RestoreGeneratedOriginChain() =>
+        GeneratedOriginChain.Select(static origin => origin.Restore()).ToArray();
 }
 
-public sealed record HirStatePatternHeader(SourceSpanPayload Span, int TypeId)
+public sealed record HirStatePatternHeader(
+    SourceSpanPayload Span,
+    int TypeId,
+    IReadOnlyList<GeneratedDeclarationOriginPayload> GeneratedOriginChain)
 {
     public static HirStatePatternHeader Create(HirPattern pattern) =>
-        new(SourceSpanPayload.Create(pattern.Span), pattern.TypeId.Value);
+        new(
+            SourceSpanPayload.Create(pattern.Span),
+            pattern.TypeId.Value,
+            pattern.GeneratedOriginChain.Select(GeneratedDeclarationOriginPayload.Create).ToArray());
 
     public SourceSpan ToSourceSpan() => Span.ToSourceSpan();
+
+    public IReadOnlyList<GeneratedDeclarationOrigin> RestoreGeneratedOriginChain() =>
+        GeneratedOriginChain.Select(static origin => origin.Restore()).ToArray();
 }
 
 public sealed record HirStateTypeParamPayload(

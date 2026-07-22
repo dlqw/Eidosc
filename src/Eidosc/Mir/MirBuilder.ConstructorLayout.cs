@@ -136,8 +136,15 @@ public sealed partial class MirBuilder
         if (!symbolId.IsValid || _symbolTable == null)
             return TypeId.None;
 
-        return _symbolTable.GetSymbol(symbolId)?.TypeId is { } typeId && typeId.IsValid
-            ? typeId
+        var symbol = _symbolTable.GetSymbol(symbolId);
+        if (symbol?.TypeId is { IsValid: true } typeId)
+        {
+            return typeId;
+        }
+
+        return symbol is Symbols.CtorSymbol { OwnerAdt.IsValid: true } constructor &&
+               _symbolTable.GetSymbol<Symbols.AdtSymbol>(constructor.OwnerAdt) is { TypeId.IsValid: true } owner
+            ? owner.TypeId
             : TypeId.None;
     }
 

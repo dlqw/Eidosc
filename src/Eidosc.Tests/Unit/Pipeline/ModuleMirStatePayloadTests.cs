@@ -56,6 +56,58 @@ public sealed class ModuleMirStatePayloadTests
     }
 
     [Fact]
+    public void Create_RestoresStructuredOwnershipContract()
+    {
+        var valueType = new TypeId(BaseTypes.StringId);
+        var sharedType = new TypeId(9001);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [valueType.Value] = new TypeDescriptor.Builtin(valueType.Value),
+            [sharedType.Value] = new TypeDescriptor.Ref(valueType)
+        };
+        var contract = OwnershipContract.Create(
+            new SymbolId(41),
+            "borrow_text",
+            [("value", valueType)],
+            sharedType,
+            descriptors);
+        var block = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Terminator = new MirReturn()
+        };
+        var module = new MirModule
+        {
+            Name = "ownership_contract_restore",
+            TypeDescriptors = descriptors,
+            Functions =
+            [
+                new MirFunc
+                {
+                    Name = "borrow_text",
+                    SymbolId = new SymbolId(41),
+                    EntryBlockId = block.Id,
+                    BasicBlocks = [block],
+                    OwnershipContract = contract
+                }
+            ]
+        };
+
+        var payload = ModuleMirStatePayload.Create(module);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = JsonSerializer.Deserialize<ModuleMirStatePayload>(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped!.TryRestore(out var restored));
+        var restoredContract = Assert.Single(restored.Functions).OwnershipContract;
+        Assert.Equal(contract.SchemaVersion, restoredContract.SchemaVersion);
+        Assert.Equal(contract.CanonicalIdentity, restoredContract.CanonicalIdentity);
+        Assert.Equal(OwnershipPassingKind.ByValue, restoredContract.GetParameter(0).Projection.Kind);
+        Assert.Equal(OwnershipPassingKind.SharedBorrow, restoredContract.Result.Projection.Kind);
+    }
+
+    [Fact]
     public void Create_FromCompiledMir_RestoresEquivalentFingerprints()
     {
         var result = new CompilationPipeline("""
@@ -91,7 +143,7 @@ Main :: module {
     {
         var result = new CompilationPipeline("""
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {
@@ -368,7 +420,7 @@ Utils :: module {
     {
         const string source = """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {
@@ -423,7 +475,7 @@ Main :: module {
     {
         const string source = """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     main :: Int -> Int
     {
@@ -566,6 +618,10 @@ Main :: module {
                             new TypeId(BaseTypes.IntId),
                             ReferencedParameterIndex: 0,
                             ValueVariableIndex: 9)
+                    ],
+                    EffectArgs =
+                    [
+                        new GenericEffectArgumentDescriptor(1, "symbol:89", new TypeId(89))
                     ]
                 },
                 [5] = new TypeDescriptor.Ref(new TypeId(17)),
@@ -769,6 +825,16 @@ Main :: module {
                             Instructions =
                             [
                                 new MirAssign { Target = local, Source = ConstInt(42, intType), Span = Span(31) },
+                                new MirCaseInject
+                                {
+                                    Target = local,
+                                    Operand = ConstInt(1, intType),
+                                    SourceCase = new SymbolId(901),
+                                    TargetAncestor = new SymbolId(902),
+                                    SourceTypeId = new TypeId(903),
+                                    TargetTypeId = intType,
+                                    Span = Span(31)
+                                },
                                 new MirAssign { Target = local, Source = ConstChar('x'), Span = Span(31) },
                                 new MirAssign { Target = local, Source = ConstUnit(unitType), Span = Span(31) },
                                 new MirAssign
@@ -1010,6 +1076,10 @@ Main :: module {
             case MirAssign assign:
                 CollectOperandTypes(assign.Target, types);
                 CollectOperandTypes(assign.Source, types);
+                break;
+            case MirCaseInject injection:
+                CollectOperandTypes(injection.Target, types);
+                CollectOperandTypes(injection.Operand, types);
                 break;
             case MirCall call:
                 CollectOperandTypes(call.Target, types);

@@ -55,8 +55,9 @@ public sealed partial class MirGenericSpecializer
 
     private bool IsBuiltinCloneTraitCall(MirFunc containingFunction, MirFunctionRef functionRef)
     {
-        return containingFunction.TraitInvokeHelper == TraitInvokeHelperKind.CloneValue &&
-               string.Equals(functionRef.Name, "clone", StringComparison.Ordinal);
+        return (containingFunction.TraitInvokeHelper == TraitInvokeHelperKind.CloneValue &&
+                string.Equals(functionRef.Name, "clone", StringComparison.Ordinal)) ||
+               string.Equals(functionRef.Name, "std__TraitInvoke__clone_value", StringComparison.Ordinal);
     }
 
     private bool HasExplicitTraitImpl(MirFunc containingFunction, MirFunctionRef functionRef, TypeId receiverTypeId)
@@ -236,6 +237,28 @@ public sealed partial class MirGenericSpecializer
         }
 
         var receiverTypeId = ResolveOperandType(call.Arguments[0], localTypes);
+        if (TryGetTypeDescriptor(receiverTypeId, out var receiverDescriptor) &&
+            receiverDescriptor is TypeDescriptor.Ref reference &&
+            BaseTypes.IsBuiltIn(reference.Inner) &&
+            !HasExplicitTraitImpl(containingFunction, functionRef, reference.Inner) &&
+            call.Arguments[0] is MirPlace referencePlace)
+        {
+            rewrittenInstruction = new MirLoad
+            {
+                Target = call.Target,
+                Source = new MirPlace
+                {
+                    Kind = PlaceKind.Deref,
+                    Base = referencePlace,
+                    TypeId = reference.Inner,
+                    Span = call.Span
+                },
+                CreatesBorrowAlias = false,
+                Span = call.Span
+            };
+            return true;
+        }
+
         if (!BaseTypes.IsBuiltIn(receiverTypeId) ||
             HasExplicitTraitImpl(containingFunction, functionRef, receiverTypeId))
         {

@@ -12,7 +12,8 @@ public sealed record NamerStateMergeResult(
 
 public static class NamerStateMerger
 {
-    public static NamerStateMergeResult Merge(IReadOnlyList<ModuleNamerStatePayload> payloads)
+    public static NamerStateMergeResult Merge(
+        IReadOnlyList<ModuleNamerStatePayload> payloads)
     {
         if (payloads.Count == 0)
         {

@@ -15,10 +15,10 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.BinaryHeap
-import Std.Seq
-import Std.Option
-import Std.PriorityQueue
+import std.BinaryHeap
+import std.Seq
+import std.Option
+import std.PriorityQueue
 
 check_heap :: Unit -> Int
 {
@@ -48,12 +48,14 @@ check_priority_queue :: Unit -> Int
         match PriorityQueue.dequeue(q1) {
             Some((first, rest1)) =>
                 match PriorityQueue.dequeue(rest1) {
-                    Some((second, rest2)) =>
+                    Some((second, rest2)) => {
+                        remaining := PriorityQueue.len(ref rest2)
                         match PriorityQueue.peek(rest2) {
                             Some(third) =>
-                                if first == 12 && second == 9 && third == 5 && PriorityQueue.len(rest2) == 1 then { 22 } else { 5 },
+                                if first == 12 && second == 9 && third == 5 && remaining == 1 then { 22 } else { 5 },
                             None() => 6
-                        },
+                        }
+                    },
                     None() => 7
                 },
             None() => 8

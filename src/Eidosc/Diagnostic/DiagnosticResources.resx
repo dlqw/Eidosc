@@ -1003,7 +1003,7 @@
     <value>@borrow requires at least one capability tag: read, write, move</value>
   </data>
   <data name="AmbiguousOverlappingImplRegistration" xml:space="preserve">
-    <value>Ambiguous overlapping impl registration</value>
+    <value>Ambiguous overlapping instance registration</value>
   </data>
   <data name="CannotAssignToImmutableVariable" xml:space="preserve">
     <value>Cannot assign to immutable variable '{0}'</value>
@@ -1072,19 +1072,19 @@
     <value>Duplicate exported name '{0}' in module '{1}'</value>
   </data>
   <data name="FfiFunctionCannotHaveBody" xml:space="preserve">
-    <value>@ffi 函数 '{0}' 不能有函数体</value>
+    <value>extern 函数 '{0}' 不能有 Eidos 函数体</value>
   </data>
   <data name="IntrinsicFunctionCannotHaveBody" xml:space="preserve">
     <value>@intrinsic 函数 '{0}' 不能有函数体</value>
   </data>
   <data name="FfiDuplicateBinding" xml:space="preserve">
-    <value>重复的 @ffi 绑定 '{0}/{1}'</value>
+    <value>重复的 extern 绑定 '{0}/{1}'</value>
   </data>
   <data name="FfiLinkWithoutFunction" xml:space="preserve">
-    <value>link '{0}' 被声明但模块中没有 @ffi 函数</value>
+    <value>link_library '{0}' 已声明，但模块中没有 extern 函数</value>
   </data>
   <data name="FfiUndeclaredLibraryReference" xml:space="preserve">
-    <value>@ffi('{0}/{1}') 引用了未声明的库 '{0}'。请在 eidos.toml 的 ffi.libraries 中添加 "{0}"</value>
+    <value>extern 绑定 '{0}/{1}' 引用了未声明的库 '{0}'。请在 eidos.toml 的 ffi.libraries 中添加 "{0}"</value>
   </data>
   <data name="FfiParameterRole" xml:space="preserve">
     <value>参数</value>
@@ -1117,7 +1117,7 @@
     <value>类型 '{0}' 不是 FFI 安全类型，不能用于 @ffi 函数的{1}</value>
   </data>
   <data name="ExistingOverlappingImplRegisteredHere" xml:space="preserve">
-    <value>existing overlapping impl registered here</value>
+    <value>existing overlapping instance registered here</value>
   </data>
   <data name="GuardedBranchesExcludedFromExactCoverage" xml:space="preserve">
     <value>Guarded branches with unresolved predicates were conservatively excluded from exact coverage: {0}.</value>
@@ -1240,19 +1240,19 @@
     <value>existing canonical head: {0}</value>
   </data>
   <data name="OverlappingImplExistingHead" xml:space="preserve">
-    <value>existing impl head: {0}</value>
+    <value>existing instance head: {0}</value>
   </data>
   <data name="OverlappingImplHelp" xml:space="preserve">
-    <value>Keep only one impl head per canonical trait/type shape. Different aliases that canonicalize to the same underlying constructor currently overlap.</value>
+    <value>Keep only one instance head per canonical trait/type shape. Different aliases that canonicalize to the same underlying constructor currently overlap.</value>
   </data>
   <data name="OverlappingImplRequestedCanonicalHead" xml:space="preserve">
     <value>requested canonical head: {0}</value>
   </data>
   <data name="OverlappingImplRequestedHead" xml:space="preserve">
-    <value>requested impl head: {0}</value>
+    <value>requested instance head: {0}</value>
   </data>
   <data name="OverlappingImplRequestedHere" xml:space="preserve">
-    <value>overlapping impl requested here: {0}</value>
+    <value>overlapping instance requested here: {0}</value>
   </data>
   <data name="OverlappingImplSpecializationRelation" xml:space="preserve">
     <value>specialization relation: {0}</value>
@@ -1452,6 +1452,12 @@
   <data name="BorrowUseAfterMoveCannotRead" xml:space="preserve">
     <value>变量已被移动，无法再次读取</value>
   </data>
+  <data name="BorrowValueAlreadyConsumedCannotDrop" xml:space="preserve">
+    <value>值已被移动或释放，无法再次释放</value>
+  </data>
+  <data name="BorrowDropExactlyOnceHint" xml:space="preserve">
+    <value>每条控制流路径只能消费一次所有权；请删除重复释放或改为释放移动后的目标值</value>
+  </data>
   <data name="BorrowCannotMoveBorrowedValue" xml:space="preserve">
     <value>无法移动被借用的值</value>
   </data>
@@ -1603,7 +1609,7 @@
     <value>module import alias must start with an uppercase letter</value>
   </data>
   <data name="ParserImportAliasUseNameFirstForm" xml:space="preserve">
-    <value>in Eidos 0.6.0-alpha.1, module alias imports must use the binding form 'Alias :: import Module.Path;' instead of 'import Module.Path as Alias;'</value>
+    <value>in Eidos 0.7.0-alpha.1, module alias imports must use the binding form 'alias :: import module.path;' instead of 'import module.path as alias;'</value>
   </data>
   <data name="ParserImportBindingExpectsModulePath" xml:space="preserve">
     <value>name-first import binding expects a module path; selective and wildcard imports are not valid in 'Alias :: import ...;' form</value>
@@ -1741,13 +1747,13 @@
     <value>expected type identifier after qualified path separator</value>
   </data>
   <data name="ParserQualifiedDoubleColonRemoved" xml:space="preserve">
-    <value>qualified names use '.' in Eidos 0.6.0-alpha.1; '::' is reserved for declaration bindings</value>
+    <value>qualified names use '.' in Eidos 0.7.0-alpha.1; '::' is reserved for declaration bindings</value>
   </data>
   <data name="ParserExpectedCommaBetweenAdtConstructors" xml:space="preserve">
     <value>expected ',' between ADT constructors</value>
   </data>
   <data name="ParserAdtPipeSeparatorRemoved" xml:space="preserve">
-    <value>ADT constructors use ',' in Eidos 0.6.0-alpha.1; '|' remains a pattern operator</value>
+    <value>type body members use ',' in Eidos 0.7.0-alpha.1; '|' remains a pattern operator</value>
   </data>
   <data name="ParserListRestStandaloneNote" xml:space="preserve">
     <value>`..` is a list-rest marker, not a standalone pattern.</value>
@@ -1763,6 +1769,9 @@
   </data>
   <data name="UnsupportedAstExpressionDuringHirLowering" xml:space="preserve">
     <value>Unsupported AST expression '{0}' during HIR lowering.</value>
+  </data>
+  <data name="QuoteExpressionCrossedHirBoundary" xml:space="preserve">
+    <value>Compile-time quote expression reached HIR lowering; quote evaluation must complete before the Types-to-HIR phase boundary.</value>
   </data>
   <data name="UnsupportedAstPatternDuringHirLowering" xml:space="preserve">
     <value>Unsupported AST pattern '{0}' during HIR lowering.</value>
@@ -2053,10 +2062,10 @@
     <value>`{0}` can only borrow from a stable place. Temporary expressions are not borrowable.</value>
   </data>
   <data name="TraitDoesNotAcceptTypeArgumentsInImpl" xml:space="preserve">
-    <value>Trait '{0}' does not accept type arguments in @impl</value>
+    <value>Trait '{0}' does not accept type arguments in an impl clause</value>
   </data>
   <data name="TraitExpectsTypeArgumentsInImpl" xml:space="preserve">
-    <value>Trait '{0}' expects {1} type argument(s) in @impl, got {2}</value>
+    <value>Trait '{0}' expects {1} type argument(s) in an impl clause, got {2}</value>
   </data>
   <data name="TraitDefinitionUnavailableForImplSignature" xml:space="preserve">
     <value>Trait '{0}' definition is unavailable; cannot validate impl signature</value>
@@ -2780,5 +2789,26 @@
   </data>
   <data name="IdeSymbolDocumentation" xml:space="preserve">
     <value>{0} `{1}`.</value>
+  </data>
+  <data name="NamingStyleMismatch" xml:space="preserve">
+    <value>Name '{0}' for {1} should use {2}.</value>
+  </data>
+  <data name="NamingStyleExpectedName" xml:space="preserve">
+    <value>Expected spelling: '{0}'.</value>
+  </data>
+  <data name="RenameSymbolSuggestion" xml:space="preserve">
+    <value>Rename symbol to '{0}'.</value>
+  </data>
+  <data name="NamingFqnRedundancy" xml:space="preserve">
+    <value>Name '{0}' redundantly repeats module segment '{1}'.</value>
+  </data>
+  <data name="NamingWeakPublicTypeName" xml:space="preserve">
+    <value>Public type name '{0}' is a weak semantic placeholder; use a domain-specific name.</value>
+  </data>
+  <data name="NamingModuleFileMismatch" xml:space="preserve">
+    <value>Module file '{0}' should use lower_snake_case as '{1}'.</value>
+  </data>
+  <data name="PublicClosedCaseRootCannotContainInternalDescendant" xml:space="preserve">
+    <value>Public closed case root '{0}' cannot contain internal descendant '{1}'; a closed hierarchy has one atomic visibility.</value>
   </data>
 </root>

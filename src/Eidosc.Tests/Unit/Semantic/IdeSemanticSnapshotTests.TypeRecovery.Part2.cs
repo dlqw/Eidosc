@@ -155,7 +155,7 @@ main :: Unit -> Int
     public void Build_SequentialGuardTypeMismatch_DoesNotExposeTrustworthyResultTypeText()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) , NoneInt }
+OptionInt :: type { SomeInt:: type(Int) , NoneInt :: type {} }
 
 main :: Unit -> Int
 {
@@ -355,7 +355,9 @@ main :: Int -> Int
 
         Assert.Null(bad.TypeText);
         Assert.Equal("Int", good.TypeText);
-        Assert.Contains(snapshot.Diagnostics, item => item.Message.Contains("Explicit type arguments can only be applied", StringComparison.Ordinal));
+        Assert.Contains(snapshot.Diagnostics, item =>
+            item.Severity == "error" &&
+            item.Message.Contains("Indexed object must be Seq", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -641,14 +643,14 @@ main :: Int -> Int
     {
         const string source = """
 Shape :: type {
-    Circle {
-        radius: Int,
-        color: Int
+    Circle :: type{
+        radius:: Int,
+        color:: Int
     }
-    , Rect {
-        width: Int,
-        height: Int,
-        color: Int
+    , Rect :: type{
+        width:: Int,
+        height:: Int,
+        color:: Int
     }
 }
 
@@ -686,11 +688,9 @@ main :: Shape -> Int
     {
         const string source = """
 GameState :: type {
-    GameState {
-        snake: Int,
-        tick: Int
+        snake:: Int,
+        tick:: Int
     }
-}
 
 make :: Unit -> GameState
 {
@@ -848,7 +848,7 @@ good :: 1;
     {
         const string source = """
 Color :: type {
-    Red
+    Red :: type {}
 }
 
 bad :: Red;
@@ -869,7 +869,7 @@ good :: 1;
         var bad = Assert.Single(snapshot.Symbols, item => item.Name == "bad");
         var good = Assert.Single(snapshot.Symbols, item => item.Name == "good");
 
-        Assert.Equal("Red", bad.TypeText);
+        Assert.Equal("Color.Red", bad.TypeText);
         Assert.Equal("Int", good.TypeText);
     }
 
@@ -878,7 +878,7 @@ good :: 1;
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 bad :: Some;
@@ -893,14 +893,17 @@ good :: 1;
             UseColors = false
         }).Run();
 
-        Assert.True(result.Success);
+        Assert.False(result.Success);
 
         var snapshot = IdeSemanticSnapshotBuilder.Build(result);
         var bad = Assert.Single(snapshot.Symbols, item => item.Name == "bad");
         var good = Assert.Single(snapshot.Symbols, item => item.Name == "good");
 
-        Assert.Equal("Some", bad.TypeText);
+        Assert.Null(bad.TypeText);
         Assert.Equal("Int", good.TypeText);
+        Assert.Contains(snapshot.Diagnostics, item =>
+            item.Severity == "error" &&
+            item.Message.Contains("requires arguments", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -908,7 +911,7 @@ good :: 1;
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 bad :: Option;
@@ -963,7 +966,7 @@ good :: 1;
         Assert.Equal("Int", good.TypeText);
         Assert.Contains(snapshot.Diagnostics, item =>
             item.Severity == "error" &&
-            item.Message.Contains("constructor", StringComparison.OrdinalIgnoreCase));
+            item.Message.Contains("Undefined identifier 'Ghost'", StringComparison.Ordinal));
     }
 
 }

@@ -23,9 +23,9 @@ public sealed class ModuleMirMixedRestoreTests
             var typesPayloads = Assert.IsAssignableFrom<IReadOnlyList<ModuleTypesStatePayload>>(
                 first.ModuleTypesStatePayloads);
             var typesPayloadByModule = typesPayloads.ToDictionary(static payload => payload.ModuleKey, StringComparer.Ordinal);
-            File.WriteAllText(Path.Combine(tempDir, "LibA.eidos"), """
+            File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     unbox :: Box -> Int
     {
@@ -67,15 +67,51 @@ LibA :: module {
 
             Assert.True(expected.Success, FormatDiagnostics(expected));
             Assert.True(second.Success, FormatFailure(second));
+            AssertNonCopyOwnedArgumentIsMoved(expected);
+            AssertNonCopyOwnedArgumentIsMoved(second);
             Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault("Mir.moduleRestore.applied"));
             Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault("Mir.moduleRestore.fallbackBuildMir"));
             Assert.Equal(2, second.ProfilingCounters.GetValueOrDefault("Build.moduleStage.Mir.compiledModules"));
             Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault("Build.moduleStage.Mir.restoredModules"));
             Assert.True(second.ProfilingCounters.GetValueOrDefault("Build.moduleStage.Mir.maxObservedParallelism") > 1);
             Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault("Mir.build_mir.calls"));
-            Assert.Equal(
-                FormatConstructorLayouts(expected.MirModule!),
-                FormatConstructorLayouts(second.MirModule!));
+            var secondHirText = Eidosc.Hir.HirFormatter.FormatHir(second.HirModule!);
+            Assert.Contains("CaseInject", secondHirText, StringComparison.Ordinal);
+            var mainHirPayload = ModuleHirStateArtifactPayload.Create(
+                "Main",
+                second.ModuleTypedSemanticSnapshot!,
+                second.HirModule,
+                null,
+                null,
+                null,
+                null,
+                null);
+            Assert.True(mainHirPayload.HirState.TryRestore(out var restoredMainHir));
+            Assert.Contains(
+                "CaseInject",
+                Eidosc.Hir.HirFormatter.FormatHir(restoredMainHir),
+                StringComparison.Ordinal);
+            var secondMain = Assert.Single(
+                second.MirModule!.Functions,
+                static function => string.Equals(function.SourceName, "main", StringComparison.Ordinal));
+            var secondConstructorReferences = secondMain.BasicBlocks
+                .SelectMany(static block => block.Instructions)
+                .OfType<Eidosc.Mir.MirCall>()
+                .Select(static call => call.Function)
+                .OfType<Eidosc.Mir.MirFunctionRef>()
+                .Where(static function => function.Name.Contains("Box", StringComparison.Ordinal))
+                .ToArray();
+            var secondConstructorReference = Assert.Single(secondConstructorReferences);
+            Assert.Equal(Eidosc.Symbols.SymbolKind.Constructor, secondConstructorReference.SymbolKind);
+            Assert.True(Eidosc.Borrow.TypeSemantics.IsAdtConstructorCall(secondConstructorReference));
+            var expectedLayouts = FormatConstructorLayouts(expected.MirModule!);
+            var restoredLayouts = FormatConstructorLayouts(second.MirModule!);
+            Assert.True(
+                expectedLayouts.SequenceEqual(restoredLayouts, StringComparer.Ordinal),
+                string.Join(
+                    Environment.NewLine,
+                    $"expected layouts: {string.Join(", ", expectedLayouts)}",
+                    $"restored layouts: {string.Join(", ", restoredLayouts)}"));
             Assert.True(
                 string.Equals(expected.LlvmIrText, second.LlvmIrText, StringComparison.Ordinal),
                 FormatTextDifference(expected.LlvmIrText, second.LlvmIrText));
@@ -115,9 +151,9 @@ Main :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "LibA.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     unbox :: Box -> Int
     {
@@ -125,7 +161,7 @@ LibA :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "LibB.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "lib_b.eidos"), """
 LibB :: module {
     inc :: Int -> Int
     {
@@ -186,6 +222,7 @@ LibB :: module {
             string.Join(Environment.NewLine, actualLines.Skip(start).Take(count)));
     }
 
+
     private static string FormatFailure(CompilationResult result) =>
         string.Join(
             Environment.NewLine,
@@ -206,5 +243,24 @@ LibB :: module {
         result.MirFunctionFingerprints?.Functions
             .Select(static fingerprint => $"{fingerprint.FunctionKey}:{fingerprint.BodyHash}")
             .ToArray() ?? [];
+
+    private static void AssertNonCopyOwnedArgumentIsMoved(CompilationResult result)
+    {
+        var main = Assert.Single(
+            result.MirModule!.Functions,
+            static function => string.Equals(function.SourceName, "main", StringComparison.Ordinal));
+        var call = Assert.Single(
+            main.BasicBlocks.SelectMany(static block => block.Instructions).OfType<Eidosc.Mir.MirCall>(),
+            static candidate => candidate.Function is Eidosc.Mir.MirFunctionRef function &&
+                                function.Name.Contains("unbox", StringComparison.Ordinal));
+        var block = Assert.Single(main.BasicBlocks, candidate => candidate.Instructions.Contains(call));
+        var argument = Assert.IsType<Eidosc.Mir.MirPlace>(Assert.Single(call.Arguments));
+        Assert.Contains(
+            block.Instructions.OfType<Eidosc.Mir.MirMove>(),
+            move => move.Target.Local.Equals(argument.Local));
+        Assert.DoesNotContain(
+            block.Instructions.OfType<Eidosc.Mir.MirCopy>(),
+            copy => copy.Target.Local.Equals(argument.Local));
+    }
 
 }

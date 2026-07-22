@@ -1,4 +1,5 @@
 using Eidosc.Bindgen;
+using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Tests.Fixtures;
 
@@ -62,12 +63,12 @@ public sealed class BindingPackageGeneratorTests
                 linkerFlags = ["-ldemo"]
 
                 [[wrappers]]
-                module = "Window"
+                module = "window"
                 raw = "demo_init"
                 name = "init"
 
                 [[wrappers]]
-                module = "Input"
+                module = "input"
                 raw = "demo_key_down"
                 name = "key_down"
                 """);
@@ -81,17 +82,21 @@ public sealed class BindingPackageGeneratorTests
         Assert.Null(manifest.Ffi.Libraries);
         Assert.Contains("""nativeSources = ["native/demo.c"]""", File.ReadAllText(Path.Combine(tempDir, EidosProjectConfigurationLoader.DefaultFileName)));
 
-        var raw = File.ReadAllText(Path.Combine(tempDir, "src", "Raw.eidos"));
-        Assert.Contains("""@ffi("demo_init")""", raw, StringComparison.Ordinal);
-        Assert.Contains("export demo_init :: Int32 -> Int32 -> Unit", raw, StringComparison.Ordinal);
+        var rawPath = Path.Combine(tempDir, "src", "raw.eidos");
+        var raw = File.ReadAllText(rawPath);
+        Assert.Contains("""@[extern(c, name: "demo_init")]""", raw, StringComparison.Ordinal);
+        Assert.Contains("""export demo_init :: Int32 -> Int32 -> Unit need ffi;""", raw, StringComparison.Ordinal);
         Assert.Contains("export demo_a :: Int = 1;", raw, StringComparison.Ordinal);
-        Assert.Contains("@cstruct", raw, StringComparison.Ordinal);
+        Assert.Contains("@[repr(c)]", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("link \"demo\"", raw, StringComparison.Ordinal);
 
-        var wrapper = File.ReadAllText(Path.Combine(tempDir, "src", "Window.eidos"));
+        var wrapperPath = Path.Combine(tempDir, "src", "window.eidos");
+        var wrapper = File.ReadAllText(wrapperPath);
         Assert.Contains("Window :: module", wrapper, StringComparison.Ordinal);
         Assert.Contains("export init :: Int32 -> Int32 -> Unit", wrapper, StringComparison.Ordinal);
         Assert.Contains("Raw.demo_init(arg0, arg1)", wrapper, StringComparison.Ordinal);
+        AssertGeneratedSourcePassesDenyStyle(rawPath);
+        AssertGeneratedSourcePassesDenyStyle(wrapperPath);
     }
 
     [Fact]
@@ -107,7 +112,7 @@ public sealed class BindingPackageGeneratorTests
                 headers = ["demo.h"]
 
                 [[wrappers]]
-                module = "Window"
+                module = "window"
                 raw = "demo_should_close"
                 name = "should_close"
                 """);
@@ -115,10 +120,49 @@ public sealed class BindingPackageGeneratorTests
         var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
 
         Assert.True(result.Success, string.Join("; ", result.Diagnostics));
-        var wrapper = File.ReadAllText(Path.Combine(tempDir, "src", "Window.eidos"));
+        var wrapper = File.ReadAllText(Path.Combine(tempDir, "src", "window.eidos"));
         Assert.Contains("export should_close :: Unit -> Int32", wrapper, StringComparison.Ordinal);
         Assert.Contains("_ => Raw.demo_should_close()", wrapper, StringComparison.Ordinal);
         Assert.DoesNotContain("Raw.demo_should_close(())", wrapper, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generate_FfiNamingContract_NormalizesBindingAndPreservesExternalLinkName()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_bindgen");
+        var tempDir = workspace.Root;
+        File.WriteAllText(Path.Combine(tempDir, "ssl.h"), "void SSL_CTX_new(void);");
+        File.WriteAllText(Path.Combine(tempDir, BindingPackageGenerator.SpecFileName), """
+                package = "dev.eidos.ssl"
+                library = "ssl"
+                headers = ["ssl.h"]
+                """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
+
+        Assert.True(result.Success, string.Join("; ", result.Diagnostics));
+        var raw = File.ReadAllText(Path.Combine(tempDir, "src", "raw.eidos"));
+        Assert.Contains("@[extern(c, name: \"SSL_CTX_new\")]", raw, StringComparison.Ordinal);
+        Assert.Contains("export ssl_ctx_new :: Unit -> Unit need ffi;", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("SSL_CTX_new ::", raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generate_RejectsNonCanonicalBindgenPackageId()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_bindgen");
+        var tempDir = workspace.Root;
+        File.WriteAllText(Path.Combine(tempDir, "demo.h"), "void demo_init(void);");
+        File.WriteAllText(Path.Combine(tempDir, BindingPackageGenerator.SpecFileName), """
+                package = "Dev.eidos.demo"
+                library = "demo"
+                headers = ["demo.h"]
+                """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("lower-kebab-case", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -154,7 +198,7 @@ public sealed class BindingPackageGeneratorTests
                 headers = ["demo.h"]
 
                 [[wrappers]]
-                module = "Window"
+                module = "window"
                 raw = "demo_missing"
                 name = "missing"
                 """);
@@ -163,6 +207,102 @@ public sealed class BindingPackageGeneratorTests
 
         Assert.False(result.Success);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("unknown raw symbol 'demo_missing'", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("module = \"Window\"", "name = \"init\"", "wrapper module 'Window'")]
+    [InlineData("module = \"window\"", "name = \"badName\"", "wrapper name 'badName'")]
+    public void Generate_RejectsNonCanonicalWrapperNames(
+        string moduleDeclaration,
+        string nameDeclaration,
+        string expectedDiagnostic)
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_bindgen");
+        var tempDir = workspace.Root;
+        File.WriteAllText(Path.Combine(tempDir, "demo.h"), "void demo_init(void);");
+        File.WriteAllText(Path.Combine(tempDir, BindingPackageGenerator.SpecFileName), $$"""
+                package = "dev.eidos.demo"
+                library = "demo"
+                headers = ["demo.h"]
+
+                [[wrappers]]
+                {{moduleDeclaration}}
+                raw = "demo_init"
+                {{nameDeclaration}}
+                """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains(expectedDiagnostic, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generate_RejectsNonCanonicalEffectLabel()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_bindgen");
+        var tempDir = workspace.Root;
+        File.WriteAllText(Path.Combine(tempDir, "demo.h"), "void demo_init(void);");
+        File.WriteAllText(Path.Combine(tempDir, BindingPackageGenerator.SpecFileName), """
+                package = "dev.eidos.demo"
+                library = "demo"
+                headers = ["demo.h"]
+
+                [[effects]]
+                name = "WindowIO"
+                """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("effect label 'WindowIO'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generate_RejectsWrapperNameThatRepeatsModuleIdentity()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_bindgen");
+        var tempDir = workspace.Root;
+        File.WriteAllText(Path.Combine(tempDir, "demo.h"), "void demo_open(void);");
+        File.WriteAllText(Path.Combine(tempDir, BindingPackageGenerator.SpecFileName), """
+                package = "dev.eidos.demo"
+                library = "demo"
+                headers = ["demo.h"]
+
+                [[wrappers]]
+                module = "window"
+                raw = "demo_open"
+                name = "window_open"
+                """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
+
+        Assert.False(result.Success);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Contains("redundantly repeats module segment 'window'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generate_RejectsEffectOperationsRemovedFromEidos07()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_bindgen");
+        var tempDir = workspace.Root;
+        File.WriteAllText(Path.Combine(tempDir, "demo.h"), "void demo_init(void);");
+        File.WriteAllText(Path.Combine(tempDir, BindingPackageGenerator.SpecFileName), """
+                package = "dev.eidos.demo"
+                library = "demo"
+                headers = ["demo.h"]
+
+                [[effects]]
+                name = "window_io"
+                operations = ["open"]
+                """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(tempDir, Check: false, NoShim: true));
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Contains("cannot declare operations in Eidos 0.7", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -181,5 +321,23 @@ public sealed class BindingPackageGeneratorTests
 
         Assert.False(result.Success);
         Assert.NotEmpty(result.ChangedFiles);
+    }
+
+    private static void AssertGeneratedSourcePassesDenyStyle(string sourcePath)
+    {
+        var result = new CompilationPipeline(File.ReadAllText(sourcePath), new CompilationOptions
+        {
+            InputFile = sourcePath,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Types,
+            ImportSearchRoots = [Path.GetDirectoryName(sourcePath)!],
+            EmitStyleSuggestions = true,
+            DenyStyle = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
     }
 }

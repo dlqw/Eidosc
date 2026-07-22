@@ -12,136 +12,6 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private void TryRegisterTraitImplFromAttributes(FuncDef func)
-    {
-        // Trait 内部的方法声明不应参与 impl 注册——它们是 trait 签名的一部分。
-        if (_traitSignatureDepth > 0)
-        {
-            return;
-        }
-
-        var hasImplAttribute = false;
-        foreach (var attribute in func.Attributes)
-        {
-            if (!string.Equals(attribute.Name, "impl", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            hasImplAttribute = true;
-            if (!TryResolveTraitFromImplAttribute(attribute, out var traitId, out var traitName, out var traitRef))
-            {
-                var name = string.IsNullOrWhiteSpace(traitName) ? "<missing>" : traitName;
-                AddUndefinedImplTraitError(attribute.Span, traitRef, DiagnosticMessages.UndefinedTraitInImpl(name));
-                continue;
-            }
-
-            if (!TryGetImplTargetType(func, out var implementingTypePath, out var targetTypeId))
-            {
-                AddError(attribute.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
-                continue;
-            }
-
-            if (!TryBuildImplTypeRequirements(
-                    func,
-                    implementingTypePath,
-                    out var implementingTypeRequirements,
-                    out var requirementError))
-            {
-                AddError(attribute.Span, requirementError ?? DiagnosticMessages.UnsupportedConstrainedImplHead);
-                continue;
-            }
-
-            if (!TryValidateTraitImplCompatibility(
-                    traitId,
-                    func,
-                    implementingTypePath,
-                    traitRef.TypeArgTexts,
-                    out var reason,
-                    out var matchedTraitMethodId))
-            {
-                AddError(attribute.Span, reason);
-                continue;
-            }
-
-            var canonicalTraitTypeArgs = CanonicalizeImplTraitTypeArgs(traitRef);
-            var traitTypeArgKeys = BuildImplTraitTypeArgKeys(traitId, traitRef);
-            var canonicalTraitTypeArgKeys = BuildCanonicalImplTraitTypeArgKeys(
-                canonicalTraitTypeArgs,
-                traitTypeArgKeys);
-            var implementingTypeKey = BuildImplTypeRefKey(implementingTypePath);
-            var implementingTypeDisplay = NormalizeTypePath(implementingTypePath, selfType: null, traitTypeArgBindings: null);
-            var canonicalImplementingType = CanonicalizeTypePathForImplHead(implementingTypePath);
-            var requestedHeadShape = BuildCanonicalImplHeadShape(
-                traitId,
-                traitRef.GenericArguments.Count > 0 ? [] : traitRef.TypeArgs,
-                implementingTypePath,
-                canonicalTraitTypeArgs,
-                canonicalTraitTypeArgKeys,
-                canonicalImplementingType);
-            if (TryGetConflictingImplRegistration(
-                    traitId,
-                    targetTypeId,
-                    canonicalImplementingType,
-                    canonicalTraitTypeArgs,
-                    traitRef.TypeArgTexts,
-                    requestedHeadShape,
-                    out var conflictingImpl))
-            {
-                var traitDisplay = FormatTraitReferenceDisplay(traitRef);
-                var requestedHead = FormatImplHeadDisplay(traitDisplay, implementingTypeDisplay);
-                var conflictingHead = FormatImplHeadDisplay(
-                    BuildTraitDisplay(GetTraitName(conflictingImpl!.Trait), conflictingImpl.TraitTypeArgs),
-                    string.IsNullOrWhiteSpace(conflictingImpl.ImplementingTypeDisplay)
-                        ? implementingTypeDisplay
-                        : conflictingImpl.ImplementingTypeDisplay);
-                var requestedCanonical = FormatImplHeadDisplay(
-                    BuildTraitDisplay(GetTraitName(traitId), canonicalTraitTypeArgs),
-                    canonicalImplementingType);
-                var conflictingCanonical = FormatImplHeadDisplay(
-                    BuildTraitDisplay(GetTraitName(conflictingImpl.Trait), conflictingImpl.CanonicalTraitTypeArgs),
-                    string.IsNullOrWhiteSpace(conflictingImpl.CanonicalImplementingType)
-                        ? canonicalImplementingType
-                        : conflictingImpl.CanonicalImplementingType);
-                var conflictingHeadShape = BuildImplHeadShape(conflictingImpl);
-                var specializationRelation = ImplSpecializationComparer.CompareHeads(requestedHeadShape, conflictingHeadShape);
-                _diagnostics.Add(
-                    BuildOverlappingImplRegistrationDiagnostic(
-                        attribute.Span,
-                        requestedHead,
-                        conflictingImpl,
-                        conflictingHead,
-                        requestedCanonical,
-                        conflictingCanonical,
-                        specializationRelation));
-                continue;
-            }
-
-            var implId = _symbolTable.DeclareImpl(
-                traitId,
-                targetTypeId,
-                attribute.Span,
-                traitRef.TypeArgTexts,
-                implementingTypeDisplay,
-                canonicalImplementingType,
-                canonicalTraitTypeArgs,
-                traitTypeArgKeys,
-                canonicalTraitTypeArgKeys,
-                implementingTypeRequirements,
-                requestedHeadShape,
-                implementingTypeKey);
-            if (implId.IsValid && func.SymbolId.IsValid)
-            {
-                _symbolTable.AddMethodToImpl(implId, func.SymbolId, matchedTraitMethodId);
-            }
-        }
-
-        if (!hasImplAttribute)
-        {
-            TryRegisterTraitImplByConvention(func);
-        }
-    }
-
     private bool TryGetConflictingImplRegistration(
         SymbolId traitId,
         TypeId implementingTypeId,
@@ -557,7 +427,7 @@ public sealed partial class NameResolver
     private static string FormatImplHeadDisplay(string traitDisplay, string implementingTypeDisplay)
     {
         var typeDisplay = string.IsNullOrWhiteSpace(implementingTypeDisplay) ? "<type>" : implementingTypeDisplay;
-        return $"@impl({traitDisplay}) on {typeDisplay}";
+        return $"instance {traitDisplay} for {typeDisplay}";
     }
 
     private EidoscDiagnostic BuildOverlappingImplRegistrationDiagnostic(

@@ -1,5 +1,6 @@
 using Eidosc.Symbols;
 using Eidosc;
+using Eidosc.Mir;
 using Eidosc.Semantic;
 using Eidosc.Types;
 using Eidosc.Utils;
@@ -89,6 +90,75 @@ public class CopyTypeSemanticsTests
     }
 
     [Fact]
+    public void IsCopyType_RefDescriptor_IsIntrinsicCopyWithoutTraitEvidence()
+    {
+        var refType = new TypeId(9105);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [refType.Value] = new TypeDescriptor.Ref(new TypeId(BaseTypes.StringId))
+        };
+
+        Assert.True(CopyTypeSemantics.IsCopyType(refType, _ => false, descriptors));
+    }
+
+    [Fact]
+    public void IsCopyType_MutRefDescriptor_IsNeverCopyEvenWithTraitEvidence()
+    {
+        var mutRefType = new TypeId(9106);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [mutRefType.Value] = new TypeDescriptor.MutRef(new TypeId(BaseTypes.IntId))
+        };
+
+        Assert.False(CopyTypeSemantics.IsCopyType(mutRefType, _ => true, descriptors));
+    }
+
+    [Fact]
+    public void IsCopyType_TupleDescriptor_RequiresEveryFieldToBeCopy()
+    {
+        var refType = new TypeId(9107);
+        var copyTupleType = new TypeId(9108);
+        var moveTupleType = new TypeId(9109);
+        var descriptors = new Dictionary<int, TypeDescriptor>
+        {
+            [refType.Value] = new TypeDescriptor.Ref(new TypeId(BaseTypes.StringId)),
+            [copyTupleType.Value] = new TypeDescriptor.Tuple([new TypeId(BaseTypes.IntId), refType]),
+            [moveTupleType.Value] = new TypeDescriptor.Tuple([new TypeId(BaseTypes.IntId), new TypeId(BaseTypes.StringId)])
+        };
+
+        Assert.True(CopyTypeSemantics.IsCopyType(copyTupleType, null, descriptors));
+        Assert.False(CopyTypeSemantics.IsCopyType(moveTupleType, null, descriptors));
+    }
+
+    [Fact]
+    public void IsCopyType_AdtCopyImpl_RejectsNonCopyCasePayload()
+    {
+        var symbolTable = new SymbolTable();
+        var adtId = symbolTable.DeclareAdt("Envelope", SourceSpan.Empty);
+        var adtType = symbolTable.GetSymbol<AdtSymbol>(adtId)!.TypeId;
+        var copyTrait = symbolTable.DeclareTrait(BuiltinTraits.TraitNames.Copy, SourceSpan.Empty);
+        symbolTable.DeclareImpl(copyTrait, adtType, SourceSpan.Empty);
+        var layouts = new Dictionary<int, List<ConstructorTypeLayout>>
+        {
+            [adtType.Value] =
+            [
+                new ConstructorTypeLayout
+                {
+                    TypeName = "Envelope",
+                    ConstructorName = "Text",
+                    FieldTypeIds = [new TypeId(BaseTypes.StringId)]
+                }
+            ]
+        };
+
+        Assert.False(CopyTypeSemantics.IsCopyType(
+            adtType,
+            CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable),
+            typeDescriptors: null,
+            constructorLayouts: layouts));
+    }
+
+    [Fact]
     public void IsTypeVariable_DescriptorWithoutDynamicKey_ReturnsTrue()
     {
         var typeVariable = new TypeId(9102);
@@ -147,7 +217,7 @@ public class CopyTypeSemanticsTests
     }
 
     [Fact]
-    public void CreateSymbolTableCopyResolver_CloneTraitFallback_ReturnsTrueWhenCopyTraitAbsent()
+    public void CreateSymbolTableCopyResolver_CloneOnlyType_ReturnsFalse()
     {
         var symbolTable = new SymbolTable();
         var adtId = symbolTable.DeclareAdt("Packet", SourceSpan.Empty);
@@ -157,7 +227,26 @@ public class CopyTypeSemanticsTests
 
         var resolver = CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable);
 
-        Assert.True(resolver(packetType));
+        Assert.False(resolver(packetType));
+    }
+
+    [Fact]
+    public void CreateSymbolTableCopyResolver_GenericConstraint_RequiresExactCopyTrait()
+    {
+        var symbolTable = new SymbolTable();
+        var copyTrait = symbolTable.DeclareTrait(BuiltinTraits.TraitNames.Copy, SourceSpan.Empty);
+        var cloneTrait = symbolTable.DeclareTrait(BuiltinTraits.TraitNames.Clone, SourceSpan.Empty);
+        var copyParamId = symbolTable.DeclareTypeParameter("CopyT", SourceSpan.Empty);
+        var cloneParamId = symbolTable.DeclareTypeParameter("CloneT", SourceSpan.Empty);
+        var copyParam = symbolTable.GetSymbol<TypeParamSymbol>(copyParamId)!;
+        var cloneParam = symbolTable.GetSymbol<TypeParamSymbol>(cloneParamId)!;
+        symbolTable.UpdateSymbol(copyParam with { TraitConstraints = [copyTrait] });
+        symbolTable.UpdateSymbol(cloneParam with { TraitConstraints = [cloneTrait] });
+
+        var resolver = CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable);
+
+        Assert.True(resolver(new TypeId(copyParamId.Value)));
+        Assert.False(resolver(new TypeId(cloneParamId.Value)));
     }
 
     [Fact]

@@ -31,7 +31,7 @@ public static class InfoCommand
             [FunctionalCategory] = new(
                 CliMessages.InfoStdlibCategoryFunctional,
                 CliMessages.InfoStdlibSummaryFunctional,
-                ["Fn.compose", "Predicate.accept", "Predicate.is", "Option.map", "Option.apply", "Option.traverse", "Seq.traverse", "Result.and_then", "Ordering.show"]),
+                ["Functions.compose", "Predicate.accept", "Predicate.is", "Option.map", "Option.apply", "Option.traverse", "Seq.traverse", "Result.and_then", "Ordering.show"]),
             [MathCategory] = new(
                 CliMessages.InfoStdlibCategoryMath,
                 CliMessages.InfoStdlibSummaryMath,
@@ -183,42 +183,42 @@ public static class InfoCommand
     {
         return module switch
         {
-            "Std/Fn" or
-            "Std/Applicative" or
-            "Std/Foldable" or
-            "Std/Functor" or
-            "Std/Monad" or
-            "Std/Traversable" or
-            "Std/Option" or
-            "Std/Ordering" or
-            "Std/Prelude" or
-            "Std/Result" or
-            "Std/Trait" or
-            "Std/TraitInvoke" => FunctionalCategory,
-            "Std/Math" or
-            "Std/FloatMath" or
-            "Std/GameMath" => MathCategory,
-            "Std/Deque" or
-            "Std/BinaryHeap" or
-            "Std/HashMap" or
-            "Std/HashSet" or
-            "Std/Seq" or
-            "Std/PersistentMap" or
-            "Std/PersistentSet" or
-            "Std/PriorityQueue" or
-            "Std/Queue" or
-            "Std/Stack" or
-            "Std/TreeMap" or
-            "Std/TreeSet" or
-            "Std/SeqBuilder" => ContainersCategory,
-            "Std/File" => FileIoCategory,
-            "Std/Console" => ConsoleIoCategory,
-            "Std/Network" => NetworkCategory,
-            "Std/Binary" or
-            "Std/Json" => SerializationCategory,
-            "Std/Text" or
-            "Std/Range" or
-            "Std/Shared" => BasicsCategory,
+            "std/Functions" or
+            "std/Applicative" or
+            "std/Foldable" or
+            "std/Functor" or
+            "std/Monad" or
+            "std/Traversable" or
+            "std/Option" or
+            "std/Ordering" or
+            "std/Prelude" or
+            "std/Result" or
+            "std/Traits" or
+            "std/TraitInvoke" => FunctionalCategory,
+            "std/Math" or
+            "std/FloatMath" or
+            "std/GameMath" => MathCategory,
+            "std/Deque" or
+            "std/BinaryHeap" or
+            "std/HashMap" or
+            "std/HashSet" or
+            "std/Seq" or
+            "std/PersistentMap" or
+            "std/PersistentSet" or
+            "std/PriorityQueue" or
+            "std/Queue" or
+            "std/Stack" or
+            "std/TreeMap" or
+            "std/TreeSet" or
+            "std/SeqBuilder" => ContainersCategory,
+            "std/File" => FileIoCategory,
+            "std/Console" => ConsoleIoCategory,
+            "std/Network" => NetworkCategory,
+            "std/Binary" or
+            "std/Json" => SerializationCategory,
+            "std/Text" or
+            "std/Range" or
+            "std/Shared" => BasicsCategory,
             _ => OtherCategory
         };
     }
@@ -282,9 +282,9 @@ public static class InfoCommand
 
     private static string FormatStdlibModulePath(string modulePath)
     {
-        const string stdPrefix = "Std/";
+        const string stdPrefix = "std/";
         return modulePath.StartsWith(stdPrefix, StringComparison.Ordinal)
-            ? $"Std.{modulePath[stdPrefix.Length..]}"
+            ? $"std.{modulePath[stdPrefix.Length..]}"
             : modulePath;
     }
 

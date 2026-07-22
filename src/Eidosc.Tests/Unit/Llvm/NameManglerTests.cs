@@ -62,6 +62,26 @@ public sealed class NameManglerTests
     }
 
     [Fact]
+    public void MangleFunctionName_DifferentEffectGenericArguments_ReturnsDifferentNames()
+    {
+        var mangler = new NameMangler();
+        var envelopeIo = new TyCon
+        {
+            Name = "Envelope",
+            EffectArgs = [new GenericEffectArgument(0, new TyCon { Name = "io", Symbol = new SymbolId(101) })]
+        };
+        var envelopeAlloc = envelopeIo with
+        {
+            EffectArgs = [new GenericEffectArgument(0, new TyCon { Name = "Alloc", Symbol = new SymbolId(102) })]
+        };
+
+        var ioName = mangler.MangleFunctionName("", "read", [envelopeIo]);
+        var allocName = mangler.MangleFunctionName("", "read", [envelopeAlloc]);
+
+        Assert.NotEqual(ioName, allocName);
+    }
+
+    [Fact]
     public void MangleFunctionName_IsDeterministicAcrossInstances()
     {
         var first = new NameMangler().MangleFunctionName("Core", "map", [BaseTypes.Int]);

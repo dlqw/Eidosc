@@ -5,6 +5,8 @@ using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Semantic;
+using Eidosc.Syntax;
 using Eidosc.Utils;
 using AstAttribute = Eidosc.Ast.Attribute;
 
@@ -19,6 +21,81 @@ public sealed class DeclParser(ParserContext ctx)
     public ExprParser ExprParser => _exprParser;
     public PatternParser PatternParser => _patternParser;
     public TypeParser TypeParser => _typeParser;
+
+    public IReadOnlyList<EidosAstNode> ParseTypeMemberFragments()
+    {
+        var members = new List<EidosAstNode>();
+        var fieldNames = new HashSet<string>(StringComparer.Ordinal);
+        while (!ctx.IsEof)
+        {
+            if (ctx.Match(","))
+            {
+                continue;
+            }
+
+            var start = ctx.Position;
+            var attributes = ParseAttributes();
+            if (ctx.Check("expand"))
+            {
+                members.Add(ParseExpandDeclaration(SyntaxCategory.Member));
+            }
+            else if (IsClosedCaseLookahead())
+            {
+                members.Add(ParseCaseType(fieldNames, attributes));
+            }
+            else if (IsNewFieldLookahead())
+            {
+                var field = ParseField("::");
+                if (!fieldNames.Add(field.Name))
+                {
+                    ctx.Error($"duplicate field member '{field.Name}'", field.Span.Location);
+                }
+                members.Add(field);
+            }
+            else
+            {
+                ctx.Error("expected a field declaration 'name :: Type' or a case type 'Case :: type'");
+                ctx.Advance();
+            }
+
+            ctx.Match(",");
+            if (ctx.Position == start)
+            {
+                ctx.Advance();
+            }
+        }
+        return members;
+    }
+
+    public IReadOnlyList<EidosAstNode> ParseTraitMemberFragments() =>
+        ParseAssociatedMemberFragments(requireAssociatedValues: false);
+
+    public IReadOnlyList<EidosAstNode> ParseInstanceMemberFragments() =>
+        ParseAssociatedMemberFragments(requireAssociatedValues: true);
+
+    private IReadOnlyList<EidosAstNode> ParseAssociatedMemberFragments(bool requireAssociatedValues)
+    {
+        var members = new List<EidosAstNode>();
+        while (!ctx.IsEof)
+        {
+            if (ctx.Match(",") || ctx.Match(";"))
+            {
+                continue;
+            }
+
+            var start = ctx.Position;
+            var attributes = ParseAttributes();
+            members.Add(ctx.Check("expand")
+                ? ParseExpandDeclaration(SyntaxCategory.Member)
+                : ParseNameFirstMember(attributes, requireAssociatedValues));
+            ctx.Match(";");
+            if (ctx.Position == start)
+            {
+                ctx.Advance();
+            }
+        }
+        return members;
+    }
 
     public List<EidosAstNode> ParseProgram()
     {
@@ -55,6 +132,7 @@ public sealed class DeclParser(ParserContext ctx)
 
         return text switch
         {
+            "expand"  => ParseExpandDeclaration(SyntaxCategory.Item),
             "module"  => ParseModuleDef(attrs, isExport),
             "func"    => ParseFuncDef(attrs, isExport),
             "let"     => ctx.CheckPeek(1, "?") ? ParseLetQuestionDecl(attrs) : ParseLetDecl(attrs, isExport),
@@ -65,6 +143,23 @@ public sealed class DeclParser(ParserContext ctx)
             "import"  => ParseImportDecl(attrs, isExport),
             _ => _exprParser.ParseExpr()
         };
+    }
+
+    private ExpandDeclaration ParseExpandDeclaration(SyntaxCategory category)
+    {
+        var start = ctx.Current;
+        ctx.Expect("expand");
+        var invocation = MetaInvocationSyntaxParser.Parse(
+            ctx,
+            () => _exprParser.ParseExpr(),
+            $"{category.ToString().ToLowerInvariant()} expand");
+        ctx.Expect(";");
+
+        var expansion = new ExpandDeclaration();
+        expansion.SetInvocation(invocation);
+        expansion.SetSiteCategory(category);
+        expansion.SetSpan(ctx.SpanFrom(start));
+        return expansion;
     }
 
     private bool IsNameFirstDeclarationStart()
@@ -139,7 +234,6 @@ public sealed class DeclParser(ParserContext ctx)
         var typeParams = !isOperatorDeclaration && modulePath.Count == 1
             ? _typeParser.TryParseTypeParams()
             : null;
-        _typeParser.ApplyGenericWhereClause(typeParams ?? []);
 
         ctx.Expect("::");
 
@@ -196,6 +290,23 @@ public sealed class DeclParser(ParserContext ctx)
 
             if (typeParams is null || typeParams.Count == 0)
             {
+                var clauses = ParseDeclarationClauseZone([]);
+                if (clauses.Count > 0)
+                {
+                    ctx.Expect("=");
+                    var clauseTargetValue = _exprParser.ParseExpr();
+                    ctx.Match(";");
+                    return CreateNameFirstValueBinding(
+                        attrs,
+                        isExport,
+                        startToken,
+                        name,
+                        typeAnnotation: null,
+                        value: clauseTargetValue,
+                        isComptime: true,
+                        clauses: clauses);
+                }
+
                 var value = _exprParser.ParseExpr();
                 ctx.Match(";");
                 return CreateNameFirstValueBinding(attrs, isExport, startToken, name, typeAnnotation: null, value, isComptime: true);
@@ -212,14 +323,38 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         var signature = _typeParser.ParseType();
+        var signatureClauses = new List<DeclarationClause>();
+        AddSignatureNeedClause(signature, signatureClauses);
+        var requiredAbilities = ParseFunctionClauseGroup(typeParams ?? [], signatureClauses);
         if ((typeParams is null || typeParams.Count == 0) && ctx.Match("="))
         {
+            if (ctx.Check(";") && PrecompiledModuleRegistry.IsStdlibSourcePath(ctx.SourcePath))
+            {
+                ctx.Advance();
+                return CreateNameFirstValueBinding(
+                    attrs,
+                    isExport,
+                    startToken,
+                    name,
+                    signature,
+                    value: null,
+                    clauses: signatureClauses);
+            }
+
             var value = _exprParser.ParseExpr();
             ctx.Match(";");
-            return CreateNameFirstValueBinding(attrs, isExport, startToken, name, signature, value);
+            return CreateNameFirstValueBinding(attrs, isExport, startToken, name, signature, value, clauses: signatureClauses);
         }
 
-        return ParseTopLevelNameFirstCallableAfterSignature(attrs, startToken, name, typeParams ?? [], signature, isExport);
+        return ParseTopLevelNameFirstCallableAfterSignature(
+            attrs,
+            startToken,
+            name,
+            typeParams ?? [],
+            signature,
+            signatureClauses,
+            requiredAbilities,
+            isExport);
     }
 
     private List<AstAttribute> ParseAttributes()
@@ -227,7 +362,17 @@ public sealed class DeclParser(ParserContext ctx)
         var attrs = new List<AstAttribute>();
         while (ctx.Check("@"))
         {
+            if (ctx.SupportsTypedClauses && ctx.CheckPeek(1, "["))
+            {
+                attrs.AddRange(ParseTypedTagGroup());
+                continue;
+            }
+
             var startToken = ctx.Current;
+            if (ctx.SupportsTypedClauses)
+            {
+                ctx.Error("standalone '@attribute' syntax was removed; use '@[...]' typed declaration tags");
+            }
             ctx.Advance(); // consume "@"
             var name = ctx.GetText();
             ctx.Advance();
@@ -251,9 +396,101 @@ public sealed class DeclParser(ParserContext ctx)
                 ctx.Expect(")");
             }
 
-            attrs.Add(attr);
+            if (!ctx.SupportsTypedClauses)
+            {
+                attrs.Add(attr);
+            }
         }
         return attrs;
+    }
+
+    private IReadOnlyList<AstAttribute> ParseTypedTagGroup()
+    {
+        var tags = new List<AstAttribute>();
+        ctx.Advance(); // consume "@"
+        ctx.Expect("[");
+        while (!ctx.Check("]") && !ctx.IsEof)
+        {
+            var start = ctx.Current;
+            var keyword = ctx.GetText();
+            if (!ClauseSchema.TryGet(keyword, out var spec) ||
+                spec.Adapter is not (DeclarationAttachmentAdapterKind.TypedTag or DeclarationAttachmentAdapterKind.ForeignContract))
+            {
+                ctx.Error($"'{keyword}' is not a typed declaration tag");
+                SkipTypedTag();
+            }
+            else
+            {
+                ctx.Advance();
+                var clause = CreateClause(spec.Kind, keyword, start);
+                var attribute = new AstAttribute();
+                attribute.SetName(keyword);
+
+                if (ctx.Match("("))
+                {
+                    if (spec.Arguments == ClauseArgumentGrammar.MetaInvocation)
+                    {
+                        var invocation = ParseMetaInvocationSyntax();
+                        clause.SetMetaInvocation(invocation);
+                        clause.AddArgument(invocation.GeneratorDisplayName);
+                        attribute.AddArgumentText(invocation.GeneratorDisplayName);
+                    }
+                    else if (!ctx.Check(")"))
+                    {
+                        AddTagArgument();
+                        while (ctx.Match(","))
+                        {
+                            if (ctx.Check(")"))
+                            {
+                                break;
+                            }
+                            AddTagArgument();
+                        }
+                    }
+                    ctx.Expect(")");
+                }
+
+                clause.SetSpan(ctx.SpanFrom(start));
+                attribute.SetSpan(clause.Span);
+                attribute.SetTypedClause(clause);
+                tags.Add(attribute);
+
+                void AddTagArgument()
+                {
+                    var argument = ReadAttributeArg();
+                    clause.AddArgument(argument);
+                    attribute.AddArgumentText(argument);
+                }
+            }
+
+            if (!ctx.Match(","))
+            {
+                break;
+            }
+        }
+        ctx.Expect("]");
+        return tags;
+
+        void SkipTypedTag()
+        {
+            ctx.Advance();
+            if (!ctx.Match("("))
+            {
+                return;
+            }
+
+            var depth = 1;
+            while (!ctx.IsEof && depth > 0)
+            {
+                depth += ctx.GetText() switch
+                {
+                    "(" => 1,
+                    ")" => -1,
+                    _ => 0
+                };
+                ctx.Advance();
+            }
+        }
     }
 
     private string ReadAttributeArg()
@@ -262,7 +499,7 @@ public sealed class DeclParser(ParserContext ctx)
         int depth = 0;
         while (!ctx.IsEof)
         {
-            var text = ctx.GetText();
+            var text = ctx.GetLiteralRawText();
             if (depth == 0 && (text == "," || text == ")"))
                 break;
             if (text == "(" || text == "[" || text == "{")
@@ -327,7 +564,9 @@ public sealed class DeclParser(ParserContext ctx)
         List<TypeParam> typeParams)
     {
         var signature = _typeParser.ParseType();
-        var requiredAbilities = ParseFunctionClauseGroup(typeParams);
+        var clauses = new List<DeclarationClause>();
+        AddSignatureNeedClause(signature, clauses);
+        var requiredAbilities = ParseFunctionClauseGroup(typeParams, clauses);
 
         List<PatternBranch>? body = null;
         if (ctx.Check("{"))
@@ -336,7 +575,7 @@ public sealed class DeclParser(ParserContext ctx)
             body = ParsePatternBranches();
             ctx.Expect("}");
         }
-        requiredAbilities.AddRange(ParseFunctionClauseGroup(typeParams));
+        RejectPostBodyClauses();
 
         var func = new FuncDef();
         func.SetSpan(ctx.SpanFrom(startToken));
@@ -346,6 +585,7 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
         func.SetBody(body ?? []);
         func.SetAttributes(attrs);
+        func.SetClauses(clauses);
         func.SetExported(isExport);
         return func;
     }
@@ -356,8 +596,9 @@ public sealed class DeclParser(ParserContext ctx)
         Token startToken,
         string name,
         TypeNode? typeAnnotation,
-        EidosAstNode value,
-        bool isComptime = false)
+        EidosAstNode? value,
+        bool isComptime = false,
+        List<DeclarationClause>? clauses = null)
     {
         var pattern = new VarPattern();
         pattern.SetSpan(new SourceSpan(startToken.Location, startToken.Length));
@@ -370,6 +611,7 @@ public sealed class DeclParser(ParserContext ctx)
         decl.SetComptime(isComptime);
         decl.SetValue(value);
         decl.SetAttributes(attrs);
+        decl.SetClauses(clauses ?? []);
         decl.SetExported(isExport);
         return decl;
     }
@@ -381,19 +623,9 @@ public sealed class DeclParser(ParserContext ctx)
             return true;
         }
 
-        if (TokenKind.IsIdentifier(token))
+        if (TokenKind.IsAnyIdentifier(token))
         {
-            if (QualifiedPathParser.IsPackageQualifiedItemLookahead(ctx, TokenKind.IsTypeIdentifier))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        if (TokenKind.IsTypeIdentifier(token) && ctx.GetText(ctx.Peek(1)) is "(" or "{")
-        {
-            return true;
+            return !LooksLikeNameFirstSignatureOrTypedBinding();
         }
 
         if (TokenKind.IsOperator(token, "-") || TokenKind.IsOperator(token, "!"))
@@ -414,6 +646,102 @@ public sealed class DeclParser(ParserContext ctx)
                TokenKind.IsKeyword(token, "handler") ||
                TokenKind.IsKeyword(token, "do") ||
                TokenKind.IsKeyword(token, "fn");
+    }
+
+    private bool LooksLikeNameFirstSignatureOrTypedBinding()
+    {
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        for (var offset = 0; offset < 256; offset++)
+        {
+            var token = ctx.Peek(offset);
+            if (token is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetText(token);
+            switch (text)
+            {
+                case "(":
+                    parenDepth++;
+                    continue;
+                case ")":
+                    parenDepth = Math.Max(0, parenDepth - 1);
+                    continue;
+                case "[":
+                    bracketDepth++;
+                    continue;
+                case "]":
+                    bracketDepth = Math.Max(0, bracketDepth - 1);
+                    continue;
+            }
+
+            if (parenDepth != 0 || bracketDepth != 0)
+            {
+                continue;
+            }
+
+            if (text is "->" or "=")
+            {
+                return true;
+            }
+
+            if (text is "where" or "need" or "ffi" or "extern" or "calling_convention" or
+                "unwind" or "expand" or "internal" or "intrinsic" or "external")
+            {
+                return true;
+            }
+
+            if (text == "{")
+            {
+                return BraceContainsTopLevelFunctionBranch(offset);
+            }
+
+            if (text is ";" or "}")
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    private bool BraceContainsTopLevelFunctionBranch(int openBraceOffset)
+    {
+        var depth = 0;
+        for (var offset = openBraceOffset; offset < openBraceOffset + 256; offset++)
+        {
+            var token = ctx.Peek(offset);
+            if (token is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetText(token);
+            if (text is "{" or "(" or "[")
+            {
+                depth++;
+                continue;
+            }
+
+            if (text is "}" or ")" or "]")
+            {
+                depth--;
+                if (depth <= 0)
+                {
+                    return false;
+                }
+                continue;
+            }
+
+            if (depth == 1 && text == "=>")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool LooksLikeParenthesizedFunctionSignature()
@@ -537,7 +865,9 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         var signature = _typeParser.ParseType();
-        var requiredAbilities = ParseFunctionClauseGroup(typeParams);
+        var clauses = new List<DeclarationClause>();
+        AddSignatureNeedClause(signature, clauses);
+        var requiredAbilities = ParseFunctionClauseGroup(typeParams, clauses);
 
         var func = new FuncDecl();
         func.SetSpan(ctx.SpanFrom(startToken));
@@ -547,23 +877,73 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
         func.SetComptime(isComptime);
         func.SetAttributes([]);
+        func.SetClauses(clauses);
         return func;
     }
 
-    private List<EffectRequirementNode> ParseFunctionClauseGroup(IReadOnlyList<TypeParam> typeParams)
+    private List<EffectRequirementNode> ParseFunctionClauseGroup(
+        IReadOnlyList<TypeParam> typeParams,
+        List<DeclarationClause> clauses)
     {
         var requiredAbilities = new List<EffectRequirementNode>();
         while (!ctx.IsEof)
         {
             if (ctx.Check(WellKnownStrings.Keywords.Where))
             {
-                _typeParser.ApplyGenericWhereClause(typeParams);
+                clauses.Add(ParseGenericWhereClause(typeParams));
                 continue;
             }
 
             if (ctx.Check(WellKnownStrings.Keywords.Need))
             {
-                requiredAbilities.AddRange(ParseNeedClause());
+                var start = ctx.Current;
+                var requirements = ParseNeedClause();
+                requiredAbilities.AddRange(requirements);
+                var clause = CreateClause(DeclarationClauseKind.Need, "need", start);
+                foreach (var requirement in requirements)
+                {
+                    clause.AddArgument(string.Join(WellKnownStrings.Separators.Path, requirement.Path));
+                }
+                clause.SetSpan(ctx.SpanFrom(start));
+                clauses.Add(clause);
+                continue;
+            }
+
+            if (ClauseSchema.TryGetKind(ctx.GetText(), out var kind))
+            {
+                if (!IsSignatureClause(kind))
+                {
+                    RejectInterimAttachmentClause(kind);
+                    continue;
+                }
+
+                clauses.Add(ParseDeclarationClause(kind));
+                continue;
+            }
+
+            if (ctx.Check("impl"))
+            {
+                if (!ctx.SupportsTypedClauses)
+                {
+                    clauses.Add(ParseLegacyImplClause());
+                    continue;
+                }
+
+                ctx.Error("function-level impl clauses were removed; declare a named instance");
+                SkipRemovedFunctionClause();
+                continue;
+            }
+
+            if (ctx.Check("operator"))
+            {
+                ctx.Error("function-level operator clauses were removed; declare the symbolic function name directly");
+                SkipRemovedFunctionClause();
+                continue;
+            }
+
+            if (IsRemovedCompilerDirective(ctx.GetText()))
+            {
+                RejectRemovedCompilerDirective();
                 continue;
             }
 
@@ -573,12 +953,370 @@ public sealed class DeclParser(ParserContext ctx)
         return requiredAbilities;
     }
 
-    private void ParseGenericWhereClauseGroup(IReadOnlyList<TypeParam> typeParams)
+    private DeclarationClause ParseLegacyImplClause()
     {
-        while (ctx.Check(WellKnownStrings.Keywords.Where))
+        var start = ctx.Current;
+        ctx.Advance();
+        var argumentStart = ctx.SavePosition();
+        _typeParser.ParseTraitRef();
+        var clause = CreateClause(DeclarationClauseKind.LegacyImpl, "impl", start);
+        clause.AddArgument(ReadConsumedTokenRange(argumentStart));
+        clause.SetSpan(ctx.SpanFrom(start));
+        return clause;
+    }
+
+    private void SkipRemovedFunctionClause()
+    {
+        ctx.Advance();
+        while (!ctx.IsEof &&
+               !ctx.Check("{") &&
+               !ctx.Check(";") &&
+               !ClauseSchema.TryGetKind(ctx.GetText(), out _))
         {
-            _typeParser.ApplyGenericWhereClause(typeParams);
+            ctx.Advance();
         }
+    }
+
+    private List<DeclarationClause> ParseDeclarationClauseZone(IReadOnlyList<TypeParam> typeParams)
+    {
+        var clauses = new List<DeclarationClause>();
+        while (ClauseSchema.TryGetKind(ctx.GetText(), out _) || IsRemovedCompilerDirective(ctx.GetText()))
+        {
+            if (IsRemovedCompilerDirective(ctx.GetText()))
+            {
+                RejectRemovedCompilerDirective();
+                continue;
+            }
+
+            _ = ClauseSchema.TryGetKind(ctx.GetText(), out var kind);
+            if (!IsSignatureClause(kind))
+            {
+                RejectInterimAttachmentClause(kind);
+                continue;
+            }
+
+            if (kind == DeclarationClauseKind.Where)
+            {
+                clauses.Add(ParseGenericWhereClause(typeParams));
+            }
+            else
+            {
+                clauses.Add(ParseDeclarationClause(kind));
+            }
+        }
+
+        return clauses;
+    }
+
+    private static bool IsSignatureClause(DeclarationClauseKind kind) =>
+        kind is DeclarationClauseKind.Where or DeclarationClauseKind.Case or
+        DeclarationClauseKind.Need or DeclarationClauseKind.Compiler;
+
+    private void RejectInterimAttachmentClause(DeclarationClauseKind kind)
+    {
+        var keyword = ctx.GetText();
+        ctx.Error($"'{keyword}' is an interim pre-body attachment; use '@[{keyword}(...)]' typed declaration tag syntax");
+        _ = ParseDeclarationClause(kind);
+    }
+
+    private static bool IsRemovedCompilerDirective(string keyword) =>
+        keyword is "internal" or "intrinsic" or "llvm_abi";
+
+    private void RejectRemovedCompilerDirective()
+    {
+        var keyword = ctx.GetText();
+        ctx.Error($"'{keyword}' was replaced by the structured compiler(...) directive");
+        ctx.Advance();
+        if (keyword is "intrinsic" or "llvm_abi" && !IsClauseBoundary())
+        {
+            ctx.Advance();
+        }
+    }
+
+    private DeclarationClause ParseDeclarationClause(DeclarationClauseKind kind)
+    {
+        var start = ctx.Current;
+        var keyword = ctx.GetText();
+        ctx.Advance();
+        var clause = CreateClause(kind, keyword, start);
+        _ = ClauseSchema.TryGet(keyword, out var spec);
+
+        if (kind is DeclarationClauseKind.Extern or DeclarationClauseKind.Compiler)
+        {
+            if (!ctx.Match("("))
+            {
+                ctx.Error(kind == DeclarationClauseKind.Extern
+                    ? "extern uses the structured form 'extern(c, library: Library, name: \"symbol\")'"
+                    : "compiler directives use the structured form 'compiler(internal, intrinsic: \"name\")'");
+                if (!IsClauseBoundary())
+                {
+                    clause.AddArgument(ReadClauseArgument());
+                }
+                clause.SetSpan(ctx.SpanFrom(start));
+                return clause;
+            }
+
+            if (!ctx.Check(")"))
+            {
+                clause.AddArgument(ReadAttributeArg());
+                while (ctx.Match(","))
+                {
+                    if (ctx.Check(")"))
+                    {
+                        break;
+                    }
+                    clause.AddArgument(ReadAttributeArg());
+                }
+            }
+            ctx.Expect(")");
+            clause.SetSpan(ctx.SpanFrom(start));
+            return clause;
+        }
+
+        if (spec.Arguments == ClauseArgumentGrammar.None)
+        {
+            clause.SetSpan(ctx.SpanFrom(start));
+            return clause;
+        }
+
+        if (spec.Arguments == ClauseArgumentGrammar.MetaInvocation)
+        {
+            var saved = ctx.SavePosition();
+            var invocation = ParseMetaInvocationSyntax();
+            ctx.RestorePosition(saved);
+            clause.AddArgument(ReadMetaInvocationTokens());
+            clause.SetMetaInvocation(invocation);
+            clause.SetSpan(ctx.SpanFrom(start));
+            return clause;
+        }
+
+        if (spec.Arguments is ClauseArgumentGrammar.PathList or ClauseArgumentGrammar.IdentifierList)
+        {
+            clause.AddArgument(ReadClauseArgument());
+            while (ctx.Match(","))
+            {
+                clause.AddArgument(ReadClauseArgument());
+            }
+            clause.SetSpan(ctx.SpanFrom(start));
+            return clause;
+        }
+
+        clause.AddArgument(ReadClauseArgument());
+        if (spec.Arguments == ClauseArgumentGrammar.TokenIsland && !IsClauseBoundary())
+        {
+            clause.AddArgument(ReadClauseArgument());
+        }
+        clause.SetSpan(ctx.SpanFrom(start));
+        return clause;
+    }
+
+    private MetaInvocationSyntax ParseMetaInvocationSyntax()
+    {
+        var start = ctx.Current;
+        var invocation = new MetaInvocationSyntax();
+        var path = new List<string>();
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
+        {
+            ctx.Error("expand requires a meta generator path");
+            invocation.SetSpan(new SourceSpan(start.Location, start.Length));
+            return invocation;
+        }
+
+        path.Add(ctx.GetText());
+        ctx.Advance();
+        while (ctx.Match("."))
+        {
+            if (!TokenKind.IsAnyIdentifier(ctx.Current))
+            {
+                ctx.Error("expected a generator name after '.'");
+                break;
+            }
+            path.Add(ctx.GetText());
+            ctx.Advance();
+        }
+        invocation.SetGeneratorPath(path);
+
+        if (ctx.Match("("))
+        {
+            if (!ctx.Check(")"))
+            {
+                AddMetaArgument();
+                while (ctx.Match(","))
+                {
+                    AddMetaArgument();
+                }
+            }
+            ctx.Expect(")");
+        }
+
+        invocation.SetSpan(ctx.SpanFrom(start));
+        return invocation;
+
+        void AddMetaArgument()
+        {
+            var argument = _exprParser.ParseExpr();
+            invocation.AddExplicitArgument(argument);
+        }
+    }
+
+    private string ReadMetaInvocationTokens()
+    {
+        var parts = new List<string>();
+        var depth = 0;
+        while (!ctx.IsEof)
+        {
+            var text = ctx.GetText();
+            if (depth == 0 &&
+                (text is "{" or "}" or ";" or "=" or "," || ClauseSchema.TryGetKind(text, out _)))
+            {
+                break;
+            }
+
+            depth += text switch
+            {
+                "(" or "[" => 1,
+                ")" or "]" => -1,
+                _ => 0
+            };
+            parts.Add(text);
+            ctx.Advance();
+            if (depth == 0 && parts.Count > 0 && text == ")")
+            {
+                break;
+            }
+        }
+
+        return string.Concat(parts);
+    }
+
+    private string ReadClauseArgument()
+    {
+        if (IsClauseBoundary())
+        {
+            ctx.Error($"clause '{ctx.GetText(ctx.Peek(-1))}' requires an argument");
+            return string.Empty;
+        }
+
+        var parts = new List<string> { ctx.GetLiteralRawText() };
+        ctx.Advance();
+        while (ctx.Check(".") && TokenKind.IsAnyIdentifier(ctx.Peek(1)))
+        {
+            parts.Add(".");
+            ctx.Advance();
+            parts.Add(ctx.GetText());
+            ctx.Advance();
+        }
+
+        if (ctx.Check("["))
+        {
+            var depth = 0;
+            do
+            {
+                var text = ctx.GetLiteralRawText();
+                depth += text switch
+                {
+                    "[" => 1,
+                    "]" => -1,
+                    _ => 0
+                };
+                parts.Add(text);
+                ctx.Advance();
+            }
+            while (!ctx.IsEof && depth > 0);
+
+            if (depth > 0)
+            {
+                ctx.Error("unterminated generic argument list in declaration clause");
+            }
+        }
+
+        return string.Concat(parts);
+    }
+
+    private bool IsClauseBoundary()
+    {
+        var text = ctx.GetText();
+        return text is "{" or "}" or ";" or "<eof>" || ClauseSchema.TryGetKind(text, out _);
+    }
+
+    private static DeclarationClause CreateClause(
+        DeclarationClauseKind kind,
+        string keyword,
+        Token start)
+    {
+        var clause = new DeclarationClause();
+        clause.SetKind(kind, keyword);
+        clause.SetSpan(new SourceSpan(start.Location, start.Length));
+        return clause;
+    }
+
+    private void RejectPostBodyClauses()
+    {
+        while (ClauseSchema.TryGetKind(ctx.GetText(), out var kind))
+        {
+            if (kind == DeclarationClauseKind.Expand && IsStandaloneExpandDeclarationLookahead())
+            {
+                return;
+            }
+
+            ctx.Error("declaration clauses must appear before the body");
+            _ = ParseDeclarationClause(kind);
+        }
+    }
+
+    private bool IsStandaloneExpandDeclarationLookahead()
+    {
+        var offset = 1;
+        if (!TokenKind.IsAnyIdentifier(ctx.Peek(offset)))
+        {
+            return false;
+        }
+
+        offset++;
+        while (ctx.GetText(ctx.Peek(offset)) == "." &&
+               TokenKind.IsAnyIdentifier(ctx.Peek(offset + 1)))
+        {
+            offset += 2;
+        }
+
+        if (ctx.GetText(ctx.Peek(offset)) == "(")
+        {
+            var depth = 0;
+            do
+            {
+                var token = ctx.Peek(offset);
+                if (token is EofToken)
+                {
+                    return false;
+                }
+
+                depth += ctx.GetText(token) switch
+                {
+                    "(" or "[" or "{" => 1,
+                    ")" or "]" or "}" => -1,
+                    _ => 0
+                };
+                offset++;
+            }
+            while (depth > 0);
+        }
+
+        return ctx.GetText(ctx.Peek(offset)) == ";";
+    }
+
+    private DeclarationClause ParseGenericWhereClause(IReadOnlyList<TypeParam> typeParams)
+    {
+        var start = ctx.Current;
+        var startPosition = ctx.SavePosition();
+        _typeParser.ApplyGenericWhereClause(typeParams);
+        var consumed = ReadConsumedTokenRange(startPosition);
+        var argument = consumed.StartsWith(WellKnownStrings.Keywords.Where, StringComparison.Ordinal)
+            ? consumed[WellKnownStrings.Keywords.Where.Length..]
+            : consumed;
+        var clause = CreateClause(DeclarationClauseKind.Where, WellKnownStrings.Keywords.Where, start);
+        clause.AddArgument(argument);
+        clause.SetSpan(ctx.SpanFrom(start));
+        return clause;
     }
 
     private AdtDef ParseNameFirstType(
@@ -588,8 +1326,7 @@ public sealed class DeclParser(ParserContext ctx)
         string name,
         List<TypeParam> typeParams)
     {
-        _typeParser.ApplyGenericWhereClause(typeParams);
-        ParseGenericWhereClauseGroup(typeParams);
+        var clauses = ParseDeclarationClauseZone(typeParams);
         if (ctx.Match("="))
         {
             var target = _typeParser.ParseType();
@@ -600,12 +1337,26 @@ public sealed class DeclParser(ParserContext ctx)
             alias.SetTypeParams(typeParams);
             alias.SetTypeAlias(target);
             alias.SetAttributes(attrs);
+            alias.SetClauses(clauses);
             alias.SetExported(isExport);
             return alias;
         }
 
         ctx.Expect("{");
-        ParseAdtBody(out var constructors, out var fields);
+        List<CaseTypeDef> cases;
+        List<Constructor> constructors;
+        List<Field> fields;
+        List<EidosAstNode> members;
+        if (ctx.SupportsTypedClauses)
+        {
+            ParseClosedTypeBody(out cases, out constructors, out fields, out members);
+        }
+        else
+        {
+            ParseAdtBody(out constructors, out fields);
+            cases = [];
+            members = [.. fields];
+        }
 
         ctx.Expect("}");
         var adt = new AdtDef();
@@ -614,9 +1365,303 @@ public sealed class DeclParser(ParserContext ctx)
         adt.SetTypeParams(typeParams);
         adt.SetConstructors(constructors);
         adt.SetFields(fields);
+        adt.SetCases(cases);
+        adt.SetMembers(members);
         adt.SetAttributes(attrs);
+        adt.SetClauses(clauses);
         adt.SetExported(isExport);
         return adt;
+    }
+
+    private void ParseClosedTypeBody(
+        out List<CaseTypeDef> cases,
+        out List<Constructor> constructors,
+        out List<Field> fields,
+        out List<EidosAstNode> members)
+    {
+        cases = [];
+        constructors = [];
+        fields = [];
+        members = [];
+        var seenCase = false;
+        var fieldNames = new HashSet<string>(StringComparer.Ordinal);
+        var caseNames = new HashSet<string>(StringComparer.Ordinal);
+
+        while (!ctx.Check("}") && !ctx.IsEof)
+        {
+            if (ctx.Match(","))
+            {
+                continue;
+            }
+
+            var attributes = ParseAttributes();
+            if (ctx.Check("expand"))
+            {
+                members.Add(ParseExpandDeclaration(SyntaxCategory.Member));
+                ctx.Match(",");
+                continue;
+            }
+            if (IsClosedCaseLookahead())
+            {
+                seenCase = true;
+                var caseType = ParseCaseType(fieldNames, attributes);
+                if (!caseNames.Add(caseType.Name))
+                {
+                    ctx.Error($"duplicate case type '{caseType.Name}'", caseType.Span.Location);
+                }
+                cases.Add(caseType);
+                members.Add(caseType);
+                constructors.AddRange(ClosedCaseConstructorProjection.Create(caseType, fields, []));
+            }
+            else if (IsNewFieldLookahead())
+            {
+                if (seenCase)
+                {
+                    ctx.Error("common fields must be declared before the first case type");
+                }
+
+                var field = ParseField("::");
+                if (!fieldNames.Add(field.Name))
+                {
+                    ctx.Error($"duplicate common field '{field.Name}'", field.Span.Location);
+                }
+                fields.Add(field);
+                members.Add(field);
+            }
+            else if (IsLegacyFieldLookahead())
+            {
+                ctx.Error("type-body fields use 'name :: Type'; ':' is reserved for labels");
+                _ = ParseField(":");
+            }
+            else
+            {
+                ctx.Error("expected a field declaration 'name :: Type' or a case type 'Case :: type'");
+                ctx.Advance();
+            }
+
+            if (!ctx.Check("}") && !ctx.Check(","))
+            {
+                ctx.Error("expected ',' between type body members");
+            }
+        }
+    }
+
+    private bool IsClosedCaseLookahead()
+    {
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
+        {
+            return false;
+        }
+
+        var bindingOffset = 1;
+        if (ctx.CheckPeek(bindingOffset, "["))
+        {
+            var depth = 0;
+            do
+            {
+                var token = ctx.Peek(bindingOffset);
+                if (token is EofToken)
+                {
+                    return false;
+                }
+
+                var text = ctx.GetText(token);
+                if (text == "[")
+                {
+                    depth++;
+                }
+                else if (text == "]")
+                {
+                    depth--;
+                }
+
+                bindingOffset++;
+            }
+            while (depth > 0);
+        }
+
+        return ctx.CheckPeek(bindingOffset, "::") &&
+               ctx.CheckPeek(bindingOffset + 1, WellKnownStrings.Keywords.Type);
+    }
+
+    private bool IsNewFieldLookahead()
+    {
+        return TokenKind.IsAnyIdentifier(ctx.Current) &&
+               ctx.CheckPeek(1, "::") &&
+               !ctx.CheckPeek(2, WellKnownStrings.Keywords.Type);
+    }
+
+    private bool IsLegacyFieldLookahead()
+    {
+        return TokenKind.IsAnyIdentifier(ctx.Current) && ctx.CheckPeek(1, ":");
+    }
+
+    private CaseTypeDef ParseCaseType(
+        IReadOnlySet<string> inheritedFieldNames,
+        IReadOnlyList<AstAttribute>? attributes = null)
+    {
+        var startToken = ctx.Current;
+        var caseType = new CaseTypeDef();
+        caseType.SetName(ParseCompileTimeDeclarationName());
+        caseType.SetTypeParams(_typeParser.TryParseTypeParams() ?? []);
+        ctx.Expect("::");
+        ctx.Expect(WellKnownStrings.Keywords.Type);
+        caseType.SetAttributes([.. attributes ?? []]);
+
+        var isPositional = ctx.Match("(");
+        if (isPositional)
+        {
+            if (inheritedFieldNames.Count > 0)
+            {
+                ctx.Error("a positional case type cannot inherit common named fields");
+            }
+            if (!ctx.Check(")"))
+            {
+                caseType.AddPositionalField(_typeParser.ParseType());
+                while (ctx.Match(","))
+                {
+                    caseType.AddPositionalField(_typeParser.ParseType());
+                }
+            }
+            ctx.Expect(")");
+        }
+
+        var clauses = ParseCaseTypeClauseZone(caseType.TypeParams, out var parentSpecialization);
+        caseType.SetClauses(clauses);
+        if (!isPositional)
+        {
+            ctx.Expect("{");
+            ParseNestedCaseBody(caseType, inheritedFieldNames);
+            ctx.Expect("}");
+            RejectPostBodyClauses();
+        }
+
+        caseType.SetParentSpecialization(parentSpecialization);
+        caseType.SetSpan(ctx.SpanFrom(startToken));
+        return caseType;
+    }
+
+    private List<DeclarationClause> ParseCaseTypeClauseZone(
+        IReadOnlyList<TypeParam> typeParams,
+        out TypeNode? parentSpecialization)
+    {
+        var clauses = new List<DeclarationClause>();
+        parentSpecialization = null;
+        while (ClauseSchema.TryGetKind(ctx.GetText(), out _) || IsRemovedCompilerDirective(ctx.GetText()))
+        {
+            if (IsRemovedCompilerDirective(ctx.GetText()))
+            {
+                RejectRemovedCompilerDirective();
+                continue;
+            }
+
+            _ = ClauseSchema.TryGetKind(ctx.GetText(), out var kind);
+            if (!IsSignatureClause(kind))
+            {
+                RejectInterimAttachmentClause(kind);
+                continue;
+            }
+
+            if (kind == DeclarationClauseKind.Where)
+            {
+                clauses.Add(ParseGenericWhereClause(typeParams));
+                continue;
+            }
+
+            if (kind != DeclarationClauseKind.Case)
+            {
+                clauses.Add(ParseDeclarationClause(kind));
+                continue;
+            }
+
+            var start = ctx.Current;
+            ctx.Advance();
+            var argumentStart = ctx.SavePosition();
+            var specialization = _typeParser.ParseType();
+            var clause = CreateClause(DeclarationClauseKind.Case, "case", start);
+            clause.AddArgument(ReadConsumedTokenRange(argumentStart));
+            clause.SetSpan(ctx.SpanFrom(start));
+            clauses.Add(clause);
+            parentSpecialization ??= specialization;
+        }
+
+        return clauses;
+    }
+
+    private string ReadConsumedTokenRange(int startPosition)
+    {
+        var endPosition = ctx.SavePosition();
+        var parts = new List<string>();
+        ctx.RestorePosition(startPosition);
+        while (ctx.Position < endPosition && !ctx.IsEof)
+        {
+            parts.Add(ctx.GetLiteralRawText());
+            ctx.Advance();
+        }
+        ctx.RestorePosition(endPosition);
+        return string.Concat(parts);
+    }
+
+    private void ParseNestedCaseBody(CaseTypeDef owner, IReadOnlySet<string> inheritedFieldNames)
+    {
+        var seenCase = false;
+        var effectiveFieldNames = new HashSet<string>(inheritedFieldNames, StringComparer.Ordinal);
+        var caseNames = new HashSet<string>(StringComparer.Ordinal);
+
+        while (!ctx.Check("}") && !ctx.IsEof)
+        {
+            if (ctx.Match(","))
+            {
+                continue;
+            }
+
+            var attributes = ParseAttributes();
+            if (ctx.Check("expand"))
+            {
+                owner.AddMemberExpansion(ParseExpandDeclaration(SyntaxCategory.Member));
+                ctx.Match(",");
+                continue;
+            }
+            if (IsClosedCaseLookahead())
+            {
+                seenCase = true;
+                var child = ParseCaseType(effectiveFieldNames, attributes);
+                if (!caseNames.Add(child.Name))
+                {
+                    ctx.Error($"duplicate case type '{child.Name}'", child.Span.Location);
+                }
+                owner.AddCase(child);
+            }
+            else if (IsNewFieldLookahead())
+            {
+                if (seenCase)
+                {
+                    ctx.Error("fields must be declared before the first nested case type");
+                }
+
+                var field = ParseField("::");
+                if (!effectiveFieldNames.Add(field.Name))
+                {
+                    ctx.Error($"field '{field.Name}' shadows an inherited or earlier field in case type '{owner.Name}'", field.Span.Location);
+                }
+                owner.AddField(field);
+            }
+            else if (IsLegacyFieldLookahead())
+            {
+                ctx.Error("type-body fields use 'name :: Type'; ':' is reserved for labels");
+                _ = ParseField(":");
+            }
+            else
+            {
+                ctx.Error("expected a field declaration or nested case type");
+                ctx.Advance();
+            }
+
+            if (!ctx.Check("}") && !ctx.Check(","))
+            {
+                ctx.Error("expected ',' between type body members");
+            }
+        }
     }
 
     private TraitDef ParseNameFirstTrait(
@@ -636,20 +1681,27 @@ public sealed class DeclParser(ParserContext ctx)
             }
         }
 
-        _typeParser.ApplyGenericWhereClause(typeParams);
-        ParseGenericWhereClauseGroup(typeParams);
+        var clauses = ParseDeclarationClauseZone(typeParams);
         var funcs = new List<FuncDef>();
         var associatedTypes = new List<AssociatedTypeDecl>();
         var associatedConsts = new List<AssociatedConstDecl>();
+        var members = new List<EidosAstNode>();
         if (ctx.Check("{"))
         {
             ctx.Advance();
             while (!ctx.Check("}") && !ctx.IsEof)
             {
                 var funcAttrs = ParseAttributes();
+                if (ctx.Check("expand"))
+                {
+                    members.Add(ParseExpandDeclaration(SyntaxCategory.Member));
+                    continue;
+                }
                 if (ctx.Check(WellKnownStrings.Keywords.Func))
                 {
-                    funcs.Add(ParseFuncDef(funcAttrs, false));
+                    var method = ParseFuncDef(funcAttrs, false);
+                    funcs.Add(method);
+                    members.Add(method);
                 }
                 else if (IsNameFirstDeclarationStart())
                 {
@@ -658,15 +1710,20 @@ public sealed class DeclParser(ParserContext ctx)
                     {
                         case FuncDef funcDef:
                             funcs.Add(funcDef);
+                            members.Add(funcDef);
                             break;
                         case FuncDecl funcDecl:
-                            funcs.Add(WrapFuncDecl(funcDecl));
+                            var wrapped = WrapFuncDecl(funcDecl);
+                            funcs.Add(wrapped);
+                            members.Add(wrapped);
                             break;
                         case AssociatedTypeDecl associatedType:
                             associatedTypes.Add(associatedType);
+                            members.Add(associatedType);
                             break;
                         case AssociatedConstDecl associatedConst:
                             associatedConsts.Add(associatedConst);
+                            members.Add(associatedConst);
                             break;
                     }
                 }
@@ -680,7 +1737,7 @@ public sealed class DeclParser(ParserContext ctx)
             }
             ctx.Expect("}");
         }
-        ParseGenericWhereClauseGroup(typeParams);
+        RejectPostBodyClauses();
 
         ctx.Match(";");
         var def = new TraitDef();
@@ -691,7 +1748,9 @@ public sealed class DeclParser(ParserContext ctx)
         def.SetMethods(funcs);
         def.SetAssociatedTypes(associatedTypes);
         def.SetAssociatedConsts(associatedConsts);
+        def.SetMembers(members);
         def.SetAttributes(attrs);
+        def.SetClauses(clauses);
         def.SetExported(isExport);
         return def;
     }
@@ -798,7 +1857,9 @@ public sealed class DeclParser(ParserContext ctx)
         bool isExport = false,
         bool isComptime = false)
     {
-        var requiredAbilities = ParseFunctionClauseGroup(typeParams);
+        var clauses = new List<DeclarationClause>();
+        AddSignatureNeedClause(signature, clauses);
+        var requiredAbilities = ParseFunctionClauseGroup(typeParams, clauses);
 
         List<PatternBranch>? body = null;
         if (ctx.Check("{"))
@@ -807,7 +1868,7 @@ public sealed class DeclParser(ParserContext ctx)
             body = ParsePatternBranches();
             ctx.Expect("}");
         }
-        requiredAbilities.AddRange(ParseFunctionClauseGroup(typeParams));
+        RejectPostBodyClauses();
 
         var func = new FuncDef();
         func.SetSpan(ctx.SpanFrom(startToken));
@@ -818,6 +1879,7 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetComptime(isComptime);
         func.SetBody(body ?? []);
         func.SetAttributes(attrs);
+        func.SetClauses(clauses);
         func.SetExported(isExport);
         return func;
     }
@@ -828,9 +1890,10 @@ public sealed class DeclParser(ParserContext ctx)
         string name,
         List<TypeParam> typeParams,
         TypeNode signature,
+        List<DeclarationClause> clauses,
+        List<EffectRequirementNode> requiredAbilities,
         bool isExport = false)
     {
-        var requiredAbilities = ParseFunctionClauseGroup(typeParams);
         if (ctx.Match(";"))
         {
             var decl = new FuncDecl();
@@ -840,6 +1903,7 @@ public sealed class DeclParser(ParserContext ctx)
             decl.SetSignature(signature);
             decl.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
             decl.SetAttributes(attrs);
+            decl.SetClauses(clauses);
             decl.SetExported(isExport);
             return decl;
         }
@@ -851,7 +1915,7 @@ public sealed class DeclParser(ParserContext ctx)
             body = ParsePatternBranches();
             ctx.Expect("}");
         }
-        requiredAbilities.AddRange(ParseFunctionClauseGroup(typeParams));
+        RejectPostBodyClauses();
 
         var func = new FuncDef();
         func.SetSpan(ctx.SpanFrom(startToken));
@@ -861,6 +1925,7 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
         func.SetBody(body ?? []);
         func.SetAttributes(attrs);
+        func.SetClauses(clauses);
         func.SetExported(isExport);
         return func;
     }
@@ -879,6 +1944,7 @@ public sealed class DeclParser(ParserContext ctx)
         wrapper.SetComptime(funcDecl.IsComptime);
         wrapper.SetBody([]);
         wrapper.SetAttributes(funcDecl.Attributes);
+        wrapper.SetClauses(funcDecl.Clauses);
         return wrapper;
     }
 
@@ -894,6 +1960,7 @@ public sealed class DeclParser(ParserContext ctx)
             ctx.Error(DiagnosticMessages.ParserEffectTagTypeParametersNotSupported);
         }
 
+        var clauses = ParseDeclarationClauseZone(typeParams);
         if (ctx.Check("{"))
         {
             ctx.Error(DiagnosticMessages.ParserEffectTagMembersNotSupported);
@@ -903,11 +1970,13 @@ public sealed class DeclParser(ParserContext ctx)
         {
             ctx.Error(DiagnosticMessages.ParserEffectTagRequiresSemicolon);
         }
+        RejectPostBodyClauses();
 
         var def = new EffectDef();
         def.SetSpan(ctx.SpanFrom(startToken));
         def.SetName(name);
         def.SetAttributes(attrs);
+        def.SetClauses(clauses);
         def.SetExported(isExport);
         return def;
     }
@@ -951,6 +2020,7 @@ public sealed class DeclParser(ParserContext ctx)
         {
             targetType = _typeParser.ParseType();
             usesConstructorBridge = true;
+            var clauses = ParseDeclarationClauseZone(typeParams);
 
             var bridgeDef = new InstanceDecl();
             bridgeDef.SetSpan(ctx.SpanFrom(startToken));
@@ -959,6 +2029,7 @@ public sealed class DeclParser(ParserContext ctx)
             bridgeDef.SetTrait(traitRef);
             bridgeDef.SetTargetType(targetType);
             bridgeDef.SetUsesConstructorBridge(true);
+            bridgeDef.SetClauses(clauses);
             if (ctx.Check("{"))
             {
                 bridgeDef.SetConstructorBridgeFacts(ParseConstructorBridgeFacts());
@@ -973,17 +2044,26 @@ public sealed class DeclParser(ParserContext ctx)
             return bridgeDef;
         }
 
+        var instanceClauses = ParseDeclarationClauseZone(typeParams);
         ctx.Expect("{");
 
         var methods = new List<FuncDef>();
         var associatedTypes = new List<AssociatedTypeDecl>();
         var associatedConsts = new List<AssociatedConstDecl>();
+        var members = new List<EidosAstNode>();
         while (!ctx.Check("}") && !ctx.IsEof)
         {
             var methodAttrs = ParseAttributes();
+            if (ctx.Check("expand"))
+            {
+                members.Add(ParseExpandDeclaration(SyntaxCategory.Member));
+                continue;
+            }
             if (ctx.Check(WellKnownStrings.Keywords.Func))
             {
-                methods.Add(ParseFuncDef(methodAttrs, false));
+                var method = ParseFuncDef(methodAttrs, false);
+                methods.Add(method);
+                members.Add(method);
             }
             else if (IsNameFirstDeclarationStart())
             {
@@ -992,12 +2072,15 @@ public sealed class DeclParser(ParserContext ctx)
                 {
                     case FuncDef funcDef:
                         methods.Add(funcDef);
+                        members.Add(funcDef);
                         break;
                     case AssociatedTypeDecl associatedType:
                         associatedTypes.Add(associatedType);
+                        members.Add(associatedType);
                         break;
                     case AssociatedConstDecl associatedConst:
                         associatedConsts.Add(associatedConst);
+                        members.Add(associatedConst);
                         break;
                 }
             }
@@ -1011,6 +2094,7 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         ctx.Expect("}");
+        RejectPostBodyClauses();
         var def = new InstanceDecl();
         def.SetSpan(ctx.SpanFrom(startToken));
         def.SetName(name);
@@ -1024,7 +2108,9 @@ public sealed class DeclParser(ParserContext ctx)
         def.SetMethods(methods);
         def.SetAssociatedTypes(associatedTypes);
         def.SetAssociatedConsts(associatedConsts);
+        def.SetMembers(members);
         def.SetAttributes(attrs);
+        def.SetClauses(instanceClauses);
         def.SetExported(isExport);
         return def;
     }
@@ -1048,7 +2134,7 @@ public sealed class DeclParser(ParserContext ctx)
     private ConstructorBridgeFact ParseConstructorBridgeFact()
     {
         var startToken = ctx.Current;
-        var ctorName = ParseCompileTimeDeclarationName("constructor bridge fact");
+        var ctorName = ParseCompileTimeDeclarationName();
         ctx.Expect("=>");
         ctx.Expect("{");
 
@@ -1082,6 +2168,11 @@ public sealed class DeclParser(ParserContext ctx)
         List<string> modulePath)
     {
         var decl = new ModuleDecl();
+        var clauses = ParseDeclarationClauseZone([]);
+        foreach (var segment in modulePath)
+        {
+            ctx.RegisterNamespaceRoot(segment);
+        }
         ctx.Expect("{");
         var innerDecls = new List<Declaration>();
         while (!ctx.Check("}") && !ctx.IsEof)
@@ -1093,10 +2184,12 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         ctx.Expect("}");
+        RejectPostBodyClauses();
         decl.SetSpan(ctx.SpanFrom(startToken));
         decl.SetPath(modulePath);
         decl.SetDeclarations(innerDecls);
         decl.SetAttributes(attrs);
+        decl.SetClauses(clauses);
         decl.SetExported(isExport);
         return decl;
     }
@@ -1180,7 +2273,7 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         ctx.Expect("=>");
-        if (HasCurriedGuardBeforeNextArrow())
+        while (HasCurriedPatternBeforeNextArrow())
         {
             while (!ctx.Check("when") && !ctx.Check("=>") && !ctx.IsEof)
             {
@@ -1220,10 +2313,9 @@ public sealed class DeclParser(ParserContext ctx)
         return branch;
     }
 
-    private bool HasCurriedGuardBeforeNextArrow()
+    private bool HasCurriedPatternBeforeNextArrow()
     {
         var depth = 0;
-        var sawWhen = false;
         for (var offset = 0; offset < 64; offset++)
         {
             var token = ctx.Peek(offset);
@@ -1235,15 +2327,11 @@ public sealed class DeclParser(ParserContext ctx)
             var text = ctx.GetText(token);
             if (depth == 0)
             {
-                if (text == "when")
+                if (text == "=>")
                 {
-                    sawWhen = true;
+                    return true;
                 }
-                else if (text == "=>")
-                {
-                    return sawWhen;
-                }
-                else if (text is "," or "}")
+                if (text is "," or "}")
                 {
                     return false;
                 }
@@ -1382,7 +2470,7 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         var required = new List<EffectRequirementNode>();
-        if (!TokenKind.IsTypeIdentifier(ctx.Current))
+        if (!IsEffectIdentifier(ctx.Current))
         {
             ctx.Error(DiagnosticMessages.ParserNeedClauseRequiresEffectPath);
             return required;
@@ -1391,7 +2479,7 @@ public sealed class DeclParser(ParserContext ctx)
         required.Add(ParseEffectRequirement());
         while (ctx.Match(","))
         {
-            if (!TokenKind.IsTypeIdentifier(ctx.Current))
+            if (!IsEffectIdentifier(ctx.Current))
             {
                 ctx.Error(DiagnosticMessages.ParserNeedClauseRequiresEffectPath);
                 break;
@@ -1408,7 +2496,7 @@ public sealed class DeclParser(ParserContext ctx)
         var startToken = ctx.Current;
         var path = QualifiedPathParser.Parse(
             ctx,
-            TokenKind.IsTypeIdentifier,
+            IsEffectIdentifier,
             DiagnosticMessages.ParserExpectedTypeIdentifierAfterQualifiedSeparator);
 
         if (ctx.Check("(") || ctx.Check("["))
@@ -1421,6 +2509,39 @@ public sealed class DeclParser(ParserContext ctx)
             Path = path,
             Span = ctx.SpanFrom(startToken)
         };
+    }
+
+    private static bool IsEffectIdentifier(Token token) =>
+        TokenKind.IsIdentifier(token) || TokenKind.IsAnyIdentifier(token);
+
+    private static void AddSignatureNeedClause(TypeNode signature, ICollection<DeclarationClause> clauses)
+    {
+        var effects = new List<EffectRequirementNode>();
+        var current = signature;
+        while (current is ArrowType arrow)
+        {
+            foreach (var effect in arrow.RequiredEffects)
+            {
+                AddEffectIfMissing(effects, effect);
+            }
+
+            current = arrow.ReturnType;
+        }
+
+        if (effects.Count == 0)
+        {
+            return;
+        }
+
+        var clause = new DeclarationClause();
+        clause.SetKind(DeclarationClauseKind.Need, WellKnownStrings.Keywords.Need);
+        foreach (var effect in effects)
+        {
+            clause.AddArgument(string.Join(WellKnownStrings.Separators.Path, effect.Path));
+        }
+
+        clause.SetSpan(effects[0].Span);
+        clauses.Add(clause);
     }
 
     private string ParseFunctionName()
@@ -1452,7 +2573,7 @@ public sealed class DeclParser(ParserContext ctx)
         return fallback;
     }
 
-    private string ParseRuntimeDeclarationName(string declarationKind)
+    private string ParseCompileTimeDeclarationName()
     {
         if (InternalNameParser.TryParseLeadingDoubleUnderscoreName(ctx, out var internalName))
         {
@@ -1460,30 +2581,9 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         var name = ctx.GetText();
-        if (!TokenKind.IsIdentifier(ctx.Current))
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
         {
-            ctx.Error(DiagnosticMessages.ParserRuntimeDeclarationNameMustStartWithLowercase(declarationKind));
-        }
-
-        if (!ctx.IsEof)
-        {
-            ctx.Advance();
-        }
-
-        return name;
-    }
-
-    private string ParseCompileTimeDeclarationName(string declarationKind)
-    {
-        if (InternalNameParser.TryParseLeadingDoubleUnderscoreName(ctx, out var internalName))
-        {
-            return internalName;
-        }
-
-        var name = ctx.GetText();
-        if (!TokenKind.IsTypeIdentifier(ctx.Current))
-        {
-            ctx.Error(DiagnosticMessages.ParserCompileTimeDeclarationNameMustStartWithUppercase(declarationKind));
+            ctx.Error(DiagnosticMessages.ParserUnexpectedToken(name));
         }
 
         if (!ctx.IsEof)
@@ -1571,7 +2671,7 @@ public sealed class DeclParser(ParserContext ctx)
     {
         var startToken = ctx.Current;
         ctx.Expect("type");
-        var name = ParseCompileTimeDeclarationName("type");
+        var name = ParseCompileTimeDeclarationName();
 
         var typeParams = _typeParser.TryParseTypeParams();
         _typeParser.ApplyGenericWhereClause(typeParams ?? []);
@@ -1730,7 +2830,7 @@ public sealed class DeclParser(ParserContext ctx)
     private Constructor ParseConstructor()
     {
         var startToken = ctx.Current;
-        var name = ParseCompileTimeDeclarationName("constructor");
+        var name = ParseCompileTimeDeclarationName();
         var typeParams = _typeParser.TryParseTypeParams();
 
         var ctor = new Constructor();
@@ -1818,12 +2918,12 @@ public sealed class DeclParser(ParserContext ctx)
         return constant;
     }
 
-    private Field ParseField()
+    private Field ParseField(string separator = ":")
     {
         var startToken = ctx.Current;
         var name = ctx.GetText();
         ctx.Advance();
-        ctx.Expect(":");
+        ctx.Expect(separator);
         var type = _typeParser.ParseType();
 
         var field = new Field();
@@ -1841,7 +2941,7 @@ public sealed class DeclParser(ParserContext ctx)
     {
         var startToken = ctx.Current;
         ctx.Expect("ability");
-        var name = ParseCompileTimeDeclarationName("ability");
+        var name = ParseCompileTimeDeclarationName();
         _typeParser.TryParseTypeParams();
         SkipBalancedBlock();
 
@@ -1873,7 +2973,7 @@ public sealed class DeclParser(ParserContext ctx)
     {
         var startToken = ctx.Current;
         ctx.Expect("trait");
-        var name = ParseCompileTimeDeclarationName("trait");
+        var name = ParseCompileTimeDeclarationName();
 
         var typeParams = _typeParser.TryParseTypeParams();
 
@@ -1974,9 +3074,9 @@ public sealed class DeclParser(ParserContext ctx)
         }
         else
         {
-            if (!TokenKind.IsTypeIdentifier(firstToken))
+            if (!TokenKind.IsAnyIdentifier(firstToken))
             {
-                ctx.Error(DiagnosticMessages.ParserModulePathSegmentMustStartWithUppercase);
+                ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
             }
 
             parts.Add(firstSegment);
@@ -2021,9 +3121,9 @@ public sealed class DeclParser(ParserContext ctx)
         if (ctx.Match("as"))
         {
             var alias = ctx.GetText();
-            if (decl.Kind == ImportKind.Module && !TokenKind.IsTypeIdentifier(ctx.Current))
+            if (decl.Kind == ImportKind.Module && !TokenKind.IsAnyIdentifier(ctx.Current))
             {
-                ctx.Error(DiagnosticMessages.ParserModuleAliasMustStartWithUppercase);
+                ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
             }
 
             if (!ctx.IsEof)
@@ -2100,10 +3200,13 @@ public sealed class DeclParser(ParserContext ctx)
             }
         }
 
+        var clauses = ParseDeclarationClauseZone([]);
         ctx.Match(";");
         decl.SetAttributes(attrs);
+        decl.SetClauses(clauses);
         decl.SetExported(isExport);
         decl.SetSpan(ctx.SpanFrom(startToken));
+        RegisterImportedNamespace(decl);
         return decl;
     }
 
@@ -2117,7 +3220,7 @@ public sealed class DeclParser(ParserContext ctx)
     {
         if (!IsValidatedModuleAliasName(alias))
         {
-            ctx.Error(DiagnosticMessages.ParserModuleAliasMustStartWithUppercase);
+            ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
         }
 
         var (packageAlias, parts) = ParseNameFirstImportModulePath();
@@ -2134,18 +3237,32 @@ public sealed class DeclParser(ParserContext ctx)
             ctx.Error(DiagnosticMessages.ParserImportBindingExpectsModulePath);
         }
 
+        var clauses = ParseDeclarationClauseZone([]);
         ctx.Match(";");
         decl.SetAttributes(attrs);
+        decl.SetClauses(clauses);
         decl.SetExported(isExport);
         decl.SetSpan(ctx.SpanFrom(startToken));
+        RegisterImportedNamespace(decl);
         return decl;
     }
 
-    private bool IsValidatedModuleAliasName(string alias)
+    private void RegisterImportedNamespace(ImportDecl decl)
     {
-        // Module alias names are compile-time module names and must start upper-case.
-        return alias.Length > 0 && char.IsUpper(alias[0]);
+        if (decl.Kind != ImportKind.Module)
+        {
+            return;
+        }
+
+        ctx.RegisterNamespaceRoot(decl.Alias ?? decl.ModulePath.LastOrDefault());
+        ctx.RegisterNamespaceRoot(decl.PackageAlias);
+        if (decl.ModulePath.Count > 1)
+        {
+            ctx.RegisterNamespaceRoot(decl.ModulePath[0]);
+        }
     }
+
+    private static bool IsValidatedModuleAliasName(string alias) => alias.Length > 0;
 
     /// <summary>
     /// Parses a 0.6.0-alpha.1 import module path: an optional <c>packageAlias::</c> prefix
@@ -2181,9 +3298,9 @@ public sealed class DeclParser(ParserContext ctx)
         }
         else
         {
-            if (!TokenKind.IsTypeIdentifier(firstToken))
+            if (!TokenKind.IsAnyIdentifier(firstToken))
             {
-                ctx.Error(DiagnosticMessages.ParserModulePathSegmentMustStartWithUppercase);
+                ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
             }
 
             parts.Add(firstSegment);
@@ -2213,7 +3330,7 @@ public sealed class DeclParser(ParserContext ctx)
 
         while (true)
         {
-            if (ctx.Check(".") && TokenKind.IsTypeIdentifier(ctx.Peek(1)))
+            if (ctx.Check(".") && TokenKind.IsAnyIdentifier(ctx.Peek(1)))
             {
                 ctx.Advance();
                 parts.Add(ParseModulePathSegment());
@@ -2224,9 +3341,9 @@ public sealed class DeclParser(ParserContext ctx)
             {
                 ctx.Error(DiagnosticMessages.ParserQualifiedDoubleColonRemoved);
                 ctx.Advance();
-                if (!TokenKind.IsTypeIdentifier(ctx.Current))
+                if (!TokenKind.IsAnyIdentifier(ctx.Current))
                 {
-                    ctx.Error(DiagnosticMessages.ParserModulePathSegmentMustStartWithUppercase);
+                    ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
                     break;
                 }
 
@@ -2243,9 +3360,9 @@ public sealed class DeclParser(ParserContext ctx)
     private string ParseModulePathSegment()
     {
         var segment = ctx.GetText();
-        if (!TokenKind.IsTypeIdentifier(ctx.Current))
+        if (!TokenKind.IsAnyIdentifier(ctx.Current))
         {
-            ctx.Error(DiagnosticMessages.ParserModulePathSegmentMustStartWithUppercase);
+            ctx.Error(DiagnosticMessages.ParserExpectedIdentifierAfterQualifiedSeparator);
         }
 
         if (!ctx.IsEof)

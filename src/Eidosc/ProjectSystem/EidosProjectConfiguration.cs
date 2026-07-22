@@ -1,5 +1,8 @@
 using Eidosc.Pipeline;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 using Tomlyn;
 
 namespace Eidosc.ProjectSystem;
@@ -34,6 +37,7 @@ public sealed record EidosBuildToolConfiguration
 {
     public string Name { get; init; } = "";
     public string Path { get; init; } = "";
+    public string Execution { get; init; } = "host";
 }
 
 public sealed record EidosBuildConfiguration
@@ -41,8 +45,52 @@ public sealed record EidosBuildConfiguration
     public string Program { get; init; } = "";
     public string[] FileInputs { get; init; } = [];
     public string[] Environment { get; init; } = [];
+    public string[] NetworkInputs { get; init; } = [];
+    public string[] VolatileCapabilities { get; init; } = [];
     public string[] OutputRoots { get; init; } = [];
     public EidosBuildToolConfiguration[] Tools { get; init; } = [];
+}
+
+public sealed record EidosMetaResourceConfiguration
+{
+    public string DeclaredInput { get; init; } = "";
+    public string RelativePath { get; init; } = "";
+    public string? Content { get; init; }
+    public string ContentHash { get; init; } = "";
+    public bool Exists { get; init; }
+}
+
+public sealed record EidosMetaExtensionConfiguration
+{
+    public string Name { get; init; } = "";
+    public string Entry { get; init; } = "";
+    public string Stage { get; init; } = "semantic";
+    public string Scope { get; init; } = "package";
+    public string[] Inputs { get; init; } = [];
+    public string[] Capabilities { get; init; } = [];
+    public EidosMetaResourceConfiguration[] Resources { get; init; } = [];
+}
+
+public sealed record EidosMetaConfiguration
+{
+    public string[] Checks { get; init; } = [];
+    public EidosMetaExtensionConfiguration[] Extensions { get; init; } = [];
+
+    public string Fingerprint => CreateFingerprint(this);
+
+    private static string CreateFingerprint(EidosMetaConfiguration configuration)
+    {
+        var lines = configuration.Checks
+            .Select(static check => $"check:{check}")
+            .Concat(configuration.Extensions.SelectMany(static extension => new[]
+            {
+                $"extension:{extension.Name}:{extension.Entry}:{extension.Stage}:{extension.Scope}",
+                $"capabilities:{string.Join(',', extension.Capabilities)}"
+            }.Concat(extension.Resources.Select(static resource =>
+                $"resource:{resource.DeclaredInput}:{resource.RelativePath}:{resource.Exists}:{resource.ContentHash}"))));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", lines))))
+            .ToLowerInvariant();
+    }
 }
 
 public sealed record EidosProjectConfiguration
@@ -60,6 +108,7 @@ public sealed record EidosProjectConfiguration
     public bool NoImplicitStdlib { get; init; }
     public EidosBuildConfiguration? Build { get; init; }
     public EidosFfiConfiguration? Ffi { get; init; }
+    public EidosMetaConfiguration? Meta { get; init; }
 }
 
 public sealed record LoadedEidosProjectConfiguration(
@@ -240,6 +289,7 @@ public static class EidosProjectConfigurationLoader
             }
 
             var buildConfig = ResolveBuildConfiguration(configDocument.Build, baseDirectory);
+            var metaConfig = ResolveMetaConfiguration(configDocument.Meta, baseDirectory);
 
             var targets = ResolveTargets(configDocument.Targets, baseDirectory);
             var defaultTarget = NormalizeOptionalValue(configDocument.DefaultTarget)
@@ -264,7 +314,8 @@ public static class EidosProjectConfigurationLoader
                     VersionedDependencies = versionedDeps,
                     NoImplicitStdlib = configDocument.NoImplicitStdlib ?? false,
                     Build = buildConfig,
-                    Ffi = ffiConfig
+                    Ffi = ffiConfig,
+                    Meta = metaConfig
                 });
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TomlException)
@@ -274,6 +325,255 @@ public static class EidosProjectConfigurationLoader
                 ex);
         }
     }
+
+    private static EidosMetaConfiguration? ResolveMetaConfiguration(
+        EidosProjectMetaManifestDocument? meta,
+        string projectDirectory)
+    {
+        if (meta == null)
+        {
+            return null;
+        }
+
+        var checks = NormalizeMetaEntries(meta.Checks, "meta check");
+        var extensions = new List<EidosMetaExtensionConfiguration>();
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var document in meta.Extensions ?? [])
+        {
+            var name = document.Name?.Trim() ?? string.Empty;
+            if (!IsBuildName(name))
+            {
+                throw new InvalidOperationException($"Invalid meta extension name '{document.Name}'.");
+            }
+            if (!names.Add(name))
+            {
+                throw new InvalidOperationException($"Duplicate meta extension name '{name}'.");
+            }
+
+            var entry = NormalizeMetaEntry(document.Entry, $"meta extension '{name}' entry");
+            var stage = (document.Stage ?? "semantic").Trim().ToLowerInvariant();
+            if (stage is not ("syntax" or "semantic" or "body" or "layout"))
+            {
+                throw new InvalidOperationException($"Meta extension '{name}' has invalid stage '{document.Stage}'.");
+            }
+
+            var scope = (document.Scope ?? "package").Trim().ToLowerInvariant();
+            if (scope != "package")
+            {
+                throw new InvalidOperationException($"Meta extension '{name}' currently requires scope = \"package\".");
+            }
+
+            var capabilities = NormalizeMetaCapabilities(document.Capabilities, name);
+            var inputs = NormalizeMetaInputs(document.Inputs, name);
+            var resources = ResolveMetaResources(inputs, projectDirectory);
+            extensions.Add(new EidosMetaExtensionConfiguration
+            {
+                Name = name,
+                Entry = entry,
+                Stage = stage,
+                Scope = scope,
+                Inputs = inputs,
+                Capabilities = capabilities,
+                Resources = resources
+            });
+        }
+
+        return new EidosMetaConfiguration
+        {
+            Checks = checks,
+            Extensions = extensions.ToArray()
+        };
+    }
+
+    private static string[] NormalizeMetaEntries(IReadOnlyList<string>? entries, string description)
+    {
+        if (entries == null)
+        {
+            return [];
+        }
+
+        var result = new List<string>(entries.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            var normalized = NormalizeMetaEntry(entry, description);
+            if (!seen.Add(normalized))
+            {
+                throw new InvalidOperationException($"Duplicate {description} '{normalized}'.");
+            }
+            result.Add(normalized);
+        }
+        return result.ToArray();
+    }
+
+    private static string NormalizeMetaEntry(string? entry, string description)
+    {
+        var normalized = entry?.Trim() ?? string.Empty;
+        var segments = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0 || segments.Any(static segment =>
+                segment.Length == 0 ||
+                !(char.IsLetter(segment[0]) || segment[0] == '_') ||
+                segment.Any(static value => !(char.IsLetterOrDigit(value) || value == '_'))))
+        {
+            throw new InvalidOperationException($"Invalid {description} '{entry}'.");
+        }
+        return string.Join('.', segments);
+    }
+
+    private static string[] NormalizeMetaCapabilities(IReadOnlyList<string>? capabilities, string extensionName)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "read-syntax", "read-semantics", "read-bodies", "read-layout",
+            "read-declared-resources", "transform-explicit-targets", "transform-current-package",
+            "emit-items", "emit-modules", "emit-diagnostics"
+        };
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in capabilities ?? [])
+        {
+            var capability = raw?.Trim().ToLowerInvariant() ?? string.Empty;
+            if (!allowed.Contains(capability))
+            {
+                throw new InvalidOperationException(
+                    $"Meta extension '{extensionName}' requests unknown capability '{raw}'.");
+            }
+            if (!seen.Add(capability))
+            {
+                throw new InvalidOperationException(
+                    $"Meta extension '{extensionName}' repeats capability '{capability}'.");
+            }
+            result.Add(capability);
+        }
+        return result.ToArray();
+    }
+
+    private static string[] NormalizeMetaInputs(IReadOnlyList<string>? inputs, string extensionName)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in inputs ?? [])
+        {
+            var input = (raw ?? string.Empty).Trim().Replace('\\', '/');
+            if (string.IsNullOrWhiteSpace(input) || Path.IsPathRooted(input) ||
+                input.Split('/').Any(static segment => segment == ".."))
+            {
+                throw new InvalidOperationException(
+                    $"Meta extension '{extensionName}' input '{raw}' must stay within the project root.");
+            }
+            if (!seen.Add(input))
+            {
+                throw new InvalidOperationException(
+                    $"Meta extension '{extensionName}' repeats input '{input}'.");
+            }
+            result.Add(input);
+        }
+        return result.ToArray();
+    }
+
+    private static EidosMetaResourceConfiguration[] ResolveMetaResources(
+        IReadOnlyList<string> inputs,
+        string projectDirectory)
+    {
+        var files = Directory.Exists(projectDirectory)
+            ? Directory.EnumerateFiles(projectDirectory, "*", SearchOption.AllDirectories)
+                .Select(path => new
+                {
+                    FullPath = path,
+                    RelativePath = Path.GetRelativePath(projectDirectory, path).Replace('\\', '/')
+                })
+                .OrderBy(static file => file.RelativePath, StringComparer.Ordinal)
+                .ToArray()
+            : [];
+        var resources = new List<EidosMetaResourceConfiguration>();
+        foreach (var input in inputs)
+        {
+            var hasGlob = input.IndexOfAny(['*', '?']) >= 0;
+            var matches = hasGlob
+                ? files.Where(file => GlobMatches(input, file.RelativePath)).ToArray()
+                : files.Where(file => string.Equals(file.RelativePath, input, StringComparison.Ordinal)).ToArray();
+
+            if (!hasGlob && matches.Length == 0)
+            {
+                var directory = Path.GetFullPath(input, projectDirectory);
+                if (Directory.Exists(directory))
+                {
+                    matches = files.Where(file =>
+                            file.FullPath.StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        .ToArray();
+                }
+            }
+
+            if (matches.Length == 0)
+            {
+                resources.Add(new EidosMetaResourceConfiguration
+                {
+                    DeclaredInput = input,
+                    RelativePath = input,
+                    Exists = false,
+                    ContentHash = HashMetaResource("<missing>")
+                });
+                continue;
+            }
+
+            foreach (var match in matches)
+            {
+                var content = File.ReadAllText(match.FullPath);
+                resources.Add(new EidosMetaResourceConfiguration
+                {
+                    DeclaredInput = input,
+                    RelativePath = match.RelativePath,
+                    Exists = true,
+                    Content = content,
+                    ContentHash = HashMetaResource(content)
+                });
+            }
+        }
+
+        return resources
+            .OrderBy(static resource => resource.DeclaredInput, StringComparer.Ordinal)
+            .ThenBy(static resource => resource.RelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static bool GlobMatches(string pattern, string relativePath)
+    {
+        var regex = new StringBuilder("^");
+        for (var index = 0; index < pattern.Length; index++)
+        {
+            var value = pattern[index];
+            if (value == '*' && index + 1 < pattern.Length && pattern[index + 1] == '*')
+            {
+                index++;
+                if (index + 1 < pattern.Length && pattern[index + 1] == '/')
+                {
+                    index++;
+                    regex.Append("(?:.*/)?");
+                }
+                else
+                {
+                    regex.Append(".*");
+                }
+            }
+            else if (value == '*')
+            {
+                regex.Append("[^/]*");
+            }
+            else if (value == '?')
+            {
+                regex.Append("[^/]");
+            }
+            else
+            {
+                regex.Append(Regex.Escape(value.ToString()));
+            }
+        }
+        regex.Append('$');
+        return Regex.IsMatch(relativePath, regex.ToString(), RegexOptions.CultureInvariant);
+    }
+
+    private static string HashMetaResource(string content) => Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
 
     private static EidosBuildConfiguration? ResolveBuildConfiguration(
         EidosProjectBuildManifestDocument? build,
@@ -325,12 +625,16 @@ public static class EidosProjectConfigurationLoader
         }
 
         var environment = NormalizeBuildEnvironment(build.Environment);
+        var networkInputs = NormalizeBuildNetworkInputs(build.NetworkInputs);
+        var volatileCapabilities = NormalizeBuildVolatileCapabilities(build.VolatileCapabilities);
         var tools = NormalizeBuildTools(build.Tools, projectDirectory);
         return new EidosBuildConfiguration
         {
             Program = program,
             FileInputs = fileInputs,
             Environment = environment,
+            NetworkInputs = networkInputs,
+            VolatileCapabilities = volatileCapabilities,
             OutputRoots = outputRoots,
             Tools = tools
         };
@@ -466,7 +770,76 @@ public static class EidosProjectConfigurationLoader
                     ex);
             }
 
-            result.Add(new EidosBuildToolConfiguration { Name = name, Path = toolPath });
+            var execution = string.IsNullOrWhiteSpace(tool.Execution)
+                ? "host"
+                : tool.Execution.Trim();
+            if (execution is not ("host" or "target"))
+            {
+                throw new InvalidOperationException(
+                    $"Registered build tool '{name}' execution must be 'host' or 'target'.");
+            }
+
+            result.Add(new EidosBuildToolConfiguration
+            {
+                Name = name,
+                Path = toolPath,
+                Execution = execution
+            });
+        }
+
+        return result.ToArray();
+    }
+
+    private static string[] NormalizeBuildNetworkInputs(IReadOnlyList<string>? urls)
+    {
+        if (urls == null || urls.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var rawUrl in urls)
+        {
+            var url = rawUrl?.Trim() ?? string.Empty;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) ||
+                parsed.Scheme is not ("https" or "http") ||
+                !string.IsNullOrEmpty(parsed.Fragment))
+            {
+                throw new InvalidOperationException(
+                    $"Build network input '{rawUrl}' must be an absolute HTTP(S) URL without a fragment.");
+            }
+
+            if (!result.Add(parsed.AbsoluteUri))
+            {
+                throw new InvalidOperationException($"Duplicate build network input '{rawUrl}'.");
+            }
+        }
+
+        return result.ToArray();
+    }
+
+    private static string[] NormalizeBuildVolatileCapabilities(IReadOnlyList<string>? capabilities)
+    {
+        if (capabilities == null || capabilities.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var rawCapability in capabilities)
+        {
+            var capability = rawCapability?.Trim() ?? string.Empty;
+            if (capability is not ("clock" or "unseeded-random" or "unpinned-network"))
+            {
+                throw new InvalidOperationException(
+                    $"Unknown volatile build capability '{rawCapability}'.");
+            }
+
+            if (!result.Add(capability))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate volatile build capability '{capability}'.");
+            }
         }
 
         return result.ToArray();
@@ -628,7 +1001,7 @@ public static class EidosProjectConfigurationLoader
             return NormalizeTargets(targets, baseDirectory);
         }
 
-        var mainEntry = Path.Combine(baseDirectory, "src", "Main.eidos");
+        var mainEntry = Path.Combine(baseDirectory, "src", "main.eidos");
         if (File.Exists(mainEntry))
         {
             return
@@ -642,7 +1015,7 @@ public static class EidosProjectConfigurationLoader
             ];
         }
 
-        var libEntry = Path.Combine(baseDirectory, "src", "Lib.eidos");
+        var libEntry = Path.Combine(baseDirectory, "src", "lib.eidos");
         if (File.Exists(libEntry))
         {
             return

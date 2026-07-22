@@ -78,7 +78,7 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
-        var typeVarEnv = CreateCtorTypeVarEnv(binding, expectedCon.Args, expectedCon.ValueArgs);
+        var typeVarEnv = CreateCtorTypeVarEnv(binding, expectedCon.Args, expectedCon.ValueArgs, expectedCon.EffectArgs);
         var ctor = CreateDesugaredContextualRecordLiteralCtor(literal, binding);
         var namedArgTypes = new Dictionary<string, Type>(StringComparer.Ordinal);
         var hasRecovery = false;

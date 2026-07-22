@@ -517,6 +517,15 @@ public sealed class BorrowChecker
                     ResolveSpan(assign.Target.Span, assign.Span));
                 break;
 
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target } injection:
+                OverwriteBorrower(
+                    target.Local,
+                    blockId,
+                    index,
+                    currentState,
+                    ResolveSpan(target.Span, injection.Span));
+                break;
+
             case MirBinOp binOp when binOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var local }:
                 OverwriteBorrower(local, blockId, index, currentState, ResolveSpan(binOp.Target.Span, binOp.Span));
                 break;
@@ -1109,15 +1118,6 @@ public sealed class BorrowChecker
                 index,
                 currentState,
                 readAction: DiagnosticMessages.BorrowActionCreateSharedBorrowThroughCallArgument,
-                mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
-            ParamBorrowMode.Copy => RequireCallArgumentLoadCapability(
-                argumentPlace,
-                isMutableBorrow: false,
-                span,
-                blockId,
-                index,
-                currentState,
-                readAction: DiagnosticMessages.BorrowActionReadThroughCallArgument,
                 mutableAction: DiagnosticMessages.BorrowActionCreateMutableBorrowThroughCallArgument),
             _ => true
         };

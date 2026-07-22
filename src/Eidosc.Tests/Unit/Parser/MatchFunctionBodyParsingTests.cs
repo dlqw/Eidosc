@@ -209,7 +209,7 @@ project :: Int -> Int {
     public void Parser_FunctionBodyCurriedPatternBranch_DesugarsHeadToTuplePattern()
     {
         const string source = """
-OptionString :: type { SomeString(String) , NoneString }
+OptionString :: type { SomeString:: type(String) , NoneString :: type {} }
 
 optionStringMap :: OptionString -> (String -> String) -> OptionString
 {
@@ -312,7 +312,7 @@ pickPositive :: Int -> Int -> Int {
     public void Parser_FunctionBodyCurriedPatternBranch_AllowsMultipleGuardsOnLaterSegment()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) , NoneInt }
+OptionInt :: type { SomeInt:: type(Int) , NoneInt :: type {} }
 
 addIfPositive :: Int -> OptionInt -> Int {
     base => opt when SomeInt(n) <- opt when n > 0 => base + n,
@@ -346,7 +346,7 @@ addIfPositive :: Int -> OptionInt -> Int {
     public void Parser_FunctionBodyCurriedPatternBranch_ConvertsLaterCtorSegmentToCtorPattern()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) , NoneInt }
+OptionInt :: type { SomeInt:: type(Int) , NoneInt :: type {} }
 
 zip_left :: OptionInt -> OptionInt -> OptionInt
 {
@@ -386,7 +386,7 @@ zip_left :: OptionInt -> OptionInt -> OptionInt
     public void Parser_FunctionBodyCurriedPatternBranch_ConvertsFourCtorSegmentsToTuplePattern()
     {
         const string source = """
-OptionInt :: type { SomeInt(Int) , NoneInt }
+OptionInt :: type { SomeInt:: type(Int) , NoneInt :: type {} }
 
 quad_sum :: OptionInt -> OptionInt -> OptionInt -> OptionInt -> Int
 {

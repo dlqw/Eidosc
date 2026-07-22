@@ -15,13 +15,17 @@ public class CStructDotAccessTests
     public void CStructDotAccess_SingleMatch_ResolvesToGetterCall()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
+
+
+
+@[repr(c)]
+Point :: type
+{
+    x:: Float,
+    y:: Float
 }
 
 main :: Int -> Int
@@ -43,19 +47,25 @@ main :: Int -> Int
     public void CStructDotAccess_MultipleCStructsDistinctFields_ResolvesCorrectly()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
+
+
+
+@[repr(c)]
+Point :: type
+{
+    x:: Float,
+    y:: Float
 }
 
-@cstruct
-Header :: type {
-    magic: Int,
-    version: Int
+
+@[repr(c)]
+Header :: type
+{
+    magic:: Int,
+    version:: Int
 }
 
 main :: Int -> Int
@@ -79,21 +89,27 @@ main :: Int -> Int
     public void CStructDotAccess_AmbiguousField_ProducesError()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
+
+
+
+@[repr(c)]
+Point :: type
+{
+    x:: Float,
+    y:: Float
 }
 
-@cstruct
-Rect :: type {
-    x: Float,
-    y: Float,
-    w: Float,
-    h: Float
+
+@[repr(c)]
+Rect :: type
+{
+    x:: Float,
+    y:: Float,
+    w:: Float,
+    h:: Float
 }
 
 main :: Int -> Int
@@ -120,13 +136,17 @@ main :: Int -> Int
     public void CStructDotAccess_NoMatchingField_ProducesOriginalError()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float,
-    y: Float
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
+
+
+
+@[repr(c)]
+Point :: type
+{
+    x:: Float,
+    y:: Float
 }
 
 main :: Int -> Int
@@ -176,12 +196,16 @@ main :: Int -> Int
     public void CStructDotAccess_ExplicitCallSyntax_NotResolvedAsCStructField()
     {
         const string source = """
-@ffi("malloc")
-malloc :: Int -> RawPtr
 
-@cstruct
-Point :: type {
-    x: Float
+@[extern(c, name: "malloc")]
+malloc :: Int -> RawPtr need ffi
+
+
+
+@[repr(c)]
+Point :: type
+{
+    x:: Float
 }
 
 main :: Int -> Int

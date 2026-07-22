@@ -25,7 +25,7 @@ public sealed partial class NameResolver
         if (patternGuard.Pattern != null)
         {
             using var context = PushPatternDiagnosticContext("pattern-guard");
-            ResolvePatternBindings(patternGuard.Pattern);
+            patternGuard.SetPattern(ResolvePatternBindings(patternGuard.Pattern));
         }
         else
         {
@@ -41,45 +41,74 @@ public sealed partial class NameResolver
         }
     }
 
-    private void ResolvePatternBranchReferences(PatternBranch branch, int branchIndex, bool isParameterBranch = false)
+    private void ResolvePatternBranchReferences(
+        PatternBranch branch,
+        int branchIndex,
+        bool isParameterBranch = false,
+        SymbolId preferredPatternAdt = default)
     {
         using var _ = _symbolTable.PushScopeGuard(ScopeKind.PatternBranch);
+        SymbolId boundPatternValue = SymbolId.None;
 
         if (branch.Pattern != null)
         {
             using var context = PushPatternDiagnosticContext($"branch#{branchIndex}");
-            ResolvePatternBindings(branch.Pattern, isParameter: isParameterBranch);
+            branch.SetPattern(ResolvePatternBindings(branch.Pattern, isParameter: isParameterBranch));
+            if (preferredPatternAdt.IsValid && branch.Pattern is VarPattern { SymbolId.IsValid: true } variable)
+            {
+                boundPatternValue = variable.SymbolId;
+                _patternValueAdtBindings[boundPatternValue] = preferredPatternAdt;
+            }
         }
-
-        if (branch.Guard != null)
+        try
         {
-            ResolveExpressionReferences(branch.Guard);
+            if (branch.Guard != null)
+            {
+                ResolveExpressionReferences(branch.Guard);
+            }
+
+            if (branch.Expression != null)
+            {
+                ResolveExpressionReferences(branch.Expression);
+            }
         }
-
-        if (branch.Expression != null)
+        finally
         {
-            ResolveExpressionReferences(branch.Expression);
+            if (boundPatternValue.IsValid)
+            {
+                _patternValueAdtBindings.Remove(boundPatternValue);
+            }
         }
     }
 
-    private void ResolvePatternBindings(
+    private Pattern ResolvePatternBindings(
         Pattern pattern,
         bool isMutableBinding = false,
         bool isComptimeBinding = false,
         bool isParameter = false)
     {
+        pattern = ResolveBareNamePattern(pattern);
         switch (pattern)
         {
+            case ExpandPattern expansion:
+                return ResolveExpandPatternBindings(
+                    expansion,
+                    isMutableBinding,
+                    isComptimeBinding,
+                    isParameter);
+
             case VarPattern varPattern:
                 var varId = DeclarePatternVariable(
-                    varPattern.Name,
+                    GetSyntaxBindingName(varPattern, varPattern.Name),
                     pattern.Span,
                     isParameter: isParameter,
                     isPatternBound: true,
                     bindingMode: varPattern.BindingMode,
                     isMutable: isMutableBinding || varPattern.IsMutableBinding,
-                    isComptime: isComptimeBinding);
+                    isComptime: isComptimeBinding,
+                    existingSymbolId: varPattern.SymbolId);
                 varPattern.SymbolId = varId;
+                RegisterSyntaxIdentitySymbol(varPattern, varId);
                 break;
 
             case WildcardPattern:
@@ -93,7 +122,11 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext($"positional#{i + 1}"))
                     {
-                        ResolvePatternBindings(ctorPattern.PositionalPatterns[i], isMutableBinding, isComptimeBinding, isParameter);
+                        ctorPattern.PositionalPatterns[i] = ResolvePatternBindings(
+                            ctorPattern.PositionalPatterns[i],
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter);
                     }
                 }
 
@@ -105,7 +138,11 @@ public sealed partial class NameResolver
                             ? "field#<unnamed>"
                             : $"field#{fieldPattern.FieldName}";
                         using var context = PushPatternDiagnosticContext(fieldSegment);
-                        ResolvePatternBindings(fieldPattern.Pattern, isMutableBinding, isComptimeBinding, isParameter);
+                        fieldPattern.SetPattern(ResolvePatternBindings(
+                            fieldPattern.Pattern,
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter));
                     }
                 }
                 break;
@@ -115,7 +152,11 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext($"element#{i + 1}"))
                     {
-                        ResolvePatternBindings(tuplePattern.Elements[i], isMutableBinding, isComptimeBinding, isParameter);
+                        tuplePattern.Elements[i] = ResolvePatternBindings(
+                            tuplePattern.Elements[i],
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter);
                     }
                 }
                 break;
@@ -125,7 +166,11 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext($"element#{i + 1}"))
                     {
-                        ResolvePatternBindings(listPattern.Elements[i], isMutableBinding, isComptimeBinding, isParameter);
+                        listPattern.Elements[i] = ResolvePatternBindings(
+                            listPattern.Elements[i],
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter);
                     }
                 }
 
@@ -133,7 +178,11 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext("rest"))
                     {
-                        ResolvePatternBindings(listPattern.RestPattern, isMutableBinding, isComptimeBinding, isParameter);
+                        listPattern.RestPattern = ResolvePatternBindings(
+                            listPattern.RestPattern,
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter);
                     }
                 }
 
@@ -141,7 +190,10 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext($"suffix#{i + 1}"))
                     {
-                        ResolvePatternBindings(listPattern.SuffixElements[i], isMutableBinding, isComptimeBinding);
+                        listPattern.SuffixElements[i] = ResolvePatternBindings(
+                            listPattern.SuffixElements[i],
+                            isMutableBinding,
+                            isComptimeBinding);
                     }
                 }
                 break;
@@ -197,31 +249,72 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext("view-inner"))
                     {
-                        ResolvePatternBindings(viewPattern.InnerPattern, isMutableBinding, isComptimeBinding, isParameter);
+                        viewPattern.InnerPattern = ResolvePatternBindings(
+                            viewPattern.InnerPattern,
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter);
                     }
                 }
                 break;
 
             case AsPattern asPattern:
                 var asId = DeclarePatternVariable(
-                    asPattern.BindingName,
+                    GetSyntaxBindingName(asPattern, asPattern.BindingName),
                     pattern.Span,
                     isParameter: isParameter,
                     isPatternBound: true,
                     bindingMode: asPattern.BindingMode,
                     isMutable: isMutableBinding || asPattern.IsMutableBinding,
-                    isComptime: isComptimeBinding);
+                    isComptime: isComptimeBinding,
+                    existingSymbolId: asPattern.SymbolId);
                 asPattern.SymbolId = asId;
+                RegisterSyntaxIdentitySymbol(asPattern, asId);
 
                 if (asPattern.InnerPattern != null)
                 {
                     using (PushPatternDiagnosticContext("as-inner"))
                     {
-                        ResolvePatternBindings(asPattern.InnerPattern, isMutableBinding, isComptimeBinding, isParameter);
+                        asPattern.InnerPattern = ResolvePatternBindings(
+                            asPattern.InnerPattern,
+                            isMutableBinding,
+                            isComptimeBinding,
+                            isParameter);
                     }
                 }
                 break;
         }
+
+        return pattern;
+    }
+
+    private Pattern ResolveBareNamePattern(Pattern pattern)
+    {
+        if (pattern is not VarPattern { MayResolveToConstructor: true } unresolved)
+        {
+            return pattern;
+        }
+
+        var ctorId = _symbolTable.LookupConstructor(unresolved.Name);
+        if (ctorId is not { IsValid: true } resolvedCtorId ||
+            !IsZeroFieldConstructor(resolvedCtorId))
+        {
+            unresolved.SetMayResolveToConstructor(false);
+            return unresolved;
+        }
+
+        var constructor = new CtorPattern();
+        constructor.SetSpan(unresolved.Span);
+        constructor.SetConstructorName(unresolved.Name);
+        constructor.SymbolId = resolvedCtorId;
+        ValidateCtorPatternShape(constructor, resolvedCtorId);
+        return constructor;
+    }
+
+    private bool IsZeroFieldConstructor(SymbolId ctorId)
+    {
+        return !_ctorPatternShapes.TryGetValue(ctorId, out var shape) ||
+               shape.PositionalArity == 0 && shape.NamedFields.Count == 0;
     }
 
     private void ValidateCtorPatternShape(CtorPattern ctorPattern, SymbolId ctorId)
@@ -295,14 +388,15 @@ public sealed partial class NameResolver
         }
     }
 
-    private void ResolvePatternReferencesWithoutBinding(Pattern pattern)
+    private Pattern ResolvePatternReferencesWithoutBinding(Pattern pattern)
     {
+        pattern = ResolveBareNamePattern(pattern);
         switch (pattern)
         {
             case WildcardPattern:
             case LiteralPattern:
             case VarPattern:
-                return;
+                return pattern;
 
             case CtorPattern ctorPattern:
                 ResolveCtorPatternSymbol(ctorPattern, pattern.Span);
@@ -311,7 +405,8 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext($"positional#{i + 1}"))
                     {
-                        ResolvePatternReferencesWithoutBinding(ctorPattern.PositionalPatterns[i]);
+                        ctorPattern.PositionalPatterns[i] = ResolvePatternReferencesWithoutBinding(
+                            ctorPattern.PositionalPatterns[i]);
                     }
                 }
 
@@ -323,27 +418,27 @@ public sealed partial class NameResolver
                             ? "field#<unnamed>"
                             : $"field#{named.FieldName}";
                         using var context = PushPatternDiagnosticContext(fieldSegment);
-                        ResolvePatternReferencesWithoutBinding(named.Pattern);
+                        named.SetPattern(ResolvePatternReferencesWithoutBinding(named.Pattern));
                     }
                 }
-                return;
+                return pattern;
 
             case TuplePattern tuplePattern:
                 for (var i = 0; i < tuplePattern.Elements.Count; i++)
                 {
                     using (PushPatternDiagnosticContext($"element#{i + 1}"))
                     {
-                        ResolvePatternReferencesWithoutBinding(tuplePattern.Elements[i]);
+                        tuplePattern.Elements[i] = ResolvePatternReferencesWithoutBinding(tuplePattern.Elements[i]);
                     }
                 }
-                return;
+                return pattern;
 
             case ListPattern listPattern:
                 for (var i = 0; i < listPattern.Elements.Count; i++)
                 {
                     using (PushPatternDiagnosticContext($"element#{i + 1}"))
                     {
-                        ResolvePatternReferencesWithoutBinding(listPattern.Elements[i]);
+                        listPattern.Elements[i] = ResolvePatternReferencesWithoutBinding(listPattern.Elements[i]);
                     }
                 }
 
@@ -351,7 +446,7 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext("rest"))
                     {
-                        ResolvePatternReferencesWithoutBinding(listPattern.RestPattern);
+                        listPattern.RestPattern = ResolvePatternReferencesWithoutBinding(listPattern.RestPattern);
                     }
                 }
 
@@ -359,31 +454,32 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext($"suffix#{i + 1}"))
                     {
-                        ResolvePatternReferencesWithoutBinding(listPattern.SuffixElements[i]);
+                        listPattern.SuffixElements[i] = ResolvePatternReferencesWithoutBinding(
+                            listPattern.SuffixElements[i]);
                     }
                 }
-                return;
+                return pattern;
 
             case OrPattern orPattern:
-                foreach (var alternative in orPattern.Alternatives)
+                for (var i = 0; i < orPattern.Alternatives.Count; i++)
                 {
-                    ResolvePatternReferencesWithoutBinding(alternative);
+                    orPattern.Alternatives[i] = ResolvePatternReferencesWithoutBinding(orPattern.Alternatives[i]);
                 }
-                return;
+                return pattern;
 
             case AndPattern andPattern:
-                foreach (var conjunct in andPattern.Conjuncts)
+                for (var i = 0; i < andPattern.Conjuncts.Count; i++)
                 {
-                    ResolvePatternReferencesWithoutBinding(conjunct);
+                    andPattern.Conjuncts[i] = ResolvePatternReferencesWithoutBinding(andPattern.Conjuncts[i]);
                 }
-                return;
+                return pattern;
 
             case NotPattern notPattern:
                 if (notPattern.InnerPattern != null)
                 {
-                    ResolvePatternReferencesWithoutBinding(notPattern.InnerPattern);
+                    notPattern.InnerPattern = ResolvePatternReferencesWithoutBinding(notPattern.InnerPattern);
                 }
-                return;
+                return pattern;
 
             case RangePattern rangePattern:
                 if (rangePattern.Start != null)
@@ -401,7 +497,7 @@ public sealed partial class NameResolver
                         ResolvePatternReferencesWithoutBinding(rangePattern.End);
                     }
                 }
-                return;
+                return pattern;
 
             case ViewPattern viewPattern:
                 if (viewPattern.ViewExpression != null)
@@ -415,21 +511,23 @@ public sealed partial class NameResolver
                 {
                     using (PushPatternDiagnosticContext("view-inner"))
                     {
-                        ResolvePatternReferencesWithoutBinding(viewPattern.InnerPattern);
+                        viewPattern.InnerPattern = ResolvePatternReferencesWithoutBinding(viewPattern.InnerPattern);
                     }
                 }
-                return;
+                return pattern;
 
             case AsPattern asPattern:
                 if (asPattern.InnerPattern != null)
                 {
                     using (PushPatternDiagnosticContext("as-inner"))
                     {
-                        ResolvePatternReferencesWithoutBinding(asPattern.InnerPattern);
+                        asPattern.InnerPattern = ResolvePatternReferencesWithoutBinding(asPattern.InnerPattern);
                     }
                 }
-                return;
+                return pattern;
         }
+
+        return pattern;
     }
 
     private void ResolveCtorPatternSymbol(CtorPattern ctorPattern, SourceSpan span)

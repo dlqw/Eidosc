@@ -1,0 +1,82 @@
+RuntimeArray :: module {
+
+
+    new_raw[T] :: Int -> Int -> Seq[T] compiler(internal, intrinsic: "array_new");
+
+
+
+
+    push_raw[T] :: Seq[T] -> T -> Int -> Seq[T] compiler(internal, intrinsic: "array_push");
+
+
+
+
+    extend_raw[T] :: Seq[T] -> Seq[T] -> Int -> Seq[T] compiler(internal, intrinsic: "array_extend");
+
+
+
+
+    pop_raw[T] :: MRef[Seq[T]] -> Unit compiler(internal, intrinsic: "array_pop");
+
+
+
+
+    swap_raw[T] :: MRef[Seq[T]] -> Int -> Int -> Unit compiler(internal, intrinsic: "array_swap");
+
+
+
+
+    set_raw[T] :: MRef[Seq[T]] -> Int -> T -> Int -> Unit compiler(internal, intrinsic: "array_set");
+
+
+
+    len[T] :: Seq[T] -> Int compiler(intrinsic: "array_length");
+
+
+    with_capacity[T] :: Int -> Seq[T]
+    {
+        capacity => RuntimeArray.new_raw[T](capacity)(0)
+    }
+
+    empty[T] :: Unit -> Seq[T]
+    {
+        _ => RuntimeArray.with_capacity[T](0)
+    }
+
+    singleton[T] :: T -> Seq[T]
+    {
+        value => RuntimeArray.push(RuntimeArray.with_capacity[T](1))(value)
+    }
+
+    push[T] :: Seq[T] -> T -> Seq[T]
+    {
+        values => value => RuntimeArray.push_raw(values)(value)(0)
+    }
+
+    extend[T] :: Seq[T] -> Seq[T] -> Seq[T]
+    {
+        left => right => RuntimeArray.extend_raw(left)(right)(0)
+    }
+
+    pop_last[T] :: MRef[Seq[T]] -> Unit
+    {
+        values => RuntimeArray.pop_raw(values)
+    }
+
+    swap[T] :: MRef[Seq[T]] -> Int -> Int -> Unit
+    {
+        values => left => right => RuntimeArray.swap_raw(values, left, right)
+    }
+
+    get[T] :: Seq[T] -> Int -> T
+    {
+        values => index => values[index]
+    }
+
+    // In-place write at index. Intended for the builder (SeqBuilder) phase only; the
+    // trailing size arg is an ABI placeholder (0) resolved by codegen.
+    set[T] :: MRef[Seq[T]] -> Int -> T -> Unit
+    {
+        values => index => value => RuntimeArray.set_raw(values)(index)(value)(0)
+    }
+}

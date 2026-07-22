@@ -201,8 +201,10 @@ public class EidosProjectGraphResolverTests
         File.WriteAllText(Path.Combine(appProjectDir, "src", "Main.eidos"), "main :: Unit -> Unit { _ => () }");
         File.WriteAllText(Path.Combine(bindingProjectDir, "src", "Raw.eidos"), """
             Raw :: module {
-                @ffi("demo_init")
-                demo_init :: Unit -> Unit
+
+                @[extern(c, name: "demo_init")]
+                demo_init :: Unit -> Unit need ffi
+
             }
             """);
         File.WriteAllText(Path.Combine(bindingProjectDir, "native", "demo.c"), "void demo_init(void) {}");

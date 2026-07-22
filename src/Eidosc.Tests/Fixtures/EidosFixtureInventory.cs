@@ -260,7 +260,7 @@ public static class EidosFixtureInventory
         var dir = AppDomain.CurrentDomain.BaseDirectory;
         for (var i = 0; i < 6; i++)
         {
-            var candidate = Path.Combine(dir, "Stdlib", "Precompiled", "Std");
+            var candidate = Path.Combine(dir, "Stdlib", "Precompiled", "std");
             if (Directory.Exists(candidate))
             {
                 return candidate;

@@ -56,7 +56,10 @@ internal static partial class PatternUsefulnessAnalyzer
                     return PatternSpecializationStatus.NotApplicable;
                 }
 
-                resolvedAdt = ctorSymbol.OwnerAdt;
+                resolvedAdt = preferredAdt.IsValid &&
+                              symbolTable.IsClosedCaseSubtype(ctorSymbol.OwnerAdt, preferredAdt)
+                    ? preferredAdt
+                    : symbolTable.GetClosedCaseRoot(ctorSymbol.OwnerAdt);
                 constructorHints[ctorPattern.SymbolId] = AdtCoverageSpace.InferConstructorPatternWitness(ctorPattern, symbolTable);
                 return PatternSpecializationStatus.ExactFinite;
             }
@@ -330,7 +333,10 @@ internal static partial class PatternUsefulnessAnalyzer
                         return PatternSpecializationStatus.NotApplicable;
                     }
 
-                    resolvedAdt = ctorSymbol.OwnerAdt;
+                    resolvedAdt = preferredAdt.IsValid &&
+                                  symbolTable.IsClosedCaseSubtype(ctorSymbol.OwnerAdt, preferredAdt)
+                        ? preferredAdt
+                        : symbolTable.GetClosedCaseRoot(ctorSymbol.OwnerAdt);
                     constructorHints[ctorPattern.SymbolId] = InferConstructorPatternWitness(ctorPattern, symbolTable);
                     return PatternSpecializationStatus.ExactFinite;
                 }

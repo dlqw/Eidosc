@@ -1207,8 +1207,9 @@ internal static partial class PatternUsefulnessAnalyzer
     {
         private SymbolId _coveredAdt = SymbolId.None;
 
-        public AdtCoverageSpace() : base(new AdtConstructorCaseComparer())
+        public AdtCoverageSpace(SymbolId preferredAdt) : base(new AdtConstructorCaseComparer())
         {
+            _coveredAdt = preferredAdt;
         }
 
         protected override PatternCoverageTargetKind CoverageTarget => PatternCoverageTargetKind.Adt;
@@ -1344,7 +1345,8 @@ internal static partial class PatternUsefulnessAnalyzer
 
     public static PatternUsefulnessSummary Analyze(
         IReadOnlyList<PatternUsefulnessBranchFact> branches,
-        SymbolTable symbolTable)
+        SymbolTable symbolTable,
+        SymbolId? preferredAdt = null)
     {
         IPatternCoverageSpace[] spaces =
         [
@@ -1353,7 +1355,7 @@ internal static partial class PatternUsefulnessAnalyzer
             new TupleBoolCoverageSpace(),
             new TupleAdtCoverageSpace(branches, symbolTable),
             new ListLengthCoverageSpace(branches),
-            new AdtCoverageSpace()
+            new AdtCoverageSpace(preferredAdt ?? SymbolId.None)
         ];
 
         var hasGuardedBranches = false;

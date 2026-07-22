@@ -208,7 +208,7 @@ public record CtorExpr : Expression
     {
         if (term.Terminal == null) return false;
         var terminalName = term.Terminal.ToString();
-        return terminalName == WellKnownStrings.Terminals.TypeIdentifier;
+        return terminalName == WellKnownStrings.Terminals.Identifier;
     }
 
     private static bool IsIdentifierTerminal(TerminalCstNode term)

@@ -416,11 +416,6 @@ public sealed partial class CompilationPipeline
             return new ModuleMirCompilationResult(moduleKey, null, diagnostics);
         }
 
-        var effectAnalysis = new ParameterEffectAnalysis(mirModule);
-        effectAnalysis.Analyze();
-        ParameterEffectAnalysis.ApplyCallSiteEffectFixup(mirModule, effectAnalysis.Results);
-        ParameterEffectAnalysis.ApplyReadOnlyParameterFix(mirModule, effectAnalysis.Results);
-
         var specializer = new MirGenericSpecializer(
             CopyTypeSemantics.CreateSymbolTableCopyResolver(_symbolTable, _hirTypeDescriptors),
             _hirCopyLikeTypeIds,

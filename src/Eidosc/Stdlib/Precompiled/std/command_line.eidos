@@ -1,0 +1,28 @@
+CommandLine :: module {
+
+
+
+    command_line_argc :: Unit -> Int compiler(internal, intrinsic: "command_line_argc") need io;
+
+
+
+
+
+    command_line_arg_or :: Int -> String -> String compiler(internal, intrinsic: "command_line_arg_or") need io;
+
+
+    argc :: Unit -> Int need io
+    {
+        _ => command_line_argc(())
+    }
+
+    arg_or :: Int -> String -> String need io
+    {
+        index => fallback => command_line_arg_or(index, fallback)
+    }
+
+    first_user_arg_or :: String -> String need io
+    {
+        fallback => command_line_arg_or(1, fallback)
+    }
+}

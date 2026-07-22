@@ -8,8 +8,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_Option_NativeSmoke_BindsSequentialValues()
     {
         const string source = """
-            import Std.Option
-            import Std.Monad
+            import std.Option
+            import std.Monad
 
             main :: Unit -> Int
             {
@@ -36,8 +36,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_ListWithSemicolonSeparators_NativeSmoke_BindsSequentialValues()
     {
         const string source = """
-            import Std.Seq
-            import Std.Monad
+            import std.Seq
+            import std.Monad
 
             main :: Unit -> Int
             {
@@ -64,8 +64,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_ListTuplePattern_NativeSmoke_MaterializesAggregateScrutinee()
     {
         const string source = """
-            import Std.Seq
-            import Std.Monad
+            import std.Seq
+            import std.Monad
 
             main :: Unit -> Int
             {
@@ -91,8 +91,8 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_LocalLetBinding_NativeSmoke_BindsValueForFollowingItems()
     {
         const string source = """
-            import Std.Option
-            import Std.Monad
+            import std.Option
+            import std.Monad
 
             main :: Unit -> Int
             {
@@ -119,9 +119,9 @@ public partial class LlvmPipelineIntegrationTests
     public void DoExpression_LocalLetCapturedByNestedLambda_NativeSmoke_CapturesAcrossContinuation()
     {
         const string source = """
-            import Std.Option
-            import Std.Monad
-            import Std.Seq
+            import std.Option
+            import std.Monad
+            import std.Seq
 
             main :: Unit -> Int
             {

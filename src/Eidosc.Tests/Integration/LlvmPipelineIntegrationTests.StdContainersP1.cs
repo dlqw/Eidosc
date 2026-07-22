@@ -15,11 +15,12 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
-import Std.Deque
-import Std.Seq
-import Std.Option
-import Std.Queue
-import Std.Stack
+import std.Deque
+import std.Seq
+import std.Option
+import std.Queue
+import std.Stack
+import std.TraitInvoke
 
 check_deque :: Unit -> Int
 {
@@ -27,14 +28,14 @@ check_deque :: Unit -> Int
         d0 := Deque.empty[Int](())
         d1 := Deque.push_back(Deque.push_front(d0)(2))(3)
         d2 := Deque.push_front(d1)(1)
-        listed := Deque.to_seq(d2)
+        listed := Deque.to_seq(TraitInvoke.clone_value(ref d2))
         match Deque.pop_front(d2) {
             Some((front, withoutFront)) =>
                 match Deque.pop_back(withoutFront) {
                     Some((back, middle)) =>
                         if front == 1 &&
                            back == 3 &&
-                           Deque.len(middle) == 1 &&
+                           Deque.len(ref middle) == 1 &&
                            Deque.get_or(middle)(0)(0) == 2 &&
                            Seq.sum(listed) == 6
                         then { 10 }
@@ -52,12 +53,14 @@ check_queue :: Unit -> Int
         q0 := Queue.empty[Int](())
         q1 := Queue.enqueue(Queue.enqueue(q0)(10))(20)
         match Queue.dequeue(q1) {
-            Some((first, rest)) =>
+            Some((first, rest)) => {
+                remaining := Queue.len(ref rest)
                 match Queue.peek(rest) {
                     Some(second) =>
-                        if first == 10 && second == 20 && Queue.len(rest) == 1 then { 20 } else { 4 },
+                        if first == 10 && second == 20 && remaining == 1 then { 20 } else { 4 },
                     None() => 5
-                },
+                }
+            },
             None() => 6
         }
     }
@@ -69,12 +72,14 @@ check_stack :: Unit -> Int
         s0 := Stack.empty[Int](())
         s1 := Stack.push(Stack.push(s0)(4))(9)
         match Stack.pop(s1) {
-            Some((top, rest)) =>
+            Some((top, rest)) => {
+                remaining := Stack.len(ref rest)
                 match Stack.peek(rest) {
                     Some(next) =>
-                        if top == 9 && next == 4 && Stack.len(rest) == 1 then { 12 } else { 7 },
+                        if top == 9 && next == 4 && remaining == 1 then { 12 } else { 7 },
                     None() => 8
-                },
+                }
+            },
             None() => 9
         }
     }

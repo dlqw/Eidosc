@@ -125,6 +125,14 @@ public sealed class VariableUsageAnalyzer
                 AnalyzeOperand(assign.Source, UseKind.Read, blockId, index);
                 break;
 
+            case MirCaseInject injection:
+                AnalyzeOperand(injection.Operand, UseKind.Read, blockId, index);
+                if (injection.Target is MirPlace target)
+                {
+                    RecordDefinition(target, blockId, index);
+                }
+                break;
+
             case MirCall call:
                 // 函数是使用
                 AnalyzeOperand(call.Function, UseKind.Read, blockId, index);

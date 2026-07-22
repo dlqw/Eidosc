@@ -38,6 +38,14 @@ public sealed partial class MirGenericSpecializer
                     ? instruction
                     : assign with { Target = target, Source = source };
             }
+            case MirCaseInject injection:
+            {
+                var target = RefreshOperandType(injection.Target, localTypes);
+                var operand = RefreshOperandType(injection.Operand, localTypes);
+                return ReferenceEquals(target, injection.Target) && ReferenceEquals(operand, injection.Operand)
+                    ? instruction
+                    : injection with { Target = target, Operand = operand };
+            }
             case MirCall call:
             {
                 var target = call.Target is null ? null : RefreshPlaceType(call.Target, localTypes);

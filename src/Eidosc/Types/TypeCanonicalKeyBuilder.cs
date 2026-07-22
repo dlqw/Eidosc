@@ -17,8 +17,24 @@ public static class TypeCanonicalKeyBuilder
             TyShared shared => $"shared({Build(shared.Inner, tyConTypeIdResolver)})",
             TyTuple tuple => $"tuple({string.Join(",", tuple.Elements.Select(element => Build(element, tyConTypeIdResolver)))})",
             TyFun function => $"fun({string.Join(",", function.Params.Select(parameter => Build(parameter, tyConTypeIdResolver)))})->{Build(function.Result, tyConTypeIdResolver)}",
+            EffectTag effect => BuildEffectTagKey(effect, tyConTypeIdResolver),
+            EffectRow effects => $"effects(tags={string.Join(",", effects.Effects
+                .Select(effect => BuildEffectTagKey(effect, tyConTypeIdResolver))
+                .Order(StringComparer.Ordinal))};vars={string.Join(",", effects.Variables.Select(static variable => variable.Id).Order())})",
             _ => type.ToString() ?? type.GetType().Name
         };
+    }
+
+    private static string BuildEffectTagKey(
+        EffectTag effect,
+        Func<TyCon, TypeId> tyConTypeIdResolver)
+    {
+        var head = effect.Symbol.IsValid
+            ? $"symbol:{effect.Symbol.Value}"
+            : $"name:{effect.Name}";
+        return effect.TypeArgs.Count == 0
+            ? head
+            : $"{head}[{string.Join(",", effect.TypeArgs.Select(argument => Build(argument, tyConTypeIdResolver)))}]";
     }
 
     private static string BuildTyConKey(
@@ -33,13 +49,14 @@ public static class TypeCanonicalKeyBuilder
                 : con.Symbol.IsValid
                     ? $"symbol:{con.Symbol.Value}"
                     : $"name:{con.Name}";
-        if (con.Args.Count == 0 && con.ValueArgs.Count == 0)
+        if (con.Args.Count == 0 && con.ValueArgs.Count == 0 && con.EffectArgs.Count == 0)
         {
             return head;
         }
 
         var valueArguments = con.ValueArgs.ToDictionary(static argument => argument.ParameterIndex);
-        var argumentCount = con.Args.Count + con.ValueArgs.Count;
+        var effectArguments = con.EffectArgs.ToDictionary(static argument => argument.ParameterIndex);
+        var argumentCount = con.Args.Count + con.ValueArgs.Count + con.EffectArgs.Count;
         var typeArgumentIndex = 0;
         var arguments = new List<string>(argumentCount);
         for (var parameterIndex = 0; parameterIndex < argumentCount; parameterIndex++)
@@ -47,6 +64,10 @@ public static class TypeCanonicalKeyBuilder
             if (valueArguments.TryGetValue(parameterIndex, out var valueArgument))
             {
                 arguments.Add(BuildValueArgumentKey(valueArgument));
+            }
+            else if (effectArguments.TryGetValue(parameterIndex, out var effectArgument))
+            {
+                arguments.Add($"effect:{Build(effectArgument.Argument, tyConTypeIdResolver)}");
             }
             else if (typeArgumentIndex < con.Args.Count)
             {

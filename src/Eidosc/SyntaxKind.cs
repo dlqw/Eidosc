@@ -14,7 +14,6 @@ public enum SyntaxKind
 
     // 标识符
     Identifier,
-    TypeIdentifier,
     OperatorIdentifier,
 
     // 字面量
@@ -52,6 +51,7 @@ public enum SyntaxKind
     KwMref,
     KwDo,
     KwUnreachable,
+    KwQuote,
 
     // 运算符
     OpArrow,        // ->

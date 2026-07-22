@@ -50,7 +50,12 @@ public sealed partial class CompilationPipeline
         }
 
         var languageVersion = GetModuleLanguageVersion(filePath);
-        return TryParseModuleSource(sourceText, filePath, languageVersion, out moduleDecl, out diagnostics);
+        return TryParseModuleSource(
+            sourceText,
+            GetLogicalSourceName(filePath),
+            languageVersion,
+            out moduleDecl,
+            out diagnostics);
     }
 
     private string GetModuleLanguageVersion(string filePath)

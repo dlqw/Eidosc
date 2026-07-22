@@ -27,7 +27,7 @@ IO :: effect;
         const string source = """
 IO :: effect;
 
-write :: String -> Unit need IO
+write :: String -> Unit need io
 {
     _ => ()
 }
@@ -106,7 +106,7 @@ main :: Unit -> Unit
         const string source = """
 IO :: effect;
 
-write :: Unit -> Unit need IO
+write :: Unit -> Unit need io
 {
     _ => ()
 }
@@ -129,7 +129,7 @@ main :: Unit -> Unit
         const string source = """
 IO :: effect;
 
-write :: Unit -> Unit need IO
+write :: Unit -> Unit need io
 {
     _ => ()
 }
@@ -152,12 +152,12 @@ caller :: Unit -> Unit
         const string source = """
 IO :: effect;
 
-write :: Unit -> Unit need IO
+write :: Unit -> Unit need io
 {
     _ => ()
 }
 
-caller :: Unit -> Unit need IO
+caller :: Unit -> Unit need io
 {
     _ => write(())
 }
@@ -179,12 +179,12 @@ apply[A, B, E: effects] :: (A -> B need E) -> A -> B need E
     callback => value => callback(value)
 }
 
-write_number :: Int -> Int need IO
+write_number :: Int -> Int need io
 {
     value => value
 }
 
-caller :: Int -> Int need IO
+caller :: Int -> Int need io
 {
     value => apply(write_number, value)
 }

@@ -49,10 +49,25 @@ internal static class ConstructorRuntimeTypeId
             return false;
         }
 
-        var module = symbolTable.Modules.ModulePaths.Values
-            .Distinct()
+        var ownerPath = new List<string>();
+        var rootAdtId = ctor.OwnerAdt;
+        var currentAdt = ownerAdt;
+        while (true)
+        {
+            ownerPath.Add(currentAdt.Name);
+            if (!currentAdt.ParentAdt.IsValid ||
+                symbolTable.GetSymbol<AdtSymbol>(currentAdt.ParentAdt) is not { } parentAdt)
+            {
+                break;
+            }
+
+            rootAdtId = currentAdt.ParentAdt;
+            currentAdt = parentAdt;
+        }
+
+        ownerPath.Reverse();
+        var module = symbolTable.Modules.GetOwningModuleIds(rootAdtId)
             .Select(symbolTable.Modules.GetModule)
-            .Where(candidate => candidate?.Members.Contains(ctor.OwnerAdt) == true)
             .OrderBy(static candidate => candidate!.Identity.ToIdentityKey(), StringComparer.Ordinal)
             .FirstOrDefault();
         if (module == null)
@@ -64,7 +79,7 @@ internal static class ConstructorRuntimeTypeId
             ? constructorName
             : ctor.Name;
         stableIdentityKey =
-            $"module-ctor:{module.Identity.ToIdentityKey()}::{ownerAdt.Name}::{stableConstructorName}";
+            $"module-ctor:{module.Identity.ToIdentityKey()}::{string.Join('.', ownerPath)}::{stableConstructorName}";
 
         return true;
     }

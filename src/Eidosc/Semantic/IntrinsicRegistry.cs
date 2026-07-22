@@ -2,7 +2,6 @@ using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Types;
 using Eidosc.Symbols;
 using Eidosc.Utils;
-using EidosAttribute = Eidosc.Ast.Attribute;
 
 namespace Eidosc.Semantic;
 
@@ -112,17 +111,17 @@ public static class IntrinsicRegistry
                     CollectModuleIntrinsics(nested, modulePath, firstByName, byNameAndSignature);
                     break;
                 case FuncDecl funcDecl:
-                    AddIntrinsic(funcDecl.Attributes, modulePath, funcDecl.Name, funcDecl.Signature.FirstOrDefault(), funcDecl.TypeParams, firstByName, byNameAndSignature);
+                    AddIntrinsic(funcDecl.Clauses, modulePath, funcDecl.Name, funcDecl.Signature.FirstOrDefault(), funcDecl.TypeParams, firstByName, byNameAndSignature);
                     break;
                 case FuncDef funcDef:
-                    AddIntrinsic(funcDef.Attributes, modulePath, funcDef.Name, funcDef.Signature.FirstOrDefault(), funcDef.TypeParams, firstByName, byNameAndSignature);
+                    AddIntrinsic(funcDef.Clauses, modulePath, funcDef.Name, funcDef.Signature.FirstOrDefault(), funcDef.TypeParams, firstByName, byNameAndSignature);
                     break;
             }
         }
     }
 
     private static void AddIntrinsic(
-        IReadOnlyList<EidosAttribute> attributes,
+        IReadOnlyList<DeclarationClause> clauses,
         string modulePath,
         string functionName,
         TypeNode? signature,
@@ -130,15 +129,18 @@ public static class IntrinsicRegistry
         Dictionary<string, IntrinsicDeclaration> firstByName,
         Dictionary<string, Dictionary<string, IntrinsicDeclaration>> byNameAndSignature)
     {
-        var intrinsicName = GetAttributeArgument(attributes, WellKnownStrings.SpecialNames.Intrinsic) ?? functionName;
-        if (!HasAttribute(attributes, WellKnownStrings.SpecialNames.Intrinsic) ||
+        if (CompilerDirectiveIR.FromClauses(clauses) is not { Intrinsic: { } intrinsicName } directive ||
             string.IsNullOrWhiteSpace(intrinsicName))
         {
             return;
         }
 
-        var effects = GetEffectAttributes(attributes);
-        var llvmAbi = GetAttributeArgument(attributes, WellKnownStrings.SpecialNames.LlvmAbi);
+        var effects = clauses
+            .Where(static clause => clause.ClauseKind == DeclarationClauseKind.Need)
+            .SelectMany(static clause => clause.ArgumentTokens)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var llvmAbi = directive.LlvmAbi;
         var declaration = new IntrinsicDeclaration(
             intrinsicName,
             modulePath,
@@ -204,84 +206,6 @@ public static class IntrinsicRegistry
                 .Select(path => string.Join(".", path)));
         var output = effectful.OutputType == null ? "" : $"->{RenderTypeNode(effectful.OutputType)}";
         return $"{input}->{{{effects}}}{output}";
-    }
-
-    private static IReadOnlyList<string> GetEffectAttributes(IReadOnlyList<EidosAttribute> attributes)
-    {
-        var effects = new List<string>();
-        foreach (var attribute in attributes)
-        {
-            if (!string.Equals(attribute.Name, WellKnownStrings.SpecialNames.Effects, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            foreach (var raw in attribute.ArgumentTexts)
-            {
-                foreach (var effect in SplitEffectText(raw))
-                {
-                    if (!effects.Contains(effect, StringComparer.Ordinal))
-                    {
-                        effects.Add(effect);
-                    }
-                }
-            }
-        }
-
-        return effects;
-    }
-
-    private static IEnumerable<string> SplitEffectText(string raw)
-    {
-        var normalized = raw
-            .Replace("[", "", StringComparison.Ordinal)
-            .Replace("]", "", StringComparison.Ordinal)
-            .Replace("{", "", StringComparison.Ordinal)
-            .Replace("}", "", StringComparison.Ordinal);
-
-        foreach (var segment in normalized.Split([',', '|', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (!string.IsNullOrWhiteSpace(segment))
-            {
-                yield return segment;
-            }
-        }
-    }
-
-    private static bool HasAttribute(IReadOnlyList<EidosAttribute> attributes, string name)
-    {
-        return attributes.Any(attribute => string.Equals(attribute.Name, name, StringComparison.Ordinal));
-    }
-
-    private static string? GetAttributeArgument(IReadOnlyList<EidosAttribute> attributes, string name)
-    {
-        foreach (var attribute in attributes)
-        {
-            if (string.Equals(attribute.Name, name, StringComparison.Ordinal))
-            {
-                return NormalizeAttributeArgumentText(attribute.ArgumentTexts.FirstOrDefault());
-            }
-        }
-
-        return null;
-    }
-
-    private static string? NormalizeAttributeArgumentText(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        var trimmed = text.Trim();
-        if (trimmed.Length >= 2 &&
-            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
-             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
-        {
-            return trimmed[1..^1];
-        }
-
-        return trimmed;
     }
 
     private sealed record IntrinsicRegistryData(

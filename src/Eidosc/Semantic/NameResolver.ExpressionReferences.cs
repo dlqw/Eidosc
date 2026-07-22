@@ -27,6 +27,20 @@ public sealed partial class NameResolver
             case LiteralExpr:
                 break;
 
+            case QuoteExpr quote:
+                foreach (var splice in quote.Parts.OfType<QuoteSplicePart>())
+                {
+                    if (splice.Value != null)
+                    {
+                        ResolveExpressionReferences(splice.Value);
+                    }
+                }
+                break;
+
+            case ExpandExpr expansion:
+                ResolveExpandExpressionReferences(expansion);
+                break;
+
             case IdentifierExpr ident:
                 ResolveIdentifierReference(ident);
                 break;
@@ -179,8 +193,7 @@ public sealed partial class NameResolver
                             infixCall.AddFunctionCandidate(candidate);
                         }
                     }
-                    else if (IsLowerIdentifierName(infixCall.FunctionName) &&
-                             IsKnownPrecompiledValueName(infixCall.FunctionName))
+                    else if (IsKnownPrecompiledValueName(infixCall.FunctionName))
                     {
                         return;
                     }
@@ -200,7 +213,7 @@ public sealed partial class NameResolver
 
             case IndexExpr index:
                 // 反糖化：ptr_load_as[Float](ptr) → IndexExpr { Object = IdentifierExpr("ptr_load_as"), TypeArgs = [Float] }
-                if (index.IsTypeApplication && TryDesugarGenericPtrIntrinsicIndex(index))
+                if (TryDesugarGenericPtrIntrinsicIndex(index))
                 {
                     // 已反糖化，IndexExpr 的 Object 已被解析
                     break;
@@ -211,7 +224,7 @@ public sealed partial class NameResolver
                     ResolveExpressionReferences(index.Object);
                 }
 
-                TryReinterpretSingleValueGenericApplication(index);
+                TryReinterpretSingleGenericApplication(index);
 
                 if (index.Index != null)
                 {
@@ -262,6 +275,20 @@ public sealed partial class NameResolver
         if (ident.Name is not (WellKnownStrings.InternalNames.PtrLoadAs or WellKnownStrings.InternalNames.PtrStoreAs))
             return false;
 
+        if (!index.IsTypeApplication &&
+            index.Index != null &&
+            TryConvertExpressionToTypeCandidate(index.Index, out var neutralTypeArgument))
+        {
+            index.ReinterpretAsGenericApplication(
+            [
+                new TypeGenericArgumentNode
+                {
+                    Type = neutralTypeArgument,
+                    Span = index.Index?.Span ?? index.Span
+                }
+            ]);
+        }
+
         if (index.TypeArgs.Count == 0)
         {
             AddError(index.Span, DiagnosticMessages.PtrIntrinsicRequiresExplicitTypeArgument(ident.Name));
@@ -305,11 +332,17 @@ public sealed partial class NameResolver
             }
         }
 
-        foreach (var stmt in block.Statements)
+        for (var index = 0; index < block.Statements.Count; index++)
         {
+            var stmt = block.Statements[index];
             if (stmt is Declaration decl)
             {
                 ResolveDeclarationReferences(decl);
+            }
+            else if (stmt is ExpandStmt expansion)
+            {
+                ResolveExpandStatementReferences(expansion, block);
+                return;
             }
             else
             {
@@ -420,7 +453,7 @@ public sealed partial class NameResolver
             if (binding.Kind == DoBindingKind.Bind && binding.Pattern != null)
             {
                 using var context = PushPatternDiagnosticContext("do-bind");
-                ResolvePatternBindings(binding.Pattern);
+                binding.SetPattern(ResolvePatternBindings(binding.Pattern));
             }
             else if (binding.Kind == DoBindingKind.Let)
             {
@@ -489,7 +522,7 @@ public sealed partial class NameResolver
         {
             using var _ = _symbolTable.PushScopeGuard(ScopeKind.PatternBranch);
             using var context = PushPatternDiagnosticContext("if-let-pattern");
-            ResolvePatternBindings(ifLetExpr.Pattern);
+            ifLetExpr.SetPattern(ResolvePatternBindings(ifLetExpr.Pattern));
 
             if (ifLetExpr.ThenBranch != null)
             {
@@ -523,7 +556,7 @@ public sealed partial class NameResolver
 
         using var _ = _symbolTable.PushScopeGuard(ScopeKind.PatternBranch);
         using var context = PushPatternDiagnosticContext("while-let-pattern");
-        ResolvePatternBindings(whileLetExpr.Pattern);
+        whileLetExpr.SetPattern(ResolvePatternBindings(whileLetExpr.Pattern));
 
         if (whileLetExpr.Body != null)
         {
@@ -546,6 +579,8 @@ public sealed partial class NameResolver
             ResolveExpressionReferences(match.MatchedExpression);
         }
 
+        var preferredAdt = ResolvePatternCoverageAdt(match.MatchedExpression);
+
         for (var i = 0; i < match.Branches.Count; i++)
         {
             ResolvePatternBranchReferences(match.Branches[i], i + 1);
@@ -557,29 +592,56 @@ public sealed partial class NameResolver
                 match.Branches,
                 match.Span,
                 "match expression",
-                TryGetIdentifierName(match.MatchedExpression, out var matchedIdentifier) ? matchedIdentifier : null)));
+                TryGetIdentifierName(match.MatchedExpression, out var matchedIdentifier) ? matchedIdentifier : null,
+                PreferredAdt: preferredAdt)));
+    }
+
+    private SymbolId ResolvePatternCoverageAdt(EidosAstNode? expression)
+    {
+        var symbolId = expression switch
+        {
+            IdentifierExpr identifier => identifier.SymbolId,
+            PathExpr path => path.SymbolId,
+            CtorExpr constructor => constructor.SymbolId,
+            _ => SymbolId.None
+        };
+        if (!symbolId.IsValid)
+        {
+            return SymbolId.None;
+        }
+
+        if (_patternValueAdtBindings.TryGetValue(symbolId, out var boundAdt))
+        {
+            return boundAdt;
+        }
+
+        return _symbolTable.GetSymbol<CtorSymbol>(symbolId) is { OwnerAdt.IsValid: true } constructorSymbol
+            ? constructorSymbol.OwnerAdt
+            : SymbolId.None;
     }
 
     private void ResolveLambdaReferences(LambdaExpr lambda)
     {
         using var scopeGuard = _symbolTable.PushScopeGuard(ScopeKind.Lambda);
 
-        foreach (var param in lambda.Parameters)
+        for (var parameterIndex = 0; parameterIndex < lambda.Parameters.Count; parameterIndex++)
         {
-            if (param is VarPattern varPattern)
+            var param = lambda.Parameters[parameterIndex];
+            if (param is VarPattern { MayResolveToConstructor: false } varPattern)
             {
                 var paramId = DeclarePatternVariable(
-                    varPattern.Name,
+                    GetSyntaxBindingName(varPattern, varPattern.Name),
                     param.Span,
                     isParameter: true,
                     isPatternBound: false,
                     bindingMode: varPattern.BindingMode,
                     isMutable: varPattern.IsMutableBinding);
                 varPattern.SymbolId = paramId;
+                RegisterSyntaxIdentitySymbol(varPattern, paramId);
             }
             else
             {
-                ResolvePatternBindings(param, isParameter: true);
+                lambda.Parameters[parameterIndex] = ResolvePatternBindings(param, isParameter: true);
             }
         }
 
@@ -596,9 +658,19 @@ public sealed partial class NameResolver
             ResolveCallTargetReferences(call.Function);
         }
 
-        foreach (var arg in call.PositionalArgs)
+        var metaIntrinsicName = TryGetMetaIntrinsicName(call.Function);
+        for (var argumentIndex = 0; argumentIndex < call.PositionalArgs.Count; argumentIndex++)
         {
-            ResolveExpressionReferences(arg);
+            var argument = call.PositionalArgs[argumentIndex];
+            if (metaIntrinsicName != null &&
+                MetaSchemaRegistry.PrefersCompileTimeNamespace(metaIntrinsicName, argumentIndex))
+            {
+                ResolveCompileTimeNamespacePreferred(argument);
+            }
+            else
+            {
+                ResolveExpressionReferences(argument);
+            }
         }
 
         foreach (var arg in call.NamedArgs)
@@ -609,6 +681,150 @@ public sealed partial class NameResolver
             }
         }
 
+    }
+
+    private string? TryGetMetaIntrinsicName(EidosAstNode? callTarget)
+    {
+        var symbolId = callTarget switch
+        {
+            IdentifierExpr identifier => identifier.SymbolId,
+            PathExpr path => path.SymbolId,
+            IndexExpr { Object: IdentifierExpr identifier } => identifier.SymbolId,
+            IndexExpr { Object: PathExpr path } => path.SymbolId,
+            _ => SymbolId.None
+        };
+
+        return symbolId.IsValid &&
+               _symbolTable.GetSymbol<FuncSymbol>(symbolId) is { } function &&
+               MetaSchemaRegistry.IsMetaIntrinsic(function, out var intrinsicName)
+            ? intrinsicName
+            : null;
+    }
+
+    private void ResolveCompileTimeNamespacePreferred(EidosAstNode expression)
+    {
+        if (TryResolveCompileTimeTypeValueExpression(expression))
+        {
+            return;
+        }
+
+        if (expression is IdentifierExpr identifier)
+        {
+            var typeResult = _lookupService.Lookup(
+                identifier.Name,
+                LookupKind.Type,
+                CreateLookupContext());
+            if (typeResult.IsSuccess)
+            {
+                identifier.SymbolId = typeResult.SymbolId;
+                identifier.IsConstructor = false;
+                return;
+            }
+        }
+
+        ResolveExpressionReferences(expression);
+    }
+
+    private bool TryResolveCompileTimeTypeValueExpression(EidosAstNode expression)
+    {
+        switch (expression)
+        {
+            case IdentifierExpr identifier:
+            {
+                var result = _lookupService.Lookup(identifier.Name, LookupKind.Type, CreateLookupContext());
+                if (!result.IsSuccess)
+                {
+                    return false;
+                }
+
+                identifier.SymbolId = result.SymbolId;
+                identifier.IsConstructor = false;
+                return true;
+            }
+            case PathExpr path:
+            {
+                var result = _lookupService.LookupPath(path.Path, LookupKind.Type, CreateLookupContext());
+                if (!result.IsSuccess)
+                {
+                    return false;
+                }
+
+                path.SymbolId = result.SymbolId;
+                path.SetIsTypePath(true);
+                if (path.GenericArguments.Count > 0)
+                {
+                    path.SetGenericArguments(ResolveGenericArguments(
+                        path.SymbolId,
+                        path.GenericArguments,
+                        path.Span));
+                }
+                return true;
+            }
+            case IndexExpr { Object: not null } index:
+            {
+                if (!TryResolveCompileTimeTypeValueExpression(index.Object))
+                {
+                    return false;
+                }
+
+                TryReinterpretSingleGenericApplication(index);
+                var targetSymbolId = GetGenericApplicationTargetSymbol(index);
+                if (!index.IsTypeApplication || !targetSymbolId.IsValid)
+                {
+                    return false;
+                }
+
+                index.SetGenericArguments(ResolveGenericArguments(
+                    targetSymbolId,
+                    index.GenericArguments,
+                    index.Span));
+                return true;
+            }
+            case MethodCallExpr
+            {
+                HasExplicitCallSyntax: false,
+                Receiver: not null,
+                PositionalArgs.Count: 0,
+                NamedArgs.Count: 0
+            } member:
+            {
+                if (!TryResolveCompileTimeTypeValueExpression(member.Receiver) ||
+                    !TryGetCompileTimeTypeValueSymbol(member.Receiver, out var receiverSymbolId))
+                {
+                    return false;
+                }
+
+                var memberSymbolId = _symbolTable.LookupDirectCase(receiverSymbolId, member.MethodName);
+                if (memberSymbolId is not { IsValid: true } resolvedMember)
+                {
+                    return false;
+                }
+
+                var typeValue = new PathExpr();
+                typeValue.SetSpan(member.Span);
+                typeValue.SetName(member.MethodName);
+                typeValue.SetIsTypePath(true);
+                typeValue.SymbolId = resolvedMember;
+                member.SymbolId = resolvedMember;
+                member.SetResolvedStaticExpression(typeValue);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryGetCompileTimeTypeValueSymbol(EidosAstNode expression, out SymbolId symbolId)
+    {
+        symbolId = expression switch
+        {
+            IdentifierExpr identifier => identifier.SymbolId,
+            PathExpr path => path.SymbolId,
+            IndexExpr { Object: not null } index when TryGetCompileTimeTypeValueSymbol(index.Object, out var target) => target,
+            MethodCallExpr method => method.SymbolId,
+            _ => SymbolId.None
+        };
+        return symbolId.IsValid;
     }
 
     private void ResolveCallTargetReferences(EidosAstNode target)
@@ -624,6 +840,18 @@ public sealed partial class NameResolver
 
     private void ResolveIdentifierCallTargetReference(IdentifierExpr ident)
     {
+        if (TryUseAttachedSyntaxSymbol(ident, out var attachedSymbol))
+        {
+            ident.IsConstructor = attachedSymbol is CtorSymbol;
+            return;
+        }
+
+        if (HasUnresolvedHygienicSyntaxIdentity(ident))
+        {
+            AddUnresolvedHygienicIdentifierError(ident, ident.Name);
+            return;
+        }
+
         if (ident.Name == WellKnownStrings.Keywords.ReflConstructor)
         {
             ident.IsConstructor = true;
@@ -663,7 +891,7 @@ public sealed partial class NameResolver
             return;
         }
 
-        if (IsLowerIdentifierName(ident.Name) && IsKnownPrecompiledValueName(ident.Name))
+        if (IsKnownPrecompiledValueName(ident.Name))
         {
             return;
         }
@@ -677,11 +905,6 @@ public sealed partial class NameResolver
         AddUndefinedIdentifierError(ident.Span, ident.Name);
     }
 
-    private static bool IsLowerIdentifierName(string name)
-    {
-        return !string.IsNullOrWhiteSpace(name) && char.IsLower(name[0]);
-    }
-
     private static bool IsKnownPrecompiledValueName(string name)
     {
         return PrecompiledValueNames.Value.Contains(name);
@@ -689,16 +912,20 @@ public sealed partial class NameResolver
 
     private void ResolveCtorReferences(CtorExpr ctor)
     {
-        if (!string.IsNullOrWhiteSpace(ctor.ConstructorName))
+        if (!TryUseAttachedSyntaxSymbol(ctor, out var attachedConstructor) ||
+            attachedConstructor is not CtorSymbol)
         {
-            var ctorSymbol = _symbolTable.LookupConstructor(ctor.ConstructorName);
-            if (ctorSymbol != null)
+            if (!string.IsNullOrWhiteSpace(ctor.ConstructorName))
             {
-                ctor.SymbolId = ctorSymbol.Value;
-            }
-            else
-            {
-                AddError(ctor.Span, DiagnosticMessages.UndefinedConstructor(ctor.ConstructorName));
+                var ctorSymbol = _symbolTable.LookupConstructor(ctor.ConstructorName);
+                if (ctorSymbol != null)
+                {
+                    ctor.SymbolId = ctorSymbol.Value;
+                }
+                else
+                {
+                    AddError(ctor.Span, DiagnosticMessages.UndefinedConstructor(ctor.ConstructorName));
+                }
             }
         }
 
@@ -758,23 +985,34 @@ public sealed partial class NameResolver
 
     private void ResolveMethodCallReferences(MethodCallExpr methodCall)
     {
+        if (TryUseAttachedSyntaxSymbol(methodCall, out _))
+        {
+            if (methodCall.Receiver != null)
+            {
+                ResolveExpressionReferences(methodCall.Receiver);
+            }
+            ResolveMethodArguments(methodCall);
+            return;
+        }
+
+        if (TryResolveAssociatedConstProjection(methodCall))
+        {
+            ResolveMethodArguments(methodCall);
+            return;
+        }
+
+        if (TryResolveStaticMemberPath(methodCall))
+        {
+            ResolveMethodArguments(methodCall);
+            return;
+        }
+
         if (methodCall.Receiver != null)
         {
             ResolveExpressionReferences(methodCall.Receiver);
         }
 
-        foreach (var arg in methodCall.PositionalArgs)
-        {
-            ResolveExpressionReferences(arg);
-        }
-
-        foreach (var arg in methodCall.NamedArgs)
-        {
-            if (arg.Value != null)
-            {
-                ResolveExpressionReferences(arg.Value);
-            }
-        }
+        ResolveMethodArguments(methodCall);
 
         if (string.IsNullOrWhiteSpace(methodCall.MethodName))
         {
@@ -837,6 +1075,185 @@ public sealed partial class NameResolver
         AddError(methodCall.Span, DiagnosticMessages.UndefinedFunction(methodCall.MethodName));
     }
 
+    private void ResolveMethodArguments(MethodCallExpr methodCall)
+    {
+        foreach (var arg in methodCall.PositionalArgs)
+        {
+            ResolveExpressionReferences(arg);
+        }
+
+        foreach (var arg in methodCall.NamedArgs)
+        {
+            if (arg.Value != null)
+            {
+                ResolveExpressionReferences(arg.Value);
+            }
+        }
+    }
+
+    private bool TryResolveAssociatedConstProjection(MethodCallExpr methodCall)
+    {
+        if (methodCall.HasExplicitCallSyntax ||
+            methodCall.Receiver == null ||
+            methodCall.PositionalArgs.Count > 0 ||
+            methodCall.NamedArgs.Count > 0)
+        {
+            return false;
+        }
+
+        if (!TryResolveCompileTimeTypeValueExpression(methodCall.Receiver))
+        {
+            ResolveExpressionReferences(methodCall.Receiver);
+        }
+        if (!TryCreateTraitProjectionTarget(methodCall.Receiver, out var target) ||
+            !target.SymbolId.IsValid ||
+            _symbolTable.GetSymbol<TraitSymbol>(target.SymbolId) is not { } trait)
+        {
+            return false;
+        }
+
+        var isDeclaredAssociatedConst = trait.AssociatedConsts.Any(id =>
+            _symbolTable.GetSymbol<AssociatedConstSymbol>(id) is { } associatedConst &&
+            string.Equals(associatedConst.Name, methodCall.MethodName, StringComparison.Ordinal));
+        if (!isDeclaredAssociatedConst &&
+            (string.IsNullOrWhiteSpace(methodCall.MethodName) || !char.IsUpper(methodCall.MethodName[0])))
+        {
+            return false;
+        }
+
+        var projection = new AssociatedConstExpr();
+        projection.SetSpan(methodCall.Span);
+        projection.SetTarget(target);
+        projection.SetMemberName(methodCall.MethodName);
+        ResolveAssociatedConstExprReferences(projection);
+        methodCall.SymbolId = projection.SymbolId;
+        methodCall.SetResolvedStaticExpression(projection);
+        return true;
+    }
+
+    private static bool TryCreateTraitProjectionTarget(EidosAstNode expression, out TypePath target)
+    {
+        IReadOnlyList<GenericArgumentNode> genericArguments = [];
+        var baseExpression = expression;
+        if (expression is IndexExpr { IsTypeApplication: true, Object: not null } application)
+        {
+            genericArguments = application.GenericArguments;
+            baseExpression = application.Object;
+        }
+
+        target = new TypePath();
+        switch (baseExpression)
+        {
+            case IdentifierExpr identifier:
+                target.SetSpan(expression.Span);
+                target.SetTypeName(identifier.Name);
+                target.SymbolId = identifier.SymbolId;
+                break;
+            case PathExpr path:
+                target.SetSpan(expression.Span);
+                target.SetPackageAlias(path.PackageAlias);
+                target.ModulePath = [.. path.ModulePath];
+                target.SetTypeName(path.Name);
+                target.SymbolId = path.SymbolId;
+                break;
+            default:
+                target = null!;
+                return false;
+        }
+
+        target.SetGenericArguments(genericArguments);
+        return true;
+    }
+
+    private bool TryResolveStaticMemberPath(MethodCallExpr methodCall)
+    {
+        if (!TryCollectStaticPathSegments(methodCall.Receiver, out var receiverSegments) ||
+            receiverSegments.Count == 0 ||
+            string.IsNullOrWhiteSpace(methodCall.MethodName))
+        {
+            return false;
+        }
+
+        // A runtime binding at the root shadows a static Namespace with the same
+        // spelling. This keeps local.field and local.method() value-directed.
+        var runtimeRoot = _lookupService.Lookup(
+            receiverSegments[0],
+            LookupKind.Value,
+            CreateLookupContext());
+        if (runtimeRoot.IsSuccess)
+        {
+            return false;
+        }
+
+        var fullPath = receiverSegments.Append(methodCall.MethodName).ToList();
+        var result = _lookupService.LookupPath(
+            fullPath,
+            LookupKind.Value | LookupKind.Type | LookupKind.Constructor | LookupKind.Effect | LookupKind.Proof,
+            CreateLookupContext());
+        if (!result.IsSuccess)
+        {
+            return false;
+        }
+
+        var resolvedSymbolId = result.SymbolId;
+        if (_symbolTable.GetSymbol(resolvedSymbolId) is AdtSymbol
+            {
+                IsCaseType: true,
+                CaseConstructor.IsValid: true
+            } caseType && methodCall.HasExplicitCallSyntax)
+        {
+            resolvedSymbolId = caseType.CaseConstructor;
+        }
+
+        else if (_symbolTable.GetSymbol(resolvedSymbolId) is AdtSymbol { IsCaseType: true } &&
+                 !methodCall.HasExplicitCallSyntax)
+        {
+            var typeValue = new PathExpr();
+            typeValue.SetSpan(methodCall.Span);
+            typeValue.SetModulePath(fullPath.Take(fullPath.Count - 1).ToList());
+            typeValue.SetName(fullPath[^1]);
+            typeValue.SetIsTypePath(true);
+            typeValue.SymbolId = resolvedSymbolId;
+            methodCall.SymbolId = resolvedSymbolId;
+            methodCall.SetResolvedStaticExpression(typeValue);
+            return true;
+        }
+
+        if (_symbolTable.GetSymbol(resolvedSymbolId) is not (CtorSymbol or FuncSymbol or VarSymbol))
+        {
+            return false;
+        }
+
+        methodCall.SymbolId = resolvedSymbolId;
+        methodCall.MarkResolvedAsStaticPath();
+        return true;
+    }
+
+    private static bool TryCollectStaticPathSegments(EidosAstNode? expression, out List<string> segments)
+    {
+        switch (expression)
+        {
+            case IdentifierExpr identifier:
+                segments = [identifier.Name];
+                return !string.IsNullOrWhiteSpace(identifier.Name);
+            case PathExpr path:
+                segments = path.Path;
+                return segments.Count > 0;
+            case MethodCallExpr
+                {
+                    HasExplicitCallSyntax: false,
+                    PositionalArgs.Count: 0,
+                    NamedArgs.Count: 0,
+                    Receiver: not null
+                } member when TryCollectStaticPathSegments(member.Receiver, out segments):
+                segments.Add(member.MethodName);
+                return !string.IsNullOrWhiteSpace(member.MethodName);
+            default:
+                segments = [];
+                return false;
+        }
+    }
+
     private static bool CanUseTypeDirectedMethodLookup(MethodCallExpr methodCall)
     {
         return methodCall.Receiver != null && methodCall.HasExplicitCallSyntax;
@@ -860,6 +1277,16 @@ public sealed partial class NameResolver
 
             AddMethodCandidateIfFunction(methodCall, importScope.LookupImportedSymbol(methodCall.MethodName));
         }
+
+        var metaMember = _lookupService.LookupPath(
+            [WellKnownStrings.Meta.Module, methodCall.MethodName],
+            LookupKind.Value,
+            CreateLookupContext());
+        if (metaMember.IsSuccess)
+        {
+            AddMethodCandidateIfFunction(methodCall, metaMember.SymbolId);
+        }
+
     }
 
     private void AddMethodCandidateIfFunction(MethodCallExpr methodCall, SymbolId? symbolId)
@@ -915,7 +1342,7 @@ public sealed partial class NameResolver
 
                 if (qualifier.GeneratorPattern != null)
                 {
-                    ResolvePatternBindings(qualifier.GeneratorPattern);
+                    qualifier.GeneratorPattern = ResolvePatternBindings(qualifier.GeneratorPattern);
                 }
             }
             else if (qualifier.Kind == QualifierKind.Guard)

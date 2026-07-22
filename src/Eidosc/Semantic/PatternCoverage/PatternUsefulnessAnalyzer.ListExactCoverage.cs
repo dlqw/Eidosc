@@ -1388,12 +1388,13 @@ internal static partial class PatternUsefulnessAnalyzer
                     return false;
                 }
 
-                if (resolvedAdt is { IsValid: true } currentAdt && currentAdt != ctorSymbol.OwnerAdt)
+                var constructorAdt = symbolTable.GetClosedCaseRoot(ctorSymbol.OwnerAdt);
+                if (resolvedAdt is { IsValid: true } currentAdt && currentAdt != constructorAdt)
                 {
                     return false;
                 }
 
-                resolvedAdt = ctorSymbol.OwnerAdt;
+                resolvedAdt = constructorAdt;
                 hasConstrainedCase = true;
 
                 if (ctorPattern.PositionalPatterns.Count == 1 &&

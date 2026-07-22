@@ -24,7 +24,7 @@ public sealed class ModuleHirMixedRestoreTests
             var typesPayloads = Assert.IsAssignableFrom<IReadOnlyList<ModuleTypesStatePayload>>(
                 first.ModuleTypesStatePayloads);
             var typesPayloadByModule = typesPayloads.ToDictionary(static payload => payload.ModuleKey, StringComparer.Ordinal);
-            File.WriteAllText(Path.Combine(tempDir, "LibA.eidos"), """
+            File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
     id :: Int -> Int
     {
@@ -100,7 +100,7 @@ Main :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "LibA.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
     id :: Int -> Int
     {
@@ -108,7 +108,7 @@ LibA :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "LibB.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "lib_b.eidos"), """
 LibB :: module {
     inc :: Int -> Int
     {

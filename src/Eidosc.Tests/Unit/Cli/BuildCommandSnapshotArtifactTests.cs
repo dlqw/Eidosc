@@ -185,7 +185,7 @@ public sealed class BuildCommandSnapshotArtifactTests
                 "module-semantic-signature-snapshot",
                 ".json",
                 """
-                {"SchemaVersion":"semantic-signature-snapshot-v1","Nodes":[{"ModuleKey":"Main","Dependencies":[],"Declarations":[],"ExportSurfaceHash":"surface","DependencySemanticSignatureHash":"deps","SemanticSignatureHash":"semantic"}]}
+                {"SchemaVersion":"semantic-signature-snapshot-v2","Nodes":[{"ModuleKey":"Main","Dependencies":[],"Declarations":[],"ExportSurfaceHash":"surface","DependencySemanticSignatureHash":"deps","SemanticSignatureHash":"semantic"}]}
                 """);
             var restored = BuildCommand.TryLoadModuleSemanticSignatureSnapshot(artifact);
             Assert.NotNull(restored);

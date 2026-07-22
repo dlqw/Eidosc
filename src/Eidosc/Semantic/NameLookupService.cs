@@ -59,7 +59,66 @@ internal sealed class NameLookupService
             return LookupValue(name, kind.HasFlag(LookupKind.Constructor), context);
         }
 
+        var candidates = new List<LookupCandidate>();
+        AddCandidate(_symbolTable.LookupType(name), ResolutionKind.Type);
+        AddCandidate(_symbolTable.LookupEffect(name), ResolutionKind.Effect);
+        AddCandidate(_symbolTable.LookupConstructor(name), ResolutionKind.Constructor);
+        AddCandidate(_symbolTable.LookupModule(name), ResolutionKind.Module);
+
+        if (context.ImportScope != null)
+        {
+            foreach (var imported in context.ImportScope.GetEffectiveImportDetails(name))
+            {
+                if (imported.SymbolId.IsValid && MatchesRequestedKind(imported.Kind, kind))
+                {
+                    candidates.Add(new LookupCandidate(name, imported.SymbolId, imported.Kind));
+                }
+            }
+        }
+
+        var matching = candidates
+            .Where(candidate => MatchesRequestedKind(candidate.Kind, kind))
+            .DistinctBy(candidate => candidate.SymbolId)
+            .ToArray();
+        if (matching.Length == 1)
+        {
+            var selected = matching[0];
+            return LookupResult.Found(
+                selected.SymbolId,
+                selected.Kind,
+                selected.Kind == ResolutionKind.Constructor);
+        }
+
+        if (matching.Length > 1)
+        {
+            return LookupResult.Failure(
+                $"Identifier '{name}' is ambiguous across the requested semantic namespaces.",
+                matching);
+        }
+
         return LookupResult.NotFound();
+
+        void AddCandidate(SymbolId? symbolId, ResolutionKind resolutionKind)
+        {
+            if (symbolId is { IsValid: true } id)
+            {
+                candidates.Add(new LookupCandidate(name, id, resolutionKind));
+            }
+        }
+    }
+
+    private static bool MatchesRequestedKind(ResolutionKind resolutionKind, LookupKind lookupKind)
+    {
+        return resolutionKind switch
+        {
+            ResolutionKind.Value => lookupKind.HasFlag(LookupKind.Value),
+            ResolutionKind.Type => lookupKind.HasFlag(LookupKind.Type),
+            ResolutionKind.Constructor => lookupKind.HasFlag(LookupKind.Constructor),
+            ResolutionKind.Module => lookupKind.HasFlag(LookupKind.Module),
+            ResolutionKind.Effect => lookupKind.HasFlag(LookupKind.Effect),
+            ResolutionKind.Proof => lookupKind.HasFlag(LookupKind.Proof),
+            _ => false
+        };
     }
 
     public LookupResult LookupPath(
@@ -110,8 +169,11 @@ internal sealed class NameLookupService
             return false;
         }
 
-        if (context.ImportScope.TryLookupImportedSymbol(name, out _, out var isAmbiguous, out var importedCandidates) ||
-            !isAmbiguous)
+        var importedCandidates = CollectImportedValueCandidates(
+            context.ImportScope,
+            name,
+            allowConstructors: true);
+        if (importedCandidates.Count <= 1)
         {
             return false;
         }
@@ -185,14 +247,19 @@ internal sealed class NameLookupService
                     : LookupResult.NotFound();
             }
 
-            if (context.ImportScope.TryLookupImportedSymbol(name, out var importedSymbol, out var isAmbiguous, out var candidates))
+            var importedCandidates = CollectImportedValueCandidates(context.ImportScope, name, allowConstructors);
+            if (importedCandidates.Count == 1)
             {
-                return LookupResult.Found(importedSymbol, ResolutionKind.Value);
+                var imported = importedCandidates[0];
+                return LookupResult.Found(
+                    imported.SymbolId,
+                    imported.Kind,
+                    imported.Kind == ResolutionKind.Constructor);
             }
 
-            if (isAmbiguous)
+            if (importedCandidates.Count > 1)
             {
-                return LookupResult.Failure(BuildAmbiguousValueImportDiagnostic(name, candidates));
+                return LookupResult.Failure(BuildAmbiguousValueImportDiagnostic(name, importedCandidates));
             }
         }
 
@@ -202,7 +269,7 @@ internal sealed class NameLookupService
             return LookupResult.Found(symbol.Value, ResolutionKind.Value);
         }
 
-        if (allowConstructors && name.Length > 0 && char.IsUpper(name[0]))
+        if (allowConstructors)
         {
             var ctor = _symbolTable.LookupConstructor(name);
             if (ctor != null)
@@ -232,12 +299,23 @@ internal sealed class NameLookupService
         string name,
         out IReadOnlyList<ImportedSymbol> candidates)
     {
-        var details = importScope.GetImportDetails(name);
+        var result = CollectImportedValueCandidates(importScope, name, allowConstructors: true);
+        candidates = result;
+        return result.Count > 0;
+    }
+
+    private static List<ImportedSymbol> CollectImportedValueCandidates(
+        ImportScope importScope,
+        string name,
+        bool allowConstructors)
+    {
+        var details = importScope.GetEffectiveImportDetails(name);
         var result = new List<ImportedSymbol>(details.Count);
         for (var i = 0; i < details.Count; i++)
         {
             var detail = details[i];
-            if (detail.Kind is not (ResolutionKind.Value or ResolutionKind.Constructor) ||
+            if ((detail.Kind != ResolutionKind.Value &&
+                 (!allowConstructors || detail.Kind != ResolutionKind.Constructor)) ||
                 ContainsImportedSymbol(result, detail))
             {
                 continue;
@@ -246,8 +324,7 @@ internal sealed class NameLookupService
             result.Add(detail);
         }
 
-        candidates = result;
-        return candidates.Count > 0;
+        return result;
     }
 
     private static int CountNonTraitImports(IReadOnlyList<ImportedSymbol> candidates)

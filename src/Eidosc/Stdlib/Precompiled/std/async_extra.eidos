@@ -1,0 +1,156 @@
+AsyncExtra :: module {
+    import Task
+    import Seq
+    import Option
+    import Traits
+    import TraitInvoke
+
+    /// Map a spawning function over each element of a Seq.
+    distribute[A, B, E: effects] :: Seq[A] -> (A -> Task[B] need E) -> Seq[Task[B]] need E
+    {
+        xs => spawn_fn => Seq.map(xs)(spawn_fn)
+    }
+
+    /// Apply a pure transformation to the result of a spawn.
+    map_spawn[A, B, E1: effects, E2: effects] :: (Unit -> A need E1) -> (A -> B need E2) -> Unit -> B need E1, E2
+    {
+        thunk => f => _ => f(thunk(()))
+    }
+
+    /// Sequence two computations, passing the result of the first to the second.
+    bind_spawn[A, B, E1: effects, E2: effects] :: (Unit -> A need E1) -> (A -> Unit -> B need E2) -> Unit -> B need E1, E2
+    {
+        first => next => _ => next(first(()))(())
+    }
+
+
+    make_action_thunk[A, E: effects] :: (A -> Unit need E) -> A -> Unit -> Unit need E
+     compiler(internal)
+{
+        action => x => _ => action(x)
+    }
+
+    /// Apply a side-effecting action to each element, returning thunks.
+    for_each_thunk[A, E: effects] :: Seq[A] -> (A -> Unit need E) -> Seq[Unit -> Unit need E]
+    {
+        xs => action => Seq.map(xs)(AsyncExtra.make_action_thunk(action))
+    }
+
+    /// Chunk a Seq into groups of `n` elements each.
+    chunk[A] :: Seq[A] -> Int -> Seq[Seq[A]]
+    {
+        xs => n => if n <= 0 then { [] } else { AsyncExtra.chunk_positive(xs)(n) }
+    }
+
+
+    split_at[A] :: Seq[A] -> Int -> (Seq[A], Seq[A])
+     compiler(internal)
+{
+        xs => n =>
+            if n <= 0 then { ([], xs) }
+            else {
+                match xs {
+                    [] => ([], []),
+                    [head, ..tail] => match AsyncExtra.split_at(tail)(n - 1) {
+                        (prefix, suffix) => ([head, ..prefix], suffix)
+                    }
+                }
+            }
+    }
+
+    chunk_positive[A] :: Seq[A] -> Int -> Seq[Seq[A]]
+     compiler(internal)
+{
+        [] => _ => [],
+        xs => n => match AsyncExtra.split_at(xs)(n) {
+            (prefix, suffix) => Seq.append([prefix])(AsyncExtra.chunk_positive(suffix)(n))
+        }
+    }
+
+    /// Pair each element with its index.
+    indexed[T] :: Seq[T] -> Seq[(Int, T)]
+    {
+        xs => AsyncExtra.indexed_from(xs)(0)
+    }
+
+
+    indexed_from[T] :: Seq[T] -> Int -> Seq[(Int, T)]
+     compiler(internal)
+{
+        [] => _ => [],
+        [head, ..tail] => i => Seq.append([(i, head)])(AsyncExtra.indexed_from(tail)(i + 1))
+    }
+
+    /// Select elements at the given indices from a Seq.
+    select_at[A: Traits.Clone] :: Seq[A] -> Seq[Int] -> Seq[A]
+    {
+        xs => indices => AsyncExtra.select_at_inner(ref xs)(indices)
+    }
+
+
+    get_from_ref[A: Traits.Clone] :: Ref[Seq[A]] -> Int -> Option[A]
+     compiler(internal)
+{
+        xs => index => {
+            len := Seq.len_ref(xs)
+            if index < 0 || index >= len then { None() }
+            else { Some(TraitInvoke.clone_value(ref xs[index])) }
+        }
+    }
+
+
+    select_at_inner[A: Traits.Clone] :: Ref[Seq[A]] -> Seq[Int] -> Seq[A]
+     compiler(internal)
+{
+        xs => [] => [],
+        xs => [index, ..rest] => match AsyncExtra.get_from_ref(xs)(index)
+        {
+            Some(value) => Seq.append([value])(AsyncExtra.select_at_inner(xs)(rest)),
+            None() => AsyncExtra.select_at_inner(xs)(rest)
+        }
+    }
+
+    /// Repeat a computation `n` times and collect results into a Seq.
+    replicate[A, E: effects] :: Int -> (Unit -> A need E) -> Seq[A] need E
+    {
+        n => thunk => AsyncExtra.replicate_from(n)(0)(thunk)
+    }
+
+
+    replicate_from[A, E: effects] :: Int -> Int -> (Unit -> A need E) -> Seq[A] need E
+     compiler(internal)
+{
+        n => i => thunk => if i >= n then { [] } else {
+            Seq.append([thunk(())])(AsyncExtra.replicate_from(n)(i + 1)(thunk))
+        }
+    }
+
+    /// Build a Seq of thunks from a range [start, end).
+    range_thunks[A, E: effects] :: Int -> Int -> (Int -> A need E) -> Seq[A] need E
+    {
+        start => end => f => if start >= end then { [] } else {
+            Seq.append([f(start)])(AsyncExtra.range_thunks(start + 1)(end)(f))
+        }
+    }
+
+    /// Zip two lists and apply a function to each pair.
+    zip_apply[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
+    {
+        left => right => f => Seq.zip_with(left)(right)(f)
+    }
+
+    /// Take the first `n` elements that satisfy a predicate.
+    take_while[A: Traits.Clone, E: effects] :: Seq[A] -> (A -> Bool need E) -> Seq[A] need E
+    {
+        [] => _ => [],
+        [head, ..tail] => pred => if pred(TraitInvoke.clone_value(ref head)) then {
+            Seq.append([head])(AsyncExtra.take_while(tail)(pred))
+        } else { [] }
+    }
+
+    /// Partition a Seq into two groups based on a predicate.
+    partition[A, E: effects] :: Seq[A] -> (A -> Bool need E) -> (Seq[A], Seq[A]) need E
+    {
+        xs => pred => Seq.partition(xs)(pred)
+    }
+}

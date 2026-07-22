@@ -3,6 +3,7 @@ using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
+using Eidosc.Pipeline;
 
 namespace Eidosc.Hir;
 
@@ -82,8 +83,13 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
             ContinueExpr continueExpr => VisitContinueExpr(continueExpr),
             IndexExpr index => VisitIndexExpr(index),
             MethodCallExpr methodCall => VisitMethodCallExpr(methodCall),
+            QuoteExpr quote => VisitQuoteExpr(quote),
+            ExpandExpr expansion => VisitExpandExpr(expansion),
+            QuoteTokenPart token => VisitQuoteTokenPart(token),
+            QuoteSplicePart splice => VisitQuoteSplicePart(splice),
 
             // 模式节点
+            ExpandPattern expansion => VisitExpandPattern(expansion),
             VarPattern varPat => VisitVarPattern(varPat),
             CtorPattern ctorPat => VisitCtorPattern(ctorPat),
             WildcardPattern wildcard => VisitWildcardPattern(wildcard),
@@ -99,6 +105,7 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
             FieldPattern fieldPat => VisitFieldPattern(fieldPat),
 
             // 类型节点 - 注意：具体类型必须放在 TypeNode 之前
+            ExpandType expansion => VisitExpandType(expansion),
             ArrowType arrow => VisitArrowType(arrow),
             EffectfulType effectful => VisitEffectfulType(effectful),
             TupleType tupleType => VisitTupleType(tupleType),
@@ -119,8 +126,14 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
     /// </summary>
     public virtual IEnumerable<TResult> VisitChildren(EidosAstNode node)
     {
-        // 大多数节点需要子类重写此方法来访问子节点
-        yield break;
+        foreach (var child in AstStableNodeTraversal.GetStructuralChildren(node))
+        {
+            var result = Visit(child);
+            if (result != null)
+            {
+                yield return result;
+            }
+        }
     }
 
     #region 声明节点访问方法
@@ -302,9 +315,19 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
     /// </summary>
     protected virtual TResult? VisitMethodCallExpr(MethodCallExpr node) => DefaultVisit(node);
 
+    protected virtual TResult? VisitQuoteExpr(QuoteExpr node) => DefaultVisit(node);
+
+    protected virtual TResult? VisitExpandExpr(ExpandExpr node) => DefaultVisit(node);
+
+    protected virtual TResult? VisitQuoteTokenPart(QuoteTokenPart node) => DefaultVisit(node);
+
+    protected virtual TResult? VisitQuoteSplicePart(QuoteSplicePart node) => DefaultVisit(node);
+
     #endregion
 
     #region 模式节点访问方法
+
+    protected virtual TResult? VisitExpandPattern(ExpandPattern node) => DefaultVisit(node);
 
     /// <summary>
     /// 访问变量模式
@@ -374,6 +397,8 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
     #endregion
 
     #region 类型节点访问方法
+
+    protected virtual TResult? VisitExpandType(ExpandType node) => DefaultVisit(node);
 
     /// <summary>
     /// 访问类型节点
@@ -455,7 +480,9 @@ public abstract class AstWalker : AstVisitor<bool>
         // 如果需要继续，遍历子节点
         if (shouldContinue)
         {
-            VisitChildren(node);
+            foreach (var _ in VisitChildren(node))
+            {
+            }
         }
 
         return shouldContinue;
@@ -473,8 +500,10 @@ public abstract class AstWalker : AstVisitor<bool>
     /// </summary>
     public override IEnumerable<bool> VisitChildren(EidosAstNode node)
     {
-        // 子类可以重写此方法来控制子节点遍历
-        yield return true;
+        foreach (var child in AstStableNodeTraversal.GetStructuralChildren(node))
+        {
+            yield return Visit(child);
+        }
     }
 }
 

@@ -152,6 +152,21 @@ public sealed partial class MirGenericSpecializer
                 Arguments = combinedArguments
             };
             RefineCallTargetTypeFromImmediateUse(block, instructionIndex, resolvedCall, localTypes);
+            if (TryRewriteMonomorphicRecursiveCall(
+                    function,
+                    resolvedCall,
+                    sourceFunctionRef,
+                    template,
+                    localTypes,
+                    out var recursiveCall))
+            {
+                block.Instructions[instructionIndex] = recursiveCall;
+                UpdateLocalCallBindings(recursiveCall, localCallBindings);
+                localTypesChanged = true;
+                localTypesChanged |= RefineLocalTypesFromInstruction(function, recursiveCall, localTypes);
+                continue;
+            }
+
             var templateRewrittenResolvedCall = RewriteCallArgumentFunctionValuesFromTemplate(
                 resolvedCall,
                 template.TemplateSource,
@@ -457,5 +472,67 @@ public sealed partial class MirGenericSpecializer
 
         PruneDeadPartialTemplateCalls(function, block);
         return localTypesChanged;
+    }
+
+    private bool TryRewriteMonomorphicRecursiveCall(
+        MirFunc containingFunction,
+        MirCall call,
+        MirFunctionRef sourceFunctionRef,
+        TemplateInfo template,
+        IReadOnlyDictionary<LocalId, TypeId> localTypes,
+        out MirCall rewrittenCall)
+    {
+        rewrittenCall = null!;
+        if (!IsGeneratedSpecialization(containingFunction.Name) ||
+            !IsSpecializationOfTemplate(containingFunction, template.TemplateSource))
+        {
+            return false;
+        }
+
+        var parameterTypes = containingFunction.Locals
+            .Where(static local => local.IsParameter)
+            .Select(static local => local.TypeId)
+            .ToArray();
+        if (parameterTypes.Length != call.Arguments.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < parameterTypes.Length; index++)
+        {
+            var argumentType = ResolveOperandType(call.Arguments[index], localTypes);
+            if (!argumentType.IsValid ||
+                ContainsOpenTypeVariable(argumentType) ||
+                argumentType != parameterTypes[index])
+            {
+                return false;
+            }
+        }
+
+        rewrittenCall = call with
+        {
+            Function = RewriteFunctionReference(
+                sourceFunctionRef,
+                containingFunction,
+                containingFunction.ReturnType)
+        };
+        return true;
+    }
+
+    private static bool IsSpecializationOfTemplate(MirFunc specialization, MirFunc template)
+    {
+        if (MirFunctionIdentity.TryGetStableKey(specialization.FunctionId, out var specializationKey) &&
+            MirFunctionIdentity.TryGetStableKey(template.FunctionId, out var templateKey))
+        {
+            var specializationPrefix = $"{templateKey}\0specialization\0";
+            return specializationKey.StartsWith(specializationPrefix, StringComparison.Ordinal);
+        }
+
+        return string.Equals(
+            specialization.SourceName,
+            string.IsNullOrWhiteSpace(template.SourceName) ? template.Name : template.SourceName,
+            StringComparison.Ordinal) &&
+               string.Equals(specialization.FunctionId.ModuleIdentityKey, template.FunctionId.ModuleIdentityKey, StringComparison.Ordinal) &&
+               string.Equals(specialization.FunctionId.Module, template.FunctionId.Module, StringComparison.Ordinal);
     }
 }

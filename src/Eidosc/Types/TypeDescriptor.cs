@@ -46,6 +46,8 @@ public abstract record TypeDescriptor
     {
         public GenericValueArgumentDescriptor[] ValueArgs { get; init; } = [];
 
+        public GenericEffectArgumentDescriptor[] EffectArgs { get; init; } = [];
+
         public TyCon(string constructorDescriptor, TypeId[] typeArgs)
             : this(TypeConstructorKey.Parse(constructorDescriptor), typeArgs)
         {
@@ -54,7 +56,7 @@ public abstract record TypeDescriptor
         public string ConstructorDescriptor => Constructor.ToDescriptorString();
 
         public override string ToString() =>
-            $"TyCon({ConstructorDescriptor};{string.Join(",", TypeArgs.Select(t => t.ToString()))};values={string.Join(",", ValueArgs.Select(static value => value.ToString()))})";
+            $"TyCon({ConstructorDescriptor};{string.Join(",", TypeArgs.Select(t => t.ToString()))};values={string.Join(",", ValueArgs.Select(static value => value.ToString()))};effects={string.Join(",", EffectArgs.Select(static effect => effect.ToString()))})";
     }
 
     /// <summary>
@@ -107,4 +109,9 @@ public sealed record GenericValueArgumentDescriptor(
 
     public override string ToString() =>
         $"{ParameterIndex}:{CanonicalHash}:{TypeId.Value}:ref={ReferencedParameterIndex}:var={ValueVariableIndex}";
+}
+
+public sealed record GenericEffectArgumentDescriptor(int ParameterIndex, string CanonicalText, TypeId TypeId)
+{
+    public override string ToString() => $"{ParameterIndex}:{CanonicalText}:{TypeId.Value}";
 }

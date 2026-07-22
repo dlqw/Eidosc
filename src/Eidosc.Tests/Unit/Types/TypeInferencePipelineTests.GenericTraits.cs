@@ -108,16 +108,21 @@ id[T: Marker] :: T -> T
 
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Trait
-import Std.Ordering
-import Std.Text
+import std.Traits
+import std.Ordering
+import std.Text
 
-eq_self[T: Trait.Eq] :: T -> Bool
+clone_text :: String -> String
+{
+    value => Text.clone(ref value)
+}
+
+eq_self[T: Traits.Eq] :: T -> Bool
 {
     x => x == x
 }
 
-ord_self[T: Trait.Ord] :: T -> Bool
+ord_self[T: Traits.Ord] :: T -> Bool
 {
     x => x <= x
 }
@@ -126,7 +131,7 @@ main :: Unit -> Int
 {
     _ => {
         lessLabel := Ordering.show(Ordering.compare_int(1)(2));
-        echo := Text.show(Text.clone("ok"));
+        echo := Text.show(clone_text("ok"));
 
         if eq_self(41) &&
            ord_self('a') &&
@@ -162,7 +167,7 @@ main :: Unit -> Int
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Result
+import std.Result
 
 inc :: Int -> Int
 {
@@ -200,7 +205,7 @@ main :: Unit -> Bool
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Option
+import std.Option
 
 inc :: Int -> Int
 {
@@ -240,13 +245,14 @@ Marker :: trait {
 }
 
 Box :: type {
-    Box(Int)
+    Box:: type(Int)
 }
 
-@impl(Marker)
-mark :: Box -> Bool
-{
-    x => true
+
+MarkerBox :: instance Marker {
+    mark :: Box -> Bool {
+        x => true
+    }
 }
 
 id[T: Marker] :: T -> T
@@ -275,13 +281,14 @@ Marker :: trait {
 }
 
 Box :: type {
-    Box(Int)
+    Box:: type(Int)
 }
 
-@impl(Marker)
-mark :: Box -> Bool
-{
-    x => true
+
+MarkerBox :: instance Marker {
+    mark :: Box -> Bool {
+        x => true
+    }
 }
 
 id[T] :: T -> T where T: Marker
@@ -308,7 +315,7 @@ good :: Box -> Box
     {
         const string source = """
 Box[A] :: type {
-    Wrap(A)
+    Wrap:: type(A)
 }
 
 Functor[F: kind2] :: trait {
@@ -341,17 +348,18 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Functor[Box])
-fmap :: Person -> Box[Int]
-{
-    p => Box(1)
+
+FunctorPersonBox :: instance Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 
 id[T: Functor[Box]] :: T -> T
@@ -380,21 +388,22 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Bag[A] :: type {
-    Bag(A)
+    Bag:: type(A)
 }
 
-@impl(Functor[Bag])
-fmap :: Person -> Bag[Int]
-{
-    p => Bag(1)
+
+FunctorPersonBag :: instance Functor[Bag] {
+    fmap :: Person -> Bag[Int] {
+        p => Bag(1)
+    }
 }
 
 id[T: Functor[Box]] :: T -> T
@@ -428,17 +437,18 @@ Core :: module {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Core.Functor[Box])
-fmap :: Person -> Box[Int]
-{
-    p => Box(1)
+
+FunctorPersonBox :: instance Core.Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -469,21 +479,22 @@ Core :: module {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Bag[A] :: type {
-    Bag(A)
+    Bag:: type(A)
 }
 
-@impl(Core.Functor[Bag])
-fmap :: Person -> Bag[Int]
-{
-    p => Bag(1)
+
+FunctorPersonBag :: instance Core.Functor[Bag] {
+    fmap :: Person -> Bag[Int] {
+        p => Bag(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -527,17 +538,18 @@ Core :: module {
 import Core
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Core.Functor[Box])
-fmap :: Person -> Box[Int]
-{
-    p => Box(1)
+
+FunctorPersonBox :: instance Core.Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -593,21 +605,22 @@ Core :: module {
 import Core
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Bag[A] :: type {
-    Bag(A)
+    Bag:: type(A)
 }
 
-@impl(Core.Functor[Bag])
-fmap :: Person -> Bag[Int]
-{
-    p => Bag(1)
+
+FunctorPersonBag :: instance Core.Functor[Bag] {
+    fmap :: Person -> Bag[Int] {
+        p => Bag(1)
+    }
 }
 
 id[T: Core.Functor[Box]] :: T -> T
@@ -650,7 +663,7 @@ bad :: Person -> Person
     {
         const string source = """
 Option[T] :: type {
-    Some(T) , None
+    Some:: type(T) , None :: type {}
 }
 
 bad :: Option -> Int
@@ -715,7 +728,7 @@ Marker :: trait {
 }
 
 Box[T: Marker] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 bad :: Int -> Box[Int]
@@ -742,7 +755,7 @@ Marker :: trait {
 }
 
 Box[T: Marker] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 bad :: Box[Int] -> Int
@@ -769,17 +782,18 @@ Marker :: trait {
 }
 
 Tagged :: type {
-    Tagged(Int)
+    Tagged:: type(Int)
 }
 
-@impl(Marker)
-mark :: Tagged -> Bool
-{
-    x => true
+
+MarkerTagged :: instance Marker {
+    mark :: Tagged -> Bool {
+        x => true
+    }
 }
 
 Box[T: Marker] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 good :: Tagged -> Box[Tagged]
@@ -799,7 +813,7 @@ good :: Tagged -> Box[Tagged]
     {
         const string source = """
 Box[T] :: type {
-    Wrap(T)
+    Wrap:: type(T)
 }
 
 unbox[T] :: Box[T] -> T
@@ -831,7 +845,7 @@ mixed :: String -> Int
     {
         const string source = """
 Box :: type {
-    Box(Int)
+    Box:: type(Int)
 }
 
 double[T] :: T -> T
@@ -894,6 +908,48 @@ use :: Int -> Int
 
         Assert.True(result.Success);
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E4000");
+    }
+
+    [Fact]
+    public void Types_GenericCall_ExplicitTypeArgsPreserveDeclarationOrderAfterConstraintInference()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_types_explicit_order_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var entryFile = Path.Combine(tempDir, "main.eidos");
+        const string source = """
+import std.Traits
+import std.TraitInvoke
+
+pair_clone[A: Traits.Clone + Traits.Eq, B] :: A -> B -> (A, B)
+{
+    a => b => if TraitInvoke.eq_value(TraitInvoke.clone_value(ref a))(TraitInvoke.clone_value(ref a))
+        then { (a, b) }
+        else { (a, b) }
+}
+
+main :: Unit -> Int
+{
+    _ => match pair_clone[Int, Bool](41)(true)
+    {
+        (value, ok) => if ok then { value } else { 0 }
+    }
+}
+""";
+
+        File.WriteAllText(entryFile, source);
+        try
+        {
+            var result = RunPipeline(source, CompilationPhase.Types, options => options.InputFile = entryFile);
+
+            Assert.True(
+                result.Success,
+                string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
+            Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E4000");
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [Fact]

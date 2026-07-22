@@ -268,7 +268,7 @@ use :: Ref[Int] -> Int { r => r.read }
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 start :: Ref[Range] -> Bool { _ => false }
@@ -302,7 +302,7 @@ read_method :: Ref[Range] -> Bool { r => r.start() }
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 inc :: Int -> Int { x => x + 1 }
@@ -335,7 +335,7 @@ use :: Ref[Range] -> Int { r => r.start.inc }
     {
         const string source = """
 ReaderBox[T] :: type {
-    reader: Ref[T], tag: Int
+    reader:: Ref[T], tag:: Int
 }
 
 read :: Ref[Int] -> Int { r => r }
@@ -368,7 +368,7 @@ use :: Ref[ReaderBox[Int]] -> Int { box => box.reader.read }
     {
         const string source = """
 WriterBox[T] :: type {
-    writer: MRef[T], tag: Int
+    writer:: MRef[T], tag:: Int
 }
 
 read :: Ref[Int] -> Int { r => r }
@@ -401,7 +401,7 @@ use :: Ref[WriterBox[Int]] -> Int { box => box.writer.read }
     {
         const string source = """
 Range :: type {
-    start: Int, end: Int
+    start:: Int, end:: Int
 }
 
 first_start :: Ref[Seq[Range]] -> Int
@@ -497,7 +497,7 @@ use :: 1 `join` 2;
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_qualified_curried_hir_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
-        var moduleFile = Path.Combine(tempDir, "ProbeMath.eidos");
+        var moduleFile = Path.Combine(tempDir, "probe_math.eidos");
         var entryFile = Path.Combine(tempDir, "main.eidos");
 
         const string moduleSource = """

@@ -173,7 +173,7 @@ public record LetDecl : Declaration
     internal void SetTypeAnnotation(TypeNode? type) => TypeAnnotation = type;
     internal void SetMutable(bool isMutable) => IsMutable = isMutable;
     internal void SetComptime(bool isComptime) => IsComptime = isComptime;
-    internal void SetValue(EidosAstNode value) => Value = value;
+    internal void SetValue(EidosAstNode? value) => Value = value;
 
     public override XmlElement ToXmlElement(XmlDocument doc)
     {

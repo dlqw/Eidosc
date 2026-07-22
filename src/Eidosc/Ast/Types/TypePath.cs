@@ -144,7 +144,7 @@ public record TypePath : TypeNode
             ModulePath = ["Option"],
             TypeArgs = [innerType]
         };
-        optionType.SetPackageAlias("Std");
+        optionType.SetPackageAlias(WellKnownStrings.Std.Module);
         optionType.SetTypeName("Option");
         optionType.SetSpan(span);
         return optionType;
@@ -211,7 +211,7 @@ public record TypePath : TypeNode
         foreach (var child in node.Children)
         {
             if (child is TerminalCstNode term &&
-                string.Equals(term.Terminal?.ToString(), WellKnownStrings.Terminals.TypeIdentifier, StringComparison.Ordinal))
+                string.Equals(term.Terminal?.ToString(), WellKnownStrings.Terminals.Identifier, StringComparison.Ordinal))
             {
                 var typePath = new TypePath();
                 typePath.SetTypeName(GetTokenText(term));

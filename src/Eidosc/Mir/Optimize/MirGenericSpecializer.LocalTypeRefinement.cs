@@ -22,7 +22,8 @@ public sealed partial class MirGenericSpecializer
         _stats.LocalTypeConcretizeCalls++;
         var changed = true;
         var anyChanged = false;
-        while (changed)
+        var refinementIterations = 0;
+        while (changed && refinementIterations++ < 64)
         {
             changed = false;
 
@@ -100,6 +101,8 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => TryConcretizeLocalType(assign.Target, ResolveOperandType(assign.Source, localTypes), localTypes),
+            MirCaseInject { Target: MirPlace target } injection =>
+                TryConcretizeLocalType(target, injection.TargetTypeId, localTypes),
             MirLoad load => TryConcretizeLocalType(load.Target, ResolveOperandType(load.Source, localTypes), localTypes),
             MirStore store => TryConcretizeLocalType(store.Target, ResolveOperandType(store.Value, localTypes), localTypes),
             MirCopy copy => TryConcretizeLocalType(copy.Target, ResolvePlaceType(copy.Source, localTypes), localTypes) |
@@ -379,8 +382,12 @@ public sealed partial class MirGenericSpecializer
         TypeId candidateType,
         Dictionary<LocalId, TypeId> localTypes)
     {
-        if (targetPlace.Kind != PlaceKind.Local ||
-            !targetPlace.Local.IsValid ||
+        if (targetPlace.Kind != PlaceKind.Local)
+        {
+            return TryConcretizeAggregateProjectionBaseType(targetPlace, candidateType, localTypes);
+        }
+
+        if (!targetPlace.Local.IsValid ||
             !candidateType.IsValid ||
             ContainsOpenTypeVariable(candidateType))
         {
@@ -401,6 +408,40 @@ public sealed partial class MirGenericSpecializer
 
         localTypes[targetPlace.Local] = candidateType;
         _dirtyLocalTypeIds.Add(targetPlace.Local);
+        return true;
+    }
+
+    private bool TryConcretizeAggregateProjectionBaseType(
+        MirPlace targetPlace,
+        TypeId candidateType,
+        Dictionary<LocalId, TypeId> localTypes)
+    {
+        if (targetPlace.Kind != PlaceKind.Index ||
+            targetPlace.Base is not { Kind: PlaceKind.Local } basePlace ||
+            !basePlace.Local.IsValid ||
+            !candidateType.IsValid ||
+            ContainsOpenTypeVariable(candidateType) ||
+            !TryResolveConstantIndex(targetPlace.Index, out var index) ||
+            !localTypes.TryGetValue(basePlace.Local, out var baseType) ||
+            !TryGetTypeDescriptor(baseType, out var descriptor) ||
+            descriptor is not TypeDescriptor.Tuple tuple ||
+            index < 0 ||
+            index >= tuple.FieldTypes.Length)
+        {
+            return false;
+        }
+
+        var existingFieldType = tuple.FieldTypes[index];
+        if (existingFieldType == candidateType ||
+            !ContainsOpenTypeVariable(existingFieldType))
+        {
+            return false;
+        }
+
+        var fields = tuple.FieldTypes.ToArray();
+        fields[index] = candidateType;
+        localTypes[basePlace.Local] = GetOrCreateDynamicTypeId(new TypeDescriptor.Tuple(fields));
+        _dirtyLocalTypeIds.Add(basePlace.Local);
         return true;
     }
 

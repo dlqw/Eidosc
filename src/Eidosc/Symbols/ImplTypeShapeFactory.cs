@@ -51,9 +51,9 @@ public static class ImplTypeShapeFactory
             };
         }
 
-        if (IsVariableLikeName(key.Text))
+        if (TryGetExplicitVariableIdentity(key.Text, out var variableIdentity))
         {
-            return new ImplVariableShapeNode(key.Text);
+            return new ImplVariableShapeNode(variableIdentity);
         }
 
         throw new InvalidOperationException(
@@ -75,19 +75,19 @@ public static class ImplTypeShapeFactory
         return key.Text;
     }
 
-    public static bool IsVariableLikeName(string name)
+    public static bool TryGetExplicitVariableIdentity(string text, out string identity)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        const string prefix = "var:";
+        if (!string.IsNullOrWhiteSpace(text) &&
+            text.StartsWith(prefix, StringComparison.Ordinal) &&
+            text.Length > prefix.Length)
         {
-            return false;
-        }
-
-        if (name.Length == 1 && char.IsLetter(name[0]))
-        {
+            identity = text[prefix.Length..];
             return true;
         }
 
-        return char.IsLower(name[0]);
+        identity = string.Empty;
+        return false;
     }
 
     private static string BuildValueVariableName(ImplValueRefKey argument)

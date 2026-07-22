@@ -137,7 +137,7 @@ public record TypeParam : EidosAstNode
         }
 
         var terminalName = term.Terminal?.ToString();
-        if (terminalName is not (WellKnownStrings.Terminals.Identifier or WellKnownStrings.Terminals.TypeIdentifier))
+        if (terminalName is not (WellKnownStrings.Terminals.Identifier or WellKnownStrings.Terminals.Identifier))
         {
             return false;
         }
@@ -174,7 +174,7 @@ public record TypeParam : EidosAstNode
             if (child is TerminalCstNode terminal)
             {
                 var terminalName = terminal.Terminal?.ToString();
-                if (terminalName is not (WellKnownStrings.Terminals.TypeIdentifier or WellKnownStrings.Terminals.Identifier))
+                if (terminalName is not (WellKnownStrings.Terminals.Identifier or WellKnownStrings.Terminals.Identifier))
                 {
                     continue;
                 }

@@ -12,6 +12,61 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public sealed class ModuleTypesStatePayloadTests
 {
     [Fact]
+    public void MetaTypePayload_RoundTripsTypedKindAndGenericDomainWithStableTokens()
+    {
+        var effectArgument = new MetaGenericArgumentRef(
+            MetaGenericArgumentDomain.EffectRow,
+            "io",
+            "effect:io",
+            SymbolId.None,
+            null);
+        var original = new MetaTypeRef(
+            MetaTypeKind.TypeParameter,
+            "T",
+            "type-parameter:0",
+            new SymbolId(41),
+            new TypeId(42),
+            [],
+            GenericArguments: [effectArgument]);
+
+        var payload = MetaTypeRefPayload.Create(original);
+
+        Assert.Equal("type-parameter", payload.Kind);
+        Assert.Equal("effect-row", Assert.Single(payload.GenericArguments!).Domain);
+        Assert.True(payload.TryRestore(remapper: null, out var restored));
+        Assert.Equal(MetaTypeKind.TypeParameter, restored.Kind);
+        Assert.Equal(MetaGenericArgumentDomain.EffectRow, Assert.Single(restored.GenericArguments!).Domain);
+        Assert.Equal(original.CanonicalText, restored.CanonicalText);
+        Assert.StartsWith("type-parameter:", restored.CanonicalText, StringComparison.Ordinal);
+        Assert.Contains("<[effect-row:", restored.CanonicalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(MetaTypeKind.TypeParameter), restored.CanonicalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(MetaGenericArgumentDomain.EffectRow), restored.CanonicalText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MetaTypePayload_RejectsUnknownKindAndGenericDomainTokens()
+    {
+        var unknownKind = new MetaTypeRefPayload(
+            "future-kind",
+            "T",
+            "future:T",
+            0,
+            0,
+            []);
+        var unknownDomain = new MetaTypeRefPayload(
+            "nominal",
+            "Box",
+            "nominal:Box",
+            0,
+            0,
+            [],
+            [new MetaGenericArgumentRefPayload("future-domain", "T", "type:T", 0, null)]);
+
+        Assert.False(unknownKind.TryRestore(remapper: null, out _));
+        Assert.False(unknownDomain.TryRestore(remapper: null, out _));
+    }
+
+    [Fact]
     public void AstTypesStatePayload_RestoresNonStructuralTypesAttachments()
     {
         var implementation = new LiteralExpr();
@@ -22,6 +77,9 @@ public sealed class ModuleTypesStatePayloadTests
         method.MarkSyntheticUnitArguments(1);
         method.MarkResolvedAsFieldAccess(new SymbolId(201));
         method.MarkResolvedAsCStructAccess("point_x", new SymbolId(202));
+        var methodProjection = new AssociatedConstExpr();
+        methodProjection.SetImplementationValue(implementation);
+        method.SetResolvedStaticExpression(methodProjection);
         var infix = new InfixCallExpr { FunctionSymbolId = new SymbolId(203) };
         var letQuestion = new LetQuestionDecl();
         letQuestion.SetFailureBindingSymbol(new SymbolId(206));
@@ -50,6 +108,7 @@ public sealed class ModuleTypesStatePayloadTests
         restoredImplementation.SetLiteral("7");
         var restoredCall = new CallExpr();
         var restoredMethod = new MethodCallExpr();
+        restoredMethod.SetResolvedStaticExpression(new AssociatedConstExpr());
         var restoredInfix = new InfixCallExpr();
         var restoredLetQuestion = new LetQuestionDecl();
         var restoredAssociatedConst = new AssociatedConstExpr();
@@ -73,6 +132,9 @@ public sealed class ModuleTypesStatePayloadTests
         Assert.Equal(new SymbolId(201), restoredMethod.FieldSymbolId);
         Assert.Equal("point_x", restoredMethod.CStructGetterName);
         Assert.Equal(new SymbolId(202), restoredMethod.CStructGetterSymbolId);
+        Assert.Same(
+            restoredImplementation,
+            Assert.IsType<AssociatedConstExpr>(restoredMethod.ResolvedStaticExpression).ImplementationValue);
         Assert.Equal(new SymbolId(203), restoredInfix.FunctionSymbolId);
         Assert.Equal(LetQuestionBindingKind.Result, restoredLetQuestion.BindingKind);
         Assert.Equal(new SymbolId(204), restoredLetQuestion.SuccessConstructorSymbolId);
@@ -147,17 +209,24 @@ minimum :: Unit -> Int
             call.Function is IdentifierExpr { Name: "ping" });
         Assert.Equal(1, emptyCall.SynthesizedUnitArgumentCount);
         Assert.False(emptyCall.UsesFfiUnitArgumentElision);
-        Assert.True(Assert.Single(nodes.OfType<MethodCallExpr>()).SymbolId.IsValid);
+        var restoredMethod = Assert.Single(
+            nodes.OfType<MethodCallExpr>(),
+            static method => string.Equals(method.MethodName, "inc", StringComparison.Ordinal));
+        Assert.True(restoredMethod.SymbolId.IsValid);
         Assert.True(Assert.Single(nodes.OfType<InfixCallExpr>()).FunctionSymbolId.IsValid);
-        Assert.NotNull(Assert.Single(nodes.OfType<AssociatedConstExpr>()).ImplementationValue);
+        var restoredProjectionMethod = Assert.Single(
+            nodes.OfType<MethodCallExpr>(),
+            static method => string.Equals(method.MethodName, "Min", StringComparison.Ordinal));
+        Assert.NotNull(
+            Assert.IsType<AssociatedConstExpr>(restoredProjectionMethod.ResolvedStaticExpression).ImplementationValue);
     }
 
     [Fact]
     public void Run_MirTargetWithTypesAstState_RestoresLetQuestionDesugaring()
     {
         const string source = """
-Option[T] :: type { Some(T) , None }
-Result[T, E] :: type { Ok(T) , Err(E) }
+Option[T] :: type { Some:: type(T) , None :: type {} }
+Result[T, E] :: type { Ok:: type(T) , Err:: type(E) }
 
 maybe_inc :: Int -> Option[Int]
 {
@@ -229,7 +298,7 @@ use_result :: Int -> Result[Int, String]
     public void Run_ContextualRecordStructuralRewrite_FallsBackToFullInference()
     {
         const string source = """
-Pos :: type { Pos { x: Int, y: Int } }
+Pos :: type { x:: Int, y:: Int }
 origin :: Pos = .{ x: 0, y: 0 };
 """;
         var first = RunVirtualPhase(source, CompilationPhase.Types, static _ => { });
@@ -500,7 +569,7 @@ origin :: Pos = .{ x: 0, y: 0 };
             Assert.True(first.Success, FormatDiagnostics(first));
             var payloads = Assert.IsAssignableFrom<IReadOnlyList<ModuleTypesStatePayload>>(first.ModuleTypesStatePayloads);
             var payloadByModule = payloads.ToDictionary(static payload => payload.ModuleKey, StringComparer.Ordinal);
-            File.WriteAllText(Path.Combine(tempDir, "LibA.eidos"), """
+            File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
     id :: Int -> Int
     {
@@ -567,9 +636,9 @@ LibA :: module {
                 static declaration => declaration.Name == "unauthorized" &&
                                       declaration.CanonicalFacts.Any(fact =>
                                           fact.StartsWith("inferredEffects:", StringComparison.Ordinal) &&
-                                          fact.Contains("IO", StringComparison.Ordinal)));
+                                          fact.Contains("io", StringComparison.Ordinal)));
 
-            File.WriteAllText(Path.Combine(tempDir, "Changed.eidos"), """
+            File.WriteAllText(Path.Combine(tempDir, "changed.eidos"), """
 Changed :: module {
     id :: Int -> Int
     {
@@ -600,7 +669,7 @@ Changed :: module {
             Assert.Contains(
                 restoredSummaries,
                 static binding => binding.Key.Name == "unauthorized" &&
-                                  binding.Value.InferredEffects.ContainsName("IO"));
+                                  binding.Value.InferredEffects.ContainsName("io"));
             var restoredApplyFunctions = AstStableNodeTraversal
                 .Enumerate(Assert.IsType<ModuleDecl>(second.Ast))
                 .Select(static entry => entry.Node)
@@ -634,8 +703,8 @@ Changed :: module {
     {
         Directory.CreateDirectory(tempDir);
         var entryFile = Path.Combine(tempDir, "Main.eidos");
-        var libAFile = Path.Combine(tempDir, "LibA.eidos");
-        var libBFile = Path.Combine(tempDir, "LibB.eidos");
+        var libAFile = Path.Combine(tempDir, "lib_a.eidos");
+        var libBFile = Path.Combine(tempDir, "lib_b.eidos");
         File.WriteAllText(entryFile, """
 Main :: module {
     import LibA
@@ -682,7 +751,7 @@ Main :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "Changed.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "changed.eidos"), """
 Changed :: module {
     id :: Int -> Int
     {
@@ -690,11 +759,11 @@ Changed :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "Effects.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "effects.eidos"), """
 Effects :: module {
-    IO :: effect;
+    io :: effect;
 
-    write :: Int -> Int need IO
+    write :: Int -> Int need io
     {
         value => value
     }
@@ -710,7 +779,7 @@ Effects :: module {
     }
 }
 """);
-        File.WriteAllText(Path.Combine(tempDir, "Effects2.eidos"), """
+        File.WriteAllText(Path.Combine(tempDir, "effects2.eidos"), """
 Effects2 :: module {
     apply[A, B, E: effects] :: (A -> B need E) -> A -> B need E
     {

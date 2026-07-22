@@ -3,6 +3,7 @@ using Eidosc.Mir;
 using Eidosc.Semantic;
 using Eidosc.Symbols;
 using Eidosc.Types;
+using Eidosc.Ast.Declarations;
 
 namespace Eidosc.Pipeline;
 
@@ -14,6 +15,7 @@ internal sealed record CompilationLiveStateCacheKey(
     CompilationPhase Phase);
 
 internal sealed record CompilationLiveStateSnapshot(
+    ModuleDecl? Ast,
     SymbolTable? SymbolTable,
     NameResolver? NameResolver,
     TypeInferer? TypeInferer,

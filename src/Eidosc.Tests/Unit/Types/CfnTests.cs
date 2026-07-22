@@ -138,7 +138,7 @@ main :: Int -> Int {
     public void CfnFrom_CapturingClosure_ReportsE3053BeforeNative()
     {
         const string source = """
-main :: Int -> Int need FFI {
+main :: Int -> Int need ffi {
     captured => {
         closure := x => x + captured;
         fn_ptr := cfn_from(closure);

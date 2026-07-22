@@ -31,22 +31,22 @@ public partial class LlvmPipelineIntegrationTests
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Binary__decode_bool", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Binary__decode_bool", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Binary__decode_u32_le", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Binary__decode_u32_le", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Binary__normalize_bytes", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Binary__normalize_bytes", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Binary__checksum8", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Binary__checksum8", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Binary__decode_i32_be", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Binary__decode_i32_be", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Binary__decode_string", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Binary__decode_string", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -62,46 +62,46 @@ public partial class LlvmPipelineIntegrationTests
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__hex_digit", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__hex_digit", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__escape_control_byte", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__escape_control_byte", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__escape_string", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__escape_string", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__array_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__array_compact", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__field_or_null", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__field_or_null", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__field_or_null_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__field_or_null_compact", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__object_from_options", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__object_from_options", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__object_from_options_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__object_from_options_compact", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__object_from_pairs_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__object_from_pairs_compact", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__array_strings", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__array_strings", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__array_strings_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__array_strings_compact", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__array_ints_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__array_ints_compact", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__array_bools", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__array_bools", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("Json__array_bools_compact", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Json__array_bools_compact", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -538,14 +538,14 @@ main :: Unit -> Int
     {
         ReadOnlySpan<string> requiredImports =
         [
-            "import Std.Async",
-            "import Std.Barrier",
-            "import Std.Channel",
-            "import Std.Mutex",
-            "import Std.Promise",
-            "import Std.RwLock",
-            "import Std.Task",
-            "import Std.TaskGroup"
+            "import std.Async",
+            "import std.Barrier",
+            "import std.Channel",
+            "import std.Mutex",
+            "import std.Promise",
+            "import std.RwLock",
+            "import std.Task",
+            "import std.TaskGroup"
         ];
 
         foreach (var requiredImport in requiredImports)
@@ -895,14 +895,14 @@ main :: Unit -> Int
     _ => {
         redirect := Network.http_get_response("{{baseUrl}}redirect");
         replyHeader := Network.http_get_response("{{baseUrl}}reply-header");
-        headerBit := match Network.header_value_opt(replyHeader)("X-Reply")
+        headerBit := match Network.header_value_opt(ref replyHeader)("X-Reply")
         {
             Some(value) => if value == "server-value" then { 1 } else { 0 },
             None() => 0
         };
-        redirectBit := if Network.status(redirect) == 200 &&
-            Network.body(redirect) == "hello-from-eidos" &&
-            Text.ends_with(Network.effective_url(redirect))("/ok")
+        redirectBit := if Network.status(ref redirect) == 200 &&
+            Network.body(ref redirect) == "hello-from-eidos" &&
+            Text.ends_with(Network.effective_url(ref redirect))("/ok")
             then { 1 } else { 0 };
 
         if redirectBit + headerBit == 2

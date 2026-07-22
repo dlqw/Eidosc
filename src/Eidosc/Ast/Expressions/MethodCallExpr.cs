@@ -1,4 +1,5 @@
 using System.Xml;
+using Eidosc.Utils;
 
 namespace Eidosc.Ast.Expressions;
 
@@ -21,6 +22,8 @@ public record MethodCallExpr : Expression
     /// </summary>
     public string MethodName { get; private set; } = "";
 
+    public SourceSpan MemberNameSpan { get; private set; }
+
     /// <summary>
     /// 位置参数
     /// </summary>
@@ -40,6 +43,18 @@ public record MethodCallExpr : Expression
     /// Types 阶段是否已把裸点访问判定为字段读取
     /// </summary>
     public bool ResolvedAsFieldAccess { get; private set; }
+
+    /// <summary>
+    /// Name resolution bound the dotted syntax as a static Namespace path.
+    /// The receiver is syntax-only and must not be passed as a runtime argument.
+    /// </summary>
+    public bool ResolvedAsStaticPath { get; private set; }
+
+    /// <summary>
+    /// Semantic replacement for static dotted syntax such as a trait associated
+    /// constant projection. Downstream phases consume this node directly.
+    /// </summary>
+    public EidosAstNode? ResolvedStaticExpression { get; private set; }
 
     /// <summary>
     /// 若按字段读取解析，记录对应字段符号
@@ -86,6 +101,8 @@ public record MethodCallExpr : Expression
     /// </summary>
     public void SetMethodName(string methodName) => MethodName = methodName;
 
+    public void SetMemberNameSpan(SourceSpan span) => MemberNameSpan = span;
+
     /// <summary>
     /// 添加位置参数。
     /// </summary>
@@ -100,6 +117,14 @@ public record MethodCallExpr : Expression
     /// 标记调用显式写出了参数括号。
     /// </summary>
     public void MarkExplicitCallSyntax() => HasExplicitCallSyntax = true;
+
+    public void MarkResolvedAsStaticPath() => ResolvedAsStaticPath = true;
+
+    public void SetResolvedStaticExpression(EidosAstNode expression)
+    {
+        ResolvedStaticExpression = expression;
+        ResolvedAsStaticPath = true;
+    }
 
     public void MarkSyntheticUnitArguments(int count)
     {
@@ -133,7 +158,7 @@ public record MethodCallExpr : Expression
         call.SetFunction(function);
         call.SetSpan(Span);
 
-        if (Receiver != null)
+        if (Receiver != null && !ResolvedAsStaticPath)
         {
             call.AddPositionalArg(Receiver);
         }
@@ -165,6 +190,7 @@ public record MethodCallExpr : Expression
         Span = node.Span;
         Receiver = null;
         MethodName = "";
+        MemberNameSpan = SourceSpan.Empty;
         PositionalArgs = [];
         NamedArgs = [];
         HasExplicitCallSyntax = false;
@@ -188,6 +214,7 @@ public record MethodCallExpr : Expression
         if (methodNameTerm != null)
         {
             MethodName = GetTokenText(methodNameTerm);
+            MemberNameSpan = methodNameTerm.Span;
         }
 
         foreach (var child in ntNode.Children)

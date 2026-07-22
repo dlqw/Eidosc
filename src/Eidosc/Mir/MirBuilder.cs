@@ -14,7 +14,6 @@ public sealed partial class MirBuilder
 {
     private readonly Func<TypeId, bool>? _hasCopyImplResolver;
     private readonly SymbolTable? _symbolTable;
-    private readonly ParameterEffectMap? _parameterEffects;
     private readonly HashSet<int> _extraCopyLikeTypeIds = [];
     private readonly Dictionary<int, string> _dynamicTypeKeysById = [];
     private readonly Dictionary<int, TypeDescriptor> _typeDescriptorsById = [];
@@ -55,7 +54,6 @@ public sealed partial class MirBuilder
     private readonly Dictionary<TypeId, HashSet<string>> _partialNamedFieldByAdtType = new();
     private readonly Dictionary<TypeId, HashSet<string>> _allNamedFieldByAdtType = new();
     private readonly Dictionary<TypeId, string> _adtDisplayNameByType = new();
-    private readonly HashSet<int> _copyFirstArgumentFunctionSymbols = [];
     private Dictionary<LocalId, int> _knownListLengths = new();
     private HashSet<LocalId> _runtimeArrayLocals = [];
     private HashSet<LocalId> _comprehensionElementLocals = [];
@@ -120,7 +118,6 @@ public sealed partial class MirBuilder
     {
         _substitution = substitution;
         _hasCopyImplResolver = hasCopyImplResolver;
-        _parameterEffects = parameterEffects;
         _symbolTable = symbolTable;
         if (symbolTable != null)
         {
@@ -159,6 +156,7 @@ public sealed partial class MirBuilder
         _constructorLayouts = constructorLayouts != null
             ? new Dictionary<int, List<ConstructorTypeLayout>>(constructorLayouts)
             : [];
+        AddClosedDeclaredCopyLayoutsForDynamicTypes();
 
         if (extraCopyLikeTypeIds == null)
         {
@@ -253,7 +251,6 @@ public sealed partial class MirBuilder
         _partialNamedFieldByAdtType.Clear();
         _allNamedFieldByAdtType.Clear();
         _adtDisplayNameByType.Clear();
-        _copyFirstArgumentFunctionSymbols.Clear();
         _copyTypeCache.Clear();
         _generatedLambdaFunctions.Clear();
         _loopContextStack.Clear();
@@ -326,7 +323,6 @@ public sealed partial class MirBuilder
             .ToList();
         DetectModuleValueCycles(moduleValueDecls);
 
-        PopulateCloneMethodSymbols();
 
         foreach (var val in resolutionDeclarations.OfType<HirVal>())
         {
@@ -659,6 +655,7 @@ public sealed partial class MirBuilder
             GenericParameters = GetGenericParameters(func),
             GenericTypeParameterIds = GetGenericTypeParameterIds(func),
             ReturnType = func.ReturnType,
+            OwnershipContract = func.OwnershipContract,
             EntryBlockId = entryBlock.Id,
             IsEntry = func.IsEntry,
             IntrinsicName = func.IntrinsicName,
@@ -832,6 +829,7 @@ public sealed partial class MirBuilder
         return node switch
         {
             HirError error => ReportHirErrorExpr(error),
+            HirCaseInject injection => ConvertCaseInject(injection),
             HirLiteral lit => ConvertLiteral(lit),
             HirConstGenericValue constGeneric => ConvertConstGenericValue(constGeneric),
             HirVar var => ConvertVar(var),
@@ -854,6 +852,57 @@ public sealed partial class MirBuilder
             HirIndexAccess indexAccess => ConvertIndexAccess(indexAccess),
             _ => ReportUnsupportedExpr(node)
         };
+    }
+
+    private void AddClosedDeclaredCopyLayoutsForDynamicTypes()
+    {
+        if (_symbolTable == null || _constructorLayouts.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (typeIdValue, descriptor) in _typeDescriptorsById.ToArray())
+        {
+            if (descriptor is not TypeDescriptor.TyCon
+                {
+                    Constructor.Kind: TypeConstructorKeyKind.Symbol
+                } tyCon ||
+                _constructorLayouts.ContainsKey(typeIdValue) ||
+                _symbolTable.GetSymbol(tyCon.Constructor.SymbolId) is not { TypeId.IsValid: true } constructorSymbol ||
+                !_constructorLayouts.TryGetValue(constructorSymbol.TypeId.Value, out var declaredLayouts) ||
+                declaredLayouts.Count == 0 ||
+                declaredLayouts.Any(layout => layout.FieldTypeIds.Any(IsOpenCopyLayoutField)))
+            {
+                continue;
+            }
+
+            _constructorLayouts[typeIdValue] = declaredLayouts;
+        }
+    }
+
+    private bool IsOpenCopyLayoutField(TypeId fieldTypeId)
+    {
+        return (_typeDescriptorsById.TryGetValue(fieldTypeId.Value, out var descriptor) &&
+                descriptor is TypeDescriptor.TypeVar) ||
+               _symbolTable?.GetSymbol(new SymbolId(fieldTypeId.Value)) is TypeParamSymbol;
+    }
+
+    private MirOperand ConvertCaseInject(HirCaseInject injection)
+    {
+        var operand = ConvertExpr(injection.Operand);
+        operand = EnsureReadValue(operand, injection.SourceTypeId, injection.Span);
+        var target = NewTemp(injection.TypeId);
+        _currentBlock!.Instructions.Add(new MirCaseInject
+        {
+            Target = target,
+            Operand = operand,
+            SourceCase = injection.SourceCase,
+            TargetAncestor = injection.TargetAncestor,
+            SourceTypeId = injection.SourceTypeId,
+            TargetTypeId = injection.TypeId,
+            Span = injection.Span
+        });
+        return target;
     }
 
     private static MirConstGenericValue ConvertConstGenericValue(HirConstGenericValue value)
@@ -1341,8 +1390,7 @@ public sealed partial class MirBuilder
         for (var i = 0; i < call.Arguments.Count; i++)
         {
             var argument = call.Arguments[i];
-            var forceCopy = ShouldPassCallArgumentByCopy(func, i);
-            args.Add(PrepareCallArgumentForNode(argument, call.Span, forceCopy));
+            args.Add(PrepareCallArgumentForNode(argument, call.Span, forceCopy: false));
         }
         var resultType = ResolveCallResultType(call, func);
         func = AttachCallSiteSignature(func, args, resultType);
@@ -1551,10 +1599,7 @@ public sealed partial class MirBuilder
             var group = argumentGroups[groupIndex];
             for (var argIndex = 0; argIndex < group.Count; argIndex++)
             {
-                // Arg position within the full flattened call determines by-copy policy.
-                var flatPosition = flattenedArgs.Count;
-                var forceCopy = ShouldPassCallArgumentByCopy(functionRef, flatPosition);
-                flattenedArgs.Add(PrepareCallArgumentForNode(group[argIndex], call.Span, forceCopy));
+                flattenedArgs.Add(PrepareCallArgumentForNode(group[argIndex], call.Span, forceCopy: false));
             }
         }
 

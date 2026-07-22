@@ -3,10 +3,10 @@ manifestSchema = 3
 sourceRoots = ["."]
 
 [language]
-version = "0.6.0-alpha.1"
+version = "0.7.0-alpha.1"
 
 [package]
-name = "Std"
+name = "std"
 version = "0.1.0-alpha.1"
 description = "Eidos standard library"
 license = "MIT"

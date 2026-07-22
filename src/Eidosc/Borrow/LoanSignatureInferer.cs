@@ -8,7 +8,7 @@ using Eidosc.Utils;
 namespace Eidosc.Borrow;
 
 /// <summary>
-/// 借用签名推断器 - 从函数体推断函数的借用签名
+/// Builds signature-derived ownership requirements and infers body-derived loan facts.
 /// </summary>
 public sealed class LoanSignatureInferer
 {
@@ -20,8 +20,8 @@ public sealed class LoanSignatureInferer
     private readonly LoanSignatureCache _cache;
     private readonly ControlFlowGraph? _precomputedCfg;
     private readonly SymbolTable _symbolTable;
-    private readonly Func<TypeId, bool> _hasCopyImplResolver;
     private readonly IReadOnlyDictionary<int, string>? _dynamicTypeKeys;
+    private readonly IReadOnlyDictionary<int, TypeDescriptor>? _typeDescriptors;
 
     /// <summary>
     /// 下一个生命周期 ID
@@ -52,14 +52,12 @@ public sealed class LoanSignatureInferer
     /// 每个程序点的参数别名来源状态（CFG/dataflow）
     /// </summary>
     private readonly Dictionary<(BlockId Block, int Index), LoanInferState> _originStatesAtPoint = new();
-    private ParamUsageSummary[] _paramUsageSummaries = [];
-
     /// <summary>
     /// 是否启用调用点生命周期传播
     /// </summary>
     private bool _includeCallConstraints = true;
     private bool _analysisPrepared;
-    private bool _usedReferenceTypeKeyHeuristic;
+    private OwnershipContract _ownershipContract = OwnershipContract.Empty;
 
     /// <summary>
     /// 诊断信息列表
@@ -71,14 +69,35 @@ public sealed class LoanSignatureInferer
         LoanSignatureCache cache,
         SymbolTable symbolTable,
         IReadOnlyDictionary<int, string>? dynamicTypeKeys = null,
-        ControlFlowGraph? cfg = null)
+        ControlFlowGraph? cfg = null,
+        IReadOnlyDictionary<int, TypeDescriptor>? typeDescriptors = null)
     {
         _function = function;
         _cache = cache;
         _precomputedCfg = cfg;
         _symbolTable = symbolTable;
-        _hasCopyImplResolver = CopyTypeSemantics.CreateSymbolTableCopyResolver(symbolTable);
         _dynamicTypeKeys = dynamicTypeKeys;
+        _typeDescriptors = typeDescriptors ?? ParseLegacyTypeDescriptors(dynamicTypeKeys);
+    }
+
+    private static IReadOnlyDictionary<int, TypeDescriptor>? ParseLegacyTypeDescriptors(
+        IReadOnlyDictionary<int, string>? dynamicTypeKeys)
+    {
+        if (dynamicTypeKeys == null || dynamicTypeKeys.Count == 0)
+        {
+            return null;
+        }
+
+        var descriptors = new Dictionary<int, TypeDescriptor>();
+        foreach (var (typeId, typeKey) in dynamicTypeKeys)
+        {
+            if (TypeKeyParsing.TryParseTypeDescriptor(typeKey, out var descriptor))
+            {
+                descriptors[typeId] = descriptor;
+            }
+        }
+
+        return descriptors;
     }
 
     /// <summary>
@@ -99,9 +118,18 @@ public sealed class LoanSignatureInferer
         ParamRequirements = [];
         ReturnConstraint = new ReturnBorrowConstraint();
         LifetimeConstraints = [];
-        _usedReferenceTypeKeyHeuristic = false;
 
         EnsurePreparedAnalysis();
+        _ownershipContract = string.IsNullOrEmpty(_function.OwnershipContract.CanonicalIdentity)
+            ? OwnershipContract.Create(
+                _function.SymbolId,
+                _function.SourceName.Length > 0 ? _function.SourceName : _function.Name,
+                _paramLocals.Select(static local => (local.Name, local.TypeId)).ToArray(),
+                _function.ReturnType,
+                _typeDescriptors,
+                _symbolTable)
+            : _function.OwnershipContract;
+        _function.OwnershipContract = _ownershipContract;
 
         // 1. 推断参数借用要求
         ParamRequirements = InferParamRequirements();
@@ -120,6 +148,7 @@ public sealed class LoanSignatureInferer
         {
             FunctionName = _function.Name,
             FunctionSymbol = _function.SymbolId,
+            OwnershipContract = _ownershipContract,
             LifetimeParams = lifetimeParams,
             ParamRequirements = ParamRequirements,
             ReturnConstraint = ReturnConstraint,
@@ -147,12 +176,9 @@ public sealed class LoanSignatureInferer
         _paramLocalIndex.Clear();
         _localAliases.Clear();
         _originStatesAtPoint.Clear();
-        _paramUsageSummaries = [];
-
         InitializeParamMetadata();
         BuildLocalAliasMap();
         BuildOriginStates();
-        BuildParamUsageSummaries();
         _analysisPrepared = true;
     }
 
@@ -205,67 +231,13 @@ public sealed class LoanSignatureInferer
     /// </summary>
     private ParamBorrowMode InferParamBorrowMode(MirLocal local, int paramIndex)
     {
-        var typeId = local.TypeId;
-        var summary = GetParamUsageSummary(paramIndex);
-
-        if (IsMutableReferenceTypeId(typeId))
+        return _ownershipContract.GetParameter(paramIndex).Projection.Kind switch
         {
-            return ParamBorrowMode.BorrowMutable;
-        }
-
-        if (IsReferenceTypeId(typeId))
-        {
-            return ParamBorrowMode.BorrowShared;
-        }
-
-        // 检查类型是否实现了 Copy trait
-        if (IsCopyType(typeId))
-        {
-            return ParamBorrowMode.Copy;
-        }
-
-        // 检查参数是否被移动
-        if (summary.HasMove)
-        {
-            return ParamBorrowMode.Own;
-        }
-
-        // 检查参数是否被可变借用
-        if (summary.HasMutableBorrow)
-        {
-            return ParamBorrowMode.BorrowMutable;
-        }
-
-        // 检查参数是否被共享借用
-        if (summary.IsOnlyRead)
-        {
-            return ParamBorrowMode.BorrowShared;
-        }
-
-        // 检查参数是否被修改
-        if (summary.HasWrite)
-        {
-            return ParamBorrowMode.BorrowMutable;
-        }
-
-        // 检查参数是否只被读取
-        if (summary.IsOnlyRead)
-        {
-            return ParamBorrowMode.BorrowShared;
-        }
-
-        // 默认：获取所有权
-        return ParamBorrowMode.Own;
-    }
-
-    private ParamUsageSummary GetParamUsageSummary(int paramIndex)
-    {
-        if ((uint)paramIndex >= (uint)_paramUsageSummaries.Length)
-        {
-            return ParamUsageSummary.None;
-        }
-
-        return _paramUsageSummaries[paramIndex];
+            OwnershipPassingKind.SharedBorrow => ParamBorrowMode.BorrowShared,
+            OwnershipPassingKind.MutableBorrow => ParamBorrowMode.BorrowMutable,
+            OwnershipPassingKind.ByValue => ParamBorrowMode.Own,
+            _ => ParamBorrowMode.Own
+        };
     }
 
     /// <summary>
@@ -273,6 +245,9 @@ public sealed class LoanSignatureInferer
     /// </summary>
     private ReturnBorrowConstraint InferReturnConstraint()
     {
+        var resultKind = _ownershipContract.Result.Projection.Kind;
+        var returnsBorrow = resultKind is OwnershipPassingKind.SharedBorrow or OwnershipPassingKind.MutableBorrow;
+        var returnsMutableBorrow = resultKind == OwnershipPassingKind.MutableBorrow;
         var returnSites = _function.BasicBlocks
             .Where(block => block.Terminator is MirReturn { Value: not null })
             .Select(block => (Block: block, Return: (MirReturn)block.Terminator!))
@@ -280,11 +255,15 @@ public sealed class LoanSignatureInferer
 
         if (returnSites.Count == 0)
         {
-            return CreateReturnBorrowConstraint(isBorrow: false, isMutable: false, [], LifetimeId.None, _function.Span);
+            return CreateReturnBorrowConstraint(
+                returnsBorrow,
+                returnsMutableBorrow,
+                [],
+                returnsBorrow ? AllocateLifetime() : LifetimeId.None,
+                _function.Span);
         }
 
         var boundParams = new HashSet<int>();
-        var isMutable = false;
         SourceSpan span = _function.Span;
         var returnInstructionIndexByBlock = returnSites.ToDictionary(
             item => item.Block.Id,
@@ -300,6 +279,11 @@ public sealed class LoanSignatureInferer
             if (span.Equals(_function.Span))
             {
                 span = ret.Span;
+            }
+
+            if (!returnsBorrow)
+            {
+                continue;
             }
 
             if (!TryResolveReturnedBorrowOrigin(
@@ -320,10 +304,9 @@ public sealed class LoanSignatureInferer
             }
 
             boundParams.UnionWith(origin.BoundParams);
-            isMutable = isMutable || origin.IsMutable || IsMutableBorrow(place);
         }
 
-        if (boundParams.Count == 0)
+        if (!returnsBorrow)
         {
             return CreateReturnBorrowConstraint(isBorrow: false, isMutable: false, [], LifetimeId.None, span);
         }
@@ -333,7 +316,7 @@ public sealed class LoanSignatureInferer
 
         return CreateReturnBorrowConstraint(
             isBorrow: true,
-            isMutable,
+            isMutable: returnsMutableBorrow,
             normalizedBoundParams,
             lifetime,
             span);
@@ -346,12 +329,6 @@ public sealed class LoanSignatureInferer
         LifetimeId lifetime,
         SourceSpan span)
     {
-        var notes = new List<string>();
-        if (_usedReferenceTypeKeyHeuristic)
-        {
-            notes.Add("type-key-name-heuristic:Ref/MRef");
-        }
-
         return new ReturnBorrowConstraint
         {
             IsBorrow = isBorrow,
@@ -359,8 +336,8 @@ public sealed class LoanSignatureInferer
             Lifetime = lifetime,
             BoundToParams = boundParams,
             Span = span,
-            Confidence = notes.Count > 0 ? LoanInferenceConfidence.Low : LoanInferenceConfidence.High,
-            InternalNotes = notes
+            Confidence = LoanInferenceConfidence.High,
+            InternalNotes = []
         };
     }
 
@@ -445,262 +422,6 @@ public sealed class LoanSignatureInferer
     private LifetimeId AllocateLifetime()
     {
         return new LifetimeId { Value = _nextLifetimeId++ };
-    }
-
-    /// <summary>
-    /// 检查类型是否实现了 Copy trait
-    /// </summary>
-    private bool IsCopyType(TypeId typeId)
-    {
-        return CopyTypeSemantics.IsCopyType(typeId, _hasCopyImplResolver, _dynamicTypeKeys);
-    }
-
-    /// <summary>
-    /// 检查参数是否被移动
-    /// </summary>
-    private bool IsParamMoved(int paramIndex)
-    {
-        return GetParamUsageSummary(paramIndex).HasMove;
-    }
-
-    /// <summary>
-    /// 检查参数是否被可变借用
-    /// </summary>
-    private bool IsParamMutablyBorrowed(int paramIndex)
-    {
-        return GetParamUsageSummary(paramIndex).HasMutableBorrow;
-    }
-
-    /// <summary>
-    /// 检查参数是否被共享借用
-    /// </summary>
-    private bool IsParamSharedBorrowed(int paramIndex)
-    {
-        return GetParamUsageSummary(paramIndex).IsOnlyRead;
-    }
-
-    /// <summary>
-    /// 检查参数是否被修改
-    /// </summary>
-    private bool IsParamModified(int paramIndex)
-    {
-        return GetParamUsageSummary(paramIndex).HasWrite;
-    }
-
-    /// <summary>
-    /// 检查参数是否只被读取
-    /// </summary>
-    private bool IsParamOnlyRead(int paramIndex)
-    {
-        return GetParamUsageSummary(paramIndex).IsOnlyRead;
-    }
-
-    /// <summary>
-    /// 检查指令是否读取参数
-    /// </summary>
-    private bool IsReadOfParam(MirInstruction instr, LocalId paramId, BlockId blockId, int instructionIndex)
-    {
-        return instr switch
-        {
-            MirLoad load => load.Source is MirPlace p &&
-                            p.Kind == PlaceKind.Local &&
-                            p.Local.Equals(paramId) &&
-                            (load.IsMutableBorrow || load.CreatesBorrowAlias),
-            MirBinOp binOp => OperandUsesParam(binOp.Left, paramId, blockId, instructionIndex) ||
-                              OperandUsesParam(binOp.Right, paramId, blockId, instructionIndex),
-            MirUnaryOp unaryOp => OperandUsesParam(unaryOp.Operand, paramId, blockId, instructionIndex),
-            MirCall call => call.Arguments.Any(a => OperandUsesParam(a, paramId, blockId, instructionIndex)),
-            _ => false
-        };
-    }
-
-    /// <summary>
-    /// 检查指令是否写入参数
-    /// </summary>
-    private bool IsWriteOfParam(MirInstruction instr, LocalId paramId)
-    {
-        return instr switch
-        {
-            MirStore store => store.Target?.Kind == PlaceKind.Local && store.Target.Local.Equals(paramId),
-            MirAssign assign => assign.Target?.Kind == PlaceKind.Local && assign.Target.Local.Equals(paramId),
-            _ => false
-        };
-    }
-
-    /// <summary>
-    /// 检查操作数是否使用参数
-    /// </summary>
-    private bool OperandUsesParam(MirOperand? operand, LocalId paramId, BlockId blockId, int instructionIndex)
-    {
-        if (operand is MirPlace place && place.Kind == PlaceKind.Local)
-        {
-            if (_paramLocalIndex.TryGetValue(paramId, out var paramIndex) &&
-                TryGetOriginAt(place.Local, blockId, instructionIndex, out var origin) &&
-                origin.BoundParams.Contains(paramIndex))
-            {
-                return true;
-            }
-
-            var resolved = ResolveAlias(place.Local);
-            return resolved.Equals(paramId);
-        }
-
-        return false;
-    }
-
-    private void BuildParamUsageSummaries()
-    {
-        if (_paramLocals.Count == 0)
-        {
-            _paramUsageSummaries = [];
-            return;
-        }
-
-        _paramUsageSummaries = new ParamUsageSummary[_paramLocals.Count];
-        for (int i = 0; i < _paramUsageSummaries.Length; i++)
-        {
-            _paramUsageSummaries[i] = new ParamUsageSummary();
-        }
-
-        foreach (var block in _function.BasicBlocks)
-        {
-            for (int instructionIndex = 0; instructionIndex < block.Instructions.Count; instructionIndex++)
-            {
-                SummarizeInstructionUsage(block.Instructions[instructionIndex], block.Id, instructionIndex);
-            }
-        }
-    }
-
-    private void SummarizeInstructionUsage(MirInstruction instruction, BlockId blockId, int instructionIndex)
-    {
-        switch (instruction)
-        {
-            case MirMove move:
-                MarkDirectParamMove(move.Source);
-                break;
-
-            case MirStore store:
-                MarkDirectParamStore(store.Target);
-                break;
-
-            case MirAssign assign:
-                MarkDirectParamAssign(assign.Target);
-                break;
-
-            case MirLoad load when load.IsMutableBorrow || load.CreatesBorrowAlias:
-                MarkOperandRead(load.Source, blockId, instructionIndex);
-                break;
-
-            case MirBinOp binOp:
-                MarkOperandRead(binOp.Left, blockId, instructionIndex);
-                MarkOperandRead(binOp.Right, blockId, instructionIndex);
-                break;
-
-            case MirUnaryOp unaryOp:
-                MarkOperandRead(unaryOp.Operand, blockId, instructionIndex);
-                break;
-
-            case MirCall call:
-                SummarizeCallUsage(call, blockId, instructionIndex);
-                break;
-
-        }
-    }
-
-    private void SummarizeCallUsage(MirCall call, BlockId blockId, int instructionIndex)
-    {
-        for (int argIndex = 0; argIndex < call.Arguments.Count; argIndex++)
-        {
-            var mode = TryGetCallArgMode(call, argIndex);
-            MarkCallArgumentUsage(call.Arguments[argIndex], blockId, instructionIndex, mode);
-        }
-    }
-
-    private void MarkOperandRead(MirOperand operand, BlockId blockId, int instructionIndex)
-    {
-        MarkOperandUsage(operand, blockId, instructionIndex, static summary => summary.HasRead = true);
-    }
-
-    private void MarkCallArgumentUsage(
-        MirOperand operand,
-        BlockId blockId,
-        int instructionIndex,
-        ParamBorrowMode? mode)
-    {
-        MarkOperandUsage(operand, blockId, instructionIndex, summary =>
-        {
-            if (mode == null || mode == ParamBorrowMode.Own)
-            {
-                summary.HasMove = true;
-                return;
-            }
-
-            summary.HasRead = true;
-            if (mode == ParamBorrowMode.BorrowMutable)
-            {
-                summary.HasWrite = true;
-                summary.HasMutableBorrow = true;
-            }
-        });
-    }
-
-    private void MarkOperandUsage(
-        MirOperand operand,
-        BlockId blockId,
-        int instructionIndex,
-        Action<ParamUsageSummary> apply)
-    {
-        if (operand is not MirPlace { Kind: PlaceKind.Local, Local: var localId })
-        {
-            return;
-        }
-
-        if (TryGetOriginAt(localId, blockId, instructionIndex, out var origin))
-        {
-            foreach (var paramIndex in origin.BoundParams)
-            {
-                apply(_paramUsageSummaries[paramIndex]);
-            }
-        }
-
-        if (TryGetResolvedParamIndex(localId, out var directParamIndex))
-        {
-            apply(_paramUsageSummaries[directParamIndex]);
-        }
-    }
-
-    private void MarkDirectParamMove(MirPlace source)
-    {
-        if (source.Kind == PlaceKind.Local &&
-            _paramLocalIndex.TryGetValue(source.Local, out var paramIndex))
-        {
-            _paramUsageSummaries[paramIndex].HasMove = true;
-        }
-    }
-
-    private void MarkDirectParamStore(MirPlace target)
-    {
-        if (target.Kind == PlaceKind.Local &&
-            _paramLocalIndex.TryGetValue(target.Local, out var paramIndex))
-        {
-            _paramUsageSummaries[paramIndex].HasWrite = true;
-            _paramUsageSummaries[paramIndex].HasMutableBorrow = true;
-        }
-    }
-
-    private void MarkDirectParamAssign(MirPlace target)
-    {
-        if (target.Kind == PlaceKind.Local &&
-            _paramLocalIndex.TryGetValue(target.Local, out var paramIndex))
-        {
-            _paramUsageSummaries[paramIndex].HasWrite = true;
-        }
-    }
-
-    private bool TryGetResolvedParamIndex(LocalId localId, out int paramIndex)
-    {
-        var resolved = ResolveAlias(localId);
-        return _paramLocalIndex.TryGetValue(resolved, out paramIndex);
     }
 
     /// <summary>
@@ -902,6 +623,22 @@ public sealed class LoanSignatureInferer
                 else
                 {
                     state.Clear(assign.Target.Local);
+                }
+                break;
+
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target } injection:
+                if (injection.Operand is MirPlace { Kind: PlaceKind.Local, Local: var sourceLocal })
+                {
+                    TransferAlias(
+                        state,
+                        target.Local,
+                        sourceLocal,
+                        forceMutable: false,
+                        allowParamFallback: ShouldAllowDirectParamReferenceOriginFallback(sourceLocal));
+                }
+                else
+                {
+                    state.Clear(target.Local);
                 }
                 break;
 
@@ -1161,45 +898,18 @@ public sealed class LoanSignatureInferer
 
     private bool IsReferenceTypeId(TypeId typeId)
     {
-        if (!typeId.IsValid || _dynamicTypeKeys == null)
-        {
-            return false;
-        }
-
-        if (!_dynamicTypeKeys.TryGetValue(typeId.Value, out var typeKey))
-        {
-            return false;
-        }
-
-        var isReference = typeKey.StartsWith("Ref(", StringComparison.Ordinal) ||
-                          typeKey.StartsWith("MRef(", StringComparison.Ordinal);
-        if (isReference)
-        {
-            _usedReferenceTypeKeyHeuristic = true;
-        }
-
-        return isReference;
+        return typeId.IsValid &&
+               _typeDescriptors != null &&
+               _typeDescriptors.TryGetValue(typeId.Value, out var descriptor) &&
+               descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef;
     }
 
     private bool IsMutableReferenceTypeId(TypeId typeId)
     {
-        if (!typeId.IsValid || _dynamicTypeKeys == null)
-        {
-            return false;
-        }
-
-        if (!_dynamicTypeKeys.TryGetValue(typeId.Value, out var typeKey))
-        {
-            return false;
-        }
-
-        var isMutableReference = typeKey.StartsWith("MRef(", StringComparison.Ordinal);
-        if (isMutableReference)
-        {
-            _usedReferenceTypeKeyHeuristic = true;
-        }
-
-        return isMutableReference;
+        return typeId.IsValid &&
+               _typeDescriptors != null &&
+               _typeDescriptors.TryGetValue(typeId.Value, out var descriptor) &&
+               descriptor is TypeDescriptor.MutRef;
     }
 
     private void AddReturnedBorrowEscapeDiagnostic(SourceSpan span, BlockId blockId, int instructionIndex)
@@ -1246,24 +956,6 @@ public sealed class LoanSignatureInferer
         {
             CollectReturnBoundParams(place.Base, blockId, instructionIndex, boundParams, ref mutableFromOrigin);
         }
-    }
-
-    /// <summary>
-    /// 检查是否是可变借用
-    /// </summary>
-    private bool IsMutableBorrow(MirPlace place)
-    {
-        // 简化实现：基于参数是否被修改来判断
-        var paramLocals = _function.Locals.Where(l => l.IsParameter).ToList();
-        foreach (var param in paramLocals)
-        {
-            if (param.Id.Equals(place.Local))
-            {
-                return param.IsMutable;
-            }
-        }
-
-        return false;
     }
 
     /// <summary>
@@ -1648,16 +1340,4 @@ internal sealed class LoanInferOrigin
     }
 
     public LoanInferOrigin Clone() => new([.. BoundParams], IsMutable);
-}
-
-internal sealed class ParamUsageSummary
-{
-    public static ParamUsageSummary None { get; } = new();
-
-    public bool HasRead { get; set; }
-    public bool HasWrite { get; set; }
-    public bool HasMove { get; set; }
-    public bool HasMutableBorrow { get; set; }
-
-    public bool IsOnlyRead => HasRead && !HasWrite && !HasMove;
 }

@@ -65,6 +65,7 @@ public sealed partial class MirGenericSpecializer
                 Target = assign.Target,
                 Source = assign.Source
             },
+            MirCaseInject injection => injection with { },
             MirCall call => call with
             {
                 Arguments = call.Arguments.ToList()

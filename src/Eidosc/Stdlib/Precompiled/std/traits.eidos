@@ -1,0 +1,26 @@
+Traits :: module {
+    import Ordering.{Ordering}
+
+    Eq :: trait {
+        eq :: Self -> Self -> Bool
+    }
+
+    Ord :: trait {
+        compare :: Self -> Self -> Ordering
+    }
+
+    Show :: trait {
+        show :: Self -> String
+    }
+
+    Hash :: trait {
+        hash :: Self -> Int
+    }
+
+    Clone :: trait {
+        clone :: Ref[Self] -> Self
+    }
+
+    Copy :: trait {
+    }
+}

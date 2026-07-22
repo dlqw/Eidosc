@@ -69,7 +69,7 @@ public sealed class LspLocalizationResourceTests
         Assert.Equal("版本: 1.2.3", CliMessages.InfoVersionLine("1.2.3"));
         Assert.Equal("Add a dependency to eidos.toml", CliMessages.PkgAddCommandDescription);
         Assert.Equal("Added dependency: Std.Json", CliMessages.PkgAddedDependency("Std.Json"));
-        Assert.Contains("eidosc build src/Main.eidos --emit-llvm", CliMessages.HelpBuildExamples);
+        Assert.Contains("eidosc build src/main.eidos --emit-llvm", CliMessages.HelpBuildExamples);
         Assert.Equal("Package management", CliMessages.PkgCommandDescription);
         Assert.Equal("创建新的 Eidos 项目目录", CliMessages.NewCommandDescription);
         Assert.Equal("package in C:\\tmp\\demo", CliMessages.ProjectPackageInSubject("C:\\tmp\\demo"));
@@ -106,7 +106,7 @@ public sealed class LspLocalizationResourceTests
         Assert.Contains("zero-capture function", DiagnosticMessages.CfnFromCapturedClosureUnsupported);
         Assert.Equal("Module 'Std.Missing' not found", DiagnosticMessages.ModuleNotFound("Std.Missing"));
         Assert.Equal(
-            "Trait 'Show' expects 1 type argument(s) in @impl, got 0",
+            "Trait 'Show' expects 1 type argument(s) in an impl clause, got 0",
             DiagnosticMessages.TraitExpectsTypeArgumentsInImpl("Show", 1, 0));
         Assert.Equal(
             "`ref` can only borrow from a stable place. Temporary expressions are not borrowable.",

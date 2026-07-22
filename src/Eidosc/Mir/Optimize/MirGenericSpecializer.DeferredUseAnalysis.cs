@@ -127,6 +127,8 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => PlaceUsesLocal(assign.Target, localId) || OperandUsesLocal(assign.Source, localId),
+            MirCaseInject injection =>
+                OperandUsesLocal(injection.Target, localId) || OperandUsesLocal(injection.Operand, localId),
             MirCall call =>
                 (call.Target != null && PlaceUsesLocal(call.Target, localId)) ||
                 OperandUsesLocal(call.Function, localId) ||

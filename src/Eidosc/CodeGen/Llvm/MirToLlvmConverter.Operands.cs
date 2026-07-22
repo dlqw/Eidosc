@@ -111,10 +111,20 @@ public sealed partial class MirToLlvmConverter
                 return localValue;
 
             case PlaceKind.Deref:
+                var derefPointer = ConvertPlace(place.Base!);
+                var derefType = ResolveDerefValueType(place);
+                // Heap-backed Eidos values (Seq, String, ADTs, and other pointer-represented
+                // types) are already passed as their runtime pointer for Ref[T]. Scalar
+                // references remain address-backed and require an LLVM load.
+                if (derefType is LlvmPointerType)
+                {
+                    return derefPointer;
+                }
+
                 var loadInstr = new LlvmLoad
                 {
-                    Pointer = ConvertPlace(place.Base!),
-                    LoadType = ResolveLoweredPlaceTypeOrFallback(place, TypeId.None, "deref load"),
+                    Pointer = derefPointer,
+                    LoadType = derefType,
                     ResultName = _nameMangler.NewTempName("deref")
                 };
                 _currentBlock?.Instructions.Add(loadInstr);
@@ -375,6 +385,25 @@ public sealed partial class MirToLlvmConverter
         }
 
         return candidateType;
+    }
+
+    private LlvmType ResolveDerefValueType(MirPlace place)
+    {
+        var valueTypeId = ResolvePlaceTypeId(place);
+        if (valueTypeId.IsValid &&
+            _typeLowering.TypeDescriptors.TryGetValue(valueTypeId.Value, out var descriptor))
+        {
+            valueTypeId = descriptor switch
+            {
+                TypeDescriptor.Ref reference => reference.Inner,
+                TypeDescriptor.MutRef reference => reference.Inner,
+                _ => valueTypeId
+            };
+        }
+
+        return valueTypeId.IsValid
+            ? LowerStorageTypeIdOrReport(valueTypeId, "deref load")
+            : ResolveLoweredPlaceTypeOrFallback(place, TypeId.None, "deref load");
     }
 
     private TypeId ResolvePlaceTypeId(MirPlace place, TypeId? fallbackTypeId = null)

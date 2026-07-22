@@ -1,4 +1,5 @@
 using Eidosc.Symbols;
+using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
@@ -6,14 +7,25 @@ using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
 using Eidosc.Types;
 using Eidosc.Utils;
-using EidosAttribute = Eidosc.Ast.Attribute;
 
 namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private void CollectDeclaration(Declaration decl)
+    private void CollectDeclaration(Declaration decl, bool isGeneratedSource = false)
     {
+        if (string.Equals(LanguageVersion, ProjectSystem.EidosLanguageVersions.Current, StringComparison.Ordinal))
+        {
+            foreach (var attribute in decl.Attributes)
+            {
+                AddError(
+                    attribute.Span,
+                    $"attribute '@{attribute.Name}' is not part of the 0.7 declaration model; run 'eidosc migrate attachments --to {ProjectSystem.EidosLanguageVersions.Current}'");
+            }
+        }
+
+        BindDeclarationSyntaxClauses(decl, isGeneratedSource);
+
         switch (decl)
         {
             case FuncDef func:
@@ -44,11 +56,38 @@ public sealed partial class NameResolver
                 // 导入语句在 ProcessImports 中处理
                 break;
         }
+
+        if (!decl.SymbolId.IsValid)
+        {
+            return;
+        }
+
+        if (_currentModule.IsValid &&
+            _symbolTable.GetSymbol(decl.SymbolId) is { DefinitionModuleId.IsValid: false } symbol)
+        {
+            _symbolTable.UpdateSymbol(symbol with { DefinitionModuleId = _currentModule });
+        }
+
+        _declarationsBySymbol[decl.SymbolId] = decl;
+
+        if (decl is AdtDef adtDeclaration)
+        {
+            ProcessDeclarationMetaClauses(adtDeclaration);
+        }
+        else
+        {
+            ProcessDeclarationMetaClauses(decl, deriveShape: null, GetMetaTargetName(decl), [GetMetaTargetName(decl)]);
+        }
     }
 
     private bool IsDeclarationPublic(Declaration declaration)
     {
-        if (HasAttribute(declaration, "internal"))
+        if (_forcedPrivateGeneratedDeclarationDepth > 0)
+        {
+            return false;
+        }
+
+        if (CompilerDirectiveIR.FromDeclaration(declaration) is { IsInternal: true })
         {
             return false;
         }
@@ -133,19 +172,19 @@ public sealed partial class NameResolver
             return;
         }
 
-        var attributesAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
-        var attributes = _attributeBinder.BindDeclarationAttributes(func, func.Name);
+        var bindingName = GetSyntaxBindingName(func, func.Name);
+        var clausesAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
+        var clauseSemantics = _clauseSemanticBinder.Bind(func, func.Name);
         AddAllocationCounter(
-            "Namer.collect.funcDef.bindAttributes.allocatedBytes",
-            GC.GetAllocatedBytesForCurrentThread() - attributesAllocatedBytesBefore);
-        AddAttributeBindingDiagnostics(attributes);
-        var ffiInfo = attributes.Ffi;
-        var intrinsicInfo = attributes.Intrinsic;
+            "Namer.collect.funcDef.bindClauses.allocatedBytes",
+            GC.GetAllocatedBytesForCurrentThread() - clausesAllocatedBytesBefore);
+        AddClauseSemanticDiagnostics(clauseSemantics);
+        var ffiInfo = clauseSemantics.Ffi;
+        var intrinsicInfo = clauseSemantics.Intrinsic;
 
-        // @ffi 函数不能有函数体
+        // extern declarations cannot have an Eidos body.
         if (ffiInfo != null && func.Body.Count > 0)
         {
-            AddError(func.Span, DiagnosticMessages.FfiFunctionCannotHaveBody(func.Name), "E3050");
             func.SymbolId = SymbolId.None;
             return;
         }
@@ -159,14 +198,14 @@ public sealed partial class NameResolver
 
         var hasBody = func.Body.Count > 0 && ffiInfo == null && intrinsicInfo == null;
 
-        var isTraitImplementation = HasAttribute(func, "impl") || _instanceMethodDeclarationDepth > 0;
+        var isTraitImplementation = _instanceMethodDeclarationDepth > 0;
         if (isTraitImplementation)
         {
             AddCounter("Namer.collect.traitImplementationFunction.count");
         }
 
         if (!isTraitImplementation &&
-            TryReportInvalidFunctionOverloadDeclaration(func.Name, func.Signature, func.TypeParams, func.Span))
+            TryReportInvalidFunctionOverloadDeclaration(bindingName, func.Signature, func.TypeParams, func.Span))
         {
             func.SymbolId = SymbolId.None;
             return;
@@ -174,15 +213,21 @@ public sealed partial class NameResolver
 
         var declareFunctionAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
         var symbolId = _symbolTable.DeclareFunction(
-            func.Name,
+            bindingName,
             func.Span,
             hasBody: hasBody,
             isPublic: IsDeclarationPublic(func),
             isComptime: func.IsComptime);
+        if (_symbolTable.GetSymbol<FuncSymbol>(symbolId) is { } declaredFunction)
+        {
+            _symbolTable.UpdateSymbol(declaredFunction with { DefinitionModuleId = _currentModule });
+        }
         AddAllocationCounter(
             "Namer.collect.funcDef.declareFunction.allocatedBytes",
             GC.GetAllocatedBytesForCurrentThread() - declareFunctionAllocatedBytesBefore);
         func.SymbolId = symbolId;
+        RegisterSyntaxIdentitySymbol(func, symbolId);
+        RegisterGenericParameterKinds(symbolId, func.TypeParams);
         if (isTraitImplementation &&
             _symbolTable.GetSymbol<FuncSymbol>(symbolId) is { } traitImplSymbol)
         {
@@ -195,14 +240,14 @@ public sealed partial class NameResolver
         else
         {
             var overloadRegistrationAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
-            RegisterFunctionOverloadDeclaration(func.Name, func.Signature, func.TypeParams, func.Span, symbolId);
+            RegisterFunctionOverloadDeclaration(bindingName, func.Signature, func.TypeParams, func.Span, symbolId);
             AddAllocationCounter(
                 "Namer.collect.funcDef.registerOverload.allocatedBytes",
                 GC.GetAllocatedBytesForCurrentThread() - overloadRegistrationAllocatedBytesBefore);
         }
         var arityAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
         var arity = GetDeclaredArity(func, defaultUnaryWhenUnknown: false);
-        // For @ffi functions, Unit -> T is equivalent to () -> T:
+        // For extern functions, Unit -> T is equivalent to () -> T:
         // Unit carries no meaningful argument, so the call-site arity is 0.
         if (ffiInfo != null && func.Signature.Count == 1)
         {
@@ -241,33 +286,13 @@ public sealed partial class NameResolver
             "Namer.collect.funcDef.applyMetadata.allocatedBytes",
             GC.GetAllocatedBytesForCurrentThread() - metadataAllocatedBytesBefore);
 
-        var operatorAttributesAllocatedBytesBefore = GC.GetAllocatedBytesForCurrentThread();
-        RegisterOperatorAttributes(func, attributes.Operators);
-        AddAllocationCounter(
-            "Namer.collect.funcDef.registerOperatorAttributes.allocatedBytes",
-            GC.GetAllocatedBytesForCurrentThread() - operatorAttributesAllocatedBytesBefore);
     }
 
-    private void AddAttributeBindingDiagnostics(AttributeBindingResult attributes)
+    private void AddClauseSemanticDiagnostics(DeclarationClauseSemanticBindingResult clauses)
     {
-        foreach (var diagnostic in attributes.Diagnostics)
+        foreach (var diagnostic in clauses.Diagnostics)
         {
             AddError(diagnostic.Span, diagnostic.Message);
-        }
-    }
-
-    private void RegisterOperatorAttributes(FuncDef func, IReadOnlyList<OperatorBindingInfo> operators)
-    {
-        foreach (var operatorInfo in operators)
-        {
-            var symbol = func.Name;
-            if (_customOperators.IsRegistered(symbol))
-            {
-                AddError(operatorInfo.Span, DiagnosticMessages.OperatorAlreadyDeclared(symbol));
-                continue;
-            }
-
-            _customOperators.Register(symbol, operatorInfo.Fixity, operatorInfo.Precedence, func.Name);
         }
     }
 
@@ -295,25 +320,28 @@ public sealed partial class NameResolver
             return;
         }
 
-        var attributes = _attributeBinder.BindDeclarationAttributes(func, func.Name);
-        AddAttributeBindingDiagnostics(attributes);
-        var ffiInfo = attributes.Ffi;
-        var intrinsicInfo = attributes.Intrinsic;
+        var bindingName = GetSyntaxBindingName(func, func.Name);
+        var clauseSemantics = _clauseSemanticBinder.Bind(func, func.Name);
+        AddClauseSemanticDiagnostics(clauseSemantics);
+        var ffiInfo = clauseSemantics.Ffi;
+        var intrinsicInfo = clauseSemantics.Intrinsic;
 
-        if (TryReportInvalidFunctionOverloadDeclaration(func.Name, func.Signature, func.TypeParams, func.Span))
+        if (TryReportInvalidFunctionOverloadDeclaration(bindingName, func.Signature, func.TypeParams, func.Span))
         {
             func.SymbolId = SymbolId.None;
             return;
         }
 
         var symbolId = _symbolTable.DeclareFunction(
-            func.Name,
+            bindingName,
             func.Span,
             hasBody: false,
             isPublic: IsDeclarationPublic(func),
             isComptime: func.IsComptime);
         func.SymbolId = symbolId;
-        RegisterFunctionOverloadDeclaration(func.Name, func.Signature, func.TypeParams, func.Span, symbolId);
+        RegisterSyntaxIdentitySymbol(func, symbolId);
+        RegisterGenericParameterKinds(symbolId, func.TypeParams);
+        RegisterFunctionOverloadDeclaration(bindingName, func.Signature, func.TypeParams, func.Span, symbolId);
         UpdateFunctionSymbolSignature(symbolId, GetDeclaredArity(func, defaultUnaryWhenUnknown: false));
 
         if (ffiInfo != null)
@@ -363,44 +391,24 @@ public sealed partial class NameResolver
         }
 
         funcSymbol.IsTransparentIdentity = IsTransparentIdentityFunction(func);
-        funcSymbol.IsProofTransparent = HasAttribute(func, "transparent");
-        funcSymbol.ProofUnfoldTargetName = TryGetFirstAttributeArgument(func, "proof_unfold");
-        funcSymbol.HasProofUnfoldTarget = HasAttribute(func, "proof_unfold");
+        funcSymbol.IsProofTransparent = HasClause(func, DeclarationClauseKind.Transparent);
+        funcSymbol.ProofUnfoldTargetName = TryGetFirstClauseArgument(func, DeclarationClauseKind.ProofUnfold);
+        funcSymbol.HasProofUnfoldTarget = HasClause(func, DeclarationClauseKind.ProofUnfold);
     }
 
-    private static bool HasAttribute(Declaration declaration, string name)
-    {
-        return declaration.Attributes.Any(attribute =>
-            string.Equals(attribute.Name, name, StringComparison.Ordinal));
-    }
+    private static bool HasClause(Declaration declaration, DeclarationClauseKind kind) =>
+        declaration.Clauses.Any(clause => clause.ClauseKind == kind);
 
-    private static string? TryGetFirstAttributeArgument(Declaration declaration, string name)
+    private static string? TryGetFirstClauseArgument(Declaration declaration, DeclarationClauseKind kind)
     {
-        foreach (var attribute in declaration.Attributes)
+        var clauseText = declaration.Clauses
+            .Where(clause => clause.ClauseKind == kind)
+            .SelectMany(static clause => clause.ArgumentTokens)
+            .Select(static argument => argument.Trim().Trim('"'))
+            .FirstOrDefault(static argument => !string.IsNullOrWhiteSpace(argument));
+        if (!string.IsNullOrWhiteSpace(clauseText))
         {
-            if (!string.Equals(attribute.Name, name, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var text = attribute.ArgumentTexts
-                .Select(static argument => argument.Trim().Trim('"'))
-                .FirstOrDefault(static argument => !string.IsNullOrWhiteSpace(argument));
-            if (!string.IsNullOrWhiteSpace(text))
-            {
-                return text;
-            }
-
-            foreach (var argument in attribute.Arguments)
-            {
-                switch (argument)
-                {
-                    case IdentifierExpr { Name.Length: > 0 } identifier:
-                        return identifier.Name;
-                    case PathExpr { Path.Count: > 0 } path:
-                        return string.Join(WellKnownStrings.Separators.Path, path.Path);
-                }
-            }
+            return clauseText;
         }
 
         return null;
@@ -458,7 +466,9 @@ public sealed partial class NameResolver
             return;
         }
 
-        if (CurrentScopeHasFunctionOverloadGroup(varPattern.Name))
+        var bindingName = GetSyntaxBindingName(varPattern, varPattern.Name);
+
+        if (CurrentScopeHasFunctionOverloadGroup(bindingName))
         {
             AddError(varPattern.Span, DiagnosticMessages.ValueConflictsWithFunctionOverload(varPattern.Name), "E3001");
             varPattern.SymbolId = SymbolId.None;
@@ -467,7 +477,7 @@ public sealed partial class NameResolver
         }
 
         var symbolId = _symbolTable.DeclareVariable(
-            varPattern.Name,
+            bindingName,
             varPattern.Span,
             isMutable: letDecl.IsMutable,
             isPatternBound: true,
@@ -476,6 +486,8 @@ public sealed partial class NameResolver
             isPublic: IsDeclarationPublic(letDecl));
         varPattern.SymbolId = symbolId;
         letDecl.SymbolId = symbolId;
+        RegisterSyntaxIdentitySymbol(varPattern, symbolId);
+        RegisterSyntaxIdentitySymbol(letDecl, symbolId);
     }
 
     private void CollectAdtDef(AdtDef adt)
@@ -512,13 +524,18 @@ public sealed partial class NameResolver
             ? null
             : adt.TypeParams.Select(_ => SymbolId.None).ToList();
         var isPublic = IsDeclarationPublic(adt);
-        var adtId = _symbolTable.DeclareAdt(adt.Name, adt.Span, adtTypeParams, isPublic);
+        var adtId = _symbolTable.DeclareAdt(
+            GetSyntaxBindingName(adt, adt.Name),
+            adt.Span,
+            adtTypeParams,
+            isPublic);
         adt.SymbolId = adtId;
+        RegisterSyntaxIdentitySymbol(adt, adtId);
+        RegisterGenericParameterKinds(adtId, adt.TypeParams);
         _adtDefinitions[adtId] = adt;
+        CollectDeclaredFields(adt.Fields, adtId, isPublic);
 
-        // 检测 @cstruct 属性
-        var cstructAttr = TryGetCStructAttribute(adt);
-        if (cstructAttr != null)
+        if (HasReprCClause(adt))
         {
             CollectCStructDef(adt, adtId);
             return;
@@ -528,39 +545,191 @@ public sealed partial class NameResolver
         // 等价于 `T :: type { T { a: A, b: B } }`。
         SynthesizeDefaultConstructorIfBareProduct(adt);
 
-        for (var i = 0; i < adt.Constructors.Count; i++)
+        if (adt.Cases.Count > 0)
         {
-            var ctor = adt.Constructors[i];
+            CollectClosedCaseTypes(adt, adtId, isPublic);
+        }
+        else
+        {
+            for (var i = 0; i < adt.Constructors.Count; i++)
+            {
+                var ctor = adt.Constructors[i];
+                if (TryReportReservedInternalNameDeclaration(ctor.Name, ctor.Span, "constructor"))
+                {
+                    ctor.SymbolId = SymbolId.None;
+                    continue;
+                }
+
+                EidosAstNode constructorIdentityOwner = ctor.AttachedSyntaxIdentity == null ? adt : ctor;
+                var ctorId = _symbolTable.DeclareConstructor(
+                    GetSyntaxBindingName(constructorIdentityOwner, ctor.Name),
+                    ctor.Span,
+                    adtId,
+                    isPublic);
+                ctor.SymbolId = ctorId;
+                RegisterSyntaxIdentitySymbol(constructorIdentityOwner, ctorId);
+                _symbolTable.AddConstructorToAdt(adtId, ctorId);
+                _symbolTable.AddMemberToModule(_currentModule, ctorId);
+                _ctorPatternShapes[ctorId] = BuildCtorPatternShape(ctor);
+            }
+        }
+
+    }
+
+    private void CollectClosedCaseTypes(AdtDef adt, SymbolId rootAdtId, bool isPublic)
+    {
+        var leaves = new List<CaseTypeDef>();
+        foreach (var caseType in adt.Cases)
+        {
+            CollectCaseTypeTree(caseType, rootAdtId, rootAdtId, isPublic, leaves);
+        }
+
+        if (leaves.Count != adt.Constructors.Count)
+        {
+            AddError(adt.Span, $"closed case lowering mismatch for '{adt.Name}'");
+            return;
+        }
+
+        for (var index = 0; index < leaves.Count; index++)
+        {
+            var caseType = leaves[index];
+            var ctor = adt.Constructors[index];
             if (TryReportReservedInternalNameDeclaration(ctor.Name, ctor.Span, "constructor"))
             {
                 ctor.SymbolId = SymbolId.None;
                 continue;
             }
 
-            var ctorId = _symbolTable.DeclareConstructor(ctor.Name, ctor.Span, adtId, isPublic);
+            EidosAstNode constructorIdentityOwner = ctor.AttachedSyntaxIdentity == null ? caseType : ctor;
+            var ctorId = _symbolTable.DeclareConstructor(
+                GetSyntaxBindingName(constructorIdentityOwner, ctor.Name),
+                ctor.Span,
+                caseType.SymbolId,
+                isPublic);
             ctor.SymbolId = ctorId;
-            _symbolTable.AddConstructorToAdt(adtId, ctorId);
+            RegisterSyntaxIdentitySymbol(constructorIdentityOwner, ctorId);
+            caseType.ConstructorSymbolId = ctorId;
+            AddClosedCaseConstructorToAncestors(caseType.SymbolId, ctorId);
             _symbolTable.AddMemberToModule(_currentModule, ctorId);
             _ctorPatternShapes[ctorId] = BuildCtorPatternShape(ctor);
-        }
 
-        ProcessDeriveAttributes(adt);
-    }
-
-    /// <summary>
-    /// 检测声明是否带有 @cstruct 属性
-    /// </summary>
-    private static EidosAttribute? TryGetCStructAttribute(Declaration decl)
-    {
-        foreach (var attr in decl.Attributes)
-        {
-            if (attr.Name == "cstruct")
+            if (_symbolTable.GetSymbol<AdtSymbol>(caseType.SymbolId) is { } caseSymbol)
             {
-                return attr;
+                _symbolTable.UpdateSymbol(caseSymbol with { CaseConstructor = ctorId });
             }
         }
-        return null;
     }
+
+    private void BindDeclarationSyntaxClauses(Declaration declaration, bool isGeneratedSource = false)
+    {
+        var binding = DeclarationClauseBinder.Bind(
+            declaration,
+            LanguageVersion,
+            isGeneratedSource ? CompilerOwnedSourceGrant.None : CompilerOwnedSourceGrant);
+        declaration.SetBoundClauses(binding.Clauses, binding.MetaInvocations);
+        foreach (var diagnostic in binding.Diagnostics)
+        {
+            AddError(diagnostic.Span, diagnostic.Message, diagnostic.Code);
+        }
+    }
+
+    private void AddClosedCaseConstructorToAncestors(SymbolId leafCaseId, SymbolId constructorId)
+    {
+        var current = leafCaseId;
+        var visited = new HashSet<SymbolId>();
+        while (current.IsValid && visited.Add(current))
+        {
+            _symbolTable.AddConstructorToAdt(current, constructorId);
+            current = _symbolTable.GetSymbol<AdtSymbol>(current)?.ParentAdt ?? SymbolId.None;
+        }
+    }
+
+    private void CollectCaseTypeTree(
+        CaseTypeDef caseType,
+        SymbolId rootAdtId,
+        SymbolId parentAdtId,
+        bool isPublic,
+        List<CaseTypeDef> leaves)
+    {
+        var clauseBinding = DeclarationClauseBinder.Bind(caseType, LanguageVersion, CompilerOwnedSourceGrant);
+        caseType.SetBoundClauses(clauseBinding.Clauses, clauseBinding.MetaInvocations);
+        foreach (var diagnostic in clauseBinding.Diagnostics)
+        {
+            AddError(diagnostic.Span, diagnostic.Message, diagnostic.Code);
+        }
+
+        if (isPublic &&
+            CompilerDirectiveIR.FromDeclaration(caseType) is { IsInternal: true } &&
+            clauseBinding.Clauses.Any(static clause =>
+                clause.Kind == DeclarationClauseKind.Compiler && clause.HasCompilerOwnedSourceGrant))
+        {
+            var rootName = _symbolTable.GetSymbol<AdtSymbol>(rootAdtId)?.Name ?? "<closed-root>";
+            AddError(
+                caseType.Span,
+                DiagnosticMessages.PublicClosedCaseRootCannotContainInternalDescendant(rootName, caseType.Name),
+                nameof(ErrorCode.E3061_PublicClosedCaseContainsInternalDescendant));
+        }
+
+        if (TryReportReservedInternalNameDeclaration(caseType.Name, caseType.Span, "case type"))
+        {
+            caseType.SymbolId = SymbolId.None;
+            return;
+        }
+
+        var typeParams = caseType.TypeParams.Count == 0
+            ? null
+            : caseType.TypeParams.Select(_ => SymbolId.None).ToList();
+        caseType.SymbolId = _symbolTable.DeclareCaseType(
+            GetSyntaxBindingName(caseType, caseType.Name),
+            caseType.Span,
+            parentAdtId,
+            typeParams,
+            isPublic);
+        RegisterSyntaxIdentitySymbol(caseType, caseType.SymbolId);
+        _declarationsBySymbol[caseType.SymbolId] = caseType;
+        RegisterGenericParameterKinds(caseType.SymbolId, caseType.TypeParams);
+        CollectDeclaredFields(caseType.Fields, caseType.SymbolId, isPublic);
+
+        if (caseType.IsLeaf)
+        {
+            leaves.Add(caseType);
+            return;
+        }
+
+        foreach (var child in caseType.Cases)
+        {
+            CollectCaseTypeTree(child, rootAdtId, caseType.SymbolId, isPublic, leaves);
+        }
+    }
+
+    private void CollectDeclaredFields(
+        IReadOnlyList<Field> fields,
+        SymbolId ownerType,
+        bool isPublic)
+    {
+        for (var index = 0; index < fields.Count; index++)
+        {
+            var field = fields[index];
+            if (TryReportReservedInternalNameDeclaration(field.Name, field.Span, "field"))
+            {
+                field.SymbolId = SymbolId.None;
+                continue;
+            }
+
+            field.SymbolId = _symbolTable.DeclareField(
+                GetSyntaxBindingName(field, field.Name),
+                field.Span,
+                ownerType,
+                index,
+                isPublic);
+            RegisterSyntaxIdentitySymbol(field, field.SymbolId);
+        }
+    }
+
+    private static bool HasReprCClause(Declaration declaration) =>
+        declaration.Clauses.Any(clause =>
+            clause.ClauseKind == DeclarationClauseKind.Repr &&
+            clause.ArgumentTokens.Any(argument => string.Equals(argument.Trim(), "c", StringComparison.Ordinal)));
 
     /// <summary>
     /// 处理 @cstruct 类型声明。
@@ -574,9 +743,13 @@ public sealed partial class NameResolver
             return;
         }
 
-        adtSymbol.IsCStruct = true;
-
         // 验证：@cstruct 必须是积类型（有字段，无构造器变体）
+        if (adt.Cases.Count > 0)
+        {
+            AddError(adt.Span, $"repr c cannot be applied to sealed sum type '{adt.Name}'; use a product type with FFI-safe fields");
+            return;
+        }
+
         if (adt.Fields.Count == 0)
         {
             AddError(adt.Span, DiagnosticMessages.CStructTypeRequiresAtLeastOneField(adt.Name));
@@ -594,6 +767,8 @@ public sealed partial class NameResolver
             AddError(adt.Span, DiagnosticMessages.CStructTypeDoesNotSupportTypeParameters(adt.Name));
             return;
         }
+
+        adtSymbol.IsCStruct = true;
 
         // 收集字段信息并验证 FFI 安全性
         var fieldEntries = new List<(string Name, TypeId TypeId, string TypeName)>();
@@ -760,8 +935,12 @@ public sealed partial class NameResolver
         }
 
         var isPublic = IsDeclarationPublic(ability);
-        var abilityId = _symbolTable.DeclareEffect(ability.Name, ability.Span, isPublic);
+        var abilityId = _symbolTable.DeclareEffect(
+            GetSyntaxBindingName(ability, ability.Name),
+            ability.Span,
+            isPublic);
         ability.SymbolId = abilityId;
+        RegisterSyntaxIdentitySymbol(ability, abilityId);
     }
 
     private void CollectTraitDef(TraitDef trait)
@@ -798,10 +977,38 @@ public sealed partial class NameResolver
             ? null
             : trait.TypeParams.Select(_ => SymbolId.None).ToList();
         var isPublic = IsDeclarationPublic(trait);
-        var traitId = _symbolTable.DeclareTrait(trait.Name, trait.Span, traitTypeParams, isPublic);
+        var traitId = _symbolTable.DeclareTrait(
+            GetSyntaxBindingName(trait, trait.Name),
+            trait.Span,
+            traitTypeParams,
+            isPublic);
         trait.SymbolId = traitId;
+        RegisterSyntaxIdentitySymbol(trait, traitId);
+        RegisterGenericParameterKinds(traitId, trait.TypeParams);
         _traitDefinitions[traitId] = trait;
         _traitOwnerModules[traitId] = _currentModule;
+
+        foreach (var associatedType in trait.AssociatedTypes)
+        {
+            if (TryReportReservedInternalNameDeclaration(associatedType.Name, associatedType.Span, "associated type"))
+            {
+                associatedType.SymbolId = SymbolId.None;
+                continue;
+            }
+
+            CollectAssociatedTypeSymbol(associatedType, traitId, SymbolId.None, isPublic);
+        }
+
+        foreach (var associatedConst in trait.AssociatedConsts)
+        {
+            if (TryReportReservedInternalNameDeclaration(associatedConst.Name, associatedConst.Span, "associated const"))
+            {
+                associatedConst.SymbolId = SymbolId.None;
+                continue;
+            }
+
+            CollectAssociatedConstSymbol(associatedConst, traitId, SymbolId.None, isPublic);
+        }
 
         // Resolve supertrait references and populate ParentTraits
         var parentTraitIds = ResolveSupertraitReferences(trait);
@@ -809,6 +1016,8 @@ public sealed partial class NameResolver
         var traitMethodOverloads = new Dictionary<string, List<FunctionOverloadDeclaration>>(StringComparer.Ordinal);
         foreach (var method in trait.Methods)
         {
+            BindDeclarationSyntaxClauses(method);
+
             if (TryReportReservedInternalNameDeclaration(method.Name, method.Span, "trait method"))
             {
                 method.SymbolId = SymbolId.None;
@@ -822,8 +1031,15 @@ public sealed partial class NameResolver
             }
 
             var hasDefaultBody = method.Body.Count > 0;
-            var methodId = _symbolTable.DeclareFunction(method.Name, method.Span, hasBody: hasDefaultBody, isPublic, method.IsComptime);
+            var methodId = _symbolTable.DeclareFunction(
+                GetSyntaxBindingName(method, method.Name),
+                method.Span,
+                hasBody: hasDefaultBody,
+                isPublic,
+                method.IsComptime);
             method.SymbolId = methodId;
+            RegisterSyntaxIdentitySymbol(method, methodId);
+            RegisterGenericParameterKinds(methodId, method.TypeParams);
             RegisterTraitMethodOverloadDeclaration(method, methodId, traitMethodOverloads);
             UpdateFunctionSymbolSignature(methodId, GetDeclaredArity(method, defaultUnaryWhenUnknown: true));
             var methodSelfUsage = AnalyzeTraitMethodSelfUsage(trait, method);
@@ -832,6 +1048,7 @@ public sealed partial class NameResolver
             {
                 _symbolTable.UpdateSymbol(methodSymbol with
                 {
+                    DefinitionModuleId = _currentModule,
                     OwnerTrait = traitId,
                     TraitSelfPosition = methodSelfUsage.Position,
                     TraitSelfParameterIndices = methodSelfUsage.ParameterIndices,
@@ -846,6 +1063,9 @@ public sealed partial class NameResolver
                 var methods = new List<SymbolId>(traitSymbol.Methods) { methodId };
                 _symbolTable.UpdateSymbol(traitSymbol with { Methods = methods });
             }
+
+            _declarationsBySymbol[methodId] = method;
+            ProcessDeclarationMetaClauses(method, deriveShape: null, method.Name, [trait.Name, method.Name]);
         }
 
         // Proof collection removed during migration
@@ -948,17 +1168,134 @@ public sealed partial class NameResolver
             AddError(instance.Span, $"Duplicate instance declaration '{instance.Name}'.");
         }
 
+        if (!instance.SymbolId.IsValid)
+        {
+            instance.SymbolId = _symbolTable.DeclarePendingImpl(
+                GetSyntaxBindingName(instance, instance.Name),
+                instance.Span,
+                IsDeclarationPublic(instance));
+            RegisterSyntaxIdentitySymbol(instance, instance.SymbolId);
+        }
+
+        var instanceIsPublic = IsDeclarationPublic(instance);
+        foreach (var associatedType in instance.AssociatedTypes)
+        {
+            if (TryReportReservedInternalNameDeclaration(associatedType.Name, associatedType.Span, "associated type"))
+            {
+                associatedType.SymbolId = SymbolId.None;
+                continue;
+            }
+
+            CollectAssociatedTypeSymbol(associatedType, SymbolId.None, instance.SymbolId, instanceIsPublic);
+        }
+
+        foreach (var associatedConst in instance.AssociatedConsts)
+        {
+            if (TryReportReservedInternalNameDeclaration(associatedConst.Name, associatedConst.Span, "associated const"))
+            {
+                associatedConst.SymbolId = SymbolId.None;
+                continue;
+            }
+
+            CollectAssociatedConstSymbol(associatedConst, SymbolId.None, instance.SymbolId, instanceIsPublic);
+        }
+
         _instanceMethodDeclarationDepth++;
         try
         {
             foreach (var method in instance.Methods)
             {
+                BindDeclarationSyntaxClauses(method);
                 CollectFuncDef(method);
+                if (!method.SymbolId.IsValid)
+                {
+                    continue;
+                }
+
+                _declarationsBySymbol[method.SymbolId] = method;
+                ProcessDeclarationMetaClauses(
+                    method,
+                    deriveShape: null,
+                    method.Name,
+                    [instance.Name, method.Name]);
             }
         }
         finally
         {
             _instanceMethodDeclarationDepth--;
+        }
+    }
+
+    private SymbolId CollectAssociatedTypeSymbol(
+        AssociatedTypeDecl associatedType,
+        SymbolId ownerTrait,
+        SymbolId ownerImpl,
+        bool isPublic,
+        GeneratedDeclarationOrigin? origin = null)
+    {
+        var typeParams = associatedType.TypeParams.Count == 0
+            ? null
+            : associatedType.TypeParams.Select(static _ => SymbolId.None).ToArray();
+        var symbolId = _symbolTable.DeclareAssociatedType(
+            GetSyntaxBindingName(associatedType, associatedType.Name),
+            associatedType.Span,
+            _currentModule,
+            ownerTrait,
+            ownerImpl,
+            typeParams,
+            isPublic);
+        associatedType.SymbolId = symbolId;
+        RegisterSyntaxIdentitySymbol(associatedType, symbolId);
+        if (origin != null)
+        {
+            SetGeneratedOrigin(symbolId, origin);
+        }
+        AddAssociatedItemToOwner(symbolId, ownerTrait, ownerImpl, isType: true);
+        return symbolId;
+    }
+
+    private SymbolId CollectAssociatedConstSymbol(
+        AssociatedConstDecl associatedConst,
+        SymbolId ownerTrait,
+        SymbolId ownerImpl,
+        bool isPublic,
+        GeneratedDeclarationOrigin? origin = null)
+    {
+        var symbolId = _symbolTable.DeclareAssociatedConst(
+            GetSyntaxBindingName(associatedConst, associatedConst.Name),
+            associatedConst.Span,
+            _currentModule,
+            ownerTrait,
+            ownerImpl,
+            isPublic);
+        associatedConst.SymbolId = symbolId;
+        RegisterSyntaxIdentitySymbol(associatedConst, symbolId);
+        if (origin != null)
+        {
+            SetGeneratedOrigin(symbolId, origin);
+        }
+        AddAssociatedItemToOwner(symbolId, ownerTrait, ownerImpl, isType: false);
+        return symbolId;
+    }
+
+    private void AddAssociatedItemToOwner(
+        SymbolId itemId,
+        SymbolId ownerTrait,
+        SymbolId ownerImpl,
+        bool isType)
+    {
+        if (ownerTrait.IsValid && _symbolTable.GetSymbol<TraitSymbol>(ownerTrait) is { } trait)
+        {
+            _symbolTable.UpdateSymbol(isType
+                ? trait with { AssociatedTypes = [.. trait.AssociatedTypes, itemId] }
+                : trait with { AssociatedConsts = [.. trait.AssociatedConsts, itemId] });
+        }
+
+        if (ownerImpl.IsValid && _symbolTable.GetSymbol<ImplSymbol>(ownerImpl) is { } impl)
+        {
+            _symbolTable.UpdateSymbol(isType
+                ? impl with { AssociatedTypes = [.. impl.AssociatedTypes, itemId] }
+                : impl with { AssociatedConsts = [.. impl.AssociatedConsts, itemId] });
         }
     }
 

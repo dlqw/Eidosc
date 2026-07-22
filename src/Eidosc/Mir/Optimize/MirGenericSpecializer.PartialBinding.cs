@@ -558,6 +558,9 @@ public sealed partial class MirGenericSpecializer
             case MirAssign { Target.Kind: PlaceKind.Local } assign:
                 UpdateLocalCallBinding(assign.Target.Local, assign.Source, localCallBindings);
                 break;
+            case MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } target }:
+                localCallBindings.Remove(target.Local);
+                break;
             case MirStore { Target.Kind: PlaceKind.Local } store:
                 UpdateLocalCallBinding(store.Target.Local, store.Value, localCallBindings);
                 break;
@@ -776,6 +779,7 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => CountOperandLocalReads(assign.Source, localId),
+            MirCaseInject injection => CountOperandLocalReads(injection.Operand, localId),
             MirCall call => CountOperandLocalReads(call.Function, localId) +
                             CountOperandListLocalReads(call.Arguments, localId),
             MirBinOp binOp => CountOperandLocalReads(binOp.Left, localId) +
@@ -799,6 +803,9 @@ public sealed partial class MirGenericSpecializer
         {
             case MirAssign assign:
                 AddOperandLocalReads(counts, assign.Source, delta);
+                break;
+            case MirCaseInject injection:
+                AddOperandLocalReads(counts, injection.Operand, delta);
                 break;
             case MirCall call:
                 AddOperandLocalReads(counts, call.Function, delta);
@@ -956,6 +963,7 @@ public sealed partial class MirGenericSpecializer
         return instruction switch
         {
             MirAssign assign => OperandUsesLocal(assign.Source, localId),
+            MirCaseInject injection => OperandUsesLocal(injection.Operand, localId),
             MirCall call => OperandUsesLocal(call.Function, localId) ||
                             call.Arguments.Any(argument => OperandUsesLocal(argument, localId)),
             MirBinOp binOp => OperandUsesLocal(binOp.Left, localId) ||

@@ -25,18 +25,59 @@ public sealed partial class MirBuilder
         }
 
         var isCopy = _extraCopyLikeTypeIds.Contains(typeId.Value) ||
-                     CopyTypeSemantics.IsCopyTypeForMirBuilding(
+                     CopyTypeSemantics.IsCopyType(
                          typeId,
                          _hasCopyImplResolver,
                          _typeDescriptorsById,
-                         _dynamicTypeKeysById);
+                         _dynamicTypeKeysById,
+                         _constructorLayouts);
         _copyTypeCache[typeId.Value] = isCopy;
         return isCopy;
     }
 
     private bool ShouldCopyLocalValue(LocalId localId, TypeId typeId)
     {
-        return _comprehensionElementLocals.Contains(localId) || IsCopyType(typeId);
+        return _comprehensionElementLocals.Contains(localId) ||
+               (IsFunctionType(typeId) ? IsCopyClosureValue(localId) : IsCopyType(typeId));
+    }
+
+    private bool IsFunctionType(TypeId typeId)
+    {
+        return CopyTypeSemantics.IsFunctionType(
+            typeId,
+            _typeDescriptorsById,
+            _dynamicTypeKeysById);
+    }
+
+    private bool IsCopyClosureValue(LocalId localId)
+    {
+        var definingCalls = _currentFunc?.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .Where(call => call.Target is MirPlace
+            {
+                Kind: PlaceKind.Local,
+                Local: var targetLocal
+            } && targetLocal == localId)
+            .ToList();
+
+        if (definingCalls is not { Count: 1 } || definingCalls[0].Arguments.Count == 0)
+        {
+            return definingCalls is { Count: 1 };
+        }
+
+        return definingCalls[0].Arguments.All(IsCopyClosureCaptureOperand);
+    }
+
+    private bool IsCopyClosureCaptureOperand(MirOperand operand)
+    {
+        if (operand is MirPlace { Kind: PlaceKind.Local, Local: var local } place &&
+            IsFunctionType(place.TypeId))
+        {
+            return IsCopyClosureValue(local);
+        }
+
+        return IsCopyType(operand.TypeId);
     }
 
     private void EmitInitialization(MirPlace target, MirOperand value, SourceSpan span)
@@ -982,48 +1023,6 @@ public sealed partial class MirBuilder
                span.Location.Position > 0 ||
                span.Location.Line > 0 ||
                span.Location.Column > 0;
-    }
-
-    /// <summary>
-    /// 将所有 Clone trait impl 方法的 SymbolId 加入 copy-first-argument 集合，
-    /// 使 clone 调用不消费原值。
-    /// </summary>
-    private void PopulateCloneMethodSymbols()
-    {
-        if (_symbolTable == null)
-        {
-            return;
-        }
-
-        var cloneTraitId = _symbolTable.LookupType("Clone");
-        if (!cloneTraitId.HasValue || !cloneTraitId.Value.IsValid)
-        {
-            return;
-        }
-
-        var cloneTraitSymbol = _symbolTable.GetSymbol<TraitSymbol>(cloneTraitId.Value);
-        if (cloneTraitSymbol == null)
-        {
-            return;
-        }
-
-        foreach (var symbol in _symbolTable.Symbols.Values)
-        {
-            if (symbol is not ImplSymbol implSymbol)
-            {
-                continue;
-            }
-
-            if (implSymbol.Trait != cloneTraitId.Value)
-            {
-                continue;
-            }
-
-            foreach (var methodId in implSymbol.Methods)
-            {
-                _copyFirstArgumentFunctionSymbols.Add(methodId.Value);
-            }
-        }
     }
 
     /// <summary>

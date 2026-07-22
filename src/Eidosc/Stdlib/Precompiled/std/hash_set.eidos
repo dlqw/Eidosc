@@ -1,0 +1,269 @@
+HashSet :: module {
+    import Traits
+    import TraitInvoke
+    import HashMap
+    import Seq
+    import Option
+
+    HashSet[K] :: type {inner:: HashMap[K, Unit]}
+
+    // ── Constructors ──────────────────────────────────────────
+
+    empty[K] :: Unit -> HashSet[K]
+    {
+        _ => HashSet{inner: HashMap.empty(())}
+    }
+
+    new[K] :: Int -> HashSet[K]
+    {
+        capacity => HashSet{inner: HashMap.new(capacity)}
+    }
+
+    from_seq[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K]
+    {
+        values => HashSet.fold_insert[K](values)(HashSet.empty(()))
+    }
+
+    // ── Core operations ──────────────────────────────────────
+
+    insert[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
+    {
+        HashSet{inner: m} => key => HashSet{inner: HashMap.insert[K, Unit](m)(key)(())}
+    }
+
+    contains[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> Bool
+    {
+        HashSet{inner: m} => key => HashMap.contains_key[K, Unit](m)(key)
+    }
+
+    remove[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
+    {
+        HashSet{inner: m} => key => HashSet{inner: HashMap.remove[K, Unit](m)(key)}
+    }
+
+    insert_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> HashSet[K]
+    {
+        self => values => HashSet.fold_insert[K](values)(self)
+    }
+
+    remove_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> HashSet[K]
+    {
+        self => values => HashSet.fold_remove[K](values)(self)
+    }
+
+    toggle[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
+    {
+        self => key => {
+            keys := HashSet.to_seq[K](self)
+            match HashMap.key_in_seq_preserve[K](TraitInvoke.clone_value(ref key))(keys)
+            {
+                (present, rebuilt_keys) => {
+                    rebuilt := HashSet.from_seq[K](rebuilt_keys)
+                    if present
+                    then { HashSet.remove[K](rebuilt)(key) }
+                    else { HashSet.insert[K](rebuilt)(key) }
+                }
+            }
+        }
+    }
+
+    // ── Query operations ─────────────────────────────────────
+
+    len[K] :: Ref[HashSet[K]] -> Int
+    {
+        self => match *self {
+            HashSet{inner: m} => HashMap.len(ref m)
+        }
+    }
+
+    is_empty[K] :: Ref[HashSet[K]] -> Bool
+    {
+        self => HashSet.len(self) == 0
+    }
+
+    // ── Set operations ───────────────────────────────────────
+
+    union[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    {
+        self => other => HashSet.fold_insert[K](HashSet.to_seq[K](other))(self)
+    }
+
+    intersection[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    {
+        self => other => HashSet.filter_contains[K](HashSet.to_seq[K](self))(other)
+    }
+
+    difference[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    {
+        self => other => HashSet.filter_not_contains[K](HashSet.to_seq[K](self))(other)
+    }
+
+    symmetric_difference[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    {
+        self => other => HashSet.fold_toggle(HashSet.to_seq[K](other))(self)
+    }
+
+    is_subset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    {
+        self => other => HashSet.all_contained[K](HashSet.to_seq[K](self))(other)
+    }
+
+    is_superset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    {
+        self => other => HashSet.is_subset[K](other)(self)
+    }
+
+    is_disjoint[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    {
+        self => other => HashSet.none_contained[K](HashSet.to_seq[K](self))(other)
+    }
+
+    contains_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> Bool
+    {
+        self => values => HashSet.all_contained[K](values)(self)
+    }
+
+    contains_any[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> Bool
+    {
+        self => values => HashSet.any_contained(values)(self)
+    }
+
+    equals[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    {
+        self => other => match HashSet.to_seq_with_len[K](self)
+        {
+            (left, left_len) => match HashSet.to_seq_with_len[K](other)
+            {
+                (right, right_len) => left_len == right_len && HashMap.all_keys_in_available[K](left)(right)
+            }
+        }
+    }
+
+    is_proper_subset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    {
+        self => other => match HashSet.to_seq_with_len[K](self)
+        {
+            (left, left_len) => match HashSet.to_seq_with_len[K](other)
+            {
+                (right, right_len) => left_len < right_len && HashMap.all_keys_in_available[K](left)(right)
+            }
+        }
+    }
+
+    is_proper_superset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    {
+        self => other => HashSet.is_proper_subset[K](other)(self)
+    }
+
+    to_seq[K] :: HashSet[K] -> Seq[K]
+    {
+        HashSet{inner: m} => HashMap.keys[K, Unit](m)
+    }
+
+    // ── Internal helpers ─────────────────────────────────────
+
+    to_seq_with_len[K] :: HashSet[K] -> (Seq[K], Int)
+     compiler(internal)
+{
+        HashSet{inner: HashMap.HashMap{buckets: buckets, size: size, capacity: _}} =>
+            (HashMap.collect_keys[K, Unit](buckets), size)
+    }
+
+
+    keys_and_empty[K] :: HashSet[K] -> (Seq[K], HashSet[K])
+     compiler(internal)
+{
+        HashSet{inner: HashMap.HashMap{buckets: buckets, size: _, capacity: capacity}} =>
+            (HashMap.collect_keys[K, Unit](buckets), HashSet{inner: HashMap.HashMap{
+                buckets: HashMap.make_empty_buckets[K, Unit](capacity),
+                size: 0,
+                capacity: capacity
+            }})
+    }
+
+    //
+    // These are written with Seq.fold_left rather than hand-rolled index loops
+    // because the CPS borrow analysis in this module context rejects the custom
+    // loop form (the index read of a non-Copy element is treated as moving the
+    // whole Seq). fold_left is lowered as a comprehension and is borrow-safe.
+
+
+    fold_insert[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
+     compiler(internal)
+{
+        keys => acc => Seq.fold_left(keys)(acc)(s => k => HashSet.insert(s)(k))
+    }
+
+
+    fold_remove[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
+     compiler(internal)
+{
+        keys => acc => Seq.fold_left(keys)(acc)(s => k => HashSet.remove(s)(k))
+    }
+
+
+    fold_toggle[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
+     compiler(internal)
+{
+        [] => acc => acc,
+        [key, ..rest] => acc => HashSet.fold_toggle(rest)(HashSet.toggle[K](acc)(key))
+    }
+
+
+    all_contained[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> Bool
+     compiler(internal)
+{
+        keys => HashSet{inner: inner} => HashMap.all_keys_contained[K, Unit](keys)(inner)
+    }
+
+
+    any_contained[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> Bool
+     compiler(internal)
+{
+        keys => HashSet{inner: inner} => HashMap.any_key_contained[K, Unit](keys)(inner)
+    }
+
+
+    none_contained[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> Bool
+     compiler(internal)
+{
+        keys => self => !HashSet.any_contained[K](keys)(self)
+    }
+
+
+    filter_with_membership[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> Seq[K] -> HashSet[K] -> Bool -> HashSet[K]
+     compiler(internal)
+{
+        [] => _ => acc => _ => acc,
+        [key, ..rest] => available => acc => retain_matches => {
+            match HashMap.key_in_seq_preserve[K](TraitInvoke.clone_value(ref key))(available)
+            {
+                (present, rebuilt_available) => {
+                    keep := if retain_matches then { present } else { !present }
+                    next := if keep then { HashSet.insert[K](acc)(key) } else { acc }
+                    HashSet.filter_with_membership(rest)(rebuilt_available)(next)(retain_matches)
+                }
+            }
+        }
+    }
+
+
+    filter_contains[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
+     compiler(internal)
+{
+        keys => other => match HashSet.keys_and_empty[K](other)
+        {
+            (available, empty) => HashSet.filter_with_membership[K](keys)(available)(empty)(true)
+        }
+    }
+
+
+    filter_not_contains[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
+     compiler(internal)
+{
+        keys => other => match HashSet.keys_and_empty[K](other)
+        {
+            (available, empty) => HashSet.filter_with_membership[K](keys)(available)(empty)(false)
+        }
+    }
+}

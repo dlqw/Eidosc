@@ -11,118 +11,158 @@ using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
 using Eidosc.Types;
 using Eidosc.Utils;
-using AstAttribute = Eidosc.Ast.Attribute;
 
 namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private void ProcessDeriveAttributes(AdtDef adt)
+    private void ProcessDeclarationMetaClauses(
+        Declaration declaration,
+        AdtDef? deriveShape,
+        string targetName,
+        IReadOnlyList<string> targetPath)
+    {
+        foreach (var invocation in declaration.MetaInvocations
+                     .OrderBy(static invocation => invocation.SourceOrder)
+                     .ThenBy(static invocation => invocation.OccurrenceId.ArgumentSubIndex))
+        {
+            if (invocation.SourceOrder < 0 || invocation.SourceOrder >= declaration.Clauses.Count)
+            {
+                continue;
+            }
+
+            _metaInvocationOccurrences.Add(new MetaInvocationOccurrence(
+                declaration,
+                deriveShape,
+                targetName,
+                targetPath,
+                _currentModule,
+                declaration.Clauses[invocation.SourceOrder],
+                invocation,
+                [],
+                CreateMetaOrderingDomainIdentity(declaration)));
+        }
+    }
+
+    private void ProcessDeclarationMetaClauses(AdtDef adt)
     {
         if (adt.IsTypeAlias)
-            return;
-
-        for (var attributeIndex = 0; attributeIndex < adt.Attributes.Count; attributeIndex++)
         {
-            var attr = adt.Attributes[attributeIndex];
-            if (attr.Name != WellKnownStrings.Keywords.Derive)
-                continue;
+            return;
+        }
 
-            AddCounter("Namer.collect.deriveAttribute.count");
-            for (var argumentIndex = 0; argumentIndex < attr.ArgumentTexts.Count; argumentIndex++)
+        ProcessDeclarationMetaClauses(adt, adt, adt.Name, [adt.Name]);
+
+        foreach (var caseType in adt.Cases)
+        {
+            ProcessCaseMetaClauses(adt, caseType, [adt.Name, caseType.Name]);
+        }
+    }
+
+    private static string GetMetaTargetName(Declaration declaration) => declaration switch
+    {
+        AdtDef adt => adt.Name,
+        CaseTypeDef caseType => caseType.Name,
+        FuncDef function => function.Name,
+        FuncDecl function => function.Name,
+        TraitDef trait => trait.Name,
+        EffectDef effect => effect.Name,
+        InstanceDecl instance => instance.Name,
+        ModuleDecl module => string.Join(WellKnownStrings.Separators.Path, module.Path),
+        LetDecl { Pattern: VarPattern variable } => variable.Name,
+        _ => declaration.GetType().Name
+    };
+
+    private void ProcessCaseMetaClauses(
+        AdtDef root,
+        CaseTypeDef caseType,
+        IReadOnlyList<string> targetPath)
+    {
+        var deriveShape = CreateCaseDeriveShape(root, caseType);
+        foreach (var invocation in caseType.MetaInvocations
+                     .OrderBy(static invocation => invocation.SourceOrder)
+                     .ThenBy(static invocation => invocation.OccurrenceId.ArgumentSubIndex))
+        {
+            if (invocation.SourceOrder < 0 || invocation.SourceOrder >= caseType.Clauses.Count)
             {
-                var traitName = attr.ArgumentTexts[argumentIndex];
-                AddCounter("Namer.collect.deriveArgument.count");
-                if (NormalizeBuiltinDeriveTraitName(traitName) is { } normalizedTrait)
+                continue;
+            }
+
+            _metaInvocationOccurrences.Add(new MetaInvocationOccurrence(
+                caseType,
+                deriveShape,
+                string.Join(WellKnownStrings.Separators.Path, targetPath),
+                targetPath,
+                _currentModule,
+                caseType.Clauses[invocation.SourceOrder],
+                invocation,
+                [],
+                CreateMetaOrderingDomainIdentity(caseType)));
+        }
+
+        foreach (var child in caseType.Cases)
+        {
+            ProcessCaseMetaClauses(root, child, [.. targetPath, child.Name]);
+        }
+    }
+
+    private string CreateMetaOrderingDomainIdentity(Declaration declaration)
+    {
+        if (declaration.GeneratedOriginChain.LastOrDefault() is { } generatedOrigin)
+        {
+            return $"generated:{generatedOrigin.StableIdentity}";
+        }
+        if (declaration.SymbolId.IsValid && _symbolTable.GetSymbol(declaration.SymbolId) is { } symbol)
+        {
+            return MetaComptimeIntrinsics.CreateStableIdentity(symbol, _symbolTable);
+        }
+
+        return DeclarationClauseBinder.CreateDeclarationIdentity(declaration);
+    }
+
+    private static AdtDef CreateCaseDeriveShape(AdtDef root, CaseTypeDef caseType)
+    {
+        var descendantConstructorIds = EnumerateLeafCases(caseType)
+            .Select(static leaf => leaf.ConstructorSymbolId)
+            .Where(static id => id.IsValid)
+            .ToHashSet();
+        var shape = new AdtDef();
+        shape.SetName(caseType.Name);
+        shape.SetSpan(caseType.Span);
+        shape.SetTypeParams([.. caseType.TypeParams]);
+        shape.SetConstructors(root.Constructors
+            .Where(constructor => descendantConstructorIds.Contains(constructor.SymbolId))
+            .ToList());
+        shape.SymbolId = caseType.SymbolId;
+        return shape;
+
+        static IEnumerable<CaseTypeDef> EnumerateLeafCases(CaseTypeDef current)
+        {
+            if (current.IsLeaf)
+            {
+                yield return current;
+                yield break;
+            }
+
+            foreach (var child in current.Cases)
+            {
+                foreach (var leaf in EnumerateLeafCases(child))
                 {
-                    var funcDef = GenerateDerivedImpl(adt, normalizedTrait, attr.Span);
-                    if (funcDef != null)
-                    {
-                        RegisterGeneratedDerivedFunction(funcDef);
-                    }
-
-                    continue;
+                    yield return leaf;
                 }
-
-                if (traitName.Trim() is { Length: > 0 } trimmed && char.IsLower(trimmed[0]))
-                {
-                    _deferredDeriveInvocations.Add(new DeferredDeriveInvocation(
-                        adt,
-                        _currentModule,
-                        attr,
-                        attributeIndex,
-                        argumentIndex,
-                        traitName,
-                        []));
-                    continue;
-                }
-
-                AddError(attr.Span, DiagnosticMessages.DeriveUnsupportedTrait(traitName));
             }
         }
     }
 
-    private void RegisterGeneratedDerivedFunction(FuncDef funcDef)
+    private void RegisterGeneratedDerivedInstance(InstanceDecl instance)
     {
-        AddCounter("Namer.collect.derivedFunction.count");
+        AddCounter("Namer.collect.derivedInstance.count");
         if (TryGetCurrentModuleDecl() is { } module)
         {
-            module.Declarations.Add(funcDef);
+            module.Declarations.Add(instance);
         }
 
-        CollectDeclaration(funcDef);
-        if (funcDef.SymbolId.IsValid)
-        {
-            _symbolTable.AddMemberToModule(_currentModule, funcDef.SymbolId);
-        }
-    }
-
-    private static string? NormalizeBuiltinDeriveTraitName(string name)
-    {
-        var trimmed = name.Trim();
-        return trimmed switch
-        {
-            "Eq" => "Eq",
-            "Show" => "Show",
-            "Ord" => "Ord",
-            "Hash" => "Hash",
-            "Clone" => "Clone",
-            "Copy" => "Copy",
-            _ => null
-        };
-    }
-
-    private bool TryResolveDeriveTrait(
-        AstAttribute attr,
-        string traitName,
-        out SymbolId traitId,
-        out string traitDisplayName)
-    {
-        traitId = SymbolId.None;
-        traitDisplayName = traitName.Trim();
-
-        var traitAttr = new AstAttribute();
-        SetPrivate(traitAttr, "Name", WellKnownStrings.Keywords.Derive);
-        SetPrivate(traitAttr, "Span", attr.Span);
-        traitAttr.ArgumentTexts.Add(traitName);
-
-        if (!TryResolveTraitFromImplAttribute(traitAttr, out traitId, out traitDisplayName, out _))
-        {
-            var path = ParsePathText(traitDisplayName);
-            if (path.Count > 0)
-            {
-                var result = ResolvePathWithImports(path);
-                if (result.IsSuccess && _symbolTable.GetSymbol(result.SymbolId) is TraitSymbol)
-                {
-                    traitId = result.SymbolId;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        return true;
+        CollectDeclaration(instance);
     }
 
     private static bool ContainsEffectfulTypeNode(TypeNode type)
@@ -142,7 +182,11 @@ public sealed partial class NameResolver
         return ctor.PositionalArgs.Count + ctor.NamedArgs.Count;
     }
 
-    private FuncDef? GenerateDerivedImpl(AdtDef adt, string traitName, SourceSpan span)
+    private InstanceDecl? GenerateDerivedImpl(
+        AdtDef adt,
+        string traitName,
+        SourceSpan span,
+        IReadOnlyList<string>? targetPath = null)
     {
         AddCounter($"Namer.collect.derive.{traitName}.count");
         var funcName = traitName switch
@@ -165,21 +209,42 @@ public sealed partial class NameResolver
             return null;
         }
 
-        var funcDef = new FuncDef();
-        SetPrivate(funcDef, "Name", funcName);
-
+        var derivedTypeParams = new List<TypeParam>(adt.TypeParams.Count);
+        var derivedMethodTypeParams = new List<TypeParam>(adt.TypeParams.Count);
         var requiredConstraint = GetDeriveRequiredConstraint(traitName);
         foreach (var tp in adt.TypeParams)
         {
-            var derivedTp = CreateDerivedTypeParam(tp, requiredConstraint, span);
-            funcDef.TypeParams.Add(derivedTp);
+            var derivedTp = CreateDerivedTypeParam(
+                tp,
+                requiredConstraint,
+                traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
+                span);
+            derivedTypeParams.Add(derivedTp);
+            derivedMethodTypeParams.Add(CreateDerivedTypeParam(
+                tp,
+                requiredConstraint,
+                traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
+                span));
         }
 
-        var implAttr = new AstAttribute();
-        SetPrivate(implAttr, "Name", "impl");
-        implAttr.ArgumentTexts.Add(traitName);
-        implAttr.Arguments.Add(MakeIdent(traitName, span));
-        funcDef.Attributes.Add(implAttr);
+        if (traitName == "Copy")
+        {
+            var markerTrait = new TraitRef();
+            markerTrait.SetTraitName(traitName);
+            markerTrait.SetSpan(span);
+
+            var markerInstance = new InstanceDecl();
+            markerInstance.SetName(CreateDerivedInstanceName(traitName, adt.Name, targetPath));
+            markerInstance.SetSpan(span);
+            markerInstance.SetTypeParams(derivedTypeParams);
+            markerInstance.SetTrait(markerTrait);
+            markerInstance.SetTargetType(CreateAdtSelfType(adt, span, targetPath));
+            return markerInstance;
+        }
+
+        var funcDef = new FuncDef();
+        SetPrivate(funcDef, "Name", funcName);
+        funcDef.TypeParams.AddRange(derivedMethodTypeParams);
 
         var returnType = traitName switch
         {
@@ -187,17 +252,19 @@ public sealed partial class NameResolver
             "Show" => CreateTypePath("String"),
             "Ord" => CreateTypePath("Ordering"),
             "Hash" => CreateTypePath("Int"),
-            "Clone" => CreateAdtSelfType(adt, span),
-            "Copy" => CreateTypePath("Unit"),
+            "Clone" => CreateAdtSelfType(adt, span, targetPath),
             _ => null
         };
 
         if (returnType != null)
         {
-            var paramTypes = new List<TypeNode> { CreateAdtSelfType(adt, span) };
+            var receiverType = traitName == "Clone"
+                ? CreateRefType(CreateAdtSelfType(adt, span, targetPath), span)
+                : CreateAdtSelfType(adt, span, targetPath);
+            var paramTypes = new List<TypeNode> { receiverType };
             if (traitName is "Eq" or "Ord")
             {
-                paramTypes.Add(CreateAdtSelfType(adt, span));
+                paramTypes.Add(CreateAdtSelfType(adt, span, targetPath));
             }
 
             funcDef.SetSignature(CreateCurriedArrowType(paramTypes, returnType, span));
@@ -210,7 +277,30 @@ public sealed partial class NameResolver
         if (funcDef.Body.Count == 0)
             return null;
 
-        return funcDef;
+        var trait = new TraitRef();
+        trait.SetTraitName(traitName);
+        trait.SetSpan(span);
+
+        var instance = new InstanceDecl();
+        instance.SetName(CreateDerivedInstanceName(traitName, adt.Name, targetPath));
+        instance.SetSpan(span);
+        instance.SetTypeParams(derivedTypeParams);
+        instance.SetTrait(trait);
+        instance.SetMethods([funcDef]);
+        instance.SetMembers([funcDef]);
+        return instance;
+    }
+
+    private static string CreateDerivedInstanceName(
+        string traitName,
+        string typeName,
+        IReadOnlyList<string>? targetPath)
+    {
+        var path = targetPath is { Count: > 0 } ? targetPath : [typeName];
+        return $"Derived{traitName}{string.Concat(path.Select(static segment =>
+            string.IsNullOrEmpty(segment)
+                ? string.Empty
+                : char.ToUpperInvariant(segment[0]) + segment[1..]))}";
     }
 
     private static string? GetDeriveRequiredConstraint(string traitName)
@@ -227,7 +317,11 @@ public sealed partial class NameResolver
         };
     }
 
-    private static TypeParam CreateDerivedTypeParam(TypeParam original, string? requiredConstraint, SourceSpan span)
+    private static TypeParam CreateDerivedTypeParam(
+        TypeParam original,
+        string? requiredConstraint,
+        bool addRequiredConstraint,
+        SourceSpan span)
     {
         var derived = new TypeParam();
         SetPrivate(derived, "Name", original.Name);
@@ -239,7 +333,8 @@ public sealed partial class NameResolver
         foreach (var constraint in original.TraitConstraints)
             derived.TraitConstraints.Add(constraint);
 
-        if (requiredConstraint != null &&
+        if (addRequiredConstraint &&
+            requiredConstraint != null &&
             !derived.TraitConstraints.Any(c =>
                 string.Equals(c.TraitName, requiredConstraint, StringComparison.Ordinal)))
         {
@@ -250,6 +345,50 @@ public sealed partial class NameResolver
         }
 
         return derived;
+    }
+
+    private static bool AdtUsesTypeParameter(AdtDef adt, string typeParameterName)
+    {
+        foreach (var field in adt.Fields)
+        {
+            if (TypeUsesTypeParameter(field.Type, typeParameterName))
+            {
+                return true;
+            }
+        }
+
+        foreach (var constructor in adt.Constructors)
+        {
+            if (constructor.PositionalArgs.Any(type => TypeUsesTypeParameter(type, typeParameterName)) ||
+                constructor.NamedArgs.Any(field => TypeUsesTypeParameter(field.Type, typeParameterName)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TypeUsesTypeParameter(TypeNode? type, string typeParameterName)
+    {
+        return type switch
+        {
+            null => false,
+            TypePath path => string.Equals(path.TypeName, typeParameterName, StringComparison.Ordinal) ||
+                             path.TypeArgs.Any(argument => TypeUsesTypeParameter(argument, typeParameterName)) ||
+                             path.GenericArguments.Any(argument => argument switch
+                             {
+                                 TypeGenericArgumentNode typed => TypeUsesTypeParameter(typed.Type, typeParameterName),
+                                 UnresolvedGenericArgumentNode unresolved => TypeUsesTypeParameter(unresolved.TypeCandidate, typeParameterName),
+                                 _ => false
+                             }),
+            TupleType tuple => tuple.Elements.Any(element => TypeUsesTypeParameter(element, typeParameterName)),
+            ArrowType arrow => TypeUsesTypeParameter(arrow.ParamType, typeParameterName) ||
+                               TypeUsesTypeParameter(arrow.ReturnType, typeParameterName),
+            EffectfulType effectful => TypeUsesTypeParameter(effectful.InputType, typeParameterName) ||
+                                       TypeUsesTypeParameter(effectful.OutputType, typeParameterName),
+            _ => false
+        };
     }
 
     private List<PatternBranch> GenerateDerivedBranches(AdtDef adt, string traitName, SourceSpan span)
@@ -348,7 +487,7 @@ public sealed partial class NameResolver
             var rightPat = MakeCtorPattern(ctor, rightVars, span);
             var tuplePat = MakeTuplePattern([leftPat, rightPat], span);
             var expr = fieldCount == 0
-                ? MakePathCall("Std.Ordering.Equal", [], span)
+                ? MakePathCall("std.Ordering.Equal", [], span)
                 : BuildOrdChain(leftVars, rightVars, span);
             branches.Add(MakeBranch(tuplePat, expr, span));
         }
@@ -364,10 +503,10 @@ public sealed partial class NameResolver
                 var wildcardPat = new WildcardPattern();
                 SetPrivate(wildcardPat, "Span", span);
                 var tuplePat = MakeTuplePattern([leftPat, wildcardPat], span);
-                branches.Add(MakeBranch(tuplePat, MakePathCall("Std.Ordering.Less", [], span), span));
+                branches.Add(MakeBranch(tuplePat, MakePathCall("std.Ordering.Less", [], span), span));
             }
 
-            branches.Add(MakeBranch(new WildcardPattern(), MakePathCall("Std.Ordering.Greater", [], span), span));
+            branches.Add(MakeBranch(new WildcardPattern(), MakePathCall("std.Ordering.Greater", [], span), span));
         }
 
         return branches;
@@ -432,14 +571,19 @@ public sealed partial class NameResolver
             for (var i = 0; i < vars.Count; i++)
             {
                 clonedFields.Add(
-                    MakeTraitInvokeCall("clone_value", MakeIdent(vars[i].Name, span), span));
+                    MakeTraitInvokeCall("clone_value", MakeRefExpr(MakeIdent(vars[i].Name, span)), span));
             }
 
             var expr = MakeCtorExpr(ctor, clonedFields, span);
             branches.Add(MakeBranch(pat, expr, span));
         }
 
-        return branches;
+        var receiverPattern = new VarPattern();
+        receiverPattern.SetName("value");
+        return [MakeBranch(
+            receiverPattern,
+            MakeMatchExpr(MakeDerefExpr(MakeIdent("value", span)), branches, span),
+            span)];
     }
 
     #endregion
@@ -517,7 +661,7 @@ public sealed partial class NameResolver
                 MakeIdent(leftVars[i].Name, span),
                 MakeIdent(rightVars[i].Name, span), span);
 
-            result = MakePathCall("Std.Ordering.then_with", [result, nextCmp], span);
+            result = MakePathCall("std.Ordering.then_with", [result, nextCmp], span);
         }
 
         return result;
@@ -638,7 +782,7 @@ public sealed partial class NameResolver
         return id;
     }
 
-    private static CallExpr MakeTraitInvokeCall(string method, IdentifierExpr firstArg, SourceSpan span)
+    private static CallExpr MakeTraitInvokeCall(string method, EidosAstNode firstArg, SourceSpan span)
     {
         var path = new PathExpr();
         SetPrivate(path, "ModulePath", new List<string> { "TraitInvoke" });
@@ -650,7 +794,7 @@ public sealed partial class NameResolver
         return call;
     }
 
-    private static CallExpr MakeTraitInvokeCall(string method, IdentifierExpr firstArg, IdentifierExpr secondArg, SourceSpan span)
+    private static CallExpr MakeTraitInvokeCall(string method, EidosAstNode firstArg, EidosAstNode secondArg, SourceSpan span)
     {
         var innerPath = new PathExpr();
         SetPrivate(innerPath, "ModulePath", new List<string> { "TraitInvoke" });
@@ -664,6 +808,33 @@ public sealed partial class NameResolver
         outerCall.SetFunction(innerCall);
         outerCall.AddPositionalArg(secondArg);
         return outerCall;
+    }
+
+    private static UnaryExpr MakeRefExpr(EidosAstNode operand)
+    {
+        var expression = new UnaryExpr();
+        expression.SetOperator(UnaryOp.Ref);
+        expression.SetOperand(operand);
+        return expression;
+    }
+
+    private static UnaryExpr MakeDerefExpr(EidosAstNode operand)
+    {
+        var expression = new UnaryExpr();
+        expression.SetOperator(UnaryOp.Deref);
+        expression.SetOperand(operand);
+        return expression;
+    }
+
+    private static MatchExpr MakeMatchExpr(
+        EidosAstNode matchedExpression,
+        IReadOnlyList<PatternBranch> branches,
+        SourceSpan span)
+    {
+        var match = new MatchExpr { Span = span };
+        SetPrivate(match, "MatchedExpression", matchedExpression);
+        match.Branches.AddRange(branches);
+        return match;
     }
 
     private static CallExpr MakePathCall(string qualifiedPath, List<EidosAstNode> args, SourceSpan span)
@@ -715,9 +886,22 @@ public sealed partial class NameResolver
         return tp;
     }
 
-    private static TypePath CreateAdtSelfType(AdtDef adt, SourceSpan span)
+    private static TypePath CreateRefType(TypeNode innerType, SourceSpan span)
     {
-        var tp = CreateTypePath(adt.Name);
+        var reference = CreateTypePath("Ref");
+        reference.SetSpan(span);
+        reference.TypeArgs.Add(innerType);
+        return reference;
+    }
+
+    private static TypePath CreateAdtSelfType(
+        AdtDef adt,
+        SourceSpan span,
+        IReadOnlyList<string>? targetPath = null)
+    {
+        var path = targetPath is { Count: > 0 } ? targetPath : [adt.Name];
+        var tp = CreateTypePath(path[^1]);
+        tp.ModulePath = path.Take(path.Count - 1).ToList();
         tp.SetSpan(span);
         foreach (var typeParam in adt.TypeParams)
         {
@@ -747,21 +931,6 @@ public sealed partial class NameResolver
         }
 
         return result;
-    }
-
-    private static EidosAstNode MakeTraitAttributeArgument(string traitDisplayName, SourceSpan span)
-    {
-        var path = ParsePathText(traitDisplayName);
-        if (path.Count <= 1)
-        {
-            return MakeIdent(path.Count == 1 ? path[0] : traitDisplayName, span);
-        }
-
-        var expr = new PathExpr();
-        SetPrivate(expr, "ModulePath", path.Take(path.Count - 1).ToList());
-        SetPrivate(expr, "Name", path[^1]);
-        SetPrivate(expr, "Span", span);
-        return expr;
     }
 
     private static bool IsSupportedConstructorConstantExpression(EidosAstNode expr)

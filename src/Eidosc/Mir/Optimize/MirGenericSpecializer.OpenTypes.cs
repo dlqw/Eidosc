@@ -139,6 +139,11 @@ public sealed partial class MirGenericSpecializer
             MirAssign assign =>
                 ContainsOpenTypeVariable(assign.Target) ||
                 ContainsOpenTypeVariable(assign.Source),
+            MirCaseInject injection =>
+                ContainsOpenTypeVariable(injection.Target) ||
+                ContainsOpenTypeVariable(injection.Operand) ||
+                ContainsOpenTypeVariable(injection.SourceTypeId) ||
+                ContainsOpenTypeVariable(injection.TargetTypeId),
             MirCall call =>
                 (call.Target != null && ContainsOpenTypeVariable(call.Target)) ||
                 ContainsOpenTypeVariable(call.Function) ||

@@ -97,6 +97,16 @@ public static class MigrateManifestCommand
                 continue;
             }
 
+            if (string.Equals(section, "package", StringComparison.Ordinal) &&
+                trimmed.StartsWith("name", StringComparison.Ordinal) &&
+                TryReadQuotedValue(trimmed, out var packageName) &&
+                !string.IsNullOrWhiteSpace(packageName))
+            {
+                var normalizedPackageName = ManifestNamingRules.NormalizePackageId(packageName);
+                output.Add(rawLine.Replace(packageName, normalizedPackageName, StringComparison.Ordinal));
+                continue;
+            }
+
             output.Add(rawLine);
         }
 
@@ -125,5 +135,24 @@ public static class MigrateManifestCommand
         }
 
         return string.Join(Environment.NewLine, output).TrimEnd() + Environment.NewLine;
+
+        static bool TryReadQuotedValue(string line, out string value)
+        {
+            value = string.Empty;
+            var firstQuote = line.IndexOf('"');
+            if (firstQuote < 0)
+            {
+                return false;
+            }
+
+            var lastQuote = line.LastIndexOf('"');
+            if (lastQuote <= firstQuote)
+            {
+                return false;
+            }
+
+            value = line[(firstQuote + 1)..lastQuote];
+            return true;
+        }
     }
 }

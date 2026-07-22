@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Eidosc.ProjectSystem;
 using Tomlyn;
 
 namespace Eidosc.Bindgen;
@@ -52,33 +53,31 @@ public sealed class BindingSpecDocument
         {
             lines.Add("");
             lines.Add("[[modules]]");
-            lines.Add($"name = {FormatString(module.Name ?? "Raw")}");
+            lines.Add($"name = {FormatString(module.Name ?? "raw")}");
             if (!string.IsNullOrWhiteSpace(module.Prefix))
                 lines.Add($"prefix = {FormatString(module.Prefix!)}");
             if (module.Symbols is { Length: > 0 })
                 lines.Add($"symbols = {FormatArray(module.Symbols)}");
         }
 
-        foreach (var ability in Effects ?? [])
+        foreach (var effect in Effects ?? [])
         {
             lines.Add("");
-            lines.Add("[[abilities]]");
-            lines.Add($"name = {FormatString(ability.Name ?? "")}");
-            if (ability.Operations is { Length: > 0 })
-                lines.Add($"operations = {FormatArray(ability.Operations)}");
+            lines.Add("[[effects]]");
+            lines.Add($"name = {FormatString(effect.Name ?? "")}");
         }
 
         foreach (var wrapper in Wrappers ?? [])
         {
             lines.Add("");
             lines.Add("[[wrappers]]");
-            lines.Add($"module = {FormatString(wrapper.Module ?? "Api")}");
+            lines.Add($"module = {FormatString(wrapper.Module ?? "api")}");
             lines.Add($"raw = {FormatString(wrapper.Raw ?? "")}");
             lines.Add($"name = {FormatString(wrapper.Name ?? "")}");
             if (!string.IsNullOrWhiteSpace(wrapper.Signature))
                 lines.Add($"signature = {FormatString(wrapper.Signature!)}");
             if (wrapper.Effects is { Length: > 0 })
-                lines.Add($"abilities = {FormatArray(wrapper.Effects)}");
+                lines.Add($"effects = {FormatArray(wrapper.Effects)}");
         }
 
         foreach (var ownership in Ownership ?? [])
@@ -107,6 +106,8 @@ public sealed class BindingSpecDocument
     {
         if (string.IsNullOrWhiteSpace(Package))
             throw new InvalidOperationException($"{sourceName}: bindgen package is required.");
+        if (!ManifestNamingRules.IsPackageId(Package))
+            throw new InvalidOperationException($"{sourceName}: bindgen package '{Package}' must use lower-kebab-case dot-separated segments.");
         if (string.IsNullOrWhiteSpace(Library))
             throw new InvalidOperationException($"{sourceName}: bindgen library is required.");
         if (Headers is not { Length: > 0 })
@@ -117,17 +118,23 @@ public sealed class BindingSpecDocument
         {
             if (string.IsNullOrWhiteSpace(module.Name))
                 throw new InvalidOperationException($"{sourceName}: module rule requires name.");
+            if (!IsModulePath(module.Name))
+                throw new InvalidOperationException($"{sourceName}: module rule '{module.Name}' must use lower_snake_case path segments.");
             if (!moduleNames.Add(module.Name))
                 throw new InvalidOperationException($"{sourceName}: duplicate module rule '{module.Name}'.");
         }
 
-        var abilityNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var ability in Effects ?? [])
+        var effectNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var effect in Effects ?? [])
         {
-            if (string.IsNullOrWhiteSpace(ability.Name))
-                throw new InvalidOperationException($"{sourceName}: ability rule requires name.");
-            if (!abilityNames.Add(ability.Name))
-                throw new InvalidOperationException($"{sourceName}: duplicate ability rule '{ability.Name}'.");
+            if (string.IsNullOrWhiteSpace(effect.Name))
+                throw new InvalidOperationException($"{sourceName}: effect rule requires name.");
+            if (!ManifestNamingRules.IsModuleSegment(effect.Name))
+                throw new InvalidOperationException($"{sourceName}: effect label '{effect.Name}' must use lower_snake_case.");
+            if (effect.Operations is { Length: > 0 })
+                throw new InvalidOperationException($"{sourceName}: effect label '{effect.Name}' cannot declare operations in Eidos 0.7.");
+            if (!effectNames.Add(effect.Name))
+                throw new InvalidOperationException($"{sourceName}: duplicate effect rule '{effect.Name}'.");
         }
 
         foreach (var wrapper in Wrappers ?? [])
@@ -138,13 +145,32 @@ public sealed class BindingSpecDocument
             {
                 throw new InvalidOperationException($"{sourceName}: wrapper rule requires module, raw, and name.");
             }
-
-            foreach (var ability in wrapper.Effects ?? [])
+            if (!IsModulePath(wrapper.Module))
+                throw new InvalidOperationException($"{sourceName}: wrapper module '{wrapper.Module}' must use lower_snake_case path segments.");
+            if (!ManifestNamingRules.IsModuleSegment(wrapper.Name))
+                throw new InvalidOperationException($"{sourceName}: wrapper name '{wrapper.Name}' must use lower_snake_case.");
+            var moduleSegment = wrapper.Module
+                .Replace('\\', '.')
+                .Replace('/', '.')
+                .Split('.', StringSplitOptions.RemoveEmptyEntries)[^1];
+            if (wrapper.Name.StartsWith(moduleSegment + "_", StringComparison.Ordinal))
             {
-                if (!abilityNames.Contains(ability))
-                    throw new InvalidOperationException($"{sourceName}: wrapper '{wrapper.Name}' references unknown ability '{ability}'.");
+                throw new InvalidOperationException(
+                    $"{sourceName}: wrapper name '{wrapper.Name}' redundantly repeats module segment '{moduleSegment}'.");
+            }
+
+            foreach (var effect in wrapper.Effects ?? [])
+            {
+                if (!effectNames.Contains(effect))
+                    throw new InvalidOperationException($"{sourceName}: wrapper '{wrapper.Name}' references unknown effect '{effect}'.");
             }
         }
+
+        static bool IsModulePath(string value) => value
+            .Replace('\\', '.')
+            .Replace('/', '.')
+            .Split('.', StringSplitOptions.RemoveEmptyEntries)
+            .All(ManifestNamingRules.IsModuleSegment);
     }
 
     private static string FormatString(string value) =>

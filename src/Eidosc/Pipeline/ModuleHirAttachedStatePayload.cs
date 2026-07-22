@@ -12,7 +12,7 @@ public sealed record ModuleHirAttachedStatePayload(
     IReadOnlyList<ConstructorLayoutGroupPayload> ConstructorLayouts,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-hir-attached-state-payload-v3";
+    public const string CurrentSchemaVersion = "module-hir-attached-state-payload-v4";
 
     public static ModuleHirAttachedStatePayload Create(
         ParameterEffectMap? parameterEffects,
@@ -197,6 +197,7 @@ public sealed record TypeDescriptorPayload(
     int ConstructorId = -1,
     IReadOnlyList<int>? TypeArgs = null,
     IReadOnlyList<GenericValueArgumentDescriptorPayload>? ValueArgs = null,
+    IReadOnlyList<GenericEffectArgumentDescriptorPayload>? EffectArgs = null,
     int Inner = -1,
     string? AbilitiesKey = null,
     int ResultType = -1,
@@ -221,7 +222,8 @@ public sealed record TypeDescriptorPayload(
                 ConstructorKind: tyCon.Constructor.Kind.ToString(),
                 ConstructorId: tyCon.Constructor.Id,
                 TypeArgs: tyCon.TypeArgs.Select(static id => id.Value).ToArray(),
-                ValueArgs: tyCon.ValueArgs.Select(GenericValueArgumentDescriptorPayload.Create).ToArray()),
+                ValueArgs: tyCon.ValueArgs.Select(GenericValueArgumentDescriptorPayload.Create).ToArray(),
+                EffectArgs: tyCon.EffectArgs.Select(GenericEffectArgumentDescriptorPayload.Create).ToArray()),
             TypeDescriptor.Ref reference => new TypeDescriptorPayload(
                 nameof(TypeDescriptor.Ref),
                 Inner: reference.Inner.Value),
@@ -267,6 +269,9 @@ public sealed record TypeDescriptorPayload(
                 {
                     ValueArgs = (ValueArgs ?? [])
                         .Select(static value => value.Restore())
+                        .ToArray(),
+                    EffectArgs = (EffectArgs ?? [])
+                        .Select(static effect => effect.Restore())
                         .ToArray()
                 };
                 return true;
@@ -316,6 +321,15 @@ public sealed record GenericValueArgumentDescriptorPayload(
             new TypeId(TypeId),
             ReferencedParameterIndex,
             ValueVariableIndex);
+}
+
+public sealed record GenericEffectArgumentDescriptorPayload(int ParameterIndex, string CanonicalText, int TypeId)
+{
+    public static GenericEffectArgumentDescriptorPayload Create(GenericEffectArgumentDescriptor value) =>
+        new(value.ParameterIndex, value.CanonicalText, value.TypeId.Value);
+
+    public GenericEffectArgumentDescriptor Restore() =>
+        new(ParameterIndex, CanonicalText, new TypeId(TypeId));
 }
 
 public sealed record ConstructorLayoutGroupPayload(

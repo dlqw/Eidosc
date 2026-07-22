@@ -84,6 +84,8 @@ public record DoBinding : EidosAstNode
     public string? VarName { get; private set; }
     public EidosAstNode? Value { get; private set; }
 
+    internal void SetPattern(Pattern pattern) => Pattern = Pattern.NormalizePatternNode(pattern);
+
     public static DoBinding CreateExpr(EidosAstNode expr)
     {
         return new DoBinding { Kind = DoBindingKind.Expr, Value = expr, Span = expr.Span };

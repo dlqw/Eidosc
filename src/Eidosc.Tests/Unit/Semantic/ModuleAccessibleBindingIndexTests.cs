@@ -70,7 +70,7 @@ Main :: module {
     public void ModuleQualifiedTraitMember_UsesAccessibleBindingNameIndexForOwnerLookup()
     {
         var source = """
-Seq :: module {
+seq :: module {
     Seq :: trait {
         map :: Int -> Int
     }
@@ -79,7 +79,7 @@ Seq :: module {
 Main :: module {
     use :: Int -> Int
     {
-        x => Seq.map(x)
+        x => seq.Seq.map(x)
     }
 }
 """;

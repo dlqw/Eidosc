@@ -74,8 +74,10 @@ public sealed partial class CompilationPipeline
             ComptimeFuelBudget = _options.ComptimeFuelBudget,
             ComptimeAllocatedValueBytesBudget = _options.ComptimeAllocatedValueBytesBudget,
             ComptimeDiagnosticBudget = _options.ComptimeDiagnosticBudget,
+            ToolchainOwnedSourcePaths = _options.ToolchainOwnedSourcePaths.ToArray(),
             EnableIncrementalCompilation = true,
             TreatWarningsAsErrors = _options.TreatWarningsAsErrors,
+            DenyStyle = _options.DenyStyle,
             WarningCodesAsErrors = new HashSet<string>(_options.WarningCodesAsErrors, StringComparer.Ordinal),
             ImportSearchRoots = _options.ImportSearchRoots.ToArray(),
             PackageImportRoots = _options.PackageImportRoots.ToDictionary(

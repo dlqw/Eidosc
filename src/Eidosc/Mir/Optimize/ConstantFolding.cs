@@ -187,6 +187,19 @@ public sealed class ConstantFolding : IMirOptimizationPass
             return assign;
         }
 
+        if (instr is MirCaseInject injection)
+        {
+            var operand = PropagateOperand(injection.Operand, knownConstants);
+            if (injection.Target is MirPlace { Kind: PlaceKind.Local } target)
+            {
+                knownConstants.Remove(target.Local);
+            }
+
+            return ReferenceEquals(operand, injection.Operand)
+                ? injection
+                : injection with { Operand = operand };
+        }
+
         // Handle MirBinOp: propagate + fold
         if (instr is MirBinOp binOp)
         {
@@ -228,6 +241,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
         return instr switch
         {
             MirAssign { Target: { Kind: PlaceKind.Local } place } => place.Local,
+            MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
             MirCall { Target: { Kind: PlaceKind.Local } place } => place.Local,
             MirLoad { Target: { Kind: PlaceKind.Local } place } => place.Local,
             MirAlloc { Target: { Kind: PlaceKind.Local } place } => place.Local,

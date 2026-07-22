@@ -1,4 +1,5 @@
 using System.Xml;
+using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Types;
 
@@ -8,9 +9,8 @@ namespace Eidosc.Ast;
 /// 属性
 /// </summary>
 /// <example>
-/// @public
-/// @impl(Show)
-/// @inline
+/// @[repr(c)]
+/// @[derive(Eq, Show)]
 /// </example>
 public record Attribute : EidosAstNode
 {
@@ -25,9 +25,11 @@ public record Attribute : EidosAstNode
     public List<EidosAstNode> Arguments { get; private set; } = [];
 
     /// <summary>
-    /// 参数文本（便于语义层直接匹配如 @impl(Show)）
+    /// 参数文本，用于 typed attribute group 的结构化绑定。
     /// </summary>
     public List<string> ArgumentTexts { get; private set; } = [];
+
+    public DeclarationClause? TypedClause { get; private set; }
 
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {
@@ -129,6 +131,7 @@ public record Attribute : EidosAstNode
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
     internal void SetName(string name) => Name = name;
     internal void AddArgumentText(string text) => ArgumentTexts.Add(text);
+    internal void SetTypedClause(DeclarationClause clause) => TypedClause = clause;
 
     public override XmlElement ToXmlElement(XmlDocument doc)
     {

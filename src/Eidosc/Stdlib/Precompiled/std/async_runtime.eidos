@@ -1,0 +1,62 @@
+AsyncRuntime :: module {
+
+
+
+@[extern(c, name: "eidos_scheduler_init")]
+start_runtime :: Int -> Unit compiler(internal) need ffi;
+
+
+
+
+@[extern(c, name: "eidos_scheduler_shutdown")]
+shutdown_runtime :: Unit -> Unit compiler(internal) need ffi;
+
+
+
+
+@[extern(c, name: "eidos_worker_index")]
+worker_index_runtime :: Unit -> Int compiler(internal) need ffi;
+
+
+/// Run a thunk synchronously. Async operation handling remains ability-level until spawn/await integration lands.
+run[A, E: effects] :: (Unit -> A need E) -> A need E
+{
+    action => action(())
+}
+
+/// Start the runtime scheduler with the requested worker count.
+start :: Int -> Unit need ffi
+{
+    worker_count => AsyncRuntime.start_runtime(worker_count)
+}
+
+/// Start the runtime scheduler using the runtime default worker count.
+start_default :: Unit -> Unit need ffi
+{
+    _ => AsyncRuntime.start(0)
+}
+
+/// Shut down the runtime scheduler if it is running.
+shutdown :: Unit -> Unit need ffi
+{
+    _ => AsyncRuntime.shutdown_runtime(())
+}
+
+/// Return the current runtime worker index, or the runtime sentinel outside worker threads.
+worker_index :: Unit -> Int need ffi
+{
+    _ => AsyncRuntime.worker_index_runtime(())
+}
+
+/// Start the scheduler for a synchronous action, then shut it down before returning.
+with_scheduler[A, E: effects] :: Int -> (Unit -> A need E) -> A need ffi, E
+{
+    worker_count => action => {
+        started := AsyncRuntime.start(worker_count);
+        result := AsyncRuntime.run(action);
+        stopped := AsyncRuntime.shutdown(());
+        result
+    }
+}
+
+}

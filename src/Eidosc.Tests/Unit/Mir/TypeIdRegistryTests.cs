@@ -151,6 +151,49 @@ public sealed class TypeIdRegistryTests
     }
 
     [Fact]
+    public void GetTypeTypeId_EffectGenericArgumentsParticipateInDescriptorIdentity()
+    {
+        var symbolTable = new SymbolTable();
+        var registry = new TypeIdRegistry(symbolTable, null);
+        var envelopeId = symbolTable.DeclareAdt("Envelope", default);
+        var ioId = symbolTable.DeclareEffect("io", default);
+        var allocId = symbolTable.DeclareEffect("Alloc", default);
+        var io = Assert.IsType<EffectSymbol>(symbolTable.GetSymbol(ioId));
+        var alloc = Assert.IsType<EffectSymbol>(symbolTable.GetSymbol(allocId));
+        var envelopeIo = new TyCon
+        {
+            Name = "Envelope",
+            Symbol = envelopeId,
+            EffectArgs =
+            [
+                new GenericEffectArgument(
+                    0,
+                    new TyCon { Name = "io", Symbol = ioId, Id = io.TypeId })
+            ]
+        };
+        var envelopeAlloc = envelopeIo with
+        {
+            EffectArgs =
+            [
+                new GenericEffectArgument(
+                    0,
+                    new TyCon { Name = "Alloc", Symbol = allocId, Id = alloc.TypeId })
+            ]
+        };
+
+        var ioTypeId = registry.GetTypeTypeId(envelopeIo);
+        var repeatedIoTypeId = registry.GetTypeTypeId(envelopeIo);
+        var allocTypeId = registry.GetTypeTypeId(envelopeAlloc);
+
+        Assert.Equal(ioTypeId, repeatedIoTypeId);
+        Assert.NotEqual(ioTypeId, allocTypeId);
+        var descriptor = Assert.IsType<TypeDescriptor.TyCon>(registry.TypeDescriptors[ioTypeId.Value]);
+        var effectArgument = Assert.Single(descriptor.EffectArgs);
+        Assert.Equal(0, effectArgument.ParameterIndex);
+        Assert.Equal(io.TypeId, effectArgument.TypeId);
+    }
+
+    [Fact]
     public void GetTypeTypeId_DifferentValueSpecializations_PublishDistinctConstructorLayouts()
     {
         var symbolTable = new SymbolTable();

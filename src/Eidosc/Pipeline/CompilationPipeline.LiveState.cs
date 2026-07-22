@@ -10,6 +10,8 @@ public sealed partial class CompilationPipeline
             return false;
         }
 
+        var ast = _ast;
+
         var key = CreateLiveStateCacheKey(phase);
         if (!CompilationLiveStateCache.TryGet(key, out var snapshot))
         {
@@ -20,12 +22,23 @@ public sealed partial class CompilationPipeline
                 $"live-state:{phase}",
                 "miss",
                 key.FlagsHash,
-                _ast.Span,
+                ast.Span,
                 0);
             return false;
         }
 
         ApplyLiveStateSnapshot(snapshot);
+        if (phase == CompilationPhase.Namer)
+        {
+            foreach (var diagnostic in Semantic.DeclarationClauseBinder.BindTree(
+                         ast,
+                         _options.LanguageVersion,
+                         Semantic.CompilerOwnedSourceGrant.Create(_compilerOwnedSourcePaths)))
+            {
+                _diagnostics.Add(Diagnostic.Diagnostic.Error(diagnostic.Message, "E3000")
+                    .WithLabel(diagnostic.Span, diagnostic.Message));
+            }
+        }
         SetProfilingCounter($"Build.liveState.{phase}.hits", 1);
         _comptimeExecution.Trace.Record(
             "pipeline.cache",
@@ -33,7 +46,7 @@ public sealed partial class CompilationPipeline
             $"live-state:{phase}",
             "hit",
             key.FlagsHash,
-            _ast.Span,
+            ast.Span,
             0);
         return true;
     }
@@ -117,12 +130,16 @@ public sealed partial class CompilationPipeline
             $"comptime-diagnostics:{_options.ComptimeDiagnosticBudget}",
             $"no-prelude:{_options.NoImplicitPrelude}",
             $"imports:{string.Join('|', _options.ImportSearchRoots.Select(SourcePathNormalizer.NormalizeForCacheKey))}",
-            $"packages:{string.Join('|', _options.PackageImportRoots.OrderBy(static pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={string.Join(',', pair.Value.Select(SourcePathNormalizer.NormalizeForCacheKey))}"))}"
+            $"packages:{string.Join('|', _options.PackageImportRoots.OrderBy(static pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={string.Join(',', pair.Value.Select(SourcePathNormalizer.NormalizeForCacheKey))}"))}",
+            $"clause-schema:{Ast.Declarations.ClauseSchema.Version}",
+            $"compiler-source-grants:{string.Join('|', _compilerOwnedSourcePaths.Select(SourcePathNormalizer.NormalizeForCacheKey).Order(StringComparer.Ordinal))}",
+            $"meta-configuration:{_options.MetaConfiguration?.Fingerprint ?? string.Empty}"
         ]);
     }
 
     private CompilationLiveStateSnapshot CreateLiveStateSnapshot() =>
         new(
+            _ast,
             _symbolTable,
             _nameResolver,
             _typeInferer,
@@ -169,6 +186,9 @@ public sealed partial class CompilationPipeline
         SetProfilingCounter($"Build.liveStatePayload.{phase}.moduleRegistryHash", StableCounterFromHash(payload.ModuleRegistry.Hash));
         SetProfilingCounter($"Build.liveStatePayload.{phase}.typeSubstitutionHash", StableCounterFromHash(payload.TypeSubstitution.Hash));
         SetProfilingCounter($"Build.liveStatePayload.{phase}.astInferredTypesHash", StableCounterFromHash(payload.AstInferredTypes.Hash));
+        SetProfilingCounter($"Build.liveStatePayload.{phase}.metaQueryHash", StableCounterFromHash(payload.MetaQueries.Hash));
+        SetProfilingCounter($"Build.liveStatePayload.{phase}.metaQueryCacheEntries", payload.MetaQueries.CacheEntries.Count);
+        SetProfilingCounter($"Build.liveStatePayload.{phase}.metaQueryDependencies", payload.MetaQueries.Dependencies.Count);
         SetProfilingCounter($"Build.liveStatePayload.{phase}.hirGraphHash", StableCounterFromHash(payload.HirGraph.Hash));
         SetProfilingCounter($"Build.liveStatePayload.{phase}.mirGraphHash", StableCounterFromHash(payload.MirGraph.Hash));
         SetProfilingCounter($"Build.liveStatePayload.{phase}.mirStateHash", StableCounterFromHash(payload.MirState.Hash));
@@ -184,6 +204,7 @@ public sealed partial class CompilationPipeline
 
     private void ApplyLiveStateSnapshot(CompilationLiveStateSnapshot snapshot)
     {
+        _ast = snapshot.Ast;
         _symbolTable = snapshot.SymbolTable;
         _nameResolver = snapshot.NameResolver;
         _typeInferer = snapshot.TypeInferer;

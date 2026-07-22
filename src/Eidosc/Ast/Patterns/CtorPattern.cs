@@ -118,7 +118,7 @@ public record CtorPattern : Pattern
 
     private bool TryAssignConstructorName(TerminalCstNode term)
     {
-        if (term.Terminal?.ToString() != WellKnownStrings.Terminals.TypeIdentifier || !string.IsNullOrEmpty(ConstructorName))
+        if (term.Terminal?.ToString() != WellKnownStrings.Terminals.Identifier || !string.IsNullOrEmpty(ConstructorName))
         {
             return false;
         }

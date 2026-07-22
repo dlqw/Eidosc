@@ -11,16 +11,18 @@ public partial class LlvmPipelineIntegrationTests
     public void RuntimeArrayImportSource_LowersRuntimeArrayPrimitivesToLlvmCalls()
     {
         const string source = """
-import Std.RuntimeArray
+import std.RuntimeArray
+import std.Seq
 
 main :: Unit -> Int
 {
     _ => {
-        xs := RuntimeArray.push(RuntimeArray.with_capacity[Int](1))(41);
-        ys := RuntimeArray.push(xs)(1);
-        RuntimeArray.swap(ys)(0)(1);
-        RuntimeArray.pop_last(ys);
-        RuntimeArray.get(ys)(0) + RuntimeArray.len(ys)
+        mut ys := RuntimeArray.push(RuntimeArray.with_capacity[Int](1))(41);
+        ys := RuntimeArray.push(ys)(1);
+        RuntimeArray.swap(mref ys, 0, 1);
+        RuntimeArray.pop_last(mref ys);
+        len := RuntimeArray.len(Seq.clone(ref ys));
+        RuntimeArray.get(ys)(0) + len
     }
 }
 """;
@@ -47,14 +49,14 @@ main :: Unit -> Int
     public void SeqBuilderPopLast_NativeSmoke_ShrinksWithoutCopyingPrefix()
     {
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
 
 main :: Unit -> Int
 {
     _ => {
         xs := SeqBuilder.push(SeqBuilder.push(SeqBuilder.with_capacity[Int](3))(10))(20);
-        SeqBuilder.pop_last(xs);
-        if SeqBuilder.len(xs) == 1 && SeqBuilder.get(xs)(0) == 10 then { 0 } else { 99 }
+        shrunk := SeqBuilder.pop_last(xs);
+        if SeqBuilder.len(ref shrunk) == 1 && SeqBuilder.get(shrunk)(0) == 10 then { 0 } else { 99 }
     }
 }
 """;
@@ -71,16 +73,18 @@ main :: Unit -> Int
     public void SeqBuilderSwap_NativeSmoke_SwapsCompositeSlotsWithoutClone()
     {
         const string source = """
-import Std.SeqBuilder
+import std.SeqBuilder
 
 main :: Unit -> Int
 {
     _ => {
         xs := SeqBuilder.push(SeqBuilder.push(SeqBuilder.with_capacity[(Int, Int)](2))((1, 10)))((2, 20));
-        SeqBuilder.swap(xs)(0)(1);
-        (a, b) := SeqBuilder.get(xs)(0);
-        (c, d) := SeqBuilder.get(xs)(1);
-        if a == 2 && b == 20 && c == 1 && d == 10 then { 0 } else { 99 }
+        swapped := SeqBuilder.swap(xs)(0)(1);
+        match SeqBuilder.freeze(swapped)
+        {
+            [(a, b), (c, d)] => if a == 2 && b == 20 && c == 1 && d == 10 then { 0 } else { 99 },
+            _ => 99
+        }
     }
 }
 """;
@@ -97,8 +101,8 @@ main :: Unit -> Int
     public void SeqBuilderWithCapacity_SpecializesCompositeTypeArgumentInsideGenericFunction()
     {
         const string source = """
-import Std.SeqBuilder
-import Std.Seq
+import std.SeqBuilder
+import std.Seq
 
 build_aa[A] :: Int -> SeqBuilder[(A, A)]
 {
@@ -111,7 +115,7 @@ main :: Unit -> Int
         xs := build_aa[Int](4)
         builder := SeqBuilder.push(xs)((1, 2))
         ys := SeqBuilder.freeze(builder)
-        Seq.len(ys)
+        Seq.len(ref ys)
     }
 }
 """;
@@ -126,8 +130,8 @@ main :: Unit -> Int
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
 
         var llvmIr = Assert.IsType<string>(result.LlvmIrText);
-        Assert.Contains("@eidos_Std__SeqBuilder__with_capacity__spec_", llvmIr, StringComparison.Ordinal);
+        Assert.Contains("@eidos_std__SeqBuilder__with_capacity__spec_", llvmIr, StringComparison.Ordinal);
         Assert.Contains("call ptr @eidos_array_new_with_policy(i64 %capacity, i64 16", llvmIr, StringComparison.Ordinal);
-        Assert.DoesNotContain("musttail call ptr @eidos_Std__SeqBuilder__with_capacity(i64 %n)", llvmIr, StringComparison.Ordinal);
+        Assert.DoesNotContain("musttail call ptr @eidos_std__SeqBuilder__with_capacity(i64 %n)", llvmIr, StringComparison.Ordinal);
     }
 }

@@ -11,7 +11,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultMapHigherOrderClosure_NativeSmoke_ReturnsMappedValue()
     {
         const string source = """
-            import Std.Result
+            import std.Result
 
             inc :: Int -> Int
             {
@@ -39,7 +39,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultApplyCurriedPartial_NativeSmoke_ReturnsAppliedValue()
     {
         const string source = """
-            import Std.Result
+            import std.Result
 
             add :: Int -> Int -> Int
             {
@@ -79,8 +79,8 @@ public partial class LlvmPipelineIntegrationTests
     public void NestedCtorPattern_NativeSmoke_ShortCircuitsBeforeReadingFields()
     {
         const string source = """
-            import Std.Option
-            import Std.Result
+            import std.Option
+            import std.Result
 
             main :: Unit -> Int
             {
@@ -107,9 +107,9 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultTraverse_WithResultApplicative_NativeSmoke_ReturnsInnerValue()
     {
         const string source = """
-            import Std.Result
+            import std.Result
 
-            positive_result :: Int -> Result.ResultWith[String, Int]
+            positive_result :: Int -> Result.With[String, Int]
             {
                 x => if x > 0 then { Ok(x + 1) } else { Err("bad") }
             }
@@ -117,7 +117,7 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    input: Result.ResultWith[String, Int] := Ok(2);
+                    input: Result.With[String, Int] := Ok(2);
                     match Result.traverse(input)(positive_result)
                     {
                         Ok(inner) => Result.unwrap_or(inner)(0),
@@ -139,7 +139,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultPureThenApply_WithCurriedUnwrapOr_NativeSmoke_ReturnsCombinedValue()
     {
         const string source = """
-            import Std.Result
+            import std.Result
 
             add :: Int -> Int -> Int
             {
@@ -149,7 +149,7 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    pureValue: Result.ResultWith[String, Int] := Result.pure(5);
+                    pureValue: Result.With[String, Int] := Result.pure(5);
                     pureCollapsed := Result.unwrap_or(pureValue)(0);
                     applyFunction: Result[Int -> Int, String] := Ok(add(20));
                     applyInput: Result[Int, String] := Ok(4);
@@ -172,7 +172,7 @@ public partial class LlvmPipelineIntegrationTests
     public void ResultSequence_AfterApply_NativeSmoke_ReturnsCombinedValue()
     {
         const string source = """
-            import Std.Result
+            import std.Result
 
             add :: Int -> Int -> Int
             {
@@ -182,7 +182,7 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int
             {
                 _ => {
-                    pureValue: Result.ResultWith[String, Int] := Result.pure(5);
+                    pureValue: Result.With[String, Int] := Result.pure(5);
                     pureCollapsed := Result.unwrap_or(pureValue)(0);
                     applyFunction: Result[Int -> Int, String] := Ok(add(20));
                     applyInput: Result[Int, String] := Ok(4);
@@ -211,8 +211,8 @@ public partial class LlvmPipelineIntegrationTests
     public void SeqSequence_WithResultApplicative_NativeSmoke_ReturnsHead()
     {
         const string source = """
-            import Std.Seq
-            import Std.Result
+            import std.Seq
+            import std.Result
 
             collapse_seq_result :: Result[Seq[Int], String] -> Int
             {
@@ -238,7 +238,7 @@ public partial class LlvmPipelineIntegrationTests
     public void SeqPartition_WithTupleResult_NativeSmoke_ReturnsPartitionSizes()
     {
         const string source = """
-            import Std.Seq
+            import std.Seq
 
             is_small :: Int -> Bool
             {
@@ -250,7 +250,7 @@ public partial class LlvmPipelineIntegrationTests
                 _ => {
                     pieces := Seq.partition([1, 2, 3, 4])(is_small);
                     (left, right) := pieces;
-                    Seq.len(left) + Seq.len(right)
+                    Seq.len(ref left) + Seq.len(ref right)
                 }
             }
             """;
@@ -267,8 +267,8 @@ public partial class LlvmPipelineIntegrationTests
     public void TupleReturnAndSeqTupleElement_NativeSmoke_PreservesAggregatePayload()
     {
         const string source = """
-            import Std.Seq
-            import Std.Option
+            import std.Seq
+            import std.Option
 
             choose_pair :: Bool -> (Int, Int) -> (Int, Int) -> (Int, Int)
             {
@@ -300,8 +300,8 @@ public partial class LlvmPipelineIntegrationTests
     public void OptionShowSome_NativeSmoke_ReturnsTrue()
     {
         const string source = """
-            import Std.Option
-            import Std.Ordering
+            import std.Option
+            import std.Ordering
 
             main :: Unit -> Int
             {
@@ -321,8 +321,8 @@ public partial class LlvmPipelineIntegrationTests
     public void OptionZipMapOr_WithTuplePatternFunction_NativeSmoke_ReturnsSum()
     {
         const string source = """
-            import Std.Option
-            import Std.Ordering
+            import std.Option
+            import std.Ordering
 
             pair_sum :: (Int, Int) -> Int
             {
@@ -347,7 +347,7 @@ public partial class LlvmPipelineIntegrationTests
     }
 
     private const string ResultShowSource = """
-        import Std.Result
+        import std.Result
 
         main :: Unit -> Int
         {

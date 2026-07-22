@@ -9,23 +9,20 @@ namespace Eidosc.Tests.Unit.Cli;
 public sealed class MetaCommandTests
 {
     [Fact]
-    public async Task Expand_JsonTraceAndGeneratedDocuments_AreEmittedWithoutMixingStreams()
+    public async Task Expand_UsesTypedDeriveProtocolAndEmitsGeneratedDocument()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_meta_cli_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
         var sourcePath = Path.Combine(tempDir, "main.eidos");
         var generatedDir = Path.Combine(tempDir, "generated");
         await File.WriteAllTextAsync(sourcePath, """
-deriveAnswer :: comptime Meta.DeriveInput -> Meta.Expansion {
-    input => {
-        Meta.warning(Meta.deriveSpan(input), "trace warning");
-        Meta.expansion([Meta.function("answer", [], Int, Meta.exprInt(42))])
-    }
+derive_answer :: comptime meta.Type -> meta.Items {
+    _ => [meta.function("answer", [], Int, meta.expr_int(42))]
 }
 
-@derive(deriveAnswer)
+@[expand(derive_answer)]
 Subject :: type {
-    value: Int
+    value :: Int
 }
 """);
 
@@ -58,15 +55,10 @@ Subject :: type {
             Console.SetError(originalError);
         }
 
-        using var json = JsonDocument.Parse(stdout.ToString());
-        Assert.Equal("eidos-meta-expansion-v1", json.RootElement.GetProperty("SchemaVersion").GetString());
-        var declaration = Assert.Single(json.RootElement.GetProperty("Declarations").EnumerateArray());
-        Assert.Equal("answer", declaration.GetProperty("Name").GetString());
-        Assert.Contains("[comptime #", stderr.ToString(), StringComparison.Ordinal);
-        Assert.Contains("Meta.warning", stderr.ToString(), StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(generatedDir, "generated-manifest.json")));
-        Assert.True(Directory.EnumerateFiles(generatedDir, "*.eidos").Any());
-
+        Assert.DoesNotContain("Target", stderr.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Transformation", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("answer", stdout.ToString(), StringComparison.Ordinal);
+        Assert.NotEmpty(Directory.EnumerateFiles(generatedDir, "*", SearchOption.AllDirectories));
         Directory.Delete(tempDir, recursive: true);
     }
 

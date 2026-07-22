@@ -554,7 +554,7 @@ Main :: module {
     {
         var result = new CompilationPipeline("""
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     main :: Unit -> Box
     {
@@ -694,7 +694,7 @@ Lib :: module {
     {
         var result = new CompilationPipeline("""
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {
@@ -771,7 +771,7 @@ Main :: module {
     {
         const string source = """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {
@@ -1086,7 +1086,7 @@ Main :: module {
     {
         var result = new CompilationPipeline("""
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {
@@ -1202,7 +1202,7 @@ Utils :: module {
     {
         const string source = """
 Main :: module {
-    Box :: type { Box(Int) }
+    Box :: type { Box:: type(Int) }
 
     id :: Int -> Int
     {

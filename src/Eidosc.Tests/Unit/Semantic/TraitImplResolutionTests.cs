@@ -210,7 +210,7 @@ Iterator[I] :: trait
 
 Box[A] :: type
 {
-    Box(A)
+    Box:: type(A)
 }
 
 IteratorInt :: instance Iterator[Int]
@@ -266,7 +266,7 @@ Iterator[I] :: trait
 
 Pair[A, B] :: type
 {
-    Pair(A, B)
+    Pair:: type(A, B)
 }
 
 PairWithRight[R, L] :: type = Pair[L, R]
@@ -516,21 +516,29 @@ main :: Unit -> Int
                     }
                 }
                 break;
+
+            case MethodCallExpr { ResolvedStaticExpression: not null } methodCall:
+                foreach (var child in EnumerateAst(methodCall.ResolvedStaticExpression))
+                {
+                    yield return child;
+                }
+                break;
         }
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_UnknownTrait_ReportsDiagnostic()
+    public void CompilationPipeline_Instance_UnknownTrait_ReportsDiagnostic()
     {
         const string source = """
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(MissingTrait)
-show :: Person -> String
-{
-    p => "person"
+
+ShowPerson :: instance MissingTrait {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 """;
 
@@ -546,7 +554,7 @@ show :: Person -> String
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_MethodNameMismatch_ReportsDiagnostic()
+    public void CompilationPipeline_Instance_MethodNameMismatch_ReportsDiagnostic()
     {
         const string source = """
 Show :: trait {
@@ -554,13 +562,14 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Show)
-display :: Person -> String
-{
-    p => "person"
+
+ShowPerson :: instance Show {
+    display :: Person -> String {
+        p => "person"
+    }
 }
 """;
 
@@ -576,7 +585,7 @@ display :: Person -> String
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_SignatureMismatch_ReportsDiagnostic()
+    public void CompilationPipeline_Instance_SignatureMismatch_ReportsDiagnostic()
     {
         const string source = """
 Show :: trait {
@@ -584,13 +593,14 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Show)
-show :: Person -> Int
-{
-    p => 1
+
+ShowPerson :: instance Show {
+    show :: Person -> Int {
+        p => 1
+    }
 }
 """;
 
@@ -606,21 +616,24 @@ show :: Person -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_SignatureMismatch_UsesEffectSetSyntaxInDiagnostic()
+    public void CompilationPipeline_Instance_SignatureMismatch_UsesEffectSetSyntaxInDiagnostic()
     {
         const string source = """
+Logger :: effect;
+
 LoggerUser :: trait {
     act :: Self -> Unit need Logger
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(LoggerUser)
-act :: Person -> Unit
-{
-    p => p
+
+LoggerPerson :: instance LoggerUser {
+    act :: Person -> Unit {
+        p => p
+    }
 }
 """;
 
@@ -639,7 +652,7 @@ act :: Person -> Unit
     }
 
     [Fact]
-    public void CompilationPipeline_ConventionImpl_RegistersWhenTraitMethodNameMatches()
+    public void CompilationPipeline_ConventionName_DoesNotRegisterTraitImplementation()
     {
         const string source = """
 Show :: trait {
@@ -647,7 +660,7 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 show :: Person -> String
@@ -674,11 +687,11 @@ show :: Person -> String
         var personSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(personId.Value));
         var impl = symbolTable.LookupImplForTrait(personSymbol.TypeId, traitId.Value);
 
-        Assert.NotNull(impl);
+        Assert.Null(impl);
     }
 
     [Fact]
-    public void CompilationPipeline_ConventionImpl_SignatureMismatch_DoesNotRegister()
+    public void CompilationPipeline_ConventionName_SignatureMismatch_DoesNotRegister()
     {
         const string source = """
 Show :: trait {
@@ -686,7 +699,7 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 show :: Person -> Int
@@ -717,7 +730,39 @@ show :: Person -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_ConventionImpl_GenericTrait_RequiresExplicitImplAttribute()
+    public void CompilationPipeline_ConventionName_DoesNotInferMarkerEvidence()
+    {
+        const string source = """
+Marker :: trait {}
+
+Person :: type {}
+
+unrelated :: Person -> Int {
+    _ => 1
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "trait_impl_convention_marker.eidos",
+            StopAtPhase = CompilationPhase.Namer,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success);
+
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var traitId = symbolTable.LookupType("Marker");
+        var personId = symbolTable.LookupType("Person");
+        Assert.True(traitId.HasValue);
+        Assert.True(personId.HasValue);
+        var personSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(personId.Value));
+
+        Assert.Null(symbolTable.LookupImplForTrait(personSymbol.TypeId, traitId.Value));
+    }
+
+    [Fact]
+    public void CompilationPipeline_ConventionName_GenericTrait_DoesNotRegister()
     {
         const string source = """
 Functor[F: kind2] :: trait {
@@ -725,11 +770,11 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 fmap :: Person -> Box[Int]
@@ -745,15 +790,16 @@ fmap :: Person -> Box[Int]
             UseColors = false
         }).Run();
 
-        Assert.False(result.Success);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Code == "E3000" &&
-                          diagnostic.Message.Contains("@impl(Functor[...])", StringComparison.Ordinal));
+        Assert.True(result.Success);
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+        var traitId = Assert.IsType<SymbolId>(symbolTable.LookupTrait("Functor"));
+        var personId = Assert.IsType<SymbolId>(symbolTable.LookupType("Person"));
+        var person = Assert.IsType<AdtSymbol>(symbolTable.GetSymbol(personId));
+        Assert.Null(symbolTable.LookupImplForTrait(person.TypeId, traitId));
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_GenericImpl_RegistersForGenericAdt()
+    public void CompilationPipeline_Instance_RegistersForGenericAdt()
     {
         const string source = """
 Eq :: trait {
@@ -761,13 +807,14 @@ Eq :: trait {
 }
 
 Option[A] :: type {
-    None , Some(A)
+    None :: type {} , Some:: type(A)
 }
 
-@impl(Eq)
-eq[A] :: Option[A] -> Option[A] -> Bool
-{
-    left => true
+
+EqOption[A] :: instance Eq {
+    eq :: Option[A] -> Option[A] -> Bool {
+        left => true
+    }
 }
 """;
 
@@ -793,7 +840,7 @@ eq[A] :: Option[A] -> Option[A] -> Bool
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_GenericImplWithConstrainedHead_TracksConditionalRequirements()
+    public void CompilationPipeline_InstanceWithConstrainedHead_TracksConditionalRequirements()
     {
         const string source = """
 Eq :: trait {
@@ -801,13 +848,14 @@ Eq :: trait {
 }
 
 Option[A] :: type {
-    None , Some(A)
+    None :: type {} , Some:: type(A)
 }
 
-@impl(Eq)
-eq[T: Eq] :: Option[T] -> Option[T] -> Bool
-{
-    _ => _ => true
+
+EqOption[T: Eq] :: instance Eq {
+    eq :: Option[T] -> Option[T] -> Bool {
+        _ => _ => true
+    }
 }
 """;
 
@@ -837,7 +885,7 @@ eq[T: Eq] :: Option[T] -> Option[T] -> Bool
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_SpecializedImplementingTypeOverlap_AllowsCoexistingImpls()
+    public void CompilationPipeline_SpecializedInstances_AllowCoexistingEvidence()
     {
         const string source = """
 Show :: trait {
@@ -845,19 +893,21 @@ Show :: trait {
 }
 
 Option[A] :: type {
-    None , Some(A)
+    None :: type {} , Some:: type(A)
 }
 
-@impl(Show)
-show[T] :: Option[T] -> String
-{
-    _ => "generic"
+
+ShowOption[T] :: instance Show {
+    show :: Option[T] -> String {
+        _ => "generic"
+    }
 }
 
-@impl(Show)
-show :: Option[Int] -> String
-{
-    _ => "int"
+
+ShowOptionInt :: instance Show {
+    show :: Option[Int] -> String {
+        _ => "int"
+    }
 }
 """;
 
@@ -891,7 +941,7 @@ show :: Option[Int] -> String
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_GenericTraitTypeArgs_RegistersImplementation()
+    public void CompilationPipeline_Instance_GenericTraitTypeArgs_RegisterImplementation()
     {
         const string source = """
 Functor[F: kind2] :: trait {
@@ -899,17 +949,18 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Functor[Box])
-fmap :: Person -> Box[Int]
-{
-    p => Box(1)
+
+FunctorPersonBox :: instance Functor[Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 """;
 
@@ -942,7 +993,7 @@ fmap :: Person -> Box[Int]
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_NestedCanonicalTraitTypeArgKey_PreservesTypeArguments()
+    public void CompilationPipeline_Instance_NestedCanonicalTraitTypeArgKey_PreservesTypeArguments()
     {
         const string source = """
 Wrapper[T] :: trait {
@@ -950,17 +1001,18 @@ Wrapper[T] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Wrapper[Box[Int]])
-get :: Person -> Int
-{
-    p => 1
+
+WrapperPersonBoxInt :: instance Wrapper[Box[Int]] {
+    get :: Person -> Int {
+        p => 1
+    }
 }
 """;
 
@@ -996,7 +1048,7 @@ get :: Person -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_GenericTraitTypeArgs_ArityMismatch_ReportsDiagnostic()
+    public void CompilationPipeline_Instance_GenericTraitTypeArgs_ArityMismatch_ReportsDiagnostic()
     {
         const string source = """
 Functor[F: kind2] :: trait {
@@ -1004,17 +1056,18 @@ Functor[F: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Functor[Int, Box])
-fmap :: Person -> Box[Int]
-{
-    p => Box(1)
+
+FunctorPersonInvalid :: instance Functor[Int, Box] {
+    fmap :: Person -> Box[Int] {
+        p => Box(1)
+    }
 }
 """;
 
@@ -1029,11 +1082,11 @@ fmap :: Person -> Box[Int]
         Assert.Contains(
             result.Diagnostics,
             diagnostic => diagnostic.Code == "E3000" &&
-                          diagnostic.Message.Contains("expects 1 type argument(s) in @impl, got 2", StringComparison.Ordinal));
+                          diagnostic.Message.Contains("expects 1 type argument(s)", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_AliasOverlapOnImplementingType_ReportsDiagnostic()
+    public void CompilationPipeline_Instance_AliasOverlapOnImplementingType_ReportsDiagnostic()
     {
         const string source = """
 Show :: trait {
@@ -1041,21 +1094,23 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
 PersonAlias :: type = Person;
 
-@impl(Show)
-show :: Person -> String
-{
-    p => "person"
+
+ShowPerson :: instance Show {
+    show :: Person -> String {
+        p => "person"
+    }
 }
 
-@impl(Show)
-show :: PersonAlias -> String
-{
-    p => "alias"
+
+ShowPersonAlias :: instance Show {
+    show :: PersonAlias -> String {
+        p => "alias"
+    }
 }
 """;
 
@@ -1070,18 +1125,18 @@ show :: PersonAlias -> String
         var diagnostic = Assert.Single(
             result.Diagnostics,
             item => item.Code == "E3004" &&
-                    item.Message.Contains("Ambiguous overlapping impl registration", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested impl head: @impl(Show) on PersonAlias", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing impl head: @impl(Show) on Person", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested canonical head: @impl(Show) on Person", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing canonical head: @impl(Show) on Person", StringComparison.Ordinal));
+                    item.Message.Contains("Ambiguous overlapping instance registration", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested instance head: instance Show for PersonAlias", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing instance head: instance Show for Person", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested canonical head: instance Show for Person", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing canonical head: instance Show for Person", StringComparison.Ordinal));
         var related = Assert.Single(diagnostic.Related);
-        Assert.Contains("existing overlapping impl registered here", related.Message, StringComparison.Ordinal);
-        Assert.Contains(related.Labels, label => label.Message.Contains("@impl(Show) on Person", StringComparison.Ordinal));
+        Assert.Contains("existing overlapping instance registered here", related.Message, StringComparison.Ordinal);
+        Assert.Contains(related.Labels, label => label.Message.Contains("instance Show for Person", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_AliasOverlapOnMultipleTraitTypeArgs_ReportsDiagnostic()
+    public void CompilationPipeline_Instance_AliasOverlapOnMultipleTraitTypeArgs_ReportsDiagnostic()
     {
         const string source = """
 Pairing[F: kind2, G: kind2] :: trait {
@@ -1089,11 +1144,11 @@ Pairing[F: kind2, G: kind2] :: trait {
 }
 
 Person :: type {
-    Person(Int)
+    Person:: type(Int)
 }
 
 Result[T, E] :: type {
-    Ok(T) , Err(E)
+    Ok:: type(T) , Err:: type(E)
 }
 
 ResultWith[E, T] :: type = Result[T, E];
@@ -1101,19 +1156,21 @@ DeepResultWith[E, T] :: type = ResultWith[E, T];
 AlsoResultWith[E, T] :: type = Result[T, E];
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
-@impl(Pairing[DeepResultWith[String], Box])
-build :: Person -> DeepResultWith[String, Int]
-{
-    p => Ok(1)
+
+PairingPersonDeep :: instance Pairing[DeepResultWith[String], Box] {
+    build :: Person -> DeepResultWith[String, Int] {
+        p => Ok(1)
+    }
 }
 
-@impl(Pairing[AlsoResultWith[String], Box])
-build :: Person -> AlsoResultWith[String, Int]
-{
-    p => Ok(2)
+
+PairingPersonAlso :: instance Pairing[AlsoResultWith[String], Box] {
+    build :: Person -> AlsoResultWith[String, Int] {
+        p => Ok(2)
+    }
 }
 """;
 
@@ -1128,18 +1185,18 @@ build :: Person -> AlsoResultWith[String, Int]
         var diagnostic = Assert.Single(
             result.Diagnostics,
             item => item.Code == "E3004" &&
-                    item.Message.Contains("Ambiguous overlapping impl registration", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested impl head: @impl(Pairing[AlsoResultWith[String], Box]) on Person", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing impl head: @impl(Pairing[DeepResultWith[String], Box]) on Person", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("requested canonical head: @impl(Pairing[Result[T,String], Box]) on Person", StringComparison.Ordinal));
-        Assert.Contains(diagnostic.Notes, note => note.Contains("existing canonical head: @impl(Pairing[Result[T,String], Box]) on Person", StringComparison.Ordinal));
+                    item.Message.Contains("Ambiguous overlapping instance registration", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested instance head: instance Pairing[AlsoResultWith[String], Box] for Person", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing instance head: instance Pairing[DeepResultWith[String], Box] for Person", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("requested canonical head: instance Pairing[Result[T,String], Box] for Person", StringComparison.Ordinal));
+        Assert.Contains(diagnostic.Notes, note => note.Contains("existing canonical head: instance Pairing[Result[T,String], Box] for Person", StringComparison.Ordinal));
         var related = Assert.Single(diagnostic.Related);
-        Assert.Contains("existing overlapping impl registered here", related.Message, StringComparison.Ordinal);
-        Assert.Contains(related.Labels, label => label.Message.Contains("@impl(Pairing[DeepResultWith[String], Box]) on Person", StringComparison.Ordinal));
+        Assert.Contains("existing overlapping instance registered here", related.Message, StringComparison.Ordinal);
+        Assert.Contains(related.Labels, label => label.Message.Contains("instance Pairing[DeepResultWith[String], Box] for Person", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_QualifiedTraitPath_Registers()
+    public void CompilationPipeline_Instance_QualifiedTraitPath_Registers()
     {
         const string source = """
 M :: module {
@@ -1148,13 +1205,14 @@ M :: module {
     }
 
     Person :: type {
-        Person(String)
+        Person:: type(String)
     }
 
-    @impl(M.Show)
-    show :: Person -> String
-    {
-        p => "ok"
+
+    ShowPerson :: instance M.Show {
+        show :: Person -> String {
+            p => "ok"
+        }
     }
 }
 """;
@@ -1181,7 +1239,7 @@ M :: module {
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_QualifiedTraitPath_FromImportedModuleFile_Registers()
+    public void CompilationPipeline_Instance_QualifiedTraitPath_FromImportedModuleFile_Registers()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_trait_impl_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -1201,13 +1259,14 @@ M :: module {
 import M
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(M.Show)
-show :: Person -> String
-{
-    p => "ok"
+
+ShowPerson :: instance M.Show {
+    show :: Person -> String {
+        p => "ok"
+    }
 }
 """;
 
@@ -1244,23 +1303,24 @@ show :: Person -> String
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_ImportedStdTrait_RegistersForUserType()
+    public void CompilationPipeline_Instance_ImportedStdTrait_RegistersForUserType()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_trait_impl_std_trait_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         var entryFile = Path.Combine(tempDir, "main.eidos");
         const string source = """
-import Std.Trait
+import std.Traits
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(Trait.Eq)
-eq :: Person -> Person -> Bool
-{
-    _ => _ => true
+
+EqPerson :: instance Traits.Eq {
+    eq :: Person -> Person -> Bool {
+        _ => _ => true
+    }
 }
 """;
 
@@ -1278,7 +1338,7 @@ eq :: Person -> Person -> Bool
             Assert.True(result.Success);
 
             var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
-            var traitModuleId = symbolTable.Modules.LookupModuleByPath("Std", ["Trait"]);
+            var traitModuleId = symbolTable.Modules.LookupModuleByPath("std", ["Traits"]);
             Assert.True(traitModuleId.HasValue);
             Assert.True(symbolTable.Modules.TryLookupAccessibleBinding(
                 traitModuleId.Value,
@@ -1301,7 +1361,7 @@ eq :: Person -> Person -> Bool
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_UnknownQualifiedTrait_ReportsSingleImplDiagnostic()
+    public void CompilationPipeline_Instance_UnknownQualifiedTrait_ReportsSingleDiagnostic()
     {
         const string source = """
 Show :: trait {
@@ -1309,13 +1369,14 @@ Show :: trait {
 }
 
 Person :: type {
-    Person(String)
+    Person:: type(String)
 }
 
-@impl(N.Show)
-show :: Person -> String
-{
-    p => "ok"
+
+ShowPerson :: instance N.Show {
+    show :: Person -> String {
+        p => "ok"
+    }
 }
 """;
 
@@ -1327,7 +1388,7 @@ show :: Person -> String
         }).Run();
 
         Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, d => d.Code == "E3000" && d.Message.Contains("Undefined trait 'N.Show' in @impl"));
+        Assert.Contains(result.Diagnostics, d => d.Code == "E3000" && d.Message.Contains("Undefined trait 'N.Show'"));
         Assert.DoesNotContain(result.Diagnostics, d => d.Message.Contains("Cannot resolve path 'N.Show'"));
     }
 
@@ -1336,7 +1397,7 @@ show :: Person -> String
     {
         const string source = """
 Self :: type {
-    Self(Int)
+    Self:: type(Int)
 }
 """;
 
@@ -1393,7 +1454,7 @@ id[Self] :: Int -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_ImplAttribute_AllowsMethodLevelConstrainedTypeParamsOutsideImplHead()
+    public void CompilationPipeline_Instance_AllowsMethodLevelConstrainedTypeParamsOutsideHead()
     {
         const string source = """
 Applicative[F: kind2] :: trait {
@@ -1401,17 +1462,18 @@ Applicative[F: kind2] :: trait {
 }
 
 Box[A] :: type {
-    Box(A)
+    Box:: type(A)
 }
 
 Traversable[T: kind2] :: trait {
     traverse[A, B, G: kind2 : Applicative[G]] :: T[A] -> (A -> G[B]) -> G[T[B]]
 }
 
-@impl(Traversable[Box])
-traverse[A, B, G: kind2 : Applicative[G]] :: Box[A] -> (A -> G[B]) -> G[Box[B]]
-{
-    value => f => f(value)
+
+TraversableBox :: instance Traversable[Box] {
+    traverse[A, B, G: kind2 : Applicative[G]] :: Box[A] -> (A -> G[B]) -> G[Box[B]] {
+        value => f => f(value)
+    }
 }
 """;
 

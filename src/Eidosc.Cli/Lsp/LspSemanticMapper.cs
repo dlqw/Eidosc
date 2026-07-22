@@ -1,6 +1,7 @@
 using Eidosc.Cli.Resources;
 using Eidosc.Diagnostic;
 using Eidosc.Ide;
+using Eidosc.Ast.Declarations;
 using System.Collections.Concurrent;
 
 namespace Eidosc.Cli.Lsp;
@@ -340,7 +341,170 @@ public static class LspSemanticMapper
             });
         }
 
+        AddTypedTagCompletions(items, sourceText, line, character, prefix, replacementRange);
+        AddClauseCompletions(items, sourceText, line, character, prefix, replacementRange);
+
         return items;
+    }
+
+    private static void AddTypedTagCompletions(
+        List<LspCompletionItem> items,
+        string? sourceText,
+        int line,
+        int character,
+        string prefix,
+        LspRange? replacementRange)
+    {
+        if (!TryGetTypedTagCompletionTarget(sourceText, line, character))
+        {
+            return;
+        }
+
+        var existing = items.Select(static item => item.Label).ToHashSet(StringComparer.Ordinal);
+        foreach (var spec in ClauseSchema.Entries.Values
+                     .Where(static spec => spec.Adapter is DeclarationAttachmentAdapterKind.TypedTag or DeclarationAttachmentAdapterKind.ForeignContract)
+                     .OrderBy(static spec => spec.Keyword, StringComparer.Ordinal))
+        {
+            if (!MatchesCompletionPrefix(spec.Keyword, prefix) || !existing.Add(spec.Keyword))
+            {
+                continue;
+            }
+
+            items.Add(new LspCompletionItem
+            {
+                Label = spec.Keyword,
+                Kind = LspCompletionItemKind.Keyword,
+                Detail = $"typed declaration tag; {spec.CanonicalArgumentType.ToString().ToLowerInvariant()} argument",
+                Documentation = $"Typed declaration tag. Valid targets: {spec.Targets}.",
+                SortText = $"0-tag-{spec.Keyword}",
+                InsertText = spec.Keyword,
+                TextEdit = replacementRange == null
+                    ? null
+                    : new LspTextEdit { Range = replacementRange, NewText = spec.Keyword }
+            });
+        }
+    }
+
+    private static bool TryGetTypedTagCompletionTarget(string? sourceText, int line, int character)
+    {
+        if (!TryGetOffset(sourceText, line, character, out var offset) || string.IsNullOrEmpty(sourceText))
+        {
+            return false;
+        }
+
+        var searchEnd = Math.Min(offset - 1, sourceText.Length - 1);
+        if (searchEnd < 0)
+        {
+            return false;
+        }
+
+        var open = sourceText.LastIndexOf("@[", searchEnd, StringComparison.Ordinal);
+        var close = sourceText.LastIndexOf(']', searchEnd);
+        return open >= 0 && open > close;
+    }
+
+    private static void AddClauseCompletions(
+        List<LspCompletionItem> items,
+        string? sourceText,
+        int line,
+        int character,
+        string prefix,
+        LspRange? replacementRange)
+    {
+        if (!TryGetClauseCompletionTarget(sourceText, line, character, out var target))
+        {
+            return;
+        }
+
+        var existing = items.Select(static item => item.Label).ToHashSet(StringComparer.Ordinal);
+        foreach (var spec in ClauseSchema.Entries.Values
+                     .Where(static spec => spec.Adapter == DeclarationAttachmentAdapterKind.SignatureComponent)
+                     .Where(spec => (spec.Targets & target) != 0)
+                     .OrderBy(static spec => spec.SourceOrder)
+                     .ThenBy(static spec => spec.Keyword, StringComparer.Ordinal))
+        {
+            if (!MatchesCompletionPrefix(spec.Keyword, prefix) || !existing.Add(spec.Keyword))
+            {
+                continue;
+            }
+
+            var detail = $"{spec.Stage.ToString().ToLowerInvariant()} clause; {spec.CanonicalArgumentType.ToString().ToLowerInvariant()} argument";
+            var privilege = spec.Privilege == ClausePrivilegePolicy.ToolchainOwnedSource
+                ? " Reserved for compiler-owned source."
+                : string.Empty;
+            items.Add(new LspCompletionItem
+            {
+                Label = spec.Keyword,
+                Kind = LspCompletionItemKind.Keyword,
+                Detail = detail,
+                Documentation = $"Valid targets: {spec.Targets}. Source order: {spec.SourceOrder}.{privilege}",
+                SortText = $"0-clause-{spec.Keyword}",
+                InsertText = spec.Keyword,
+                TextEdit = replacementRange == null
+                    ? null
+                    : new LspTextEdit { Range = replacementRange, NewText = spec.Keyword }
+            });
+        }
+    }
+
+    private static bool TryGetClauseCompletionTarget(
+        string? sourceText,
+        int line,
+        int character,
+        out DeclarationClauseTarget target)
+    {
+        target = DeclarationClauseTarget.None;
+        if (!TryGetOffset(sourceText, line, character, out var offset))
+        {
+            return false;
+        }
+
+        var prefix = sourceText![..offset];
+        var boundary = Math.Max(
+            Math.Max(prefix.LastIndexOf('{'), prefix.LastIndexOf('}')),
+            prefix.LastIndexOf(';'));
+        var declarationHead = prefix[(boundary + 1)..];
+        var binding = declarationHead.LastIndexOf("::", StringComparison.Ordinal);
+        if (binding < 0 || declarationHead.Contains("=>", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var tail = declarationHead[(binding + 2)..].TrimStart();
+        target = tail.StartsWith("type", StringComparison.Ordinal)
+            ? boundary >= 0 && prefix[boundary] == '{'
+                ? DeclarationClauseTarget.Type | DeclarationClauseTarget.CaseType
+                : DeclarationClauseTarget.Type
+            : tail.StartsWith("trait", StringComparison.Ordinal)
+                ? DeclarationClauseTarget.Trait
+                : tail.StartsWith("effect", StringComparison.Ordinal)
+                    ? DeclarationClauseTarget.Effect
+                    : DeclarationClauseTarget.Function;
+        return true;
+    }
+
+    private static bool TryGetOffset(string? sourceText, int line, int character, out int offset)
+    {
+        offset = 0;
+        if (string.IsNullOrEmpty(sourceText) || line < 0 || character < 0)
+        {
+            return false;
+        }
+
+        var currentLine = 0;
+        while (currentLine < line && offset < sourceText.Length)
+        {
+            var next = sourceText.IndexOf('\n', offset);
+            if (next < 0)
+            {
+                return false;
+            }
+            offset = next + 1;
+            currentLine++;
+        }
+
+        offset = Math.Min(sourceText.Length, offset + character);
+        return currentLine == line;
     }
 
     private static string? BuildCompletionDetail(IdeCompletionEntry entry)
@@ -819,14 +983,20 @@ public static class LspSemanticMapper
                     continue;
                 }
 
+                var semanticRename = string.Equals(suggestion.Kind, "RenameSymbol", StringComparison.OrdinalIgnoreCase) &&
+                                     suggestion.OriginalSymbolId is { } originalSymbolId
+                    ? BuildSemanticRenameEdit(snapshot, originalSymbolId, suggestion.Replacement)
+                    : null;
+
                 actions.Add(new LspCodeAction
                 {
                     Title = string.IsNullOrWhiteSpace(suggestion.Message)
                         ? "Apply suggestion"
                         : suggestion.Message,
                     Kind = "quickfix",
-                    IsPreferred = string.Equals(suggestion.Kind, "AddImport", StringComparison.OrdinalIgnoreCase),
-                    Edit = new LspWorkspaceEdit
+                    IsPreferred = string.Equals(suggestion.Kind, "AddImport", StringComparison.OrdinalIgnoreCase) ||
+                                  semanticRename != null,
+                    Edit = semanticRename ?? new LspWorkspaceEdit
                     {
                         Changes = new Dictionary<string, List<LspTextEdit>>
                         {
@@ -847,6 +1017,109 @@ public static class LspSemanticMapper
         }
 
         return actions;
+    }
+
+    public static LspHover? MapHover(
+        IdeSemanticSnapshot snapshot,
+        SnapshotIndex index,
+        int line,
+        int character,
+        string? sourceText)
+    {
+        if (TryGetWordAt(sourceText, line, character, out var keyword, out var range) &&
+            ClauseSchema.TryGet(keyword, out var spec))
+        {
+            return new LspHover
+            {
+                Contents = new LspMarkupContent
+                {
+                    Kind = "markdown",
+                    Value = $"`{spec.Keyword}` {(spec.Adapter is DeclarationAttachmentAdapterKind.TypedTag or DeclarationAttachmentAdapterKind.ForeignContract ? "typed declaration tag" : "declaration clause")}\n\nStage: `{spec.Stage}`  \nArguments: `{spec.CanonicalArgumentType}`  \nTargets: `{spec.Targets}`  \nSource order: `{spec.SourceOrder}`"
+                },
+                Range = range
+            };
+        }
+
+        return MapHover(snapshot, index, line, character);
+    }
+
+    private static bool TryGetWordAt(
+        string? sourceText,
+        int line,
+        int character,
+        out string word,
+        out LspRange range)
+    {
+        word = string.Empty;
+        range = new LspRange();
+        var lineText = sourceText == null ? null : TryGetLine(sourceText, line);
+        if (lineText == null || character < 0 || character > lineText.Length)
+        {
+            return false;
+        }
+
+        var start = Math.Min(character, lineText.Length);
+        var end = start;
+        while (start > 0 && (char.IsLetterOrDigit(lineText[start - 1]) || lineText[start - 1] == '_'))
+        {
+            start--;
+        }
+        while (end < lineText.Length && (char.IsLetterOrDigit(lineText[end]) || lineText[end] == '_'))
+        {
+            end++;
+        }
+        if (end <= start)
+        {
+            return false;
+        }
+
+        word = lineText[start..end];
+        range = new LspRange
+        {
+            Start = new LspPosition { Line = line, Character = start },
+            End = new LspPosition { Line = line, Character = end }
+        };
+        return true;
+    }
+
+    private static LspWorkspaceEdit? BuildSemanticRenameEdit(
+        IdeSemanticSnapshot snapshot,
+        int symbolId,
+        string replacement)
+    {
+        var changes = new Dictionary<string, List<LspTextEdit>>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var occurrence in snapshot.Occurrences
+                     .Where(occurrence => occurrence.SymbolId == symbolId)
+                     .OrderBy(occurrence => occurrence.Span.FilePath ?? snapshot.InputFile, StringComparer.Ordinal)
+                     .ThenBy(static occurrence => occurrence.Span.Start))
+        {
+            if (occurrence.Span.Length <= 0)
+            {
+                continue;
+            }
+
+            var targetUri = ToFileUri(occurrence.Span.FilePath ?? snapshot.InputFile);
+            var key = $"{targetUri}:{occurrence.Span.Start}:{occurrence.Span.Length}";
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            if (!changes.TryGetValue(targetUri, out var edits))
+            {
+                edits = [];
+                changes[targetUri] = edits;
+            }
+
+            edits.Add(new LspTextEdit
+            {
+                Range = MapIdeSpanToRange(occurrence.Span),
+                NewText = replacement
+            });
+        }
+
+        return changes.Count == 0 ? null : new LspWorkspaceEdit { Changes = changes };
     }
 
 
@@ -927,6 +1200,12 @@ public static class LspSemanticMapper
         if (!string.IsNullOrWhiteSpace(symbol.ExternalLibrary))
         {
             metadata.Add(CliMessages.LspHoverFfiLibraryMetadata(symbol.ExternalLibrary));
+        }
+
+        if (symbol.OwnershipContract is { } ownership)
+        {
+            var parameters = string.Join(", ", ownership.Parameters.Select(static slot => slot.Kind));
+            metadata.Add($"ownership: ({parameters}) -> {ownership.Result.Kind}");
         }
 
         if (symbol.IsGenerated && symbol.GeneratedOrigin is { } generatedOrigin)
@@ -1403,19 +1682,6 @@ public static class LspSemanticMapper
 
             if (IsIdentifierStart(current))
             {
-                if (TryAddQualifiedModulePrefixTokens(
-                        sourceText,
-                        i,
-                        line,
-                        character,
-                        candidates,
-                        out var consumedLength))
-                {
-                    i += consumedLength;
-                    character += consumedLength;
-                    continue;
-                }
-
                 var start = i;
                 var startCharacter = character;
                 i++;
@@ -1424,20 +1690,6 @@ public static class LspSemanticMapper
                 {
                     i++;
                     character++;
-                }
-
-                if (start > 0 &&
-                    sourceText[start - 1] == '.' &&
-                    IsLowercaseIdentifier(sourceText, start) &&
-                    NextNonWhitespaceIs(sourceText, i, '('))
-                {
-                    AddCandidate(
-                        candidates,
-                        line,
-                        startCharacter,
-                        i - start,
-                        SemanticTokenFunctionType,
-                        modifiers: 0);
                 }
 
                 if (IsSemanticTokenKeyword(sourceText, start, i - start))
@@ -1500,10 +1752,7 @@ public static class LspSemanticMapper
                 span.Start,
                 pathEnd,
                 out var lastOffset,
-                out var lastLength,
-                candidates,
-                span.StartLine,
-                span.StartCharacter))
+                out var lastLength))
         {
             return false;
         }
@@ -1550,14 +1799,10 @@ public static class LspSemanticMapper
         int start,
         int end,
         out int lastOffset,
-        out int lastLength,
-        SemanticTokenCandidateSet candidates,
-        int line,
-        int startCharacter)
+        out int lastLength)
     {
         lastOffset = 0;
         lastLength = 0;
-        var segmentStarts = new List<int>();
         var segmentRanges = new List<(int Offset, int Length)>();
 
         for (var index = start; index < end;)
@@ -1579,141 +1824,14 @@ public static class LspSemanticMapper
             var length = index - segmentStart;
             lastOffset = offset;
             lastLength = length;
-            segmentStarts.Add(segmentStart);
             segmentRanges.Add((offset, length));
         }
 
-        if (segmentRanges.Count < 2 || !IsNamespacePath(text, segmentStarts))
+        if (segmentRanges.Count < 2)
         {
             return false;
         }
 
-        foreach (var (offset, length) in segmentRanges.Take(segmentRanges.Count - 1))
-        {
-            AddCandidate(
-                candidates,
-                line,
-                startCharacter + offset,
-                length,
-                SemanticTokenModuleType,
-                modifiers: 0,
-                isSemantic: true);
-        }
-
-        return true;
-    }
-
-    private static bool TryAddQualifiedModulePrefixTokens(
-        string sourceText,
-        int start,
-        int line,
-        int character,
-        SemanticTokenCandidateSet candidates,
-        out int consumedLength)
-    {
-        consumedLength = 0;
-        var segmentRanges = new List<(int Character, int Length)>();
-        var cursor = start;
-        var cursorCharacter = character;
-
-        if (!TryReadIdentifier(sourceText, cursor, out var firstLength))
-        {
-            return false;
-        }
-
-        segmentRanges.Add((cursorCharacter, firstLength));
-        cursor += firstLength;
-        cursorCharacter += firstLength;
-
-        var segmentStarts = new List<int> { start };
-        while (TryReadQualifiedModuleSeparator(sourceText, cursor, out var separatorLength) &&
-               TryReadIdentifier(sourceText, cursor + separatorLength, out var segmentLength))
-        {
-            cursor += separatorLength;
-            cursorCharacter += separatorLength;
-            segmentStarts.Add(cursor);
-            segmentRanges.Add((cursorCharacter, segmentLength));
-            cursor += segmentLength;
-            cursorCharacter += segmentLength;
-        }
-
-        if (segmentRanges.Count < 2 || !IsNamespacePath(sourceText, segmentStarts))
-        {
-            return false;
-        }
-
-        foreach (var (segmentCharacter, segmentLength) in segmentRanges.Take(segmentRanges.Count - 1))
-        {
-            AddCandidate(
-                candidates,
-                line,
-                segmentCharacter,
-                segmentLength,
-                SemanticTokenModuleType,
-                modifiers: 0,
-                isSemantic: false);
-        }
-
-        var (leafCharacter, leafLength) = segmentRanges[^1];
-        if (char.IsLower(sourceText[segmentStarts[^1]]) && NextNonWhitespaceIs(sourceText, cursor, '('))
-        {
-            AddCandidate(
-                candidates,
-                line,
-                leafCharacter,
-                leafLength,
-                SemanticTokenFunctionType,
-                modifiers: 0,
-                isSemantic: false);
-        }
-
-        consumedLength = cursor - start;
-        return true;
-    }
-
-    private static bool TryReadQualifiedModuleSeparator(string sourceText, int start, out int length)
-    {
-        length = 0;
-        if (start >= sourceText.Length)
-        {
-            return false;
-        }
-
-        if (sourceText[start] == '.')
-        {
-            length = 1;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsNamespacePath(string sourceText, IReadOnlyList<int> segmentStarts)
-    {
-        if (segmentStarts.Count < 2)
-        {
-            return false;
-        }
-
-        return char.IsUpper(sourceText[segmentStarts[0]]) ||
-               char.IsUpper(sourceText[segmentStarts[1]]);
-    }
-
-    private static bool TryReadIdentifier(string sourceText, int start, out int length)
-    {
-        length = 0;
-        if (start >= sourceText.Length || !IsIdentifierStart(sourceText[start]))
-        {
-            return false;
-        }
-
-        var cursor = start + 1;
-        while (cursor < sourceText.Length && IsIdentifierPart(sourceText[cursor]))
-        {
-            cursor++;
-        }
-
-        length = cursor - start;
         return true;
     }
 
@@ -1740,6 +1858,24 @@ public static class LspSemanticMapper
         }
 
         return false;
+    }
+
+    private static bool TryReadIdentifier(string sourceText, int start, out int length)
+    {
+        length = 0;
+        if (start >= sourceText.Length || !IsIdentifierStart(sourceText[start]))
+        {
+            return false;
+        }
+
+        var cursor = start + 1;
+        while (cursor < sourceText.Length && IsIdentifierPart(sourceText[cursor]))
+        {
+            cursor++;
+        }
+
+        length = cursor - start;
+        return true;
     }
 
     private static void AddCandidate(
@@ -1820,14 +1956,6 @@ public static class LspSemanticMapper
 
         return 0;
     }
-
-    private static bool IsLowercaseIdentifier(string value) =>
-        value.Length > 0 && (char.IsLower(value[0]) || value[0] == '_');
-
-    private static bool IsLowercaseIdentifier(string value, int start) =>
-        start >= 0 &&
-        start < value.Length &&
-        (char.IsLower(value[start]) || value[start] == '_');
 
     private static bool IsSemanticTokenKeyword(string text, int start, int length)
     {

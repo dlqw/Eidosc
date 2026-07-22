@@ -256,16 +256,26 @@ public sealed class SendChecker
         {
             foreach (var instruction in block.Instructions)
             {
-                if (instruction is not MirAssign
+                var alias = instruction switch
+                {
+                    MirAssign
                     {
-                        Target: MirPlace { Kind: PlaceKind.Local, Local: var targetLocal },
-                        Source: MirPlace { Kind: PlaceKind.Local, Local: var sourceLocal }
-                    })
+                        Target: MirPlace { Kind: PlaceKind.Local, Local: var assignTarget },
+                        Source: MirPlace { Kind: PlaceKind.Local, Local: var assignSource }
+                    } => (Target: assignTarget, Source: assignSource),
+                    MirCaseInject
+                    {
+                        Target: MirPlace { Kind: PlaceKind.Local, Local: var injectionTarget },
+                        Operand: MirPlace { Kind: PlaceKind.Local, Local: var injectionSource }
+                    } => (Target: injectionTarget, Source: injectionSource),
+                    _ => ((LocalId Target, LocalId Source)?)null
+                };
+                if (alias is not { } binding)
                 {
                     continue;
                 }
 
-                aliases[targetLocal] = aliases.ContainsKey(targetLocal) ? null : sourceLocal;
+                aliases[binding.Target] = aliases.ContainsKey(binding.Target) ? null : binding.Source;
             }
         }
 

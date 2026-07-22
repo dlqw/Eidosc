@@ -40,6 +40,8 @@ public static class WellKnownStrings
         /// <summary>Unit type as it appears in surface syntax.</summary>
         public const string UnitSyntax = "()";
         public const string Seq = "Seq";
+        public const string Option = "Option";
+        public const string Result = "Result";
         public const string Ref = "Ref";
         public const string MRef = "MRef";
         public const string MutRef = "MutRef";
@@ -52,47 +54,105 @@ public static class WellKnownStrings
 
     public static class Meta
     {
-        public const string Module = "Meta";
-        public const int SchemaVersion = 1;
+        public const string Module = "meta";
+        public const int SchemaVersion = 6;
 
         public static class Types
         {
-            public const string TypeInfo = "TypeInfo";
-            public const string Decl = "Decl";
-            public const string DeclInfo = "DeclInfo";
-            public const string Span = "Span";
-            public const string DeriveInput = "DeriveInput";
-            public const string Expansion = "Expansion";
+            public const string TypeShape = "TypeShape";
             public const string Declaration = "Declaration";
-            public const string Parameter = "Parameter";
-            public const string Binding = "Binding";
+            public const string DeclarationShape = "DeclarationShape";
+            public const string Span = "Span";
+            public const string Stage = "Stage";
+            public const string Target = "Target";
+            public const string Site = "Site";
+            public const string Transformation = "Transformation";
+            public const string Syntax = "Syntax";
+            public const string Item = "Item";
+            public const string Member = "Member";
             public const string Expr = "Expr";
             public const string Pattern = "Pattern";
+            public const string Stmt = "Stmt";
+            public const string TypeSyntax = "TypeSyntax";
             public const string Branch = "Branch";
-            public const string FieldInfo = "FieldInfo";
-            public const string ConstructorInfo = "ConstructorInfo";
+            public const string Parameter = "Parameter";
+            public const string Binding = "Binding";
+            public const string ExprSyntax = "ExprSyntax";
+            public const string PatternSyntax = "PatternSyntax";
+            public const string BranchSyntax = "BranchSyntax";
+            public const string Field = "Field";
+            public const string Constructor = "Constructor";
             public const string NamedExpr = "NamedExpr";
             public const string FieldPattern = "FieldPattern";
-            public const string LayoutInfo = "LayoutInfo";
+            public const string Layout = "Layout";
+            public const string Clause = "Clause";
+            public const string ClauseArgument = "ClauseArgument";
+            public const string Diagnostic = "Diagnostic";
+            public const string Workspace = "Workspace";
+            public const string Package = "Package";
+            public const string Module = "Module";
+            public const string Dependency = "Dependency";
+            public const string Import = "Import";
+            public const string Export = "Export";
+            public const string CaseType = "CaseType";
+            public const string Implementation = "Implementation";
+            public const string Reference = "Reference";
+            public const string Call = "Call";
+            public const string Body = "Body";
+            public const string BodyNode = "BodyNode";
+            public const string Tokens = "Tokens";
+            public const string Identifier = "Identifier";
+            public const string IdentifierCategory = "IdentifierCategory";
+            public const string ParseFailure = "ParseFailure";
+            public const string ResolveFailure = "ResolveFailure";
+            public const string GeneratedModule = "GeneratedModule";
+            public const string GenerationSlot = "GenerationSlot";
+            public const string Resource = "Resource";
+            public const string Fix = "Fix";
+            public const string Origin = "Origin";
+            public const string Scope = "Scope";
+            public const string ScopeKind = "ScopeKind";
+            public const string Query = "Query";
+            public const string FunctionShape = "FunctionShape";
+            public const string NominalShape = "NominalShape";
+            public const string ReferenceShape = "ReferenceShape";
+            public const string TupleShape = "TupleShape";
+            public const string ClosedSumShape = "ClosedSumShape";
+            public const string CaseShape = "CaseShape";
+            public const string GenericArgument = "GenericArgument";
+            public const string Type = "Type";
+            public const string Items = "Items";
+            public const string Function = "Function";
+            public const string Modules = "Modules";
+            public const string Ownership = "Ownership";
         }
     }
 
     public static class Build
     {
-        public const string Module = "Build";
-        public const int SchemaVersion = 1;
+        public const string Module = "build";
+        public const int SchemaVersion = 2;
 
         public static class Types
         {
-            public const string Context = "Context";
+            public const string Session = "Session";
             public const string Fs = "Fs";
             public const string Env = "Env";
             public const string Process = "Process";
             public const string Emit = "Emit";
+            public const string Network = "Network";
+            public const string Sha256 = "Sha256";
             public const string Graph = "Graph";
             public const string Step = "Step";
             public const string Artifact = "Artifact";
+            public const string Inputs = "Inputs";
         }
+    }
+
+    public static class Std
+    {
+        public const string Module = "std";
+        public const string SeqModule = "Seq";
     }
 
     /// <summary>
@@ -100,8 +160,8 @@ public static class WellKnownStrings
     /// </summary>
     public static class BuiltinAbilities
     {
-        public const string FFI = "FFI";
-        public const string IO = "IO";
+        public const string FFI = "ffi";
+        public const string IO = "io";
     }
 
     /// <summary>
@@ -164,6 +224,7 @@ public static class WellKnownStrings
         public const string With = "with";
         public const string Return = "return";
         public const string Unreachable = "unreachable";
+        public const string Quote = "quote";
         public const string Resume = "resume";
         public const string Effect = "effect";
         public const string Effects = "effects";
@@ -422,7 +483,6 @@ public static class WellKnownStrings
         public const string Char = "charLiteral";
         public const string Boolean = "booleanLiteral";
         public const string Identifier = "identifier";
-        public const string TypeIdentifier = "typeIdentifier";
         public const string OperatorIdentifier = "operatorIdentifier";
     }
 

@@ -330,7 +330,14 @@ public sealed class TypeLowering
             result = typeId.Value switch
             {
                 BaseTypes.IntId => LlvmIntType.I64,
+                BaseTypes.Int64Id => LlvmIntType.I64,
+                BaseTypes.Int32Id => LlvmIntType.I32,
+                BaseTypes.Int16Id => LlvmIntType.I16,
+                BaseTypes.Int8Id => LlvmIntType.I8,
                 BaseTypes.FloatId => LlvmFloatType.Double,
+                BaseTypes.Float64Id => LlvmFloatType.Double,
+                BaseTypes.Float32Id => LlvmFloatType.Float,
+                BaseTypes.Float16Id => LlvmFloatType.Half,
                 BaseTypes.BoolId => LlvmIntType.I1,
                 BaseTypes.StringId => LlvmPointerType.VoidPtr(),
                 BaseTypes.CharId => LlvmIntType.I32,
@@ -793,7 +800,14 @@ public sealed class TypeLowering
     {
         return typeId.Value is
             BaseTypes.IntId or
+            BaseTypes.Int64Id or
+            BaseTypes.Int32Id or
+            BaseTypes.Int16Id or
+            BaseTypes.Int8Id or
             BaseTypes.FloatId or
+            BaseTypes.Float64Id or
+            BaseTypes.Float32Id or
+            BaseTypes.Float16Id or
             BaseTypes.BoolId or
             BaseTypes.StringId or
             BaseTypes.CharId or
