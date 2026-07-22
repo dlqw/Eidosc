@@ -1,8 +1,12 @@
+using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
+using Eidosc.Ast.Expressions;
+using Eidosc.Ide;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Semantic;
 using Eidosc.Symbols;
+using Eidosc.Syntax;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Semantic;
@@ -91,6 +95,123 @@ Subject :: type {}
         Assert.Contains(
             Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
             function => function.Name == "answer");
+    }
+
+    [Fact]
+    public void Typed_quote_values_cover_every_public_grammar_category()
+    {
+        const string source = """
+ItemValue :: comptime quote item { generated :: Unit -> Int { _ => 1 } };
+ItemsValue :: comptime quote items {
+    first :: Unit -> Int { _ => 1 }
+    second :: Unit -> Int { _ => 2 }
+};
+MemberValue :: comptime quote member { value :: Int };
+MembersValue :: comptime quote members { first :: Int, second :: Bool };
+StatementValue :: comptime quote stmt { 42; };
+ExpressionValue :: comptime quote expr { 40 + 2 };
+PatternValue :: comptime quote pattern { _ };
+TypeValue :: comptime quote type { Seq[Int] };
+TokensValue :: comptime quote tokens { if ??? { value } };
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
+    public void Typed_derive_materializes_quoted_items_with_stable_origin_and_virtual_document()
+    {
+        const string source = """
+derive_answer :: comptime meta.Type -> meta.Items {
+    _ => quote items {
+        generated_answer :: Unit -> Int { _ => 42 }
+    }
+}
+
+@[expand(derive_answer)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var generated = Assert.Single(
+            Assert.IsType<ModuleDecl>(result.Ast).Declarations.OfType<FuncDef>(),
+            static function => function.Name == "generated_answer");
+        var origin = Assert.Single(generated.GeneratedOriginChain);
+        Assert.NotEmpty(origin.StableIdentity);
+        Assert.NotEmpty(origin.GenerationSlotIdentity);
+        Assert.StartsWith("eidos-generated://", origin.VirtualDocumentPath, StringComparison.Ordinal);
+        Assert.Equal(0, origin.ExpansionOutputIndex);
+        Assert.Equal(6, origin.MetaSchemaVersion);
+
+        var document = Assert.Single(
+            IdeSemanticSnapshotBuilder.Build(result).GeneratedDocuments,
+            entry => entry.Uri == origin.VirtualDocumentPath);
+        Assert.Equal(origin.StableIdentity, document.StableIdentity);
+        Assert.Contains("generated_answer", document.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Typed_derive_quote_splices_preserve_fragment_order_and_declaration_identity()
+    {
+        const string source = """
+helper :: Unit -> Int { _ => 39 }
+HelperDecl :: comptime meta.declaration_of(helper);
+First :: comptime quote item {
+    first :: Unit -> Int { _ => 1 }
+};
+Rest :: comptime quote items {
+    second :: Unit -> Int { _ => 2 }
+    answer :: Unit -> Int { _ => $(HelperDecl)(()) + 3 }
+};
+
+derive_all :: comptime meta.Type -> meta.Items {
+    _ => quote items {
+        $(First)
+        ..$(Rest)
+    }
+}
+
+@[expand(derive_all)]
+Subject :: type {}
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var generated = module.Declarations
+            .OfType<FuncDef>()
+            .Where(static function => function.Name is "first" or "second" or "answer")
+            .ToArray();
+        Assert.Equal(["first", "second", "answer"], generated.Select(static function => function.Name));
+        Assert.Equal([0, 1, 2], generated.Select(static function => Assert.Single(function.GeneratedOriginChain).ExpansionOutputIndex));
+
+        var helper = Assert.Single(module.Declarations.OfType<FuncDef>(), static function => function.Name == "helper");
+        var answer = Assert.Single(generated, static function => function.Name == "answer");
+        var binary = Assert.IsType<BinaryExpr>(Assert.Single(answer.Body).Expression);
+        var call = Assert.IsType<CallExpr>(binary.Left);
+        var reference = Assert.IsType<IdentifierExpr>(call.Function);
+        Assert.Equal(helper.SymbolId, reference.SymbolId);
+        Assert.Equal(SyntaxIdentityKind.Declaration, reference.AttachedSyntaxIdentity?.Kind);
+    }
+
+    [Fact]
+    public void Typed_quote_rejects_non_syntax_splice_in_item_slot()
+    {
+        const string source = """
+Bad :: comptime quote item { $(42) };
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("quote item", StringComparison.OrdinalIgnoreCase) ||
+            diagnostic.Message.Contains("item syntax", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
