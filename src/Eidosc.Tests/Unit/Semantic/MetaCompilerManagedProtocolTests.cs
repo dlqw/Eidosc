@@ -557,6 +557,78 @@ work[T] :: Ref[T] -> Int {
     }
 
     [Fact]
+    public void Meta_scheduler_reaches_a_fixed_point_for_nested_typed_syntax_sites()
+    {
+        const string source = """
+make_inner_statement :: comptime meta.Syntax[meta.Stmt] -> meta.Syntax[meta.Stmt] {
+    _ => quote stmt { 20; }
+}
+make_outer_statement :: comptime meta.Syntax[meta.Stmt] -> meta.Syntax[meta.Stmt] {
+    _ => quote stmt { expand make_inner_statement(); }
+}
+make_inner_item :: comptime meta.Syntax[meta.Item] -> meta.Syntax[meta.Item] {
+    _ => quote item { generated :: Unit -> Int { _ => 22 } }
+}
+make_outer_item :: comptime meta.Syntax[meta.Item] -> meta.Syntax[meta.Item] {
+    _ => quote item { expand make_inner_item(); }
+}
+
+expand make_outer_item();
+answer :: Int = {
+    expand make_outer_statement();
+    42
+};
+""";
+
+        var result = Compile(source, CompilationPhase.Types);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var module = Assert.IsType<ModuleDecl>(result.Ast);
+        var generated = Assert.Single(
+            module.Declarations.OfType<FuncDef>(),
+            static function => function.Name == "generated");
+        Assert.Equal(2, generated.GeneratedOriginChain.Count);
+        var answer = Assert.Single(
+            module.Declarations.OfType<LetDecl>(),
+            static declaration => declaration.Pattern is VarPattern { Name: "answer" });
+        var block = Assert.IsType<BlockExpr>(answer.Value);
+        var generatedStatement = Assert.IsType<LiteralExpr>(block.Statements[0]);
+        Assert.Equal("20", generatedStatement.RawText);
+        Assert.Equal(2, generatedStatement.GeneratedOriginChain.Count);
+        Assert.DoesNotContain(module.Declarations, static declaration => declaration is ExpandDeclaration);
+        Assert.DoesNotContain(block.Statements, static statement => statement is ExpandStmt);
+    }
+
+    [Fact]
+    public void Meta_scheduler_reports_non_convergent_nested_generation_deterministically()
+    {
+        const string source = """
+repeat_statement :: comptime meta.Syntax[meta.Stmt] -> meta.Syntax[meta.Stmt] {
+    _ => quote stmt { expand repeat_statement(); }
+}
+
+answer :: Int = {
+    expand repeat_statement();
+    42
+};
+""";
+
+        var first = Compile(source, CompilationPhase.Types);
+        var repeated = Compile(source, CompilationPhase.Types);
+
+        Assert.False(first.Success);
+        Assert.False(repeated.Success);
+        var firstDiagnostic = Assert.Single(first.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("meta expansion did not converge", StringComparison.Ordinal));
+        var repeatedDiagnostic = Assert.Single(repeated.Diagnostics, static diagnostic =>
+            diagnostic.Message.Contains("meta expansion did not converge", StringComparison.Ordinal));
+        Assert.Equal(firstDiagnostic.Code, repeatedDiagnostic.Code);
+        Assert.Equal(firstDiagnostic.Message, repeatedDiagnostic.Message);
+        Assert.Contains("repeat_statement", firstDiagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("answer", firstDiagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Package_extension_emits_typed_items_without_query_or_transformation_values()
     {
         const string source = """
