@@ -171,7 +171,8 @@ public static class MirFormatter
             // 声明
             ModuleDecl m => $"path=\"{string.Join(WellKnownStrings.Operators.Divide, m.Path)}\" decls={m.Declarations.Count}",
             LetDecl => "let-pattern",
-            FuncDef f => $"name=\"{f.Name}\" typeParams={f.TypeParams.Count} signature={f.Signature.Count} branches={f.Body.Count}",
+            FuncDef f => $"name=\"{f.Name}\" typeParams={f.TypeParams.Count} signature={f.Signature.Count} branches={f.Body.Count}" +
+                         (f.HasImplicitUnitBody ? " implicitUnitBody=true" : string.Empty),
             FuncDecl f => $"name=\"{f.Name}\"",
             AdtDef a => $"name=\"{a.Name}\" typeParams={a.TypeParams.Count} constructors={a.Constructors.Count}",
             TraitDef t => $"name=\"{t.Name}\" typeParams={t.TypeParams.Count} methods={t.Methods.Count}",
@@ -193,6 +194,7 @@ public static class MirFormatter
             IfLetExpr i => $"hasElse={i.ElseBranch != null}",
             WhileLetExpr => "while-let",
             MatchExpr m => $"branches={m.Branches.Count}",
+            SelectionExpr s => $"group={s.IsGroup} hasThen={s.ThenArm != null} hasElse={s.ElseArm != null}",
             BlockExpr b => $"stmts={b.Statements.Count}",
             CtorExpr c => $"ctor=\"{c.ConstructorPath?.TypeName ?? "?"}\"",
             ListExpr l => $"elements={l.Elements.Count}",
@@ -261,6 +263,7 @@ public static class MirFormatter
                 .Concat(w.Body != null ? [w.Body] : Enumerable.Empty<EidosAstNode>()),
             MatchExpr m => (m.MatchedExpression != null ? [m.MatchedExpression] : Enumerable.Empty<EidosAstNode>())
                 .Concat(m.Branches),
+            SelectionExpr s => CollectNonNullNodes(s.Subject, s.ThenArm, s.ElseArm),
             LoopExpr l => l.Body != null ? [l.Body] : Enumerable.Empty<EidosAstNode>(),
             ReturnExpr r => r.Value != null ? [r.Value] : Enumerable.Empty<EidosAstNode>(),
             BreakExpr b => b.Value != null ? [b.Value] : Enumerable.Empty<EidosAstNode>(),

@@ -77,6 +77,10 @@ public sealed partial class NameResolver
                 ResolveMatchReferences(match);
                 break;
 
+            case SelectionExpr selection:
+                ResolveSelectionReferences(selection);
+                break;
+
             case PatternGuardExpr patternGuard:
                 ResolvePatternGuardReferences(patternGuard);
                 break;
@@ -594,6 +598,60 @@ public sealed partial class NameResolver
                 "match expression",
                 TryGetIdentifierName(match.MatchedExpression, out var matchedIdentifier) ? matchedIdentifier : null,
                 PreferredAdt: preferredAdt)));
+    }
+
+    private void ResolveSelectionReferences(SelectionExpr selection)
+    {
+        if (selection.Subject != null)
+        {
+            ResolveExpressionReferences(selection.Subject);
+        }
+
+        ResolveSelectionArm(selection, positiveArm: true);
+        ResolveSelectionArm(selection, positiveArm: false);
+    }
+
+    private void ResolveSelectionArm(SelectionExpr selection, bool positiveArm)
+    {
+        var arm = positiveArm ? selection.ThenArm : selection.ElseArm;
+        if (arm == null)
+        {
+            return;
+        }
+
+        using var _ = _symbolTable.PushScopeGuard(ScopeKind.PatternBranch);
+        var indices = positiveArm
+            ? selection.ThenPlaceholderIndices
+            : selection.ElsePlaceholderIndices;
+        var spans = positiveArm
+            ? selection.ThenPlaceholderSpans
+            : selection.ElsePlaceholderSpans;
+        foreach (var index in indices)
+        {
+            var name = $"_{index}";
+            if (!positiveArm && selection.IsGroup)
+            {
+                AddError(spans.GetValueOrDefault(index, arm.Span), DiagnosticMessages.SelectionGroupElsePlaceholder(name), "E4022");
+            }
+
+            _selectionPlaceholderDeclarationDepth++;
+            SymbolId symbolId;
+            try
+            {
+                symbolId = DeclarePatternVariable(
+                    name,
+                    spans.GetValueOrDefault(index, arm.Span),
+                    isParameter: false,
+                    isPatternBound: true);
+            }
+            finally
+            {
+                _selectionPlaceholderDeclarationDepth--;
+            }
+            selection.SetPlaceholderSymbol(positiveArm, index, symbolId);
+        }
+
+        ResolveExpressionReferences(arm);
     }
 
     private SymbolId ResolvePatternCoverageAdt(EidosAstNode? expression)

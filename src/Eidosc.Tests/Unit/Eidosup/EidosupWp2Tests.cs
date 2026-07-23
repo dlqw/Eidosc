@@ -13,10 +13,19 @@ using NSec.Cryptography;
 
 namespace Eidosc.Tests.Unit.Eidosup;
 
-[Collection("Eidosup environment")]
-public sealed class EidosupWp2Tests
+[Collection(EidosupEnvironmentTestCollection.Name)]
+public sealed class EidosupWp2Tests : IDisposable
 {
     private const string AssetHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private readonly string? _previousToolchainSelector;
+
+    public EidosupWp2Tests()
+    {
+        _previousToolchainSelector = Environment.GetEnvironmentVariable("EIDOSUP_TOOLCHAIN");
+        Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", null);
+    }
+
+    public void Dispose() => Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", _previousToolchainSelector);
 
     [Theory]
     [InlineData("custom:local", ToolchainSpecKind.Custom)]

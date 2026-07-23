@@ -53,6 +53,7 @@ public sealed partial class TypeInferer
             IfLetExpr ifLetExpr => InferIfLet(ifLetExpr),
             WhileLetExpr whileLetExpr => InferWhileLet(whileLetExpr),
             MatchExpr match => InferMatch(match),
+            SelectionExpr selection => InferSelection(selection),
             PatternGuardExpr patternGuard => InferPatternGuardExpr(patternGuard),
             SequentialGuardExpr sequentialGuard => InferSequentialGuardExpr(sequentialGuard),
             DoExpr doExpr => InferDoExpr(doExpr),

@@ -68,6 +68,7 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
             IfLetExpr ifLetExpr => VisitIfLetExpr(ifLetExpr),
             WhileLetExpr whileLetExpr => VisitWhileLetExpr(whileLetExpr),
             MatchExpr match => VisitMatchExpr(match),
+            SelectionExpr selection => VisitSelectionExpr(selection),
             PatternGuardExpr patternGuard => VisitPatternGuardExpr(patternGuard),
             SequentialGuardExpr sequentialGuard => VisitSequentialGuardExpr(sequentialGuard),
             BlockExpr block => VisitBlockExpr(block),
@@ -239,6 +240,7 @@ public abstract class AstVisitor<TResult> : IAstVisitor<TResult>
     /// 访问 Match 表达式
     /// </summary>
     protected virtual TResult? VisitMatchExpr(MatchExpr node) => DefaultVisit(node);
+    protected virtual TResult? VisitSelectionExpr(SelectionExpr node) => DefaultVisit(node);
 
     /// <summary>
     /// 访问 Pattern Guard 表达式

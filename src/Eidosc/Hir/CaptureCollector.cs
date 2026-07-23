@@ -256,6 +256,23 @@ internal sealed class CaptureCollector
                 }
                 return;
 
+            case SelectionExpr selection:
+                CollectNodeCaptures(selection.Subject, boundSymbols, freeVariables, captures, capturedSymbols);
+                var thenBoundSymbols = new HashSet<SymbolId>(boundSymbols);
+                foreach (var symbolId in selection.ThenPlaceholderSymbols.Values)
+                {
+                    thenBoundSymbols.Add(symbolId);
+                }
+                CollectNodeCaptures(selection.ThenArm, thenBoundSymbols, freeVariables, captures, capturedSymbols);
+
+                var elseBoundSymbols = new HashSet<SymbolId>(boundSymbols);
+                foreach (var symbolId in selection.ElsePlaceholderSymbols.Values)
+                {
+                    elseBoundSymbols.Add(symbolId);
+                }
+                CollectNodeCaptures(selection.ElseArm, elseBoundSymbols, freeVariables, captures, capturedSymbols);
+                return;
+
             case PatternGuardExpr patternGuardExpr:
                 CollectNodeCaptures(patternGuardExpr.SourceExpression, boundSymbols, freeVariables, captures, capturedSymbols);
                 if (patternGuardExpr.Pattern != null)

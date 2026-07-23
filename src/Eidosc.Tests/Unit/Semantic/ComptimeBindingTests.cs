@@ -3,6 +3,7 @@ using Eidosc.Mir;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Symbols;
+using Eidosc.Tests.Fixtures;
 using Eidosc.Types;
 
 namespace Eidosc.Tests.Unit.Semantic;
@@ -551,6 +552,84 @@ public sealed class ComptimeBindingTests
         Assert.Contains(
             result.Diagnostics,
             diagnostic => diagnostic.Message.Contains("if condition must evaluate to a comptime bool", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Types_ComptimeSelection_EvaluatesBoolOptionResultAndEither()
+    {
+        const string source = """
+import std.Option
+import std.Result
+import std.Either
+
+select_bool :: comptime Bool -> Int
+{
+    value => value then 1 else 0
+}
+
+select_option :: comptime Option[Int] -> Int
+{
+    value => value then _0 else 0
+}
+
+select_result :: comptime Result[Int, String] -> Int
+{
+    value => value then _0 else 0
+}
+
+select_either :: comptime Either[String, Int] -> Int
+{
+    value => value then _0 else 0
+}
+
+Answer :: comptime select_bool(true) + select_option(Some(10)) + select_result(Ok(11)) + select_either(Right(20));
+
+main :: Unit -> Int
+{
+    Answer
+}
+""";
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = TestSourceLoader.GetFullPath("projects/test/src/stdlib/std_option_import.eidos"),
+            StopAtPhase = CompilationPhase.Mir,
+            LanguageVersion = EidosLanguageVersions.Current,
+            EnableMirOptimizations = false,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        AssertMirContainsIntConstant(Assert.IsType<MirModule>(result.MirModule), 42);
+    }
+
+    [Fact]
+    public void Types_ComptimeSelection_DoesNotEvaluateUnselectedArm()
+    {
+        var result = RunNameFirst(
+            """
+            compute :: Unit -> Int { 0 }
+            Answer :: comptime true then 42 else compute(());
+            main :: Unit -> Int { Answer }
+            """,
+            CompilationPhase.Types);
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+    }
+
+    [Fact]
+    public void Types_ComptimeGroupSelection_EvaluatesEverySubjectWithoutShortCircuiting()
+    {
+        var result = RunNameFirst(
+            """
+            Answer :: comptime (false, 1 / 0 == 0) then 1 else 0;
+            main :: Unit -> Int { 0 }
+            """,
+            CompilationPhase.Types);
+
+        Assert.False(result.Success);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("comptime", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
