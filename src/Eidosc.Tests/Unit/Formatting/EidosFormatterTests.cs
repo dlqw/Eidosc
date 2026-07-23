@@ -6,6 +6,99 @@ namespace Eidosc.Tests.Unit.Formatting;
 public sealed class EidosFormatterTests
 {
     [Fact]
+    public void Format_Selection_UsesIndentedArmsWithoutExpressionBraces()
+    {
+        const string source = "result then render(_0) else render_error(_0);";
+
+        var first = EidosFormatter.Format(source, options: NoValidation());
+        var second = EidosFormatter.Format(first.FormattedText, options: NoValidation());
+
+        Assert.True(first.Success);
+        Assert.True(second.Success);
+        Assert.Equal(
+            """
+            result
+                then render(_0)
+                else render_error(_0);
+
+            """.ReplaceLineEndings("\n"),
+            first.FormattedText.ReplaceLineEndings("\n"));
+        Assert.Equal(first.FormattedText, second.FormattedText);
+    }
+
+    [Fact]
+    public void Format_Selection_PreservesBlockOnlyForMultiStatementArm()
+    {
+        const string source = "result then { value := 1; render(value) } else render_error(_0);";
+
+        var result = EidosFormatter.Format(source, options: NoValidation());
+
+        Assert.True(result.Success);
+        Assert.Equal(
+            """
+            result
+                then
+                {
+                    value := 1;
+                    render(value)
+                }
+                else render_error(_0);
+
+            """.ReplaceLineEndings("\n"),
+            result.FormattedText.ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void Format_Selection_PreservesTrailingArmCommentWithoutAddingBraces()
+    {
+        const string source = """
+choose :: Result[Int, String] -> Int {
+value => result then render(_0) // payload
+else render_error(_0)
+}
+""";
+
+        var first = EidosFormatter.Format(source, options: NoValidation());
+        var second = EidosFormatter.Format(first.FormattedText, options: NoValidation());
+
+        Assert.True(first.Success);
+        Assert.Equal(
+            """
+            choose :: Result[Int, String] -> Int {
+                value => result
+                    then render(_0) // payload
+                    else render_error(_0)
+            }
+
+            """.ReplaceLineEndings("\n"),
+            first.FormattedText.ReplaceLineEndings("\n"));
+        Assert.Equal(first.FormattedText, second.FormattedText);
+    }
+
+    [Fact]
+    public void Format_Selection_KeepsNestedSelectionParenthesizedAndExpressionArmsUnbraced()
+    {
+        const string source = "nested :: Option[Option[Int]] -> Int { outer => outer then (_0 then _0 else 0) else 0 }";
+
+        var first = EidosFormatter.Format(source, options: NoValidation());
+        var second = EidosFormatter.Format(first.FormattedText, options: NoValidation());
+
+        Assert.True(first.Success);
+        Assert.Equal(
+            """
+            nested :: Option[Option[Int]] -> Int {
+                outer => outer
+                    then (_0 then _0 else 0)
+                    else 0
+            }
+
+            """.ReplaceLineEndings("\n"),
+            first.FormattedText.ReplaceLineEndings("\n"));
+        Assert.DoesNotContain("then {", first.FormattedText, StringComparison.Ordinal);
+        Assert.Equal(first.FormattedText, second.FormattedText);
+    }
+
+    [Fact]
     public void Format_FunctionBranches_UsesBlockIndentation()
     {
         const string source = "inc :: Int->Int{x=>x+1,}";

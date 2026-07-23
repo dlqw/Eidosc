@@ -269,6 +269,14 @@ public sealed partial class TypeInferer
                 ResolveRequiredAbilities(func.RequiredAbilities, typeVarEnv));
             RejectComptimeFunctionAbilities(func, funcType);
 
+            if (func.HasImplicitUnitBody &&
+                (funcType is not TyFun implicitBodyType ||
+                 CollectParamTypes(implicitBodyType).FirstOrDefault() is not { } firstParameter ||
+                 !IsUnitType(_substitution.Apply(firstParameter))))
+            {
+                AddError(func.Span, DiagnosticMessages.ImplicitFunctionBodyRequiresUnitParameter, "E4027");
+            }
+
             // For function declarations without a body (@ffi, trait methods),
             // strip Unit parameters: Unit -> T is equivalent to () -> T.
             // The symbol's arity (set during name resolution) already reflects
@@ -654,10 +662,12 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var (expectedParamType, consumedParameterCount) = GetPatternBranchParameterExpectation(
-            branch,
-            paramTypes,
-            consumeWholeParameterList: true);
+        var (expectedParamType, consumedParameterCount) = func.HasImplicitUnitBody
+            ? (paramTypes[0], 1)
+            : GetPatternBranchParameterExpectation(
+                branch,
+                paramTypes,
+                consumeWholeParameterList: true);
         InferPattern(branchPattern, expectedParamType);
 
         if (branch.Expression != null)

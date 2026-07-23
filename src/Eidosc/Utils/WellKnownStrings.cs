@@ -631,6 +631,7 @@ public static class WellKnownStrings
         public const string LiteralExpr = "LiteralExpr";
         public const string LoopExpr = "LoopExpr";
         public const string MatchExpr = "MatchExpr";
+        public const string SelectionExpr = "SelectionExpr";
         public const string MethodCallExpr = "MethodCallExpr";
         public const string PathExpr = "PathExpr";
         public const string PatternBranch = "PatternBranch";

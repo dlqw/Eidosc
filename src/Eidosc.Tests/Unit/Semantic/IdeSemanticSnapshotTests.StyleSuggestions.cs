@@ -3,6 +3,7 @@ using Eidosc.Ide;
 using Eidosc.Pipeline;
 using Eidosc.Diagnostic;
 using Eidosc.Semantic;
+using Eidosc.Tests.Fixtures;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Semantic;
@@ -159,7 +160,7 @@ mapped :: map(items, inc);
     }
 
     [Fact]
-    public void Build_RewritePreviewRejectsTypeInvalidStyleFixes()
+    public void Build_RewritePreviewRejectsInvalidFluentFixButKeepsValidGroupedFix()
     {
         const string source = """
 combined :: append(a)(b);
@@ -168,7 +169,9 @@ combined :: append(a)(b);
         var snapshot = BuildStyleSnapshot(source);
 
         Assert.True(snapshot.Success);
-        Assert.DoesNotContain(snapshot.Diagnostics, item => item.Code is "S1001" or "S1002");
+        var diagnostic = Assert.Single(snapshot.Diagnostics, item => item.Code == "S1002");
+        Assert.DoesNotContain(diagnostic.Suggestions, suggestion => suggestion.Replacement == "a.append(b)");
+        Assert.Contains(diagnostic.Suggestions, suggestion => suggestion.Replacement == "append(a, b)");
     }
 
     [Fact]
@@ -314,8 +317,116 @@ combined :: append(a)(missing);
         Assert.False(snapshot.SnapshotContract.AllowsTypeSensitiveRewrites);
     }
 
+    [Fact]
+    public void Build_Selection_OffersValidatedExplicitMatchMigration()
+    {
+        const string source = """
+import std.Option
+
+consume :: Int -> Int { value => value + 1 }
+
+main :: Option[Int] -> Int {
+    option => option then consume(_0) else 0
+}
+""";
+
+        var snapshot = BuildSelectionStyleSnapshot(source);
+
+        var diagnostic = Assert.Single(snapshot.Diagnostics, item => item.Code == "S1005");
+        var suggestion = Assert.Single(diagnostic.Suggestions);
+        Assert.Equal("StyleRewrite", suggestion.Kind);
+        Assert.Equal("high", suggestion.Confidence);
+        Assert.True(suggestion.RequiresCleanTypes);
+        Assert.Contains("match option", suggestion.Replacement, StringComparison.Ordinal);
+        Assert.Contains("Some(selected_value_0)", suggestion.Replacement, StringComparison.Ordinal);
+        Assert.Contains("consume(selected_value_0)", suggestion.Replacement, StringComparison.Ordinal);
+        Assert.Contains("None() => 0", suggestion.Replacement, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_CanonicalMatch_OffersValidatedSelectionMigration()
+    {
+        const string source = """
+import std.Result
+
+main :: Result[Int, String] -> Int {
+    result => match result {
+        Err(_) => 0,
+        Ok(value) => value + 1
+    }
+}
+""";
+
+        var snapshot = BuildSelectionStyleSnapshot(source);
+
+        var diagnostic = Assert.Single(snapshot.Diagnostics, item => item.Code == "S1006");
+        var suggestion = Assert.Single(diagnostic.Suggestions);
+        Assert.Contains("result\n    then _0 + 1\n    else 0", suggestion.Replacement, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_SelectionToMatch_UsesWildcardForUnusedPayload()
+    {
+        const string source = """
+import std.Either
+
+main :: Either[String, Int] -> Int {
+    value => value then _0 else 0
+}
+""";
+
+        var snapshot = BuildSelectionStyleSnapshot(source);
+
+        var diagnostic = Assert.Single(snapshot.Diagnostics, item => item.Code == "S1005");
+        var suggestion = Assert.Single(diagnostic.Suggestions);
+        Assert.Contains("Right(selected_value_0)", suggestion.Replacement, StringComparison.Ordinal);
+        Assert.Contains("Left(_) => 0", suggestion.Replacement, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_UserDefinedOptionMatch_DoesNotOfferSelectionMigration()
+    {
+        const string source = """
+Option[T] :: type { Some :: type(T), None :: type {} }
+
+main :: Option[Int] -> Int {
+    option => match option {
+        Some(value) => value,
+        None() => 0
+    }
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "ide_selection_migration_local_option.eidos",
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<Eidosc.Ast.Declarations.ModuleDecl>(result.Ast);
+        var diagnostics = IdeStyleSuggestionBuilder.Build(module, result.SourceText, symbolTable: result.SymbolTable);
+        Assert.DoesNotContain(diagnostics, item => item.Code == "S1006");
+    }
+
     private static IdeSemanticSnapshot BuildStyleSnapshot(string source)
         => BuildStyleSnapshot(source, assertSuccess: true);
+
+    private static IdeSemanticSnapshot BuildSelectionStyleSnapshot(string source)
+    {
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = TestSourceLoader.GetFullPath("projects/test/src/stdlib/std_option_import.eidos"),
+            StopAtPhase = CompilationPhase.Types,
+            NoImplicitPrelude = false,
+            UseColors = false
+        }).Run();
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        return IdeSemanticSnapshotBuilder.Build(result);
+    }
 
     private static IReadOnlyList<Eidosc.Diagnostic.Diagnostic> BuildRawStyleDiagnostics(string source)
     {

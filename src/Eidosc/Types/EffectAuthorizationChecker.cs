@@ -313,6 +313,21 @@ public sealed class EffectAuthorizationChecker
                 }
                 break;
 
+            case SelectionExpr selection:
+                if (selection.Subject != null)
+                {
+                    VisitExpression(selection.Subject);
+                }
+                if (selection.ThenArm != null)
+                {
+                    VisitExpression(selection.ThenArm);
+                }
+                if (selection.ElseArm != null)
+                {
+                    VisitExpression(selection.ElseArm);
+                }
+                break;
+
             case PatternGuardExpr patternGuard:
                 if (patternGuard.SourceExpression != null)
                 {

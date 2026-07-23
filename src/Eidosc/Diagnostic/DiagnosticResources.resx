@@ -2115,6 +2115,27 @@
   <data name="StyleSuggestionPreferPatternGuardBranches" xml:space="preserve">
     <value>Style suggestion: prefer pattern guard branches for this predicate split.</value>
   </data>
+  <data name="SelectionCanBeExpandedToMatch" xml:space="preserve">
+    <value>Migration action: expand this branch selection to an explicit match.</value>
+  </data>
+  <data name="MatchCanBeCollapsedToSelection" xml:space="preserve">
+    <value>Migration action: collapse this canonical binary match to branch selection.</value>
+  </data>
+  <data name="SelectionToMatchLabel" xml:space="preserve">
+    <value>selection has an equivalent explicit match</value>
+  </data>
+  <data name="MatchToSelectionLabel" xml:space="preserve">
+    <value>canonical binary match has an equivalent selection</value>
+  </data>
+  <data name="SelectionMigrationPreservesBranchSemantics" xml:space="preserve">
+    <value>The quick fix preserves the canonical positive/negative branch direction and rewrites payload bindings by resolved symbol identity.</value>
+  </data>
+  <data name="RewriteAsExplicitMatchSuggestion" xml:space="preserve">
+    <value>Rewrite as explicit match</value>
+  </data>
+  <data name="RewriteAsSelectionSuggestion" xml:space="preserve">
+    <value>Rewrite as then/else selection</value>
+  </data>
   <data name="PrefixCallCanBeRewrittenLabel" xml:space="preserve">
     <value>prefix call can be rewritten</value>
   </data>

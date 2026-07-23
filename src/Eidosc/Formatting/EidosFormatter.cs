@@ -173,6 +173,7 @@ public static class EidosFormatter
             var formatted = CollapseEmptyBlocks(_builder.ToString());
             formatted = CompactSimpleIfExpressions(formatted);
             formatted = CompactSimpleConditionalBranches(formatted);
+            formatted = FormatSelectionExpressions(formatted);
             return ExpandMultilineConditionalBlocks(formatted);
         }
 
@@ -861,10 +862,259 @@ public static class EidosFormatter
                     continue;
                 }
 
+                if (TrySplitCloseElseExpression(line, out closeBrace, out elseLine))
+                {
+                    expanded.Add(closeBrace);
+                    expanded.Add(elseLine);
+                    continue;
+                }
+
                 expanded.Add(line);
             }
 
-            return string.Join(_newLine, expanded);
+            return NormalizeSelectionIndentation(string.Join(_newLine, expanded));
+        }
+
+        private static bool TrySplitCloseElseExpression(
+            string line,
+            out string closeBrace,
+            out string elseLine)
+        {
+            closeBrace = string.Empty;
+            elseLine = string.Empty;
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("} else ", StringComparison.Ordinal) || trimmed == "} else {")
+            {
+                return false;
+            }
+
+            var indent = line[..(line.Length - line.TrimStart().Length)];
+            closeBrace = $"{indent}}}";
+            elseLine = $"{indent}{trimmed[2..]}";
+            return true;
+        }
+
+        private string NormalizeSelectionIndentation(string text)
+        {
+            var lines = text.Split(_newLine).ToList();
+            for (var index = 0; index + 1 < lines.Count; index++)
+            {
+                var head = lines[index];
+                var next = lines[index + 1].TrimStart();
+                var headTrimmed = head.Trim();
+                if ((!next.StartsWith("then", StringComparison.Ordinal) &&
+                     !next.StartsWith("else", StringComparison.Ordinal)) ||
+                    FindTopLevelWord(head, "if") >= 0 ||
+                    string.IsNullOrWhiteSpace(head) ||
+                    headTrimmed is "{" or "}" ||
+                    headTrimmed.StartsWith("then", StringComparison.Ordinal) ||
+                    headTrimmed.StartsWith("else", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var headIndentLength = head.Length - head.TrimStart().Length;
+                var armIndex = index + 1;
+                while (armIndex < lines.Count)
+                {
+                    var armTrimmed = lines[armIndex].TrimStart();
+                    var isThen = armTrimmed.StartsWith("then", StringComparison.Ordinal);
+                    var isElse = armTrimmed.StartsWith("else", StringComparison.Ordinal);
+                    if (!isThen && !isElse)
+                    {
+                        break;
+                    }
+
+                    var currentIndentLength = lines[armIndex].Length - armTrimmed.Length;
+                    var desiredIndentLength = headIndentLength + _indentUnit.Length;
+                    var delta = Math.Max(0, desiredIndentLength - currentIndentLength);
+                    var armEnd = armIndex;
+                    if ((armTrimmed == "then" || armTrimmed == "else") &&
+                        armIndex + 1 < lines.Count &&
+                        lines[armIndex + 1].Trim() == "{")
+                    {
+                        var depth = 0;
+                        for (var scan = armIndex + 1; scan < lines.Count; scan++)
+                        {
+                            var trimmed = lines[scan].Trim();
+                            if (trimmed == "{")
+                            {
+                                depth++;
+                            }
+                            else if (trimmed == "}")
+                            {
+                                depth--;
+                            }
+
+                            armEnd = scan;
+                            if (depth == 0)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (delta > 0)
+                    {
+                        var extraIndent = new string(' ', delta);
+                        for (var scan = armIndex; scan <= armEnd; scan++)
+                        {
+                            lines[scan] = extraIndent + lines[scan];
+                        }
+                    }
+
+                    armIndex = armEnd + 1;
+                    if (!isThen || armIndex >= lines.Count ||
+                        !lines[armIndex].TrimStart().StartsWith("else", StringComparison.Ordinal))
+                    {
+                        break;
+                    }
+                }
+
+                index = Math.Max(index, armIndex - 1);
+            }
+
+            return string.Join(_newLine, lines);
+        }
+
+        private string FormatSelectionExpressions(string text)
+        {
+            var lines = text.Split(_newLine);
+            var formatted = new List<string>(lines.Length);
+            foreach (var line in lines)
+            {
+                if (!TryFormatSingleLineSelection(line, out var selectionLines))
+                {
+                    formatted.Add(line);
+                    continue;
+                }
+
+                formatted.AddRange(selectionLines);
+            }
+
+            return string.Join(_newLine, formatted);
+        }
+
+        private bool TryFormatSingleLineSelection(string line, out string[] formattedLines)
+        {
+            formattedLines = [];
+            var thenIndex = FindTopLevelWord(line, "then");
+            var elseIndex = FindTopLevelWord(line, "else");
+            var keywordIndex = thenIndex >= 0 ? thenIndex : elseIndex;
+            if (keywordIndex < 0)
+            {
+                return false;
+            }
+
+            var head = line[..keywordIndex].TrimEnd();
+            if (FindTopLevelWord(head, "if") >= 0 ||
+                string.IsNullOrWhiteSpace(head) ||
+                line.Contains('{') ||
+                line.Contains('}'))
+            {
+                return false;
+            }
+
+            var indent = line[..(line.Length - line.TrimStart().Length)];
+            var armIndent = indent + _indentUnit;
+            var result = new List<string> { head };
+            if (thenIndex >= 0)
+            {
+                var thenStart = thenIndex + "then".Length;
+                var thenEnd = elseIndex > thenIndex ? elseIndex : line.Length;
+                var thenArm = line[thenStart..thenEnd].Trim();
+                if (thenArm.Length == 0)
+                {
+                    return false;
+                }
+                result.Add($"{armIndent}then {thenArm}");
+            }
+
+            if (elseIndex >= 0)
+            {
+                var elseArm = line[(elseIndex + "else".Length)..].Trim();
+                if (elseArm.Length == 0)
+                {
+                    return false;
+                }
+                result.Add($"{armIndent}else {elseArm}");
+            }
+
+            formattedLines = result.ToArray();
+            return true;
+        }
+
+        private static int FindTopLevelWord(string text, string word)
+        {
+            var parenDepth = 0;
+            var bracketDepth = 0;
+            var braceDepth = 0;
+            var quote = '\0';
+            var escaped = false;
+            for (var index = 0; index <= text.Length - word.Length; index++)
+            {
+                var ch = text[index];
+                if (quote != '\0')
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (ch == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (ch == quote)
+                    {
+                        quote = '\0';
+                    }
+                    continue;
+                }
+
+                if (ch is '\'' or '"')
+                {
+                    quote = ch;
+                    continue;
+                }
+
+                switch (ch)
+                {
+                    case '(':
+                        parenDepth++;
+                        continue;
+                    case ')':
+                        parenDepth--;
+                        continue;
+                    case '[':
+                        bracketDepth++;
+                        continue;
+                    case ']':
+                        bracketDepth--;
+                        continue;
+                    case '{':
+                        braceDepth++;
+                        continue;
+                    case '}':
+                        braceDepth--;
+                        continue;
+                }
+
+                if (parenDepth != 0 || bracketDepth != 0 || braceDepth != 0 ||
+                    !text.AsSpan(index).StartsWith(word, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var beforeIsWord = index > 0 && (char.IsLetterOrDigit(text[index - 1]) || text[index - 1] == '_');
+                var after = index + word.Length;
+                var afterIsWord = after < text.Length && (char.IsLetterOrDigit(text[after]) || text[after] == '_');
+                if (!beforeIsWord && !afterIsWord)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
         }
 
         private static bool TryExpandConditionalOpenLine(

@@ -1,0 +1,45 @@
+Either :: module {
+    Either[L, R] :: type { Left:: type(L), Right:: type(R) }
+
+    is_left[L, R] :: Either[L, R] -> Bool
+    {
+        Left(_) => true,
+        Right(_) => false
+    }
+
+    is_right[L, R] :: Either[L, R] -> Bool
+    {
+        Left(_) => false,
+        Right(_) => true
+    }
+
+    map[L, R, U, F: effects] :: Either[L, R] -> (R -> U need F) -> Either[L, U] need F
+    {
+        Left(value) => _ => Left(value),
+        Right(value) => f => Right(f(value))
+    }
+
+    map_left[L, R, U, F: effects] :: Either[L, R] -> (L -> U need F) -> Either[U, R] need F
+    {
+        Left(value) => f => Left(f(value)),
+        Right(value) => _ => Right(value)
+    }
+
+    bimap[L, R, U, V, F1: effects, F2: effects] :: Either[L, R] -> (L -> U need F1) -> (R -> V need F2) -> Either[U, V] need F1, F2
+    {
+        Left(value) => left_fn => _ => Left(left_fn(value)),
+        Right(value) => _ => right_fn => Right(right_fn(value))
+    }
+
+    fold[L, R, U, F1: effects, F2: effects] :: Either[L, R] -> (L -> U need F1) -> (R -> U need F2) -> U need F1, F2
+    {
+        Left(value) => left_fn => _ => left_fn(value),
+        Right(value) => _ => right_fn => right_fn(value)
+    }
+
+    unwrap_or[L, R] :: Either[L, R] -> R -> R
+    {
+        Left(_) => fallback => fallback,
+        Right(value) => _ => value
+    }
+}

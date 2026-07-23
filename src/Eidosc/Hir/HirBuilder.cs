@@ -1275,6 +1275,7 @@ public sealed partial class HirBuilder
             ContinueExpr continueExpr => ConvertContinue(continueExpr),
             UnreachableExpr unreachableExpr => ConvertUnreachable(unreachableExpr),
             MatchExpr match => ConvertMatch(match),
+            SelectionExpr selection => ConvertSelection(selection),
             PatternGuardExpr patternGuard => ConvertPatternGuard(patternGuard),
             SequentialGuardExpr sequentialGuard => ConvertSequentialGuard(sequentialGuard),
             LambdaExpr lambda => ConvertLambda(lambda),
@@ -2146,6 +2147,158 @@ public sealed partial class HirBuilder
 
         return hirMatch;
     }
+
+    private HirMatch ConvertSelection(SelectionExpr selection)
+    {
+        var subjectNodes = selection.Subject is TupleExpr tuple
+            ? tuple.Elements.Cast<EidosAstNode>().ToArray()
+            : selection.Subject != null
+                ? [selection.Subject]
+                : [];
+        var hirMatch = new HirMatch
+        {
+            Scrutinee = ConvertExprOrFallback(selection.Subject, "selection subject", selection.Span),
+            Span = selection.Span,
+            TypeId = GetTypeId(selection),
+            IsExhaustive = true
+        };
+
+        var positivePattern = BuildSelectionPattern(selection, subjectNodes, positive: true);
+        var negativePattern = selection.IsGroup
+            ? CreateSelectionWildcard(selection.Span)
+            : BuildSelectionPattern(selection, subjectNodes, positive: false);
+        var unit = new HirLiteral
+        {
+            LiteralKind = LiteralKind.Unit,
+            Value = null,
+            Span = selection.Span,
+            TypeId = new TypeId(BaseTypes.UnitId)
+        };
+
+        if (selection.ThenArm != null)
+        {
+            hirMatch.Branches.Add(new HirMatchBranch
+            {
+                Pattern = positivePattern,
+                Body = ConvertExpr(selection.ThenArm)
+            });
+        }
+
+        if (selection.ElseArm != null)
+        {
+            hirMatch.Branches.Add(new HirMatchBranch
+            {
+                Pattern = negativePattern,
+                Body = ConvertExpr(selection.ElseArm)
+            });
+        }
+
+        if (selection.ThenArm == null || selection.ElseArm == null)
+        {
+            hirMatch.Branches.Add(new HirMatchBranch
+            {
+                Pattern = CreateSelectionWildcard(selection.Span),
+                Body = unit
+            });
+        }
+
+        return hirMatch;
+    }
+
+    private HirPattern BuildSelectionPattern(
+        SelectionExpr selection,
+        IReadOnlyList<EidosAstNode> subjectNodes,
+        bool positive)
+    {
+        var payloadIndex = 0;
+        var elements = new List<HirPattern>(selection.Subjects.Count);
+        for (var i = 0; i < selection.Subjects.Count; i++)
+        {
+            var subject = selection.Subjects[i];
+            var node = i < subjectNodes.Count ? subjectNodes[i] : selection;
+            elements.Add(BuildSelectionSubjectPattern(selection, subject, node, positive, ref payloadIndex));
+        }
+
+        if (!selection.IsGroup)
+        {
+            return elements.Count == 1 ? elements[0] : CreateSelectionWildcard(selection.Span);
+        }
+
+        return new HirTuplePattern
+        {
+            Elements = elements,
+            Span = selection.Span,
+            TypeId = GetTypeId(selection.Subject)
+        };
+    }
+
+    private HirPattern BuildSelectionSubjectPattern(
+        SelectionExpr selection,
+        SelectionSubjectDesugaring subject,
+        EidosAstNode subjectNode,
+        bool positive,
+        ref int payloadIndex)
+    {
+        if (subject.Kind == SelectionSubjectKind.Bool)
+        {
+            return new HirLiteralPattern
+            {
+                Value = positive,
+                Span = subjectNode.Span,
+                TypeId = new TypeId(BaseTypes.BoolId)
+            };
+        }
+
+        var payloadTypes = positive ? subject.PositivePayloadTypes : subject.NegativePayloadTypes;
+        var symbols = positive ? selection.ThenPlaceholderSymbols : selection.ElsePlaceholderSymbols;
+        var fields = new List<HirFieldPattern>(payloadTypes.Count);
+        for (var i = 0; i < payloadTypes.Count; i++)
+        {
+            var index = payloadIndex++;
+            var payloadTypeId = payloadTypes[i] is DrivenType payloadType
+                ? GetTypeTypeId(payloadType)
+                : TypeId.None;
+            var pattern = symbols.TryGetValue(index, out var symbolId)
+                ? new HirVarPattern
+                {
+                    Name = $"_{index}",
+                    SymbolId = symbolId,
+                    Span = subjectNode.Span,
+                    TypeId = payloadTypeId
+                }
+                : CreateSelectionWildcard(subjectNode.Span, payloadTypeId);
+            fields.Add(new HirFieldPattern
+            {
+                FieldName = $"_{i}",
+                Pattern = pattern
+            });
+        }
+
+        var constructorName = subject.Kind switch
+        {
+            SelectionSubjectKind.Option => positive ? "Some" : "None",
+            SelectionSubjectKind.Result => positive ? "Ok" : "Err",
+            SelectionSubjectKind.Either => positive ? "Right" : "Left",
+            _ => string.Empty
+        };
+        return new HirCtorPattern
+        {
+            ConstructorName = constructorName,
+            ConstructorSymbolId = positive
+                ? subject.PositiveConstructorSymbolId
+                : subject.NegativeConstructorSymbolId,
+            Fields = fields,
+            Span = subjectNode.Span,
+            TypeId = GetTypeId(subjectNode)
+        };
+    }
+
+    private static HirVarPattern CreateSelectionWildcard(SourceSpan span, TypeId typeId = default) => new()
+    {
+        IsWildcard = true,
+        Span = span,
+        TypeId = typeId
+    };
 
     private HirPatternGuard ConvertPatternGuard(PatternGuardExpr patternGuard)
     {

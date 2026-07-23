@@ -13,6 +13,66 @@ namespace Eidosc.Tests.Unit.Parsing.Handwritten;
 public sealed class ExprParserTests
 {
     [Fact]
+    public void Parse_selection_with_then_and_else_placeholders()
+    {
+        var ctx = MakeNameFirstCtx(
+            Ident("result"), "then", Ident("render"), "(", Ident("_0"), ")",
+            "else", Ident("render_error"), "(", Ident("_0"), ")");
+
+        var selection = Assert.IsType<SelectionExpr>(new ExprParser(ctx).ParseExpr());
+
+        Assert.IsType<IdentifierExpr>(selection.Subject);
+        Assert.IsType<CallExpr>(selection.ThenArm);
+        Assert.IsType<CallExpr>(selection.ElseArm);
+        Assert.Equal([0], selection.ThenPlaceholderIndices);
+        Assert.Equal([0], selection.ElsePlaceholderIndices);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_group_selection_marks_tuple_subject()
+    {
+        var ctx = MakeNameFirstCtx(
+            "(", Ident("ready"), ",", Ident("value"), ")",
+            "then", Ident("consume"), "(", Ident("_0"), ")");
+
+        var selection = Assert.IsType<SelectionExpr>(new ExprParser(ctx).ParseExpr());
+
+        Assert.True(selection.IsGroup);
+        Assert.Equal(2, Assert.IsType<TupleExpr>(selection.Subject).Elements.Count);
+        Assert.Equal([0], selection.ThenPlaceholderIndices);
+        Assert.Null(selection.ElseArm);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_nested_selection_keeps_subject_placeholder_in_outer_arm_and_shadows_nested_arm()
+    {
+        var ctx = MakeNameFirstCtx(
+            Ident("outer"), "then", "(", Ident("_0"), "then", Ident("_0"), "else", Num("0"), ")",
+            "else", Num("0"));
+
+        var outer = Assert.IsType<SelectionExpr>(new ExprParser(ctx).ParseExpr());
+        var nested = Assert.IsType<SelectionExpr>(outer.ThenArm);
+
+        Assert.Equal([0], outer.ThenPlaceholderIndices);
+        Assert.Equal([0], nested.ThenPlaceholderIndices);
+        Assert.Empty(nested.ElsePlaceholderIndices);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_standalone_else_does_not_consume_following_then_at_same_level()
+    {
+        var ctx = MakeNameFirstCtx(Ident("result"), "else", Ident("recover"), "then", Ident("unexpected"));
+
+        var selection = Assert.IsType<SelectionExpr>(new ExprParser(ctx).ParseExpr());
+
+        Assert.IsType<IdentifierExpr>(selection.ElseArm);
+        Assert.True(ctx.Check("then"));
+    }
+
+    [Fact]
     public void Parse_integer_literal()
     {
         var ctx = MakeCtx(Num("42"));

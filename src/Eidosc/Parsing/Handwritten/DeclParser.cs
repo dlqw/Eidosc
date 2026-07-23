@@ -568,13 +568,7 @@ public sealed class DeclParser(ParserContext ctx)
         AddSignatureNeedClause(signature, clauses);
         var requiredAbilities = ParseFunctionClauseGroup(typeParams, clauses);
 
-        List<PatternBranch>? body = null;
-        if (ctx.Check("{"))
-        {
-            ctx.Advance();
-            body = ParsePatternBranches();
-            ctx.Expect("}");
-        }
+        var (body, hasImplicitUnitBody) = ParseOptionalFunctionBody();
         RejectPostBodyClauses();
 
         var func = new FuncDef();
@@ -583,7 +577,8 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetTypeParams(typeParams);
         func.SetSignature(signature);
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
-        func.SetBody(body ?? []);
+        func.SetBody(body);
+        func.SetImplicitUnitBody(hasImplicitUnitBody);
         func.SetAttributes(attrs);
         func.SetClauses(clauses);
         func.SetExported(isExport);
@@ -1861,13 +1856,7 @@ public sealed class DeclParser(ParserContext ctx)
         AddSignatureNeedClause(signature, clauses);
         var requiredAbilities = ParseFunctionClauseGroup(typeParams, clauses);
 
-        List<PatternBranch>? body = null;
-        if (ctx.Check("{"))
-        {
-            ctx.Advance();
-            body = ParsePatternBranches();
-            ctx.Expect("}");
-        }
+        var (body, hasImplicitUnitBody) = ParseOptionalFunctionBody();
         RejectPostBodyClauses();
 
         var func = new FuncDef();
@@ -1877,7 +1866,8 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetSignature(signature);
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
         func.SetComptime(isComptime);
-        func.SetBody(body ?? []);
+        func.SetBody(body);
+        func.SetImplicitUnitBody(hasImplicitUnitBody);
         func.SetAttributes(attrs);
         func.SetClauses(clauses);
         func.SetExported(isExport);
@@ -1908,13 +1898,7 @@ public sealed class DeclParser(ParserContext ctx)
             return decl;
         }
 
-        List<PatternBranch>? body = null;
-        if (ctx.Check("{"))
-        {
-            ctx.Advance();
-            body = ParsePatternBranches();
-            ctx.Expect("}");
-        }
+        var (body, hasImplicitUnitBody) = ParseOptionalFunctionBody();
         RejectPostBodyClauses();
 
         var func = new FuncDef();
@@ -1923,7 +1907,8 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetTypeParams(typeParams);
         func.SetSignature(signature);
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
-        func.SetBody(body ?? []);
+        func.SetBody(body);
+        func.SetImplicitUnitBody(hasImplicitUnitBody);
         func.SetAttributes(attrs);
         func.SetClauses(clauses);
         func.SetExported(isExport);
@@ -2209,13 +2194,7 @@ public sealed class DeclParser(ParserContext ctx)
         var requiredAbilities = ParseNeedClause();
         _typeParser.ApplyGenericWhereClause(typeParams ?? []);
 
-        List<PatternBranch>? body = null;
-        if (ctx.Check("{"))
-        {
-            ctx.Advance();
-            body = ParsePatternBranches();
-            ctx.Expect("}");
-        }
+        var (body, hasImplicitUnitBody) = ParseOptionalFunctionBody();
 
         var func = new FuncDef();
         func.SetSpan(ctx.SpanFrom(startToken));
@@ -2223,7 +2202,8 @@ public sealed class DeclParser(ParserContext ctx)
         func.SetTypeParams(typeParams ?? []);
         func.SetSignature(signature);
         func.SetRequiredAbilities(MergeSignatureEffects(signature, requiredAbilities));
-        func.SetBody(body ?? []);
+        func.SetBody(body);
+        func.SetImplicitUnitBody(hasImplicitUnitBody);
         func.SetAttributes(attrs);
         func.SetExported(isExport);
         return func;
@@ -2242,6 +2222,66 @@ public sealed class DeclParser(ParserContext ctx)
             }
         }
         return branches;
+    }
+
+    private (List<PatternBranch> Body, bool HasImplicitUnitBody) ParseOptionalFunctionBody()
+    {
+        if (!ctx.Check("{"))
+        {
+            return ([], false);
+        }
+
+        if (FunctionBodyHasTopLevelBranchArrow())
+        {
+            ctx.Advance();
+            var branches = ParsePatternBranches();
+            ctx.Expect("}");
+            return (branches, false);
+        }
+
+        var block = _exprParser.ParseFunctionBlock();
+        var wildcard = new WildcardPattern();
+        wildcard.SetSpan(block.Span);
+        var branch = new PatternBranch();
+        branch.SetSpan(block.Span);
+        branch.SetPattern(wildcard);
+        branch.SetBody(block);
+        return ([branch], true);
+    }
+
+    private bool FunctionBodyHasTopLevelBranchArrow()
+    {
+        var depth = 0;
+        for (var offset = 0; ; offset++)
+        {
+            var token = ctx.RawPeek(offset);
+            if (token is EofToken)
+            {
+                return false;
+            }
+
+            var text = ctx.GetRawText(token);
+            if (text == "{")
+            {
+                depth++;
+                continue;
+            }
+
+            if (text == "}")
+            {
+                depth--;
+                if (depth <= 0)
+                {
+                    return false;
+                }
+                continue;
+            }
+
+            if (depth == 1 && text == "=>")
+            {
+                return true;
+            }
+        }
     }
 
     internal PatternBranch ParsePatternBranch()

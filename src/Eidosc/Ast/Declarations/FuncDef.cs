@@ -42,6 +42,8 @@ public record FuncDef : Declaration
 
     public bool IsPatternBodyExhaustive { get; private set; }
 
+    public bool HasImplicitUnitBody { get; private set; }
+
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {
         Span = node.Span;
@@ -184,6 +186,7 @@ public record FuncDef : Declaration
     internal void SetComptime(bool isComptime) => IsComptime = isComptime;
     internal void SetBody(List<Eidosc.Ast.Patterns.PatternBranch> body) => Body = body;
     internal void SetPatternBodyExhaustive(bool isExhaustive) => IsPatternBodyExhaustive = isExhaustive;
+    internal void SetImplicitUnitBody(bool value) => HasImplicitUnitBody = value;
 
     public override XmlElement ToXmlElement(XmlDocument doc)
     {
@@ -192,6 +195,10 @@ public record FuncDef : Declaration
         if (IsComptime)
         {
             element.SetAttribute("phase", "comptime");
+        }
+        if (HasImplicitUnitBody)
+        {
+            element.SetAttribute("implicitUnitBody", "true");
         }
 
         if (TypeParams.Count > 0)

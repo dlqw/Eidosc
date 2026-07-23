@@ -722,6 +722,36 @@ public sealed class DeclParserTests
     }
 
     [Fact]
+    public void Parse_name_first_unit_function_with_implicit_block_body()
+    {
+        var ctx = MakeNameFirstCtx(
+            Ident("main"), "::", TypeId("Unit"), "->", TypeId("Int"),
+            "{", Num("41"), "+", Num("1"), "}");
+
+        var func = Assert.IsType<FuncDef>(new DeclParser(ctx).ParseTopLevel());
+
+        Assert.True(func.HasImplicitUnitBody);
+        var branch = Assert.Single(func.Body);
+        Assert.IsType<WildcardPattern>(branch.Pattern);
+        Assert.IsType<BlockExpr>(branch.Expression);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_explicit_wildcard_function_body_remains_pattern_body()
+    {
+        var ctx = MakeNameFirstCtx(
+            Ident("main"), "::", TypeId("Unit"), "->", TypeId("Int"),
+            "{", "_", "=>", Num("42"), "}");
+
+        var func = Assert.IsType<FuncDef>(new DeclParser(ctx).ParseTopLevel());
+
+        Assert.False(func.HasImplicitUnitBody);
+        Assert.IsType<LiteralExpr>(Assert.Single(func.Body).Expression);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
     public void Parse_name_first_func_decl()
     {
         var ctx = MakeNameFirstCtx(Ident("malloc"), "::", TypeId("Int"), "->", TypeId("RawPtr"), ";");

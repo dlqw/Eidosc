@@ -4,6 +4,7 @@ using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
+using Eidosc.Pipeline;
 using Eidosc.Syntax;
 using Eidosc.Utils;
 
@@ -87,6 +88,12 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                 left = binary;
             }
 
+            if (minPrec <= Precedence.Selection &&
+                (ctx.Check(WellKnownStrings.Keywords.Then) || ctx.Check(WellKnownStrings.Keywords.Else)))
+            {
+                left = ParseSelectionSuffix(startToken, left);
+            }
+
             return left;
         }
         finally
@@ -98,6 +105,66 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     public EidosAstNode ParseExprNoLambda()
     {
         return ParseExpr(0, false);
+    }
+
+    private SelectionExpr ParseSelectionSuffix(Token startToken, EidosAstNode subject)
+    {
+        var selection = new SelectionExpr();
+        selection.SetSubject(subject);
+
+        if (ctx.Match(WellKnownStrings.Keywords.Then))
+        {
+            var (thenArm, thenPlaceholders) = ParseSelectionArm(allowNestedSelection: false);
+            selection.SetThenArm(thenArm, thenPlaceholders);
+            if (ctx.Match(WellKnownStrings.Keywords.Else))
+            {
+                var (elseArm, elsePlaceholders) = ParseSelectionArm(allowNestedSelection: true);
+                selection.SetElseArm(elseArm, elsePlaceholders);
+            }
+        }
+        else
+        {
+            ctx.Expect(WellKnownStrings.Keywords.Else);
+            var (elseArm, elsePlaceholders) = ParseSelectionArm(allowNestedSelection: false);
+            selection.SetElseArm(elseArm, elsePlaceholders);
+        }
+
+        selection.SetSpan(ctx.SpanFrom(startToken));
+        return selection;
+    }
+
+    private (EidosAstNode Arm, IReadOnlyDictionary<int, SourceSpan> Placeholders) ParseSelectionArm(bool allowNestedSelection)
+    {
+        var arm = ParseExpr(allowNestedSelection ? Precedence.Selection : Precedence.Selection + 1);
+        var placeholders = new Dictionary<int, SourceSpan>();
+        CollectSelectionPlaceholders(arm, placeholders);
+        return (arm, placeholders);
+    }
+
+    private static void CollectSelectionPlaceholders(
+        EidosAstNode node,
+        Dictionary<int, SourceSpan> placeholders)
+    {
+        if (node is IdentifierExpr identifier &&
+            SelectionPlaceholderSyntax.TryParse(identifier.Name, out var index, out _))
+        {
+            placeholders.TryAdd(index, identifier.Span);
+            return;
+        }
+
+        if (node is SelectionExpr nestedSelection)
+        {
+            if (nestedSelection.Subject != null)
+            {
+                CollectSelectionPlaceholders(nestedSelection.Subject, placeholders);
+            }
+            return;
+        }
+
+        foreach (var child in AstStableNodeTraversal.GetStructuralChildren(node))
+        {
+            CollectSelectionPlaceholders(child, placeholders);
+        }
     }
 
     private EidosAstNode ParsePrefix()
@@ -1037,13 +1104,13 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
 
         var pattern = patternParser.ParsePattern();
         ctx.Expect("=");
-        var matched = ParseExprNoLambda();
+        var matched = ParseExpr(Precedence.Selection + 1, allowLambda: false);
         ctx.Expect("then");
 
         var ifLet = new IfLetExpr();
         ifLet.SetPattern(pattern);
         ifLet.SetMatchedExpression(matched);
-        ifLet.SetThenBranch(ParseBlockOrExpr());
+        ifLet.SetThenBranch(ParseBlockOrExpr(Precedence.Selection + 1));
 
         if (ctx.Match("else"))
         {
@@ -1062,7 +1129,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
 
         var pattern = patternParser.ParsePattern();
         ctx.Expect("=");
-        var matched = ParseExprNoLambda();
+        var matched = ParseExpr(Precedence.Selection + 1, allowLambda: false);
         ctx.Expect("then");
 
         var whileLet = new WhileLetExpr();
@@ -1221,12 +1288,12 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         ifExpr.SetSpan(ctx.SpanFrom(startToken));
 
         // Condition expression
-        var condition = ParseExpr();
+        var condition = ParseExpr(Precedence.Selection + 1);
         ifExpr.SetCondition(condition);
 
         // then block
         ctx.Expect("then");
-        var thenBranch = ParseBlockOrExpr();
+        var thenBranch = ParseBlockOrExpr(Precedence.Selection + 1);
         ifExpr.SetThenBranch(thenBranch);
 
         // Optional else
@@ -1424,10 +1491,11 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     private EidosAstNode ParseCall(EidosAstNode function)
     {
         var startToken = ctx.Current;
+        var callStart = function.Span.Position >= 0 ? function.Span.Location : startToken.Location;
         ctx.Expect("(");
 
         var call = new CallExpr();
-        call.SetSpan(ctx.SpanFrom(startToken));
+        call.SetSpan(new SourceSpan(callStart, startToken.Location.Position + startToken.Length - callStart.Position));
         call.SetFunction(function);
 
         if (!ctx.Check(")"))
@@ -1452,7 +1520,8 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         }
 
         ctx.Expect(")");
-        call.SetSpan(ctx.SpanFrom(startToken));
+        var endToken = ctx.Peek(-1);
+        call.SetSpan(new SourceSpan(callStart, endToken.Location.Position + endToken.Length - callStart.Position));
         return call;
     }
 
@@ -1572,13 +1641,13 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         return infixCall;
     }
 
-    private EidosAstNode ParseBlockOrExpr()
+    private EidosAstNode ParseBlockOrExpr(int minPrec = 0)
     {
         if (ctx.Check("{"))
         {
             return ParseBlock();
         }
-        return ParseExpr();
+        return ParseExpr(minPrec);
     }
 
     private BlockExpr ParseBlock()
@@ -1642,6 +1711,8 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         block.SetSpan(ctx.SpanFrom(startToken));
         return block;
     }
+
+    internal BlockExpr ParseFunctionBlock() => ParseBlock();
 
     private void PushMutableBindingScope()
     {

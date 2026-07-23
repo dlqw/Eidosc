@@ -66,6 +66,7 @@ public sealed partial class NameResolver
     private int _traitSignatureDepth;
     private int _instanceMethodDeclarationDepth;
     private int _forcedPrivateGeneratedDeclarationDepth;
+    private int _selectionPlaceholderDeclarationDepth;
     private SymbolId _rootModule = SymbolId.None;
     private SymbolId _currentModule = SymbolId.None;
     private string? _rootInputFilePath;
@@ -1324,6 +1325,12 @@ public sealed partial class NameResolver
 
     private bool TryReportReservedInternalNameDeclaration(string name, SourceSpan span, string declarationKind)
     {
+        if (_selectionPlaceholderDeclarationDepth == 0 && SelectionPlaceholderSyntax.LooksLikePlaceholder(name))
+        {
+            AddError(span, DiagnosticMessages.SelectionPlaceholderOutsideArm(name), "E4020");
+            return true;
+        }
+
         if (!ReservedInternalNames.TryMatch(name, out var prefix))
         {
             return false;
