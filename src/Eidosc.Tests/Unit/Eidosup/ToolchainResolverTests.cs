@@ -8,10 +8,20 @@ using Eidosup.Toolchains;
 
 namespace Eidosc.Tests.Unit.Eidosup;
 
-public sealed class ToolchainResolverTests
+[Collection(EidosupEnvironmentTestCollection.Name)]
+public sealed class ToolchainResolverTests : IDisposable
 {
     private static readonly DateTimeOffset FixedTime = DateTimeOffset.Parse("2026-07-12T00:00:00Z");
     private const string AssetHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private readonly string? _previousToolchainSelector;
+
+    public ToolchainResolverTests()
+    {
+        _previousToolchainSelector = Environment.GetEnvironmentVariable("EIDOSUP_TOOLCHAIN");
+        Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", null);
+    }
+
+    public void Dispose() => Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", _previousToolchainSelector);
 
     [Fact]
     public async Task ResolveAsync_UsesVerifiedDefaultToolchain()
