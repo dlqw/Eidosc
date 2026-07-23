@@ -4,9 +4,11 @@ using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Diagnostic;
+using Eidosc.Semantic;
 using Eidosc.Symbols;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
+using Eidosc.Types;
 using Eidosc.Utils;
 
 namespace Eidosc.Ide;
@@ -17,6 +19,8 @@ internal static class IdeStyleSuggestionBuilder
     private const string CurriedCallStyleCode = "S1002";
     private const string InfixCallStyleCode = "S1003";
     private const string PatternGuardStyleCode = "S1004";
+    private const string SelectionToMatchMigrationCode = "S1005";
+    private const string MatchToSelectionMigrationCode = "S1006";
 
     public static IReadOnlyList<Diagnostic.Diagnostic> Build(
         ModuleDecl module,
@@ -66,6 +70,28 @@ internal static class IdeStyleSuggestionBuilder
         if (node is FuncDef func && IsInRequestedSource(func.Span, sourceText, sourceFilePath))
         {
             AddPatternGuardStyleDiagnostic(func, diagnostics);
+        }
+
+        if (node is SelectionExpr selection &&
+            IsInRequestedSource(selection.Span, sourceText, sourceFilePath))
+        {
+            AddSelectionToMatchMigration(
+                selection,
+                sourceText,
+                diagnostics,
+                symbolTable,
+                validateReplacement);
+        }
+
+        if (node is MatchExpr match &&
+            IsInRequestedSource(match.Span, sourceText, sourceFilePath))
+        {
+            AddMatchToSelectionMigration(
+                match,
+                sourceText,
+                diagnostics,
+                symbolTable,
+                validateReplacement);
         }
 
         foreach (var child in EnumerateChildNodes(node))
@@ -317,6 +343,433 @@ internal static class IdeStyleSuggestionBuilder
         }
 
         return current is TypePath { TypeName: "Bool", ModulePath.Count: 0, TypeArgs.Count: 0 };
+    }
+
+    private static void AddSelectionToMatchMigration(
+        SelectionExpr selection,
+        string sourceText,
+        List<Diagnostic.Diagnostic> diagnostics,
+        SymbolTable? symbolTable,
+        Func<SourceSpan, string, int?, bool>? validateReplacement)
+    {
+        if (selection.IsGroup ||
+            selection.Subject == null ||
+            selection.Subjects.Count != 1 ||
+            selection.Subjects[0] is not { Kind: not SelectionSubjectKind.Unknown } subject ||
+            !TrySlice(selection.Subject.Span, sourceText, out var subjectText) ||
+            !TryRenderSelectionArm(
+                selection.ThenArm,
+                selection.ThenPlaceholderSymbols,
+                "selected_value",
+                sourceText,
+                symbolTable,
+                out var thenArm,
+                out var positiveBindings) ||
+            !TryRenderSelectionArm(
+                selection.ElseArm,
+                selection.ElsePlaceholderSymbols,
+                "selected_error",
+                sourceText,
+                symbolTable,
+                out var elseArm,
+                out var negativeBindings) ||
+            !TryBuildSelectionPatterns(subject, symbolTable, positiveBindings, negativeBindings, out var positivePattern, out var negativePattern))
+        {
+            return;
+        }
+
+        var replacement = $"match {subjectText} {{\n    {positivePattern} => {thenArm},\n    {negativePattern} => {elseArm}\n}}";
+        if (!IsReplacementAccepted(selection.Span, replacement, null, validateReplacement))
+        {
+            return;
+        }
+
+        diagnostics.Add(Diagnostic.Diagnostic.Help(
+                DiagnosticMessages.SelectionCanBeExpandedToMatch,
+                SelectionToMatchMigrationCode)
+            .WithLabel(selection.Span, DiagnosticMessages.SelectionToMatchLabel)
+            .WithHelp(DiagnosticMessages.SelectionMigrationPreservesBranchSemantics)
+            .WithSuggestion(
+                DiagnosticMessages.RewriteAsExplicitMatchSuggestion,
+                SuggestionKind.StyleRewrite,
+                selection.Span,
+                replacement,
+                confidence: "high",
+                requiresCleanTypes: true)
+            .WithMetadata("migration", "selection-to-match"));
+    }
+
+    private static void AddMatchToSelectionMigration(
+        MatchExpr match,
+        string sourceText,
+        List<Diagnostic.Diagnostic> diagnostics,
+        SymbolTable? symbolTable,
+        Func<SourceSpan, string, int?, bool>? validateReplacement)
+    {
+        if (symbolTable == null ||
+            match.MatchedExpression == null ||
+            match.Branches.Count != 2 ||
+            match.Branches.Any(static branch => branch.Guard != null || branch.Expression == null) ||
+            !TrySlice(match.MatchedExpression.Span, sourceText, out var subjectText) ||
+            !TryClassifyBinaryMatch(match, symbolTable, out var positiveBranch, out var positiveBinding, out var negativeBranch, out var negativeBinding) ||
+            !TryRenderMatchArm(positiveBranch.Expression!, positiveBinding, sourceText, out var thenArm) ||
+            !TryRenderMatchArm(negativeBranch.Expression!, negativeBinding, sourceText, out var elseArm))
+        {
+            return;
+        }
+
+        var replacement = $"{subjectText}\n    then {thenArm}\n    else {elseArm}";
+        if (!IsReplacementAccepted(match.Span, replacement, null, validateReplacement))
+        {
+            return;
+        }
+
+        diagnostics.Add(Diagnostic.Diagnostic.Help(
+                DiagnosticMessages.MatchCanBeCollapsedToSelection,
+                MatchToSelectionMigrationCode)
+            .WithLabel(match.Span, DiagnosticMessages.MatchToSelectionLabel)
+            .WithHelp(DiagnosticMessages.SelectionMigrationPreservesBranchSemantics)
+            .WithSuggestion(
+                DiagnosticMessages.RewriteAsSelectionSuggestion,
+                SuggestionKind.StyleRewrite,
+                match.Span,
+                replacement,
+                confidence: "high",
+                requiresCleanTypes: true)
+            .WithMetadata("migration", "match-to-selection"));
+    }
+
+    private static bool TryBuildSelectionPatterns(
+        SelectionSubjectDesugaring subject,
+        SymbolTable? symbolTable,
+        IReadOnlyDictionary<int, string> positiveBindings,
+        IReadOnlyDictionary<int, string> negativeBindings,
+        out string positivePattern,
+        out string negativePattern)
+    {
+        positivePattern = "";
+        negativePattern = "";
+        if (subject.Kind == SelectionSubjectKind.Bool)
+        {
+            positivePattern = "true";
+            negativePattern = "false";
+            return positiveBindings.Count == 0 && negativeBindings.Count == 0;
+        }
+
+        if (symbolTable?.GetSymbol(subject.PositiveConstructorSymbolId) is not CtorSymbol positiveConstructor ||
+            symbolTable.GetSymbol(subject.NegativeConstructorSymbolId) is not CtorSymbol negativeConstructor)
+        {
+            return false;
+        }
+
+        positivePattern = FormatConstructorPattern(
+            positiveConstructor.Name,
+            subject.PositivePayloadTypes.Count,
+            positiveBindings);
+        negativePattern = FormatConstructorPattern(
+            negativeConstructor.Name,
+            subject.NegativePayloadTypes.Count,
+            negativeBindings);
+        return true;
+    }
+
+    private static string FormatConstructorPattern(
+        string constructorName,
+        int payloadCount,
+        IReadOnlyDictionary<int, string> bindings) =>
+        $"{constructorName}({string.Join(", ", Enumerable.Range(0, payloadCount).Select(index => bindings.GetValueOrDefault(index, "_")))})";
+
+    private static bool TryRenderSelectionArm(
+        EidosAstNode? arm,
+        IReadOnlyDictionary<int, SymbolId> placeholderSymbols,
+        string bindingPrefix,
+        string sourceText,
+        SymbolTable? symbolTable,
+        out string rendered,
+        out IReadOnlyDictionary<int, string> bindings)
+    {
+        if (arm == null)
+        {
+            rendered = "()";
+            bindings = new Dictionary<int, string>();
+            return true;
+        }
+
+        var names = new Dictionary<SymbolId, string>();
+        var orderedBindings = new Dictionary<int, string>();
+        foreach (var entry in placeholderSymbols.OrderBy(static entry => entry.Key))
+        {
+            var name = CreateUniqueBindingName($"{bindingPrefix}_{entry.Key}", sourceText, symbolTable, orderedBindings.Values);
+            names[entry.Value] = name;
+            orderedBindings[entry.Key] = name;
+        }
+
+        bindings = orderedBindings;
+        return TryRenderNodeWithSymbolRenames(arm, sourceText, names, out rendered);
+    }
+
+    private static bool TryRenderMatchArm(
+        EidosAstNode arm,
+        VarPattern? binding,
+        string sourceText,
+        out string rendered)
+    {
+        var renames = binding is { SymbolId.IsValid: true }
+            ? new Dictionary<SymbolId, string> { [binding.SymbolId] = "_0" }
+            : [];
+        return TryRenderNodeWithSymbolRenames(arm, sourceText, renames, out rendered);
+    }
+
+    private static string CreateUniqueBindingName(
+        string seed,
+        string sourceText,
+        SymbolTable? symbolTable,
+        IReadOnlyCollection<string> reserved)
+    {
+        var candidate = seed;
+        while (reserved.Contains(candidate, StringComparer.Ordinal) ||
+               symbolTable?.Symbols.Values.Any(symbol => string.Equals(symbol.Name, candidate, StringComparison.Ordinal)) == true ||
+               ContainsIdentifier(sourceText, candidate))
+        {
+            candidate += "_";
+        }
+
+        return candidate;
+    }
+
+    private static bool ContainsIdentifier(string sourceText, string candidate)
+    {
+        var index = 0;
+        while ((index = sourceText.IndexOf(candidate, index, StringComparison.Ordinal)) >= 0)
+        {
+            var beforeIsIdentifier = index > 0 && IsIdentifierCharacter(sourceText[index - 1]);
+            var end = index + candidate.Length;
+            var afterIsIdentifier = end < sourceText.Length && IsIdentifierCharacter(sourceText[end]);
+            if (!beforeIsIdentifier && !afterIsIdentifier)
+            {
+                return true;
+            }
+
+            index = end;
+        }
+
+        return false;
+    }
+
+    private static bool IsIdentifierCharacter(char value) => char.IsLetterOrDigit(value) || value == '_';
+
+    private static bool TryClassifyBinaryMatch(
+        MatchExpr match,
+        SymbolTable symbolTable,
+        out PatternBranch positiveBranch,
+        out VarPattern? positiveBinding,
+        out PatternBranch negativeBranch,
+        out VarPattern? negativeBinding)
+    {
+        positiveBranch = null!;
+        negativeBranch = null!;
+        positiveBinding = null;
+        negativeBinding = null;
+
+        if (match.MatchedExpression?.InferredType is TyCon { Name: "Bool" })
+        {
+            foreach (var branch in match.Branches)
+            {
+                if (branch.Pattern is not LiteralPattern { Type: LiteralType.Boolean, Value: bool value })
+                {
+                    return false;
+                }
+
+                if (value)
+                {
+                    positiveBranch = branch;
+                }
+                else
+                {
+                    negativeBranch = branch;
+                }
+            }
+
+            return positiveBranch != null && negativeBranch != null;
+        }
+
+        if (match.MatchedExpression?.InferredType is not TyCon matchedType ||
+            !TryGetCanonicalSelectionKind(matchedType, symbolTable, out var matchedKind) ||
+            match.Branches[0].Pattern is not CtorPattern first ||
+            match.Branches[1].Pattern is not CtorPattern second ||
+            !TryGetCanonicalSelectionPattern(first, matchedKind, out var firstPositive, out var firstBinding) ||
+            !TryGetCanonicalSelectionPattern(second, matchedKind, out var secondPositive, out var secondBinding) ||
+            firstPositive == secondPositive)
+        {
+            return false;
+        }
+
+        if (firstPositive)
+        {
+            positiveBranch = match.Branches[0];
+            positiveBinding = firstBinding;
+            negativeBranch = match.Branches[1];
+            negativeBinding = secondBinding;
+        }
+        else
+        {
+            positiveBranch = match.Branches[1];
+            positiveBinding = secondBinding;
+            negativeBranch = match.Branches[0];
+            negativeBinding = firstBinding;
+        }
+
+        return true;
+    }
+
+    private static bool TryGetCanonicalSelectionKind(
+        TyCon matchedType,
+        SymbolTable symbolTable,
+        out SelectionSubjectKind kind)
+    {
+        kind = matchedType.Name switch
+        {
+            "Option" when matchedType.Args.Count == 1 => SelectionSubjectKind.Option,
+            "Result" when matchedType.Args.Count == 2 => SelectionSubjectKind.Result,
+            "Either" when matchedType.Args.Count == 2 => SelectionSubjectKind.Either,
+            _ => SelectionSubjectKind.Unknown
+        };
+        if (kind == SelectionSubjectKind.Unknown ||
+            !matchedType.Symbol.IsValid ||
+            symbolTable.GetSymbol<AdtSymbol>(matchedType.Symbol) is not { } owner ||
+            !string.Equals(owner.Name, matchedType.Name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(owner.Span.FilePath, out var precompiledPath) &&
+            string.Equals(precompiledPath, owner.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return symbolTable.Modules.TryGetOwningModule(owner.Id, out var module) &&
+               string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.OrdinalIgnoreCase) &&
+               module.Path.Count > 0 &&
+               string.Equals(module.Path[^1], owner.Name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryGetCanonicalSelectionPattern(
+        CtorPattern pattern,
+        SelectionSubjectKind kind,
+        out bool positive,
+        out VarPattern? binding)
+    {
+        positive = false;
+        binding = null;
+        if (pattern.NamedPatterns.Count != 0 ||
+            pattern.HasRecordRest)
+        {
+            return false;
+        }
+
+        var classifiedKind = (kind, pattern.ConstructorName) switch
+        {
+            (SelectionSubjectKind.Option, "Some") => (SelectionSubjectKind.Option, true),
+            (SelectionSubjectKind.Option, "None") => (SelectionSubjectKind.Option, false),
+            (SelectionSubjectKind.Result, "Ok") => (SelectionSubjectKind.Result, true),
+            (SelectionSubjectKind.Result, "Err") => (SelectionSubjectKind.Result, false),
+            (SelectionSubjectKind.Either, "Right") => (SelectionSubjectKind.Either, true),
+            (SelectionSubjectKind.Either, "Left") => (SelectionSubjectKind.Either, false),
+            _ => (SelectionSubjectKind.Unknown, false)
+        };
+        if (classifiedKind.Item1 == SelectionSubjectKind.Unknown)
+        {
+            return false;
+        }
+
+        positive = classifiedKind.Item2;
+
+        var expectedPayloadCount = kind == SelectionSubjectKind.Option && !positive ? 0 : 1;
+        if (pattern.PositionalPatterns.Count != expectedPayloadCount)
+        {
+            return false;
+        }
+
+        if (expectedPayloadCount == 0)
+        {
+            return true;
+        }
+
+        binding = pattern.PositionalPatterns[0] switch
+        {
+            VarPattern { BindingMode: PatternBindingMode.ByValue, IsMutableBinding: false } variable => variable,
+            WildcardPattern => null,
+            _ => null
+        };
+        return binding != null || pattern.PositionalPatterns[0] is WildcardPattern;
+    }
+
+    private static bool TryRenderNodeWithSymbolRenames(
+        EidosAstNode node,
+        string sourceText,
+        IReadOnlyDictionary<SymbolId, string> renames,
+        out string rendered)
+    {
+        if (!TrySlice(node.Span, sourceText, out rendered, trim: false))
+        {
+            return false;
+        }
+
+        var start = node.Span.Location.Position;
+        var sourceSliceLength = rendered.Length;
+        var edits = new List<(int Start, int Length, string Replacement)>();
+        var visited = new HashSet<EidosAstNode>(ReferenceEqualityComparer.Instance);
+        Collect(node);
+        foreach (var edit in edits.OrderByDescending(static edit => edit.Start))
+        {
+            rendered = rendered.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
+        }
+
+        rendered = rendered.Trim();
+        return rendered.Length > 0;
+
+        void Collect(EidosAstNode current)
+        {
+            if (!visited.Add(current))
+            {
+                return;
+            }
+
+            if (current is IdentifierExpr { SymbolId.IsValid: true } identifier &&
+                renames.TryGetValue(identifier.SymbolId, out var replacement))
+            {
+                var relativeStart = identifier.Span.Location.Position - start;
+                if (relativeStart >= 0 && relativeStart + identifier.Span.Length <= sourceSliceLength)
+                {
+                    edits.Add((relativeStart, identifier.Span.Length, replacement));
+                }
+            }
+
+            foreach (var child in EnumerateChildNodes(current))
+            {
+                Collect(child);
+            }
+        }
+    }
+
+    private static bool TrySlice(SourceSpan span, string sourceText, out string text, bool trim = true)
+    {
+        text = "";
+        var start = span.Location.Position;
+        var length = span.Length;
+        if (start < 0 || length <= 0 || start + length > sourceText.Length)
+        {
+            return false;
+        }
+
+        text = sourceText.Substring(start, length);
+        if (trim)
+        {
+            text = text.Trim();
+        }
+
+        return text.Length > 0;
     }
 
     private static void CollectOrTerms(EidosAstNode node, List<EidosAstNode> terms)

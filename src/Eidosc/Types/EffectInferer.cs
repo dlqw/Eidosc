@@ -244,6 +244,15 @@ public sealed class EffectInferer
                 InferMatch(match);
                 break;
 
+            case SelectionExpr selection:
+                if (selection.Subject != null)
+                    InferExpression(selection.Subject);
+                if (selection.ThenArm != null)
+                    InferExpression(selection.ThenArm);
+                if (selection.ElseArm != null)
+                    InferExpression(selection.ElseArm);
+                break;
+
             case PatternGuardExpr patternGuard:
                 if (patternGuard.SourceExpression != null)
                 {

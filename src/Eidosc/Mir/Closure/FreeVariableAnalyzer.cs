@@ -331,6 +331,23 @@ public sealed class FreeVariableAnalyzer
                 }
                 break;
 
+            case SelectionExpr selection:
+                AnalyzeNode(selection.Subject, boundVars, freeVars);
+                var selectionThenBoundVars = new HashSet<string>(boundVars);
+                foreach (var index in selection.ThenPlaceholderSymbols.Keys)
+                {
+                    selectionThenBoundVars.Add($"_{index}");
+                }
+                AnalyzeNode(selection.ThenArm, selectionThenBoundVars, freeVars);
+
+                var selectionElseBoundVars = new HashSet<string>(boundVars);
+                foreach (var index in selection.ElsePlaceholderSymbols.Keys)
+                {
+                    selectionElseBoundVars.Add($"_{index}");
+                }
+                AnalyzeNode(selection.ElseArm, selectionElseBoundVars, freeVars);
+                break;
+
             case SequentialGuardExpr sequentialGuard:
                 var sequentialBoundVars = new HashSet<string>(boundVars);
                 foreach (var guard in sequentialGuard.Guards)

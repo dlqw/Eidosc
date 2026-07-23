@@ -97,6 +97,30 @@ internal static partial class DiagnosticMessages
 
     public static string MatchExpressionRequiresBranch => Get(nameof(MatchExpressionRequiresBranch));
 
+    public static string SelectionPlaceholderOutsideArm(string name) =>
+        $"selection placeholder '{name}' is only valid inside a then/else selection arm";
+
+    public static string SelectionPlaceholderLeadingZero(string name) =>
+        $"selection placeholder '{name}' must not contain a leading zero";
+
+    public static string SelectionGroupElsePlaceholder(string name) =>
+        $"selection group else arm has no stable payload shape; placeholder '{name}' is not available";
+
+    public static string SelectionSubjectMustBeSupported(string type) =>
+        $"selection subject must be Bool, Std.Option.Option, Std.Result.Result, or Std.Either.Either; found '{type}'";
+
+    public static string SelectionPlaceholderOutOfRange(string name, int count) =>
+        $"selection placeholder '{name}' is out of range; this arm exposes {count} payload slot(s)";
+
+    public static string SelectionSingleArmMustReturnUnit =>
+        "a selection expression without both arms must return Unit or Never";
+
+    public static string SelectionBranchTypeMismatch =>
+        "then and else selection arms must return compatible types";
+
+    public static string ImplicitFunctionBodyRequiresUnitParameter =>
+        "an implicit function body requires the first runtime parameter to be Unit";
+
     public static string PatternBranchRequiresBodyExpression => Get(nameof(PatternBranchRequiresBodyExpression));
 
     public static string PatternGuardRequiresPattern => Get(nameof(PatternGuardRequiresPattern));
@@ -1911,6 +1935,25 @@ internal static partial class DiagnosticMessages
 
     public static string StyleSuggestionPreferPatternGuardBranches =>
         Get(nameof(StyleSuggestionPreferPatternGuardBranches));
+
+    public static string SelectionCanBeExpandedToMatch =>
+        Get(nameof(SelectionCanBeExpandedToMatch));
+
+    public static string MatchCanBeCollapsedToSelection =>
+        Get(nameof(MatchCanBeCollapsedToSelection));
+
+    public static string SelectionToMatchLabel => Get(nameof(SelectionToMatchLabel));
+
+    public static string MatchToSelectionLabel => Get(nameof(MatchToSelectionLabel));
+
+    public static string SelectionMigrationPreservesBranchSemantics =>
+        Get(nameof(SelectionMigrationPreservesBranchSemantics));
+
+    public static string RewriteAsExplicitMatchSuggestion =>
+        Get(nameof(RewriteAsExplicitMatchSuggestion));
+
+    public static string RewriteAsSelectionSuggestion =>
+        Get(nameof(RewriteAsSelectionSuggestion));
 
     public static string PrefixCallCanBeRewrittenLabel =>
         Get(nameof(PrefixCallCanBeRewrittenLabel));

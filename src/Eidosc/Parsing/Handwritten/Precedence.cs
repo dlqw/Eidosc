@@ -6,6 +6,7 @@ public readonly record struct PrecEntry(int Level, Assoc Associativity);
 
 public static class Precedence
 {
+    public const int Selection = 0;
     public const int Assign = 0;
     public const int Pipe = 1;
     public const int Coalesce = 2;

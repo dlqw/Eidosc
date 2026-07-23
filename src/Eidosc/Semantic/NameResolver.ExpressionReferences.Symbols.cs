@@ -24,6 +24,28 @@ public sealed partial class NameResolver
             return;
         }
 
+        if (SelectionPlaceholderSyntax.LooksLikePlaceholder(ident.Name))
+        {
+            if (!SelectionPlaceholderSyntax.TryParse(ident.Name, out _, out var hasLeadingZero) && hasLeadingZero)
+            {
+                AddError(ident.Span, DiagnosticMessages.SelectionPlaceholderLeadingZero(ident.Name), "E4021");
+                return;
+            }
+
+            var placeholderLookup = _lookupService.Lookup(
+                ident.Name,
+                LookupKind.Value,
+                CreateLookupContext());
+            if (placeholderLookup.IsSuccess)
+            {
+                ident.SymbolId = placeholderLookup.SymbolId;
+                return;
+            }
+
+            AddError(ident.Span, DiagnosticMessages.SelectionPlaceholderOutsideArm(ident.Name), "E4020");
+            return;
+        }
+
         if (ident.Name == WellKnownStrings.Keywords.ReflConstructor)
         {
             ident.IsConstructor = true;

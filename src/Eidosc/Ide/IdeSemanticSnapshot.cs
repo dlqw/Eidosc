@@ -408,11 +408,12 @@ public static partial class IdeSemanticSnapshotBuilder
             symbols,
             allowsTypeSensitiveRewrites);
         var completions = BuildCompletions(result.SymbolTable, symbols, overloadGroups);
+        var generatedFunctionBodies = BuildGeneratedFunctionBodies(result);
         var generatedDocuments = symbols
             .Where(static symbol => symbol.IsGenerated && symbol.GeneratedOrigin != null)
             .GroupBy(static symbol => symbol.GeneratedOrigin!.VirtualDocumentPath, StringComparer.Ordinal)
             .OrderBy(static group => group.Key, StringComparer.Ordinal)
-            .Select(static group => GeneratedDocumentRenderer.Create(group.ToArray()))
+            .Select(group => GeneratedDocumentRenderer.Create(group.ToArray(), generatedFunctionBodies))
             .ToList();
         var borrowCapabilities = BuildBorrowCapabilities(result.BorrowCheckResult);
 
@@ -449,6 +450,109 @@ public static partial class IdeSemanticSnapshotBuilder
             BorrowCapabilities = borrowCapabilities,
             RecoveredNodes = recoveredNodes
         };
+    }
+
+    private static IReadOnlyDictionary<int, string> BuildGeneratedFunctionBodies(CompilationResult result)
+    {
+        if (result.Ast == null || result.SymbolTable == null || string.IsNullOrEmpty(result.SourceText))
+        {
+            return new Dictionary<int, string>();
+        }
+
+        var bodies = new Dictionary<int, string>();
+        foreach (var function in AstStableNodeTraversal.Enumerate(result.Ast)
+                     .Select(static entry => entry.Node)
+                     .OfType<FuncDef>())
+        {
+            if (!function.SymbolId.IsValid ||
+                result.SymbolTable.GetSymbol(function.SymbolId)?.GeneratedOrigin is not { } symbolOrigin ||
+                function.Body.Count == 0 ||
+                !function.Body.Any(branch => branch.Expression?.GeneratedOriginChain.Any(origin =>
+                    string.Equals(
+                        origin.VirtualDocumentPath,
+                        symbolOrigin.VirtualDocumentPath,
+                        StringComparison.Ordinal)) == true) ||
+                !TryRenderGeneratedFunctionBody(function, result.SourceText, out var body))
+            {
+                continue;
+            }
+
+            bodies[function.SymbolId.Value] = body;
+        }
+
+        return bodies;
+    }
+
+    private static bool TryRenderGeneratedFunctionBody(FuncDef function, string sourceText, out string body)
+    {
+        body = "";
+        if (function.HasImplicitUnitBody &&
+            function.Body.Count == 1 &&
+            function.Body[0].Expression is { } implicitExpression &&
+            TrySliceSource(implicitExpression.Span, sourceText, out var implicitBody))
+        {
+            body = implicitBody;
+            return true;
+        }
+
+        var branches = new List<string>(function.Body.Count);
+        foreach (var branch in function.Body)
+        {
+            if (branch.Expression == null ||
+                !TryRenderGeneratedExpression(branch.Expression, sourceText, out var expressionText))
+            {
+                return false;
+            }
+
+            var patternText = branch.Pattern != null &&
+                              TrySliceSource(branch.Pattern.Span, sourceText, out var renderedPattern)
+                ? renderedPattern
+                : "_";
+            var guardText = branch.Guard != null &&
+                            TrySliceSource(branch.Guard.Span, sourceText, out var renderedGuard)
+                ? $" when {renderedGuard}"
+                : "";
+            branches.Add($"    {patternText}{guardText} => {IndentContinuation(expressionText, 8)}");
+        }
+
+        body = $"{{{Environment.NewLine}{string.Join($",{Environment.NewLine}", branches)}{Environment.NewLine}}}";
+        return true;
+    }
+
+    private static bool TryRenderGeneratedExpression(EidosAstNode expression, string sourceText, out string text)
+    {
+        switch (expression)
+        {
+            case LiteralExpr { RawText.Length: > 0 } literal:
+                text = literal.RawText;
+                return true;
+            case IdentifierExpr identifier when !string.IsNullOrWhiteSpace(identifier.Name):
+                text = identifier.Name;
+                return true;
+            default:
+                return TrySliceSource(expression.Span, sourceText, out text);
+        }
+    }
+
+    private static string IndentContinuation(string text, int spaces)
+    {
+        var indent = new string(' ', spaces);
+        return text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal)
+            .Replace("\n", Environment.NewLine + indent, StringComparison.Ordinal);
+    }
+
+    private static bool TrySliceSource(SourceSpan span, string sourceText, out string text)
+    {
+        text = "";
+        var start = span.Location.Position;
+        if (start < 0 || span.Length <= 0 || start + span.Length > sourceText.Length)
+        {
+            return false;
+        }
+
+        text = sourceText.Substring(start, span.Length).Trim();
+        return text.Length > 0;
     }
 
     private static IdeSnapshotContract BuildSnapshotContract(
@@ -1660,6 +1764,11 @@ public static partial class IdeSemanticSnapshotBuilder
                     case ListComprehension listComprehension:
                         VisitListComprehension(listComprehension, visibilitySpan);
                         return;
+                    case SelectionExpr selectionExpr:
+                        Visit(selectionExpr.Subject, visibilitySpan);
+                        Visit(selectionExpr.ThenArm, GetNodeSpanOrFallback(selectionExpr.ThenArm, selectionExpr.Span));
+                        Visit(selectionExpr.ElseArm, GetNodeSpanOrFallback(selectionExpr.ElseArm, selectionExpr.Span));
+                        return;
                 }
 
                 var childVisibility = ResolveChildVisibility(node, visibilitySpan);
@@ -1710,7 +1819,9 @@ public static partial class IdeSemanticSnapshotBuilder
 
         void AddNodeMetadata(EidosAstNode node, SourceSpan? visibilitySpan)
         {
-            if (!node.SymbolId.IsValid || !IsDefinitionNode(node))
+            var isSelectionPlaceholder = node is IdentifierExpr identifier &&
+                                         SelectionPlaceholderSyntax.LooksLikePlaceholder(identifier.Name);
+            if (!node.SymbolId.IsValid || (!IsDefinitionNode(node) && !isSelectionPlaceholder))
             {
                 return;
             }
