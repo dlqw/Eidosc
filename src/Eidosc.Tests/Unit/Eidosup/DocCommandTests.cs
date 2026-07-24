@@ -10,17 +10,17 @@ public sealed class DocCommandTests
     [Fact]
     public async Task ResolveAsync_ResolvesVersionMatchedOfflineTopic()
     {
-        using var fixture = await DocumentationFixture.CreateAsync("index.md", "0.4.0-alpha.3");
+        using var fixture = await DocumentationFixture.CreateAsync("index.md", "0.5.0-alpha.1");
 
         var document = await DocCommand.ResolveAsync(fixture.Root, "index", CancellationToken.None);
 
         Assert.Equal("index", document.Topic);
-        Assert.Equal("0.4.0-alpha.3", document.EidoscVersion);
+        Assert.Equal("0.5.0-alpha.1", document.EidoscVersion);
         Assert.Equal(Path.Combine(fixture.Root, "docs", "index.md"), document.Path);
     }
 
     [Theory]
-    [InlineData("../outside.md", "0.4.0-alpha.3")]
+    [InlineData("../outside.md", "0.5.0-alpha.1")]
     [InlineData("index.md", "0.4.0-alpha.2")]
     public async Task ResolveAsync_RejectsEscapingOrVersionMismatchedIndex(string path, string indexVersion)
     {
@@ -35,10 +35,10 @@ public sealed class DocCommandTests
     [Fact]
     public async Task ResolveAsync_RejectsUnknownIndexFields()
     {
-        using var fixture = await DocumentationFixture.CreateAsync("index.md", "0.4.0-alpha.3");
+        using var fixture = await DocumentationFixture.CreateAsync("index.md", "0.5.0-alpha.1");
         await File.WriteAllTextAsync(
             Path.Combine(fixture.Root, "docs", "index.json"),
-            "{\"schema\":1,\"eidoscVersion\":\"0.4.0-alpha.3\",\"topics\":{\"index\":\"index.md\"},\"unknown\":true}");
+            "{\"schema\":1,\"eidoscVersion\":\"0.5.0-alpha.1\",\"topics\":{\"index\":\"index.md\"},\"unknown\":true}");
 
         var exception = await Assert.ThrowsAsync<EidosupException>(() =>
             DocCommand.ResolveAsync(fixture.Root, "index", CancellationToken.None));
@@ -64,16 +64,16 @@ public sealed class DocCommandTests
                 "test-toolchain",
                 new string('a', 64),
                 new string('b', 64),
-                "eidos-toolchain-v0.4.0-alpha.3-test.json",
+                "eidos-toolchain-v0.5.0-alpha.1-test.json",
                 new string('c', 64),
-                "eidosc-v0.4.0-alpha.3",
-                "0.4.0-alpha.3",
+                "eidosc-v0.5.0-alpha.1",
+                "0.5.0-alpha.1",
                 "win-x64",
                 "test/source",
                 "complete",
                 [],
                 [],
-                [new InstalledComponent("eidos-docs", "eidos-docs", "0.4.0-alpha.3", false, null, ["docs/index.json", "docs/index.md"])],
+                [new InstalledComponent("eidos-docs", "eidos-docs", "0.5.0-alpha.1", false, null, ["docs/index.json", "docs/index.md"])],
                 [],
                 [new InstalledArtifact("bundle.zip", new string('d', 64), 1)],
                 EidosupToolchainTestFixture.FixedTime,

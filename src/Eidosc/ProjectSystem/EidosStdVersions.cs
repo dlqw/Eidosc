@@ -2,5 +2,5 @@ namespace Eidosc.ProjectSystem;
 
 public static class EidosStdVersions
 {
-    public const string Current = "0.1.0-alpha.1";
+    public const string Current = "0.2.0-alpha.1";
 }

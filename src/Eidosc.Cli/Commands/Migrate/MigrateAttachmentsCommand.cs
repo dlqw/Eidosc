@@ -45,7 +45,7 @@ public static class MigrateAttachmentsCommand
         return MigrateSyntaxCommand.Run(new MigrateSyntaxOptions
         {
             Path = options.Path,
-            From = EidosLanguageVersions.Previous,
+            From = EidosLanguageVersions.Version06,
             To = options.To,
             DryRun = options.DryRun,
             Report = options.Report

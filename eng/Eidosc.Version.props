@@ -1,13 +1,13 @@
 <Project>
   <PropertyGroup>
-    <EidoscVersionPrefix>0.4.0</EidoscVersionPrefix>
-    <EidoscVersionSuffix>alpha.3</EidoscVersionSuffix>
+    <EidoscVersionPrefix>0.5.0</EidoscVersionPrefix>
+    <EidoscVersionSuffix>alpha.1</EidoscVersionSuffix>
     <EidoscVersion>$(EidoscVersionPrefix)</EidoscVersion>
     <EidoscVersion Condition="'$(EidoscVersionSuffix)' != ''">$(EidoscVersionPrefix)-$(EidoscVersionSuffix)</EidoscVersion>
     <Version>$(EidoscVersion)</Version>
     <PackageVersion>$(EidoscVersion)</PackageVersion>
-    <AssemblyVersion>0.4.0.0</AssemblyVersion>
-    <FileVersion>0.4.0.0</FileVersion>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
+    <FileVersion>0.5.0.0</FileVersion>
     <InformationalVersion>$(EidoscVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>

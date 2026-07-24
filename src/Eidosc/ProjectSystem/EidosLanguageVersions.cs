@@ -3,9 +3,10 @@ namespace Eidosc.ProjectSystem;
 public static class EidosLanguageVersions
 {
     public const string Legacy = "legacy";
-    public const string PreviousPrevious = "0.5.0-alpha.1";
-    public const string Previous = "0.6.0-alpha.1";
-    public const string Current = "0.7.0-alpha.1";
+    public const string Version05 = "0.5.0-alpha.1";
+    public const string Version06 = "0.6.0-alpha.1";
+    public const string Previous = "0.7.0-alpha.1";
+    public const string Current = "0.8.0-alpha.1";
 
     public static string DefaultForNewProjects => Current;
 
@@ -19,7 +20,8 @@ public static class EidosLanguageVersions
     public static bool IsMigrationVersion(string value)
     {
         return string.Equals(value, Legacy, StringComparison.Ordinal) ||
-               string.Equals(value, PreviousPrevious, StringComparison.Ordinal) ||
+               string.Equals(value, Version05, StringComparison.Ordinal) ||
+               string.Equals(value, Version06, StringComparison.Ordinal) ||
                string.Equals(value, Previous, StringComparison.Ordinal) ||
                IsSupported(value);
     }

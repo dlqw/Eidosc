@@ -336,7 +336,8 @@ public static partial class SyntaxMigrationPlanner
         var source = File.ReadAllText(sourcePath);
         var tokens = Tokenize(source, sourcePath);
 
-        if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
+        if ((string.Equals(fromSyntax, EidosLanguageVersions.Version06, StringComparison.Ordinal) ||
+             string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal)) &&
             string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal) &&
             !string.Equals(fromSyntax, toSyntax, StringComparison.Ordinal) &&
             !tokens.Any(static token => string.Equals(GetTokenText(token), "impl", StringComparison.Ordinal)))
@@ -380,7 +381,7 @@ public static partial class SyntaxMigrationPlanner
                 NormalizeEdits(edits));
         }
 
-        if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
+        if (string.Equals(fromSyntax, EidosLanguageVersions.Version06, StringComparison.Ordinal) &&
             string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal))
         {
             var ownershipBlockers = CollectOwnershipMigrationBlockers(ast);
@@ -397,7 +398,7 @@ public static partial class SyntaxMigrationPlanner
         var declarationBindingPositions = CollectDeclarationBindingPositions(source, tokens, ast, fromSyntax);
         AddWhitespaceSeparatedConsEdits(source, tokens, fullSpan, edits, declarationBindingPositions);
 
-        if (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) &&
+        if (string.Equals(fromSyntax, EidosLanguageVersions.Version06, StringComparison.Ordinal) &&
             string.Equals(toSyntax, EidosLanguageVersions.Current, StringComparison.Ordinal))
         {
             AddImplInstanceMigrationEdits(source, tokens, ast, edits);
@@ -2117,7 +2118,8 @@ public static partial class SyntaxMigrationPlanner
 
             var bindingIndex = FindTopLevelTokenIndex(tokens, node.Span, "::");
             if (bindingIndex >= 0 &&
-                (string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) ||
+                (string.Equals(fromSyntax, EidosLanguageVersions.Version06, StringComparison.Ordinal) ||
+                 string.Equals(fromSyntax, EidosLanguageVersions.Previous, StringComparison.Ordinal) ||
                  LooksLikeNameFirstStaticBinding(source, tokens, bindingIndex)))
             {
                 positions.Add(tokens[bindingIndex].Location.Position);

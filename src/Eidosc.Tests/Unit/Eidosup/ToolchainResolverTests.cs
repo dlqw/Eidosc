@@ -241,7 +241,7 @@ public sealed class ToolchainResolverTests : IDisposable
             [],
             [
                 new InstalledComponent("eidosc-core", "eidosc-core", "0.4.0-alpha.2", true, null, [platform.ExecutableName]),
-                new InstalledComponent("eidos-std", "eidos-std", "0.1.0-alpha.1", true, null, ["stdlib/Std/Core.eidos"]),
+                new InstalledComponent("eidos-std", "eidos-std", "0.2.0-alpha.1", true, null, ["stdlib/Std/Core.eidos"]),
                 new InstalledComponent($"eidos-runtime@{platform.Rid}", "eidos-runtime", "0.1.0-alpha.1", false, platform.Rid, ["runtime/runtime.h"])
             ],
             [platform.Rid],

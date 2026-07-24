@@ -55,7 +55,7 @@ component sets:
 ```powershell
 eidosup show profile
 eidosup set profile minimal
-eidosup set profile complete --toolchain 0.4.0-alpha.3
+eidosup set profile complete --toolchain 0.5.0-alpha.1
 ```
 
 A profile affects initial installation and an explicit profile change. Manual

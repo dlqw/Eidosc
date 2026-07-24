@@ -348,7 +348,7 @@ public sealed class LspServerRunLoopTests
             manifestSchema = 3
 
             [language]
-            version = "0.7.0-alpha.1"
+            version = "0.8.0-alpha.1"
 
             [package]
             name = "dev.eidos.test.lsp-generated-module"
@@ -481,7 +481,7 @@ public sealed class LspServerRunLoopTests
         const string text = """
 [package]
 name = "Acme.Core"
-version = "0.7.0-alpha.1"
+version = "0.8.0-alpha.1"
 """;
         using var didOpen = JsonDocument.Parse($$"""
         {

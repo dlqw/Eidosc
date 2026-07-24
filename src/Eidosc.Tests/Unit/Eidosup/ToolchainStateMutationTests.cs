@@ -13,15 +13,15 @@ public sealed class ToolchainStateMutationTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, requestedChannel: null, CancellationToken.None);
 
-        var selected = await store.SetDefaultAsync(fixture.Layout, "0.4.0-alpha.3", CancellationToken.None);
+        var selected = await store.SetDefaultAsync(fixture.Layout, "0.5.0-alpha.1", CancellationToken.None);
         var cleared = await store.SetDefaultAsync(fixture.Layout, selector: null, CancellationToken.None);
 
-        Assert.Equal("0.4.0-alpha.3", selected.Default?.Selector);
+        Assert.Equal("0.5.0-alpha.1", selected.Default?.Selector);
         Assert.Equal(second.Manifest.ToolchainId, selected.Default?.ToolchainId);
         Assert.Equal(ToolchainActivationReason.DefaultChanged, selected.ActivationHistory[^1].Reason);
         Assert.Null(cleared.Default);
@@ -33,7 +33,7 @@ public sealed class ToolchainStateMutationTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.SetDefaultAsync(fixture.Layout, selector: null, CancellationToken.None);
@@ -73,7 +73,7 @@ public sealed class ToolchainStateMutationTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, ReleaseChannel.Preview, CancellationToken.None);
@@ -93,7 +93,7 @@ public sealed class ToolchainStateMutationTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.SetDefaultAsync(fixture.Layout, "0.4.0-alpha.2", CancellationToken.None);
@@ -120,17 +120,17 @@ public sealed class ToolchainStateMutationTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, requestedChannel: null, CancellationToken.None);
 
         await Task.WhenAll(
             store.SetDefaultAsync(fixture.Layout, "0.4.0-alpha.2", CancellationToken.None),
-            store.SetDefaultAsync(fixture.Layout, "0.4.0-alpha.3", CancellationToken.None));
+            store.SetDefaultAsync(fixture.Layout, "0.5.0-alpha.1", CancellationToken.None));
         var state = await ToolchainStateStore.ReadVerifiedAsync(fixture.Layout, CancellationToken.None);
 
-        Assert.Contains(state.Default?.Selector, new[] { "0.4.0-alpha.2", "0.4.0-alpha.3" });
+        Assert.Contains(state.Default?.Selector, new[] { "0.4.0-alpha.2", "0.5.0-alpha.1" });
         Assert.Equal(2, state.Toolchains.Count);
         Assert.True(state.Revision >= 4);
     }

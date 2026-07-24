@@ -274,7 +274,7 @@ public sealed class VerifiedToolchainInstallerTests
         var std = new ToolchainComponentDefinition(
             "eidos-std",
             "eidos-std",
-            "0.1.0-alpha.1",
+            "0.2.0-alpha.1",
             Required: true,
             Target: null,
             Dependencies: [core.Id],
@@ -287,7 +287,7 @@ public sealed class VerifiedToolchainInstallerTests
             "preview",
             platform.Rid,
             new ToolchainProductIdentity("0.4.0-alpha.2", new string('a', 40)),
-            new ToolchainLanguageIdentity("0.7.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.8.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", ["eidosc-core", std.Id]),
                 new ToolchainProfileDefinition("default", ["eidosc-core", std.Id, runtime.Id]),
