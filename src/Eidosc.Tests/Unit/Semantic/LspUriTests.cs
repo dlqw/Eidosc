@@ -21,4 +21,14 @@ public sealed class LspUriTests
 
         Assert.Contains("eidos workspace", path);
     }
+
+    [Fact]
+    public void UriToFilePath_ConvertsEncodedWindowsDriveSeparator()
+    {
+        var path = LspServer.UriToFilePath("file:///D%3A/Project/eidos_workspace/projects/snake/src/main.eidos");
+
+        Assert.Equal(
+            Path.GetFullPath(@"D:\Project\eidos_workspace\projects\snake\src\main.eidos"),
+            Path.GetFullPath(path));
+    }
 }

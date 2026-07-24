@@ -1177,7 +1177,18 @@ public sealed class LspServer : IDisposable
         if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed) &&
             string.Equals(parsed.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
         {
-            return parsed.LocalPath;
+            var localPath = parsed.LocalPath;
+            if (OperatingSystem.IsWindows() &&
+                localPath.Length >= 4 &&
+                localPath[0] is '/' or '\\' &&
+                char.IsAsciiLetter(localPath[1]) &&
+                localPath[2] == ':' &&
+                localPath[3] is '/' or '\\')
+            {
+                return localPath[1..].Replace('/', Path.DirectorySeparatorChar);
+            }
+
+            return localPath;
         }
 
         return Uri.UnescapeDataString(uri);
