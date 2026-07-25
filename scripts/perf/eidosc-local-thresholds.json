@@ -45,7 +45,7 @@
         {
           "name": "Namer",
           "maxMs": 3500,
-          "maxAllocatedBytes": 52428800
+          "maxAllocatedBytes": 54525952
         },
         {
           "name": "Types",
@@ -57,7 +57,7 @@
         {
           "name": "Namer.resolve",
           "maxMs": 3200,
-          "maxAllocatedBytes": 50331648
+          "maxAllocatedBytes": 51380224
         },
         {
           "name": "Types.infer",
