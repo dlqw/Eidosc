@@ -120,6 +120,16 @@ Ffi :: module {
     export cfn_from[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> Cfn[A, B, C, D, R] compiler(intrinsic: "cfn_from") need ffi;
     export cfn_from[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> Cfn[A, B, C, D, E, R] compiler(intrinsic: "cfn_from") need ffi;
     export cfn_from[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> Cfn[A, B, C, D, E, F, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, R] :: (A -> B -> C -> D -> E -> F -> G -> R) -> Cfn[A, B, C, D, E, F, G, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> R) -> Cfn[A, B, C, D, E, F, G, H, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> R) -> Cfn[A, B, C, D, E, F, G, H, I, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, L, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, L, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, L, M, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, L, M, N, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, N, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O -> P -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, R] compiler(intrinsic: "cfn_from") need ffi;
 
     export cfn_call[R] :: Cfn[R] -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, R] :: Cfn[A, R] -> A -> R compiler(intrinsic: "cfn_call") need ffi;
@@ -128,6 +138,16 @@ Ffi :: module {
     export cfn_call[A, B, C, D, R] :: Cfn[A, B, C, D, R] -> A -> B -> C -> D -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, B, C, D, E, R] :: Cfn[A, B, C, D, E, R] -> A -> B -> C -> D -> E -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, B, C, D, E, F, R] :: Cfn[A, B, C, D, E, F, R] -> A -> B -> C -> D -> E -> F -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, R] :: Cfn[A, B, C, D, E, F, G, R] -> A -> B -> C -> D -> E -> F -> G -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, R] :: Cfn[A, B, C, D, E, F, G, H, R] -> A -> B -> C -> D -> E -> F -> G -> H -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, R] :: Cfn[A, B, C, D, E, F, G, H, I, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, L, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, L, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, L, M, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, L, M, N, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, N, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> M -> N -> O -> P -> R compiler(intrinsic: "cfn_call") need ffi;
 
 
 

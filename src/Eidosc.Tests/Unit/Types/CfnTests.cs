@@ -192,6 +192,47 @@ main :: Unit -> Int {
     }
 
     [Fact]
+    public void CfnFromAndCall_HighArityFunction_CompilesThroughLlvm()
+    {
+        const string source = """
+sum_seven :: Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int {
+    a => b => c => d => e => f => g => a + b + c + d + e + f + g
+}
+
+main :: Unit -> Int {
+    fn_ptr := Ffi.cfn_from(sum_seven);
+    Ffi.cfn_call(fn_ptr, 1, 2, 3, 4, 5, 6, 7)
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Llvm);
+
+        Assert.True(result.Success, $"Expected success but got errors: {string.Join(", ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => d.Message))}");
+    }
+
+    [Fact]
+    public void CfnFrom_ArityAboveSupportedMaximum_FailsDuringTypes()
+    {
+        const string source = """
+too_many :: Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int {
+    a => b => c => d => e => f => g => h => i => j => k => l => m => n => o => p => q => a
+}
+
+main :: Unit -> Int {
+    Ffi.cfn_from(too_many);
+    0
+}
+""";
+
+        var result = RunPipeline(source);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Level == DiagnosticLevel.Error &&
+            diagnostic.Message.Contains("arity 17 exceeds the supported maximum of 16", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CfnFrom_CapturingClosure_ReportsE3053BeforeNative()
     {
         const string source = """

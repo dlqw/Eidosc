@@ -8,6 +8,8 @@ namespace Eidosc.Types;
 
 public sealed partial class TypeInferer
 {
+    private const int MaxCfnArity = 16;
+
     private bool TryInferCfnFromCall(CallExpr call, out Type resultType)
     {
         resultType = BaseTypes.Unit;
@@ -27,6 +29,17 @@ public sealed partial class TypeInferer
         if (TryBuildCfnType(callbackType, out var cfnType) &&
             cfnType is TyCon cfnConstructor)
         {
+            var arity = cfnConstructor.Args.Count - 1;
+            if (arity > MaxCfnArity)
+            {
+                AddError(
+                    call.Span,
+                    DiagnosticMessages.CfnArityExceedsMaximum(arity, MaxCfnArity),
+                    TypeErrorCode);
+                resultType = CreateErrorRecoveryType();
+                return true;
+            }
+
             BindCompilerIntrinsicCallee(
                 call.Function,
                 candidates,
@@ -78,6 +91,16 @@ public sealed partial class TypeInferer
         }
 
         var expectedArgumentCount = cfnType.Args.Count - 1;
+        if (expectedArgumentCount > MaxCfnArity)
+        {
+            AddError(
+                call.Span,
+                DiagnosticMessages.CfnArityExceedsMaximum(expectedArgumentCount, MaxCfnArity),
+                TypeErrorCode);
+            resultType = CreateErrorRecoveryType();
+            return true;
+        }
+
         var actualArgumentCount = positionalArgTypes.Count - 1;
         if (actualArgumentCount != expectedArgumentCount)
         {

@@ -465,6 +465,9 @@
   <data name="CfnCallFirstArgumentNotCfn" xml:space="preserve">
     <value>Cannot infer cfn_call return type because the first argument is not a Cfn[..., Ret] value</value>
   </data>
+  <data name="CfnArityExceedsMaximum" xml:space="preserve">
+    <value>C function pointer arity {0} exceeds the supported maximum of {1}</value>
+  </data>
   <data name="CfnCallArgumentCountMismatch" xml:space="preserve">
     <value>cfn_call expects {0} C argument(s), but got {1}</value>
   </data>
