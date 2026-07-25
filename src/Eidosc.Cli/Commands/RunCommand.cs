@@ -152,7 +152,7 @@ public static class RunCommand
                 .Configuration
             : EidosProjectConfigurationLoader.TryLoadNearest(inputResolution.SourceFilePath)?
                 .Configuration;
-        var ffiConfig = inputResolution.ProjectTarget?.Ffi ?? projectConfig?.Ffi;
+        var ffiConfig = inputResolution.GetFfiConfiguration() ?? projectConfig?.Ffi;
 
         var compileOptions = new CompilationOptions
         {
@@ -179,7 +179,7 @@ public static class RunCommand
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal),
+            PackageImportRoots = inputResolution.GetPackageImportRoots(),
             ConfigFfiLibraries = ffiConfig?.Libraries ?? [],
             ConfigFfiLibraryPaths = ffiConfig?.LibraryPaths ?? [],
             ConfigFfiIncludePaths = ffiConfig?.IncludePaths ?? [],

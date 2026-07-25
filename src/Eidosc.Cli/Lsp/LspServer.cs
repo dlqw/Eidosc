@@ -386,8 +386,15 @@ public sealed class LspServer : IDisposable
         }
 
         var snapshot = GetOrCompileSnapshot(uri);
+        _documents.TryGetDocument(uri, out var document);
         var actions = snapshot != null && TryGetRange(params_, out var range)
-            ? LspSemanticMapper.MapCodeActions(snapshot, uri, UriToFilePath(uri), range)
+            ? LspSemanticMapper.MapCodeActions(
+                snapshot,
+                uri,
+                UriToFilePath(uri),
+                range,
+                document?.Text,
+                document?.Version)
             : [];
 
         await SendResponseAsync(id, actions, ct);
@@ -920,9 +927,8 @@ public sealed class LspServer : IDisposable
                     .Concat(buildHostResult?.GeneratedSourceRoots ?? [])
                     .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
                     .ToArray(),
-                PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                     new Dictionary<string, string[]>(StringComparer.Ordinal),
-                NoImplicitPrelude = project?.Configuration.NoImplicitStdlib ?? false,
+                PackageImportRoots = inputResolution.GetPackageImportRoots(),
+                NoImplicitPrelude = project?.Configuration.NoImplicitPrelude ?? false,
                 BuildHostFingerprint = buildHostResult?.CacheFingerprint,
                 BuildGraphFingerprint = buildHostResult?.Graph?.CanonicalHash,
                 GeneratedSourceUriMap = buildHostResult?.GeneratedSourceUris ?? new Dictionary<string, string>(),
@@ -958,9 +964,8 @@ public sealed class LspServer : IDisposable
             TargetTriple = Eidosc.CodeGen.TargetInfo.Default.Triple,
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                 new Dictionary<string, string[]>(StringComparer.Ordinal),
-            NoImplicitPrelude = project.Configuration.NoImplicitStdlib,
+            PackageImportRoots = inputResolution.GetPackageImportRoots(),
+            NoImplicitPrelude = project.Configuration.NoImplicitPrelude,
             UseCache = true,
             ReleaseProfile = false,
             TraceBuild = false

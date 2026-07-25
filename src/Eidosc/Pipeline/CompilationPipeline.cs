@@ -252,6 +252,11 @@ public sealed partial class CompilationPipeline
             ComptimeTrace = _comptimeExecution.Trace.Snapshot(),
             InputFile = _options.InputFile,
             ImportSearchRoots = _options.ImportSearchRoots,
+            PackageImportRoots = _options.PackageImportRoots.ToDictionary(
+                static pair => pair.Key,
+                static pair => pair.Value.ToArray(),
+                StringComparer.Ordinal),
+            LanguageVersion = _options.LanguageVersion,
             NoImplicitPrelude = _options.NoImplicitPrelude,
             SourceText = _sourceCode,
             Tokens = _tokens ?? [],
@@ -344,10 +349,11 @@ public sealed partial class CompilationPipeline
         }
 
         _diagnostics.AddRange(IdeStyleSuggestionBuilder.Build(
-            _ast,
-            _sourceCode,
-            GetPrimarySourceName(),
-            _symbolTable));
+                _ast,
+                _sourceCode,
+                GetPrimarySourceName(),
+                _symbolTable)
+            .Where(static diagnostic => !IdeStyleSuggestionBuilder.IsInteractiveRefactor(diagnostic)));
     }
 
     private bool RunPhase(CompilationPhase phase, string debugLabel, Func<bool> execute)
@@ -608,7 +614,8 @@ public sealed partial class CompilationPipeline
             return;
         }
 
-        ApplyPrecompiledStdRootPackageIdentity(_ast, entryFilePath);
+        ApplyPrecompiledRootPackageIdentity(_ast, entryFilePath);
+        InjectImplicitPreludeImports(_ast);
 
         var knownModuleDeclarations = CollectKnownModuleDeclarations(_ast);
         var loadedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -616,29 +623,9 @@ public sealed partial class CompilationPipeline
             entryFilePath
         };
         var attemptedImports = new HashSet<string>(StringComparer.Ordinal);
-        var pendingImports = new Queue<(List<string> path, string? packageAlias, string? parentKey)>();
+        var pendingImports = new Queue<(List<string> path, string? packageAlias, string? parentKey, ImportDecl import)>();
         var rootModuleKey = ToImportKey(_ast.PackageAlias, GetRootModulePath(_ast));
         EnqueueImports(_ast, pendingImports, null, rootModuleKey);
-
-        // Auto-import Std.Prelude for non-stdlib modules unless disabled.
-        if (!_options.NoImplicitPrelude)
-        {
-            var rootModulePath = GetRootModulePath(_ast);
-            var isStdlibModule = IsStdPackageAlias(_ast.PackageAlias) ||
-                                 (rootModulePath.Count > 0 &&
-                                  string.Equals(rootModulePath[0], WellKnownStrings.Std.Module, StringComparison.Ordinal));
-            if (!isStdlibModule)
-            {
-                var preludePath = new List<string> { "Prelude" };
-                var preludeKey = ToImportKey(WellKnownStrings.Std.Module, preludePath);
-                var alreadyImportsPrelude = pendingImports
-                    .Any(item => ToImportKey(item.packageAlias, item.path) == preludeKey);
-                if (!alreadyImportsPrelude)
-                {
-                    pendingImports.Enqueue((preludePath, WellKnownStrings.Std.Module, rootModuleKey));
-                }
-            }
-        }
 
         var importParentMap = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!string.IsNullOrEmpty(rootModuleKey))
@@ -649,7 +636,7 @@ public sealed partial class CompilationPipeline
 
         while (pendingImports.Count > 0)
         {
-            var (importPath, packageAlias, parentKey) = pendingImports.Dequeue();
+            var (importPath, packageAlias, parentKey, importDeclaration) = pendingImports.Dequeue();
             if (importPath.Count == 0)
             {
                 continue;
@@ -687,6 +674,17 @@ public sealed partial class CompilationPipeline
             if (TryAddDuplicateImportCandidateDiagnostic(importPath, importCandidates))
             {
                 continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(packageAlias) && importCandidates.Count == 1)
+            {
+                var resolvedPackageAlias = string.Equals(
+                    importCandidates[0].PackageAlias,
+                    PreludeCoreImageRegistry.PackageAlias,
+                    StringComparison.Ordinal)
+                    ? WellKnownStrings.Std.Module
+                    : importCandidates[0].PackageAlias;
+                importDeclaration.SetPackageAlias(resolvedPackageAlias);
             }
 
             foreach (var importCandidate in importCandidates)
@@ -747,7 +745,7 @@ public sealed partial class CompilationPipeline
                 else if (importCandidate.IsPrecompiled &&
                          TryGetPrecompiledModuleSource(effectiveModulePath, out var precompiledSource))
                 {
-                    var precompiledSourceName = PrecompiledModuleRegistry.TryGetSourceFilePath(effectiveModulePath, out var precompiledSourceFile)
+                    var precompiledSourceName = TryGetPrecompiledModuleSourceFilePath(effectiveModulePath, out var precompiledSourceFile)
                         ? precompiledSourceFile
                         : $"<precompiled:{importKey}>";
                     _compilerOwnedSourcePaths.Add(precompiledSourceName);
@@ -788,6 +786,7 @@ public sealed partial class CompilationPipeline
                     importedRoot!,
                     effectivePackageAlias,
                     BuildPackageInstanceKey(effectivePackageAlias, importCandidate));
+                InjectImplicitPreludeImports(importedRoot!);
 
                 var hasAddedModule = false;
                 foreach (var moduleDecl in importedRoot!.Declarations.OfType<ModuleDecl>())
@@ -883,6 +882,33 @@ public sealed partial class CompilationPipeline
                 _moduleArtifactRestoreExecution,
                 hasRestorePayload: false);
             TryLoadModuleArtifactRestorePayload();
+        }
+    }
+
+    private void InjectImplicitPreludeImports(ModuleDecl root)
+    {
+        if (_options.NoImplicitPrelude)
+        {
+            return;
+        }
+
+        foreach (var module in EnumerateModuleTree(root))
+        {
+            if (string.Equals(
+                    module.PackageAlias,
+                    PreludeCoreImageRegistry.PackageAlias,
+                    StringComparison.Ordinal) ||
+                module.Declarations.OfType<ImportDecl>().Any(static import => import.IsCompilerInjectedPrelude))
+            {
+                continue;
+            }
+
+            var import = new ImportDecl();
+            import.SetPackageAlias(PreludeCoreImageRegistry.PackageAlias);
+            import.SetModulePath(["Prelude"]);
+            import.SetImportKind(ImportKind.Wildcard);
+            import.SetCompilerInjectedPrelude(true);
+            module.Declarations.Insert(0, import);
         }
     }
 
@@ -1320,7 +1346,8 @@ public sealed partial class CompilationPipeline
             sourcePath.EndsWith('>'))
         {
             var moduleKey = sourcePath["<precompiled:".Length..^1];
-            if (PrecompiledModuleRegistry.TryGetSource(moduleKey, out var source))
+            var modulePath = moduleKey.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (TryGetPrecompiledModuleSource(modulePath, out var source))
             {
                 _moduleSourceTextCache[normalizedSourcePath] = source;
                 AddProfilingCounter("Build.moduleSignatureSourceText.registryHits", 1);
@@ -1361,17 +1388,27 @@ public sealed partial class CompilationPipeline
             $"comptimeDiagnostics={_options.ComptimeDiagnosticBudget}",
             $"triple={_options.LlvmTargetTriple ?? ""}",
             $"nativeLinkMode={_options.NativeLinkMode}",
+            $"prelude={PreludeCoreImageRegistry.GetCoreImageFingerprint()}",
             $"stdlib={PrecompiledModuleRegistry.GetStdlibImageFingerprint()}"
             ,$"clauseSchema={Ast.Declarations.ClauseSchema.Version}"
             ,$"compilerSourceGrants={string.Join('|', _compilerOwnedSourcePaths.Select(NormalizeModuleSourcePath).Order(StringComparer.Ordinal))}"
         ]);
     }
 
-    private void ApplyPrecompiledStdRootPackageIdentity(ModuleDecl moduleDecl, string entryFilePath)
+    private void ApplyPrecompiledRootPackageIdentity(ModuleDecl moduleDecl, string entryFilePath)
     {
         if (!IsPrecompiledStdInputPath(entryFilePath))
         {
             ApplyPackageInstanceKeyToModuleTree(moduleDecl, BuildCurrentPackageInstanceKey(entryFilePath));
+            return;
+        }
+
+        if (PreludeCoreImageRegistry.TryGetModulePathFromSourcePath(entryFilePath, out _))
+        {
+            ApplyPackageIdentityToImportedModuleTree(
+                moduleDecl,
+                PreludeCoreImageRegistry.PackageAlias,
+                $"precompiled:{PreludeCoreImageRegistry.PackageAlias}");
             return;
         }
 
@@ -1413,7 +1450,7 @@ public sealed partial class CompilationPipeline
 
     private void EnqueueImports(
         ModuleDecl moduleDecl,
-        Queue<(List<string> path, string? packageAlias, string? parentKey)> queue,
+        Queue<(List<string> path, string? packageAlias, string? parentKey, ImportDecl import)> queue,
         string? ambientPackageAlias,
         string? parentKey)
     {
@@ -1426,7 +1463,7 @@ public sealed partial class CompilationPipeline
 
             NormalizeDotNamespaceImport(import);
             var packageAlias = ResolveInheritedPackageAlias(import, ambientPackageAlias);
-            queue.Enqueue((new List<string>(import.ModulePath), packageAlias, parentKey));
+            queue.Enqueue((new List<string>(import.ModulePath), packageAlias, parentKey, import));
         }
     }
 
@@ -1438,7 +1475,7 @@ public sealed partial class CompilationPipeline
         }
 
         var namespaceRoot = import.ModulePath[0];
-        if (!IsStdPackageAlias(namespaceRoot) && !_options.PackageImportRoots.ContainsKey(namespaceRoot))
+        if (!_options.PackageImportRoots.ContainsKey(namespaceRoot))
         {
             return;
         }
@@ -1704,6 +1741,25 @@ public sealed partial class CompilationPipeline
     {
         if (!string.IsNullOrWhiteSpace(packageAlias))
         {
+            if (string.Equals(packageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal) &&
+                TryGetPrecompiledModuleSource(BuildEffectiveModulePath(packageAlias, modulePath), out _))
+            {
+                return [new ImportModuleCandidate(packageAlias, WorkspaceModule: null, IsPrecompiled: true)];
+            }
+
+            if (CanResolvePrecompiledStdPackage(packageAlias) &&
+                modulePath.Count == 1 &&
+                PreludeCoreImageRegistry.IsCoreModuleName(modulePath[0]))
+            {
+                return
+                [
+                    new ImportModuleCandidate(
+                        PreludeCoreImageRegistry.PackageAlias,
+                        WorkspaceModule: null,
+                        IsPrecompiled: true)
+                ];
+            }
+
             var explicitModules = _options.PackageImportRoots.TryGetValue(packageAlias, out var packageRoots)
                 ? WorkspaceModuleLocator.ResolveImportModuleCandidatesFromRoots(modulePath, packageRoots)
                 : [];
@@ -1714,7 +1770,7 @@ public sealed partial class CompilationPipeline
                     .ToList();
             }
 
-            if (IsStdPackageAlias(packageAlias) &&
+            if (CanResolvePrecompiledStdPackage(packageAlias) &&
                 TryGetPrecompiledModuleSource(BuildEffectiveModulePath(packageAlias, modulePath), out _))
             {
                 return [new ImportModuleCandidate(packageAlias, WorkspaceModule: null, IsPrecompiled: true)];
@@ -1730,6 +1786,17 @@ public sealed partial class CompilationPipeline
             _options.ImportSearchRoots);
         candidates.AddRange(currentPackageModules.Select(module => new ImportModuleCandidate(null, module, IsPrecompiled: false)));
 
+        if (_options.PackageImportRoots.ContainsKey(WellKnownStrings.Std.Module))
+        {
+            var stdCandidateAlias = modulePath.Count == 1 && PreludeCoreImageRegistry.IsCoreModuleName(modulePath[0])
+                ? PreludeCoreImageRegistry.PackageAlias
+                : WellKnownStrings.Std.Module;
+            if (TryGetPrecompiledModuleSource(BuildEffectiveModulePath(stdCandidateAlias, modulePath), out _))
+            {
+                candidates.Add(new ImportModuleCandidate(stdCandidateAlias, WorkspaceModule: null, IsPrecompiled: true));
+            }
+        }
+
         foreach (var (dependencyAlias, packageRoots) in _options.PackageImportRoots.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
         {
             if (IsStdPackageAlias(dependencyAlias))
@@ -1741,14 +1808,17 @@ public sealed partial class CompilationPipeline
             candidates.AddRange(dependencyModules.Select(module => new ImportModuleCandidate(dependencyAlias, module, IsPrecompiled: false)));
         }
 
-        var stdEffectivePath = BuildEffectiveModulePath(WellKnownStrings.Std.Module, modulePath);
-        if (TryGetPrecompiledModuleSource(stdEffectivePath, out _))
-        {
-            candidates.Add(new ImportModuleCandidate(WellKnownStrings.Std.Module, WorkspaceModule: null, IsPrecompiled: true));
-        }
-
         return candidates;
     }
+
+    private bool IsExplicitStdDependency(string? packageAlias) =>
+        IsStdPackageAlias(packageAlias) &&
+        _options.PackageImportRoots.ContainsKey(WellKnownStrings.Std.Module);
+
+    private bool CanResolvePrecompiledStdPackage(string? packageAlias) =>
+        IsStdPackageAlias(packageAlias) &&
+        (_options.PackageImportRoots.ContainsKey(WellKnownStrings.Std.Module) ||
+         PrecompiledModuleRegistry.IsStdlibSourcePath(_options.InputFile));
 
     private bool ValidateImportedModuleMatch(
         IReadOnlyList<string> importPath,
@@ -1794,6 +1864,22 @@ public sealed partial class CompilationPipeline
         IReadOnlyList<string> importPath,
         IReadOnlyList<ImportModuleCandidate> importCandidates)
     {
+        var candidateModuleKeys = importCandidates
+            .Select(candidate => ToUserFacingImportCandidateKey(candidate.PackageAlias, importPath))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (candidateModuleKeys.Length > 1)
+        {
+            var requestedPath = string.Join(WellKnownStrings.Separators.Path, importPath);
+            _diagnostics.Add(Diagnostic.Diagnostic.Error(
+                DiagnosticMessages.AmbiguousModulePathWithCandidates(
+                    requestedPath,
+                    string.Join(", ", candidateModuleKeys)),
+                "E3000"));
+            return true;
+        }
+
         var duplicateGroups = importCandidates
             .Where(static candidate => candidate.WorkspaceModule != null)
             .GroupBy(candidate => ToImportKey(candidate.PackageAlias, importPath), StringComparer.Ordinal)
@@ -1832,6 +1918,19 @@ public sealed partial class CompilationPipeline
         }
 
         return true;
+    }
+
+    private static string ToUserFacingImportCandidateKey(
+        string? packageAlias,
+        IReadOnlyList<string> importPath)
+    {
+        var userFacingAlias = string.Equals(
+            packageAlias,
+            PreludeCoreImageRegistry.PackageAlias,
+            StringComparison.Ordinal)
+            ? WellKnownStrings.Std.Module
+            : packageAlias;
+        return ToImportKey(userFacingAlias, importPath);
     }
 
     private void AddUnresolvedImportDiagnostic(

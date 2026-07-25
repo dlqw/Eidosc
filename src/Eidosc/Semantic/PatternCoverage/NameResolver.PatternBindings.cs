@@ -295,7 +295,7 @@ public sealed partial class NameResolver
             return pattern;
         }
 
-        var ctorId = _symbolTable.LookupConstructor(unresolved.Name);
+        var ctorId = LookupVisibleConstructor(unresolved.Name);
         if (ctorId is not { IsValid: true } resolvedCtorId ||
             !IsZeroFieldConstructor(resolvedCtorId))
         {
@@ -562,7 +562,7 @@ public sealed partial class NameResolver
             return;
         }
 
-        var ctorSymbol = _symbolTable.LookupConstructor(ctorPattern.ConstructorName);
+        var ctorSymbol = LookupVisibleConstructor(ctorPattern.ConstructorName);
         if (ctorSymbol != null)
         {
             ctorPattern.SymbolId = ctorSymbol.Value;

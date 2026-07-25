@@ -210,16 +210,14 @@ public sealed partial class NameResolver
     private bool TryGetImplTargetType(
         FuncDef func,
         out TypePath implementingTypePath,
-        out TypeId typeId,
-        bool cloneReceiver = false)
+        out TypeId typeId)
     {
         implementingTypePath = null!;
         typeId = TypeId.None;
 
-        if (cloneReceiver &&
-            GetFirstParameterType(func) is TypePath
+        if (GetFirstParameterType(func) is TypePath
             {
-                TypeName: "Ref",
+                TypeName: "Ref" or "MRef",
                 TypeArgs: [TypePath innerType]
             } &&
             TryResolveImplTargetTypeNode(innerType, out implementingTypePath, out typeId))

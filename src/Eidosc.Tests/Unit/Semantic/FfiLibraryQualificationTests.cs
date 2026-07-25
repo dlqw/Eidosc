@@ -244,7 +244,7 @@ public class FfiLibraryQualificationTests
 
 
 
-            @[extern(c, name: "abs_f")]
+            @[extern(c, name: "abs")]
             abs :: Float -> Float need ffi
 
             """;

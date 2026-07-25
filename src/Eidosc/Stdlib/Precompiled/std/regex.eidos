@@ -44,17 +44,17 @@ Regex :: module {
 
     // 编译正则表达式
     // 返回 RawPtr（编译后的 regex 句柄），失败返回 ptr_null()
-    compile :: String -> RawPtr need ffi
+    export compile :: String -> RawPtr need ffi
     {
         pattern => regex_compile(string_to_cstr(pattern))(0)
     }
 
-    is_compiled :: RawPtr -> Bool need ffi
+    export is_compiled :: RawPtr -> Bool need ffi
     {
         regex => !ptr_is_null(regex)
     }
 
-    compile_opt :: String -> Option[RawPtr] need ffi
+    export compile_opt :: String -> Option[RawPtr] need ffi
     {
         pattern => {
             regex := Regex.compile(pattern);
@@ -62,7 +62,7 @@ Regex :: module {
         }
     }
 
-    with_compiled[A, E: effects] :: String -> (RawPtr -> A need E) -> Option[A] need ffi, E
+    export with_compiled[A, E: effects] :: String -> (RawPtr -> A need E) -> Option[A] need ffi, E
     {
         pattern => body => {
             regex := Regex.compile(pattern);
@@ -74,25 +74,25 @@ Regex :: module {
         }
     }
 
-    with_compiled_or[A, E: effects] :: String -> (RawPtr -> A need E) -> A -> A need ffi, E
+    export with_compiled_or[A, E: effects] :: String -> (RawPtr -> A need E) -> A -> A need ffi, E
     {
         pattern => body => fallback => match Regex.with_compiled[A, E](pattern)(body) { Some(value) => value, None() => fallback }
     }
 
-    with_compiled_or_else[A, E1: effects, E2: effects] :: String -> (RawPtr -> A need E1) -> (Unit -> A need E2) -> A need ffi, E1, E2
+    export with_compiled_or_else[A, E1: effects, E2: effects] :: String -> (RawPtr -> A need E1) -> (Unit -> A need E2) -> A need ffi, E1, E2
     {
         pattern => body => fallback => match Regex.with_compiled[A, E1](pattern)(body) { Some(value) => value, None() => fallback(()) }
     }
 
     // 测试是否完全匹配
-    is_match :: RawPtr -> String -> Bool need ffi
+    export is_match :: RawPtr -> String -> Bool need ffi
     {
         regex => text => regex_is_match(regex)(string_to_cstr(text)) == 1
     }
 
     // 查找第一个匹配，返回匹配的子串
     // 使用 regex_find_string 在 C 运行时内部处理缓冲区
-    find :: RawPtr -> String -> Option[String] need ffi
+    export find :: RawPtr -> String -> Option[String] need ffi
     {
         regex => text => {
             if Regex.is_match(regex)(Text.clone(ref text)) then {
@@ -102,17 +102,17 @@ Regex :: module {
     }
 
     // 释放正则
-    free :: RawPtr -> Unit need ffi
+    export free :: RawPtr -> Unit need ffi
     {
         regex => regex_free(regex)
     }
 
-    free_if_compiled :: RawPtr -> Unit need ffi
+    export free_if_compiled :: RawPtr -> Unit need ffi
     {
         regex => if Regex.is_compiled(regex) then { Regex.free(regex) } else { () }
     }
 
-    is_match_text :: String -> String -> Bool need ffi
+    export is_match_text :: String -> String -> Bool need ffi
     {
         pattern => text => {
             regex := Regex.compile(pattern);
@@ -124,32 +124,32 @@ Regex :: module {
         }
     }
 
-    find_or :: RawPtr -> String -> String -> String need ffi
+    export find_or :: RawPtr -> String -> String -> String need ffi
     {
         regex => text => fallback => match Regex.find(regex)(text) { Some(value) => value, None() => fallback }
     }
 
-    find_or_else[E: effects] :: RawPtr -> String -> (Unit -> String need E) -> String need ffi, E
+    export find_or_else[E: effects] :: RawPtr -> String -> (Unit -> String need E) -> String need ffi, E
     {
         regex => text => fallback => match Regex.find(regex)(text) { Some(value) => value, None() => fallback(()) }
     }
 
-    is_match_opt :: String -> String -> Option[Bool] need ffi
+    export is_match_opt :: String -> String -> Option[Bool] need ffi
     {
         pattern => text => Regex.with_compiled(pattern)(regex => Regex.is_match(regex)(text))
     }
 
-    is_match_or :: String -> String -> Bool -> Bool need ffi
+    export is_match_or :: String -> String -> Bool -> Bool need ffi
     {
         pattern => text => fallback => match Regex.is_match_opt(pattern)(text) { Some(value) => value, None() => fallback }
     }
 
-    is_match_or_else[E: effects] :: String -> String -> (Unit -> Bool need E) -> Bool need ffi, E
+    export is_match_or_else[E: effects] :: String -> String -> (Unit -> Bool need E) -> Bool need ffi, E
     {
         pattern => text => fallback => match Regex.is_match_opt(pattern)(text) { Some(value) => value, None() => fallback(()) }
     }
 
-    find_text :: String -> String -> Option[String] need ffi
+    export find_text :: String -> String -> Option[String] need ffi
     {
         pattern => text => {
             regex := Regex.compile(pattern);
@@ -161,17 +161,17 @@ Regex :: module {
         }
     }
 
-    find_text_or :: String -> String -> String -> String need ffi
+    export find_text_or :: String -> String -> String -> String need ffi
     {
         pattern => text => fallback => match Regex.find_text(pattern)(text) { Some(value) => value, None() => fallback }
     }
 
-    find_text_or_else[E: effects] :: String -> String -> (Unit -> String need E) -> String need ffi, E
+    export find_text_or_else[E: effects] :: String -> String -> (Unit -> String need E) -> String need ffi, E
     {
         pattern => text => fallback => match Regex.find_text(pattern)(text) { Some(value) => value, None() => fallback(()) }
     }
 
-    is_valid_pattern :: String -> Bool need ffi
+    export is_valid_pattern :: String -> Bool need ffi
     {
         pattern => {
             regex := Regex.compile(pattern);

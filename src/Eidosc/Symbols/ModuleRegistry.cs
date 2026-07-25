@@ -50,8 +50,8 @@ public sealed class ModuleRegistry
     private enum AccessibleBindingVisibility
     {
         External,
-        SameModuleOrPackage,
-        ExplicitExportsOnly
+        CompilerInternal,
+        SameModule
     }
 
     private sealed record AccessibleBindingIndex(
@@ -75,24 +75,36 @@ public sealed class ModuleRegistry
         var pathKey = module.Identity.ToDisplayKey();
         _modulePaths[pathKey] = id;
         _moduleIdentityKeys[module.Identity.ToIdentityKey()] = id;
-        var unqualifiedPathKey = ToModuleKey(null, module.Path);
-        if (!_moduleCandidatesByPath.TryGetValue(unqualifiedPathKey, out var candidates))
+        var isPreludeCore = string.Equals(
+            module.PackageAlias,
+            Semantic.PreludeCoreImageRegistry.PackageAlias,
+            StringComparison.Ordinal);
+        if (isPreludeCore)
         {
-            candidates = [];
-            _moduleCandidatesByPath[unqualifiedPathKey] = candidates;
+            _modulePaths[ToModuleKey(WellKnownStrings.Std.Module, module.Path)] = id;
         }
 
-        if (!candidates.Contains(id))
+        if (!isPreludeCore)
         {
-            candidates.Add(id);
-            candidates.Sort((left, right) => string.Compare(
-                FormatModuleFullName(left),
-                FormatModuleFullName(right),
-                StringComparison.Ordinal));
+            var unqualifiedPathKey = ToModuleKey(null, module.Path);
+            if (!_moduleCandidatesByPath.TryGetValue(unqualifiedPathKey, out var candidates))
+            {
+                candidates = [];
+                _moduleCandidatesByPath[unqualifiedPathKey] = candidates;
+            }
+
+            if (!candidates.Contains(id))
+            {
+                candidates.Add(id);
+                candidates.Sort((left, right) => string.Compare(
+                    FormatModuleFullName(left),
+                    FormatModuleFullName(right),
+                    StringComparison.Ordinal));
+            }
         }
 
         // 注册根模块
-        if (module.Path.Count > 0)
+        if (!isPreludeCore && module.Path.Count > 0)
         {
             var rootName = module.Path[0];
             if (!_rootModules.ContainsKey(rootName))
@@ -222,6 +234,10 @@ public sealed class ModuleRegistry
 
         InvalidateAccessibleBindingCache();
         RemoveIndexEntry(_modulePaths, module.Identity.ToDisplayKey(), moduleId);
+        if (string.Equals(module.PackageAlias, Semantic.PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal))
+        {
+            RemoveIndexEntry(_modulePaths, ToModuleKey(WellKnownStrings.Std.Module, module.Path), moduleId);
+        }
         RemoveIndexEntry(_moduleIdentityKeys, module.Identity.ToIdentityKey(), moduleId);
 
         var unqualifiedPathKey = ToModuleKey(null, module.Path);
@@ -539,8 +555,13 @@ public sealed class ModuleRegistry
         }
 
         _accessibleBindingsCacheMisses++;
-        var (sameModule, samePackage) = GetRequesterVisibility(moduleId, module, requesterModuleId);
-        var bindings = BuildAccessibleBindings(module, sameModule, samePackage);
+        var sameModule = IsSameModule(moduleId, requesterModuleId);
+        var compilerInternalPeer = !sameModule &&
+                                   module.AllowsCompilerInternalAccess &&
+                                   requesterModuleId is { IsValid: true } requesterId &&
+                                   _modules.TryGetValue(requesterId, out var requesterModule) &&
+                                   requesterModule.AllowsCompilerInternalAccess;
+        var bindings = BuildAccessibleBindings(module, sameModule, compilerInternalPeer);
         var index = new AccessibleBindingIndex(bindings, BuildAccessibleBindingNameIndex(bindings));
         _accessibleBindingsCache[key] = index;
         return index;
@@ -567,63 +588,78 @@ public sealed class ModuleRegistry
         ModuleSymbol module,
         SymbolId? requesterModuleId)
     {
-        var (sameModule, samePackage) = GetRequesterVisibility(moduleId, module, requesterModuleId);
-        var visibility = sameModule || samePackage
-            ? AccessibleBindingVisibility.SameModuleOrPackage
-            : module.UsesExplicitExports
-                ? AccessibleBindingVisibility.ExplicitExportsOnly
+        var visibility = IsSameModule(moduleId, requesterModuleId)
+            ? AccessibleBindingVisibility.SameModule
+            : module.AllowsCompilerInternalAccess &&
+              requesterModuleId is { IsValid: true } requesterId &&
+              _modules.TryGetValue(requesterId, out var requesterModule) &&
+              requesterModule.AllowsCompilerInternalAccess
+                ? AccessibleBindingVisibility.CompilerInternal
                 : AccessibleBindingVisibility.External;
         return new AccessibleBindingCacheKey(moduleId, visibility);
     }
 
-    private (bool SameModule, bool SamePackage) GetRequesterVisibility(
-        SymbolId moduleId,
-        ModuleSymbol module,
-        SymbolId? requesterModuleId)
-    {
-        var sameModule = requesterModuleId.HasValue &&
-                         requesterModuleId.Value.IsValid &&
-                         requesterModuleId.Value == moduleId;
-        var samePackage = IsSamePackage(module, requesterModuleId);
-        return (sameModule, samePackage);
-    }
+    private static bool IsSameModule(SymbolId moduleId, SymbolId? requesterModuleId) =>
+        requesterModuleId.HasValue && requesterModuleId.Value.IsValid && requesterModuleId.Value == moduleId;
 
     private ModuleBindingEntry[] BuildAccessibleBindings(
         ModuleSymbol module,
         bool sameModule,
-        bool samePackage)
+        bool compilerInternalPeer)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<ModuleBindingEntry>();
 
-        if (!sameModule && !samePackage && module.UsesExplicitExports)
+        if (!sameModule && !compilerInternalPeer)
         {
-            foreach (var binding in module.ExportedBindings)
+            AppendExportedBindings(module.ExportedBindings, result, seen);
+            AppendSyntheticBindings(module, result, seen);
+
+            return [.. result];
+        }
+
+        if (compilerInternalPeer)
+        {
+            foreach (var binding in EnumerateDirectMemberBindings(module))
             {
-                if (seen.Add(GetAccessibleBindingDedupKey(binding)))
+                if (_symbolTable.GetSymbol(binding.SymbolId) is not { IsCompilerInternal: true } ||
+                    !seen.Add(GetAccessibleBindingDedupKey(binding)))
                 {
-                    result.Add(binding);
+                    continue;
                 }
+
+                result.Add(binding);
             }
+
+            AppendExportedBindings(module.ExportedBindings, result, seen);
+            AppendSyntheticBindings(module, result, seen);
 
             return [.. result];
         }
 
         foreach (var binding in EnumerateDirectMemberBindings(module))
         {
-            if (!sameModule &&
-                !samePackage &&
-                (module.UsesExplicitExports || !IsPublicSymbol(binding.SymbolId)))
-            {
-                continue;
-            }
-
             if (seen.Add(GetAccessibleBindingDedupKey(binding)))
             {
                 result.Add(binding);
             }
         }
 
+        AppendSyntheticBindings(module, result, seen);
+
+        if (sameModule)
+        {
+            AppendExportedBindings(module.ExportedBindings, result, seen);
+        }
+
+        return [.. result];
+    }
+
+    private void AppendSyntheticBindings(
+        ModuleSymbol module,
+        List<ModuleBindingEntry> result,
+        HashSet<string> seen)
+    {
         foreach (var binding in EnumerateSyntheticPackageBindings(module))
         {
             if (seen.Add(GetAccessibleBindingDedupKey(binding)))
@@ -631,19 +667,88 @@ public sealed class ModuleRegistry
                 result.Add(binding);
             }
         }
+    }
 
-        if (sameModule || samePackage || module.UsesExplicitExports)
+    private void AppendExportedBindings(
+        IReadOnlyList<ModuleBindingEntry> exportedBindings,
+        List<ModuleBindingEntry> result,
+        HashSet<string> seen)
+    {
+        foreach (var binding in exportedBindings)
         {
-            foreach (var binding in module.ExportedBindings)
+            if (seen.Add(GetAccessibleBindingDedupKey(binding)))
             {
-                if (seen.Add(GetAccessibleBindingDedupKey(binding)))
-                {
-                    result.Add(binding);
-                }
+                result.Add(binding);
             }
         }
 
-        return [.. result];
+        foreach (var binding in exportedBindings)
+        {
+            foreach (var expanded in EnumerateAtomicExportBindings(binding).Skip(1))
+            {
+                if (seen.Add(GetAccessibleBindingDedupKey(expanded)))
+                {
+                    result.Add(expanded);
+                }
+            }
+        }
+    }
+
+    private IEnumerable<ModuleBindingEntry> EnumerateAtomicExportBindings(ModuleBindingEntry binding)
+    {
+        yield return binding;
+        if (_symbolTable.GetSymbol(binding.SymbolId) is not AdtSymbol adt)
+        {
+            yield break;
+        }
+
+        var visitedTypes = new HashSet<SymbolId>();
+        foreach (var descendant in EnumerateAdtDescendants(adt, visitedTypes))
+        {
+            yield return descendant;
+        }
+    }
+
+    private IEnumerable<ModuleBindingEntry> EnumerateAdtDescendants(
+        AdtSymbol adt,
+        HashSet<SymbolId> visitedTypes)
+    {
+        if (!visitedTypes.Add(adt.Id))
+        {
+            yield break;
+        }
+
+        foreach (var constructorId in adt.Constructors)
+        {
+            if (_symbolTable.GetSymbol<CtorSymbol>(constructorId) is { IsPublic: true } constructor)
+            {
+                yield return new ModuleBindingEntry
+                {
+                    Name = constructor.Name,
+                    SymbolId = constructorId,
+                    Kind = ResolutionKind.Constructor
+                };
+            }
+        }
+
+        foreach (var caseId in adt.DirectCases)
+        {
+            if (_symbolTable.GetSymbol<AdtSymbol>(caseId) is not { IsPublic: true } caseType)
+            {
+                continue;
+            }
+
+            yield return new ModuleBindingEntry
+            {
+                Name = caseType.Name,
+                SymbolId = caseId,
+                Kind = ResolutionKind.Type
+            };
+            foreach (var descendant in EnumerateAdtDescendants(caseType, visitedTypes))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     private string GetAccessibleBindingDedupKey(ModuleBindingEntry binding)
@@ -653,24 +758,10 @@ public sealed class ModuleRegistry
             : $"{binding.Name}#{binding.Kind}";
     }
 
-    private bool IsSamePackage(ModuleSymbol module, SymbolId? requesterModuleId)
-    {
-        if (!requesterModuleId.HasValue ||
-            !requesterModuleId.Value.IsValid ||
-            !_modules.TryGetValue(requesterModuleId.Value, out var requesterModule))
-        {
-            return false;
-        }
-
-        return string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) &&
-               string.Equals(requesterModule.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) &&
-               string.Equals(module.PackageAlias, requesterModule.PackageAlias, StringComparison.Ordinal) &&
-               string.Equals(module.PackageInstanceKey, requesterModule.PackageInstanceKey, StringComparison.Ordinal);
-    }
-
     private IEnumerable<ModuleBindingEntry> EnumerateSyntheticPackageBindings(ModuleSymbol module)
     {
-        if (!string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) ||
+        if ((!string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) &&
+             !string.Equals(module.PackageAlias, Semantic.PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal)) ||
             module.Path.Count != 1 ||
             !string.Equals(module.Path[0], WellKnownStrings.Std.SeqModule, StringComparison.Ordinal))
         {
@@ -712,11 +803,6 @@ public sealed class ModuleRegistry
                 Kind = GetResolutionKind(symbol)
             };
         }
-    }
-
-    private bool IsPublicSymbol(SymbolId symbolId)
-    {
-        return _symbolTable.GetSymbol(symbolId)?.IsPublic == true;
     }
 
     private static ResolutionKind GetResolutionKind(Symbol symbol)

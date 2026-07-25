@@ -585,7 +585,7 @@ Main :: module {
             TraitSelfPosition = SelfPosition.Both,
             TraitSelfParameterIndices = [0, 2],
             TraitSelfInResult = true,
-            TraitMethodRole = TraitMethodRole.Equality,
+            CompilerSemanticRole = CompilerSemanticRole.Equality,
             Span = Span(6)
         };
 
@@ -713,7 +713,7 @@ Main :: module {
                             SelfPosition = SelfPosition.Both,
                             SelfParameterIndices = [0, 1],
                             SelfInResult = true,
-                            MethodRole = TraitMethodRole.Equality,
+                            MethodRole = CompilerSemanticRole.Equality,
                             HasDefaultImplementation = true
                         }
                     ]

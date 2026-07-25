@@ -11,15 +11,6 @@ namespace Eidosc.Semantic;
 
 public sealed partial class NameResolver
 {
-    private static readonly Lazy<HashSet<string>> PrecompiledValueNames = new(() =>
-        PrecompiledModuleRegistry.GetAvailableModulePaths()
-            .SelectMany(modulePath =>
-            {
-                var exports = PrecompiledModuleRegistry.GetExports(modulePath);
-                return exports.Values.Concat(exports.Functions);
-            })
-            .ToHashSet(StringComparer.Ordinal));
-
     private void ResolveExpressionReferences(EidosAstNode expr)
     {
         switch (expr)
@@ -197,10 +188,6 @@ public sealed partial class NameResolver
                             infixCall.AddFunctionCandidate(candidate);
                         }
                     }
-                    else if (IsKnownPrecompiledValueName(infixCall.FunctionName))
-                    {
-                        return;
-                    }
                     else
                     {
                         AddUndefinedIdentifierError(infixCall.Span, infixCall.FunctionName);
@@ -216,13 +203,6 @@ public sealed partial class NameResolver
                 break;
 
             case IndexExpr index:
-                // 反糖化：ptr_load_as[Float](ptr) → IndexExpr { Object = IdentifierExpr("ptr_load_as"), TypeArgs = [Float] }
-                if (TryDesugarGenericPtrIntrinsicIndex(index))
-                {
-                    // 已反糖化，IndexExpr 的 Object 已被解析
-                    break;
-                }
-
                 if (index.Object != null)
                 {
                     ResolveExpressionReferences(index.Object);
@@ -263,64 +243,6 @@ public sealed partial class NameResolver
                 break;
 
         }
-    }
-
-
-    /// <summary>
-    /// 反糖化 ptr_load_as[T] / ptr_store_as[T] 类型应用。
-    /// 当 IndexExpr 是类型应用（如 ptr_load_as[Float]）且目标是 ptr_load_as/ptr_store_as 时，
-    /// 将整个 IndexExpr 替换为对具体 Phase A 函数的 PathExpr 引用。
-    /// </summary>
-    private bool TryDesugarGenericPtrIntrinsicIndex(IndexExpr index)
-    {
-        if (index.Object is not IdentifierExpr ident)
-            return false;
-
-        if (ident.Name is not (WellKnownStrings.InternalNames.PtrLoadAs or WellKnownStrings.InternalNames.PtrStoreAs))
-            return false;
-
-        if (!index.IsTypeApplication &&
-            index.Index != null &&
-            TryConvertExpressionToTypeCandidate(index.Index, out var neutralTypeArgument))
-        {
-            index.ReinterpretAsGenericApplication(
-            [
-                new TypeGenericArgumentNode
-                {
-                    Type = neutralTypeArgument,
-                    Span = index.Index?.Span ?? index.Span
-                }
-            ]);
-        }
-
-        if (index.TypeArgs.Count == 0)
-        {
-            AddError(index.Span, DiagnosticMessages.PtrIntrinsicRequiresExplicitTypeArgument(ident.Name));
-            return false;
-        }
-
-        if (index.TypeArgs.Count > 1)
-        {
-            AddError(index.Span, DiagnosticMessages.PtrIntrinsicRequiresExactlyOneTypeArgument(ident.Name));
-            return false;
-        }
-
-        var typeName = ExtractTypeArgName(index.TypeArgs[0]);
-        var desugared = MapPtrIntrinsicTypeToFunc(ident.Name, typeName);
-
-        if (desugared == null)
-        {
-            AddError(index.Span, DiagnosticMessages.UnsupportedPtrIntrinsicTypeArgument(typeName, ident.Name));
-            return false;
-        }
-
-        // 将 IdentifierExpr 的名称改为反糖化后的函数名
-        ident.SetName(desugared);
-        // 清除类型参数，使 IndexExpr 不再被视为类型应用
-        index.ClearTypeArgs();
-        // 正常解析 IdentifierExpr
-        ResolveIdentifierReference(ident);
-        return true;
     }
 
 
@@ -949,11 +871,6 @@ public sealed partial class NameResolver
             return;
         }
 
-        if (IsKnownPrecompiledValueName(ident.Name))
-        {
-            return;
-        }
-
         if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
         {
             AddError(ident.Span, result.ErrorMessage);
@@ -963,11 +880,6 @@ public sealed partial class NameResolver
         AddUndefinedIdentifierError(ident.Span, ident.Name);
     }
 
-    private static bool IsKnownPrecompiledValueName(string name)
-    {
-        return PrecompiledValueNames.Value.Contains(name);
-    }
-
     private void ResolveCtorReferences(CtorExpr ctor)
     {
         if (!TryUseAttachedSyntaxSymbol(ctor, out var attachedConstructor) ||
@@ -975,7 +887,7 @@ public sealed partial class NameResolver
         {
             if (!string.IsNullOrWhiteSpace(ctor.ConstructorName))
             {
-                var ctorSymbol = _symbolTable.LookupConstructor(ctor.ConstructorName);
+                var ctorSymbol = LookupVisibleConstructor(ctor.ConstructorName);
                 if (ctorSymbol != null)
                 {
                     ctor.SymbolId = ctorSymbol.Value;
@@ -1243,17 +1155,46 @@ public sealed partial class NameResolver
             return false;
         }
 
+        var lookupContext = CreateLookupContext();
         var fullPath = receiverSegments.Append(methodCall.MethodName).ToList();
         var result = _lookupService.LookupPath(
             fullPath,
             LookupKind.Value | LookupKind.Type | LookupKind.Constructor | LookupKind.Effect | LookupKind.Proof,
-            CreateLookupContext());
+            lookupContext);
         if (!result.IsSuccess)
         {
             return false;
         }
 
         var resolvedSymbolId = result.SymbolId;
+        if (_symbolTable.GetSymbol(resolvedSymbolId) is FuncSymbol)
+        {
+            var callableCandidates = _symbolTable.Modules
+                .GetOwningModuleIds(resolvedSymbolId)
+                .SelectMany(ownerModuleId => _symbolTable.Modules.GetAccessibleBindingsByName(
+                    ownerModuleId,
+                    methodCall.MethodName,
+                    _currentModule))
+                .Select(static binding => binding.SymbolId)
+                .Where(candidateId => _symbolTable.GetSymbol(candidateId) is FuncSymbol)
+                .Distinct()
+                .ToArray();
+            if (callableCandidates.Length > 0)
+            {
+                methodCall.ClearMethodCandidates();
+                foreach (var candidateId in callableCandidates)
+                {
+                    methodCall.AddMethodCandidate(candidateId);
+                }
+
+                methodCall.SymbolId = callableCandidates.Length == 1
+                    ? callableCandidates[0]
+                    : SymbolId.None;
+                methodCall.MarkResolvedAsStaticPath();
+                return true;
+            }
+        }
+
         if (_symbolTable.GetSymbol(resolvedSymbolId) is AdtSymbol
             {
                 IsCaseType: true,

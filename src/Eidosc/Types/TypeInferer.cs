@@ -71,7 +71,6 @@ public sealed partial class TypeInferer
     private readonly Dictionary<(SymbolId ImplId, string AssociatedTypeName), TypeNode> _associatedTypeImplementations = [];
     private readonly Dictionary<(SymbolId ImplId, string AssociatedConstName), AssociatedConstDecl> _associatedConstImplementations = [];
     private readonly Dictionary<SymbolId, ComptimeValue> _comptimeValues = [];
-    private readonly Dictionary<string, SymbolId[]> _precompiledCallableCandidateCache = new(StringComparer.Ordinal);
     private readonly Dictionary<TypeDirectedCallableResolutionCacheKey, TypeDirectedCandidateResolution> _typeDirectedCallableResolutionCache = [];
     private readonly Dictionary<TypeDirectedCallableResolutionCacheKey, TypeDirectedCallableResolutionSnapshotEntry> _previousTypeDirectedCallableResolutionCache = [];
     private readonly Dictionary<TypeDirectedCallableResolutionCacheKey, TypeDirectedCallableResolutionSnapshotEntry> _typeDirectedCallableResolutionSnapshotEntries = [];
@@ -87,6 +86,7 @@ public sealed partial class TypeInferer
     private readonly Dictionary<string, TypesStepAccumulator> _typesStepAccumulators = new(StringComparer.Ordinal);
     private bool _allowComptimeFunctionReferences;
     private string? _rootInputFilePath;
+    private SymbolId _currentModuleId = SymbolId.None;
 
     private sealed record CtorTypeBinding(
         SymbolId CtorId,
@@ -491,7 +491,7 @@ public sealed partial class TypeInferer
         _associatedConstImplementations.Clear();
         _closedCaseInjections.Clear();
         _comptimeValues.Clear();
-        _precompiledCallableCandidateCache.Clear();
+        _currentModuleId = SymbolId.None;
         _typeDirectedCallableResolutionCache.Clear();
         _typeDirectedCallableResolutionSnapshotEntries.Clear();
         _associatedTypeProjectionCache.Clear();

@@ -166,7 +166,7 @@ Main :: module {
 """);
             await File.WriteAllTextAsync(Path.Combine(tempDir, "src", "Lib.eidos"), """
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }

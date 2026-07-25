@@ -20,7 +20,7 @@ sample :: module {
 
     compare :: Int -> Int -> Ordering
     {
-        left => right => ordering.compare_int(left)(right)
+        left => right => ordering.compare(left)(right)
     }
 }
 """;
@@ -42,7 +42,7 @@ sample :: module {
 
     compare :: Int -> Int -> Int
     {
-        left => right => ordering.to_int(ordering.compare_int(left)(right))
+        left => right => ordering.to_int(ordering.compare(left)(right))
     }
 }
 """;
@@ -287,23 +287,21 @@ App :: module {
     public void Registry_AvailableModules_ContainsCoreStdModules()
     {
         var modules = PrecompiledModuleRegistry.GetAvailableModulePaths();
+        var coreModules = PreludeCoreImageRegistry.GetAvailableModulePaths();
 
-        Assert.Contains("std/Functions", modules);
-        Assert.Contains("std/Applicative", modules);
-        Assert.Contains("std/Foldable", modules);
-        Assert.Contains("std/Functor", modules);
-        Assert.Contains("std/Monad", modules);
-        Assert.Contains("std/Traversable", modules);
-        Assert.Contains("std/Ordering", modules);
-        Assert.Contains("std/Option", modules);
-        Assert.Contains("std/Result", modules);
+        Assert.Contains("Functions", coreModules);
+        Assert.Contains("Applicative", coreModules);
+        Assert.Contains("Foldable", coreModules);
+        Assert.Contains("Functor", coreModules);
+        Assert.Contains("Monad", coreModules);
+        Assert.Contains("Traversable", coreModules);
+        Assert.Contains("Ordering", coreModules);
+        Assert.Contains("Option", coreModules);
+        Assert.Contains("Result", coreModules);
+        Assert.Contains("Display", coreModules);
+        Assert.DoesNotContain("std/Option", modules);
         Assert.Contains("std/Range", modules);
-        Assert.Contains("std/Prelude", modules);
-        Assert.Contains("std/RuntimeArray", modules);
-        Assert.Contains("std/Seq", modules);
         Assert.Contains("std/SeqBuilder", modules);
-        Assert.Contains("std/Traits", modules);
-        Assert.Contains("std/TraitInvoke", modules);
         Assert.Contains("std/Text", modules);
         Assert.Contains("std/Math", modules);
         Assert.Contains("std/FloatMath", modules);
@@ -318,7 +316,9 @@ App :: module {
     [Fact]
     public void Registry_StdSeqSource_CanBeLoadedFromEmbeddedResource()
     {
-        var loaded = PrecompiledModuleRegistry.TryGetSource("std/Seq", out var source);
+        var loaded = PreludeCoreImageRegistry.TryGetSource(
+            [PreludeCoreImageRegistry.PackageAlias, "Seq"],
+            out var source);
 
         Assert.True(loaded);
         Assert.Contains("Seq :: module", source, StringComparison.Ordinal);
@@ -420,16 +420,19 @@ App :: module {
     public void Registry_StdPreludeExportedFunctions_ContainPreludeSpecificHelpersOnly()
     {
         // Verify the real embedded Prelude source re-exports correctly
-        var sourceLoaded = PrecompiledModuleRegistry.TryGetSource("std/Prelude", out var preludeSource);
+        var sourceLoaded = PreludeCoreImageRegistry.TryGetSource(
+            [PreludeCoreImageRegistry.PackageAlias, "Prelude"],
+            out var preludeSource);
         Assert.True(sourceLoaded, "Prelude source should be loadable");
         Assert.Contains("export import", preludeSource, StringComparison.Ordinal);
         Assert.Contains("export id[T] :: T -> T", preludeSource, StringComparison.Ordinal);
 
         // Use ExtractExportsForTest to bypass caching and test with full module resolution
         var moduleSources = PrecompiledModuleRegistry.GetAvailableModulePaths()
+            .Concat(PreludeCoreImageRegistry.GetAvailableModulePaths().Select(name => $"std/{name}"))
             .ToDictionary(p => p, p =>
             {
-                PrecompiledModuleRegistry.TryGetSource(p, out var src);
+                PrecompiledModuleRegistry.TryGetDistributionSource(p, out var src);
                 return src ?? "";
             });
 
@@ -462,13 +465,9 @@ App :: module {
         Assert.Contains("filter", exports.Functions);
         Assert.Contains("fold_left", exports.Functions);
 
-        // Re-exported Text/File core helpers
-        Assert.Contains("char_code_at_or", exports.Functions);
-        Assert.Contains("char_at_or", exports.Functions);
-        Assert.Contains("last_index_of_or", exports.Functions);
-        Assert.Contains("exists", exports.Functions);
-        Assert.Contains("read_text_or", exports.Functions);
-        Assert.Contains("write_text_result", exports.Functions);
+        Assert.Contains("print", exports.Functions);
+        Assert.Contains("println", exports.Functions);
+        Assert.DoesNotContain("read_text_or", exports.Functions);
     }
 
     [Fact]
@@ -494,7 +493,7 @@ App :: module {
             """;
         var moduleSources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["std/Text"] = "Text :: module { starts_with :: String -> String -> Bool { s => p => true } }"
+            ["std/Text"] = "Text :: module { export starts_with :: String -> String -> Bool { s => p => true } }"
         };
         var exports = PrecompiledModuleRegistry.ExtractExportsForTest(
             exportImportSource, "std/Prelude", moduleSources);
@@ -658,12 +657,12 @@ App :: module {
         Assert.Contains("is_gt", exports.Functions);
         Assert.Contains("reverse", exports.Functions);
         Assert.Contains("then_with", exports.Functions);
-        Assert.Contains("then_compare_int", exports.Functions);
-        Assert.Contains("then_compare_char", exports.Functions);
-        Assert.Contains("then_compare_bool", exports.Functions);
-        Assert.Contains("compare_int", exports.Functions);
-        Assert.Contains("compare_char", exports.Functions);
-        Assert.Contains("compare_bool", exports.Functions);
+        Assert.Contains("then_compare", exports.Functions);
+        Assert.Contains("then_compare", exports.Functions);
+        Assert.Contains("then_compare", exports.Functions);
+        Assert.Contains("compare", exports.Functions);
+        Assert.Contains("compare", exports.Functions);
+        Assert.Contains("compare", exports.Functions);
         Assert.Contains("eq", exports.Functions);
         Assert.Contains("compare", exports.Functions);
         Assert.Contains("show", exports.Functions);
@@ -696,9 +695,15 @@ App :: module {
         Assert.Contains("grid_cell_rect", gameMath.Functions);
         Assert.Contains("move_toward", gameMath.Functions);
         Assert.Contains("write_line", console.Functions);
-        Assert.Contains("write_text_int_line", console.Functions);
-        Assert.Contains("write_text_bool_line", console.Functions);
-        Assert.Contains("read_line_text", console.Functions);
+        Assert.Contains("write", console.Functions);
+        Assert.Contains("write_char_code", console.Functions);
+        Assert.DoesNotContain("write_char_code_raw", console.Functions);
+        Assert.DoesNotContain("print_int", console.Functions);
+        Assert.DoesNotContain("print_float", console.Functions);
+        Assert.DoesNotContain("print_string", console.Functions);
+        Assert.DoesNotContain("print_newline", console.Functions);
+        Assert.DoesNotContain("print_char", console.Functions);
+        Assert.Contains("read_line", console.Functions);
         Assert.Contains("read_line_result", console.Functions);
         Assert.Contains("read_line_opt", console.Functions);
         Assert.Contains("read_line_or_empty", console.Functions);
@@ -830,16 +835,16 @@ App :: module {
     {
         const string source = """
 Test :: module {
-    Show :: trait {
+    export Show :: trait {
         show :: Self -> String
     }
 
-    Logger :: effect;
+    export Logger :: effect;
 
-    Option[T] :: type { Some:: type(T) , None :: type {} }
-    UserId :: type = Int;
+    export Option[T] :: type { Some:: type(T) , None :: type {} }
+    export UserId :: type = Int;
 
-    map[T, U] :: Option[T] -> (T -> U) -> Option[U]
+    export map[T, U] :: Option[T] -> (T -> U) -> Option[U]
     {
         Some(value) => f => Some(f(value)),
         None => _ => None
@@ -868,7 +873,7 @@ Test :: module {
         x => x
     }
 
-    public_api :: Int -> Int
+    export public_api :: Int -> Int
     {
         x => helper(x)
     }

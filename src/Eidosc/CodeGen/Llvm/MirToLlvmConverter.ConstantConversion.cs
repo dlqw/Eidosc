@@ -381,6 +381,7 @@ public sealed partial class MirToLlvmConverter
     {
         return operand switch
         {
+            MirPoison poison => ConvertPoisonOperand(poison),
             MirConstant constOp => ConvertConstantOperand(constOp),
             MirFunctionRef funcRef => MaterializeFunctionReference(funcRef),
             MirPlace place => MaterializePlaceValue(place, place.TypeId, "operand"),
@@ -390,6 +391,35 @@ public sealed partial class MirToLlvmConverter
                 Type = LowerTypeIdOrReport(temp.TypeId, "temp operand")
             },
             _ => LlvmConstant.Zero
+        };
+    }
+
+    private LlvmValue ConvertPoisonOperand(MirPoison poison)
+    {
+        var diagnostic = Diagnostic.Diagnostic.Error(
+            DiagnosticMessages.MirPoisonOperand,
+            MirValidator.PoisonOperandCode);
+        if (HasSpan(poison.Span))
+        {
+            diagnostic.WithLabel(poison.Span, DiagnosticMessages.MirPoisonOperandLabel);
+        }
+
+        if (_currentFunction != null)
+        {
+            diagnostic.WithNote(DiagnosticMessages.FunctionNote(_currentFunction.Name));
+        }
+
+        if (!string.IsNullOrWhiteSpace(poison.Reason))
+        {
+            diagnostic.WithNote(DiagnosticMessages.ReasonNote(poison.Reason));
+        }
+
+        Diagnostics.Add(diagnostic);
+        return new LlvmUndef
+        {
+            Type = poison.TypeId.IsValid
+                ? LowerTypeIdOrReport(poison.TypeId, "poison operand")
+                : LlvmPointerType.VoidPtr()
         };
     }
 

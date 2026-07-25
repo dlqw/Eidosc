@@ -141,6 +141,13 @@ public sealed partial class CompilationPipeline
 
     private static bool TryGetPrecompiledModuleSource(IReadOnlyList<string> modulePath, out string source)
     {
-        return PrecompiledModuleRegistry.TryGetSource(modulePath, out source);
+        return PreludeCoreImageRegistry.TryGetSource(modulePath, out source) ||
+               PrecompiledModuleRegistry.TryGetSource(modulePath, out source);
+    }
+
+    private static bool TryGetPrecompiledModuleSourceFilePath(IReadOnlyList<string> modulePath, out string filePath)
+    {
+        return PreludeCoreImageRegistry.TryGetSourceFilePath(modulePath, out filePath) ||
+               PrecompiledModuleRegistry.TryGetSourceFilePath(modulePath, out filePath);
     }
 }

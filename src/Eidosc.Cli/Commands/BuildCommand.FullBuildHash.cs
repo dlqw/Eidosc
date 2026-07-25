@@ -130,7 +130,7 @@ public static partial class BuildCommand
             }
         }
 
-        foreach (var roots in inputResolution.ProjectTarget?.PackageImportRoots.Values ?? Enumerable.Empty<string[]>())
+        foreach (var roots in inputResolution.GetPackageImportRoots().Values)
         {
             foreach (var root in roots)
             {

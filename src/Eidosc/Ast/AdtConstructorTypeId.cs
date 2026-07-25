@@ -7,6 +7,7 @@ namespace Eidosc;
 public static class AdtConstructorTypeId
 {
     private const string MangledPrefix = WellKnownStrings.Mangling.Prefix;
+    private const string RuntimeIdentityPrefix = "runtime-ctor:";
 
     /// <summary>
     /// FNV-1a 偏移基础值。
@@ -48,6 +49,16 @@ public static class AdtConstructorTypeId
 
     public static int Compute(FunctionId? functionId, SymbolId constructorSymbolId, string constructorName)
     {
+        if (!string.IsNullOrWhiteSpace(functionId?.StableIdentityKey))
+        {
+            if (TryDecodeRuntimeIdentity(functionId.StableIdentityKey, out var runtimeTypeId))
+            {
+                return runtimeTypeId;
+            }
+
+            return Compute(functionId.StableIdentityKey);
+        }
+
         if (Mir.MirFunctionIdentity.TryGetStableKey(functionId, out var functionIdentityKey))
         {
             return Compute(functionIdentityKey);
@@ -70,6 +81,18 @@ public static class AdtConstructorTypeId
         }
 
         return Compute(constructorName);
+    }
+
+    internal static bool TryDecodeRuntimeIdentity(string stableIdentityKey, out int runtimeTypeId)
+    {
+        runtimeTypeId = 0;
+        return stableIdentityKey.StartsWith(RuntimeIdentityPrefix, StringComparison.Ordinal) &&
+               int.TryParse(
+                   stableIdentityKey.AsSpan(RuntimeIdentityPrefix.Length),
+                   System.Globalization.NumberStyles.None,
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   out runtimeTypeId) &&
+               runtimeTypeId > 0;
     }
 
     /// <summary>

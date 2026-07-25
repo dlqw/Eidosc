@@ -435,7 +435,7 @@ public sealed partial class CompilationPipeline
         var validator = new MirValidator();
         if (!validator.Validate(mirModule))
         {
-            diagnostics.AddRange(FilterTrustedPrecompiledDiagnostics(validator.Diagnostics));
+            diagnostics.AddRange(validator.Diagnostics);
         }
 
         if (diagnostics.Any(static diagnostic => diagnostic.Level == Diagnostic.DiagnosticLevel.Error))

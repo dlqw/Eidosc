@@ -935,7 +935,7 @@ Existing :: module {
         const string source = """
 generate_schema :: comptime meta.Package -> meta.Modules {
     _ => [meta.module("Generated.Schema", quote items {
-        answer :: Unit -> Int { _ => 42 }
+        export answer :: Unit -> Int { _ => 42 }
     })]
 }
 

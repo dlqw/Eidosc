@@ -13,10 +13,6 @@ public partial class LlvmPipelineIntegrationTests
     public void SourceEqOperator_ForAdt_RewritesMirToTraitImpl()
     {
         const string source = """
-Eq :: trait {
-    eq :: Self -> Self -> Bool
-}
-
 Direction :: type {
     North :: type {} , South :: type {} , East :: type {} , West :: type {}
 }
@@ -77,10 +73,6 @@ main :: Unit -> Int
     public void SourceEqOperator_ForAdt_NativeSmoke_UsesTraitImpl()
     {
         const string source = """
-Eq :: trait {
-    eq :: Self -> Self -> Bool
-}
-
 Direction :: type {
     North :: type {} , South :: type {} , East :: type {} , West :: type {}
 }
@@ -134,7 +126,6 @@ main :: Unit -> Int
     {
         const string source = """
 import std.Seq
-import std.Traits
 
 Direction :: type {
     North :: type {} , East :: type {}
@@ -191,10 +182,6 @@ main :: Unit -> Int
     public void SourceEqOperator_ForExactCase_PrefersCaseImplOverParentImpl()
     {
         const string source = """
-Eq :: trait {
-    eq :: Self -> Self -> Bool
-}
-
 Anim :: type {
     Dog :: type {},
     Cat :: type {},

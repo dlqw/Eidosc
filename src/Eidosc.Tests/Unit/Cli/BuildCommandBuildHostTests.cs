@@ -108,7 +108,7 @@ public sealed class BuildCommandBuildHostTests
             Session :: comptime build.session();
             Emit :: comptime build.emit(Session);
             Generated :: comptime build.generated_module(Emit, "generated.schema", quote items {
-                answer :: Int = 42;
+                export answer :: Int = 42;
             }, "main");
             BuildGraph :: comptime build.graph(Emit, [], [Generated]);
             """);

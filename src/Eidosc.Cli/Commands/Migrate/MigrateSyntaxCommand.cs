@@ -1178,12 +1178,6 @@ public static partial class SyntaxMigrationPlanner
     private static readonly HashSet<string> IoNativeCallNames = new(StringComparer.Ordinal)
     {
         "sleep_ms",
-        "print_string",
-        "print_int",
-        "print_float",
-        "print_bool",
-        "print_char",
-        "print_newline",
         "read_char",
         "read_line",
         "file_exists",

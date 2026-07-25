@@ -487,7 +487,7 @@ public sealed partial class NameResolver
             var rightPat = MakeCtorPattern(ctor, rightVars, span);
             var tuplePat = MakeTuplePattern([leftPat, rightPat], span);
             var expr = fieldCount == 0
-                ? MakePathCall("std.Ordering.Equal", [], span)
+                ? MakePathCall("Ordering.Equal", [], span)
                 : BuildOrdChain(leftVars, rightVars, span);
             branches.Add(MakeBranch(tuplePat, expr, span));
         }
@@ -503,10 +503,10 @@ public sealed partial class NameResolver
                 var wildcardPat = new WildcardPattern();
                 SetPrivate(wildcardPat, "Span", span);
                 var tuplePat = MakeTuplePattern([leftPat, wildcardPat], span);
-                branches.Add(MakeBranch(tuplePat, MakePathCall("std.Ordering.Less", [], span), span));
+                branches.Add(MakeBranch(tuplePat, MakePathCall("Ordering.Less", [], span), span));
             }
 
-            branches.Add(MakeBranch(new WildcardPattern(), MakePathCall("std.Ordering.Greater", [], span), span));
+            branches.Add(MakeBranch(new WildcardPattern(), MakePathCall("Ordering.Greater", [], span), span));
         }
 
         return branches;
@@ -661,7 +661,7 @@ public sealed partial class NameResolver
                 MakeIdent(leftVars[i].Name, span),
                 MakeIdent(rightVars[i].Name, span), span);
 
-            result = MakePathCall("std.Ordering.then_with", [result, nextCmp], span);
+            result = MakePathCall("Ordering.then_with", [result, nextCmp], span);
         }
 
         return result;
@@ -785,6 +785,7 @@ public sealed partial class NameResolver
     private static CallExpr MakeTraitInvokeCall(string method, EidosAstNode firstArg, SourceSpan span)
     {
         var path = new PathExpr();
+        path.SetPackageAlias(PreludeCoreImageRegistry.PackageAlias);
         SetPrivate(path, "ModulePath", new List<string> { "TraitInvoke" });
         SetPrivate(path, "Name", method);
 
@@ -797,6 +798,7 @@ public sealed partial class NameResolver
     private static CallExpr MakeTraitInvokeCall(string method, EidosAstNode firstArg, EidosAstNode secondArg, SourceSpan span)
     {
         var innerPath = new PathExpr();
+        innerPath.SetPackageAlias(PreludeCoreImageRegistry.PackageAlias);
         SetPrivate(innerPath, "ModulePath", new List<string> { "TraitInvoke" });
         SetPrivate(innerPath, "Name", method);
 
@@ -841,6 +843,7 @@ public sealed partial class NameResolver
     {
         var segments = qualifiedPath.Split(WellKnownStrings.Separators.Path);
         var path = new PathExpr();
+        path.SetPackageAlias(PreludeCoreImageRegistry.PackageAlias);
         SetPrivate(path, "ModulePath", segments.Take(segments.Length - 1).ToList());
         SetPrivate(path, "Name", segments[^1]);
 

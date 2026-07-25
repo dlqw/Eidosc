@@ -557,7 +557,10 @@ public sealed partial class MirToLlvmConverter
 
         if (!string.IsNullOrWhiteSpace(constructorRef.FunctionId.StableIdentityKey))
         {
-            return AdtConstructorTypeId.Compute(constructorRef.FunctionId.StableIdentityKey);
+            return AdtConstructorTypeId.Compute(
+                constructorRef.FunctionId,
+                constructorRef.SymbolId,
+                constructorRef.Name);
         }
 
         if (_symbolTable?.GetSymbol(constructorRef.SymbolId) is CtorSymbol)

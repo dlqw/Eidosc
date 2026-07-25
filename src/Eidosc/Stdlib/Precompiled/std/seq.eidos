@@ -1,4 +1,5 @@
 Seq :: module {
+    import Display
     import Option
     import Traits
     import Ordering.{Ordering}
@@ -19,7 +20,7 @@ Seq :: module {
     }
 
 
-    len[T] :: Ref[Seq[T]] -> Int compiler(intrinsic: "array_length");
+    export len[T] :: Ref[Seq[T]] -> Int compiler(intrinsic: "array_length");
 
     len_ref[T] :: Ref[Seq[T]] -> Int compiler(internal, intrinsic: "array_length");
 
@@ -32,7 +33,7 @@ Seq :: module {
         [_, ..tail] => acc => Seq.len_from(tail)(acc + 1)
     }
 
-    is_empty[T] :: Ref[Seq[T]] -> Bool
+    export is_empty[T] :: Ref[Seq[T]] -> Bool
     {
         xs => match *xs {
             [] => true,
@@ -40,13 +41,13 @@ Seq :: module {
         }
     }
 
-    head[T] :: Seq[T] -> Option[T]
+    export head[T] :: Seq[T] -> Option[T]
     {
         [first, ..] => Some(first),
         [] => None()
     }
 
-    head_or[T] :: Seq[T] -> T -> T
+    export head_or[T] :: Seq[T] -> T -> T
     {
         xs => fallback => Option.unwrap_or(Seq.head(xs))(fallback)
     }
@@ -61,38 +62,38 @@ Seq :: module {
         }
     }
 
-    get_opt[T] :: Seq[T] -> Int -> Option[T]
+    export get_opt[T] :: Seq[T] -> Int -> Option[T]
     {
         xs => index => Seq.get_from_opt(xs)(index)
     }
 
-    get_or[T] :: Seq[T] -> Int -> T -> T
+    export get_or[T] :: Seq[T] -> Int -> T -> T
     {
         xs => index => fallback => Option.unwrap_or(Seq.get_opt(xs)(index))(fallback)
     }
 
-    tail[T] :: Seq[T] -> Option[Seq[T]]
+    export tail[T] :: Seq[T] -> Option[Seq[T]]
     {
         [_, ..rest] => Some(rest),
         [] => None()
     }
 
-    tail_or[T] :: Seq[T] -> Seq[T] -> Seq[T]
+    export tail_or[T] :: Seq[T] -> Seq[T] -> Seq[T]
     {
         xs => fallback => Option.unwrap_or(Seq.tail(xs))(fallback)
     }
 
-    singleton[T] :: T -> Seq[T]
+    export singleton[T] :: T -> Seq[T] compiler(role: "operator.append_last.singleton")
     {
         value => [value]
     }
 
-    cons[T] :: T -> Seq[T] -> Seq[T]
+    export cons[T] :: T -> Seq[T] -> Seq[T] compiler(role: "operator.prepend")
     {
         head => tail => [head, ..tail]
     }
 
-    last[T] :: Seq[T] -> Option[T]
+    export last[T] :: Seq[T] -> Option[T]
     {
         xs => {
             len := Seq.len_ref(ref xs);
@@ -100,27 +101,27 @@ Seq :: module {
         }
     }
 
-    last_or[T] :: Seq[T] -> T -> T
+    export last_or[T] :: Seq[T] -> T -> T
     {
         xs => fallback => Option.unwrap_or(Seq.last(xs))(fallback)
     }
 
-    map[T, U, E: effects] :: Seq[T] -> (T -> U need E) -> Seq[U] need E
+    export map[T, U, E: effects] :: Seq[T] -> (T -> U need E) -> Seq[U] need E
     {
         xs => f => [f(x) | x <- xs]
     }
 
-    filter[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Seq[T] need E
+    export filter[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Seq[T] need E
     {
         xs => pred => [x | x <- xs, pred(x)]
     }
 
-    flat_map[T, U, E: effects] :: Seq[T] -> (T -> Seq[U] need E) -> Seq[U] need E
+    export flat_map[T, U, E: effects] :: Seq[T] -> (T -> Seq[U] need E) -> Seq[U] need E
     {
         xs => f => [y | x <- xs, y <- f(x)]
     }
 
-    fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
+    export fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
     {
         xs => initial => f => {
             len := Seq.len_ref(ref xs);
@@ -138,7 +139,7 @@ Seq :: module {
         }
     }
 
-    fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E
+    export fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E
     {
         xs => initial => f => {
             mut index := Seq.len_ref(ref xs) - 1;
@@ -155,7 +156,7 @@ Seq :: module {
         }
     }
 
-    FoldableSeq :: instance Foldable.Foldable[Seq] {
+    export FoldableSeq :: instance Foldable.Foldable[Seq] {
         fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
             {
                 xs => initial => f => Seq.fold_left(xs)(initial)(f)
@@ -166,7 +167,7 @@ Seq :: module {
             }
     }
 
-    TraversableSeq :: instance Traversable.Traversable[Seq] {
+    export TraversableSeq :: instance Traversable.Traversable[Seq] {
         traverse[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: Seq[A] -> (A -> G[B] need E) -> G[Seq[B]] need E
             {
                 [] => _ => Traversable.lift_pure([]),
@@ -174,12 +175,12 @@ Seq :: module {
             }
     }
 
-    sequence[A, G: kind2 : Applicative.Applicative[G]] :: Seq[G[A]] -> G[Seq[A]]
+    export sequence[A, G: kind2 : Applicative.Applicative[G]] :: Seq[G[A]] -> G[Seq[A]]
     {
         xs => Traversable.traverse(xs)(Traversable.identity_applicative)
     }
 
-    find[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[T] need E
+    export find[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[T] need E
     {
         xs => pred => Seq.head(Seq.filter(xs)(pred))
     }
@@ -202,12 +203,12 @@ Seq :: module {
         }
     }
 
-    find_index[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[Int] need E
+    export find_index[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[Int] need E
     {
         xs => pred => Seq.find_index_from(xs)(0)(pred)
     }
 
-    any[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
+    export any[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
         xs => pred => {
             len := Seq.len_ref(ref xs);
@@ -225,7 +226,7 @@ Seq :: module {
         }
     }
 
-    all[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
+    export all[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
         xs => pred => {
             len := Seq.len_ref(ref xs);
@@ -243,12 +244,12 @@ Seq :: module {
         }
     }
 
-    append[T] :: Seq[T] -> Seq[T] -> Seq[T]
+    export append[T] :: Seq[T] -> Seq[T] -> Seq[T] compiler(role: "operator.append_last.append")
     {
         left => right => [x | xs <- [left, right], x <- xs]
     }
 
-    take[T] :: Seq[T] -> Int -> Seq[T]
+    export take[T] :: Seq[T] -> Int -> Seq[T]
     {
         xs => n =>
             if n <= 0 then { [] }
@@ -260,7 +261,7 @@ Seq :: module {
             }
     }
 
-    drop[T] :: Seq[T] -> Int -> Seq[T]
+    export drop[T] :: Seq[T] -> Int -> Seq[T]
     {
         xs => n =>
             if n <= 0 then { xs }
@@ -272,7 +273,7 @@ Seq :: module {
             }
     }
 
-    count[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Int need E
+    export count[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Int need E
     {
         xs => pred => {
             len := Seq.len_ref(ref xs);
@@ -290,12 +291,12 @@ Seq :: module {
         }
     }
 
-    none[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
+    export none[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
         xs => pred => !Seq.any(xs)(pred)
     }
 
-    zip[A, B] :: Seq[A] -> Seq[B] -> Seq[(A, B)]
+    export zip[A, B] :: Seq[A] -> Seq[B] -> Seq[(A, B)]
     {
         left => right => {
             left_len := Seq.len_ref(ref left)
@@ -313,7 +314,7 @@ Seq :: module {
         }
     }
 
-    zip_with[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
+    export zip_with[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
     {
         left => right => f => {
             left_len := Seq.len_ref(ref left)
@@ -331,12 +332,12 @@ Seq :: module {
         }
     }
 
-    concat[T] :: Seq[Seq[T]] -> Seq[T]
+    export concat[T] :: Seq[Seq[T]] -> Seq[T]
     {
         xss => [x | xs <- xss, x <- xs]
     }
 
-    partition[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> (Seq[T], Seq[T]) need E
+    export partition[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> (Seq[T], Seq[T]) need E
     {
         xs => pred => (
             [x | x <- xs, pred(x)],
@@ -344,7 +345,7 @@ Seq :: module {
         )
     }
 
-    reverse[T] :: Seq[T] -> Seq[T]
+    export reverse[T] :: Seq[T] -> Seq[T]
     {
         xs => match xs {
             [] => [],
@@ -371,7 +372,7 @@ Seq :: module {
         }
     }
 
-    EqSeqT :: instance Traits.Eq {
+    export EqSeqT :: instance Traits.Eq {
         eq[T: Traits.Eq] :: Seq[T] -> Seq[T] -> Bool
             {
                 left => right => {
@@ -392,7 +393,7 @@ Seq :: module {
             }
     }
 
-    OrdSeqT :: instance Traits.Ord {
+    export OrdSeqT :: instance Traits.Ord {
         compare[T: Traits.Ord] :: Seq[T] -> Seq[T] -> Ordering
             {
                 left => right => {
@@ -419,14 +420,14 @@ Seq :: module {
             }
     }
 
-    ShowSeqT :: instance Traits.Show {
+    export ShowSeqT :: instance Traits.Show {
         show[T: Traits.Show] :: Seq[T] -> String
             {
                 xs => "[" ++ Seq.show_items(xs) ++ "]"
             }
     }
 
-    clone_items[T: Traits.Clone] :: Ref[Seq[T]] -> Seq[T]
+    export clone_items[T: Traits.Clone] :: Ref[Seq[T]] -> Seq[T]
     {
         xs => match *xs
         {
@@ -435,14 +436,14 @@ Seq :: module {
         }
     }
 
-    CloneSeqT :: instance Traits.Clone {
+    export CloneSeqT :: instance Traits.Clone {
         clone[T: Traits.Clone] :: Ref[Seq[T]] -> Seq[T]
             {
                 xs => Seq.clone_items(xs)
             }
     }
 
-    FunctorSeq :: instance Functor.Functor[Seq] {
+    export FunctorSeq :: instance Functor.Functor[Seq] {
         fmap[A, B, E: effects] :: Seq[A] -> (A -> B need E) -> Seq[B] need E
             {
                 values => f => Seq.map(values)(f)
@@ -504,7 +505,7 @@ Seq :: module {
     }
 
 
-    ApplicativeSeq :: instance Applicative.Applicative[Seq] {
+    export ApplicativeSeq :: instance Applicative.Applicative[Seq] {
         pure[A] :: A -> Seq[A]
             {
                 value => Seq.singleton(value)
@@ -515,7 +516,7 @@ Seq :: module {
             }
     }
 
-    MonadSeq :: instance Monad.Monad[Seq] {
+    export MonadSeq :: instance Monad.Monad[Seq] {
         pure[A] :: A -> Seq[A]
             {
                 value => Seq.singleton(value)
@@ -526,13 +527,34 @@ Seq :: module {
             }
     }
 
+    export DisplaySeq :: instance Display {
+        display[T: Display] :: Ref[Seq[T]] -> String
+            {
+                values => {
+                    length := Seq.len(values);
+                    mut index := 0;
+                    mut rendered := "[";
+                    loop {
+                        if index >= length then { break }
+                        else {
+                            if index > 0 then { rendered = rendered ++ ", " } else { () };
+                            rendered = rendered ++ Display.render(ref (*values)[index]);
+                            index = index + 1;
+                            ()
+                        }
+                    };
+                    rendered ++ "]"
+                }
+            }
+    }
 
-    empty[A] :: Unit -> Seq[A]
+
+    export empty[A] :: Unit -> Seq[A]
     {
         _ => []
     }
 
-    or_else[A] :: Seq[A] -> Seq[A] -> Seq[A]
+    export or_else[A] :: Seq[A] -> Seq[A] -> Seq[A]
     {
         [] => fallback => fallback,
         xs => _ => xs
@@ -540,7 +562,7 @@ Seq :: module {
 
     // ── Aggregation ──────────────────────────────────────────────
 
-    sum :: Seq[Int] -> Int
+    export sum :: Seq[Int] -> Int
     {
         xs => {
             len := Seq.len_ref(ref xs);
@@ -558,7 +580,7 @@ Seq :: module {
         }
     }
 
-    product :: Seq[Int] -> Int
+    export product :: Seq[Int] -> Int
     {
         xs => {
             len := Seq.len_ref(ref xs);
@@ -578,19 +600,19 @@ Seq :: module {
 
     // ── Membership ───────────────────────────────────────────────
 
-    elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
+    export elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
     {
         target => xs => eq_fn => Seq.any(xs)(x => eq_fn(x)(target))
     }
 
-    not_elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
+    export not_elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
     {
         target => xs => eq_fn => !Seq.elem(target)(xs)(eq_fn)
     }
 
     // ── Side-effect iteration ────────────────────────────────────
 
-    for_each[T, E: effects] :: Seq[T] -> (T -> Unit need E) -> Unit need E
+    export for_each[T, E: effects] :: Seq[T] -> (T -> Unit need E) -> Unit need E
     {
         xs => f => {
             len := Seq.len_ref(ref xs);

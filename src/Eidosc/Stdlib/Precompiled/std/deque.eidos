@@ -4,41 +4,41 @@ Deque :: module {
     import Traits
     import TraitInvoke
 
-    Deque[T] :: type {front:: Seq[T], back:: Seq[T]}
+    export Deque[T] :: type {front:: Seq[T], back:: Seq[T]}
 
-    empty[T] :: Unit -> Deque[T]
+    export empty[T] :: Unit -> Deque[T]
     {
         _ => Deque{front: [], back: []}
     }
 
-    singleton[T] :: T -> Deque[T]
+    export singleton[T] :: T -> Deque[T]
     {
         value => Deque{front: [value], back: []}
     }
 
-    from_seq[T] :: Seq[T] -> Deque[T]
+    export from_seq[T] :: Seq[T] -> Deque[T]
     {
         values => Deque{front: values, back: []}
     }
 
-    len[T] :: Ref[Deque[T]] -> Int
+    export len[T] :: Ref[Deque[T]] -> Int
     {
         deque => match *deque {
             Deque{front: f, back: b} => Seq.len(ref f) + Seq.len(ref b)
         }
     }
 
-    is_empty[T] :: Ref[Deque[T]] -> Bool
+    export is_empty[T] :: Ref[Deque[T]] -> Bool
     {
         deque => Deque.len(deque) == 0
     }
 
-    push_front[T] :: Deque[T] -> T -> Deque[T]
+    export push_front[T] :: Deque[T] -> T -> Deque[T]
     {
         Deque{front: f, back: b} => value => Deque{front: [value, ..f], back: b}
     }
 
-    push_back[T] :: Deque[T] -> T -> Deque[T]
+    export push_back[T] :: Deque[T] -> T -> Deque[T]
     {
         Deque{front: f, back: b} => value => Deque{front: f, back: [value, ..b]}
     }
@@ -59,7 +59,7 @@ Deque :: module {
         deque => deque
     }
 
-    front[T] :: Deque[T] -> Option[T]
+    export front[T] :: Deque[T] -> Option[T]
     {
         deque => match Deque.normalize_front(deque) {
             Deque{front: [value, ..], back: _} => Some(value),
@@ -67,7 +67,7 @@ Deque :: module {
         }
     }
 
-    back[T] :: Deque[T] -> Option[T]
+    export back[T] :: Deque[T] -> Option[T]
     {
         deque => match Deque.normalize_back(deque) {
             Deque{front: _, back: [value, ..]} => Some(value),
@@ -75,7 +75,7 @@ Deque :: module {
         }
     }
 
-    pop_front[T] :: Deque[T] -> Option[(T, Deque[T])]
+    export pop_front[T] :: Deque[T] -> Option[(T, Deque[T])]
     {
         deque => match Deque.normalize_front(deque) {
             Deque{front: [value, ..rest], back: b} => Some((value, Deque{front: rest, back: b})),
@@ -83,7 +83,7 @@ Deque :: module {
         }
     }
 
-    pop_back[T] :: Deque[T] -> Option[(T, Deque[T])]
+    export pop_back[T] :: Deque[T] -> Option[(T, Deque[T])]
     {
         deque => match Deque.normalize_back(deque) {
             Deque{front: f, back: [value, ..rest]} => Some((value, Deque{front: f, back: rest})),
@@ -91,22 +91,22 @@ Deque :: module {
         }
     }
 
-    to_seq[T] :: Deque[T] -> Seq[T]
+    export to_seq[T] :: Deque[T] -> Seq[T]
     {
         Deque{front: f, back: b} => Seq.append(f)(Seq.reverse(b))
     }
 
-    get_opt[T] :: Deque[T] -> Int -> Option[T]
+    export get_opt[T] :: Deque[T] -> Int -> Option[T]
     {
         deque => index => Seq.get_opt(Deque.to_seq(deque))(index)
     }
 
-    get_or[T] :: Deque[T] -> Int -> T -> T
+    export get_or[T] :: Deque[T] -> Int -> T -> T
     {
         deque => index => fallback => Option.unwrap_or(Deque.get_opt(deque)(index))(fallback)
     }
 
-    CloneDequeT :: instance Traits.Clone {
+    export CloneDequeT :: instance Traits.Clone {
         clone[T: Traits.Clone] :: Ref[Deque[T]] -> Deque[T]
             {
                 value => match *value {
@@ -118,7 +118,7 @@ Deque :: module {
             }
     }
 
-    EqDequeT :: instance Traits.Eq {
+    export EqDequeT :: instance Traits.Eq {
         eq[T: Traits.Eq] :: Deque[T] -> Deque[T] -> Bool
             {
                 left => right => TraitInvoke.eq_value(Deque.to_seq(left))(Deque.to_seq(right))

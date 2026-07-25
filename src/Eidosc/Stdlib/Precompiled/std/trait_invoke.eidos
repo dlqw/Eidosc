@@ -3,44 +3,44 @@ TraitInvoke :: module {
     import Ordering.{Ordering}
     import Ordering
 
-    eq_value[T: Traits.Eq] :: T -> T -> Bool
+    export eq_value[T: Traits.Eq] :: T -> T -> Bool
     {
         left => right => left == right
     }
 
-    ne_value[T: Traits.Eq] :: T -> T -> Bool
+    export ne_value[T: Traits.Eq] :: T -> T -> Bool
     {
         left => right => !TraitInvoke.eq_value(left)(right)
     }
 
-    compare_value[T: Traits.Ord] :: T -> T -> Ordering
+    export compare_value[T: Traits.Ord] :: T -> T -> Ordering
     {
         (left, right) when left < right => Less(),
         (left, right) when left > right => Greater(),
         _ => Equal()
     }
 
-    lt_value[T: Traits.Ord] :: T -> T -> Bool
+    export lt_value[T: Traits.Ord] :: T -> T -> Bool
     {
         left => right => Ordering.is_lt(TraitInvoke.compare_value(left)(right))
     }
 
-    le_value[T: Traits.Ord] :: T -> T -> Bool
+    export le_value[T: Traits.Ord] :: T -> T -> Bool
     {
         left => right => Ordering.is_le(TraitInvoke.compare_value(left)(right))
     }
 
-    gt_value[T: Traits.Ord] :: T -> T -> Bool
+    export gt_value[T: Traits.Ord] :: T -> T -> Bool
     {
         left => right => Ordering.is_gt(TraitInvoke.compare_value(left)(right))
     }
 
-    ge_value[T: Traits.Ord] :: T -> T -> Bool
+    export ge_value[T: Traits.Ord] :: T -> T -> Bool
     {
         left => right => Ordering.is_ge(TraitInvoke.compare_value(left)(right))
     }
 
-    min_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
+    export min_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
     {
         left => right => {
             left_for_compare := TraitInvoke.clone_value(ref left);
@@ -49,7 +49,7 @@ TraitInvoke :: module {
         }
     }
 
-    max_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
+    export max_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T
     {
         left => right => {
             left_for_compare := TraitInvoke.clone_value(ref left);
@@ -58,7 +58,7 @@ TraitInvoke :: module {
         }
     }
 
-    clamp_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> T
+    export clamp_value[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> T
     {
         value => low => high => {
             value_for_low := TraitInvoke.clone_value(ref value);
@@ -72,7 +72,7 @@ TraitInvoke :: module {
         }
     }
 
-    between_inclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
+    export between_inclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
     {
         value => low => high => {
             value_for_low := TraitInvoke.clone_value(ref value);
@@ -83,7 +83,7 @@ TraitInvoke :: module {
         }
     }
 
-    between_exclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
+    export between_exclusive[T: Traits.Ord + Traits.Clone] :: T -> T -> T -> Bool
     {
         value => low => high => {
             value_for_low := TraitInvoke.clone_value(ref value);
@@ -94,17 +94,17 @@ TraitInvoke :: module {
         }
     }
 
-    show_value[T: Traits.Show] :: T -> String
+    export show_value[T: Traits.Show] :: T -> String
     {
-        value => show(value)
+        value => Traits.Show.show(value)
     }
 
-    hash_value[T: Traits.Hash] :: T -> Int
+    export hash_value[T: Traits.Hash] :: T -> Int
     {
-        value => hash(value)
+        value => Traits.Hash.hash(value)
     }
 
-    hash_bucket_index[T: Traits.Hash] :: T -> Int -> Int
+    export hash_bucket_index[T: Traits.Hash] :: T -> Int -> Int
     {
         value => capacity =>
             if capacity <= 0 then { 0 }
@@ -115,8 +115,8 @@ TraitInvoke :: module {
             }
     }
 
-    clone_value[T: Traits.Clone] :: Ref[T] -> T
+    export clone_value[T: Traits.Clone] :: Ref[T] -> T
     {
-        value => clone(value)
+        value => Traits.Clone.clone(value)
     }
 }

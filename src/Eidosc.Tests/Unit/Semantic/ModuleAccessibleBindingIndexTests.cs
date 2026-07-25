@@ -71,7 +71,7 @@ Main :: module {
     {
         var source = """
 seq :: module {
-    Seq :: trait {
+    export Seq :: trait {
         map :: Int -> Int
     }
 }
@@ -139,6 +139,65 @@ Main :: module {
         Assert.True(counters["Namer.moduleRegistry.memberOwnerIndex.entries"] >= 1);
         Assert.True(counters["Namer.moduleRegistry.memberOwnerIndex.hits"] >= 1);
         Assert.True(counters["Namer.moduleRegistry.memberOwnerIndex.misses"] >= 1);
+    }
+
+    [Fact]
+    public void CompilerInternalBinding_IsVisibleOnlyBetweenVerifiedCompilerOwnedModules()
+    {
+        var symbolTable = new SymbolTable();
+        var provider = symbolTable.DeclareModule(
+            "Provider",
+            ["Provider"],
+            SourceSpan.Empty,
+            allowsCompilerInternalAccess: true);
+        var peer = symbolTable.DeclareModule(
+            "Peer",
+            ["Peer"],
+            SourceSpan.Empty,
+            allowsCompilerInternalAccess: true);
+        var user = symbolTable.DeclareModule("User", ["User"], SourceSpan.Empty);
+        var internalFunction = symbolTable.DeclareFunction(
+            "internal_helper",
+            SourceSpan.Empty,
+            isPublic: false);
+        var ordinaryPrivateFunction = symbolTable.DeclareFunction(
+            "private_helper",
+            SourceSpan.Empty,
+            isPublic: false);
+
+        symbolTable.UpdateSymbol(symbolTable.GetSymbol(internalFunction)! with
+        {
+            IsCompilerInternal = true,
+            DefinitionModuleId = provider
+        });
+        symbolTable.UpdateSymbol(symbolTable.GetSymbol(ordinaryPrivateFunction)! with
+        {
+            DefinitionModuleId = provider
+        });
+        symbolTable.AddMemberToModule(provider, internalFunction);
+        symbolTable.AddMemberToModule(provider, ordinaryPrivateFunction);
+
+        Assert.True(symbolTable.Modules.TryLookupAccessibleBinding(
+            provider,
+            "internal_helper",
+            peer,
+            out var binding));
+        Assert.Equal(internalFunction, binding.SymbolId);
+        Assert.False(symbolTable.Modules.TryLookupAccessibleBinding(
+            provider,
+            "private_helper",
+            peer,
+            out _));
+        Assert.False(symbolTable.Modules.TryLookupAccessibleBinding(
+            provider,
+            "internal_helper",
+            user,
+            out _));
+        Assert.False(symbolTable.Modules.TryLookupAccessibleBinding(
+            provider,
+            "internal_helper",
+            requesterModuleId: null,
+            out _));
     }
 
     private static string FormatDiagnostics(CompilationResult result)

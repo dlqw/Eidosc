@@ -49,6 +49,20 @@ public static class PrecompiledModuleRegistry
 
     public static bool TryGetSource(string modulePath, out string source)
     {
+        if (IsPreludeCoreModulePath(modulePath))
+        {
+            source = string.Empty;
+            return false;
+        }
+
+        return TryGetDistributionSource(modulePath, out source);
+    }
+
+    internal static bool TryGetDistributionSource(IReadOnlyList<string> modulePath, out string source) =>
+        TryGetDistributionSource(string.Join(WellKnownStrings.Operators.Divide, modulePath), out source);
+
+    internal static bool TryGetDistributionSource(string modulePath, out string source)
+    {
         source = string.Empty;
         var key = NormalizeModulePath(modulePath);
         if (string.IsNullOrEmpty(key))
@@ -68,6 +82,7 @@ public static class PrecompiledModuleRegistry
     public static IReadOnlyList<string> GetAvailableModulePaths()
     {
         return ModuleSources.Value.Keys
+            .Where(static path => !IsPreludeCoreModulePath(path))
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
     }
@@ -148,6 +163,20 @@ public static class PrecompiledModuleRegistry
     }
 
     public static bool TryGetSourceFilePath(string modulePath, out string filePath)
+    {
+        if (IsPreludeCoreModulePath(modulePath))
+        {
+            filePath = string.Empty;
+            return false;
+        }
+
+        return TryGetDistributionSourceFilePath(modulePath, out filePath);
+    }
+
+    internal static bool TryGetDistributionSourceFilePath(IReadOnlyList<string> modulePath, out string filePath) =>
+        TryGetDistributionSourceFilePath(string.Join(WellKnownStrings.Operators.Divide, modulePath), out filePath);
+
+    internal static bool TryGetDistributionSourceFilePath(string modulePath, out string filePath)
     {
         filePath = string.Empty;
         var key = NormalizeModulePath(modulePath);
@@ -361,6 +390,7 @@ public static class PrecompiledModuleRegistry
         builder.Append("stdlib-image-v1:");
         builder.AppendLine(StdlibVersion.ToString());
         foreach (var (modulePath, source) in ModuleSources.Value
+                     .Where(static entry => !IsPreludeCoreModulePath(entry.Key))
                      .OrderBy(static entry => entry.Key, StringComparer.Ordinal))
         {
             builder.Append(modulePath);
@@ -630,12 +660,7 @@ public static class PrecompiledModuleRegistry
 
     private static bool ShouldExposeDirectDeclaration(ModuleDecl moduleDecl, Declaration declaration)
     {
-        if (moduleDecl.UsesExplicitExports)
-        {
-            return declaration.IsExported;
-        }
-
-        return !HasInternalClause(declaration);
+        return declaration.IsExported && !HasInternalClause(declaration);
     }
 
     private static bool HasInternalClause(Declaration declaration)
@@ -1063,6 +1088,19 @@ public static class PrecompiledModuleRegistry
 
         var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return segments.Length == 0 ? string.Empty : segments[^1];
+    }
+
+    private static bool IsPreludeCoreModulePath(string modulePath)
+    {
+        var normalized = NormalizeModulePath(modulePath);
+        if (!IsStdPrecompiledModulePath(normalized))
+        {
+            return false;
+        }
+
+        var relative = normalized[(StdPackageAlias.Length + 1)..];
+        return !relative.Contains(WellKnownStrings.Operators.Divide, StringComparison.Ordinal) &&
+               PreludeCoreImageRegistry.IsCoreModuleName(relative);
     }
 
     private static ModuleExportAnalysisResult? TryGetAnalysisByModulePath(string modulePath)

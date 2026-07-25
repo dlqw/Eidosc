@@ -24,9 +24,6 @@ public sealed class PackageDependencyResolver
         var deps = config.VersionedDependencies;
         if (deps == null || deps.Count == 0)
         {
-            if (!config.NoImplicitStdlib)
-                AddEmbeddedStdlib(packages);
-
             return new ResolvedPackageGraph { Packages = packages };
         }
 
@@ -51,9 +48,6 @@ public sealed class PackageDependencyResolver
                     PipelineMessages.FailedToResolveDependency(name, ex.Message), ex);
             }
         }
-
-        if (!config.NoImplicitStdlib && !packages.ContainsKey(WellKnownStrings.Std.Module))
-            AddEmbeddedStdlib(packages);
 
         return new ResolvedPackageGraph { Packages = packages };
     }
@@ -249,17 +243,6 @@ public sealed class PackageDependencyResolver
         }
 
         return new LoadedPackageCache(sourceRoots, importRoots, contentHash, ffi);
-    }
-
-    private static void AddEmbeddedStdlib(Dictionary<string, ResolvedPackage> packages)
-    {
-        var version = PrecompiledModuleRegistry.StdlibVersion;
-        packages[WellKnownStrings.Std.Module] = new ResolvedPackage
-        {
-            Name = WellKnownStrings.Std.Module,
-            Source = DependencySourceKind.Version,
-            Version = version?.ToString() ?? "0.1.0"
-        };
     }
 
     private static string GetGitCachePath(string gitUrl, string refSpec)

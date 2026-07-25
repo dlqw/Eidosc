@@ -154,6 +154,10 @@ public record MethodCallExpr : Expression
         function.SymbolId = CStructGetterSymbolId.IsValid
             ? CStructGetterSymbolId
             : SymbolId;
+        foreach (var candidateId in MethodCandidateSymbolIds)
+        {
+            function.AddValueCandidate(candidateId);
+        }
 
         call.SetFunction(function);
         call.SetSpan(Span);

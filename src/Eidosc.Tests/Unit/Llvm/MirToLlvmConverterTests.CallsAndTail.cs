@@ -10,6 +10,42 @@ namespace Eidosc.Tests.Unit.Llvm;
 public partial class MirToLlvmConverterTests
 {
     [Fact]
+    public void ConvertFunction_PoisonCallable_ReportsFatalMirDiagnostic()
+    {
+        var intType = new TypeId(BaseTypes.IntId);
+        var resultPlace = LocalPlace(1, intType);
+        var converter = new MirToLlvmConverter();
+        var function = BuildFunction(
+            intType,
+            locals:
+            [
+                new MirLocal { Id = resultPlace.Local, Name = "result", TypeId = intType }
+            ],
+            instructions:
+            [
+                new MirCall
+                {
+                    Target = resultPlace,
+                    Function = new MirPoison
+                    {
+                        TypeId = TypeId.None,
+                        Reason = "unresolved callable"
+                    },
+                    Arguments = []
+                }
+            ],
+            returnValue: resultPlace);
+
+        converter.ConvertFunction(function);
+
+        Assert.Contains(
+            converter.Diagnostics,
+            diagnostic =>
+                diagnostic.Code == MirValidator.PoisonOperandCode &&
+                diagnostic.Message.Contains("poison", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void ConvertFunction_TailCallWithMatchingSignature_EmitsMustTail()
     {
         var intType = new TypeId(BaseTypes.IntId);
@@ -204,7 +240,11 @@ public partial class MirToLlvmConverterTests
                 {
                     Function = new MirFunctionRef
                     {
-                        Name = "print_string",
+                        Name = "write_text_raw",
+                        SymbolId = new SymbolId(18001),
+                        FunctionId = MirBuiltinFunctions.CreateIntrinsicFunctionId(
+                            new SymbolId(18001),
+                            "write_text_raw"),
                         TypeId = TypeId.None
                     },
                     Arguments =
@@ -253,9 +293,9 @@ public partial class MirToLlvmConverterTests
         var lengthArg = Assert.IsType<LlvmConstant>(internCall.Arguments[1]);
         Assert.Equal(3L, lengthArg.Value);
 
-        var printCall = Assert.Single(calls, call => call.Function is LlvmGlobal { Name: "eidos_print_string" });
-        var printArgRef = Assert.IsType<LlvmInstructionRef>(Assert.Single(printCall.Arguments));
-        Assert.Same(internCall, printArgRef.Instruction);
+        var writeCall = Assert.Single(calls, call => call.Function is LlvmGlobal { Name: "eidos_write_text_raw" });
+        var writeArgRef = Assert.IsType<LlvmInstructionRef>(Assert.Single(writeCall.Arguments));
+        Assert.Same(internCall, writeArgRef.Instruction);
 
         var ir = new LlvmEmitter().Emit(llvmModule);
         Assert.Contains("private constant [4 x i8] c\"int\\00\"", ir);
@@ -281,7 +321,11 @@ public partial class MirToLlvmConverterTests
                     {
                         Function = new MirFunctionRef
                         {
-                            Name = "print_string",
+                            Name = "write_text_raw",
+                            SymbolId = new SymbolId(symbolId + 10000),
+                            FunctionId = MirBuiltinFunctions.CreateIntrinsicFunctionId(
+                                new SymbolId(symbolId + 10000),
+                                "write_text_raw"),
                             TypeId = TypeId.None
                         },
                         Arguments =

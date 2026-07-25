@@ -23,8 +23,19 @@ internal sealed class CompilerOwnedSourceGrant
 
     internal static bool IsVerifiedStdlibSource(string? sourcePath, string sourceText)
     {
-        return !string.IsNullOrWhiteSpace(sourcePath) &&
-               PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(sourcePath, out var modulePath) &&
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return false;
+        }
+
+        if (PreludeCoreImageRegistry.TryGetModulePathFromSourcePath(sourcePath, out var coreModulePath) &&
+            PreludeCoreImageRegistry.TryGetSource(coreModulePath, out var coreSource) &&
+            string.Equals(sourceText, coreSource, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(sourcePath, out var modulePath) &&
                PrecompiledModuleRegistry.TryGetSource(modulePath, out var registeredSource) &&
                string.Equals(sourceText, registeredSource, StringComparison.Ordinal);
     }

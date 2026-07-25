@@ -311,13 +311,6 @@ public sealed partial class SymbolTable
 
     private static readonly BuiltinSpec[] s_builtinFunctions =
     [
-        // IO: 打印
-        new("print_int", T_Unit, [T_Int], A_IO),
-        new("print_float", T_Unit, [T_Float], A_IO),
-        new("print_string", T_Unit, [T_String], A_IO),
-        new("print_newline", T_Unit, [], A_IO),
-        new("print_char", T_Unit, [T_Int], A_IO),
-
         // 纯函数: 字符串操作
         new("string_length", T_Int, [T_String]),
         new("string_char_at", T_Int, [T_String, T_Int]),
@@ -329,6 +322,7 @@ public sealed partial class SymbolTable
 
         // 纯函数: 类型转换
         new("int_to_string", T_String, [T_Int]),
+        new("float_to_string", T_String, [T_Float]),
         new("int_to_float", T_Float, [T_Int]),
         new("string_to_float", T_Float, [T_String]),
 
@@ -472,6 +466,7 @@ public sealed partial class SymbolTable
             Name = name,
             Span = SourceSpan.Empty,
             IsModuleLevel = true,
+            IsPublic = false,
             HasBody = false,
             Parameters = parameters,
             ParamTypes = parameterTypes.ToList(),
@@ -480,8 +475,7 @@ public sealed partial class SymbolTable
             BuiltinIntrinsicRole = builtinIntrinsicRole
         };
 
-        var id = RegisterSymbol(symbol);
-        CurrentScope!.BindFunction(name, id);
+        RegisterSymbol(symbol);
     }
 
     /// <summary>
@@ -993,7 +987,8 @@ public sealed partial class SymbolTable
         bool isPublic = true,
         bool usesExplicitExports = false,
         string? packageAlias = null,
-        string? packageInstanceKey = null)
+        string? packageInstanceKey = null,
+        bool allowsCompilerInternalAccess = false)
     {
         var symbol = new ModuleSymbol
         {
@@ -1003,7 +998,8 @@ public sealed partial class SymbolTable
             Path = path,
             Span = span,
             IsPublic = isPublic,
-            UsesExplicitExports = usesExplicitExports
+            UsesExplicitExports = usesExplicitExports,
+            AllowsCompilerInternalAccess = allowsCompilerInternalAccess
         };
 
         var id = RegisterSymbol(symbol);

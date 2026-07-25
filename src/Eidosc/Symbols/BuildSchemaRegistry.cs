@@ -72,6 +72,7 @@ internal static class BuildSchemaRegistry
                 TypeId = new TypeId(typeSpec.TypeId)
             });
             symbolTable.AddMemberToModule(moduleId, typeId);
+            Export(symbolTable, moduleId, typeSpec.Name, typeId, ResolutionKind.Type);
             if (string.Equals(typeSpec.Name, WellKnownStrings.Build.Types.Sha256, StringComparison.Ordinal))
             {
                 sha256TypeId = typeId;
@@ -117,6 +118,25 @@ internal static class BuildSchemaRegistry
                 IntrinsicName = IntrinsicPrefix + functionSpec.Name
             });
             symbolTable.AddMemberToModule(moduleId, functionId);
+            Export(symbolTable, moduleId, functionSpec.Name, functionId, ResolutionKind.Value);
+        }
+    }
+
+    private static void Export(
+        SymbolTable symbolTable,
+        SymbolId moduleId,
+        string name,
+        SymbolId symbolId,
+        ResolutionKind kind)
+    {
+        if (!symbolTable.Modules.TryAddExportToModule(moduleId, new ModuleBindingEntry
+            {
+                Name = name,
+                SymbolId = symbolId,
+                Kind = kind
+            }))
+        {
+            throw new InvalidOperationException($"Unable to register compiler-owned build export '{name}'.");
         }
     }
 

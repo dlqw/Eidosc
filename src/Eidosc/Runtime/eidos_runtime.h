@@ -239,6 +239,11 @@ EidosString* eidos_string_from_char(int64_t value);
 EidosString* eidos_int_to_string(int64_t value);
 
 /**
+ * Convert a floating-point value to a round-trippable decimal string.
+ */
+EidosString* eidos_float_to_string(double value);
+
+/**
  * Convert an integer to a float.
  */
 double eidos_int_to_float(int64_t value);
@@ -253,33 +258,21 @@ double eidos_string_to_float(EidosString* str);
  * ============================================================ */
 
 /**
- * Print an integer to stdout
- * @param value Integer value to print
+ * Write an Eidos string to stdout without formatting.
+ * @param str Eidos string to write
  */
-void eidos_print_int(int64_t value);
+void eidos_write_text_raw(EidosString* str);
 
 /**
- * Print a float to stdout
- * @param value Float value to print
+ * Write a newline to stdout.
  */
-void eidos_print_float(double value);
+void eidos_write_newline_raw(void);
 
 /**
- * Print a string to stdout
- * @param str Eidos string to print
- */
-void eidos_print_string(EidosString* str);
-
-/**
- * Print a newline to stdout
- */
-void eidos_print_newline(void);
-
-/**
- * Print a single character to stdout
+ * Write a single character code to stdout.
  * @param value Character code (lower 8 bits are used)
  */
-void eidos_print_char(int64_t value);
+void eidos_write_char_code_raw(int64_t value);
 
 /**
  * Read a single line from stdin without the trailing newline.

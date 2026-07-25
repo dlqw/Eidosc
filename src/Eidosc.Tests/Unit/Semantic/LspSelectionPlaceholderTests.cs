@@ -85,7 +85,11 @@ choose :: Result[Int, String] -> Int
             InputFile = TestSourceLoader.GetFullPath("projects/test/src/stdlib/std_result_import.eidos"),
             StopAtPhase = CompilationPhase.Types,
             LanguageVersion = EidosLanguageVersions.Current,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
 
         Assert.True(result.Success, string.Join(

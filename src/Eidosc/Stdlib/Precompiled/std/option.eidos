@@ -1,4 +1,5 @@
 Option :: module {
+    import Display
     import Traits
     import Ordering.{Ordering}
     import Ordering
@@ -10,9 +11,9 @@ Option :: module {
     import Traversable
     import Semigroup
 
-    Option[T] :: type { Some:: type(T) , None :: type {} }
+    export Option[T] :: type { Some:: type(T) , None :: type {} }
 
-    CloneOptionT :: instance Traits.Clone {
+    export CloneOptionT :: instance Traits.Clone {
         clone[T: Traits.Clone] :: Ref[Option[T]] -> Option[T]
             {
                 value => match *value {
@@ -57,43 +58,43 @@ Option :: module {
         value => Some(value)
     }
 
-    is_some[T] :: Option[T] -> Bool
+    export is_some[T] :: Option[T] -> Bool
     {
         Some(_) => true,
         None() => false
     }
 
-    is_none[T] :: Option[T] -> Bool
+    export is_none[T] :: Option[T] -> Bool
     {
         Some(_) => false,
         None() => true
     }
 
-    map[T, U, E: effects] :: Option[T] -> (T -> U need E) -> Option[U] need E
+    export map[T, U, E: effects] :: Option[T] -> (T -> U need E) -> Option[U] need E
     {
         Some(value) => f => Some(f(value)),
         None() => _ => None()
     }
 
-    and_then[T, U, E: effects] :: Option[T] -> (T -> Option[U] need E) -> Option[U] need E
+    export and_then[T, U, E: effects] :: Option[T] -> (T -> Option[U] need E) -> Option[U] need E
     {
         Some(value) => f => f(value),
         None() => _ => None()
     }
 
-    and[T, U] :: Option[T] -> Option[U] -> Option[U]
+    export and[T, U] :: Option[T] -> Option[U] -> Option[U]
     {
         Some(_) => other => other,
         None() => _ => None()
     }
 
-    or[T] :: Option[T] -> Option[T] -> Option[T]
+    export or[T] :: Option[T] -> Option[T] -> Option[T]
     {
         Some(value) => _ => Some(value),
         None() => other => other
     }
 
-    xor[T] :: Option[T] -> Option[T] -> Option[T]
+    export xor[T] :: Option[T] -> Option[T] -> Option[T]
     {
         (Some(left_value), Some(right_value)) => None(),
         (Some(left_value), None()) => Some(left_value),
@@ -101,37 +102,37 @@ Option :: module {
         (None(), None()) => None()
     }
 
-    map_or[T, U, E: effects] :: Option[T] -> U -> (T -> U need E) -> U need E
+    export map_or[T, U, E: effects] :: Option[T] -> U -> (T -> U need E) -> U need E
     {
         Some(value) => _ => f => f(value),
         None() => fallback => _ => fallback
     }
 
-    map_or_else[T, U, E1: effects, E2: effects] :: Option[T] -> (Unit -> U need E1) -> (T -> U need E2) -> U need E1, E2
+    export map_or_else[T, U, E1: effects, E2: effects] :: Option[T] -> (Unit -> U need E1) -> (T -> U need E2) -> U need E1, E2
     {
         Some(value) => _ => f => f(value),
         None() => fallback => _ => fallback(())
     }
 
-    unwrap_or[T] :: Option[T] -> T -> T
+    export unwrap_or[T] :: Option[T] -> T -> T compiler(role: "operator.coalesce")
     {
         Some(value) => _ => value,
         None() => fallback => fallback
     }
 
-    unwrap_or_else[T, E: effects] :: Option[T] -> (Unit -> T need E) -> T need E
+    export unwrap_or_else[T, E: effects] :: Option[T] -> (Unit -> T need E) -> T need E
     {
         Some(value) => _ => value,
         None() => fallback => fallback(())
     }
 
-    contains[T: Traits.Eq] :: Option[T] -> T -> Bool
+    export contains[T: Traits.Eq] :: Option[T] -> T -> Bool
     {
         Some(value) => expected => TraitInvoke.eq_value(value)(expected),
         None() => _ => false
     }
 
-    filter[T: Traits.Clone, E: effects] :: Option[T] -> (T -> Bool need E) -> Option[T] need E
+    export filter[T: Traits.Clone, E: effects] :: Option[T] -> (T -> Bool need E) -> Option[T] need E
     {
         Some(value) => predicate => {
             candidate := TraitInvoke.clone_value(ref value);
@@ -140,7 +141,7 @@ Option :: module {
         None() => _ => None()
     }
 
-    zip[A, B] :: Option[A] -> Option[B] -> Option[(A, B)]
+    export zip[A, B] :: Option[A] -> Option[B] -> Option[(A, B)]
     {
         (Some(left_value), Some(right_value)) => Some((left_value, right_value)),
         (Some(left_value), None()) => None(),
@@ -148,7 +149,7 @@ Option :: module {
         (None(), None()) => None()
     }
 
-    zip_with[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
+    export zip_with[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
     {
         (Some(left_value), Some(right_value), f) => Some(f(left_value)(right_value)),
         (Some(left_value), None(), _) => None(),
@@ -157,13 +158,13 @@ Option :: module {
         _ => None()
     }
 
-    flatten[T] :: Option[Option[T]] -> Option[T]
+    export flatten[T] :: Option[Option[T]] -> Option[T]
     {
         Some(inner) => inner,
         None() => None()
     }
 
-    FoldableOption :: instance Foldable.Foldable[Option] {
+    export FoldableOption :: instance Foldable.Foldable[Option] {
         fold_left[A, B, E: effects] :: Option[A] -> B -> (B -> A -> B need E) -> B need E
             {
                 Some(value) => acc => f => f(acc)(value),
@@ -176,7 +177,7 @@ Option :: module {
             }
     }
 
-    TraversableOption :: instance Traversable.Traversable[Option] {
+    export TraversableOption :: instance Traversable.Traversable[Option] {
         traverse[A, B, G: kind2 : Applicative.Applicative[G], E: effects] :: Option[A] -> (A -> G[B] need E) -> G[Option[B]] need E
             {
                 Some(value) => f => Traversable.map_applicative(Option.some_wrap)(f(value)),
@@ -184,12 +185,12 @@ Option :: module {
             }
     }
 
-    sequence[A, G: kind2 : Applicative.Applicative[G]] :: Option[G[A]] -> G[Option[A]]
+    export sequence[A, G: kind2 : Applicative.Applicative[G]] :: Option[G[A]] -> G[Option[A]]
     {
         option => Traversable.traverse(option)(Traversable.identity_applicative)
     }
 
-    EqOptionT :: instance Traits.Eq {
+    export EqOptionT :: instance Traits.Eq {
         eq[T: Traits.Eq] :: Option[T] -> Option[T] -> Bool
             {
                 (Some(left_value), Some(right_value)) => TraitInvoke.eq_value(left_value)(right_value),
@@ -199,7 +200,7 @@ Option :: module {
             }
     }
 
-    OrdOptionT :: instance Traits.Ord {
+    export OrdOptionT :: instance Traits.Ord {
         compare[T: Traits.Ord] :: Option[T] -> Option[T] -> Ordering
             {
                 (Some(left_value), Some(right_value)) => TraitInvoke.compare_value(left_value)(right_value),
@@ -209,7 +210,7 @@ Option :: module {
             }
     }
 
-    ShowOptionT :: instance Traits.Show {
+    export ShowOptionT :: instance Traits.Show {
         show[T: Traits.Show] :: Option[T] -> String
             {
                 Some(value) => "Some(" ++ TraitInvoke.show_value(value) ++ ")",
@@ -217,14 +218,14 @@ Option :: module {
             }
     }
 
-    FunctorOption :: instance Functor.Functor[Option] {
+    export FunctorOption :: instance Functor.Functor[Option] {
         fmap[A, B, E: effects] :: Option[A] -> (A -> B need E) -> Option[B] need E
             {
                 option => f => Option.map(option)(f)
             }
     }
 
-    ApplicativeOption :: instance Applicative.Applicative[Option] {
+    export ApplicativeOption :: instance Applicative.Applicative[Option] {
         pure[A] :: A -> Option[A]
             {
                 value => Some(value)
@@ -237,7 +238,7 @@ Option :: module {
             }
     }
 
-    MonadOption :: instance Monad.Monad[Option] {
+    export MonadOption :: instance Monad.Monad[Option] {
         pure[A] :: A -> Option[A]
             {
                 value => Some(value)
@@ -248,8 +249,18 @@ Option :: module {
             }
     }
 
+    export DisplayOption :: instance Display {
+        display[T: Display] :: Ref[Option[T]] -> String
+            {
+                value => match *value {
+                    Some(inner) => "Some(" ++ Display.render(ref inner) ++ ")",
+                    None() => "None"
+                }
+            }
+    }
 
-    append[T: Semigroup.Semigroup] :: Option[T] -> Option[T] -> Option[T]
+
+    export append[T: Semigroup.Semigroup] :: Option[T] -> Option[T] -> Option[T]
     {
         Some(left) => Some(right) => Some(Semigroup.append(left)(right)),
         Some(value) => None() => Some(value),
@@ -257,18 +268,18 @@ Option :: module {
         None() => None() => None()
     }
 
-    empty[A] :: Unit -> Option[A]
+    export empty[A] :: Unit -> Option[A]
     {
         _ => None()
     }
 
-    or_else[A] :: Option[A] -> Option[A] -> Option[A]
+    export or_else[A] :: Option[A] -> Option[A] -> Option[A]
     {
         Some(value) => _ => Some(value),
         None() => fallback => fallback
     }
 
-    or_else_with[A, E: effects] :: Option[A] -> (Unit -> Option[A] need E) -> Option[A] need E
+    export or_else_with[A, E: effects] :: Option[A] -> (Unit -> Option[A] need E) -> Option[A] need E
     {
         Some(value) => _ => Some(value),
         None() => fallback => fallback(())
@@ -276,13 +287,13 @@ Option :: module {
 
     // ── Additional functions ──────────────────────────────────────
 
-    to_seq[T] :: Option[T] -> Seq[T]
+    export to_seq[T] :: Option[T] -> Seq[T]
     {
         Some(value) => [value],
         None() => []
     }
 
-    map2[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
+    export map2[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
     {
         Some(a) => Some(b) => f => Some(f(a)(b)),
         _ => _ => _ => None()

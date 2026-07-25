@@ -21,25 +21,25 @@ SeqBuilder :: module {
     import Traits
     import TraitInvoke
 
-    SeqBuilder[T] :: type { SeqBuilder:: type(Seq[T]) }
+    export SeqBuilder[T] :: type { SeqBuilder:: type(Seq[T]) }
 
     // Construct an empty SeqBuilder with the given reserved capacity.
-    with_capacity[T] :: Int -> SeqBuilder[T]
+    export with_capacity[T] :: Int -> SeqBuilder[T]
     {
         capacity => SeqBuilder(RuntimeArray.with_capacity[T](capacity))
     }
 
-    empty[T] :: Unit -> SeqBuilder[T]
+    export empty[T] :: Unit -> SeqBuilder[T]
     {
         _ => SeqBuilder.with_capacity[T](0)
     }
 
-    singleton[T] :: T -> SeqBuilder[T]
+    export singleton[T] :: T -> SeqBuilder[T]
     {
         value => SeqBuilder(RuntimeArray.singleton(value))
     }
 
-    filled[T: Traits.Clone] :: Int -> T -> SeqBuilder[T]
+    export filled[T: Traits.Clone] :: Int -> T -> SeqBuilder[T]
     {
         count => value =>
             if count <= 0 then { SeqBuilder.empty(()) }
@@ -53,38 +53,38 @@ SeqBuilder :: module {
 
     // Build a SeqBuilder from an existing Seq (copies element ownership; safe because
     // the source Seq is not mutated afterwards).
-    from_seq[T] :: Seq[T] -> SeqBuilder[T]
+    export from_seq[T] :: Seq[T] -> SeqBuilder[T]
     {
         values => SeqBuilder(values)
     }
 
     // Number of elements currently stored.
-    len[T] :: Ref[SeqBuilder[T]] -> Int
+    export len[T] :: Ref[SeqBuilder[T]] -> Int
     {
         builder => match *builder {
             SeqBuilder(buf) => Seq.len(ref buf)
         }
     }
 
-    is_empty[T] :: Ref[SeqBuilder[T]] -> Bool
+    export is_empty[T] :: Ref[SeqBuilder[T]] -> Bool
     {
         builder => SeqBuilder.len(builder) == 0
     }
 
     // Append one element. Reuses the buffer in place under unique ownership.
-    push[T] :: SeqBuilder[T] -> T -> SeqBuilder[T]
+    export push[T] :: SeqBuilder[T] -> T -> SeqBuilder[T]
     {
         SeqBuilder(buf) => value => SeqBuilder(RuntimeArray.push(buf)(value))
     }
 
     // Append all elements from another Seq. Reuses the buffer in place.
-    push_seq[T] :: SeqBuilder[T] -> Seq[T] -> SeqBuilder[T]
+    export push_seq[T] :: SeqBuilder[T] -> Seq[T] -> SeqBuilder[T]
     {
         SeqBuilder(buf) => values => SeqBuilder(RuntimeArray.extend(buf)(values))
     }
 
     // Remove the last element in place. Calling this on an empty SeqBuilder is a no-op.
-    pop_last[T] :: SeqBuilder[T] -> SeqBuilder[T]
+    export pop_last[T] :: SeqBuilder[T] -> SeqBuilder[T]
     {
         SeqBuilder(buf) => {
             mut values := buf
@@ -94,7 +94,7 @@ SeqBuilder :: module {
     }
 
     // Swap two slots in place without cloning either element.
-    swap[T] :: SeqBuilder[T] -> Int -> Int -> SeqBuilder[T]
+    export swap[T] :: SeqBuilder[T] -> Int -> Int -> SeqBuilder[T]
     {
         SeqBuilder(buf) => left => right => {
             mut values := buf
@@ -105,7 +105,7 @@ SeqBuilder :: module {
 
     // In-place write at index. Bounds are the caller's responsibility (mirrors
     // Seq indexing semantics); intended for builder-phase slot mutation only.
-    set[T] :: SeqBuilder[T] -> Int -> T -> SeqBuilder[T]
+    export set[T] :: SeqBuilder[T] -> Int -> T -> SeqBuilder[T]
     {
         SeqBuilder(buf) => index => value => {
             mut values := buf
@@ -115,13 +115,13 @@ SeqBuilder :: module {
     }
 
     // Read the element at index (O(1)).
-    get[T] :: SeqBuilder[T] -> Int -> T
+    export get[T] :: SeqBuilder[T] -> Int -> T
     {
         SeqBuilder(buf) => index => buf[index]
     }
 
     // Read the element at index, or None if out of range.
-    get_opt[T] :: SeqBuilder[T] -> Int -> Option[T]
+    export get_opt[T] :: SeqBuilder[T] -> Int -> Option[T]
     {
         builder => index => {
             len := SeqBuilder.len(ref builder)
@@ -130,14 +130,14 @@ SeqBuilder :: module {
     }
 
     // Freeze into a read-only Seq view. Shares the buffer (no copy).
-    freeze[T] :: SeqBuilder[T] -> Seq[T]
+    export freeze[T] :: SeqBuilder[T] -> Seq[T]
     {
         SeqBuilder(buf) => buf
     }
 
     // Materialize the SeqBuilder into a fresh Seq (eager snapshot of current contents).
     // Use this when the builder may be further mutated after handing off a Seq.
-    to_seq[T: Traits.Clone] :: SeqBuilder[T] -> Seq[T]
+    export to_seq[T: Traits.Clone] :: SeqBuilder[T] -> Seq[T]
     {
         SeqBuilder(buf) => Seq.clone(ref buf)
     }

@@ -28,7 +28,8 @@ public sealed partial class NameResolver
             module.Span,
             usesExplicitExports: module.UsesExplicitExports,
             packageAlias: module.PackageAlias,
-            packageInstanceKey: module.PackageInstanceKey);
+            packageInstanceKey: module.PackageInstanceKey,
+            allowsCompilerInternalAccess: CompilerOwnedSourceGrant.Allows(module.Span));
         module.SymbolId = moduleId;
         _moduleDeclarations[moduleId] = module;
         _declarationsBySymbol[moduleId] = module;

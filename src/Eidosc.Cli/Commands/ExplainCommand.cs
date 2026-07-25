@@ -131,8 +131,7 @@ public static class ExplainCommand
             UseColors = false,
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                 new Dictionary<string, string[]>(StringComparer.Ordinal)
+            PackageImportRoots = inputResolution.GetPackageImportRoots()
         }).Run();
 
         if (result.Diagnostics.Any(diagnostic => diagnostic.Level == DiagnosticLevel.Error))

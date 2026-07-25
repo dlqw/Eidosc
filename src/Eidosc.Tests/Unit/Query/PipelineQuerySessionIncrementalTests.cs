@@ -182,7 +182,7 @@ import std.GameMath
 
 main :: Unit -> Int
 {
-    _ => GameMath.scale_i(GameMath.east_i, 4).x
+    _ => GameMath.scale(GameMath.east_i, 4).x
 }
 """;
         var sourcePath = workspace.WriteFile("std_signature_query.eidos", source);
@@ -196,7 +196,11 @@ main :: Unit -> Int
                 StopAtPhase = CompilationPhase.Types,
                 LanguageVersion = EidosLanguageVersions.Current,
                 EnableDetailedProfiling = true,
-                NoImplicitPrelude = true
+                NoImplicitPrelude = true,
+                PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    [WellKnownStrings.Std.Module] = []
+                }
             });
 
         Assert.True(result.Success, FormatDiagnostics(result));
@@ -223,7 +227,7 @@ import std.GameMath
 
 main :: Unit -> Int
 {
-    _ => GameMath.scale_i(GameMath.east_i, 4).x
+    _ => GameMath.scale(GameMath.east_i, 4).x
 }
 """;
         var sourcePath = workspace.WriteFile("std_signature_full_pipeline.eidos", source);
@@ -236,7 +240,11 @@ main :: Unit -> Int
                 StopAtPhase = CompilationPhase.Types,
                 LanguageVersion = EidosLanguageVersions.Current,
                 EnableDetailedProfiling = true,
-                NoImplicitPrelude = true
+                NoImplicitPrelude = true,
+                PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    [WellKnownStrings.Std.Module] = []
+                }
             }).Run();
 
         Assert.True(result.Success, FormatDiagnostics(result));

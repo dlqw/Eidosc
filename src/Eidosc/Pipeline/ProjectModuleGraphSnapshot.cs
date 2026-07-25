@@ -825,7 +825,7 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
         yield return $"traitSelfPosition:{function.TraitSelfPosition}";
         yield return $"traitSelfParameterIndices:{string.Join(",", function.TraitSelfParameterIndices.OrderBy(static value => value))}";
         yield return $"traitSelfInResult:{function.TraitSelfInResult}";
-        yield return $"traitMethodRole:{function.TraitMethodRole}";
+        yield return $"compilerSemanticRole:{function.CompilerSemanticRole}";
         yield return $"defaultImplementation:{function.IsDefaultImplementation}";
         yield return $"traitImplementation:{function.IsTraitImplementation}";
         yield return $"external:{function.IsExternal}";

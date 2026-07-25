@@ -48,7 +48,8 @@ main :: Unit -> Int
         {
             InputFile = StdlibListImportInputFile(),
             StopAtPhase = CompilationPhase.Mir,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = ExplicitStdPackageRoots
         }).Run();
 
         Assert.True(mirResult.Success);

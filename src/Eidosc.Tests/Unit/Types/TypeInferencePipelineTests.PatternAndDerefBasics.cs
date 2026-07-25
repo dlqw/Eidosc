@@ -253,7 +253,12 @@ main :: Unit -> Int
         {
             InputFile = "types_pipeline_tests.eidos",
             StopAtPhase = stopAt,
-            UseColors = false
+            AllowVirtualInputFile = true,
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         };
         configure?.Invoke(options);
 

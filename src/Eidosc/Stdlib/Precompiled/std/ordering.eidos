@@ -1,57 +1,58 @@
 Ordering :: module {
+    import Display
     import Traits
     import Semigroup
 
-    Ordering :: type { Less :: type {} , Equal :: type {} , Greater :: type {} }
+    export Ordering :: type { Less :: type {} , Equal :: type {} , Greater :: type {} }
 
-    is_lt :: Ordering -> Bool
+    export is_lt :: Ordering -> Bool
     {
         Less() => true,
         Equal() => false,
         Greater() => false
     }
 
-    is_eq :: Ordering -> Bool
+    export is_eq :: Ordering -> Bool
     {
         Less() => false,
         Equal() => true,
         Greater() => false
     }
 
-    is_gt :: Ordering -> Bool
+    export is_gt :: Ordering -> Bool
     {
         Less() => false,
         Equal() => false,
         Greater() => true
     }
 
-    is_le :: Ordering -> Bool
+    export is_le :: Ordering -> Bool
     {
         Less() => true,
         Equal() => true,
         Greater() => false
     }
 
-    is_ge :: Ordering -> Bool
+    export is_ge :: Ordering -> Bool
     {
         Less() => false,
         Equal() => true,
         Greater() => true
     }
 
-    is_ne :: Ordering -> Bool
+    export is_ne :: Ordering -> Bool
     {
         ordering => !Ordering.is_eq(ordering)
     }
 
-    to_int :: Ordering -> Int
+    export to_int :: Ordering -> Int
     {
         Less() => -1,
         Equal() => 0,
         Greater() => 1
     }
 
-    from_int :: Int -> Ordering
+    export from_int :: Int -> Ordering
     {
         value =>
             if value < 0 then { Less() }
@@ -59,62 +60,62 @@ Ordering :: module {
             else { Equal() }
     }
 
-    fold[A] :: Ordering -> A -> A -> A -> A
+    export fold[A] :: Ordering -> A -> A -> A -> A
     {
         Less() => less_value => _ => _ => less_value,
         Equal() => _ => equal_value => _ => equal_value,
         Greater() => _ => _ => greater_value => greater_value
     }
 
-    select_le[A] :: Ordering -> A -> A -> A
+    export select_le[A] :: Ordering -> A -> A -> A
     {
         Less() => left => _ => left,
         Equal() => left => _ => left,
         Greater() => _ => right => right
     }
 
-    select_ge[A] :: Ordering -> A -> A -> A
+    export select_ge[A] :: Ordering -> A -> A -> A
     {
         Less() => _ => right => right,
         Equal() => left => _ => left,
         Greater() => left => _ => left
     }
 
-    reverse :: Ordering -> Ordering
+    export reverse :: Ordering -> Ordering
     {
         Less() => Greater(),
         Equal() => Equal(),
         Greater() => Less()
     }
 
-    then_with :: Ordering -> Ordering -> Ordering
+    export then_with :: Ordering -> Ordering -> Ordering
     {
         Less() => _ => Less(),
         Equal() => next => next,
         Greater() => _ => Greater()
     }
 
-    then_compare_int :: Ordering -> Int -> Int -> Ordering
-    {
-        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_int(left)(right))
-    }
-
-    then_compare_char :: Ordering -> Char -> Char -> Ordering
-    {
-        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_char(left)(right))
-    }
-
-    then_compare_bool :: Ordering -> Bool -> Bool -> Ordering
-    {
-        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare_bool(left)(right))
-    }
-
-    then_compare_ordering :: Ordering -> Ordering -> Ordering -> Ordering
+    export then_compare :: Ordering -> Int -> Int -> Ordering
     {
         ordering => left => right => Ordering.then_with(ordering)(Ordering.compare(left)(right))
     }
 
-    compare :: Ordering -> Ordering -> Ordering
+    export then_compare :: Ordering -> Char -> Char -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare(left)(right))
+    }
+
+    export then_compare :: Ordering -> Bool -> Bool -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare(left)(right))
+    }
+
+    export then_compare :: Ordering -> Ordering -> Ordering -> Ordering
+    {
+        ordering => left => right => Ordering.then_with(ordering)(Ordering.compare(left)(right))
+    }
+
+    export compare :: Ordering -> Ordering -> Ordering
     {
         (Less(), Less()) => Equal(),
         (Less(), _) => Less(),
@@ -125,21 +126,21 @@ Ordering :: module {
         (Greater(), _) => Greater()
     }
 
-    compare_int :: Int -> Int -> Ordering
+    export compare :: Int -> Int -> Ordering
     {
         (left, right) when left < right => Less(),
         (left, right) when left > right => Greater(),
         _ => Equal()
     }
 
-    compare_char :: Char -> Char -> Ordering
+    export compare :: Char -> Char -> Ordering
     {
         (left, right) when left < right => Less(),
         (left, right) when left > right => Greater(),
         _ => Equal()
     }
 
-    compare_bool :: Bool -> Bool -> Ordering
+    export compare :: Bool -> Bool -> Ordering
     {
         left => right =>
             if left == right then { Equal() }
@@ -147,22 +148,22 @@ Ordering :: module {
             else { Less() }
     }
 
-    compare_int_desc :: Int -> Int -> Ordering
+    export compare_desc :: Int -> Int -> Ordering
     {
-        left => right => Ordering.reverse(Ordering.compare_int(left)(right))
+        left => right => Ordering.reverse(Ordering.compare(left)(right))
     }
 
-    compare_char_desc :: Char -> Char -> Ordering
+    export compare_desc :: Char -> Char -> Ordering
     {
-        left => right => Ordering.reverse(Ordering.compare_char(left)(right))
+        left => right => Ordering.reverse(Ordering.compare(left)(right))
     }
 
-    compare_bool_desc :: Bool -> Bool -> Ordering
+    export compare_desc :: Bool -> Bool -> Ordering
     {
-        left => right => Ordering.reverse(Ordering.compare_bool(left)(right))
+        left => right => Ordering.reverse(Ordering.compare(left)(right))
     }
 
-    EqOrdering :: instance Traits.Eq {
+    export EqOrdering :: instance Traits.Eq {
         eq :: Ordering -> Ordering -> Bool
             {
                 (Less(), Less()) => true,
@@ -172,21 +173,21 @@ Ordering :: module {
             }
     }
 
-    EqBool :: instance Traits.Eq {
+    export EqBool :: instance Traits.Eq {
         eq :: Bool -> Bool -> Bool
             {
                 left => right => left == right
             }
     }
 
-    OrdOrdering :: instance Traits.Ord {
+    export OrdOrdering :: instance Traits.Ord {
         compare :: Ordering -> Ordering -> Ordering
             {
                 left => right => Ordering.compare(left)(right)
             }
     }
 
-    OrdBool :: instance Traits.Ord {
+    export OrdBool :: instance Traits.Ord {
         compare :: Bool -> Bool -> Ordering
             {
                 false => false => Equal(),
@@ -196,7 +197,7 @@ Ordering :: module {
             }
     }
 
-    ShowOrdering :: instance Traits.Show {
+    export ShowOrdering :: instance Traits.Show {
         show :: Ordering -> String
             {
                 Less() => "Less",
@@ -205,7 +206,18 @@ Ordering :: module {
             }
     }
 
-    ShowBool :: instance Traits.Show {
+    export DisplayOrdering :: instance Display {
+        display :: Ref[Ordering] -> String
+            {
+                value => match *value {
+                    Less() => "Less",
+                    Equal() => "Equal",
+                    Greater() => "Greater"
+                }
+            }
+    }
+
+    export ShowBool :: instance Traits.Show {
         show :: Bool -> String
             {
                 true => "true",
@@ -213,14 +225,14 @@ Ordering :: module {
             }
     }
 
-    SemigroupOrdering :: instance Semigroup.Semigroup {
+    export SemigroupOrdering :: instance Semigroup.Semigroup {
         append :: Ordering -> Ordering -> Ordering
             {
                 left => right => Ordering.then_with(left)(right)
             }
     }
 
-    CloneOrdering :: instance Traits.Clone {
+    export CloneOrdering :: instance Traits.Clone {
         clone :: Ref[Ordering] -> Ordering
             {
                 value => match *value {
@@ -231,7 +243,7 @@ Ordering :: module {
             }
     }
 
-    CloneBool :: instance Traits.Clone {
+    export CloneBool :: instance Traits.Clone {
         clone :: Ref[Bool] -> Bool
             {
                 value => *value

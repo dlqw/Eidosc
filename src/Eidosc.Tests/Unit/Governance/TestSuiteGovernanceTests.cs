@@ -1,4 +1,5 @@
 using Xunit;
+using System.Runtime.CompilerServices;
 
 namespace Eidosc.Tests.Unit.Governance;
 
@@ -31,9 +32,9 @@ public sealed class TestSuiteGovernanceTests
             string.Join(Environment.NewLine, oversizedFiles));
     }
 
-    private static string FindTestProjectDir()
+    private static string FindTestProjectDir([CallerFilePath] string sourceFile = "")
     {
-        var dir = AppContext.BaseDirectory;
+        var dir = Path.GetDirectoryName(sourceFile);
         while (!string.IsNullOrWhiteSpace(dir))
         {
             var candidate = Path.Combine(dir, "Eidosc.Tests.csproj");
@@ -49,13 +50,6 @@ public sealed class TestSuiteGovernanceTests
             }
 
             dir = parent.FullName;
-        }
-
-        var sourceRelative = Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-        if (File.Exists(Path.Combine(sourceRelative, "Eidosc.Tests.csproj")))
-        {
-            return sourceRelative;
         }
 
         throw new DirectoryNotFoundException("Eidosc.Tests project directory was not found.");

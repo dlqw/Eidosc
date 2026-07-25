@@ -146,12 +146,118 @@ Thing :: type { A :: type {}, B :: type {} }
             {
                 Start = new LspPosition { Line = 0, Character = 0 },
                 End = new LspPosition { Line = 0, Character = 11 }
-            });
+            },
+            sourceText: new string('x', 40),
+            documentVersion: 17);
 
         var action = Assert.Single(actions);
         Assert.True(action.IsPreferred);
-        Assert.Equal(2, Assert.Single(action.Edit!.Changes).Value.Count);
-        Assert.All(action.Edit.Changes.Single().Value, edit => Assert.Equal("bad_function", edit.NewText));
+        Assert.Empty(action.Edit!.Changes);
+        var documentEdit = Assert.IsType<LspTextDocumentEdit>(Assert.Single(action.Edit.DocumentChanges!));
+        Assert.Equal(17, documentEdit.TextDocument.Version);
+        Assert.Equal(2, documentEdit.Edits.Count);
+        Assert.All(documentEdit.Edits, edit => Assert.Equal("bad_function", edit.NewText));
+    }
+
+    [Fact]
+    public void MapCodeActions_RecomputesUtf16MultilineRangeFromOffsetsAndCarriesVersion()
+    {
+        const string source = "α😀\r\nsecond\nthird";
+        const string uri = "file:///coordinate_map.eidos";
+        var span = new IdeSpan
+        {
+            StartLine = 99,
+            StartCharacter = 99,
+            EndLine = 99,
+            EndCharacter = 99,
+            Start = 1,
+            Length = 7
+        };
+        var snapshot = SnapshotWithSuggestion(span, "first\nreplacement");
+
+        var action = Assert.Single(LspSemanticMapper.MapCodeActions(
+            snapshot,
+            uri,
+            documentFilePath: null,
+            WholeDocumentRange(),
+            source,
+            documentVersion: 23));
+
+        Assert.Equal("refactor.rewrite", action.Kind);
+        var documentEdit = Assert.IsType<LspTextDocumentEdit>(Assert.Single(action.Edit!.DocumentChanges!));
+        Assert.Equal(23, documentEdit.TextDocument.Version);
+        var edit = Assert.Single(documentEdit.Edits);
+        Assert.Equal(0, edit.Range.Start.Line);
+        Assert.Equal(1, edit.Range.Start.Character);
+        Assert.Equal(1, edit.Range.End.Line);
+        Assert.Equal(3, edit.Range.End.Character);
+        Assert.Equal("first\nreplacement", edit.NewText);
+    }
+
+    [Fact]
+    public void MapCodeActions_PreservesZeroLengthInsertionAndNullReplacementDeletion()
+    {
+        const string source = "first\r\nsecond";
+        const string uri = "file:///zero_length.eidos";
+        var insertion = SnapshotWithSuggestion(SpanAt(7, 0), "inserted");
+        var deletion = SnapshotWithSuggestion(SpanAt(7, 6), replacement: null);
+
+        var insertionEdit = GetSingleEdit(LspSemanticMapper.MapCodeActions(
+            insertion, uri, null, WholeDocumentRange(), source, 3));
+        Assert.Equal(insertionEdit.Range.Start.Line, insertionEdit.Range.End.Line);
+        Assert.Equal(insertionEdit.Range.Start.Character, insertionEdit.Range.End.Character);
+        Assert.Equal(1, insertionEdit.Range.Start.Line);
+        Assert.Equal(0, insertionEdit.Range.Start.Character);
+        Assert.Equal("inserted", insertionEdit.NewText);
+
+        var deletionEdit = GetSingleEdit(LspSemanticMapper.MapCodeActions(
+            deletion, uri, null, WholeDocumentRange(), source, 4));
+        Assert.Equal(string.Empty, deletionEdit.NewText);
+        Assert.Equal(1, deletionEdit.Range.Start.Line);
+        Assert.Equal(0, deletionEdit.Range.Start.Character);
+        Assert.Equal(1, deletionEdit.Range.End.Line);
+        Assert.Equal(6, deletionEdit.Range.End.Character);
+    }
+
+    private static IdeSemanticSnapshot SnapshotWithSuggestion(IdeSpan span, string? replacement) => new()
+    {
+        Refactors =
+        [
+            new IdeDiagnosticEntry
+            {
+                Code = "S1005",
+                Span = span,
+                Suggestions =
+                [
+                    new IdeDiagnosticSuggestionEntry
+                    {
+                        Kind = "StyleRewrite",
+                        Message = "Rewrite",
+                        Span = span,
+                        Replacement = replacement
+                    }
+                ]
+            }
+        ]
+    };
+
+    private static IdeSpan SpanAt(int start, int length) => new()
+    {
+        Start = start,
+        Length = length
+    };
+
+    private static LspRange WholeDocumentRange() => new()
+    {
+        Start = new LspPosition { Line = 0, Character = 0 },
+        End = new LspPosition { Line = int.MaxValue, Character = int.MaxValue }
+    };
+
+    private static LspTextEdit GetSingleEdit(IReadOnlyList<LspCodeAction> actions)
+    {
+        var action = Assert.Single(actions);
+        var documentEdit = Assert.IsType<LspTextDocumentEdit>(Assert.Single(action.Edit!.DocumentChanges!));
+        return Assert.Single(documentEdit.Edits);
     }
 
     private static IdeSpan Span(int start, int length, string? filePath = null) => new()

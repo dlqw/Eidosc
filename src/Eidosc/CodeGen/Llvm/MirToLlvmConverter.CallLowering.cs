@@ -81,7 +81,7 @@ public sealed partial class MirToLlvmConverter
             return ConvertRuntimeArraySetCall(call);
         }
 
-        if (call.Function is MirFunctionRef { TraitMethodRole: TraitMethodRole.Show } &&
+        if (call.Function is MirFunctionRef { CompilerSemanticRole: CompilerSemanticRole.Show } &&
             TryConvertBuiltinShowCall(call, out var builtinShowCall))
         {
             return builtinShowCall;
@@ -258,7 +258,7 @@ public sealed partial class MirToLlvmConverter
             return EmitClosureInvokeCall(call, closureValue, indirectArguments, indirectSignature);
         }
 
-        var arguments = call.Arguments.Select(ConvertOperand).ToList();
+        var arguments = ConvertArgumentsForKnownDirectCall(call);
         if (TryRecordPartialCall(call, arguments))
         {
             if (call.Arguments.Count == 0 &&
@@ -484,6 +484,40 @@ public sealed partial class MirToLlvmConverter
         return rewrittenArguments;
     }
 
+    private List<LlvmValue> ConvertArgumentsForKnownDirectCall(MirCall call)
+    {
+        if (call.Function is not MirFunctionRef functionRef ||
+            !TryResolveMirFunction(functionRef, out var callee))
+        {
+            return call.Arguments.Select(ConvertOperand).ToList();
+        }
+
+        var parameterLocals = callee.Locals
+            .Where(static local => local.IsParameter)
+            .ToList();
+        var converted = new List<LlvmValue>(call.Arguments.Count);
+        for (var index = 0; index < call.Arguments.Count; index++)
+        {
+            var argument = call.Arguments[index];
+            if (index < parameterLocals.Count &&
+                argument is MirPlace place &&
+                IsReferenceTypeId(parameterLocals[index].TypeId))
+            {
+                converted.Add(ConvertBorrowedPlaceArgument(place, parameterLocals[index].TypeId));
+                continue;
+            }
+
+            converted.Add(ConvertOperand(argument));
+        }
+
+        return converted;
+    }
+
+    private bool IsReferenceTypeId(TypeId typeId) =>
+        typeId.IsValid &&
+        _typeLowering.TryGetTypeDescriptor(typeId, out var descriptor) &&
+        descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef;
+
     private bool TryResolveMirFunction(MirFunctionRef funcRef, out MirFunc function)
     {
         if (funcRef.SymbolId.IsValid &&
@@ -524,6 +558,9 @@ public sealed partial class MirToLlvmConverter
         var combinedManagedFlags = new List<bool>(partial.BoundArgumentManagedFlags.Count + newArgumentManagedFlags.Count);
         combinedManagedFlags.AddRange(partial.BoundArgumentManagedFlags);
         combinedManagedFlags.AddRange(newArgumentManagedFlags);
+        var combinedTypeIds = new List<TypeId>(partial.BoundArgumentTypeIds.Count + call.Arguments.Count);
+        combinedTypeIds.AddRange(partial.BoundArgumentTypeIds);
+        combinedTypeIds.AddRange(call.Arguments.Select(static argument => argument.TypeId));
 
         var coercedCombined = CoerceArgumentsForSignature(partial.Signature, combinedArguments);
         var expectedParameterCount = partial.Signature.ParameterTypes.Count;
@@ -536,6 +573,7 @@ public sealed partial class MirToLlvmConverter
                     partial.Signature,
                     coercedCombined,
                     combinedManagedFlags,
+                    combinedTypeIds,
                     partial.CapturedArgumentCount,
                     partial.VisibleSignature);
                 _locals.LocalMap.Remove(targetLocal.Local);
@@ -650,6 +688,7 @@ public sealed partial class MirToLlvmConverter
                     expandedFunctionType,
                     expandedBoundArguments,
                     expandedBoundArgumentManagedFlags,
+                    call.Arguments.Select(static argument => argument.TypeId).ToList(),
                     expandedCapturedArgumentCount,
                     visibleSignature);
                 _locals.LocalMap.Remove(targetLocal.Local);
@@ -684,6 +723,7 @@ public sealed partial class MirToLlvmConverter
             functionType,
             boundArguments,
             boundArgumentManagedFlags,
+            call.Arguments.Select(static argument => argument.TypeId).ToList(),
             capturedArgumentCount,
             VisibleSignature: null);
         _locals.LocalMap.Remove(targetLocal.Local);
@@ -1162,6 +1202,17 @@ public sealed partial class MirToLlvmConverter
             };
         }
 
+        if (value.Type is LlvmPointerType sourcePointer &&
+            expectedType is LlvmPointerType expectedPointer &&
+            sourcePointer.AddressSpace == expectedPointer.AddressSpace)
+        {
+            return new LlvmTypeView
+            {
+                Value = value,
+                Type = expectedType
+            };
+        }
+
         if (value.Type is LlvmPointerType && expectedType is LlvmPointerType)
         {
             var cast = new LlvmCast
@@ -1316,7 +1367,7 @@ public sealed partial class MirToLlvmConverter
             };
         }
 
-        if (funcRef.TraitMethodRole == TraitMethodRole.Show)
+        if (funcRef.CompilerSemanticRole == CompilerSemanticRole.Show)
         {
             var helper = GetOrCreateErasedShowHelper();
             var helperType = new LlvmFunctionType
@@ -1938,6 +1989,7 @@ public sealed partial class MirToLlvmConverter
             functionType,
             boundArguments,
             boundArgumentManagedFlags,
+            call.Arguments.Select(static argument => argument.TypeId).ToList(),
             0,
             null);
         _locals.LocalMap.Remove(targetLocal.Local);
@@ -2027,6 +2079,7 @@ public sealed partial class MirToLlvmConverter
             functionType,
             boundArguments,
             boundArgumentManagedFlags,
+            call.Arguments.Select(static argument => argument.TypeId).ToList(),
             0,
             null);
         _locals.LocalMap.Remove(targetLocal.Local);

@@ -91,8 +91,7 @@ public static class MetaCommand
             AllowVirtualInputFile = sourceInput.IsInMemorySource,
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                 new Dictionary<string, string[]>(StringComparer.Ordinal)
+            PackageImportRoots = inputResolution.GetPackageImportRoots()
         }).Run();
 
         CliOutput.RenderDiagnostics(result, !options.NoColor);

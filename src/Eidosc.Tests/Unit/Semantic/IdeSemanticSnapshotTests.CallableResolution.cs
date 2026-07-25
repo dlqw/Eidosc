@@ -80,14 +80,14 @@ main :: Unit -> String
     {
         const string source = """
 A :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 1
     }
 }
 
 B :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 2
     }

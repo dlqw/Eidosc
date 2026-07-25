@@ -22,6 +22,9 @@ internal static class IdeStyleSuggestionBuilder
     private const string SelectionToMatchMigrationCode = "S1005";
     private const string MatchToSelectionMigrationCode = "S1006";
 
+    internal static bool IsInteractiveRefactor(Diagnostic.Diagnostic diagnostic) =>
+        diagnostic.Code is SelectionToMatchMigrationCode or MatchToSelectionMigrationCode;
+
     public static IReadOnlyList<Diagnostic.Diagnostic> Build(
         ModuleDecl module,
         string sourceText,
@@ -173,11 +176,16 @@ internal static class IdeStyleSuggestionBuilder
             return false;
         }
 
+        if (!TryGetCallableRewriteName(rootFunction, methodName, sourceText, out var rewriteMethodName))
+        {
+            return false;
+        }
+
         var chainedReplacement = "";
         var chainedReplacementUsesNestedReceiver = false;
         var hasChainedReplacement = CanOfferCallableStyleReplacement(rootFunction, symbolTable) &&
             TryBuildChainedReplacement(
-                methodName,
+                rewriteMethodName,
                 allArguments,
                 sourceText,
                 symbolTable,
@@ -643,13 +651,17 @@ internal static class IdeStyleSuggestionBuilder
         }
 
         if (PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(owner.Span.FilePath, out var precompiledPath) &&
-            string.Equals(precompiledPath, owner.Name, StringComparison.OrdinalIgnoreCase))
+            string.Equals(
+                precompiledPath.Split(['/', '\\', '.'], StringSplitOptions.RemoveEmptyEntries).LastOrDefault(),
+                owner.Name,
+                StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         return symbolTable.Modules.TryGetOwningModule(owner.Id, out var module) &&
-               string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.OrdinalIgnoreCase) &&
+               (string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(module.PackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal)) &&
                module.Path.Count > 0 &&
                string.Equals(module.Path[^1], owner.Name, StringComparison.OrdinalIgnoreCase);
     }
@@ -812,6 +824,8 @@ internal static class IdeStyleSuggestionBuilder
             PathExpr { SymbolId.IsValid: true } path => path.SymbolId.Value,
             MethodCallExpr { SymbolId.IsValid: true } method => method.SymbolId.Value,
             CallExpr call when call.Function != null => TryGetOriginalSymbolId(call.Function),
+            IndexExpr { IsTypeApplication: true, Object: not null } typeApplication =>
+                TryGetOriginalSymbolId(typeApplication.Object),
             _ => null
         };
     }
@@ -833,6 +847,18 @@ internal static class IdeStyleSuggestionBuilder
             }
 
             argumentGroups.Insert(0, current.PositionalArgs);
+            if (current.Function is MethodCallExpr
+                {
+                    ResolvedAsStaticPath: true,
+                    HasExplicitCallSyntax: true,
+                    NamedArgs.Count: 0
+                } staticMethod)
+            {
+                argumentGroups.Insert(0, staticMethod.PositionalArgs);
+                rootFunction = staticMethod;
+                return true;
+            }
+
             if (current.Function is not CallExpr inner)
             {
                 rootFunction = current.Function;
@@ -847,11 +873,16 @@ internal static class IdeStyleSuggestionBuilder
     {
         switch (function)
         {
-            case PathExpr { TypeArgs.Count: 0 } path:
+            case PathExpr path:
                 name = path.Name;
                 return !string.IsNullOrWhiteSpace(name);
             case IdentifierExpr identifier:
                 name = identifier.Name;
+                return !string.IsNullOrWhiteSpace(name);
+            case IndexExpr { IsTypeApplication: true, Object: not null } typeApplication:
+                return TryGetCallableName(typeApplication.Object, out name);
+            case MethodCallExpr { ResolvedAsStaticPath: true } method:
+                name = method.MethodName;
                 return !string.IsNullOrWhiteSpace(name);
             default:
                 name = "";
@@ -861,7 +892,42 @@ internal static class IdeStyleSuggestionBuilder
 
     private static bool CanBuildChainedReplacement(EidosAstNode function)
     {
-        return function is IdentifierExpr or PathExpr { TypeArgs.Count: 0 };
+        return function is IdentifierExpr or PathExpr or MethodCallExpr { ResolvedAsStaticPath: true } ||
+               function is IndexExpr { IsTypeApplication: true, Object: not null } typeApplication &&
+               CanBuildChainedReplacement(typeApplication.Object);
+    }
+
+    private static bool TryGetCallableRewriteName(
+        EidosAstNode function,
+        string callableName,
+        string sourceText,
+        out string rewriteName)
+    {
+        rewriteName = callableName;
+        var isExplicitTypeApplication = function switch
+        {
+            PathExpr path => path.GenericArguments.Count > 0 || path.TypeArgs.Count > 0,
+            IndexExpr { IsTypeApplication: true } => true,
+            _ => false
+        };
+        if (!isExplicitTypeApplication)
+        {
+            return true;
+        }
+
+        if (!TrySliceCallable(function, sourceText, out var functionText))
+        {
+            return false;
+        }
+
+        var nameIndex = functionText.LastIndexOf(callableName, StringComparison.Ordinal);
+        if (nameIndex < 0)
+        {
+            return false;
+        }
+
+        rewriteName = functionText[nameIndex..];
+        return true;
     }
 
     private static bool CanOfferCallableStyleReplacement(EidosAstNode function, SymbolTable? symbolTable)
@@ -948,7 +1014,7 @@ internal static class IdeStyleSuggestionBuilder
         out string replacement)
     {
         replacement = "";
-        if (!TryFlattenUnaryPrefixChain(call, symbolTable, out var receiver, out var methodNames) ||
+        if (!TryFlattenUnaryPrefixChain(call, sourceText, symbolTable, out var receiver, out var methodNames) ||
             !TrySliceSingleLine(call.Span, sourceText, out _) ||
             !TrySliceSingleLine(receiver.Span, sourceText, out var receiverText))
         {
@@ -969,6 +1035,7 @@ internal static class IdeStyleSuggestionBuilder
 
     private static bool TryFlattenUnaryPrefixChain(
         CallExpr call,
+        string sourceText,
         SymbolTable? symbolTable,
         out EidosAstNode receiver,
         out List<string> methodNames)
@@ -980,7 +1047,9 @@ internal static class IdeStyleSuggestionBuilder
             if (current.NamedArgs.Count > 0 ||
                 current.PositionalArgs.Count != 1 ||
                 current.Function == null ||
+                IsQualifiedCallable(current.Function) ||
                 !TryGetCallableName(current.Function, out var methodName) ||
+                !TryGetCallableRewriteName(current.Function, methodName, sourceText, out var rewriteMethodName) ||
                 !CanOfferCallableStyleReplacement(current.Function, symbolTable))
             {
                 receiver = current;
@@ -988,7 +1057,7 @@ internal static class IdeStyleSuggestionBuilder
                 return false;
             }
 
-            methodNames.Insert(0, methodName);
+            methodNames.Insert(0, rewriteMethodName);
             var argument = current.PositionalArgs[0];
             if (argument is not CallExpr nestedCall)
             {
@@ -998,6 +1067,18 @@ internal static class IdeStyleSuggestionBuilder
 
             current = nestedCall;
         }
+    }
+
+    private static bool IsQualifiedCallable(EidosAstNode function)
+    {
+        return function switch
+        {
+            MethodCallExpr { ResolvedAsStaticPath: true } => true,
+            PathExpr path => !string.IsNullOrWhiteSpace(path.PackageAlias) || path.ModulePath.Count > 0,
+            IndexExpr { IsTypeApplication: true, Object: not null } typeApplication =>
+                IsQualifiedCallable(typeApplication.Object),
+            _ => false
+        };
     }
 
     private static string FormatReceiver(EidosAstNode receiver, string receiverText)
@@ -1017,7 +1098,7 @@ internal static class IdeStyleSuggestionBuilder
         out string replacement)
     {
         replacement = "";
-        if (!TrySliceSingleLine(function.Span, sourceText, out var functionText))
+        if (!TrySliceCallable(function, sourceText, out var functionText))
         {
             return false;
         }
@@ -1035,6 +1116,25 @@ internal static class IdeStyleSuggestionBuilder
 
         replacement = $"{functionText}({string.Join(", ", argumentTexts)})";
         return true;
+    }
+
+    private static bool TrySliceCallable(EidosAstNode function, string sourceText, out string functionText)
+    {
+        if (function is MethodCallExpr
+            {
+                ResolvedAsStaticPath: true,
+                MemberNameSpan: var memberSpan
+            } method &&
+            memberSpan.Position >= method.Span.Position &&
+            memberSpan.EndPosition <= sourceText.Length)
+        {
+            var callableSpan = new SourceSpan(
+                method.Span.Location,
+                memberSpan.EndPosition - method.Span.Position);
+            return TrySliceSingleLine(callableSpan, sourceText, out functionText);
+        }
+
+        return TrySliceSingleLine(function.Span, sourceText, out functionText);
     }
 
     private static bool TryBuildInfixReplacement(

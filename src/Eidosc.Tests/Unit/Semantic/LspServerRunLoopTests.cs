@@ -364,7 +364,7 @@ public sealed class LspServerRunLoopTests
             Session :: comptime build.session();
             Emit :: comptime build.emit(Session);
             Generated :: comptime build.generated_module(Emit, "generated.schema", quote items {
-                answer :: Int = 42;
+                export answer :: Int = 42;
             }, "main");
             BuildGraph :: comptime build.graph(Emit, [], [Generated]);
             """);
@@ -385,7 +385,7 @@ public sealed class LspServerRunLoopTests
             LanguageVersion = loaded.Configuration.LanguageVersion,
             TargetName = "main",
             ImportSearchRoots = loaded.Configuration.SourceRoots,
-            NoImplicitPrelude = loaded.Configuration.NoImplicitStdlib,
+            NoImplicitPrelude = loaded.Configuration.NoImplicitPrelude,
             UseCache = true
         });
         Assert.True(primingResult.Success);
@@ -537,6 +537,93 @@ version = "0.8.0-alpha.1"
         Assert.True(response.HasValue);
         var action = Assert.Single(response.Value.GetProperty("result").EnumerateArray());
         Assert.Equal("Rename Acme.Core to acme.core", action.GetProperty("title").GetString());
+    }
+
+    [Fact]
+    public async Task RunAsync_SourceCodeAction_UsesCurrentDocumentVersionAndOffsetDerivedRange()
+    {
+        using var input = new MemoryStream();
+        using var output = new MemoryStream();
+        var uri = new Uri(Path.GetFullPath("versioned_code_action.eidos")).AbsoluteUri;
+        const string openedText = "old";
+        const string currentText = "α😀\r\nsecond";
+        using var didOpen = CreateDidOpen(uri, 41, openedText);
+        using var didChange = CreateDidChange(uri, 42, currentText);
+        using var codeAction = JsonDocument.Parse($$"""
+        {
+          "jsonrpc": "2.0",
+          "id": 9,
+          "method": "textDocument/codeAction",
+          "params": {
+            "textDocument": { "uri": {{JsonSerializer.Serialize(uri)}} },
+            "range": {
+              "start": { "line": 0, "character": 0 },
+              "end": { "line": 1, "character": 6 }
+            },
+            "context": { "diagnostics": [] }
+          }
+        }
+        """);
+        using var shutdown = JsonDocument.Parse("""{"jsonrpc":"2.0","id":10,"method":"shutdown","params":null}""");
+
+        await JsonRpc.WriteMessageAsync(input, didOpen.RootElement);
+        await JsonRpc.WriteMessageAsync(input, didChange.RootElement);
+        await JsonRpc.WriteMessageAsync(input, codeAction.RootElement);
+        await JsonRpc.WriteMessageAsync(input, shutdown.RootElement);
+        input.Position = 0;
+
+        using var server = new LspServer(
+            input,
+            output,
+            [],
+            compileDocumentOverride: (_, _) => new IdeSemanticSnapshot
+            {
+                Success = true,
+                InputFile = LspServer.UriToFilePath(uri),
+                Refactors =
+                [
+                    new IdeDiagnosticEntry
+                    {
+                        Code = "S1005",
+                        Span = new IdeSpan { Start = 1, Length = 7 },
+                        Suggestions =
+                        [
+                            new IdeDiagnosticSuggestionEntry
+                            {
+                                Kind = "StyleRewrite",
+                                Message = "Rewrite selection",
+                                Span = new IdeSpan { Start = 1, Length = 7 },
+                                Replacement = "replacement"
+                            }
+                        ]
+                    }
+                ]
+            },
+            diagnosticDebounce: TimeSpan.FromMinutes(5));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await server.RunAsync(timeout.Token);
+
+        output.Position = 0;
+        JsonElement? response = null;
+        while (await JsonRpc.ReadMessageAsync(output, timeout.Token) is { } message)
+        {
+            if (message.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number && id.GetInt32() == 9)
+            {
+                response = message.Clone();
+                break;
+            }
+        }
+
+        var action = Assert.Single(response!.Value.GetProperty("result").EnumerateArray());
+        Assert.Equal("refactor.rewrite", action.GetProperty("kind").GetString());
+        var documentEdit = Assert.Single(action.GetProperty("edit").GetProperty("documentChanges").EnumerateArray());
+        Assert.Equal(42, documentEdit.GetProperty("textDocument").GetProperty("version").GetInt32());
+        var edit = Assert.Single(documentEdit.GetProperty("edits").EnumerateArray());
+        var range = edit.GetProperty("range");
+        Assert.Equal(0, range.GetProperty("start").GetProperty("line").GetInt32());
+        Assert.Equal(1, range.GetProperty("start").GetProperty("character").GetInt32());
+        Assert.Equal(1, range.GetProperty("end").GetProperty("line").GetInt32());
+        Assert.Equal(3, range.GetProperty("end").GetProperty("character").GetInt32());
     }
 
     private static JsonDocument CreateDidOpen(string uri, int version, string text) =>

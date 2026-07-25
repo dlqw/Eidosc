@@ -148,7 +148,7 @@ public static class DebugCommand
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal)
+            PackageImportRoots = inputResolution.GetPackageImportRoots()
         };
 
         // 创建编译管道

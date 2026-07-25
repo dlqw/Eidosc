@@ -93,6 +93,11 @@ public sealed partial class MirToLlvmConverter
                     return MaterializePartialClosureValue(place, partial);
                 }
 
+                if (TryResolveLocalBorrowView(place, out var borrowedTypeId))
+                {
+                    return ConvertLocalBorrowView(place.Local, borrowedTypeId);
+                }
+
                 if (IsSlotBackedLocal(place.Local))
                 {
                     return LoadFromLocalSlot(place.Local, place.TypeId);
@@ -205,6 +210,89 @@ public sealed partial class MirToLlvmConverter
         }
     }
 
+    private bool TryResolveLocalBorrowView(MirPlace place, out TypeId borrowedTypeId)
+    {
+        borrowedTypeId = TypeId.None;
+        if (place.Kind != PlaceKind.Local ||
+            !place.TypeId.IsValid ||
+            !_locals.LocalTypeById.TryGetValue(place.Local, out var localTypeId) ||
+            !localTypeId.IsValid ||
+            !_typeLowering.TryGetTypeDescriptor(place.TypeId, out var placeDescriptor))
+        {
+            return false;
+        }
+
+        borrowedTypeId = placeDescriptor switch
+        {
+            TypeDescriptor.Ref reference => reference.Inner,
+            TypeDescriptor.MutRef mutableReference => mutableReference.Inner,
+            _ => TypeId.None
+        };
+        if (!borrowedTypeId.IsValid)
+        {
+            return false;
+        }
+
+        // A reference-typed local already stores a first-class reference.  Only
+        // a Ref[T]/MRef[T] operand layered over a T local is an address view.
+        if (_typeLowering.TryGetTypeDescriptor(localTypeId, out var localDescriptor) &&
+            localDescriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef)
+        {
+            return false;
+        }
+
+        return borrowedTypeId == localTypeId;
+    }
+
+    private LlvmValue ConvertLocalBorrowView(LocalId localId, TypeId borrowedTypeId)
+    {
+        var borrowedStorageType = LowerStorageTypeIdOrReport(
+            borrowedTypeId,
+            "local borrow view",
+            _currentFunctionAllowsOpenLocalTypes);
+
+        // Heap-backed values already use their runtime pointer as Ref[T].
+        // Scalars and inline aggregates need stable local storage whose address
+        // is passed to the callee.
+        if (borrowedStorageType is LlvmPointerType)
+        {
+            return IsSlotBackedLocal(localId)
+                ? LoadFromLocalSlot(localId, borrowedTypeId)
+                : GetOrCreateLocalById(localId, borrowedTypeId);
+        }
+
+        if (_locals.LocalSlots.TryGetValue(localId, out var existingSlot))
+        {
+            return CreateLocalSlotPointer(existingSlot, borrowedStorageType);
+        }
+
+        var currentValue = GetOrCreateLocalById(localId, borrowedTypeId);
+        var slot = new LlvmAlloca
+        {
+            AllocatedType = borrowedStorageType,
+            Alignment = 8,
+            ResultName = _nameMangler.NewTempName($"l{localId.Value}_borrow")
+        };
+        EmitAllocaInEntryBlock(slot);
+        _locals.LocalSlots[localId] = slot;
+        _locals.SlotBackedLocals.Add(localId);
+
+        var store = CreateStoreToLocalSlot(localId, currentValue);
+        if (store != null)
+        {
+            _currentBlock?.Instructions.Add(store);
+        }
+
+        return CreateLocalSlotPointer(slot, borrowedStorageType);
+    }
+
+    private static LlvmInstructionRef CreateLocalSlotPointer(LlvmAlloca slot, LlvmType storageType) =>
+        new()
+        {
+            Instruction = slot,
+            Type = new LlvmPointerType { ElementType = storageType }
+        };
+
     private LlvmValue ResolveFieldBasePointer(MirPlace basePlace)
     {
         return ResolveAggregateBasePointer(basePlace, "field_base");
@@ -216,6 +304,67 @@ public sealed partial class MirToLlvmConverter
         {
             PlaceKind.Local or PlaceKind.Deref => CoerceToPointer(ConvertPlace(basePlace)),
             _ => CoerceToPointer(MaterializePlaceValue(basePlace, basePlace.TypeId, "array_base"))
+        };
+    }
+
+    private LlvmValue ConvertBorrowedPlaceArgument(MirPlace place, TypeId referenceTypeId)
+    {
+        var referencedTypeId = ResolveReferenceInnerTypeId(referenceTypeId);
+        if (referencedTypeId.IsValid &&
+            LowerStorageTypeIdOrReport(referencedTypeId, "borrowed call argument") is LlvmPointerType)
+        {
+            return MaterializePlaceValue(place, referencedTypeId, "borrow_value");
+        }
+
+        if (place is
+            {
+                Kind: PlaceKind.Index,
+                IndexAccessKind: MirIndexAccessKind.RuntimeArray,
+                Base: not null,
+                Index: not null
+            })
+        {
+            return ResolveRuntimeArrayElementPointer(place);
+        }
+
+        return ConvertPlace(place);
+    }
+
+    private TypeId ResolveReferenceInnerTypeId(TypeId referenceTypeId)
+    {
+        if (!referenceTypeId.IsValid ||
+            !_typeLowering.TryGetTypeDescriptor(referenceTypeId, out var descriptor))
+        {
+            return TypeId.None;
+        }
+
+        return descriptor switch
+        {
+            TypeDescriptor.Ref reference => reference.Inner,
+            TypeDescriptor.MutRef mutableReference => mutableReference.Inner,
+            _ => TypeId.None
+        };
+    }
+
+    private LlvmValue ResolveRuntimeArrayElementPointer(MirPlace place)
+    {
+        var arrayValue = ResolveRuntimeArrayBasePointer(place.Base!);
+        var indexValue = CoerceToI64(ConvertOperand(place.Index!));
+        var getCall = new LlvmCall
+        {
+            Function = CreateRuntimeFunctionGlobal(
+                WellKnownStrings.Runtime.ArrayGet,
+                LlvmPointerType.VoidPtr(),
+                [LlvmPointerType.VoidPtr(), LlvmIntType.I64]),
+            Arguments = [arrayValue, indexValue],
+            ReturnType = LlvmPointerType.VoidPtr(),
+            ResultName = _nameMangler.NewTempName("array_get")
+        };
+        _currentBlock?.Instructions.Add(getCall);
+        return new LlvmInstructionRef
+        {
+            Instruction = getCall,
+            Type = LlvmPointerType.VoidPtr()
         };
     }
 
@@ -245,20 +394,7 @@ public sealed partial class MirToLlvmConverter
             place.Base != null &&
             place.Index != null)
         {
-            var arrayValue = ResolveRuntimeArrayBasePointer(place.Base);
-            var indexValue = CoerceToI64(ConvertOperand(place.Index));
-
-            var getCall = new LlvmCall
-            {
-                Function = CreateRuntimeFunctionGlobal(
-                    WellKnownStrings.Runtime.ArrayGet,
-                    LlvmPointerType.VoidPtr(),
-                    [LlvmPointerType.VoidPtr(), LlvmIntType.I64]),
-                Arguments = [arrayValue, indexValue],
-                ReturnType = LlvmPointerType.VoidPtr(),
-                ResultName = _nameMangler.NewTempName("array_get")
-            };
-            _currentBlock?.Instructions.Add(getCall);
+            var elementPointer = ResolveRuntimeArrayElementPointer(place);
 
             var loadType = ResolveRuntimeArrayElementType(place, fallbackType);
             if (loadType is LlvmVoidType)
@@ -268,11 +404,7 @@ public sealed partial class MirToLlvmConverter
 
             var typedLoad = new LlvmLoad
             {
-                Pointer = new LlvmInstructionRef
-                {
-                    Instruction = getCall,
-                    Type = LlvmPointerType.VoidPtr()
-                },
+                Pointer = elementPointer,
                 LoadType = loadType,
                 ResultName = _nameMangler.NewTempName(tempPrefix)
             };
@@ -1496,7 +1628,7 @@ public sealed partial class MirToLlvmConverter
 
     private bool TryInferBuiltinShowResultType(MirFunctionRef showRef, MirOperand argument, out LlvmType inferredType)
     {
-        if (showRef.TraitMethodRole != TraitMethodRole.Show)
+        if (showRef.CompilerSemanticRole != CompilerSemanticRole.Show)
         {
             inferredType = default!;
             return false;
@@ -1524,7 +1656,7 @@ public sealed partial class MirToLlvmConverter
 
     private bool TryInferFunctionReferenceValueType(MirFunctionRef functionRef, out LlvmType inferredType)
     {
-        if (functionRef.TraitMethodRole == TraitMethodRole.Show)
+        if (functionRef.CompilerSemanticRole == CompilerSemanticRole.Show)
         {
             inferredType = LlvmPointerType.VoidPtr();
             return true;

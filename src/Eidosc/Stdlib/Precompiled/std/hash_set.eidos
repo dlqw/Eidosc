@@ -5,53 +5,53 @@ HashSet :: module {
     import Seq
     import Option
 
-    HashSet[K] :: type {inner:: HashMap[K, Unit]}
+    export HashSet[K] :: type {inner:: HashMap[K, Unit]}
 
     // ── Constructors ──────────────────────────────────────────
 
-    empty[K] :: Unit -> HashSet[K]
+    export empty[K] :: Unit -> HashSet[K]
     {
         _ => HashSet{inner: HashMap.empty(())}
     }
 
-    new[K] :: Int -> HashSet[K]
+    export new[K] :: Int -> HashSet[K]
     {
         capacity => HashSet{inner: HashMap.new(capacity)}
     }
 
-    from_seq[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K]
+    export from_seq[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K]
     {
         values => HashSet.fold_insert[K](values)(HashSet.empty(()))
     }
 
     // ── Core operations ──────────────────────────────────────
 
-    insert[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
+    export insert[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
     {
         HashSet{inner: m} => key => HashSet{inner: HashMap.insert[K, Unit](m)(key)(())}
     }
 
-    contains[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> Bool
+    export contains[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> Bool
     {
         HashSet{inner: m} => key => HashMap.contains_key[K, Unit](m)(key)
     }
 
-    remove[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
+    export remove[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
     {
         HashSet{inner: m} => key => HashSet{inner: HashMap.remove[K, Unit](m)(key)}
     }
 
-    insert_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> HashSet[K]
+    export insert_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> HashSet[K]
     {
         self => values => HashSet.fold_insert[K](values)(self)
     }
 
-    remove_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> HashSet[K]
+    export remove_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> HashSet[K]
     {
         self => values => HashSet.fold_remove[K](values)(self)
     }
 
-    toggle[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
+    export toggle[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> K -> HashSet[K]
     {
         self => key => {
             keys := HashSet.to_seq[K](self)
@@ -69,66 +69,66 @@ HashSet :: module {
 
     // ── Query operations ─────────────────────────────────────
 
-    len[K] :: Ref[HashSet[K]] -> Int
+    export len[K] :: Ref[HashSet[K]] -> Int
     {
         self => match *self {
             HashSet{inner: m} => HashMap.len(ref m)
         }
     }
 
-    is_empty[K] :: Ref[HashSet[K]] -> Bool
+    export is_empty[K] :: Ref[HashSet[K]] -> Bool
     {
         self => HashSet.len(self) == 0
     }
 
     // ── Set operations ───────────────────────────────────────
 
-    union[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    export union[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
     {
         self => other => HashSet.fold_insert[K](HashSet.to_seq[K](other))(self)
     }
 
-    intersection[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    export intersection[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
     {
         self => other => HashSet.filter_contains[K](HashSet.to_seq[K](self))(other)
     }
 
-    difference[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    export difference[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
     {
         self => other => HashSet.filter_not_contains[K](HashSet.to_seq[K](self))(other)
     }
 
-    symmetric_difference[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
+    export symmetric_difference[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> HashSet[K]
     {
         self => other => HashSet.fold_toggle(HashSet.to_seq[K](other))(self)
     }
 
-    is_subset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    export is_subset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
     {
         self => other => HashSet.all_contained[K](HashSet.to_seq[K](self))(other)
     }
 
-    is_superset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    export is_superset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
     {
         self => other => HashSet.is_subset[K](other)(self)
     }
 
-    is_disjoint[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    export is_disjoint[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
     {
         self => other => HashSet.none_contained[K](HashSet.to_seq[K](self))(other)
     }
 
-    contains_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> Bool
+    export contains_all[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> Bool
     {
         self => values => HashSet.all_contained[K](values)(self)
     }
 
-    contains_any[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> Bool
+    export contains_any[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> Seq[K] -> Bool
     {
         self => values => HashSet.any_contained(values)(self)
     }
 
-    equals[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    export equals[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
     {
         self => other => match HashSet.to_seq_with_len[K](self)
         {
@@ -139,7 +139,7 @@ HashSet :: module {
         }
     }
 
-    is_proper_subset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    export is_proper_subset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
     {
         self => other => match HashSet.to_seq_with_len[K](self)
         {
@@ -150,12 +150,12 @@ HashSet :: module {
         }
     }
 
-    is_proper_superset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
+    export is_proper_superset[K: Traits.Hash + Traits.Eq + Traits.Clone] :: HashSet[K] -> HashSet[K] -> Bool
     {
         self => other => HashSet.is_proper_subset[K](other)(self)
     }
 
-    to_seq[K] :: HashSet[K] -> Seq[K]
+    export to_seq[K] :: HashSet[K] -> Seq[K]
     {
         HashSet{inner: m} => HashMap.keys[K, Unit](m)
     }

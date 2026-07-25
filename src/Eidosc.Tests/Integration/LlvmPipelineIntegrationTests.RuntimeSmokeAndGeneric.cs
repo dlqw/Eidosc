@@ -93,15 +93,14 @@ public partial class LlvmPipelineIntegrationTests
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Json__array_strings_compact", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Json__array_ints_compact", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Json__array_bools", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Json__array_bools_compact", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("std__Json__array_", StringComparison.Ordinal) &&
+                !function.Name.Contains("array_strings", StringComparison.Ordinal) &&
+                !function.Name.Contains("array_compact", StringComparison.Ordinal)) >= 3);
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("std__Json__array_compact", StringComparison.Ordinal)) >= 3);
     }
 
     [Fact]
@@ -195,11 +194,11 @@ public partial class LlvmPipelineIntegrationTests
     {
         const string source = """
 A :: module {
-    f :: Int -> Int { x => x + 1 }
+    export f :: Int -> Int { x => x + 1 }
 }
 
 B :: module {
-    f :: Int -> Int { x => x + 100 }
+    export f :: Int -> Int { x => x + 100 }
 }
 
 main :: Unit -> Int

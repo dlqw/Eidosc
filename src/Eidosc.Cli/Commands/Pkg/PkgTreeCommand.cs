@@ -55,8 +55,6 @@ public static class PkgTreeCommand
         var deps = config.VersionedDependencies;
         if (deps == null || deps.Count == 0)
         {
-            if (!config.NoImplicitStdlib)
-                Console.WriteLine(CliMessages.PkgStdEmbeddedTreeEntry);
             commandStopwatch.Stop();
             CliOutput.WriteFinished(
                 "pkg tree",
@@ -68,8 +66,6 @@ public static class PkgTreeCommand
         }
 
         var entries = deps.OrderBy(d => d.Key).ToList();
-        if (!config.NoImplicitStdlib && !deps.ContainsKey("Std"))
-            entries.Add(new KeyValuePair<string, DependencySpec>("Std", new DependencySpec { Version = "embedded" }));
 
         for (var i = 0; i < entries.Count; i++)
         {

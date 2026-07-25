@@ -3,46 +3,46 @@ Queue :: module {
     import Seq
     import Option
 
-    Queue[T] :: type {items:: Deque[T]}
+    export Queue[T] :: type {items:: Deque[T]}
 
-    empty[T] :: Unit -> Queue[T]
+    export empty[T] :: Unit -> Queue[T]
     {
         _ => Queue{items: Deque.empty(())}
     }
 
-    singleton[T] :: T -> Queue[T]
+    export singleton[T] :: T -> Queue[T]
     {
         value => Queue{items: Deque.singleton(value)}
     }
 
-    from_seq[T] :: Seq[T] -> Queue[T]
+    export from_seq[T] :: Seq[T] -> Queue[T]
     {
         values => Queue{items: Deque.from_seq(values)}
     }
 
-    len[T] :: Ref[Queue[T]] -> Int
+    export len[T] :: Ref[Queue[T]] -> Int
     {
         queue => match *queue {
             Queue{items: items} => Deque.len(ref items)
         }
     }
 
-    is_empty[T] :: Ref[Queue[T]] -> Bool
+    export is_empty[T] :: Ref[Queue[T]] -> Bool
     {
         queue => Queue.len(queue) == 0
     }
 
-    enqueue[T] :: Queue[T] -> T -> Queue[T]
+    export enqueue[T] :: Queue[T] -> T -> Queue[T]
     {
         Queue{items: items} => value => Queue{items: Deque.push_back(items)(value)}
     }
 
-    peek[T] :: Queue[T] -> Option[T]
+    export peek[T] :: Queue[T] -> Option[T]
     {
         Queue{items: items} => Deque.front(items)
     }
 
-    dequeue[T] :: Queue[T] -> Option[(T, Queue[T])]
+    export dequeue[T] :: Queue[T] -> Option[(T, Queue[T])]
     {
         Queue{items: items} => match Deque.pop_front(items) {
             Some((value, rest)) => Some((value, Queue{items: rest})),
@@ -50,7 +50,7 @@ Queue :: module {
         }
     }
 
-    to_seq[T] :: Queue[T] -> Seq[T]
+    export to_seq[T] :: Queue[T] -> Seq[T]
     {
         Queue{items: items} => Deque.to_seq(items)
     }

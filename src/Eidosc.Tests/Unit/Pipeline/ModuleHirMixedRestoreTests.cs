@@ -26,7 +26,7 @@ public sealed class ModuleHirMixedRestoreTests
             var typesPayloadByModule = typesPayloads.ToDictionary(static payload => payload.ModuleKey, StringComparer.Ordinal);
             File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value + 2
     }
@@ -102,7 +102,7 @@ Main :: module {
 """);
         File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -110,7 +110,7 @@ LibA :: module {
 """);
         File.WriteAllText(Path.Combine(tempDir, "lib_b.eidos"), """
 LibB :: module {
-    inc :: Int -> Int
+    export inc :: Int -> Int
     {
         value => value + 1
     }

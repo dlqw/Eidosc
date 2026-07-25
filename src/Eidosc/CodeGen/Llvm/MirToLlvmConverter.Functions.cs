@@ -1842,11 +1842,9 @@ public sealed partial class MirToLlvmConverter
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.AllocReuse, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I32);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.DropReuse, LlvmVoidType.Instance, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());
 
-        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PrintInt, LlvmVoidType.Instance, LlvmIntType.I64);
-        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PrintFloat, LlvmVoidType.Instance, LlvmFloatType.Double);
-        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PrintString, LlvmVoidType.Instance, LlvmPointerType.VoidPtr());
-        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PrintNewline, LlvmVoidType.Instance);
-        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PrintChar, LlvmVoidType.Instance, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.WriteTextRaw, LlvmVoidType.Instance, LlvmPointerType.VoidPtr());
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.WriteNewlineRaw, LlvmVoidType.Instance);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.WriteCharCodeRaw, LlvmVoidType.Instance, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.TypeId, LlvmIntType.I64, LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ClosureNew, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
 

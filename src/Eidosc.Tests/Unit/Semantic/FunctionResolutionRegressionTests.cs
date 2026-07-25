@@ -63,45 +63,59 @@ target :: Int -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_BuiltinStringFunctions_AreResolvedWithoutDeclarations()
+    public void CompilationPipeline_StdTextFunctions_AreResolvedThroughExplicitModule()
     {
         const string source = """
+import std.Text
+
 main :: String -> Int
 {
-    src => string_length(src) + string_char_at(src, 0) + string_length(string_slice(src, 0, 1))
+    src => Text.len(src) + Text.char_code_at(src)(0) + Text.len(Text.slice(src)(0)(1))
 }
 """;
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
             InputFile = "builtin_string_functions.eidos",
+            AllowVirtualInputFile = true,
             StopAtPhase = CompilationPhase.Hir,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
 
-        Assert.True(result.Success);
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Message.Contains("Undefined identifier 'string_"));
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic =>
+                $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     [Fact]
-    public void CompilationPipeline_BuiltinPrintFunctions_AreResolvedWithoutDeclarations()
+    public void CompilationPipeline_PreludeDisplayPrintFunctions_AreResolvedWithoutDeclarations()
     {
         const string source = """
 main :: String -> Unit need io
 {
-    src => { print_string(src); print_int(42) }
+    src => { print(src); print(42) }
 }
 """;
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
             InputFile = "builtin_print_functions.eidos",
+            AllowVirtualInputFile = true,
             StopAtPhase = CompilationPhase.Hir,
             UseColors = false
         }).Run();
 
-        Assert.True(result.Success);
-        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Message.Contains("Undefined identifier 'print_"));
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic =>
+                $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     [Fact]

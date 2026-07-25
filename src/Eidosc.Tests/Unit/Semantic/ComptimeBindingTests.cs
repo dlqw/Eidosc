@@ -595,7 +595,11 @@ main :: Unit -> Int
             StopAtPhase = CompilationPhase.Mir,
             LanguageVersion = EidosLanguageVersions.Current,
             EnableMirOptimizations = false,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
 
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => diagnostic.Message)));

@@ -108,69 +108,78 @@ public sealed partial class TypeInferer
 
     private void InferModuleDeclarations(ModuleDecl module)
     {
-        foreach (var decl in module.Declarations)
+        var previousModuleId = _currentModuleId;
+        _currentModuleId = module.SymbolId;
+        try
         {
-            // 设置最大错误数量限制
-            if (HasReachedTypeErrorLimit)
+            foreach (var decl in module.Declarations)
             {
-                EnsureTypeErrorLimitReported(decl.Span);
-            }
-
-            try
-            {
-                switch (decl)
+                // 设置最大错误数量限制
+                if (HasReachedTypeErrorLimit)
                 {
-                    case FuncDef func:
-                        using (MeasureTypesStep("infer_function"))
-                        {
-                            InferFunction(func);
-                        }
-                        break;
-                    case FuncDecl funcDecl:
-                        using (MeasureTypesStep("infer_function_declaration"))
-                        {
-                            InferFunctionDeclaration(funcDecl);
-                        }
-                        break;
-                    case LetDecl letDecl:
-                        using (MeasureTypesStep("infer_let_declaration"))
-                        {
-                            InferLetDecl(letDecl);
-                        }
-                        break;
-                    case LetQuestionDecl letQuestionDecl:
-                        using (MeasureTypesStep("infer_let_question_declaration"))
-                        {
-                            InferLetQuestionDecl(letQuestionDecl);
-                        }
-                        break;
-                    case EffectDef ability:
-                        InferEffectDef(ability);
-                        break;
-                    case TraitDef trait:
-                        InferTraitDef(trait);
-                        break;
-                    case ProofDecl:
-                        // Proof declarations removed during proof migration
-                        break;
-                    case ModuleDecl nestedModule:
-                        InferModuleDeclarations(nestedModule);
-                        break;
-                    case InstanceDecl instance:
-                        using (MeasureTypesStep("infer_instance_declaration"))
-                        {
-                            InferInstanceDecl(instance);
-                        }
-                        break;
+                    EnsureTypeErrorLimitReported(decl.Span);
                 }
 
-                _recoveryContext.RecordSuccess();
+                try
+                {
+                    switch (decl)
+                    {
+                        case FuncDef func:
+                            using (MeasureTypesStep("infer_function"))
+                            {
+                                InferFunction(func);
+                            }
+                            break;
+                        case FuncDecl funcDecl:
+                            using (MeasureTypesStep("infer_function_declaration"))
+                            {
+                                InferFunctionDeclaration(funcDecl);
+                            }
+                            break;
+                        case LetDecl letDecl:
+                            using (MeasureTypesStep("infer_let_declaration"))
+                            {
+                                InferLetDecl(letDecl);
+                            }
+                            break;
+                        case LetQuestionDecl letQuestionDecl:
+                            using (MeasureTypesStep("infer_let_question_declaration"))
+                            {
+                                InferLetQuestionDecl(letQuestionDecl);
+                            }
+                            break;
+                        case EffectDef ability:
+                            InferEffectDef(ability);
+                            break;
+                        case TraitDef trait:
+                            InferTraitDef(trait);
+                            break;
+                        case ProofDecl:
+                            // Proof declarations removed during proof migration
+                            break;
+                        case ModuleDecl nestedModule:
+                            InferModuleDeclarations(nestedModule);
+                            break;
+                        case InstanceDecl instance:
+                            using (MeasureTypesStep("infer_instance_declaration"))
+                            {
+                                InferInstanceDecl(instance);
+                            }
+                            break;
+                    }
+
+                    _recoveryContext.RecordSuccess();
+                }
+                catch (TypeInferenceException ex)
+                {
+                    // 类型不匹配时记录错误继续分析
+                    AddError(decl.Span, ex.Message);
+                }
             }
-            catch (TypeInferenceException ex)
-            {
-                // 类型不匹配时记录错误继续分析
-                AddError(decl.Span, ex.Message);
-            }
+        }
+        finally
+        {
+            _currentModuleId = previousModuleId;
         }
     }
 

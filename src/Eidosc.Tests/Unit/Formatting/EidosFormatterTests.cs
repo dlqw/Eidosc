@@ -260,7 +260,7 @@ else render_error(_0)
     [Fact]
     public void Format_EmptyIfBranch_KeepsEmptyBlockCompact()
     {
-        const string source = "n=>c=>if n<=0 then{}else{print_char(c);print_chars(n-1)(c)}";
+        const string source = "n=>c=>if n<=0 then{}else{write_char_code(c);write_chars(n-1)(c)}";
 
         var result = EidosFormatter.Format(source, options: NoValidation());
 
@@ -270,8 +270,8 @@ else render_error(_0)
             n => c => if n <= 0 then {}
             else
             {
-                print_char(c);
-                print_chars(n - 1)(c)
+                write_char_code(c);
+                write_chars(n - 1)(c)
             }
 
             """.ReplaceLineEndings("\n"),

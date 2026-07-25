@@ -7,6 +7,7 @@ using Eidosc.CodeGen.Llvm;
 using Eidosc.Mir;
 using Eidosc.Semantic;
 using Eidosc.Types;
+using Eidosc.ProjectSystem;
 
 namespace Eidosc.Pipeline;
 
@@ -18,6 +19,9 @@ public sealed class CompilationResult
     public IReadOnlyList<ComptimeTraceEntry> ComptimeTrace { get; init; } = [];
     public string InputFile { get; init; } = "";
     public IReadOnlyList<string> ImportSearchRoots { get; init; } = [];
+    public IReadOnlyDictionary<string, string[]> PackageImportRoots { get; init; } =
+        new Dictionary<string, string[]>(StringComparer.Ordinal);
+    public string LanguageVersion { get; init; } = EidosLanguageVersions.Current;
     public bool NoImplicitPrelude { get; init; }
     public string SourceText { get; init; } = "";
     public IReadOnlyList<Token>? Tokens { get; init; }

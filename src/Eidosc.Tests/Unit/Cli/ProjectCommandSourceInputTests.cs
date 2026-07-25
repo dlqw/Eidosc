@@ -16,7 +16,7 @@ Message :: type { Quit :: type {} , Move:: type(Int, Int) , Write:: type(String)
 handle :: Message -> Int {
     Quit() => 0,
     Move(x, y) => x + y,
-    Write(text) => text.string_length()
+    Write(_) => 1
 }
 
 main :: Int -> Int {

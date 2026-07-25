@@ -47,7 +47,7 @@ public static class InfoCommand
             [ConsoleIoCategory] = new(
                 CliMessages.InfoStdlibCategoryConsoleIo,
                 CliMessages.InfoStdlibSummaryConsoleIo,
-                ["Console.write_line", "Console.write_int", "Console.write_text_int_line", "Console.read_line_text"]),
+                ["Console.write_line", "Console.write", "Console.write_line", "Console.read_line"]),
             [NetworkCategory] = new(
                 CliMessages.InfoStdlibCategoryNetwork,
                 CliMessages.InfoStdlibSummaryNetwork,
@@ -181,44 +181,23 @@ public static class InfoCommand
 
     private static string GetStdlibCategory(string module)
     {
-        return module switch
+        var moduleName = module.Contains(WellKnownStrings.Operators.Divide, StringComparison.Ordinal)
+            ? module[(module.LastIndexOf(WellKnownStrings.Operators.Divide, StringComparison.Ordinal) + 1)..]
+            : module;
+        return moduleName switch
         {
-            "std/Functions" or
-            "std/Applicative" or
-            "std/Foldable" or
-            "std/Functor" or
-            "std/Monad" or
-            "std/Traversable" or
-            "std/Option" or
-            "std/Ordering" or
-            "std/Prelude" or
-            "std/Result" or
-            "std/Traits" or
-            "std/TraitInvoke" => FunctionalCategory,
-            "std/Math" or
-            "std/FloatMath" or
-            "std/GameMath" => MathCategory,
-            "std/Deque" or
-            "std/BinaryHeap" or
-            "std/HashMap" or
-            "std/HashSet" or
-            "std/Seq" or
-            "std/PersistentMap" or
-            "std/PersistentSet" or
-            "std/PriorityQueue" or
-            "std/Queue" or
-            "std/Stack" or
-            "std/TreeMap" or
-            "std/TreeSet" or
-            "std/SeqBuilder" => ContainersCategory,
-            "std/File" => FileIoCategory,
-            "std/Console" => ConsoleIoCategory,
-            "std/Network" => NetworkCategory,
-            "std/Binary" or
-            "std/Json" => SerializationCategory,
-            "std/Text" or
-            "std/Range" or
-            "std/Shared" => BasicsCategory,
+            "Alternative" or "Applicative" or "Either" or "Foldable" or "Functions" or
+            "Functor" or "Monad" or "Monoid" or "Option" or "Ordering" or "Prelude" or
+            "Result" or "Semigroup" or "Traits" or "TraitInvoke" or "Traversable" => FunctionalCategory,
+            "Math" or "FloatMath" or "GameMath" => MathCategory,
+            "Deque" or "BinaryHeap" or "HashMap" or "HashSet" or "Seq" or
+            "PersistentMap" or "PersistentSet" or "PriorityQueue" or "Queue" or "Stack" or
+            "TreeMap" or "TreeSet" or "SeqBuilder" => ContainersCategory,
+            "File" => FileIoCategory,
+            "Console" => ConsoleIoCategory,
+            "Network" => NetworkCategory,
+            "Binary" or "Json" => SerializationCategory,
+            "Text" or "Range" or "Shared" => BasicsCategory,
             _ => OtherCategory
         };
     }
@@ -236,13 +215,28 @@ public static class InfoCommand
         writer.WriteLine(CliMessages.InfoStdlibHeader);
         writer.WriteLine();
 
-        var modules = PrecompiledModuleRegistry.GetAvailableModulePaths();
-        if (modules.Count == 0)
+        var preludeModules = PreludeCoreImageRegistry.GetAvailableModulePaths()
+            .Select(static module => $"{WellKnownStrings.Std.Module}/{module}")
+            .ToArray();
+        var stdModules = PrecompiledModuleRegistry.GetAvailableModulePaths();
+        if (preludeModules.Length == 0 && stdModules.Count == 0)
         {
             writer.WriteLine(CliMessages.InfoStdlibNone);
             return;
         }
 
+        writer.WriteLine("Prelude Core Image（自动导入，无 package）:");
+        WriteModuleGroups(writer, preludeModules, isPrelude: true);
+        writer.WriteLine();
+        writer.WriteLine("Std package（显式依赖与 import）:");
+        WriteModuleGroups(writer, stdModules, isPrelude: false);
+    }
+
+    private static void WriteModuleGroups(
+        TextWriter writer,
+        IReadOnlyList<string> modules,
+        bool isPrelude)
+    {
         var grouped = modules
             .GroupBy(GetStdlibCategory, StringComparer.Ordinal)
             .OrderBy(group => group.Key, StringComparer.Ordinal);
@@ -257,7 +251,7 @@ public static class InfoCommand
             foreach (var module in group.OrderBy(module => module, StringComparer.Ordinal))
             {
                 var exports = PrecompiledModuleRegistry.GetExports(module);
-                writer.WriteLine(CliMessages.InfoStdlibModuleLine(FormatStdlibModulePath(module)));
+                writer.WriteLine(CliMessages.InfoStdlibModuleLine(FormatLibraryModulePath(module, isPrelude)));
                 writer.WriteLine(CliMessages.InfoStdlibValuesLine(FormatExportSummary(exports.Values)));
                 writer.WriteLine(CliMessages.InfoStdlibFunctionsLine(FormatExportSummary(exports.Functions)));
                 writer.WriteLine(CliMessages.InfoStdlibTypesLine(FormatExportSummary(exports.Types)));
@@ -280,12 +274,13 @@ public static class InfoCommand
         return values.Count == 0 ? "-" : string.Join(", ", values);
     }
 
-    private static string FormatStdlibModulePath(string modulePath)
+    private static string FormatLibraryModulePath(string modulePath, bool isPrelude)
     {
         const string stdPrefix = "std/";
-        return modulePath.StartsWith(stdPrefix, StringComparison.Ordinal)
-            ? $"std.{modulePath[stdPrefix.Length..]}"
+        var relative = modulePath.StartsWith(stdPrefix, StringComparison.Ordinal)
+            ? modulePath[stdPrefix.Length..]
             : modulePath;
+        return isPrelude ? $"Prelude.{relative}" : $"std.{relative}";
     }
 
     internal sealed record StdlibCategoryMetadata(

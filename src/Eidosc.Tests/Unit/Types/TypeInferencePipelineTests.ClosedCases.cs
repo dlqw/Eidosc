@@ -389,7 +389,7 @@ choose_leaf :: Bool -> Tree
     public void Namer_PublicClosedCaseRoot_RejectsInternalDescendant()
     {
         const string source = """
-Message :: type {
+export Message :: type {
     Text :: type { value :: String },
 
     InternalControl :: type

@@ -39,18 +39,21 @@ public sealed partial class HirBuilder
         [Ast.BinaryOp.Concat] = Hir.BinaryOp.Concat,
     }.ToFrozenDictionary();
 
-    private sealed record StdlibDesugaring(string ModulePath, string FuncName, bool SwapArgs);
+    private sealed record StdlibDesugaring(
+        string FuncName,
+        bool SwapArgs,
+        CompilerSemanticRole Role);
 
     private static readonly FrozenDictionary<Ast.BinaryOp, StdlibDesugaring> StdlibOperatorDesugaring = new Dictionary<Ast.BinaryOp, StdlibDesugaring>
     {
-        [Ast.BinaryOp.Bind] = new("std.Monad.Monad", "bind", false),
-        [Ast.BinaryOp.Coalesce] = new("std.Option", "unwrap_or", false),
-        [Ast.BinaryOp.ComposeRight] = new("std.Functions", "compose", true),
-        [Ast.BinaryOp.ComposeLeft] = new("std.Functions", "compose", false),
-        [Ast.BinaryOp.Fmap] = new("std.Functor.Functor", "fmap", true),
-        [Ast.BinaryOp.Ap] = new("std.Applicative.Applicative", "apply", false),
-        [Ast.BinaryOp.Append] = new("std.Semigroup.Semigroup", "append", false),
-        [Ast.BinaryOp.Prepend] = new("std.Seq", "cons", false),
+        [Ast.BinaryOp.Bind] = new("bind", false, CompilerSemanticRole.MonadBind),
+        [Ast.BinaryOp.Coalesce] = new("unwrap_or", false, CompilerSemanticRole.Coalesce),
+        [Ast.BinaryOp.ComposeRight] = new("compose", true, CompilerSemanticRole.Compose),
+        [Ast.BinaryOp.ComposeLeft] = new("compose", false, CompilerSemanticRole.Compose),
+        [Ast.BinaryOp.Fmap] = new("fmap", true, CompilerSemanticRole.FunctorMap),
+        [Ast.BinaryOp.Ap] = new("apply", false, CompilerSemanticRole.ApplicativeApply),
+        [Ast.BinaryOp.Append] = new("append", false, CompilerSemanticRole.SemigroupAppend),
+        [Ast.BinaryOp.Prepend] = new("cons", false, CompilerSemanticRole.Prepend),
     }.ToFrozenDictionary();
 
     private readonly SymbolTable _symbolTable;

@@ -227,6 +227,7 @@ public sealed partial class NameResolver
 
         instance.SetMethods(generated);
         _instanceMethodDeclarationDepth++;
+        _instanceMethodPublicContexts.Push(IsDeclarationPublic(instance));
         try
         {
             foreach (var method in generated)
@@ -236,6 +237,7 @@ public sealed partial class NameResolver
         }
         finally
         {
+            _instanceMethodPublicContexts.Pop();
             _instanceMethodDeclarationDepth--;
         }
     }
@@ -515,8 +517,7 @@ public sealed partial class NameResolver
             if (!TryGetImplTargetType(
                     method,
                     out var implementingTypePath,
-                    out var targetTypeId,
-                    cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
+                    out var targetTypeId))
             {
                 AddError(method.Span, DiagnosticMessages.ImplRequiresConcreteFirstParameter);
                 continue;

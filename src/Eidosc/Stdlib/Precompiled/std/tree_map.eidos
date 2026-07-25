@@ -6,16 +6,16 @@ TreeMap :: module {
     import Traits
     import TraitInvoke
 
-    TreeMap[K, V] :: type {
+    export TreeMap[K, V] :: type {
         Empty :: type {} , Node:: type{key:: K, value:: V, left:: TreeMap[K, V], right:: TreeMap[K, V], size:: Int, height:: Int}
     }
 
-    empty[K, V] :: Unit -> TreeMap[K, V]
+    export empty[K, V] :: Unit -> TreeMap[K, V]
     {
         _ => Empty()
     }
 
-    singleton[K, V] :: K -> V -> TreeMap[K, V]
+    export singleton[K, V] :: K -> V -> TreeMap[K, V]
     {
         key => value => Node{key: key, value: value, left: Empty(), right: Empty(), size: 1, height: 1}
     }
@@ -38,7 +38,7 @@ TreeMap :: module {
         }
     }
 
-    len[K, V] :: Ref[TreeMap[K, V]] -> Int
+    export len[K, V] :: Ref[TreeMap[K, V]] -> Int
     {
         map => match *map {
             Empty() => 0,
@@ -46,7 +46,7 @@ TreeMap :: module {
         }
     }
 
-    height[K, V] :: Ref[TreeMap[K, V]] -> Int
+    export height[K, V] :: Ref[TreeMap[K, V]] -> Int
     {
         map => match *map {
             Empty() => 0,
@@ -54,7 +54,7 @@ TreeMap :: module {
         }
     }
 
-    is_empty[K, V] :: Ref[TreeMap[K, V]] -> Bool
+    export is_empty[K, V] :: Ref[TreeMap[K, V]] -> Bool
     {
         map => TreeMap.len(map) == 0
     }
@@ -196,19 +196,19 @@ TreeMap :: module {
         }
     }
 
-    clone[K: Traits.Clone, V: Traits.Clone] :: Ref[TreeMap[K, V]] -> TreeMap[K, V]
+    export clone[K: Traits.Clone, V: Traits.Clone] :: Ref[TreeMap[K, V]] -> TreeMap[K, V]
     {
         map => TreeMap.clone_tree_map(map)
     }
 
-    CloneTreeMapKv :: instance Traits.Clone {
+    export CloneTreeMapKv :: instance Traits.Clone {
         clone[K: Traits.Clone, V: Traits.Clone] :: Ref[TreeMap[K, V]] -> TreeMap[K, V]
         {
             map => TreeMap.clone_tree_map(map)
         }
     }
 
-    insert[K: Traits.Ord + Traits.Clone, V] :: TreeMap[K, V] -> K -> V -> TreeMap[K, V]
+    export insert[K: Traits.Ord + Traits.Clone, V] :: TreeMap[K, V] -> K -> V -> TreeMap[K, V]
     {
         Empty() => key => value => TreeMap.singleton(key)(value),
         Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => key => value => {
@@ -221,13 +221,13 @@ TreeMap :: module {
         }
     }
 
-    from_seq[K: Traits.Ord + Traits.Clone, V] :: Seq[(K, V)] -> TreeMap[K, V]
+    export from_seq[K: Traits.Ord + Traits.Clone, V] :: Seq[(K, V)] -> TreeMap[K, V]
     {
         entries => Seq.fold_left(entries)(TreeMap.empty(()))(map => entry =>
             match entry { (key, value) => TreeMap.insert(map)(key)(value) })
     }
 
-    get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> Option[V]
+    export get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> Option[V]
     {
         Empty() => _ => None(),
         Node{key: node_key, value: node_value, left: left, right: right, size: _, height: _} => key => {
@@ -240,12 +240,12 @@ TreeMap :: module {
         }
     }
 
-    get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> V -> V
+    export get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> V -> V
     {
         map => key => fallback => Option.unwrap_or(TreeMap.get(map)(key))(fallback)
     }
 
-    contains_key[K: Traits.Ord + Traits.Clone, V] :: TreeMap[K, V] -> K -> Bool
+    export contains_key[K: Traits.Ord + Traits.Clone, V] :: TreeMap[K, V] -> K -> Bool
     {
         Empty() => _ => false,
         Node{key: node_key, value: _, left: left, right: right, size: _, height: _} => key => {
@@ -305,7 +305,7 @@ TreeMap :: module {
         }
     }
 
-    remove_entries[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> K -> TreeMap[K, V] -> TreeMap[K, V]
+    export remove_entries[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> K -> TreeMap[K, V] -> TreeMap[K, V]
     {
         [] => _ => map => map,
         [(entry_key, entry_value), ..tail] => key => map => {
@@ -317,37 +317,37 @@ TreeMap :: module {
         }
     }
 
-    remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> TreeMap[K, V]
+    export remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> TreeMap[K, V]
     {
         map => key => TreeMap.remove_entries(TreeMap.to_seq(map))(key)(TreeMap.empty(()))
     }
 
-    to_seq[K, V] :: TreeMap[K, V] -> Seq[(K, V)]
+    export to_seq[K, V] :: TreeMap[K, V] -> Seq[(K, V)]
     {
         Empty() => [],
         Node{key: key, value: value, left: left, right: right, size: _, height: _} =>
             Seq.append(TreeMap.to_seq(left))(Seq.append([(key, value)])(TreeMap.to_seq(right)))
     }
 
-    keys[K, V] :: TreeMap[K, V] -> Seq[K]
+    export keys[K, V] :: TreeMap[K, V] -> Seq[K]
     {
         Empty() => [],
         Node{key: key, value: _, left: left, right: right, size: _, height: _} =>
             Seq.append(TreeMap.keys(left))(Seq.append([key])(TreeMap.keys(right)))
     }
 
-    values[K, V] :: TreeMap[K, V] -> Seq[V]
+    export values[K, V] :: TreeMap[K, V] -> Seq[V]
     {
         map => Seq.map(TreeMap.to_seq(map))(entry => match entry { (_, value) => value })
     }
 
-    fold[K, V, A, E: effects] :: TreeMap[K, V] -> A -> (A -> K -> V -> A need E) -> A need E
+    export fold[K, V, A, E: effects] :: TreeMap[K, V] -> A -> (A -> K -> V -> A need E) -> A need E
     {
         map => initial => f => Seq.fold_left(TreeMap.to_seq(map))(initial)(acc => entry =>
             match entry { (key, value) => f(acc)(key)(value) })
     }
 
-    map_values[K: Traits.Ord + Traits.Clone, V, U, E: effects] :: TreeMap[K, V] -> (V -> U need E) -> TreeMap[K, U] need E
+    export map_values[K: Traits.Ord + Traits.Clone, V, U, E: effects] :: TreeMap[K, V] -> (V -> U need E) -> TreeMap[K, U] need E
     {
         map => f => TreeMap.from_seq(Seq.map(TreeMap.to_seq(map))(entry =>
             match entry { (key, value) => (key, f(value)) }))

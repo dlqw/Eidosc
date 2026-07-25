@@ -571,7 +571,7 @@ origin :: Pos = .{ x: 0, y: 0 };
             var payloadByModule = payloads.ToDictionary(static payload => payload.ModuleKey, StringComparer.Ordinal);
             File.WriteAllText(Path.Combine(tempDir, "lib_a.eidos"), """
 LibA :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value + 1
     }
@@ -640,7 +640,7 @@ LibA :: module {
 
             File.WriteAllText(Path.Combine(tempDir, "changed.eidos"), """
 Changed :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value + 1
     }
@@ -718,7 +718,7 @@ Main :: module {
 """);
         File.WriteAllText(libAFile, """
 LibA :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -726,7 +726,7 @@ LibA :: module {
 """);
         File.WriteAllText(libBFile, """
 LibB :: module {
-    inc :: Int -> Int
+    export inc :: Int -> Int
     {
         value => value + 1
     }
@@ -753,7 +753,7 @@ Main :: module {
 """);
         File.WriteAllText(Path.Combine(tempDir, "changed.eidos"), """
 Changed :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }

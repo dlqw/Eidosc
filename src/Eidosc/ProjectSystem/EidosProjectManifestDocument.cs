@@ -18,7 +18,7 @@ public sealed class EidosProjectManifestDocument
     public string? NativeLinkMode { get; set; }
     public EidosProjectTargetManifestDocument[]? Targets { get; set; }
     public Dictionary<string, EidosProjectDependencyManifestDocument>? Dependencies { get; set; }
-    public bool? NoImplicitStdlib { get; set; }
+    public bool? NoImplicitPrelude { get; set; }
     public EidosProjectBuildManifestDocument? Build { get; set; }
     public EidosProjectFfiManifestDocument? Ffi { get; set; }
     public EidosProjectMetaManifestDocument? Meta { get; set; }
@@ -56,11 +56,14 @@ public sealed class EidosProjectManifestDocument
             var equalsIndex = line.IndexOf('=');
             var key = equalsIndex > 0 ? line[..equalsIndex].Trim() : string.Empty;
             if ((section == null && string.Equals(key, "eidosVersion", StringComparison.Ordinal)) ||
+                (section == null && string.Equals(key, "noImplicitStdlib", StringComparison.Ordinal)) ||
                 (string.Equals(section, "language", StringComparison.Ordinal) &&
                  string.Equals(key, "syntax", StringComparison.Ordinal)))
             {
                 throw new TomlException(
-                    "Removed manifest version field detected. Use 'manifestSchema = 3' and '[language].version'.");
+                    string.Equals(key, "noImplicitStdlib", StringComparison.Ordinal)
+                        ? "Removed manifest field 'noImplicitStdlib' detected. Use 'noImplicitPrelude'; Std is an explicit package dependency."
+                        : "Removed manifest version field detected. Use 'manifestSchema = 3' and '[language].version'.");
             }
         }
     }
@@ -323,9 +326,9 @@ public sealed class EidosProjectManifestDocument
                 wrote = true;
             }
 
-            if (manifest.NoImplicitStdlib == true)
+            if (manifest.NoImplicitPrelude == true)
             {
-                AppendProperty("noImplicitStdlib", true);
+                AppendProperty("noImplicitPrelude", true);
                 wrote = true;
             }
 

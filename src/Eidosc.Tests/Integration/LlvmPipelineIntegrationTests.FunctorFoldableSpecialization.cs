@@ -17,13 +17,13 @@ public partial class LlvmPipelineIntegrationTests
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.False(string.IsNullOrWhiteSpace(result.LlvmIrText));
         Assert.DoesNotContain("eidos_fold_left", result.LlvmIrText, StringComparison.Ordinal);
-        Assert.DoesNotContain("call ptr @eidos_std__Seq__fmap(ptr", result.LlvmIrText, StringComparison.Ordinal);
+        Assert.DoesNotContain("call ptr @eidos___eidos_prelude_core__Seq__fmap(ptr", result.LlvmIrText, StringComparison.Ordinal);
         AssertFunctionalAbstractionLoweringInvariants(result.LlvmIrText);
     }
 
     private static void AssertFunctionalAbstractionLoweringInvariants(string llvmIrText)
     {
-        Assert.Contains("eidos_std__Seq__sum", llvmIrText, StringComparison.Ordinal);
+        Assert.Contains("eidos___eidos_prelude_core__Seq__sum", llvmIrText, StringComparison.Ordinal);
         Assert.DoesNotContain("unresolved_ref__", llvmIrText, StringComparison.Ordinal);
         Assert.DoesNotContain("declare ptr @eidos___lambda_", llvmIrText, StringComparison.Ordinal);
         Assert.DoesNotContain("declare i64 @eidos___lambda_", llvmIrText, StringComparison.Ordinal);
@@ -86,5 +86,44 @@ public partial class LlvmPipelineIntegrationTests
 
         Assert.Equal(4, execution.ExitCode);
     }
-}
 
+    [Fact]
+    public void ReturnedClosure_WithWideManagedAggregatePayload_NativeSmoke_RetainsEveryCapture()
+    {
+        const string source = """
+            import std.Ffi
+            import std.Text
+
+            pair_score :: (String, Int) -> Int
+            {
+                (text, score) => Text.len(text) + score
+            }
+
+            make_scorer :: RawPtr -> RawPtr -> (String, Int) -> (Int -> Int) need ffi
+            {
+                left => right => fallback => extra =>
+                    if Ffi.pointer_eq(left)(right) then {
+                        pair_score(fallback) + extra
+                    } else {
+                        0
+                    }
+            }
+
+            main :: Unit -> Int need ffi
+            {
+                _ => {
+                    pointer := Ffi.null_pointer();
+                    scorer := make_scorer(pointer)(pointer)(("wide", 2));
+                    scorer(1)
+                }
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "wide_managed_closure_payload.eidos",
+            "wide_managed_closure_payload");
+
+        Assert.Equal(7, execution.ExitCode);
+    }
+}

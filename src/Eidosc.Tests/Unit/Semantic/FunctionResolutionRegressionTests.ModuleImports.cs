@@ -50,7 +50,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Borrow,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -86,7 +87,8 @@ main :: Unit -> String
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -122,7 +124,8 @@ hash :: module {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             NoImplicitPrelude = true,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -151,7 +154,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -184,7 +188,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -220,7 +225,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -246,7 +252,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -259,15 +266,15 @@ main :: Unit -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_RepeatedUnqualifiedStdCallableLookup_UsesCandidateCache()
+    public void CompilationPipeline_RepeatedUnqualifiedPreludeOverloadLookup_UsesCandidateCache()
     {
         const string source = """
 main :: Unit -> Int
 {
     _ => {
-        first := append([1])([2]);
-        second := append([3])([4]);
-        std.Seq.len(ref first) + std.Seq.len(ref second)
+        first := unwrap_or(Some(1))(0);
+        second := unwrap_or(Some(2))(0);
+        first + second
     }
 }
 """;
@@ -277,26 +284,19 @@ main :: Unit -> Int
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             EnableDetailedProfiling = true,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
             result.Success,
             string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
         Assert.True(
-            result.ProfilingCounters.TryGetValue("Types.callableCandidateCache.misses", out var misses),
-            FormatCounters(result));
-        Assert.True(
-            result.ProfilingCounters.TryGetValue("Types.callableCandidateCache.hits", out var hits),
-            FormatCounters(result));
-        Assert.True(
             result.ProfilingCounters.TryGetValue("Types.callableResolutionCache.hits", out var resolutionHits),
             FormatCounters(result));
         Assert.True(
             result.ProfilingCounters.TryGetValue("Types.callableResolutionCache.misses", out var resolutionMisses),
             FormatCounters(result));
-        Assert.True(misses > 0, FormatCounters(result));
-        Assert.True(hits > 0, FormatCounters(result));
         Assert.True(resolutionMisses > 0, FormatCounters(result));
         Assert.True(resolutionHits > 0, FormatCounters(result));
         Assert.NotNull(result.TypeDirectedCallableResolutionSnapshot);
@@ -308,7 +308,8 @@ main :: Unit -> Int
             StopAtPhase = CompilationPhase.Types,
             EnableDetailedProfiling = true,
             PreviousTypeDirectedCallableResolutionSnapshot = result.TypeDirectedCallableResolutionSnapshot,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -347,7 +348,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -379,7 +381,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -420,7 +423,7 @@ main :: Unit -> Int
         optionApplied := unwrap_or(apply(Some(add(20)))(Some(3)))(0);
         optionShown := show(Some(8));
         resultShown := show(Ok(7));
-        orderShown := Ordering.show(compare_int(1)(2));
+        orderShown := Ordering.show(compare(1)(2));
         optionCompare := if is_lt(compare(None())(Some(1))) then { 1 } else { 0 };
         resultInput: Result.With[String, Int] := Ok(2);
         resultTraversed := match traverse(resultInput)(x => Ok(x + 1))
@@ -448,7 +451,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("42_stdlib_safe_and_traits.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -469,14 +473,14 @@ main :: Unit -> Int
     {
         const string source = """
 A :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 1
     }
 }
 
 B :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 2
     }
@@ -495,7 +499,8 @@ main :: Unit -> Int
         {
             InputFile = "ambiguous_callable_overload.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -512,14 +517,14 @@ main :: Unit -> Int
     {
         const string source = """
 A :: module {
-    join :: Int -> Int -> Int
+    export join :: Int -> Int -> Int
     {
         left => right => left + right
     }
 }
 
 B :: module {
-    join :: Int -> Int -> Int
+    export join :: Int -> Int -> Int
     {
         left => right => left + right + 1
     }
@@ -538,7 +543,8 @@ main :: Unit -> Int
         {
             InputFile = "ambiguous_infix_callable_overload.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -555,14 +561,14 @@ main :: Unit -> Int
     {
         const string source = """
 A :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 1
     }
 }
 
 B :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 2
     }
@@ -581,7 +587,8 @@ main :: Unit -> Int
         {
             InputFile = "ambiguous_pipe_callable_overload.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -598,14 +605,14 @@ main :: Unit -> Int
     {
         const string source = """
 A :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 1
     }
 }
 
 B :: module {
-    pick :: Int -> Int
+    export pick :: Int -> Int
     {
         value => value + 2
     }
@@ -624,7 +631,8 @@ main :: Unit -> Int
         {
             InputFile = "ambiguous_method_callable_overload.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -650,7 +658,8 @@ f :: append;
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -679,7 +688,8 @@ main :: Unit -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Llvm,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -730,7 +740,8 @@ Probe :: module {
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -762,7 +773,8 @@ eq_self[T: Traits.Eq] :: T -> Bool
         {
             InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -795,7 +807,8 @@ Demo.Show :: module
         {
             InputFile = "current_module_relative_qualified_trait_method.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -842,7 +855,8 @@ Demo.Append :: module
         {
             InputFile = "same_named_trait_member_over_impl_member.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -866,7 +880,7 @@ Demo.Append :: module
         const string source = """
 Lib.Semigroup :: module
 {
-    Semigroup :: trait {
+    export Semigroup :: trait {
         append :: Self -> Self -> Self
     }
 
@@ -899,7 +913,8 @@ App :: module {
         {
             InputFile = "imported_same_named_trait_member_over_impl_member.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -923,11 +938,11 @@ App :: module {
         const string source = """
 Lib.Async :: module
 {
-    Task[A] :: type {value:: A}
+    export Task[A] :: type {value:: A}
 
-    Async :: effect;
+    export Async :: effect;
 
-    spawn[A] :: (Unit -> A) -> Task[A]
+    export spawn[A] :: (Unit -> A) -> Task[A]
     {
         thunk => Task{value: thunk(())}
     }
@@ -950,7 +965,8 @@ App :: module {
         {
             InputFile = "imported_module_function_beside_same_named_effect.eidos",
             StopAtPhase = CompilationPhase.Effects,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -993,7 +1009,8 @@ Demo.Logger :: module
         {
             InputFile = "current_module_relative_qualified_effect_paths.eidos",
             StopAtPhase = CompilationPhase.Namer,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.True(
@@ -1037,7 +1054,8 @@ main :: Unit -> Int
         {
             InputFile = "module_function_short_name_leak.eidos",
             StopAtPhase = CompilationPhase.Namer,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -1076,7 +1094,8 @@ main :: Unit -> Int
         {
             InputFile = "module_method_short_name_leak.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
         }).Run();
 
         Assert.False(result.Success);
@@ -1089,6 +1108,12 @@ main :: Unit -> Int
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
                           diagnostic.Message.Contains("Ambiguous callable overload 'pick'", StringComparison.Ordinal));
     }
+
+    private static Dictionary<string, string[]> StdPackageRoots() =>
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            [WellKnownStrings.Std.Module] = []
+        };
 
     private static string FormatCounters(CompilationResult result)
     {

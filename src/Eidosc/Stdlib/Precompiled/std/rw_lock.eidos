@@ -10,11 +10,11 @@ ptr_null :: Unit -> RawPtr compiler(internal, intrinsic: "ptr_null");
 
 /// A reader-writer lock allowing concurrent reads or exclusive writes.
 @[derive(Copy)]
-RwLock[A] :: type {handle:: RawPtr}
+export RwLock[A] :: type {handle:: RawPtr}
 
 /// Observable non-blocking reader-writer lock state.
 @[derive(Copy)]
-Status :: type {
+export Status :: type {
     RwLockIdle :: type {} , RwLockReadable :: type {} , RwLockBlocked :: type {}
 }
 
@@ -61,13 +61,13 @@ replace_inner_runtime :: RawPtr -> RawPtr -> Unit compiler(internal) need ffi;
 
 
 /// Create a runtime-backed reader-writer lock handle.
-new[A] :: Unit -> RwLock[A] need ffi
+export new[A] :: Unit -> RwLock[A] need ffi
 {
     _ => RwLock{handle: RwLock.new_runtime(ptr_null())}
 }
 
 /// Create a runtime-backed reader-writer lock that owns a boxed Eidos value.
-new_value[A] :: A -> RwLock[A] need ffi
+export new_value[A] :: A -> RwLock[A] need ffi
 {
     value => {
         boxed := Ffi.box_value[A](value);
@@ -78,19 +78,19 @@ new_value[A] :: A -> RwLock[A] need ffi
 }
 
 /// Try to acquire a read lock without suspending the caller.
-try_read[A] :: RwLock[A] -> Bool need ffi
+export try_read[A] :: RwLock[A] -> Bool need ffi
 {
     RwLock{handle: handle} => RwLock.try_read_runtime(handle)
 }
 
 /// Try to acquire an exclusive write lock without suspending the caller.
-try_write[A] :: RwLock[A] -> Bool need ffi
+export try_write[A] :: RwLock[A] -> Bool need ffi
 {
     RwLock{handle: handle} => RwLock.try_write_runtime(handle)
 }
 
 /// Release a read lock previously acquired by try_read.
-unlock_read[A] :: RwLock[A] -> Unit need ffi
+export unlock_read[A] :: RwLock[A] -> Unit need ffi
 {
     RwLock{handle: handle} => {
         RwLock.unlock_read_runtime(handle);
@@ -99,7 +99,7 @@ unlock_read[A] :: RwLock[A] -> Unit need ffi
 }
 
 /// Release a write lock previously acquired by try_write.
-unlock_write[A] :: RwLock[A] -> Unit need ffi
+export unlock_write[A] :: RwLock[A] -> Unit need ffi
 {
     RwLock{handle: handle} => {
         RwLock.unlock_write_runtime(handle);
@@ -108,7 +108,7 @@ unlock_write[A] :: RwLock[A] -> Unit need ffi
 }
 
 /// Probe whether a read lock can be acquired now, releasing it immediately on success.
-try_read_then_unlock[A] :: RwLock[A] -> Bool need ffi
+export try_read_then_unlock[A] :: RwLock[A] -> Bool need ffi
 {
     rw => if RwLock.try_read(rw) then {
         released := RwLock.unlock_read(rw);
@@ -119,7 +119,7 @@ try_read_then_unlock[A] :: RwLock[A] -> Bool need ffi
 }
 
 /// Probe whether a write lock can be acquired now, releasing it immediately on success.
-try_write_then_unlock[A] :: RwLock[A] -> Bool need ffi
+export try_write_then_unlock[A] :: RwLock[A] -> Bool need ffi
 {
     rw => if RwLock.try_write(rw) then {
         released := RwLock.unlock_write(rw);
@@ -130,7 +130,7 @@ try_write_then_unlock[A] :: RwLock[A] -> Bool need ffi
 }
 
 /// Probe the reader-writer lock state without keeping a lock.
-status[A] :: RwLock[A] -> Status need ffi
+export status[A] :: RwLock[A] -> Status need ffi
 {
     rw => if RwLock.try_write(rw) then {
         released := RwLock.unlock_write(rw);
@@ -144,7 +144,7 @@ status[A] :: RwLock[A] -> Status need ffi
 }
 
 /// Return true when no reader or writer is currently holding the lock.
-status_is_idle :: Status -> Bool
+export status_is_idle :: Status -> Bool
 {
     RwLockIdle() => true,
     RwLockReadable() => false,
@@ -152,7 +152,7 @@ status_is_idle :: Status -> Bool
 }
 
 /// Return true when another read lock can be acquired immediately.
-status_is_readable :: Status -> Bool
+export status_is_readable :: Status -> Bool
 {
     RwLockIdle() => true,
     RwLockReadable() => true,
@@ -160,7 +160,7 @@ status_is_readable :: Status -> Bool
 }
 
 /// Return true when neither read nor write can be acquired immediately.
-status_is_blocked :: Status -> Bool
+export status_is_blocked :: Status -> Bool
 {
     RwLockIdle() => false,
     RwLockReadable() => false,
@@ -168,7 +168,7 @@ status_is_blocked :: Status -> Bool
 }
 
 /// Select a value from a reader-writer lock status snapshot.
-status_value_or[A] :: Status -> A -> A -> A -> A
+export status_value_or[A] :: Status -> A -> A -> A -> A
 {
     RwLockIdle() => idle_value => _ => _ => idle_value,
     RwLockReadable() => _ => readable_value => _ => readable_value,
@@ -176,7 +176,7 @@ status_value_or[A] :: Status -> A -> A -> A -> A
 }
 
 /// Lazily select a value from a reader-writer lock status snapshot.
-status_value_or_else[A, E1: effects, E2: effects, E3: effects] :: Status -> (Unit -> A need E1) -> (Unit -> A need E2) -> (Unit -> A need E3) -> A need E1, E2, E3
+export status_value_or_else[A, E1: effects, E2: effects, E3: effects] :: Status -> (Unit -> A need E1) -> (Unit -> A need E2) -> (Unit -> A need E3) -> A need E1, E2, E3
 {
     RwLockIdle() => idle_value => _ => _ => idle_value(()),
     RwLockReadable() => _ => readable_value => _ => readable_value(()),
@@ -184,7 +184,7 @@ status_value_or_else[A, E1: effects, E2: effects, E3: effects] :: Status -> (Uni
 }
 
 /// Try to run a read critical section immediately, releasing the read lock on success.
-try_with_read[A, B, E: effects] :: RwLock[A] -> (Unit -> B need E) -> Option[B] need ffi, E
+export try_with_read[A, B, E: effects] :: RwLock[A] -> (Unit -> B need E) -> Option[B] need ffi, E
 {
     rw => body => if RwLock.try_read(rw) then {
         result := body(());
@@ -196,7 +196,7 @@ try_with_read[A, B, E: effects] :: RwLock[A] -> (Unit -> B need E) -> Option[B] 
 }
 
 /// Try to run a write critical section immediately, releasing the write lock on success.
-try_with_write[A, B, E: effects] :: RwLock[A] -> (Unit -> B need E) -> Option[B] need ffi, E
+export try_with_write[A, B, E: effects] :: RwLock[A] -> (Unit -> B need E) -> Option[B] need ffi, E
 {
     rw => body => if RwLock.try_write(rw) then {
         result := body(());
@@ -208,7 +208,7 @@ try_with_write[A, B, E: effects] :: RwLock[A] -> (Unit -> B need E) -> Option[B]
 }
 
 /// Try to read the protected Eidos value under a read lock.
-try_with_read_value[A, B, E: effects] :: RwLock[A] -> (A -> B need E) -> Option[B] need ffi, E
+export try_with_read_value[A, B, E: effects] :: RwLock[A] -> (A -> B need E) -> Option[B] need ffi, E
 {
     RwLock{handle: handle} => body => if RwLock.try_read_runtime(handle) then {
         boxed := RwLock.get_inner_runtime(handle);
@@ -222,7 +222,7 @@ try_with_read_value[A, B, E: effects] :: RwLock[A] -> (A -> B need E) -> Option[
 }
 
 /// Try to read the protected Eidos value under a write lock.
-try_with_write_value[A, B, E: effects] :: RwLock[A] -> (A -> B need E) -> Option[B] need ffi, E
+export try_with_write_value[A, B, E: effects] :: RwLock[A] -> (A -> B need E) -> Option[B] need ffi, E
 {
     RwLock{handle: handle} => body => if RwLock.try_write_runtime(handle) then {
         boxed := RwLock.get_inner_runtime(handle);
@@ -236,7 +236,7 @@ try_with_write_value[A, B, E: effects] :: RwLock[A] -> (A -> B need E) -> Option
 }
 
 /// Try to replace the protected Eidos value using the current value.
-try_update[A, E: effects] :: RwLock[A] -> (A -> A need E) -> Option[A] need ffi, E
+export try_update[A, E: effects] :: RwLock[A] -> (A -> A need E) -> Option[A] need ffi, E
 {
     RwLock{handle: handle} => update => if RwLock.try_write_runtime(handle) then {
         old_boxed := RwLock.get_inner_runtime(handle);

@@ -334,7 +334,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
                functionRef.TraitSelfPosition != SelfPosition.Unknown ||
                functionRef.TraitSelfParameterIndices.Count > 0 ||
                functionRef.TraitSelfInResult ||
-               functionRef.TraitMethodRole != TraitMethodRole.None;
+               functionRef.CompilerSemanticRole != CompilerSemanticRole.None;
     }
 
     private bool ReferencesGenericTemplateCandidate(MirFunctionRef functionRef)
@@ -906,7 +906,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             TraitSelfPosition = SelfPosition.Unknown,
             TraitSelfParameterIndices = [],
             TraitSelfInResult = false,
-            TraitMethodRole = TraitMethodRole.None
+            CompilerSemanticRole = CompilerSemanticRole.None
         };
     }
 

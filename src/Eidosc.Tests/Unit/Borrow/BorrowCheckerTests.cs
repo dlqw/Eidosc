@@ -219,6 +219,10 @@ main :: Unit -> Int
     {
         return CompilationHelper.Source(source, TestSourceLoader.GetFullPath(Paths.Fixture("basic/__inline_borrow_checker.eidos")))
             .ToPhase(CompilationPhase.Borrow)
+            .WithOptions(options => options.PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            })
             .Run();
     }
 }

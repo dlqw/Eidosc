@@ -39,17 +39,17 @@ File :: module {
     string_length :: String -> Int compiler(internal, intrinsic: "string_length");
 
 
-    exists :: String -> Bool need io
+    export exists :: String -> Bool need io
     {
         path => file_exists(path)
     }
 
-    read_text_or_empty :: String -> String need io
+    export read_text_or_empty :: String -> String need io
     {
         path => file_read_all_text(path)
     }
 
-    read_text_or :: String -> String -> String need io
+    export read_text_or :: String -> String -> String need io
     {
         path => fallback => match File.read_text(path)
         {
@@ -58,7 +58,7 @@ File :: module {
         }
     }
 
-    read_text_or_else[E: effects] :: String -> (Unit -> String need E) -> String need io, E
+    export read_text_or_else[E: effects] :: String -> (Unit -> String need E) -> String need io, E
     {
         path => fallback => match File.read_text(path)
         {
@@ -67,7 +67,7 @@ File :: module {
         }
     }
 
-    read_text :: String -> Result[String, String] need io
+    export read_text :: String -> Result[String, String] need io
     {
         path => {
             text := file_read_all_text(path);
@@ -75,7 +75,7 @@ File :: module {
         }
     }
 
-    read_text_opt :: String -> Option[String] need io
+    export read_text_opt :: String -> Option[String] need io
     {
         path => match File.read_text(path)
         {
@@ -84,27 +84,27 @@ File :: module {
         }
     }
 
-    write_text :: String -> String -> Bool need io
+    export write_text :: String -> String -> Bool need io
     {
         path => content => file_write_all_text(path, content)
     }
 
-    write_text_result :: String -> String -> Result[Bool, String] need io
+    export write_text_result :: String -> String -> Result[Bool, String] need io
     {
         path => content => if file_write_all_text(path, content) then { Ok(true) } else { Err(io_last_error()) }
     }
 
-    write_text_error_opt :: String -> String -> Option[String] need io
+    export write_text_error_opt :: String -> String -> Option[String] need io
     {
         path => content => if file_write_all_text(path, content) then { None() } else { Some(io_last_error()) }
     }
 
-    is_separator :: String -> Bool
+    export is_separator :: String -> Bool
     {
         text => text == "/" || text == "\\"
     }
 
-    last_separator_index :: String -> Int
+    export last_separator_index :: String -> Int
     {
         path => {
             slash := Text.last_index_of_or(Text.clone(ref path))("/")(-1);
@@ -113,17 +113,17 @@ File :: module {
         }
     }
 
-    has_trailing_separator :: String -> Bool
+    export has_trailing_separator :: String -> Bool
     {
         path => Text.ends_with(Text.clone(ref path))("/") || Text.ends_with(Text.clone(ref path))("\\")
     }
 
-    has_leading_separator :: String -> Bool
+    export has_leading_separator :: String -> Bool
     {
         path => Text.starts_with(Text.clone(ref path))("/") || Text.starts_with(Text.clone(ref path))("\\")
     }
 
-    join_path :: String -> String -> String
+    export join_path :: String -> String -> String
     {
         left => right =>
             if Text.empty(Text.clone(ref left)) then { Text.clone(ref right) }
@@ -132,26 +132,26 @@ File :: module {
             else { Text.clone(ref left) ++ "/" ++ Text.clone(ref right) }
     }
 
-    join_paths :: Seq[String] -> String
+    export join_paths :: Seq[String] -> String
     {
         [] => "",
         [head] => head,
         [head, ..tail] => File.join_path(head)(File.join_paths(tail))
     }
 
-    normalize_separators :: String -> String
+    export normalize_separators :: String -> String
     {
         path => Text.replace_all(Text.clone(ref path))("\\")("/")
     }
 
-    ensure_trailing_separator :: String -> String
+    export ensure_trailing_separator :: String -> String
     {
         path =>
             if Text.empty(Text.clone(ref path)) || File.has_trailing_separator(Text.clone(ref path)) then { Text.clone(ref path) }
             else { Text.clone(ref path) ++ "/" }
     }
 
-    trim_trailing_separator :: String -> String
+    export trim_trailing_separator :: String -> String
     {
         path =>
             if string_length(Text.clone(ref path)) <= 1 then { Text.clone(ref path) }
@@ -159,7 +159,7 @@ File :: module {
             else { Text.clone(ref path) }
     }
 
-    name :: String -> String
+    export name :: String -> String
     {
         path => {
             separator := File.last_separator_index(Text.clone(ref path));
@@ -168,7 +168,7 @@ File :: module {
         }
     }
 
-    directory_name :: String -> String
+    export directory_name :: String -> String
     {
         path => {
             separator := File.last_separator_index(Text.clone(ref path));
@@ -177,7 +177,7 @@ File :: module {
         }
     }
 
-    extension :: String -> String
+    export extension :: String -> String
     {
         path => {
             name := File.name(Text.clone(ref path));
@@ -187,7 +187,7 @@ File :: module {
         }
     }
 
-    extension_without_dot :: String -> String
+    export extension_without_dot :: String -> String
     {
         path => {
             ext := File.extension(Text.clone(ref path));
@@ -196,7 +196,7 @@ File :: module {
         }
     }
 
-    stem :: String -> String
+    export stem :: String -> String
     {
         path => {
             name := File.name(Text.clone(ref path));
@@ -206,12 +206,12 @@ File :: module {
         }
     }
 
-    name_without_extension :: String -> String
+    export name_without_extension :: String -> String
     {
         path => File.stem(path)
     }
 
-    normalize_extension :: String -> String
+    export normalize_extension :: String -> String
     {
         ext =>
             if Text.empty(Text.clone(ref ext)) then { "" }
@@ -219,12 +219,12 @@ File :: module {
             else { "." ++ Text.clone(ref ext) }
     }
 
-    has_extension :: String -> String -> Bool
+    export has_extension :: String -> String -> Bool
     {
         path => ext => File.extension(Text.clone(ref path)) == File.normalize_extension(Text.clone(ref ext))
     }
 
-    change_extension :: String -> String -> String
+    export change_extension :: String -> String -> String
     {
         path => ext => {
             dir := File.directory_name(Text.clone(ref path));
@@ -233,12 +233,12 @@ File :: module {
         }
     }
 
-    without_extension :: String -> String
+    export without_extension :: String -> String
     {
         path => File.change_extension(path)("")
     }
 
-    last_success :: Unit -> Bool need io
+    export last_success :: Unit -> Bool need io
     {
         _ => {
             status := io_last_success();
@@ -246,7 +246,7 @@ File :: module {
         }
     }
 
-    last_error :: Unit -> String need io
+    export last_error :: Unit -> String need io
     {
         _ => {
             error := io_last_error();

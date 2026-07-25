@@ -89,6 +89,8 @@ public record ImportDecl : Declaration
     /// </summary>
     public string? Alias { get; private set; }
 
+    internal bool IsCompilerInjectedPrelude { get; private set; }
+
     /// <summary>
     /// 解析后的模块符号 ID
     /// </summary>
@@ -344,6 +346,7 @@ public record ImportDecl : Declaration
     internal void SetImportKind(ImportKind kind) => Kind = kind;
     internal void SetAlias(string? alias) => Alias = alias;
     internal void AddSelectiveImport(SelectiveImportNode node) => SelectiveImports.Add(node);
+    internal void SetCompilerInjectedPrelude(bool value) => IsCompilerInjectedPrelude = value;
 
     public override XmlElement ToXmlElement(XmlDocument doc)
     {

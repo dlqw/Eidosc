@@ -176,11 +176,11 @@ internal static class DeclarationClauseBinder
         }
 
         if (declaration is not (FuncDef or FuncDecl) &&
-            (directive.Intrinsic != null || directive.LlvmAbi != null))
+            (directive.Intrinsic != null || directive.LlvmAbi != null || directive.Role != null))
         {
             diagnostics.Add(new ClauseBindingDiagnostic(
                 declaration.Span,
-                "compiler intrinsic and llvm_abi fields are only valid on functions",
+                "compiler intrinsic, llvm_abi, and role fields are only valid on functions",
                 "E3058"));
         }
 

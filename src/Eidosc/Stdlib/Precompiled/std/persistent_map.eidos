@@ -6,15 +6,15 @@ PersistentMap :: module {
     import Traits
     import TraitInvoke
 
-    Node[K, V] :: type {key:: K, value:: V, left:: Link[K, V], right:: Link[K, V], size:: Int, height:: Int}
+    export Node[K, V] :: type {key:: K, value:: V, left:: Link[K, V], right:: Link[K, V], size:: Int, height:: Int}
 
-    Link[K, V] :: type {
+    export Link[K, V] :: type {
         Empty :: type {} , Link:: type(Shared.Shared[Node[K, V]])
     }
 
-    PersistentMap[K, V] :: type {root:: Link[K, V]}
+    export PersistentMap[K, V] :: type {root:: Link[K, V]}
 
-    empty[K, V] :: Unit -> PersistentMap[K, V]
+    export empty[K, V] :: Unit -> PersistentMap[K, V]
     {
         _ => PersistentMap{root: Empty()}
     }
@@ -56,12 +56,12 @@ PersistentMap :: module {
         }
     }
 
-    len[K, V] :: Ref[PersistentMap[K, V]] -> Int
+    export len[K, V] :: Ref[PersistentMap[K, V]] -> Int
     {
         map => PersistentMap.len_link(PersistentMap.clone_link(ref map.root))
     }
 
-    is_empty[K, V] :: Ref[PersistentMap[K, V]] -> Bool
+    export is_empty[K, V] :: Ref[PersistentMap[K, V]] -> Bool
     {
         map => PersistentMap.len(map) == 0
     }
@@ -199,14 +199,14 @@ PersistentMap :: module {
         }
     }
 
-    insert[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> V -> PersistentMap[K, V]
+    export insert[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> V -> PersistentMap[K, V]
     {
         map => key => value => PersistentMap{
             root: PersistentMap.insert_link(PersistentMap.clone_link(ref map.root))(key)(value)
         }
     }
 
-    singleton[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: K -> V -> PersistentMap[K, V]
+    export singleton[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: K -> V -> PersistentMap[K, V]
     {
         key => value => {
             map := PersistentMap.empty(())
@@ -214,7 +214,7 @@ PersistentMap :: module {
         }
     }
 
-    from_seq[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> PersistentMap[K, V]
+    export from_seq[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> PersistentMap[K, V]
     {
         entries => Seq.fold_left(entries)(PersistentMap.empty(()))(map => entry =>
             match entry { (key, value) => PersistentMap.insert(ref map)(key)(value) })
@@ -237,12 +237,12 @@ PersistentMap :: module {
         }
     }
 
-    get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> Option[V]
+    export get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> Option[V]
     {
         map => key => PersistentMap.get_link(PersistentMap.clone_link(ref map.root))(key)
     }
 
-    get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> V -> V
+    export get_or[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> V -> V
     {
         map => key => fallback => Option.unwrap_or(PersistentMap.get(map)(key))(fallback)
     }
@@ -264,7 +264,7 @@ PersistentMap :: module {
         }
     }
 
-    contains_key[K: Traits.Ord + Traits.Clone, V] :: Ref[PersistentMap[K, V]] -> K -> Bool
+    export contains_key[K: Traits.Ord + Traits.Clone, V] :: Ref[PersistentMap[K, V]] -> K -> Bool
     {
         map => key => PersistentMap.contains_link(PersistentMap.clone_link(ref map.root))(key)
     }
@@ -333,7 +333,7 @@ PersistentMap :: module {
         }
     }
 
-    remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> PersistentMap[K, V]
+    export remove[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> K -> PersistentMap[K, V]
     {
         map => key => PersistentMap{
             root: PersistentMap.remove_link(PersistentMap.clone_link(ref map.root))(key)
@@ -353,17 +353,17 @@ PersistentMap :: module {
         }
     }
 
-    to_seq[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[(K, V)]
+    export to_seq[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[(K, V)]
     {
         map => PersistentMap.to_seq_link(PersistentMap.clone_link(ref map.root))
     }
 
-    keys[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[K]
+    export keys[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[K]
     {
         map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (key, _) => key })
     }
 
-    values[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[V]
+    export values[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[V]
     {
         map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (_, value) => value })
     }

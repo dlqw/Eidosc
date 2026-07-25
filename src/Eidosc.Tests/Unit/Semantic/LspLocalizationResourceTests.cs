@@ -170,7 +170,7 @@ public sealed class LspLocalizationResourceTests
     public void InterpreterMessages_ResolveRuntimeDisplayResources()
     {
         Assert.Equal("<function(x, y)>", InterpreterMessages.RuntimeFunctionDisplay("x, y"));
-        Assert.Equal("<builtin:print_int>", InterpreterMessages.RuntimeBuiltinFunctionDisplay("print_int"));
+        Assert.Equal("<builtin:write_text_raw>", InterpreterMessages.RuntimeBuiltinFunctionDisplay("write_text_raw"));
     }
 }
 

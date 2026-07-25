@@ -34,7 +34,7 @@ public partial class MirBuilderTests
             TraitSelfPosition = SelfPosition.InParameter,
             TraitSelfParameterIndices = [0],
             TraitSelfInResult = false,
-            TraitMethodRole = TraitMethodRole.None
+            CompilerSemanticRole = CompilerSemanticRole.None
         });
 
         var module = new HirModule

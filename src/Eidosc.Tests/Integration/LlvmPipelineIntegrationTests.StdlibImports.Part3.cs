@@ -86,34 +86,40 @@ public partial class LlvmPipelineIntegrationTests
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Semigroup__append_int", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Semigroup__SemigroupInt__append", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Semigroup__append3_seq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Semigroup__SemigroupString__append", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Semigroup__append3", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Semigroup__SemigroupSeq__append", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("__eidos_prelude_core__Semigroup__append3__spec_", StringComparison.Ordinal)) >= 3);
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__empty_int", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__empty_int", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__combine_strings", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__empty_string", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__combine", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__empty_seq__spec_", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("__eidos_prelude_core__Monoid__combine__spec_", StringComparison.Ordinal)) >= 3);
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__is_empty", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__is_empty", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__law_unit", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__law_unit", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__inverse", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__inverse", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Monoid__multiply", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Monoid__multiply", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -129,85 +135,85 @@ public partial class LlvmPipelineIntegrationTests
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__map", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__map", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__map_err", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__map_err", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__FunctorResultWithE__fmap", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__FunctorResultWithE__fmap", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__ApplicativeResultWithE__pure", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__ApplicativeResultWithE__pure", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__ApplicativeResultWithE__apply", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__ApplicativeResultWithE__apply", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__sequence", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__sequence", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__FoldableResultWithE__fold_left", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__FoldableResultWithE__fold_left", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__FoldableResultWithE__fold_right", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__FoldableResultWithE__fold_right", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__MonadResultWithE__bind", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__MonadResultWithE__bind", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__TraversableResultWithE__traverse", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__TraversableResultWithE__traverse", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__and_then", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__and_then", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__map_or", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__map_or", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__map_or_else", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__map_or_else", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__and_", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__and_", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__or_", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__or_", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__or_else", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__or_else", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__unwrap_or", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__unwrap_or", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__unwrap_or_else", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__unwrap_or_else", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__unwrap_err_or", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__unwrap_err_or", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__flatten", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__flatten", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__transpose_option", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__transpose_option", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__EqResultTe__eq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__EqResultTe__eq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__OrdResultTe__compare", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__OrdResultTe__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__ok", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__ok", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__err", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__err", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__is_ok", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__is_ok", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Result__is_err", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Result__is_err", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -236,7 +242,7 @@ public partial class LlvmPipelineIntegrationTests
             mirModule.Functions.Count(function => function.Name.StartsWith("traverse_with_alias_applicative__spec_", StringComparison.Ordinal)) >= 2);
         AssertNoUnresolvedMirFunctionReferences(mirModule);
         Assert.True(
-            mirModule.Functions.Count(function => function.Name.StartsWith("std__Traversable__map_applicative__spec_", StringComparison.Ordinal)) >= 2);
+            mirModule.Functions.Count(function => function.Name.StartsWith("__eidos_prelude_core__Traversable__map_applicative__spec_", StringComparison.Ordinal)) >= 2);
     }
 
     [Fact]
@@ -308,43 +314,43 @@ public partial class LlvmPipelineIntegrationTests
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__ShowOrdering__show", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__ShowOrdering__show", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Text__ShowString__show", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__OrdOrdering__compare", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__OrdOrdering__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Text__EqString__eq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__ne_value", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__ne_value", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__lt_value", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__lt_value", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__ge_value", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__ge_value", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__min_value", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__min_value", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__max_value", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__max_value", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__clamp_value", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__clamp_value", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__between_inclusive", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__between_inclusive", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__between_exclusive", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__between_exclusive", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__TraitInvoke__hash_bucket_index", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__TraitInvoke__hash_bucket_index", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -487,15 +493,15 @@ public partial class LlvmPipelineIntegrationTests
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Math__pow", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("std__Math__is_zero_", StringComparison.Ordinal)) >= 2);
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("std__Math__square_", StringComparison.Ordinal)) >= 2);
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Math__is_zero_f", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Math__square_f", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Math__hypot_f", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Math__hypot_", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -554,24 +560,12 @@ public partial class LlvmPipelineIntegrationTests
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Console__write_line", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("std__Console__write_line_", StringComparison.Ordinal)) >= 3);
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Console__write_int_line", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Console__write_float_line", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Console__write_bool_line", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Console__write_char_line", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Console__write_text_int_line", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Console__write_text_bool_line", StringComparison.Ordinal));
+            function => function.Name.Contains("std__Console__write_char_code_line", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Console__read_line_result", StringComparison.Ordinal));
@@ -849,7 +843,7 @@ public partial class LlvmPipelineIntegrationTests
         var result = RunFixtureAtMir(Fx("stdlib/std_result_import.eidos"));
         var mir = Assert.IsType<MirModule>(result.MirModule);
         var eqHelpers = mir.Functions
-            .Where(function => function.Name.StartsWith("std__TraitInvoke__eq_value", StringComparison.Ordinal))
+            .Where(function => function.Name.StartsWith("__eidos_prelude_core__TraitInvoke__eq_value", StringComparison.Ordinal))
             .ToList();
 
         Assert.All(eqHelpers, helper =>
@@ -1107,8 +1101,8 @@ public partial class LlvmPipelineIntegrationTests
     private static int CountTraversableApplicativeHelperSpecializations(MirModule mirModule)
     {
         return mirModule.Functions.Count(function =>
-            function.Name.StartsWith("std__Traversable__map_applicative__spec_", StringComparison.Ordinal) ||
-            function.Name.StartsWith("std__Traversable__map2_applicative__spec_", StringComparison.Ordinal));
+            function.Name.StartsWith("__eidos_prelude_core__Traversable__map_applicative__spec_", StringComparison.Ordinal) ||
+            function.Name.StartsWith("__eidos_prelude_core__Traversable__map2_applicative__spec_", StringComparison.Ordinal));
     }
 
     private static IEnumerable<MirFunctionRef> EnumerateFunctionRefs(MirInstruction instruction)

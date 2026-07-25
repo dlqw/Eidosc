@@ -59,27 +59,39 @@ internal sealed class NameLookupService
             return LookupValue(name, kind.HasFlag(LookupKind.Constructor), context);
         }
 
-        var candidates = new List<LookupCandidate>();
-        AddCandidate(_symbolTable.LookupType(name), ResolutionKind.Type);
-        AddCandidate(_symbolTable.LookupEffect(name), ResolutionKind.Effect);
-        AddCandidate(_symbolTable.LookupConstructor(name), ResolutionKind.Constructor);
-        AddCandidate(_symbolTable.LookupModule(name), ResolutionKind.Module);
+        var localCandidates = new List<LookupCandidate>();
+        AddLexicalCandidate(localCandidates, _symbolTable.LookupType(name), ResolutionKind.Type);
+        AddLexicalCandidate(localCandidates, _symbolTable.LookupEffect(name), ResolutionKind.Effect);
+        AddLexicalCandidate(localCandidates, _symbolTable.LookupConstructor(name), ResolutionKind.Constructor);
+        AddLexicalCandidate(localCandidates, _symbolTable.LookupModule(name), ResolutionKind.Module);
 
-        if (context.ImportScope != null)
+        if (context.CurrentModule.IsValid)
         {
-            foreach (var imported in context.ImportScope.GetEffectiveImportDetails(name))
+            foreach (var binding in _symbolTable.Modules.GetAccessibleBindingsByName(
+                         context.CurrentModule,
+                         name,
+                         context.CurrentModule))
             {
-                if (imported.SymbolId.IsValid && MatchesRequestedKind(imported.Kind, kind))
+                if (MatchesRequestedKind(binding.Kind, kind))
                 {
-                    candidates.Add(new LookupCandidate(name, imported.SymbolId, imported.Kind));
+                    localCandidates.Add(new LookupCandidate(name, binding.SymbolId, binding.Kind));
                 }
             }
         }
 
-        var matching = candidates
+        var matching = localCandidates
             .Where(candidate => MatchesRequestedKind(candidate.Kind, kind))
             .DistinctBy(candidate => candidate.SymbolId)
             .ToArray();
+        if (matching.Length == 0 && context.ImportScope != null)
+        {
+            matching = context.ImportScope.GetEffectiveImportDetails(name)
+                .Where(imported => imported.SymbolId.IsValid && MatchesRequestedKind(imported.Kind, kind))
+                .Select(imported => new LookupCandidate(name, imported.SymbolId, imported.Kind))
+                .DistinctBy(candidate => candidate.SymbolId)
+                .ToArray();
+        }
+
         if (matching.Length == 1)
         {
             var selected = matching[0];
@@ -98,12 +110,34 @@ internal sealed class NameLookupService
 
         return LookupResult.NotFound();
 
-        void AddCandidate(SymbolId? symbolId, ResolutionKind resolutionKind)
+        void AddCandidate(
+            List<LookupCandidate> candidates,
+            SymbolId? symbolId,
+            ResolutionKind resolutionKind)
         {
             if (symbolId is { IsValid: true } id)
             {
                 candidates.Add(new LookupCandidate(name, id, resolutionKind));
             }
+        }
+
+        void AddLexicalCandidate(
+            List<LookupCandidate> candidates,
+            SymbolId? symbolId,
+            ResolutionKind resolutionKind)
+        {
+            if (symbolId is not { IsValid: true } id)
+            {
+                return;
+            }
+
+            if (_symbolTable.Modules.TryGetOwningModule(id, out var owner) &&
+                (!context.CurrentModule.IsValid || owner.Id != context.CurrentModule))
+            {
+                return;
+            }
+
+            AddCandidate(candidates, id, resolutionKind);
         }
     }
 
@@ -204,38 +238,38 @@ internal sealed class NameLookupService
 
         if (context.CurrentModule.IsValid && context.ImportScope != null)
         {
-            if (ambientSymbol.HasValue &&
-                IsCurrentModuleMember(context.CurrentModule, ambientSymbol.Value) &&
-                TryCollectImportedValueCandidates(context.ImportScope, name, out var importedValueCandidates))
+            var currentModuleValues = _symbolTable.Modules.GetAccessibleBindingsByName(
+                context.CurrentModule,
+                name,
+                context.CurrentModule,
+                new HashSet<ResolutionKind> { ResolutionKind.Value });
+            if (currentModuleValues.Count == 1)
             {
-                // Trait method imports are synthetic — they should not shadow or
-                // conflict with the module's own direct definitions.
-                var nonTraitImportCount = CountNonTraitImports(importedValueCandidates);
-                if (nonTraitImportCount == 0)
-                {
-                    // All imports are trait methods; module's own definition wins.
-                    return LookupResult.Found(ambientSymbol.Value, ResolutionKind.Value);
-                }
+                return LookupResult.Found(currentModuleValues[0].SymbolId, ResolutionKind.Value);
+            }
 
-                var valueCandidates = new List<ImportedSymbol>(nonTraitImportCount + 1)
-                {
-                    new()
-                    {
-                        Name = name,
-                        SymbolId = ambientSymbol.Value,
-                        Kind = ResolutionKind.Value
-                    }
-                };
-                for (var i = 0; i < importedValueCandidates.Count; i++)
-                {
-                    var candidate = importedValueCandidates[i];
-                    if (!candidate.IsTraitMethod)
-                    {
-                        valueCandidates.Add(candidate);
-                    }
-                }
+            if (currentModuleValues.Count > 1)
+            {
+                return LookupResult.Failure(
+                    DiagnosticMessages.AmbiguousCallableOverload(
+                        name,
+                        string.Join(", ", currentModuleValues.Select(candidate => candidate.Name))));
+            }
 
-                return LookupResult.Failure(BuildAmbiguousValueImportDiagnostic(name, valueCandidates));
+            if (allowConstructors)
+            {
+                var currentModuleConstructors = _symbolTable.Modules.GetAccessibleBindingsByName(
+                    context.CurrentModule,
+                    name,
+                    context.CurrentModule,
+                    new HashSet<ResolutionKind> { ResolutionKind.Constructor });
+                if (currentModuleConstructors.Count == 1)
+                {
+                    return LookupResult.Found(
+                        currentModuleConstructors[0].SymbolId,
+                        ResolutionKind.Constructor,
+                        isConstructor: true);
+                }
             }
 
             var preferredTraitMethod = TryGetSingleDistinctTraitMethod(context.ImportScope.GetImportDetails(name));
@@ -287,23 +321,6 @@ internal sealed class NameLookupService
                _symbolTable.GetSymbol(symbolId) is VarSymbol { IsModuleLevel: false };
     }
 
-    private bool IsCurrentModuleMember(SymbolId currentModule, SymbolId symbolId)
-    {
-        return symbolId.IsValid &&
-               currentModule.IsValid &&
-               _symbolTable.Modules.GetModuleMembers(currentModule).Contains(symbolId);
-    }
-
-    private static bool TryCollectImportedValueCandidates(
-        ImportScope importScope,
-        string name,
-        out IReadOnlyList<ImportedSymbol> candidates)
-    {
-        var result = CollectImportedValueCandidates(importScope, name, allowConstructors: true);
-        candidates = result;
-        return result.Count > 0;
-    }
-
     private static List<ImportedSymbol> CollectImportedValueCandidates(
         ImportScope importScope,
         string name,
@@ -325,20 +342,6 @@ internal sealed class NameLookupService
         }
 
         return result;
-    }
-
-    private static int CountNonTraitImports(IReadOnlyList<ImportedSymbol> candidates)
-    {
-        var count = 0;
-        for (var i = 0; i < candidates.Count; i++)
-        {
-            if (!candidates[i].IsTraitMethod)
-            {
-                count++;
-            }
-        }
-
-        return count;
     }
 
     private static ImportedSymbol? TryGetSingleDistinctTraitMethod(IReadOnlyList<ImportedSymbol> details)

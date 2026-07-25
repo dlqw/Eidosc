@@ -165,7 +165,7 @@ public sealed class LiveStateStableIdentityTests
     {
         var result = RunToNamer("""
 Main :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -206,7 +206,7 @@ Main :: module {
         Pair:: type(Int, Int)
     }
 
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -237,6 +237,55 @@ Main :: module {
         Assert.NotNull(restored.SymbolTable.LookupConstructor("Pair"));
         Assert.NotNull(restored.SymbolTable.LookupValue("id"));
         AssertFunctionArity(restored.SymbolTable, "id", 1);
+    }
+
+    [Fact]
+    public void SymbolTableStateBuilder_RoundTripPreservesCompilerInternalTrustFacts()
+    {
+        var result = RunToNamer("""
+Main :: module {
+    helper :: Unit -> Int {
+        _ => 1
+    }
+}
+""");
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var original = Assert.IsType<SymbolTable>(result.SymbolTable);
+        Assert.True(original.Modules.ModulePaths.TryGetValue("Main", out var moduleId));
+        var originalModule = Assert.IsType<ModuleSymbol>(original.GetSymbol(moduleId));
+        var trustedModule = originalModule with { AllowsCompilerInternalAccess = true };
+        original.UpdateSymbol(trustedModule);
+        original.Modules.RegisterModule(trustedModule, moduleId);
+        var helperId = Assert.Single(
+            original.Modules.GetModuleMembers(moduleId),
+            id => original.GetSymbol(id) is FuncSymbol { Name: "helper" });
+        var helper = Assert.IsType<FuncSymbol>(original.GetSymbol(helperId)) with
+        {
+            IsCompilerInternal = true
+        };
+        original.UpdateSymbol(helper);
+        Assert.True(helper.IsCompilerInternal);
+
+        var memberIndex = Assert.IsType<ProjectModuleMemberIndexSnapshot>(result.ModuleMemberIndexSnapshot);
+        var payload = ModuleNamerStatePayload.Create("Main", original, memberIndex, result.ModuleGraphSnapshot);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = Assert.IsType<ModuleNamerStatePayload>(
+            JsonSerializer.Deserialize<ModuleNamerStatePayload>(json));
+
+        var restored = SymbolTableStateBuilder.BuildFromNamerPayload(roundTripped);
+
+        Assert.True(restored.IsApplied, string.Join(Environment.NewLine, restored.Failures));
+        var table = Assert.IsType<SymbolTable>(restored.SymbolTable);
+        Assert.True(table.Modules.ModulePaths.TryGetValue("Main", out var restoredModuleId));
+        var restoredModule = Assert.IsType<ModuleSymbol>(table.GetSymbol(restoredModuleId));
+        Assert.True(restoredModule.AllowsCompilerInternalAccess);
+        var restoredHelper = Assert.Single(
+            table.Modules.GetModuleMembers(restoredModuleId)
+                .Select(table.GetSymbol)
+                .OfType<FuncSymbol>(),
+            static function => function.Name == "helper");
+        Assert.True(restoredHelper.IsCompilerInternal);
     }
 
     [Fact]
@@ -367,7 +416,7 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -402,7 +451,7 @@ Main :: module {
         Pair:: type(Int, Int)
     }
 
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -488,7 +537,7 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -611,14 +660,14 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 }
 
 Helper :: module {
-    keep :: Int -> Int
+    export keep :: Int -> Int
     {
         value => value
     }
@@ -636,19 +685,19 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 
-    plusOne :: Int -> Int
+    export plusOne :: Int -> Int
     {
         value => value + 1
     }
 }
 
 Helper :: module {
-    keep :: Int -> Int
+    export keep :: Int -> Int
     {
         value => value
     }
@@ -730,7 +779,7 @@ Main :: module {
 """);
             File.WriteAllText(libFile, """
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -738,7 +787,7 @@ Lib :: module {
 """);
             File.WriteAllText(helperFile, """
 Helper :: module {
-    keep :: Int -> Int
+    export keep :: Int -> Int
     {
         value => value
     }
@@ -753,12 +802,12 @@ Helper :: module {
 
             File.WriteAllText(libFile, """
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 
-    plusOne :: Int -> Int
+    export plusOne :: Int -> Int
     {
         value => value + 1
     }
@@ -830,14 +879,14 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 }
 
 Helper :: module {
-    keep :: Int -> Int
+    export keep :: Int -> Int
     {
         value => value
     }
@@ -855,19 +904,19 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 
-    plusOne :: Int -> Int
+    export plusOne :: Int -> Int
     {
         value => value + 1
     }
 }
 
 Helper :: module {
-    keep :: Int -> Int
+    export keep :: Int -> Int
     {
         value => value
     }
@@ -919,14 +968,14 @@ Main :: module {
 }
 
 Lib :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 }
 
 Helper :: module {
-    keep :: Int -> Int
+    export keep :: Int -> Int
     {
         value => value
     }
@@ -959,7 +1008,7 @@ Helper :: module {
     {
         var firstSource = """
 Main :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
@@ -967,12 +1016,12 @@ Main :: module {
 """;
         var changedSource = """
 Main :: module {
-    id :: Int -> Int
+    export id :: Int -> Int
     {
         value => value
     }
 
-    plusOne :: Int -> Int
+    export plusOne :: Int -> Int
     {
         value => value + 1
     }

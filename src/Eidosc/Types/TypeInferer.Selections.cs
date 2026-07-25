@@ -249,13 +249,17 @@ public sealed partial class TypeInferer
         }
 
         if (PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(adt.Span.FilePath, out var modulePath) &&
-            string.Equals(modulePath, expectedModule, StringComparison.OrdinalIgnoreCase))
+            string.Equals(
+                modulePath.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault(),
+                expectedModule,
+                StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         return _symbolTable.Modules.TryGetOwningModule(adtId, out var owner) &&
-               string.Equals(owner.PackageAlias, WellKnownStrings.Std.Module, StringComparison.OrdinalIgnoreCase) &&
+               (string.Equals(owner.PackageAlias, WellKnownStrings.Std.Module, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(owner.PackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal)) &&
                owner.Path.Count > 0 &&
                string.Equals(owner.Path[^1], expectedModule, StringComparison.OrdinalIgnoreCase);
     }
