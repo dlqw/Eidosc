@@ -248,10 +248,8 @@ public sealed partial class CompilationPipeline
                     var validator = new MirValidator();
                     if (!validator.Validate(_mirModule!))
                     {
-                        var filteredValidatorDiagnostics =
-                            FilterTrustedPrecompiledDiagnostics(validator.Diagnostics).ToList();
-                        _diagnostics.AddRange(filteredValidatorDiagnostics);
-                        hasMirErrors = filteredValidatorDiagnostics.Any(diagnostic =>
+                        _diagnostics.AddRange(validator.Diagnostics);
+                        hasMirErrors = validator.Diagnostics.Any(diagnostic =>
                             diagnostic.Level == Diagnostic.DiagnosticLevel.Error);
                     }
                 }

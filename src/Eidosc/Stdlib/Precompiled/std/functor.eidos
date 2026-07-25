@@ -1,14 +1,14 @@
 Functor :: module {
-    Functor[F: kind2] :: trait {
-        fmap[A, B, E: effects] :: F[A] -> (A -> B need E) -> F[B] need E
+    export Functor[F: kind2] :: trait {
+        fmap[A, B, E: effects] :: F[A] -> (A -> B need E) -> F[B] need E compiler(role: "operator.fmap")
     }
 
-    replace[A, B, F: kind2 : Functor[F]] :: F[A] -> B -> F[B]
+    export replace[A, B, F: kind2 : Functor[F]] :: F[A] -> B -> F[B]
     {
         values => replacement => Functor.fmap(values)(_ => replacement)
     }
 
-    void[A, F: kind2 : Functor[F]] :: F[A] -> F[Unit]
+    export void[A, F: kind2 : Functor[F]] :: F[A] -> F[Unit]
     {
         values => Functor.replace(values)(())
     }

@@ -73,7 +73,7 @@ component IDs, explicit components, and explicit targets. A typical directory
 has this shape:
 
 ```text
-toolchains/eidosc-0.4.0-alpha.3-win-x64-<sha256>/
+toolchains/eidosc-0.5.0-alpha.1-win-x64-<sha256>/
 ```
 
 The schema 3 `.eidosup-install.json` records that identity, component
@@ -178,9 +178,9 @@ failures; legacy layout detection remains a warning with manual cleanup steps.
 Exact versions accept one of these equivalent forms:
 
 ```text
-0.4.0-alpha.3
-v0.4.0-alpha.3
-eidosc-v0.4.0-alpha.3
+0.5.0-alpha.1
+v0.5.0-alpha.1
+eidosc-v0.5.0-alpha.1
 ```
 
 The version after the optional prefix must be valid SemVer 2.0.0. Unsafe path,
@@ -197,7 +197,7 @@ The default is `preview` while Eidos publishes prerelease toolchains.
 
 ```powershell
 eidosup setup --channel preview --dry-run --skip-clang --skip-env
-eidosup setup --version 0.4.0-alpha.3
+eidosup setup --version 0.5.0-alpha.1
 ```
 
 ## Errors and diagnostics

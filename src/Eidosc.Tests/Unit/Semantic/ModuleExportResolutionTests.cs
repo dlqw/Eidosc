@@ -411,7 +411,7 @@ run :: Int -> Int
             ("Core/Base.eidos", """
 Core.Base :: module
 {
-    bar :: Int -> Int
+    export bar :: Int -> Int
     {
         x => x
     }

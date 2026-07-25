@@ -365,7 +365,7 @@ public sealed partial class CompilationPipeline
                 Append(builder, functionRef.TraitSelfPosition);
                 AppendInts(builder, functionRef.TraitSelfParameterIndices);
                 Append(builder, functionRef.TraitSelfInResult);
-                Append(builder, functionRef.TraitMethodRole);
+                Append(builder, functionRef.CompilerSemanticRole);
                 break;
             case MirPlace place:
                 AppendPlace(builder, place);

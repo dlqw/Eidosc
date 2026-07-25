@@ -43,6 +43,12 @@ public abstract record Symbol
     public bool IsPublic { get; init; } = true;
 
     /// <summary>
+    /// Whether this symbol is part of the compiler-owned implementation surface.
+    /// It is visible only between verified compiler-owned modules and never through user imports.
+    /// </summary>
+    public bool IsCompilerInternal { get; init; }
+
+    /// <summary>
     /// 类型 ID（仅对类型符号有效）
     /// 用于 ADT、Trait、Effect 等类型定义
     /// </summary>

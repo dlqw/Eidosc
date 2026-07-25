@@ -41,7 +41,7 @@ BadFunction :: Int -> Int {
         const string source = """
 module json {
 HTTPServer :: type {}
-JsonValue :: type {}
+export JsonValue :: type {}
 Option :: type {}
 }
 """;

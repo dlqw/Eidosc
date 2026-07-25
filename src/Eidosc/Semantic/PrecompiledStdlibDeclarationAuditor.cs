@@ -13,9 +13,13 @@ public static class PrecompiledStdlibDeclarationAuditor
     public static IReadOnlyList<PrecompiledStdlibDeclarationAuditIssue> AuditEmbeddedStdlib()
     {
         var issues = new List<PrecompiledStdlibDeclarationAuditIssue>();
-        foreach (var modulePath in PrecompiledModuleRegistry.GetAvailableModulePaths())
+        var modulePaths = PrecompiledModuleRegistry.GetAvailableModulePaths()
+            .Concat(PreludeCoreImageRegistry.GetAvailableModulePaths()
+                .Select(moduleName => $"{WellKnownStrings.Std.Module}/{moduleName}"))
+            .Distinct(StringComparer.Ordinal);
+        foreach (var modulePath in modulePaths)
         {
-            if (!PrecompiledModuleRegistry.TryGetSource(modulePath, out var source))
+            if (!PrecompiledModuleRegistry.TryGetDistributionSource(modulePath, out var source))
             {
                 continue;
             }

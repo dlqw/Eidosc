@@ -65,7 +65,7 @@ public sealed partial class MirGenericSpecializerTests
                         TraitOwnerId = traitId,
                         TraitSelfPosition = SelfPosition.InParameter,
                         TraitSelfParameterIndices = [0],
-                        TraitMethodRole = TraitMethodRole.Show
+                        CompilerSemanticRole = CompilerSemanticRole.Show
                     },
                     Arguments = [value]
                 }
@@ -412,7 +412,7 @@ public sealed partial class MirGenericSpecializerTests
             ReturnType = TypeId.None,
             TraitSelfPosition = SelfPosition.InParameter,
             TraitSelfParameterIndices = [0, 1],
-            TraitMethodRole = TraitMethodRole.Equality
+            CompilerSemanticRole = CompilerSemanticRole.Equality
         });
 
         var directionImpl = symbolTable.DeclareImpl(traitId, directionType, SourceSpan.Empty);
@@ -463,7 +463,7 @@ public sealed partial class MirGenericSpecializerTests
                         TraitOwnerId = traitId,
                         TraitSelfPosition = SelfPosition.InParameter,
                         TraitSelfParameterIndices = [0, 1],
-                        TraitMethodRole = TraitMethodRole.Equality
+                        CompilerSemanticRole = CompilerSemanticRole.Equality
                     },
                     Arguments = [left, right]
                 }
@@ -530,7 +530,7 @@ public sealed partial class MirGenericSpecializerTests
             ReturnType = boolType,
             TraitSelfPosition = SelfPosition.InParameter,
             TraitSelfParameterIndices = [0, 1],
-            TraitMethodRole = TraitMethodRole.None
+            CompilerSemanticRole = CompilerSemanticRole.None
         });
 
         var left = LocalPlace(1, intType);
@@ -594,7 +594,7 @@ public sealed partial class MirGenericSpecializerTests
             ReturnType = boolType,
             TraitSelfPosition = SelfPosition.InParameter,
             TraitSelfParameterIndices = [0, 1],
-            TraitMethodRole = TraitMethodRole.Equality
+            CompilerSemanticRole = CompilerSemanticRole.Equality
         });
 
         var left = LocalPlace(1, intType);

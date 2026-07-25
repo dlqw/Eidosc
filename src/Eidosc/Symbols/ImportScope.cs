@@ -25,6 +25,7 @@ public sealed class ImportScope
     /// 同名导入详情（用于歧义检测）
     /// </summary>
     private readonly Dictionary<string, List<ImportedSymbol>> _importDetailsByName = new();
+    private readonly Dictionary<string, List<ImportedSymbol>> _compilerPreludeDetailsByName = new();
     private readonly Dictionary<string, ImportedSymbolLookup> _lookupCache = new();
 
     private sealed record ImportedSymbolLookup(
@@ -36,8 +37,14 @@ public sealed class ImportScope
     /// <summary>
     /// 添加导入的符号
     /// </summary>
-    public void AddImport(ImportedSymbol symbol)
+    public void AddImport(ImportedSymbol symbol, bool isCompilerInjectedPrelude = false)
     {
+        if (isCompilerInjectedPrelude)
+        {
+            AddCompilerPreludeImport(symbol);
+            return;
+        }
+
         var hasExplicitImport = _importDetails.TryGetValue(symbol.Name, out var currentDetail) &&
                                 !currentDetail.IsImplicitModuleMember;
         var shouldUpdatePrimary = !symbol.IsImplicitModuleMember || !hasExplicitImport;
@@ -63,6 +70,24 @@ public sealed class ImportScope
         }
     }
 
+    private void AddCompilerPreludeImport(ImportedSymbol symbol)
+    {
+        if (!_compilerPreludeDetailsByName.TryGetValue(symbol.Name, out var details))
+        {
+            details = [];
+            _compilerPreludeDetailsByName[symbol.Name] = details;
+        }
+
+        if (!details.Any(existing =>
+                existing.SymbolId.Equals(symbol.SymbolId) &&
+                existing.Kind == symbol.Kind &&
+                string.Equals(existing.Name, symbol.Name, StringComparison.Ordinal)))
+        {
+            details.Add(symbol);
+            _lookupCache.Remove(symbol.Name);
+        }
+    }
+
     /// <summary>
     /// 添加导入的模块
     /// </summary>
@@ -76,7 +101,12 @@ public sealed class ImportScope
     /// </summary>
     public SymbolId? LookupImportedSymbol(string name)
     {
-        return _importedSymbols.TryGetValue(name, out var id) ? id : null;
+        if (_importedSymbols.TryGetValue(name, out var id))
+        {
+            return id;
+        }
+
+        return TryGetSingleCompilerPreludeSymbol(name, out id) ? id : null;
     }
 
     public bool TryLookupImportedSymbol(
@@ -97,7 +127,8 @@ public sealed class ImportScope
             return cached.IsFound;
         }
 
-        if (!_importDetailsByName.TryGetValue(name, out var details) || details.Count == 0)
+        var details = GetPrecedenceSelectedDetails(name);
+        if (details.Count == 0)
         {
             _lookupCache[name] = new ImportedSymbolLookup(SymbolId.None, IsAmbiguous: false, [], IsFound: false);
             return false;
@@ -212,7 +243,14 @@ public sealed class ImportScope
     /// </summary>
     public ImportedSymbol? GetImportDetail(string name)
     {
-        return _importDetails.TryGetValue(name, out var detail) ? detail : null;
+        if (_importDetails.TryGetValue(name, out var detail))
+        {
+            return detail;
+        }
+
+        return _compilerPreludeDetailsByName.TryGetValue(name, out var details) && details.Count == 1
+            ? details[0]
+            : null;
     }
 
     /// <summary>
@@ -220,16 +258,13 @@ public sealed class ImportScope
     /// </summary>
     public List<ImportedSymbol> GetImportDetails(string name)
     {
-        return _importDetailsByName.TryGetValue(name, out var details)
-            ? details
-            : [];
+        return [.. GetPrecedenceSelectedDetails(name)];
     }
 
     public IReadOnlyList<ImportedSymbol> GetEffectiveImportDetails(string name)
     {
-        return _importDetailsByName.TryGetValue(name, out var details)
-            ? SelectEffectiveDetails(details)
-            : [];
+        var details = GetPrecedenceSelectedDetails(name);
+        return details.Count > 0 ? SelectEffectiveDetails(details) : [];
     }
 
     /// <summary>
@@ -237,7 +272,56 @@ public sealed class ImportScope
     /// </summary>
     public IReadOnlyDictionary<string, SymbolId> GetAllImports()
     {
-        return _importedSymbols;
+        if (_compilerPreludeDetailsByName.Count == 0)
+        {
+            return _importedSymbols;
+        }
+
+        var imports = new Dictionary<string, SymbolId>(StringComparer.Ordinal);
+        foreach (var name in _compilerPreludeDetailsByName.Keys)
+        {
+            if (TryGetSingleCompilerPreludeSymbol(name, out var symbolId))
+            {
+                imports[name] = symbolId;
+            }
+        }
+
+        foreach (var (name, symbolId) in _importedSymbols)
+        {
+            imports[name] = symbolId;
+        }
+
+        return imports;
+    }
+
+    private List<ImportedSymbol> GetPrecedenceSelectedDetails(string name)
+    {
+        if (_importDetailsByName.TryGetValue(name, out var explicitDetails) && explicitDetails.Count > 0)
+        {
+            return explicitDetails;
+        }
+
+        return _compilerPreludeDetailsByName.TryGetValue(name, out var preludeDetails)
+            ? preludeDetails
+            : [];
+    }
+
+    private bool TryGetSingleCompilerPreludeSymbol(string name, out SymbolId symbolId)
+    {
+        symbolId = SymbolId.None;
+        if (!_compilerPreludeDetailsByName.TryGetValue(name, out var details))
+        {
+            return false;
+        }
+
+        var distinctCandidates = CollectDistinctCandidates(SelectEffectiveDetails(details));
+        if (distinctCandidates.Count != 1)
+        {
+            return false;
+        }
+
+        symbolId = distinctCandidates[0].SymbolId;
+        return symbolId.IsValid;
     }
 
     /// <summary>

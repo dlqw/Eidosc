@@ -464,7 +464,7 @@ public sealed partial class MirGenericSpecializerTests
             ReturnType = stringType,
             TraitSelfPosition = SelfPosition.InParameter,
             TraitSelfParameterIndices = [0],
-            TraitMethodRole = TraitMethodRole.Show
+            CompilerSemanticRole = CompilerSemanticRole.Show
         });
 
         var implId = symbolTable.DeclareImpl(traitId, intType, SourceSpan.Empty);

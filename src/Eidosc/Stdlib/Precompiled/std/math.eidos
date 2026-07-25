@@ -26,22 +26,22 @@ Math :: module {
     math_pow :: Float -> Float -> Float compiler(internal, intrinsic: "math_pow");
 
 
-    abs :: Int -> Int
+    export abs :: Int -> Int
     {
         n => if n < 0 then { 0 - n } else { n }
     }
 
-    min :: Int -> Int -> Int
+    export min :: Int -> Int -> Int
     {
         left => right => if left <= right then { left } else { right }
     }
 
-    max :: Int -> Int -> Int
+    export max :: Int -> Int -> Int
     {
         left => right => if left >= right then { left } else { right }
     }
 
-    clamp :: Int -> Int -> Int -> Int
+    export clamp :: Int -> Int -> Int -> Int
     {
         value => lower => upper =>
             if value < lower then { lower }
@@ -49,54 +49,54 @@ Math :: module {
             else { value }
     }
 
-    min3 :: Int -> Int -> Int -> Int
+    export min3 :: Int -> Int -> Int -> Int
     {
         a => b => c => Math.min(Math.min(a)(b))(c)
     }
 
-    max3 :: Int -> Int -> Int -> Int
+    export max3 :: Int -> Int -> Int -> Int
     {
         a => b => c => Math.max(Math.max(a)(b))(c)
     }
 
-    clamp01 :: Int -> Int
+    export clamp01 :: Int -> Int
     {
         value => Math.clamp(value)(0)(1)
     }
 
-    sign :: Int -> Int
+    export sign :: Int -> Int
     {
         n when n < 0 => -1,
         n when n > 0 => 1,
         _ => 0
     }
 
-    is_zero :: Int -> Bool { n => n == 0 }
+    export is_zero :: Int -> Bool { n => n == 0 }
 
-    is_positive :: Int -> Bool { n => n > 0 }
+    export is_positive :: Int -> Bool { n => n > 0 }
 
-    is_negative :: Int -> Bool { n => n < 0 }
+    export is_negative :: Int -> Bool { n => n < 0 }
 
-    is_even :: Int -> Bool { n => n % 2 == 0 }
+    export is_even :: Int -> Bool { n => n % 2 == 0 }
 
-    is_odd :: Int -> Bool { n => n % 2 != 0 }
+    export is_odd :: Int -> Bool { n => n % 2 != 0 }
 
-    between_inclusive :: Int -> Int -> Int -> Bool
+    export between_inclusive :: Int -> Int -> Int -> Bool
     {
         value => lower => upper => value >= lower && value <= upper
     }
 
-    between_exclusive :: Int -> Int -> Int -> Bool
+    export between_exclusive :: Int -> Int -> Int -> Bool
     {
         value => lower => upper => value > lower && value < upper
     }
 
-    distance :: Int -> Int -> Int
+    export distance :: Int -> Int -> Int
     {
         left => right => Math.abs(left - right)
     }
 
-    gcd :: Int -> Int -> Int
+    export gcd :: Int -> Int -> Int
     {
         left => right => {
             a := abs(left);
@@ -105,12 +105,12 @@ Math :: module {
         }
     }
 
-    lcm :: Int -> Int -> Int
+    export lcm :: Int -> Int -> Int
     {
         left => right => if left == 0 || right == 0 then { 0 } else { abs((left / gcd(left)(right)) * right) }
     }
 
-    pow :: Int -> Int -> Int
+    export pow :: Int -> Int -> Int
     {
         base => exp =>
             if exp < 0 then { 0 }
@@ -118,17 +118,17 @@ Math :: module {
             else { base * pow(base)(exp - 1) }
     }
 
-    square :: Int -> Int
+    export square :: Int -> Int
     {
         value => value * value
     }
 
-    cube :: Int -> Int
+    export cube :: Int -> Int
     {
         value => value * value * value
     }
 
-    div_floor :: Int -> Int -> Int
+    export div_floor :: Int -> Int -> Int
     {
         dividend => divisor =>
             if divisor == 0 then { 0 }
@@ -141,28 +141,28 @@ Math :: module {
             }
     }
 
-    div_ceil :: Int -> Int -> Int
+    export div_ceil :: Int -> Int -> Int
     {
         dividend => divisor =>
             if divisor == 0 then { 0 }
             else { 0 - Math.div_floor(0 - dividend)(divisor) }
     }
 
-    mod_floor :: Int -> Int -> Int
+    export mod_floor :: Int -> Int -> Int
     {
         dividend => divisor =>
             if divisor == 0 then { 0 }
             else { dividend - Math.div_floor(dividend)(divisor) * divisor }
     }
 
-    wrap :: Int -> Int -> Int
+    export wrap :: Int -> Int -> Int
     {
         value => modulus =>
             if modulus <= 0 then { 0 }
             else { Math.mod_floor(value)(modulus) }
     }
 
-    wrap_range :: Int -> Int -> Int -> Int
+    export wrap_range :: Int -> Int -> Int -> Int
     {
         value => lower => upper => {
             span := upper - lower;
@@ -171,31 +171,31 @@ Math :: module {
         }
     }
 
-    average_floor :: Int -> Int -> Int
+    export average_floor :: Int -> Int -> Int
     {
         left => right => Math.div_floor(left + right)(2)
     }
 
-    average_ceil :: Int -> Int -> Int
+    export average_ceil :: Int -> Int -> Int
     {
         left => right => Math.div_ceil(left + right)(2)
     }
 
-    align_down :: Int -> Int -> Int
+    export align_down :: Int -> Int -> Int
     {
         value => alignment =>
             if alignment <= 0 then { value }
             else { value - Math.wrap(value)(alignment) }
     }
 
-    align_up :: Int -> Int -> Int
+    export align_up :: Int -> Int -> Int
     {
         value => alignment =>
             if alignment <= 0 then { value }
             else { Math.align_down(value + alignment - 1)(alignment) }
     }
 
-    approach :: Int -> Int -> Int -> Int
+    export approach :: Int -> Int -> Int -> Int
     {
         current => target => delta =>
             if delta <= 0 then { current }
@@ -203,7 +203,7 @@ Math :: module {
             else { Math.max(current - delta)(target) }
     }
 
-    factorial :: Int -> Int
+    export factorial :: Int -> Int
     {
         n =>
             if n < 0 then { 0 }
@@ -212,31 +212,31 @@ Math :: module {
     }
 
     // Float 版本
-    abs_f :: Float -> Float need ffi { x => math_fabs(x) }
-    min_f :: Float -> Float -> Float need ffi { left => right => math_fmin(left)(right) }
-    max_f :: Float -> Float -> Float need ffi { left => right => math_fmax(left)(right) }
-    clamp_f :: Float -> Float -> Float -> Float
+    export abs :: Float -> Float need ffi { x => math_fabs(x) }
+    export min :: Float -> Float -> Float need ffi { left => right => math_fmin(left)(right) }
+    export max :: Float -> Float -> Float need ffi { left => right => math_fmax(left)(right) }
+    export clamp :: Float -> Float -> Float -> Float
     {
         value => lower => upper =>
             if value < lower then { lower }
             else if value > upper then { upper }
             else { value }
     }
-    sign_f :: Float -> Float need ffi { x => math_copysign(1.0)(x) }
-    pow_f :: Float -> Float -> Float need ffi { base => exp => math_pow(base)(exp) }
-    is_zero_f :: Float -> Bool { x => FloatMath.is_zero(x) }
-    is_positive_f :: Float -> Bool { x => FloatMath.is_positive(x) }
-    is_negative_f :: Float -> Bool { x => FloatMath.is_negative(x) }
-    between_inclusive_f :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath.between_inclusive(value)(lower)(upper) }
-    between_exclusive_f :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath.between_exclusive(value)(lower)(upper) }
-    square_f :: Float -> Float { value => FloatMath.square(value) }
-    cube_f :: Float -> Float { value => FloatMath.cube(value) }
-    approx_eq_f :: Float -> Float -> Float -> Bool need ffi { left => right => tolerance => FloatMath.approx_eq(left)(right)(tolerance) }
-    distance_f :: Float -> Float -> Float need ffi { left => right => FloatMath.distance(left)(right) }
-    hypot_f :: Float -> Float -> Float need ffi { left => right => FloatMath.hypot(left)(right) }
-    degrees_to_radians_f :: Float -> Float { degrees => FloatMath.degrees_to_radians(degrees) }
-    radians_to_degrees_f :: Float -> Float { radians => FloatMath.radians_to_degrees(radians) }
-    lerp_f :: Float -> Float -> Float -> Float { start => end => t => FloatMath.lerp(start)(end)(t) }
-    inverse_lerp_f :: Float -> Float -> Float -> Float { start => end => value => FloatMath.inverse_lerp(start)(end)(value) }
+    export sign :: Float -> Float need ffi { x => math_copysign(1.0)(x) }
+    export pow :: Float -> Float -> Float need ffi { base => exp => math_pow(base)(exp) }
+    export is_zero :: Float -> Bool { x => FloatMath.is_zero(x) }
+    export is_positive :: Float -> Bool { x => FloatMath.is_positive(x) }
+    export is_negative :: Float -> Bool { x => FloatMath.is_negative(x) }
+    export between_inclusive :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath.between_inclusive(value)(lower)(upper) }
+    export between_exclusive :: Float -> Float -> Float -> Bool { value => lower => upper => FloatMath.between_exclusive(value)(lower)(upper) }
+    export square :: Float -> Float { value => FloatMath.square(value) }
+    export cube :: Float -> Float { value => FloatMath.cube(value) }
+    export approx_eq :: Float -> Float -> Float -> Bool need ffi { left => right => tolerance => FloatMath.approx_eq(left)(right)(tolerance) }
+    export distance :: Float -> Float -> Float need ffi { left => right => FloatMath.distance(left)(right) }
+    export hypot :: Float -> Float -> Float need ffi { left => right => FloatMath.hypot(left)(right) }
+    export degrees_to_radians :: Float -> Float { degrees => FloatMath.degrees_to_radians(degrees) }
+    export radians_to_degrees :: Float -> Float { radians => FloatMath.radians_to_degrees(radians) }
+    export lerp :: Float -> Float -> Float -> Float { start => end => t => FloatMath.lerp(start)(end)(t) }
+    export inverse_lerp :: Float -> Float -> Float -> Float { start => end => value => FloatMath.inverse_lerp(start)(end)(value) }
 
 }

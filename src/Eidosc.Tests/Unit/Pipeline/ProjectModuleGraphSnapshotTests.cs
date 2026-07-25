@@ -365,7 +365,11 @@ Main :: module {
             StopAtPhase = CompilationPhase.Namer,
             NoImplicitPrelude = true,
             EnableDetailedProfiling = true,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
 
         var second = new CompilationPipeline(source, new CompilationOptions
@@ -376,7 +380,11 @@ Main :: module {
             StopAtPhase = CompilationPhase.Namer,
             NoImplicitPrelude = true,
             EnableDetailedProfiling = true,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
 
         Assert.True(

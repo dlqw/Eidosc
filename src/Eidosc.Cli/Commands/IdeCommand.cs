@@ -72,7 +72,7 @@ public static class IdeCommand
                 Verbose = false,
                 ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                     inputResolution.ImportResolution.EffectiveSearchRoots,
-                PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal)
+                PackageImportRoots = inputResolution.GetPackageImportRoots()
             });
 
             var result = pipeline.Run();

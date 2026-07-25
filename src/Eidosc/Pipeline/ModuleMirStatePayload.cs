@@ -816,7 +816,7 @@ public sealed record MirStateOperandPayload(
     string? TraitSelfPosition = null,
     IReadOnlyList<int>? TraitSelfParameterIndices = null,
     bool TraitSelfInResult = false,
-    string? TraitMethodRole = null,
+    string? CompilerSemanticRole = null,
     string? PlaceKind = null,
     int Local = 0,
     MirStateOperandPayload? Base = null,
@@ -867,7 +867,7 @@ public sealed record MirStateOperandPayload(
                 TraitSelfPosition: functionRef.TraitSelfPosition.ToString(),
                 TraitSelfParameterIndices: functionRef.TraitSelfParameterIndices.ToArray(),
                 TraitSelfInResult: functionRef.TraitSelfInResult,
-                TraitMethodRole: functionRef.TraitMethodRole.ToString()),
+                CompilerSemanticRole: functionRef.CompilerSemanticRole.ToString()),
             MirPlace place => new MirStateOperandPayload(
                 nameof(MirPlace),
                 span,
@@ -893,7 +893,7 @@ public sealed record MirStateOperandPayload(
             nameof(MirPoison) => new MirPoison { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Reason = Reason ?? "" },
             nameof(MirConstant) => new MirConstant { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Value = RestoreConstantValue(ConstantValue) },
             nameof(MirConstGenericValue) => new MirConstGenericValue { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", ParameterIndex = ParameterIndex },
-            nameof(MirFunctionRef) => new MirFunctionRef { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", SymbolKind = Enum.Parse<SymbolKind>(SymbolKind ?? ""), FunctionId = FunctionId?.Restore() ?? new FunctionId(), SignatureTypeId = new TypeId(SignatureTypeId), TypeArgumentIds = (TypeArgumentIds ?? []).Select(static id => new TypeId(id)).ToArray(), ValueArguments = (ValueArguments ?? []).Select(static argument => argument.Restore()).ToArray(), TraitOwnerId = new SymbolId(TraitOwnerId), TraitSelfPosition = Enum.Parse<SelfPosition>(TraitSelfPosition ?? ""), TraitSelfParameterIndices = (TraitSelfParameterIndices ?? []).ToArray(), TraitSelfInResult = TraitSelfInResult, TraitMethodRole = Enum.Parse<TraitMethodRole>(TraitMethodRole ?? "") },
+            nameof(MirFunctionRef) => new MirFunctionRef { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", SymbolKind = Enum.Parse<SymbolKind>(SymbolKind ?? ""), FunctionId = FunctionId?.Restore() ?? new FunctionId(), SignatureTypeId = new TypeId(SignatureTypeId), TypeArgumentIds = (TypeArgumentIds ?? []).Select(static id => new TypeId(id)).ToArray(), ValueArguments = (ValueArguments ?? []).Select(static argument => argument.Restore()).ToArray(), TraitOwnerId = new SymbolId(TraitOwnerId), TraitSelfPosition = Enum.Parse<SelfPosition>(TraitSelfPosition ?? ""), TraitSelfParameterIndices = (TraitSelfParameterIndices ?? []).ToArray(), TraitSelfInResult = TraitSelfInResult, CompilerSemanticRole = Enum.Parse<CompilerSemanticRole>(CompilerSemanticRole ?? "") },
             nameof(MirPlace) => new MirPlace { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Kind = Enum.Parse<PlaceKind>(PlaceKind ?? ""), Local = new LocalId { Value = Local }, Base = Base?.Restore() as MirPlace, FieldName = FieldName, Index = Index?.Restore(), IndexAccessKind = Enum.Parse<MirIndexAccessKind>(IndexAccessKind ?? "") },
             nameof(MirTemp) => new MirTemp { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Id = new TempId { Value = TempId } },
             _ => throw new InvalidOperationException($"Unsupported MIR operand payload '{Kind}'.")
@@ -1302,7 +1302,7 @@ public sealed record MirStateTraitMethodInfoPayload(
             SelfPosition = Enum.Parse<SelfPosition>(SelfPosition),
             SelfParameterIndices = SelfParameterIndices.ToList(),
             SelfInResult = SelfInResult,
-            MethodRole = Enum.Parse<TraitMethodRole>(MethodRole),
+            MethodRole = Enum.Parse<CompilerSemanticRole>(MethodRole),
             HasDefaultImplementation = HasDefaultImplementation
         };
 }

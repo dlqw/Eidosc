@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Eidosc.Diagnostic;
 using Eidosc.Pipeline;
+using Eidosc.Semantic;
 using Eidosc.Tests.Fixtures;
 using Xunit;
 
@@ -56,7 +57,7 @@ public sealed partial class StdlibTypesRegressionTests
     [MemberData(nameof(StandaloneStdlibFiles))]
     public void StandaloneStdlibFile_TypesWithoutErrors(string filePath)
     {
-        var result = CompileFile(filePath, CompilationPhase.Types, denyStyle: true);
+        var result = CompileStdlibModule(filePath, CompilationPhase.Types, denyStyle: true);
         var errors = result.Diagnostics
             .Where(static diagnostic => diagnostic.Level == DiagnosticLevel.Error)
             .Select(static diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")
@@ -87,7 +88,7 @@ public sealed partial class StdlibTypesRegressionTests
     [MemberData(nameof(RepresentativeStdlibFiles))]
     public void RepresentativeStdlibFile_LlvmWithoutErrors(string filePath)
     {
-        var result = CompileFile(filePath, CompilationPhase.Llvm);
+        var result = CompileStdlibModule(filePath, CompilationPhase.Llvm);
 
         AssertLlvmSuccess(filePath, result);
     }
@@ -113,7 +114,7 @@ public sealed partial class StdlibTypesRegressionTests
     private static CompilationResult CompileFile(
         string filePath,
         CompilationPhase phase,
-        bool noImplicitPrelude = true,
+        bool noImplicitPrelude = false,
         bool denyStyle = false)
     {
         var source = File.ReadAllText(filePath);
@@ -123,7 +124,45 @@ public sealed partial class StdlibTypesRegressionTests
             StopAtPhase = phase,
             NoImplicitPrelude = noImplicitPrelude,
             DenyStyle = denyStyle,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [global::Eidosc.WellKnownStrings.Std.Module] = []
+            }
+        }).Run();
+    }
+
+    private static CompilationResult CompileStdlibModule(
+        string filePath,
+        CompilationPhase phase,
+        bool denyStyle = false)
+    {
+        Assert.True(
+            PrecompiledModuleRegistry.TryGetModulePathFromSourcePath(filePath, out var distributionModulePath),
+            $"Unable to map stdlib source path '{filePath}' to its distribution module.");
+
+        var segments = distributionModulePath.Split(
+            WellKnownStrings.Operators.Divide,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Assert.Equal(2, segments.Length);
+        var moduleName = segments[1];
+        var sourceModuleName = Path.GetFileNameWithoutExtension(filePath);
+        var source = PreludeCoreImageRegistry.IsCoreModuleName(moduleName)
+            ? "main :: Unit -> Int { 0 }"
+            : $"import {WellKnownStrings.Std.Module}.{moduleName}{Environment.NewLine}main :: Unit -> Int {{ 0 }}";
+
+        return new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = $"stdlib_{sourceModuleName}_regression.eidos",
+            StopAtPhase = phase,
+            NoImplicitPrelude = false,
+            DenyStyle = denyStyle,
+            UseColors = false,
+            AllowVirtualInputFile = true,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
     }
 

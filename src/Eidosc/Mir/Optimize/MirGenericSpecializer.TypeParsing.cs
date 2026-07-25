@@ -22,6 +22,21 @@ public sealed partial class MirGenericSpecializer
             localTypes.TryGetValue(place.Local, out var localType) &&
             localType.IsValid)
         {
+            // A local place may be a typed borrow view over the local's storage.
+            // In that case the operand type is Ref[T]/MRef[T] while the local
+            // itself remains T.  The view type is part of the call ABI and must
+            // win over the storage type during specialization.  Conversely, an
+            // actual reference-typed local should continue to use the rewritten
+            // local type, which may already be more concrete than the operand.
+            if (place.TypeId.IsValid &&
+                TryGetTypeDescriptor(place.TypeId, out var placeDescriptor) &&
+                placeDescriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef &&
+                (!TryGetTypeDescriptor(localType, out var localDescriptor) ||
+                 localDescriptor is not (TypeDescriptor.Ref or TypeDescriptor.MutRef)))
+            {
+                return place.TypeId;
+            }
+
             return localType;
         }
 

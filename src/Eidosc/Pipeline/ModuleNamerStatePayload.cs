@@ -16,7 +16,7 @@ public sealed record ModuleNamerStatePayload(
     string DependencyIndexHash,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-namer-state-payload-v7";
+    public const string CurrentSchemaVersion = "module-namer-state-payload-v8";
 
     public static ModuleNamerStatePayload Create(
         string moduleKey,

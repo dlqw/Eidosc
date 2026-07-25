@@ -24,6 +24,28 @@ public sealed partial class NameResolver
             return;
         }
 
+        if (SelectionPlaceholderSyntax.LooksLikePlaceholder(ident.Name))
+        {
+            if (!SelectionPlaceholderSyntax.TryParse(ident.Name, out _, out var hasLeadingZero) && hasLeadingZero)
+            {
+                AddError(ident.Span, DiagnosticMessages.SelectionPlaceholderLeadingZero(ident.Name), "E4021");
+                return;
+            }
+
+            var placeholderLookup = _lookupService.Lookup(
+                ident.Name,
+                LookupKind.Value,
+                CreateLookupContext());
+            if (placeholderLookup.IsSuccess)
+            {
+                ident.SymbolId = placeholderLookup.SymbolId;
+                return;
+            }
+
+            AddError(ident.Span, DiagnosticMessages.SelectionPlaceholderOutsideArm(ident.Name), "E4020");
+            return;
+        }
+
         if (ident.Name == WellKnownStrings.Keywords.ReflConstructor)
         {
             ident.IsConstructor = true;
@@ -120,10 +142,6 @@ public sealed partial class NameResolver
             AddUnresolvedHygienicIdentifierError(path, string.Join(WellKnownStrings.Separators.Path, path.Path));
             return;
         }
-
-        // 反糖化：ptr_load_as[T](ptr) → ptr_load_{type}(ptr)
-        //          ptr_store_as[T](ptr, val) → ptr_store_{type}(ptr, val)
-        TryDesugarGenericPtrIntrinsic(path);
 
         if (path.ModulePath.Count == 0 &&
             string.IsNullOrWhiteSpace(path.PackageAlias) &&
@@ -245,6 +263,13 @@ public sealed partial class NameResolver
     {
         var moduleIds = new List<SymbolId>();
 
+        if (_currentModule.IsValid &&
+            _symbolTable.Modules.GetModule(_currentModule) is { } currentModule &&
+            QualifiedPathNamesCurrentModule(path, currentModule))
+        {
+            moduleIds.Add(_currentModule);
+        }
+
         if (string.IsNullOrWhiteSpace(path.PackageAlias) &&
             path.ModulePath.Count > 0 &&
             _currentModule.IsValid &&
@@ -304,70 +329,23 @@ public sealed partial class NameResolver
             .ToArray();
     }
 
-    private void TryDesugarGenericPtrIntrinsic(PathExpr path)
+    private static bool QualifiedPathNamesCurrentModule(PathExpr path, ModuleSymbol currentModule)
     {
-        if (path.Name is not (WellKnownStrings.InternalNames.PtrLoadAs or WellKnownStrings.InternalNames.PtrStoreAs))
-            return;
-
-        if (path.TypeArgs.Count == 0)
+        if (!string.IsNullOrWhiteSpace(path.PackageAlias) &&
+            !string.Equals(path.PackageAlias, currentModule.PackageAlias, StringComparison.Ordinal))
         {
-            AddError(path.Span, DiagnosticMessages.PtrIntrinsicRequiresExplicitTypeArgument(path.Name));
-            return;
+            return false;
         }
 
-        if (path.TypeArgs.Count > 1)
+        if (path.ModulePath.SequenceEqual(currentModule.Path, StringComparer.Ordinal))
         {
-            AddError(path.Span, DiagnosticMessages.PtrIntrinsicRequiresExactlyOneTypeArgument(path.Name));
-            return;
+            return true;
         }
 
-        var typeName = ExtractTypeArgName(path.TypeArgs[0]);
-        var desugared = MapPtrIntrinsicTypeToFunc(path.Name, typeName);
-
-        if (desugared == null)
-        {
-            AddError(path.Span, DiagnosticMessages.UnsupportedPtrIntrinsicTypeArgument(typeName, path.Name));
-            return;
-        }
-
-        path.Desugar(desugared);
-    }
-
-    private static string ExtractTypeArgName(TypeNode typeNode)
-    {
-        if (typeNode is TypePath typePath)
-            return typePath.TypeName;
-        return typeNode.GetType().Name;
-    }
-
-    private static string? MapPtrIntrinsicTypeToFunc(string intrinsic, string typeName)
-    {
-        return intrinsic switch
-        {
-            WellKnownStrings.InternalNames.PtrLoadAs => typeName switch
-            {
-                WellKnownStrings.BuiltinTypes.Int    => WellKnownStrings.InternalNames.PtrLoadInt,
-                WellKnownStrings.BuiltinTypes.Float  => WellKnownStrings.InternalNames.PtrLoadFloat,
-                WellKnownStrings.BuiltinTypes.RawPtr => WellKnownStrings.InternalNames.PtrLoadPtr,
-                WellKnownStrings.BuiltinTypes.Ptr    => WellKnownStrings.InternalNames.PtrLoadPtr,
-                WellKnownStrings.BuiltinTypes.Int32  => WellKnownStrings.InternalNames.PtrLoadI32,
-                WellKnownStrings.BuiltinTypes.Int8   => WellKnownStrings.InternalNames.PtrLoadI8,
-                WellKnownStrings.BuiltinTypes.Bool   => WellKnownStrings.InternalNames.PtrLoadBool,
-                _ => null
-            },
-            WellKnownStrings.InternalNames.PtrStoreAs => typeName switch
-            {
-                WellKnownStrings.BuiltinTypes.Int    => WellKnownStrings.InternalNames.PtrStoreInt,
-                WellKnownStrings.BuiltinTypes.Float  => WellKnownStrings.InternalNames.PtrStoreFloat,
-                WellKnownStrings.BuiltinTypes.RawPtr => WellKnownStrings.InternalNames.PtrStorePtr,
-                WellKnownStrings.BuiltinTypes.Ptr    => WellKnownStrings.InternalNames.PtrStorePtr,
-                WellKnownStrings.BuiltinTypes.Int32  => WellKnownStrings.InternalNames.PtrStoreI32,
-                WellKnownStrings.BuiltinTypes.Int8   => WellKnownStrings.InternalNames.PtrStoreI8,
-                WellKnownStrings.BuiltinTypes.Bool   => WellKnownStrings.InternalNames.PtrStoreBool,
-                _ => null
-            },
-            _ => null
-        };
+        return string.IsNullOrWhiteSpace(path.PackageAlias) &&
+               path.ModulePath.Count == 1 &&
+               currentModule.Path.Count > 0 &&
+               string.Equals(path.ModulePath[0], currentModule.Path[^1], StringComparison.Ordinal);
     }
 
     private bool TryResolveImportedModulePath(
@@ -944,6 +922,17 @@ public sealed partial class NameResolver
         return result.IsSuccess;
     }
 
+    private SymbolId? LookupVisibleConstructor(string name)
+    {
+        var result = _lookupService.Lookup(
+            name,
+            LookupKind.Constructor,
+            CreateLookupContext());
+        return result.IsSuccess && result.IsConstructor && result.SymbolId.IsValid
+            ? result.SymbolId
+            : null;
+    }
+
     private bool TryCollectVisibleFunctionCandidates(string name, out IReadOnlyList<SymbolId> candidates)
     {
         var result = new List<SymbolId>();
@@ -954,9 +943,26 @@ public sealed partial class NameResolver
             return false;
         }
 
-        foreach (var candidate in localCandidates)
+        if (_currentModule.IsValid)
         {
-            AddVisibleFunctionCandidate(result, candidate);
+            foreach (var binding in _symbolTable.Modules.GetAccessibleBindingsByName(
+                         _currentModule,
+                         name,
+                         _currentModule,
+                         new HashSet<ResolutionKind> { ResolutionKind.Value }))
+            {
+                AddVisibleFunctionCandidate(result, binding.SymbolId);
+            }
+        }
+
+        // Lexical declarations shadow imported declarations.  A same-named
+        // Prelude helper must not become an overload peer of a function in the
+        // current lexical chain; overload sets are formed within the nearest
+        // scope that declares the name, then (only when absent) from imports.
+        if (result.Count > 0)
+        {
+            candidates = result.Distinct().ToArray();
+            return candidates.Count > 1;
         }
 
         if (_currentModule.IsValid && _importScopes.TryGetValue(_currentModule, out var importScope))
@@ -980,10 +986,8 @@ public sealed partial class NameResolver
             _symbolTable.GetSymbol(candidate) is not FuncSymbol
             {
                 IsCStructAccessor: false,
-                OwnerTrait: not { IsValid: true },
-                IsTraitImplementation: false
-            } ||
-            IsTraitImplMethod(candidate))
+                OwnerTrait: not { IsValid: true }
+            })
         {
             return;
         }

@@ -6,6 +6,7 @@ public sealed record CompilerDirectiveIR(
     bool IsInternal,
     string? Intrinsic,
     string? LlvmAbi,
+    string? Role,
     SourceSpan Span)
 {
     public static bool TryCreate(
@@ -21,6 +22,7 @@ public sealed record CompilerDirectiveIR(
         var isInternal = false;
         string? intrinsic = null;
         string? llvmAbi = null;
+        string? role = null;
         foreach (var clause in compilerClauses)
         {
             foreach (var raw in clause.ArgumentTokens)
@@ -45,7 +47,10 @@ public sealed record CompilerDirectiveIR(
                     case "llvm_abi" when IsQuoted(value):
                         llvmAbi = NormalizeValue(value!);
                         break;
-                    case "intrinsic" or "llvm_abi":
+                    case "role" when IsQuoted(value):
+                        role = NormalizeValue(value!);
+                        break;
+                    case "intrinsic" or "llvm_abi" or "role":
                         diagnostics.Add($"compiler field '{label}' requires a string literal");
                         break;
                     default:
@@ -64,6 +69,7 @@ public sealed record CompilerDirectiveIR(
             isInternal,
             intrinsic,
             llvmAbi,
+            role,
             compilerClauses.FirstOrDefault()?.Span ?? SourceSpan.Empty);
         errors = diagnostics;
         return diagnostics.Count == 0;

@@ -22,7 +22,7 @@ public sealed class PackageIndexResolverTests
                 {
                     ["Json"] = new() { Version = "^1.0.0" }
                 },
-                NoImplicitStdlib = true
+                NoImplicitPrelude = true
             };
 
             var graph = new PackageDependencyResolver(temp.Path).Resolve(config);
@@ -105,7 +105,7 @@ public sealed class PackageIndexResolverTests
                 {
                     ["Json"] = new() { Version = "^1.0.0" }
                 },
-                NoImplicitStdlib = true
+                NoImplicitPrelude = true
             };
             var resolver = new PackageDependencyResolver(temp.Path);
             var first = resolver.Resolve(config).Packages["Json"];

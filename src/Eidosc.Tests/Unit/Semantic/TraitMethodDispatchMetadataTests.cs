@@ -49,7 +49,7 @@ Factory[F: kind2] :: trait {
     }
 
     [Fact]
-    public void Namer_ShowTraitMethod_RecordsStructuredShowRole()
+    public void Namer_UserNamedShowTraitMethod_DoesNotForgeCompilerSemanticRole()
     {
         const string source = """
 Show :: trait {
@@ -68,6 +68,6 @@ Show :: trait {
         Assert.NotNull(symbolTable);
 
         var show = Assert.Single(symbolTable!.Symbols.Values.OfType<FuncSymbol>(), symbol => symbol.Name == "show");
-        Assert.Equal(TraitMethodRole.Show, show.TraitMethodRole);
+        Assert.Equal(CompilerSemanticRole.None, show.CompilerSemanticRole);
     }
 }

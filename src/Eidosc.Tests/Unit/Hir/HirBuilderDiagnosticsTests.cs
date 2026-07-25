@@ -21,6 +21,31 @@ public class HirBuilderDiagnosticsTests
     private static readonly TestPathConfig Paths = TestPathConfig.Current;
 
     [Fact]
+    public void BuildCompilerRoleFunctionVar_MissingOrDuplicateRole_ReportsE5208()
+    {
+        var span = new SourceSpan(new SourceLocation(0, 0, 0), 1);
+        var missingBuilder = new HirBuilder(new SymbolTable());
+
+        _ = missingBuilder.BuildCompilerRoleFunctionVar(CompilerSemanticRole.Compose, "compose", span);
+
+        Assert.Single(missingBuilder.Diagnostics, diagnostic => diagnostic.Code == "E5208");
+
+        var symbols = new SymbolTable();
+        foreach (var name in new[] { "first", "second" })
+        {
+            var symbolId = symbols.DeclareFunction(name, span, hasBody: true, isPublic: false);
+            var function = Assert.IsType<FuncSymbol>(symbols.GetSymbol(symbolId));
+            symbols.UpdateSymbol(function with { CompilerSemanticRole = CompilerSemanticRole.Compose });
+        }
+
+        var duplicateBuilder = new HirBuilder(symbols);
+        _ = duplicateBuilder.BuildCompilerRoleFunctionVar(CompilerSemanticRole.Compose, "compose", span);
+
+        var diagnostic = Assert.Single(duplicateBuilder.Diagnostics, item => item.Code == "E5208");
+        Assert.Contains("found 2", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Build_QuoteExpressionCrossingTypesBoundary_ReportsDedicatedInvariantDiagnostic()
     {
         var span = new SourceSpan(new SourceLocation(position: 0, line: 0, column: 0), length: 12);
@@ -1074,7 +1099,11 @@ main :: Unit -> Int
             InputFile = TestSourceLoader.GetFullPath(Paths.Fixture("basic/literals.eidos")),
             LanguageVersion = TestSourceLoader.GetLanguageVersion(Paths.Fixture("basic/literals.eidos")),
             StopAtPhase = stopAt,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         };
 
         return new CompilationPipeline(source, options).Run();

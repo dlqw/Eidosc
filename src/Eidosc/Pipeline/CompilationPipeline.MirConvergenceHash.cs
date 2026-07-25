@@ -448,7 +448,7 @@ public sealed partial class CompilationPipeline
                 h.Add(functionRef.TraitSelfPosition);
                 h.AddInts(functionRef.TraitSelfParameterIndices);
                 h.Add(functionRef.TraitSelfInResult);
-                h.Add(functionRef.TraitMethodRole);
+                h.Add(functionRef.CompilerSemanticRole);
                 break;
             case MirPlace place:
                 h.Add(4);

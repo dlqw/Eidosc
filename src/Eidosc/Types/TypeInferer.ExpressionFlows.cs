@@ -271,6 +271,10 @@ public sealed partial class TypeInferer
 
         var desugared = method.ToDesugaredCall();
         var resultType = InferCall(desugared);
+        if (desugared.Function?.SymbolId is { IsValid: true } resolvedCallable)
+        {
+            method.SymbolId = resolvedCallable;
+        }
         method.InferredType = desugared.InferredType ?? resultType;
         method.InferredEffects = desugared.InferredEffects;
         return resultType;
@@ -284,14 +288,8 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        var candidates = GetTypeDirectedMethodCandidates(method);
-        if (candidates.Count == 0)
-        {
-            return false;
-        }
-
         var receiverType = SafeInferExpression(method.Receiver);
-        AddReceiverOwnedPrecompiledMethodCandidates(method.MethodName, receiverType, candidates);
+        var candidates = GetTypeDirectedMethodCandidates(method, receiverType);
         var argumentTypes = new List<Type>(method.PositionalArgs.Count + method.NamedArgs.Count + 1)
         {
             receiverType
@@ -337,6 +335,11 @@ public sealed partial class TypeInferer
 
             resultType = _substitution.Apply(constrainedMethodType);
             return true;
+        }
+
+        if (candidates.Count == 0)
+        {
+            return false;
         }
 
         if (!TryResolveTypeDirectedMethodCandidate(candidates, argumentTypes, out var resolution))
@@ -463,12 +466,45 @@ public sealed partial class TypeInferer
         return false;
     }
 
-    private List<SymbolId> GetTypeDirectedMethodCandidates(MethodCallExpr method)
+    private List<SymbolId> GetTypeDirectedMethodCandidates(MethodCallExpr method, Type receiverType)
     {
-        return GetTypeDirectedCallableCandidates(
+        var candidates = GetTypeDirectedCallableCandidates(
             method.MethodName,
             method.MethodCandidateSymbolIds,
             method.SymbolId);
+        AddReceiverOwnerMethodCandidates(candidates, method.MethodName, receiverType);
+        return candidates;
+    }
+
+    private void AddReceiverOwnerMethodCandidates(
+        List<SymbolId> candidates,
+        string methodName,
+        Type receiverType)
+    {
+        var readableReceiver = UnwrapReadableReferenceType(_substitution.Apply(receiverType));
+        if (readableReceiver is not TyCon receiverConstructor)
+        {
+            return;
+        }
+
+        var receiverSymbolId = receiverConstructor.Symbol.IsValid
+            ? _symbolTable.GetClosedCaseRoot(receiverConstructor.Symbol)
+            : SymbolId.None;
+        if (!receiverSymbolId.IsValid)
+        {
+            return;
+        }
+
+        foreach (var ownerModuleId in _symbolTable.Modules.GetOwningModuleIds(receiverSymbolId))
+        {
+            foreach (var binding in _symbolTable.Modules.GetAccessibleBindingsByName(
+                         ownerModuleId,
+                         methodName,
+                         _currentModuleId.IsValid ? _currentModuleId : null))
+            {
+                AddDistinctFunctionCandidate(candidates, binding.SymbolId);
+            }
+        }
     }
 
     private List<SymbolId> GetTypeDirectedCallableCandidates(
@@ -491,38 +527,7 @@ public sealed partial class TypeInferer
             return candidates;
         }
 
-        foreach (var candidate in GetPrecompiledCallableCandidatesByName(name))
-        {
-            AddDistinctFunctionCandidate(candidates, candidate);
-        }
-
         return candidates;
-    }
-
-    private IReadOnlyList<SymbolId> GetPrecompiledCallableCandidatesByName(string name)
-    {
-        if (_precompiledCallableCandidateCache.TryGetValue(name, out var cached))
-        {
-            IncrementProfilingCounter("Types.callableCandidateCache.hits");
-            return cached;
-        }
-
-        IncrementProfilingCounter("Types.callableCandidateCache.misses");
-        var candidates = new List<SymbolId>();
-        foreach (var function in _symbolTable.Symbols.Values.OfType<FuncSymbol>())
-        {
-            if (string.Equals(function.Name, name, StringComparison.Ordinal) &&
-                IsPrecompiledSymbol(function))
-            {
-                candidates.Add(function.Id);
-            }
-        }
-
-        var result = candidates.ToArray();
-        _precompiledCallableCandidateCache[name] = result;
-        IncrementProfilingCounter("Types.callableCandidateCache.entries");
-        IncrementProfilingCounter("Types.callableCandidateCache.candidates", result.Length);
-        return result;
     }
 
     private void AddDistinctFunctionCandidate(List<SymbolId> candidates, SymbolId candidate)
@@ -778,23 +783,21 @@ public sealed partial class TypeInferer
             {
                 var paramType = trial.Apply(functionType.Params[0]);
                 var argumentType = trial.Apply(argumentTypes[i]);
-                var receiverScore = i == 0
-                    ? GetReceiverMatchScore(paramType, argumentType)
-                    : 0;
+                var argumentScore = GetCallableParameterMatchScore(paramType, argumentType);
                 try
                 {
                     trial.Unify(
                         paramType,
-                        NormalizeClosedCaseArgumentForExpectedType(paramType, argumentType, trial));
+                        NormalizeCallableArgumentForExpectedType(paramType, argumentType, trial));
                 }
                 catch (TypeInferenceException)
                 {
                     return false;
                 }
 
+                score += argumentScore;
                 if (i == 0)
                 {
-                    score += receiverScore;
                     score += GetReceiverOwnerModuleMatchScore(candidate, argumentType);
                 }
 
@@ -818,7 +821,7 @@ public sealed partial class TypeInferer
                 var actualArgument = trial.Apply(argumentTypes[i]);
                 trial.Unify(
                     expectedParameter,
-                    NormalizeClosedCaseArgumentForExpectedType(expectedParameter, actualArgument, trial));
+                    NormalizeCallableArgumentForExpectedType(expectedParameter, actualArgument, trial));
             }
             catch (TypeInferenceException)
             {
@@ -828,7 +831,34 @@ public sealed partial class TypeInferer
             currentType = trial.Apply(ret);
         }
 
+        if (trial.Apply(currentType) is not TyFun)
+        {
+            score += 32;
+        }
+
         return true;
+    }
+
+    private Type NormalizeCallableArgumentForExpectedType(
+        Type expected,
+        Type actual,
+        Substitution substitution)
+    {
+        var normalized = NormalizeClosedCaseArgumentForExpectedType(expected, actual, substitution);
+        var resolvedExpected = substitution.Apply(expected);
+        var resolvedActual = substitution.Apply(normalized);
+        if (resolvedExpected is TyRef reference && resolvedActual is not (TyRef or TyMutRef))
+        {
+            return new TyRef
+            {
+                Inner = NormalizeClosedCaseArgumentForExpectedType(
+                    reference.Inner,
+                    resolvedActual,
+                    substitution)
+            };
+        }
+
+        return normalized;
     }
 
     private Type NormalizeClosedCaseArgumentForExpectedType(
@@ -838,6 +868,13 @@ public sealed partial class TypeInferer
     {
         var resolvedExpected = substitution.Apply(expected);
         var resolvedActual = substitution.Apply(actual);
+        if (resolvedExpected is TyVar &&
+            resolvedActual is TyCon inferredConstructor &&
+            TryPromoteClosedCaseToRoot(inferredConstructor, out var inferredRoot))
+        {
+            return inferredRoot;
+        }
+
         if (resolvedExpected is TyCon expectedConstructor &&
             resolvedActual is TyCon actualConstructor)
         {
@@ -971,20 +1008,6 @@ public sealed partial class TypeInferer
         return 0;
     }
 
-    private void AddReceiverOwnedPrecompiledMethodCandidates(
-        string methodName,
-        Type receiverType,
-        List<SymbolId> candidates)
-    {
-        foreach (var candidate in GetPrecompiledCallableCandidatesByName(methodName))
-        {
-            if (GetReceiverOwnerModuleMatchScore(candidate, receiverType) > 0)
-            {
-                AddDistinctFunctionCandidate(candidates, candidate);
-            }
-        }
-    }
-
     private bool TryGetOwningModuleId(SymbolId memberId, out SymbolId moduleId)
     {
         return _symbolTable.Modules.TryGetOwningModuleId(memberId, out moduleId);
@@ -1014,15 +1037,37 @@ public sealed partial class TypeInferer
         return false;
     }
 
-    private static int GetReceiverMatchScore(Type parameterType, Type receiverType)
+    private static int GetCallableParameterMatchScore(Type parameterType, Type argumentType)
     {
-        return (parameterType, receiverType) switch
+        return (parameterType, argumentType) switch
         {
-            (TyCon left, TyCon right) when left.Symbol.IsValid && left.Symbol.Equals(right.Symbol) => 4,
-            (TyCon left, TyCon right) when string.Equals(left.Name, right.Name, StringComparison.Ordinal) => 3,
+            (TyCon left, TyCon right) when left.Symbol.IsValid && left.Symbol.Equals(right.Symbol) =>
+                16 + ScoreCallableTypeArguments(left.Args, right.Args),
+            (TyCon left, TyCon right) when string.Equals(left.Name, right.Name, StringComparison.Ordinal) =>
+                12 + ScoreCallableTypeArguments(left.Args, right.Args),
+            (TyRef left, TyRef right) => 8 + GetCallableParameterMatchScore(left.Inner, right.Inner),
+            (TyMutRef left, TyMutRef right) => 8 + GetCallableParameterMatchScore(left.Inner, right.Inner),
+            (TyRef left, not (TyRef or TyMutRef)) =>
+                Math.Max(0, GetCallableParameterMatchScore(left.Inner, argumentType) - 4),
+            (TyTuple left, TyTuple right) when left.Elements.Count == right.Elements.Count =>
+                4 + left.Elements.Zip(right.Elements, GetCallableParameterMatchScore).Sum(),
+            (TyFun left, TyFun right) when left.Params.Count == right.Params.Count =>
+                4 + left.Params.Zip(right.Params, GetCallableParameterMatchScore).Sum() +
+                GetCallableParameterMatchScore(left.Result, right.Result),
             (TyVar, _) => 1,
             _ => 2
         };
+    }
+
+    private static int ScoreCallableTypeArguments(IReadOnlyList<Type> parameters, IReadOnlyList<Type> arguments)
+    {
+        var score = 0;
+        for (var index = 0; index < Math.Min(parameters.Count, arguments.Count); index++)
+        {
+            score += GetCallableParameterMatchScore(parameters[index], arguments[index]);
+        }
+
+        return score;
     }
 
     private Type ApplyMethodArguments(MethodCallExpr method, Type functionType, List<Type> argumentTypes)
@@ -1048,7 +1093,33 @@ public sealed partial class TypeInferer
 
                 var resolvedArg = _substitution.Apply(argumentTypes[i]);
 
-                if (resolvedParam is not (TyRef or TyMutRef) &&
+                if (resolvedParam is TyRef parameterReference &&
+                    resolvedArg is not (TyRef or TyMutRef) &&
+                    originalArgument != null)
+                {
+                    var borrowedInner = NormalizeClosedCaseArgumentForExpectedType(
+                        parameterReference.Inner,
+                        resolvedArg,
+                        _substitution);
+                    var borrowedType = new TyRef { Inner = borrowedInner };
+                    var syntheticBorrow = new UnaryExpr();
+                    syntheticBorrow.SetOperator(UnaryOp.Ref);
+                    syntheticBorrow.SetOperand(originalArgument);
+                    syntheticBorrow.SetSpan(originalArgument.Span);
+                    syntheticBorrow.InferredType = borrowedType;
+
+                    if (i == 0)
+                    {
+                        method.SetReceiver(syntheticBorrow);
+                    }
+                    else if (i - 1 < method.PositionalArgs.Count)
+                    {
+                        method.PositionalArgs[i - 1] = syntheticBorrow;
+                    }
+
+                    argumentTypes[i] = borrowedType;
+                }
+                else if (resolvedParam is not (TyRef or TyMutRef) &&
                     resolvedArg is TyRef or TyMutRef)
                 {
                     var innerType = resolvedArg switch
@@ -1831,164 +1902,4 @@ public sealed partial class TypeInferer
         return resolvedType.Id;
     }
 
-    private Type InferFunctionType(FuncDef funcDef)
-    {
-        return InferFunctionSignatureType(funcDef.Signature, funcDef.TypeParams, requiredAbilities: funcDef.RequiredAbilities);
-    }
-
-    private TypeScheme InferFunctionSignatureScheme(FuncDef funcDef)
-    {
-        if (funcDef.Signature.Count == 0)
-        {
-            return _env.Generalize(BaseTypes.Unit);
-        }
-
-        var typeVarEnv = new Dictionary<string, Type>(StringComparer.Ordinal);
-        var kindEnvByName = CreateTypeParamKindMap(funcDef.TypeParams);
-        var kindEnvByTypeVar = new Dictionary<int, Kind>();
-
-        RegisterSignatureTypeParams(funcDef.TypeParams, kindEnvByName, typeVarEnv, kindEnvByTypeVar);
-        var valueGenericParameterTypes = ResolveValueGenericParameterTypes(funcDef.TypeParams, typeVarEnv);
-
-        _typeParamKindStack.Push(kindEnvByName);
-        _typeParamVarKindStack.Push(kindEnvByTypeVar);
-        try
-        {
-            var signatureConstraintGenerator = new ConstraintGenerator(_symbolTable, _substitution);
-            foreach (var typeParam in funcDef.TypeParams)
-            {
-                if (!typeVarEnv.TryGetValue(typeParam.Name, out var typeVar))
-                {
-                    continue;
-                }
-
-                signatureConstraintGenerator.CollectTypeParamConstraints(
-                    typeParam,
-                    typeVar,
-                    typeNode => ConvertType(typeNode, typeVarEnv, allowTypeConstructorReference: true));
-            }
-
-            var functionType = ConvertFunctionSignatureType(funcDef.Signature, typeVarEnv);
-            if (funcDef.Body.Count == 0 && functionType is TyFun function)
-            {
-                functionType = StripLeadingUnitParams(function);
-            }
-
-            functionType = ApplyRequiredAbilitiesToFunction(
-                functionType,
-                ResolveRequiredAbilities(funcDef.RequiredAbilities ?? [], typeVarEnv));
-
-            var scheme = _env.Generalize(functionType, signatureConstraintGenerator.Constraints.Constraints.ToList());
-            RegisterFunctionGenericParameterTypes(funcDef, typeVarEnv, valueGenericParameterTypes);
-            return scheme;
-        }
-        finally
-        {
-            _typeParamVarKindStack.Pop();
-            _typeParamKindStack.Pop();
-        }
-    }
-
-    private Type InferFunctionSignatureType(
-        IReadOnlyList<TypeNode> signature,
-        IReadOnlyList<TypeParam> typeParams,
-        IReadOnlyList<TypeParam>? outerTypeParams = null,
-        IReadOnlyDictionary<string, Kind>? outerKindEnvByName = null,
-        IReadOnlyList<EffectRequirementNode>? requiredAbilities = null,
-        Type? selfType = null)
-    {
-        if (signature.Count == 0)
-        {
-            return BaseTypes.Unit;
-        }
-
-        var typeVarEnv = new Dictionary<string, Type>(StringComparer.Ordinal);
-        var kindEnvByName = outerKindEnvByName == null
-            ? []
-            : new Dictionary<string, Kind>(outerKindEnvByName, StringComparer.Ordinal);
-        foreach (var pair in CreateTypeParamKindMap(typeParams))
-        {
-            kindEnvByName[pair.Key] = pair.Value;
-        }
-
-        var kindEnvByTypeVar = new Dictionary<int, Kind>();
-
-        RegisterSignatureTypeParams(outerTypeParams ?? [], kindEnvByName, typeVarEnv, kindEnvByTypeVar);
-        RegisterSignatureTypeParams(typeParams, kindEnvByName, typeVarEnv, kindEnvByTypeVar);
-        ResolveValueGenericParameterTypes(outerTypeParams ?? [], typeVarEnv);
-        ResolveValueGenericParameterTypes(typeParams, typeVarEnv);
-        if (selfType != null)
-        {
-            typeVarEnv[WellKnownStrings.Keywords.Self] = selfType;
-        }
-
-        _typeParamKindStack.Push(kindEnvByName);
-        _typeParamVarKindStack.Push(kindEnvByTypeVar);
-        try
-        {
-            var functionType = ConvertFunctionSignatureType(signature, typeVarEnv);
-            return ApplyRequiredAbilitiesToFunction(
-                functionType,
-                ResolveRequiredAbilities(requiredAbilities ?? [], typeVarEnv));
-        }
-        finally
-        {
-            _typeParamVarKindStack.Pop();
-            _typeParamKindStack.Pop();
-        }
-    }
-
-    private Type ConvertFunctionSignatureType(
-        IReadOnlyList<TypeNode> signature,
-        Dictionary<string, Type> typeVarEnv)
-    {
-        if (signature.Count == 1)
-        {
-            return ConvertType(signature[0], typeVarEnv);
-        }
-
-        var paramTypes = signature.Take(signature.Count - 1)
-            .Select(typeNode => ConvertType(typeNode, typeVarEnv))
-            .ToList();
-        var returnType = ConvertType(signature[^1], typeVarEnv);
-
-        return new TyFun
-        {
-            Params = paramTypes,
-            Result = returnType
-        };
-    }
-
-    private void RegisterSignatureTypeParams(
-        IReadOnlyList<TypeParam> typeParams,
-        IReadOnlyDictionary<string, Kind> kindEnvByName,
-        Dictionary<string, Type> typeVarEnv,
-        Dictionary<int, Kind> kindEnvByTypeVar)
-    {
-        foreach (var typeParam in typeParams)
-        {
-            if (string.IsNullOrWhiteSpace(typeParam.Name) ||
-                typeVarEnv.ContainsKey(typeParam.Name))
-            {
-                continue;
-            }
-
-            var typeVar = _substitution.FreshTypeVariable();
-            typeVarEnv[typeParam.Name] = typeVar;
-            if (typeVar is TyVar typeVariable &&
-                kindEnvByName.TryGetValue(typeParam.Name, out var typeParamKind))
-            {
-                kindEnvByTypeVar[typeVariable.Index] = typeParamKind;
-            }
-        }
-    }
-
-    private static List<string> SplitQualifiedName(string name)
-    {
-        return name
-            .Replace(WellKnownStrings.Separators.ModulePath, WellKnownStrings.Separators.Path, StringComparison.Ordinal)
-            .Split(WellKnownStrings.Separators.Path, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(part => !string.IsNullOrWhiteSpace(part))
-            .ToList();
-    }
 }

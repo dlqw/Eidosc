@@ -271,11 +271,9 @@ public static class WellKnownStrings
         public const string ModuleInit = "eidos_module_init";
 
         // Print / IO
-        public const string PrintInt = "eidos_print_int";
-        public const string PrintFloat = "eidos_print_float";
-        public const string PrintChar = "eidos_print_char";
-        public const string PrintString = "eidos_print_string";
-        public const string PrintNewline = "eidos_print_newline";
+        public const string WriteTextRaw = "eidos_write_text_raw";
+        public const string WriteNewlineRaw = "eidos_write_newline_raw";
+        public const string WriteCharCodeRaw = "eidos_write_char_code_raw";
         public const string ReadChar = "eidos_read_char";
         public const string ReadLine = "eidos_read_line";
         public const string IoLastSuccess = "eidos_io_last_success";
@@ -294,6 +292,7 @@ public static class WellKnownStrings
         public const string StringToCstr = "eidos_string_to_cstr";
         public const string StringToFloat = "eidos_string_to_float";
         public const string IntToString = "eidos_int_to_string";
+        public const string FloatToString = "eidos_float_to_string";
         public const string IntToFloat = "eidos_int_to_float";
 
         // Show / type display
@@ -631,6 +630,7 @@ public static class WellKnownStrings
         public const string LiteralExpr = "LiteralExpr";
         public const string LoopExpr = "LoopExpr";
         public const string MatchExpr = "MatchExpr";
+        public const string SelectionExpr = "SelectionExpr";
         public const string MethodCallExpr = "MethodCallExpr";
         public const string PathExpr = "PathExpr";
         public const string PatternBranch = "PatternBranch";

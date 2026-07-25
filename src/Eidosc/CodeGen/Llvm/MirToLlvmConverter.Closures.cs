@@ -12,7 +12,11 @@ public sealed partial class MirToLlvmConverter
     private const long ClosurePayloadWordCountOffset = 24;
     private const long ClosurePayloadOffset = 32;
 
-    private readonly record struct ClosurePayloadEntry(LlvmValue Value, LlvmType Type, bool IsManagedRc);
+    private readonly record struct ClosurePayloadEntry(LlvmValue Value, LlvmType Type, bool IsManagedRc)
+    {
+        public TypeId TypeId { get; init; } = TypeId.None;
+        public long Offset { get; init; }
+    }
 
     private LlvmValue MaterializeFunctionReference(MirFunctionRef funcRef)
     {
@@ -53,6 +57,7 @@ public sealed partial class MirToLlvmConverter
             functionType,
             [],
             [],
+            [],
             visibleSignature);
     }
 
@@ -77,7 +82,7 @@ public sealed partial class MirToLlvmConverter
     {
         value = default!;
 
-        if (funcRef.TraitMethodRole != TraitMethodRole.Show ||
+        if (funcRef.CompilerSemanticRole != CompilerSemanticRole.Show ||
             !TryResolveSourceVisibleSignature(visibleTypeId, out var visibleSignature) ||
             !_typeLowering.TryGetFunctionSignature(visibleTypeId, out var parameterTypeIds, out _) ||
             visibleSignature.ParameterTypes.Count != 1 ||
@@ -129,6 +134,7 @@ public sealed partial class MirToLlvmConverter
             fullSignature,
             [],
             [],
+            [],
             visibleSignature);
         return true;
     }
@@ -148,11 +154,13 @@ public sealed partial class MirToLlvmConverter
                 partial.Signature,
                 partial.BoundArguments,
                 partial.BoundArgumentManagedFlags,
+                partial.BoundArgumentTypeIds,
                 partial.VisibleSignature ?? BuildRemainingSignature(partial.Signature, partial.BoundArguments.Count)),
             _ => CreateNestedClosureValue(
                 partial.Function,
                 partial.BoundArguments,
                 partial.BoundArgumentManagedFlags,
+                partial.BoundArgumentTypeIds,
                 partial.VisibleSignature ?? BuildRemainingSignature(partial.Signature, partial.BoundArguments.Count))
         };
 
@@ -171,22 +179,28 @@ public sealed partial class MirToLlvmConverter
         LlvmFunctionType fullSignature,
         IReadOnlyList<LlvmValue> boundArguments,
         IReadOnlyList<bool> boundArgumentManagedFlags,
+        IReadOnlyList<TypeId> boundArgumentTypeIds,
         LlvmFunctionType visibleSignature)
     {
-        var payload = boundArguments
+        var payload = LayoutClosurePayload(boundArguments
             .Select((argument, index) => new ClosurePayloadEntry(
                 argument,
                 fullSignature.ParameterTypes[index],
                 boundArgumentManagedFlags.Count > index
                     ? boundArgumentManagedFlags[index]
-                    : IsManagedRcPayloadValue(argument, fullSignature.ParameterTypes[index])))
-            .ToList();
+                    : IsManagedRcPayloadValue(argument, fullSignature.ParameterTypes[index]))
+            {
+                TypeId = boundArgumentTypeIds.Count > index
+                    ? boundArgumentTypeIds[index]
+                    : TypeId.None
+            })
+            .ToList());
 
         var invokeThunk = SynthesizeDirectInvokeThunk(
             directFunction,
             fullSignature,
             visibleSignature,
-            payload.Select(entry => entry.Type).ToList());
+            payload);
         var releaseThunk = SynthesizeReleaseThunk(payload);
         return EmitClosureAllocation(invokeThunk, releaseThunk, payload);
     }
@@ -195,6 +209,7 @@ public sealed partial class MirToLlvmConverter
         LlvmValue rootClosure,
         IReadOnlyList<LlvmValue> boundArguments,
         IReadOnlyList<bool> boundArgumentManagedFlags,
+        IReadOnlyList<TypeId> boundArgumentTypeIds,
         LlvmFunctionType visibleSignature)
     {
         var payload = new List<ClosurePayloadEntry>(boundArguments.Count + 1)
@@ -206,11 +221,17 @@ public sealed partial class MirToLlvmConverter
             argument.Type,
             boundArgumentManagedFlags.Count > index
                 ? boundArgumentManagedFlags[index]
-                : IsManagedRcPayloadValue(argument, argument.Type))));
+                : IsManagedRcPayloadValue(argument, argument.Type))
+        {
+            TypeId = boundArgumentTypeIds.Count > index
+                ? boundArgumentTypeIds[index]
+                : TypeId.None
+        }));
 
+        payload = LayoutClosurePayload(payload);
         var invokeThunk = SynthesizeNestedInvokeThunk(
             visibleSignature,
-            payload.Skip(1).Select(entry => entry.Type).ToList());
+            payload);
         var releaseThunk = SynthesizeReleaseThunk(payload);
         return EmitClosureAllocation(invokeThunk, releaseThunk, payload);
     }
@@ -276,7 +297,7 @@ public sealed partial class MirToLlvmConverter
             [
                 new LlvmInstructionRef { Instruction = invokePtr, Type = LlvmPointerType.VoidPtr() },
                 releaseValue,
-                new LlvmConstant { Value = (long)payload.Count, Type = LlvmIntType.I64 }
+                new LlvmConstant { Value = ComputeClosurePayloadWordCount(payload), Type = LlvmIntType.I64 }
             ],
             ReturnType = LlvmPointerType.VoidPtr(),
             ResultName = _nameMangler.NewTempName(WellKnownStrings.InternalNames.Closure)
@@ -292,12 +313,16 @@ public sealed partial class MirToLlvmConverter
         for (var index = 0; index < payload.Count; index++)
         {
             var entry = payload[index];
-            if (entry.IsManagedRc)
+            if (entry.TypeId.IsValid && PayloadContainsManagedRc(entry.TypeId))
+            {
+                EmitRetainManagedPayloadValue(entry.TypeId, entry.Value, entry.Type);
+            }
+            else if (entry.IsManagedRc)
             {
                 _currentBlock?.Instructions.Add(CreateRuntimeRcCall(WellKnownStrings.Runtime.IncRefLocal, entry.Value));
             }
 
-            var slotPtr = EmitClosureFieldPointer(closureRef, ClosurePayloadOffset + (index * 8L), $"closure_slot_{index}");
+            var slotPtr = EmitClosureFieldPointer(closureRef, ClosurePayloadOffset + entry.Offset, $"closure_slot_{index}");
             _currentBlock?.Instructions.Add(new LlvmStore
             {
                 Value = CoerceValueToType(entry.Value, entry.Type, $"closure_payload_{index}"),
@@ -380,7 +405,7 @@ public sealed partial class MirToLlvmConverter
         LlvmValue directFunction,
         LlvmFunctionType fullSignature,
         LlvmFunctionType visibleSignature,
-        IReadOnlyList<LlvmType> payloadTypes)
+        IReadOnlyList<ClosurePayloadEntry> payload)
     {
         var thunk = new LlvmFunction
         {
@@ -414,9 +439,10 @@ public sealed partial class MirToLlvmConverter
             _currentBlock = entry;
 
             var callArguments = new List<LlvmValue>(fullSignature.ParameterTypes.Count);
-            for (var index = 0; index < payloadTypes.Count; index++)
+            for (var index = 0; index < payload.Count; index++)
             {
-                callArguments.Add(LoadClosurePayloadValue(payloadTypes[index], index, "direct_payload"));
+                var entryInfo = payload[index];
+                callArguments.Add(LoadClosurePayloadValue(entryInfo.Type, entryInfo.Offset, "direct_payload"));
             }
 
             for (var index = 0; index < visibleSignature.ParameterTypes.Count; index++)
@@ -439,6 +465,9 @@ public sealed partial class MirToLlvmConverter
                     fullSignature,
                     callArguments,
                     boundArgumentManagedFlags,
+                    payload.Select(static entry => entry.TypeId)
+                        .Concat(Enumerable.Repeat(TypeId.None, visibleSignature.ParameterTypes.Count))
+                        .ToList(),
                     BuildRemainingSignature(fullSignature, callArguments.Count));
                 entry.Terminator = new LlvmRet
                 {
@@ -482,7 +511,7 @@ public sealed partial class MirToLlvmConverter
 
     private LlvmFunction SynthesizeNestedInvokeThunk(
         LlvmFunctionType visibleSignature,
-        IReadOnlyList<LlvmType> boundArgumentTypes)
+        IReadOnlyList<ClosurePayloadEntry> payload)
     {
         var thunk = new LlvmFunction
         {
@@ -515,20 +544,22 @@ public sealed partial class MirToLlvmConverter
             thunk.BasicBlocks.Add(entry);
             _currentBlock = entry;
 
-            var nestedClosure = LoadClosurePayloadValue(LlvmPointerType.VoidPtr(), 0, "nested_root");
+            var rootEntry = payload[0];
+            var nestedClosure = LoadClosurePayloadValue(rootEntry.Type, rootEntry.Offset, "nested_root");
             var nestedInvoke = LoadClosureInvokePointer(
                 nestedClosure,
                 BuildClosureInvokeFunctionType(visibleSignature),
                 "nested_invoke");
 
-            var callArguments = new List<LlvmValue>(1 + boundArgumentTypes.Count + visibleSignature.ParameterTypes.Count)
+            var callArguments = new List<LlvmValue>(payload.Count + visibleSignature.ParameterTypes.Count)
             {
                 CoerceToPointer(nestedClosure)
             };
 
-            for (var index = 0; index < boundArgumentTypes.Count; index++)
+            for (var index = 1; index < payload.Count; index++)
             {
-                callArguments.Add(LoadClosurePayloadValue(boundArgumentTypes[index], index + 1, "nested_payload"));
+                var entryInfo = payload[index];
+                callArguments.Add(LoadClosurePayloadValue(entryInfo.Type, entryInfo.Offset, "nested_payload"));
             }
 
             for (var index = 0; index < visibleSignature.ParameterTypes.Count; index++)
@@ -576,7 +607,8 @@ public sealed partial class MirToLlvmConverter
     {
         var managedIndexes = payload
             .Select((entry, index) => (entry, index))
-            .Where(pair => pair.entry.IsManagedRc)
+            .Where(pair => pair.entry.IsManagedRc ||
+                           (pair.entry.TypeId.IsValid && PayloadContainsManagedRc(pair.entry.TypeId)))
             .ToList();
         if (managedIndexes.Count == 0)
         {
@@ -604,10 +636,31 @@ public sealed partial class MirToLlvmConverter
             thunk.BasicBlocks.Add(entry);
             _currentBlock = entry;
 
+            var closure = new LlvmLocal
+            {
+                Name = WellKnownStrings.InternalNames.Closure,
+                Type = LlvmPointerType.VoidPtr()
+            };
             foreach (var (entryInfo, index) in managedIndexes)
             {
-                var payloadValue = LoadClosurePayloadValue(entryInfo.Type, index, "release_payload");
-                entry.Instructions.Add(CreateRuntimeRcCall(WellKnownStrings.Runtime.DecRefLocal, payloadValue));
+                if (entryInfo.TypeId.IsValid && PayloadContainsManagedRc(entryInfo.TypeId))
+                {
+                    var slotPointer = EmitClosureFieldPointer(
+                        closure,
+                        ClosurePayloadOffset + entryInfo.Offset,
+                        $"release_payload_{index}_slot");
+                    EmitReleaseManagedPayloadFromPointer(
+                        entry,
+                        slotPointer,
+                        entryInfo.TypeId,
+                        entryInfo.Type,
+                        $"closure_payload_{index}");
+                }
+                else
+                {
+                    var payloadValue = LoadClosurePayloadValue(entryInfo.Type, entryInfo.Offset, "release_payload");
+                    entry.Instructions.Add(CreateRuntimeRcCall(WellKnownStrings.Runtime.DecRefLocal, payloadValue));
+                }
             }
 
             entry.Terminator = new LlvmRet();
@@ -764,19 +817,19 @@ public sealed partial class MirToLlvmConverter
         return helper;
     }
 
-    private LlvmValue LoadClosurePayloadValue(LlvmType payloadType, int slotIndex, string tempPrefix)
+    private LlvmValue LoadClosurePayloadValue(LlvmType payloadType, long payloadOffset, string tempPrefix)
     {
         var closureParam = new LlvmLocal
         {
             Name = WellKnownStrings.InternalNames.Closure,
             Type = LlvmPointerType.VoidPtr()
         };
-        var slotPtr = EmitClosureFieldPointer(closureParam, ClosurePayloadOffset + (slotIndex * 8L), $"{tempPrefix}_{slotIndex}");
+        var slotPtr = EmitClosureFieldPointer(closureParam, ClosurePayloadOffset + payloadOffset, $"{tempPrefix}_{payloadOffset}");
         var load = new LlvmLoad
         {
             Pointer = slotPtr,
             LoadType = payloadType,
-            ResultName = _nameMangler.NewTempName($"{tempPrefix}_{slotIndex}_load")
+            ResultName = _nameMangler.NewTempName($"{tempPrefix}_{payloadOffset}_load")
         };
         _currentBlock?.Instructions.Add(load);
         return new LlvmInstructionRef
@@ -785,6 +838,32 @@ public sealed partial class MirToLlvmConverter
             Type = payloadType
         };
     }
+
+    private static List<ClosurePayloadEntry> LayoutClosurePayload(List<ClosurePayloadEntry> payload)
+    {
+        var offset = 0L;
+        for (var index = 0; index < payload.Count; index++)
+        {
+            payload[index] = payload[index] with { Offset = offset };
+            offset += AlignConstructorPayloadSize(Math.Max(1L, GetLlvmStorageSize(payload[index].Type)));
+        }
+
+        return payload;
+    }
+
+    private static long ComputeClosurePayloadByteSize(IReadOnlyList<ClosurePayloadEntry> payload)
+    {
+        if (payload.Count == 0)
+        {
+            return 0;
+        }
+
+        var last = payload[^1];
+        return last.Offset + AlignConstructorPayloadSize(Math.Max(1L, GetLlvmStorageSize(last.Type)));
+    }
+
+    private static long ComputeClosurePayloadWordCount(IReadOnlyList<ClosurePayloadEntry> payload) =>
+        ComputeClosurePayloadByteSize(payload) / 8L;
 
     private bool IsManagedRcPayloadValue(MirOperand operand, LlvmValue value, LlvmType type)
     {

@@ -69,9 +69,9 @@ Network :: module {
     io_last_error :: Unit -> String compiler(internal, intrinsic: "io_last_error") need io;
 
 
-    HttpRequest :: type {method:: String, url:: String, content_type:: String, body:: String, headers:: String, connect_timeout_seconds:: Int, total_timeout_seconds:: Int}
-    HttpResponse :: type {ok:: Bool, status:: Int, body:: String, headers:: String, effective_url:: String, content_type:: String, error:: String}
-    HttpBytesResponse :: type {ok:: Bool, status:: Int, body:: Seq[Int], headers:: String, effective_url:: String, content_type:: String, error:: String}
+    export HttpRequest :: type {method:: String, url:: String, content_type:: String, body:: String, headers:: String, connect_timeout_seconds:: Int, total_timeout_seconds:: Int}
+    export HttpResponse :: type {ok:: Bool, status:: Int, body:: String, headers:: String, effective_url:: String, content_type:: String, error:: String}
+    export HttpBytesResponse :: type {ok:: Bool, status:: Int, body:: Seq[Int], headers:: String, effective_url:: String, content_type:: String, error:: String}
 
 
     hex_digit :: Int -> String
@@ -128,12 +128,12 @@ Network :: module {
             }
     }
 
-    url_encode_component :: String -> String
+    export url_encode_component :: String -> String
     {
         src => Network.url_encode_loop(src)(0)
     }
 
-    add_query_param :: String -> String -> String -> String
+    export add_query_param :: String -> String -> String -> String
     {
         url => key => value => {
             separator := if Text.contains(Text.clone(ref url))("?") then { "&" } else { "?" };
@@ -248,7 +248,7 @@ Network :: module {
                 else { "failed to decode http binary body" }
     }
 
-    request :: String -> String -> String -> String -> HttpRequest
+    export request :: String -> String -> String -> String -> HttpRequest
     {
         method => url => content_type => body =>
             HttpRequest{
@@ -262,7 +262,7 @@ Network :: module {
             }
     }
 
-    get_request :: String -> HttpRequest
+    export get_request :: String -> HttpRequest
     {
         url => HttpRequest{
             method: "GET",
@@ -275,7 +275,7 @@ Network :: module {
         }
     }
 
-    post_text_request :: String -> String -> HttpRequest
+    export post_text_request :: String -> String -> HttpRequest
     {
         url => body => HttpRequest{
             method: "POST",
@@ -288,7 +288,7 @@ Network :: module {
         }
     }
 
-    post_json_request :: String -> String -> HttpRequest
+    export post_json_request :: String -> String -> HttpRequest
     {
         url => body => HttpRequest{
             method: "POST",
@@ -301,7 +301,7 @@ Network :: module {
         }
     }
 
-    with_method :: HttpRequest -> String -> HttpRequest
+    export with_method :: HttpRequest -> String -> HttpRequest
     {
         HttpRequest{
             method: _,
@@ -323,7 +323,7 @@ Network :: module {
             }
     }
 
-    with_url :: HttpRequest -> String -> HttpRequest
+    export with_url :: HttpRequest -> String -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -345,7 +345,7 @@ Network :: module {
             }
     }
 
-    with_body :: HttpRequest -> String -> HttpRequest
+    export with_body :: HttpRequest -> String -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -367,7 +367,7 @@ Network :: module {
             }
     }
 
-    with_content_type :: HttpRequest -> String -> HttpRequest
+    export with_content_type :: HttpRequest -> String -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -389,7 +389,7 @@ Network :: module {
             }
     }
 
-    put_text_request :: String -> String -> HttpRequest
+    export put_text_request :: String -> String -> HttpRequest
     {
         url => body => HttpRequest{
             method: "PUT",
@@ -402,7 +402,7 @@ Network :: module {
         }
     }
 
-    put_json_request :: String -> String -> HttpRequest
+    export put_json_request :: String -> String -> HttpRequest
     {
         url => body => HttpRequest{
             method: "PUT",
@@ -415,7 +415,7 @@ Network :: module {
         }
     }
 
-    delete_request :: String -> HttpRequest
+    export delete_request :: String -> HttpRequest
     {
         url => HttpRequest{
             method: "DELETE",
@@ -428,7 +428,7 @@ Network :: module {
         }
     }
 
-    with_query_param :: HttpRequest -> String -> String -> HttpRequest
+    export with_query_param :: HttpRequest -> String -> String -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -450,7 +450,7 @@ Network :: module {
             }
     }
 
-    with_header :: HttpRequest -> String -> String -> HttpRequest
+    export with_header :: HttpRequest -> String -> String -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -472,32 +472,32 @@ Network :: module {
             }
     }
 
-    with_bearer_auth :: HttpRequest -> String -> HttpRequest
+    export with_bearer_auth :: HttpRequest -> String -> HttpRequest
     {
         request => token => Network.with_header(request)("Authorization")("Bearer " ++ token)
     }
 
-    with_accept :: HttpRequest -> String -> HttpRequest
+    export with_accept :: HttpRequest -> String -> HttpRequest
     {
         request => value => Network.with_header(request)("Accept")(value)
     }
 
-    with_accept_json :: HttpRequest -> HttpRequest
+    export with_accept_json :: HttpRequest -> HttpRequest
     {
         request => Network.with_accept(request)("application/json")
     }
 
-    with_user_agent :: HttpRequest -> String -> HttpRequest
+    export with_user_agent :: HttpRequest -> String -> HttpRequest
     {
         request => value => Network.with_header(request)("User-Agent")(value)
     }
 
-    with_json_content_type :: HttpRequest -> HttpRequest
+    export with_json_content_type :: HttpRequest -> HttpRequest
     {
         request => Network.with_content_type(request)("application/json")
     }
 
-    with_connect_timeout :: HttpRequest -> Int -> HttpRequest
+    export with_connect_timeout :: HttpRequest -> Int -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -519,7 +519,7 @@ Network :: module {
             }
     }
 
-    with_total_timeout :: HttpRequest -> Int -> HttpRequest
+    export with_total_timeout :: HttpRequest -> Int -> HttpRequest
     {
         HttpRequest{
             method: method,
@@ -541,56 +541,56 @@ Network :: module {
             }
     }
 
-    connect_timeout_seconds :: Ref[HttpRequest] -> Int
+    export connect_timeout_seconds :: Ref[HttpRequest] -> Int
     {
         request => match *request {
             HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: seconds, total_timeout_seconds: _} => seconds
         }
     }
 
-    total_timeout_seconds :: Ref[HttpRequest] -> Int
+    export total_timeout_seconds :: Ref[HttpRequest] -> Int
     {
         request => match *request {
             HttpRequest{method: _, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: seconds} => seconds
         }
     }
 
-    request_method :: Ref[HttpRequest] -> String
+    export request_method :: Ref[HttpRequest] -> String
     {
         request => match *request {
             HttpRequest{method: method, url: _, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref method)
         }
     }
 
-    request_url :: Ref[HttpRequest] -> String
+    export request_url :: Ref[HttpRequest] -> String
     {
         request => match *request {
             HttpRequest{method: _, url: url, content_type: _, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref url)
         }
     }
 
-    request_body :: Ref[HttpRequest] -> String
+    export request_body :: Ref[HttpRequest] -> String
     {
         request => match *request {
             HttpRequest{method: _, url: _, content_type: _, body: body, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref body)
         }
     }
 
-    request_content_type :: Ref[HttpRequest] -> String
+    export request_content_type :: Ref[HttpRequest] -> String
     {
         request => match *request {
             HttpRequest{method: _, url: _, content_type: content_type, body: _, headers: _, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref content_type)
         }
     }
 
-    request_headers :: Ref[HttpRequest] -> String
+    export request_headers :: Ref[HttpRequest] -> String
     {
         request => match *request {
             HttpRequest{method: _, url: _, content_type: _, body: _, headers: headers, connect_timeout_seconds: _, total_timeout_seconds: _} => Text.clone(ref headers)
         }
     }
 
-    send :: HttpRequest -> HttpResponse need io
+    export send :: HttpRequest -> HttpResponse need io
     {
         HttpRequest{
             method: method,
@@ -621,7 +621,7 @@ Network :: module {
         }
     }
 
-    send_bytes :: HttpRequest -> HttpBytesResponse need io
+    export send_bytes :: HttpRequest -> HttpBytesResponse need io
     {
         HttpRequest{
             method: method,
@@ -667,7 +667,7 @@ Network :: module {
         }
     }
 
-    send_with_bytes_body :: HttpRequest -> Seq[Int] -> HttpResponse need io
+    export send_with_bytes_body :: HttpRequest -> Seq[Int] -> HttpResponse need io
     {
         HttpRequest{
             method: method,
@@ -699,7 +699,7 @@ Network :: module {
         }
     }
 
-    send_bytes_with_bytes_body :: HttpRequest -> Seq[Int] -> HttpBytesResponse need io
+    export send_bytes_with_bytes_body :: HttpRequest -> Seq[Int] -> HttpBytesResponse need io
     {
         HttpRequest{
             method: method,
@@ -746,98 +746,98 @@ Network :: module {
         }
     }
 
-    ok :: Ref[HttpResponse] -> Bool
+    export ok :: Ref[HttpResponse] -> Bool
     {
         response => match *response {
             HttpResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
         }
     }
 
-    status :: Ref[HttpResponse] -> Int
+    export status :: Ref[HttpResponse] -> Int
     {
         response => match *response {
             HttpResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
         }
     }
 
-    body :: Ref[HttpResponse] -> String
+    export body :: Ref[HttpResponse] -> String
     {
         response => match *response {
             HttpResponse{ok: _, status: _, body: text, headers: _, effective_url: _, content_type: _, error: _} => Text.clone(ref text)
         }
     }
 
-    headers :: Ref[HttpResponse] -> String
+    export headers :: Ref[HttpResponse] -> String
     {
         response => match *response {
             HttpResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => Text.clone(ref raw)
         }
     }
 
-    effective_url :: Ref[HttpResponse] -> String
+    export effective_url :: Ref[HttpResponse] -> String
     {
         response => match *response {
             HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => Text.clone(ref url)
         }
     }
 
-    content_type :: Ref[HttpResponse] -> String
+    export content_type :: Ref[HttpResponse] -> String
     {
         response => match *response {
             HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => Text.clone(ref mime)
         }
     }
 
-    error :: Ref[HttpResponse] -> String
+    export error :: Ref[HttpResponse] -> String
     {
         response => match *response {
             HttpResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => Text.clone(ref message)
         }
     }
 
-    bytes_ok :: Ref[HttpBytesResponse] -> Bool
+    export bytes_ok :: Ref[HttpBytesResponse] -> Bool
     {
         response => match *response {
             HttpBytesResponse{ok: is_ok, status: _, body: _, headers: _, effective_url: _, content_type: _, error: _} => is_ok
         }
     }
 
-    bytes_status :: Ref[HttpBytesResponse] -> Int
+    export bytes_status :: Ref[HttpBytesResponse] -> Int
     {
         response => match *response {
             HttpBytesResponse{ok: _, status: code, body: _, headers: _, effective_url: _, content_type: _, error: _} => code
         }
     }
 
-    body_bytes :: Ref[HttpBytesResponse] -> Seq[Int]
+    export body_bytes :: Ref[HttpBytesResponse] -> Seq[Int]
     {
         response => match *response {
             HttpBytesResponse{ok: _, status: _, body: bytes, headers: _, effective_url: _, content_type: _, error: _} => Seq.clone_items(ref bytes)
         }
     }
 
-    bytes_headers :: Ref[HttpBytesResponse] -> String
+    export bytes_headers :: Ref[HttpBytesResponse] -> String
     {
         response => match *response {
             HttpBytesResponse{ok: _, status: _, body: _, headers: raw, effective_url: _, content_type: _, error: _} => Text.clone(ref raw)
         }
     }
 
-    bytes_effective_url :: Ref[HttpBytesResponse] -> String
+    export bytes_effective_url :: Ref[HttpBytesResponse] -> String
     {
         response => match *response {
             HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: url, content_type: _, error: _} => Text.clone(ref url)
         }
     }
 
-    bytes_content_type :: Ref[HttpBytesResponse] -> String
+    export bytes_content_type :: Ref[HttpBytesResponse] -> String
     {
         response => match *response {
             HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: mime, error: _} => Text.clone(ref mime)
         }
     }
 
-    bytes_error :: Ref[HttpBytesResponse] -> String
+    export bytes_error :: Ref[HttpBytesResponse] -> String
     {
         response => match *response {
             HttpBytesResponse{ok: _, status: _, body: _, headers: _, effective_url: _, content_type: _, error: message} => Text.clone(ref message)
@@ -916,7 +916,7 @@ Network :: module {
             }
     }
 
-    header_value_opt :: Ref[HttpResponse] -> String -> Option[String]
+    export header_value_opt :: Ref[HttpResponse] -> String -> Option[String]
     {
         response => name => Network.find_header_value_from(
             Network.headers(response))(
@@ -924,7 +924,7 @@ Network :: module {
             0)
     }
 
-    header_value_or_empty :: Ref[HttpResponse] -> String -> String
+    export header_value_or_empty :: Ref[HttpResponse] -> String -> String
     {
         response => name => match Network.header_value_opt(response)(name)
         {
@@ -933,7 +933,7 @@ Network :: module {
         }
     }
 
-    bytes_header_value_opt :: Ref[HttpBytesResponse] -> String -> Option[String]
+    export bytes_header_value_opt :: Ref[HttpBytesResponse] -> String -> Option[String]
     {
         response => name => Network.find_header_value_from(
             Network.bytes_headers(response))(
@@ -941,7 +941,7 @@ Network :: module {
             0)
     }
 
-    bytes_header_value_or_empty :: Ref[HttpBytesResponse] -> String -> String
+    export bytes_header_value_or_empty :: Ref[HttpBytesResponse] -> String -> String
     {
         response => name => match Network.bytes_header_value_opt(response)(name)
         {
@@ -950,82 +950,82 @@ Network :: module {
         }
     }
 
-    is_success_code :: Int -> Bool
+    export is_success_code :: Int -> Bool
     {
         code => code >= 200 && code < 300
     }
 
-    is_redirect_code :: Int -> Bool
+    export is_redirect_code :: Int -> Bool
     {
         code => code >= 300 && code < 400
     }
 
-    is_client_error_code :: Int -> Bool
+    export is_client_error_code :: Int -> Bool
     {
         code => code >= 400 && code < 500
     }
 
-    is_server_error_code :: Int -> Bool
+    export is_server_error_code :: Int -> Bool
     {
         code => code >= 500 && code < 600
     }
 
-    is_error_code :: Int -> Bool
+    export is_error_code :: Int -> Bool
     {
         code => Network.is_client_error_code(code) || Network.is_server_error_code(code)
     }
 
-    is_success_status :: Ref[HttpResponse] -> Bool
+    export is_success_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_success_code(Network.status(response))
     }
 
-    is_redirect_status :: Ref[HttpResponse] -> Bool
+    export is_redirect_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_redirect_code(Network.status(response))
     }
 
-    is_client_error_status :: Ref[HttpResponse] -> Bool
+    export is_client_error_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_client_error_code(Network.status(response))
     }
 
-    is_server_error_status :: Ref[HttpResponse] -> Bool
+    export is_server_error_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_server_error_code(Network.status(response))
     }
 
-    is_error_status :: Ref[HttpResponse] -> Bool
+    export is_error_status :: Ref[HttpResponse] -> Bool
     {
         response => Network.is_error_code(Network.status(response))
     }
 
-    bytes_is_success_status :: Ref[HttpBytesResponse] -> Bool
+    export bytes_is_success_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_success_code(Network.bytes_status(response))
     }
 
-    bytes_is_redirect_status :: Ref[HttpBytesResponse] -> Bool
+    export bytes_is_redirect_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_redirect_code(Network.bytes_status(response))
     }
 
-    bytes_is_client_error_status :: Ref[HttpBytesResponse] -> Bool
+    export bytes_is_client_error_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_client_error_code(Network.bytes_status(response))
     }
 
-    bytes_is_server_error_status :: Ref[HttpBytesResponse] -> Bool
+    export bytes_is_server_error_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_server_error_code(Network.bytes_status(response))
     }
 
-    bytes_is_error_status :: Ref[HttpBytesResponse] -> Bool
+    export bytes_is_error_status :: Ref[HttpBytesResponse] -> Bool
     {
         response => Network.is_error_code(Network.bytes_status(response))
     }
 
-    send_text_result :: HttpRequest -> Result[String, String] need io
+    export send_text_result :: HttpRequest -> Result[String, String] need io
     {
         request => {
             response := Network.send(request);
@@ -1035,7 +1035,7 @@ Network :: module {
         }
     }
 
-    send_text_opt :: HttpRequest -> Option[String] need io
+    export send_text_opt :: HttpRequest -> Option[String] need io
     {
         request => match Network.send_text_result(request)
         {
@@ -1044,7 +1044,7 @@ Network :: module {
         }
     }
 
-    send_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[String, String] need io
+    export send_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[String, String] need io
     {
         request => body_bytes => {
             response := Network.send_with_bytes_body(request)(body_bytes);
@@ -1054,7 +1054,7 @@ Network :: module {
         }
     }
 
-    send_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[String] need io
+    export send_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[String] need io
     {
         request => body_bytes => match Network.send_with_bytes_body_result(request)(body_bytes)
         {
@@ -1063,7 +1063,7 @@ Network :: module {
         }
     }
 
-    send_bytes_result :: HttpRequest -> Result[Seq[Int], String] need io
+    export send_bytes_result :: HttpRequest -> Result[Seq[Int], String] need io
     {
         request => {
             response := Network.send_bytes(request);
@@ -1085,7 +1085,7 @@ Network :: module {
         }
     }
 
-    send_bytes_opt :: HttpRequest -> Option[Seq[Int]] need io
+    export send_bytes_opt :: HttpRequest -> Option[Seq[Int]] need io
     {
         request => match Network.send_bytes_result(request)
         {
@@ -1094,7 +1094,7 @@ Network :: module {
         }
     }
 
-    send_bytes_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[Seq[Int], String] need io
+    export send_bytes_with_bytes_body_result :: HttpRequest -> Seq[Int] -> Result[Seq[Int], String] need io
     {
         request => body_bytes => {
             response := Network.send_bytes_with_bytes_body(request)(body_bytes);
@@ -1116,7 +1116,7 @@ Network :: module {
         }
     }
 
-    send_bytes_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[Seq[Int]] need io
+    export send_bytes_with_bytes_body_opt :: HttpRequest -> Seq[Int] -> Option[Seq[Int]] need io
     {
         request => body_bytes => match Network.send_bytes_with_bytes_body_result(request)(body_bytes)
         {
@@ -1125,17 +1125,17 @@ Network :: module {
         }
     }
 
-    http_get_response :: String -> HttpResponse need io
+    export http_get_response :: String -> HttpResponse need io
     {
         url => Network.send(Network.get_request(url))
     }
 
-    http_get_bytes_response :: String -> HttpBytesResponse need io
+    export http_get_bytes_response :: String -> HttpBytesResponse need io
     {
         url => Network.send_bytes(Network.get_request(url))
     }
 
-    http_get_text_or_empty :: String -> String need io
+    export http_get_text_or_empty :: String -> String need io
     {
         url => match Network.send_text_result(Network.get_request(url))
         {
@@ -1144,17 +1144,17 @@ Network :: module {
         }
     }
 
-    http_get_text_result :: String -> Result[String, String] need io
+    export http_get_text_result :: String -> Result[String, String] need io
     {
         url => Network.send_text_result(Network.get_request(url))
     }
 
-    http_get_text_opt :: String -> Option[String] need io
+    export http_get_text_opt :: String -> Option[String] need io
     {
         url => Network.send_text_opt(Network.get_request(url))
     }
 
-    http_get_bytes_or_empty :: String -> Seq[Int] need io
+    export http_get_bytes_or_empty :: String -> Seq[Int] need io
     {
         url => match Network.send_bytes_result(Network.get_request(url))
         {
@@ -1163,47 +1163,47 @@ Network :: module {
         }
     }
 
-    http_get_bytes_result :: String -> Result[Seq[Int], String] need io
+    export http_get_bytes_result :: String -> Result[Seq[Int], String] need io
     {
         url => Network.send_bytes_result(Network.get_request(url))
     }
 
-    http_get_bytes_opt :: String -> Option[Seq[Int]] need io
+    export http_get_bytes_opt :: String -> Option[Seq[Int]] need io
     {
         url => Network.send_bytes_opt(Network.get_request(url))
     }
 
-    http_post_text_response :: String -> String -> HttpResponse need io
+    export http_post_text_response :: String -> String -> HttpResponse need io
     {
         url => body => Network.send(Network.post_text_request(url)(body))
     }
 
-    http_post_text_result :: String -> String -> Result[String, String] need io
+    export http_post_text_result :: String -> String -> Result[String, String] need io
     {
         url => body => Network.send_text_result(Network.post_text_request(url)(body))
     }
 
-    http_post_text_opt :: String -> String -> Option[String] need io
+    export http_post_text_opt :: String -> String -> Option[String] need io
     {
         url => body => Network.send_text_opt(Network.post_text_request(url)(body))
     }
 
-    http_post_json_response :: String -> String -> HttpResponse need io
+    export http_post_json_response :: String -> String -> HttpResponse need io
     {
         url => body => Network.send(Network.post_json_request(url)(body))
     }
 
-    http_post_json_result :: String -> String -> Result[String, String] need io
+    export http_post_json_result :: String -> String -> Result[String, String] need io
     {
         url => body => Network.send_text_result(Network.post_json_request(url)(body))
     }
 
-    http_post_json_opt :: String -> String -> Option[String] need io
+    export http_post_json_opt :: String -> String -> Option[String] need io
     {
         url => body => Network.send_text_opt(Network.post_json_request(url)(body))
     }
 
-    http_post_bytes_text_response :: String -> Seq[Int] -> HttpResponse need io
+    export http_post_bytes_text_response :: String -> Seq[Int] -> HttpResponse need io
     {
         url => body_bytes =>
             Network.send_with_bytes_body(
@@ -1211,7 +1211,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_post_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need io
+    export http_post_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need io
     {
         url => body_bytes =>
             Network.send_with_bytes_body_result(
@@ -1219,7 +1219,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_post_bytes_text_opt :: String -> Seq[Int] -> Option[String] need io
+    export http_post_bytes_text_opt :: String -> Seq[Int] -> Option[String] need io
     {
         url => body_bytes =>
             Network.send_with_bytes_body_opt(
@@ -1227,7 +1227,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_post_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need io
+    export http_post_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need io
     {
         url => body_bytes =>
             Network.send_bytes_with_bytes_body(
@@ -1235,7 +1235,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_post_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need io
+    export http_post_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need io
     {
         url => body_bytes =>
             Network.send_bytes_with_bytes_body_result(
@@ -1243,7 +1243,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_post_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need io
+    export http_post_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need io
     {
         url => body_bytes =>
             Network.send_bytes_with_bytes_body_opt(
@@ -1251,37 +1251,37 @@ Network :: module {
                 body_bytes)
     }
 
-    http_put_text_response :: String -> String -> HttpResponse need io
+    export http_put_text_response :: String -> String -> HttpResponse need io
     {
         url => body => Network.send(Network.put_text_request(url)(body))
     }
 
-    http_put_text_result :: String -> String -> Result[String, String] need io
+    export http_put_text_result :: String -> String -> Result[String, String] need io
     {
         url => body => Network.send_text_result(Network.put_text_request(url)(body))
     }
 
-    http_put_text_opt :: String -> String -> Option[String] need io
+    export http_put_text_opt :: String -> String -> Option[String] need io
     {
         url => body => Network.send_text_opt(Network.put_text_request(url)(body))
     }
 
-    http_put_json_response :: String -> String -> HttpResponse need io
+    export http_put_json_response :: String -> String -> HttpResponse need io
     {
         url => body => Network.send(Network.put_json_request(url)(body))
     }
 
-    http_put_json_result :: String -> String -> Result[String, String] need io
+    export http_put_json_result :: String -> String -> Result[String, String] need io
     {
         url => body => Network.send_text_result(Network.put_json_request(url)(body))
     }
 
-    http_put_json_opt :: String -> String -> Option[String] need io
+    export http_put_json_opt :: String -> String -> Option[String] need io
     {
         url => body => Network.send_text_opt(Network.put_json_request(url)(body))
     }
 
-    http_put_bytes_text_response :: String -> Seq[Int] -> HttpResponse need io
+    export http_put_bytes_text_response :: String -> Seq[Int] -> HttpResponse need io
     {
         url => body_bytes =>
             Network.send_with_bytes_body(
@@ -1289,7 +1289,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_put_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need io
+    export http_put_bytes_text_result :: String -> Seq[Int] -> Result[String, String] need io
     {
         url => body_bytes =>
             Network.send_with_bytes_body_result(
@@ -1297,7 +1297,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_put_bytes_text_opt :: String -> Seq[Int] -> Option[String] need io
+    export http_put_bytes_text_opt :: String -> Seq[Int] -> Option[String] need io
     {
         url => body_bytes =>
             Network.send_with_bytes_body_opt(
@@ -1305,7 +1305,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_put_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need io
+    export http_put_bytes_response :: String -> Seq[Int] -> HttpBytesResponse need io
     {
         url => body_bytes =>
             Network.send_bytes_with_bytes_body(
@@ -1313,7 +1313,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_put_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need io
+    export http_put_bytes_result :: String -> Seq[Int] -> Result[Seq[Int], String] need io
     {
         url => body_bytes =>
             Network.send_bytes_with_bytes_body_result(
@@ -1321,7 +1321,7 @@ Network :: module {
                 body_bytes)
     }
 
-    http_put_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need io
+    export http_put_bytes_opt :: String -> Seq[Int] -> Option[Seq[Int]] need io
     {
         url => body_bytes =>
             Network.send_bytes_with_bytes_body_opt(
@@ -1329,35 +1329,35 @@ Network :: module {
                 body_bytes)
     }
 
-    http_delete_response :: String -> HttpResponse need io
+    export http_delete_response :: String -> HttpResponse need io
     {
         url => Network.send(Network.delete_request(url))
     }
 
-    http_delete_text_result :: String -> Result[String, String] need io
+    export http_delete_text_result :: String -> Result[String, String] need io
     {
         url => Network.send_text_result(Network.delete_request(url))
     }
 
-    http_delete_text_opt :: String -> Option[String] need io
+    export http_delete_text_opt :: String -> Option[String] need io
     {
         url => Network.send_text_opt(Network.delete_request(url))
     }
 
-    http_get_query_response :: String -> String -> String -> HttpResponse need io
+    export http_get_query_response :: String -> String -> String -> HttpResponse need io
     {
         url => key => value =>
             Network.send(
                 Network.with_query_param(Network.get_request(url))(key)(value))
     }
 
-    http_get_query_text_result :: String -> String -> String -> Result[String, String] need io
+    export http_get_query_text_result :: String -> String -> String -> Result[String, String] need io
     {
         url => key => value => Network.send_text_result(
             Network.with_query_param(Network.get_request(url))(key)(value))
     }
 
-    http_get_query_text_opt :: String -> String -> String -> Option[String] need io
+    export http_get_query_text_opt :: String -> String -> String -> Option[String] need io
     {
         url => key => value => Network.send_text_opt(
             Network.with_query_param(Network.get_request(url))(key)(value))

@@ -84,6 +84,10 @@ public sealed class ClosureConverter
                               match.Branches.Any(b =>
                                   (b.Guard != null && ContainsClosure(b.Guard)) ||
                                   (b.Expression != null && ContainsClosure(b.Expression))),
+            SelectionExpr selection =>
+                (selection.Subject != null && ContainsClosure(selection.Subject)) ||
+                (selection.ThenArm != null && ContainsClosure(selection.ThenArm)) ||
+                (selection.ElseArm != null && ContainsClosure(selection.ElseArm)),
             PatternGuardExpr patternGuard => patternGuard.SourceExpression != null && ContainsClosure(patternGuard.SourceExpression),
             _ => false
         };
@@ -241,6 +245,12 @@ public sealed class ClosureConverter
                         CollectLambdasRecursive(branch.Expression, lambdas);
                     }
                 }
+                break;
+
+            case SelectionExpr selection:
+                CollectLambdasRecursive(selection.Subject, lambdas);
+                CollectLambdasRecursive(selection.ThenArm, lambdas);
+                CollectLambdasRecursive(selection.ElseArm, lambdas);
                 break;
 
             case PatternGuardExpr patternGuard:

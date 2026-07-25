@@ -471,7 +471,7 @@ public sealed partial class MirOptimizer
         AddHash(ref hash, functionRef.TraitOwnerId.Value);
         AddHash(ref hash, (int)functionRef.TraitSelfPosition);
         AddHash(ref hash, functionRef.TraitSelfInResult ? 1 : 0);
-        AddHash(ref hash, (int)functionRef.TraitMethodRole);
+        AddHash(ref hash, (int)functionRef.CompilerSemanticRole);
         AddHash(ref hash, functionRef.TraitSelfParameterIndices.Count);
         foreach (var index in functionRef.TraitSelfParameterIndices)
         {

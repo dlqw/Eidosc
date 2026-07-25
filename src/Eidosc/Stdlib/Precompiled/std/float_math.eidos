@@ -110,45 +110,45 @@ FloatMath :: module {
 
 
     // 三角函数
-    sin :: Float -> Float need ffi { x => math_sin(x) }
-    cos :: Float -> Float need ffi { x => math_cos(x) }
-    tan :: Float -> Float need ffi { x => math_tan(x) }
+    export sin :: Float -> Float need ffi { x => math_sin(x) }
+    export cos :: Float -> Float need ffi { x => math_cos(x) }
+    export tan :: Float -> Float need ffi { x => math_tan(x) }
 
     // 反三角函数
-    asin :: Float -> Float need ffi { x => math_asin(x) }
-    acos :: Float -> Float need ffi { x => math_acos(x) }
-    atan :: Float -> Float need ffi { x => math_atan(x) }
-    atan2 :: Float -> Float -> Float need ffi { y => x => math_atan2(y)(x) }
+    export asin :: Float -> Float need ffi { x => math_asin(x) }
+    export acos :: Float -> Float need ffi { x => math_acos(x) }
+    export atan :: Float -> Float need ffi { x => math_atan(x) }
+    export atan2 :: Float -> Float -> Float need ffi { y => x => math_atan2(y)(x) }
 
     // 幂/指数/对数
-    sqrt :: Float -> Float need ffi { x => math_sqrt(x) }
-    exp :: Float -> Float need ffi { x => math_exp(x) }
-    log :: Float -> Float need ffi { x => math_log(x) }
-    log2 :: Float -> Float need ffi { x => math_log2(x) }
-    log10 :: Float -> Float need ffi { x => math_log10(x) }
-    pow :: Float -> Float -> Float need ffi { base => e => math_pow(base)(e) }
+    export sqrt :: Float -> Float need ffi { x => math_sqrt(x) }
+    export exp :: Float -> Float need ffi { x => math_exp(x) }
+    export log :: Float -> Float need ffi { x => math_log(x) }
+    export log2 :: Float -> Float need ffi { x => math_log2(x) }
+    export log10 :: Float -> Float need ffi { x => math_log10(x) }
+    export pow :: Float -> Float -> Float need ffi { base => e => math_pow(base)(e) }
 
     // 取整
-    abs :: Float -> Float need ffi { x => math_fabs(x) }
-    fabs :: Float -> Float need ffi { x => math_fabs(x) }
-    ceil :: Float -> Float need ffi { x => math_ceil(x) }
-    floor :: Float -> Float need ffi { x => math_floor(x) }
-    round :: Float -> Float need ffi { x => math_round(x) }
-    trunc :: Float -> Float need ffi { x => math_trunc(x) }
+    export abs :: Float -> Float need ffi { x => math_fabs(x) }
+    export fabs :: Float -> Float need ffi { x => math_fabs(x) }
+    export ceil :: Float -> Float need ffi { x => math_ceil(x) }
+    export floor :: Float -> Float need ffi { x => math_floor(x) }
+    export round :: Float -> Float need ffi { x => math_round(x) }
+    export trunc :: Float -> Float need ffi { x => math_trunc(x) }
 
     // 其他
-    fma :: Float -> Float -> Float -> Float need ffi { a => b => c => math_fma(a)(b)(c) }
-    copysign :: Float -> Float -> Float need ffi { mag => sgn => math_copysign(mag)(sgn) }
-    fmin :: Float -> Float -> Float need ffi { a => b => math_fmin(a)(b) }
-    fmax :: Float -> Float -> Float need ffi { a => b => math_fmax(a)(b) }
+    export fma :: Float -> Float -> Float -> Float need ffi { a => b => c => math_fma(a)(b)(c) }
+    export copysign :: Float -> Float -> Float need ffi { mag => sgn => math_copysign(mag)(sgn) }
+    export fmin :: Float -> Float -> Float need ffi { a => b => math_fmin(a)(b) }
+    export fmax :: Float -> Float -> Float need ffi { a => b => math_fmax(a)(b) }
 
-    is_zero :: Float -> Bool { x => x == 0.0 }
+    export is_zero :: Float -> Bool { x => x == 0.0 }
 
-    is_positive :: Float -> Bool { x => x > 0.0 }
+    export is_positive :: Float -> Bool { x => x > 0.0 }
 
-    is_negative :: Float -> Bool { x => x < 0.0 }
+    export is_negative :: Float -> Bool { x => x < 0.0 }
 
-    sign :: Float -> Int
+    export sign :: Float -> Int
     {
         x =>
             if x < 0.0 then { -1 }
@@ -156,17 +156,17 @@ FloatMath :: module {
             else { 0 }
     }
 
-    between_inclusive :: Float -> Float -> Float -> Bool
+    export between_inclusive :: Float -> Float -> Float -> Bool
     {
         value => lower => upper => value >= lower && value <= upper
     }
 
-    between_exclusive :: Float -> Float -> Float -> Bool
+    export between_exclusive :: Float -> Float -> Float -> Bool
     {
         value => lower => upper => value > lower && value < upper
     }
 
-    clamp :: Float -> Float -> Float -> Float
+    export clamp :: Float -> Float -> Float -> Float
     {
         value => lower => upper =>
             if value < lower then { lower }
@@ -174,74 +174,74 @@ FloatMath :: module {
             else { value }
     }
 
-    min3 :: Float -> Float -> Float -> Float need ffi
+    export min3 :: Float -> Float -> Float -> Float need ffi
     {
         a => b => c => FloatMath.fmin(FloatMath.fmin(a)(b))(c)
     }
 
-    max3 :: Float -> Float -> Float -> Float need ffi
+    export max3 :: Float -> Float -> Float -> Float need ffi
     {
         a => b => c => FloatMath.fmax(FloatMath.fmax(a)(b))(c)
     }
 
-    saturate :: Float -> Float
+    export saturate :: Float -> Float
     {
         value => FloatMath.clamp(value)(0.0)(1.0)
     }
 
-    square :: Float -> Float
+    export square :: Float -> Float
     {
         value => value * value
     }
 
-    cube :: Float -> Float
+    export cube :: Float -> Float
     {
         value => value * value * value
     }
 
-    fract :: Float -> Float need ffi
+    export fract :: Float -> Float need ffi
     {
         value => value - FloatMath.floor(value)
     }
 
-    approx_eq :: Float -> Float -> Float -> Bool need ffi
+    export approx_eq :: Float -> Float -> Float -> Bool need ffi
     {
         left => right => tolerance => FloatMath.abs(left - right) <= FloatMath.abs(tolerance)
     }
 
-    distance :: Float -> Float -> Float need ffi
+    export distance :: Float -> Float -> Float need ffi
     {
         left => right => FloatMath.abs(left - right)
     }
 
-    hypot :: Float -> Float -> Float need ffi
+    export hypot :: Float -> Float -> Float need ffi
     {
         x => y => FloatMath.sqrt(FloatMath.square(x) + FloatMath.square(y))
     }
 
-    degrees_to_radians :: Float -> Float
+    export degrees_to_radians :: Float -> Float
     {
         degrees => degrees * pi / 180.0
     }
 
-    radians_to_degrees :: Float -> Float
+    export radians_to_degrees :: Float -> Float
     {
         radians => radians * 180.0 / pi
     }
 
-    lerp :: Float -> Float -> Float -> Float
+    export lerp :: Float -> Float -> Float -> Float
     {
         start => end => t => start + (end - start) * t
     }
 
-    inverse_lerp :: Float -> Float -> Float -> Float
+    export inverse_lerp :: Float -> Float -> Float -> Float
     {
         start => end => value =>
             if start == end then { 0.0 }
             else { (value - start) / (end - start) }
     }
 
-    wrap :: Float -> Float -> Float -> Float need ffi
+    export wrap :: Float -> Float -> Float -> Float need ffi
     {
         value => lower => upper => {
             start := FloatMath.fmin(lower)(upper);
@@ -253,14 +253,14 @@ FloatMath :: module {
         }
     }
 
-    repeat :: Float -> Float -> Float need ffi
+    export repeat :: Float -> Float -> Float need ffi
     {
         value => length =>
             if length <= 0.0 then { 0.0 }
             else { FloatMath.wrap(value)(0.0)(length) }
     }
 
-    ping_pong :: Float -> Float -> Float need ffi
+    export ping_pong :: Float -> Float -> Float need ffi
     {
         value => length =>
             if length <= 0.0 then { 0.0 }
@@ -271,12 +271,12 @@ FloatMath :: module {
             }
     }
 
-    step :: Float -> Float -> Float
+    export step :: Float -> Float -> Float
     {
         edge => value => if value < edge then { 0.0 } else { 1.0 }
     }
 
-    smoothstep :: Float -> Float -> Float -> Float
+    export smoothstep :: Float -> Float -> Float -> Float
     {
         edge0 => edge1 => value =>
             if edge0 == edge1 then { FloatMath.step(edge0)(value) }
@@ -286,14 +286,14 @@ FloatMath :: module {
             }
     }
 
-    remap :: Float -> Float -> Float -> Float -> Float -> Float
+    export remap :: Float -> Float -> Float -> Float -> Float -> Float
     {
         in_min => in_max => out_min => out_max => value =>
             if in_min == in_max then { out_min }
             else { FloatMath.lerp(out_min)(out_max)(FloatMath.inverse_lerp(in_min)(in_max)(value)) }
     }
 
-    move_toward :: Float -> Float -> Float -> Float need ffi
+    export move_toward :: Float -> Float -> Float -> Float need ffi
     {
         current => target => max_delta => {
             delta := target - current;
@@ -304,28 +304,28 @@ FloatMath :: module {
         }
     }
 
-    angle_wrap_radians :: Float -> Float need ffi
+    export angle_wrap_radians :: Float -> Float need ffi
     {
         value => FloatMath.wrap(value + pi)(0.0)(tau) - pi
     }
 
-    angle_wrap_degrees :: Float -> Float need ffi
+    export angle_wrap_degrees :: Float -> Float need ffi
     {
         value => FloatMath.wrap(value + 180.0)(0.0)(360.0) - 180.0
     }
 
-    angle_delta_radians :: Float -> Float -> Float need ffi
+    export angle_delta_radians :: Float -> Float -> Float need ffi
     {
         current => target => FloatMath.angle_wrap_radians(target - current)
     }
 
-    angle_delta_degrees :: Float -> Float -> Float need ffi
+    export angle_delta_degrees :: Float -> Float -> Float need ffi
     {
         current => target => FloatMath.angle_wrap_degrees(target - current)
     }
 
     // 常量
-    pi :: Float = 3.14159265358979323846;
-    e :: Float = 2.71828182845904523536;
-    tau :: Float = 6.28318530717958647692;
+    export pi :: Float = 3.14159265358979323846;
+    export e :: Float = 2.71828182845904523536;
+    export tau :: Float = 6.28318530717958647692;
 }

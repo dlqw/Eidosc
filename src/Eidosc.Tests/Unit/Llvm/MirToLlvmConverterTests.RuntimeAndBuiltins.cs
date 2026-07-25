@@ -34,7 +34,7 @@ public partial class MirToLlvmConverterTests
             Name = "anything",
             SymbolId = SymbolId.None,
             TypeId = TypeId.None,
-            TraitMethodRole = TraitMethodRole.Show
+            CompilerSemanticRole = CompilerSemanticRole.Show
         };
 
         Assert.True(InvokeTryInferFunctionReferenceValueType(converter, showRef, out var inferredType));
@@ -539,7 +539,7 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
-    public void ConvertFunction_RuntimePrintBuiltins_UseRuntimeNamesAndVoidReturn()
+    public void ConvertFunction_RuntimeOutputBridges_UseSemanticRuntimeNamesAndVoidReturn()
     {
         var intType = new TypeId(BaseTypes.IntId);
         var stringType = new TypeId(BaseTypes.StringId);
@@ -558,8 +558,11 @@ public partial class MirToLlvmConverterTests
                 {
                     Function = new MirFunctionRef
                     {
-                        Name = "print_string",
-                        SymbolId = SymbolId.None,
+                        Name = "write_text_raw",
+                        SymbolId = new SymbolId(1803),
+                        FunctionId = MirBuiltinFunctions.CreateIntrinsicFunctionId(
+                            new SymbolId(1803),
+                            "write_text_raw"),
                         TypeId = unitType
                     },
                     Arguments = [stringPlace]
@@ -568,25 +571,11 @@ public partial class MirToLlvmConverterTests
                 {
                     Function = new MirFunctionRef
                     {
-                        Name = "print_int",
-                        SymbolId = SymbolId.None,
-                        TypeId = unitType
-                    },
-                    Arguments =
-                    [
-                        new MirConstant
-                        {
-                            TypeId = intType,
-                            Value = new MirConstantValue.IntValue(7)
-                        }
-                    ]
-                },
-                new MirCall
-                {
-                    Function = new MirFunctionRef
-                    {
-                        Name = "print_char",
-                        SymbolId = SymbolId.None,
+                        Name = "write_char_code_raw",
+                        SymbolId = new SymbolId(1804),
+                        FunctionId = MirBuiltinFunctions.CreateIntrinsicFunctionId(
+                            new SymbolId(1804),
+                            "write_char_code_raw"),
                         TypeId = unitType
                     },
                     Arguments =
@@ -615,15 +604,13 @@ public partial class MirToLlvmConverterTests
 
         var llvmFunc = SingleFunctionBySourceName(llvmModule, "caller_print_runtime");
         var calls = llvmFunc.BasicBlocks.Single().Instructions.OfType<LlvmCall>().ToList();
-        Assert.Equal(3, calls.Count);
-        Assert.Contains(calls, call => call.ToIrString().Contains("@eidos_print_string", StringComparison.Ordinal));
-        Assert.Contains(calls, call => call.ToIrString().Contains("@eidos_print_int", StringComparison.Ordinal));
-        Assert.Contains(calls, call => call.ToIrString().Contains("@eidos_print_char", StringComparison.Ordinal));
+        Assert.Equal(2, calls.Count);
+        Assert.Contains(calls, call => call.ToIrString().Contains("@eidos_write_text_raw", StringComparison.Ordinal));
+        Assert.Contains(calls, call => call.ToIrString().Contains("@eidos_write_char_code_raw", StringComparison.Ordinal));
         Assert.All(calls, call => Assert.IsType<LlvmVoidType>(call.ReturnType));
 
-        Assert.Contains(llvmModule.Declarations, declaration => declaration.Name == "eidos_print_string");
-        Assert.Contains(llvmModule.Declarations, declaration => declaration.Name == "eidos_print_int");
-        Assert.Contains(llvmModule.Declarations, declaration => declaration.Name == "eidos_print_char");
+        Assert.Contains(llvmModule.Declarations, declaration => declaration.Name == "eidos_write_text_raw");
+        Assert.Contains(llvmModule.Declarations, declaration => declaration.Name == "eidos_write_char_code_raw");
     }
 
     [Fact]

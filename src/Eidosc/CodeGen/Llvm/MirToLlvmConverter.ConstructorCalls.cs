@@ -259,7 +259,9 @@ public sealed partial class MirToLlvmConverter
             return null;
         }
 
-        var (loadType, localType) = GetTypedLoadInfo(name);
+        var (loadType, localType) = name == WellKnownStrings.InternalNames.PtrLoadAs
+            ? GetGenericPtrLoadInfo(targetPlace.TypeId)
+            : GetTypedLoadInfo(name);
         var resultName = _nameMangler.NewTempName($"l{targetPlace.Local.Value}");
         var ptrValue = CoerceToPointer(ConvertOperand(call.Arguments[0]));
 
@@ -304,6 +306,12 @@ public sealed partial class MirToLlvmConverter
         return null;
     }
 
+    private (LlvmType LoadType, LlvmType LocalType) GetGenericPtrLoadInfo(TypeId targetTypeId)
+    {
+        var storageType = LowerStorageTypeIdOrReport(targetTypeId, "generic pointer load result");
+        return (storageType, storageType);
+    }
+
     /// <summary>
     /// 处理类型化指针写入（ptr_store_float, ptr_store_ptr, ptr_store_i32, ptr_store_i8）。
     /// 根据函数名查表确定 LLVM 存储类型，并截断/转换值。
@@ -315,7 +323,9 @@ public sealed partial class MirToLlvmConverter
             return null;
         }
 
-        var valueType = GetTypedStoreValueType(name);
+        var valueType = name == WellKnownStrings.InternalNames.PtrStoreAs
+            ? LowerStorageTypeIdOrReport(call.Arguments[1].TypeId, "generic pointer store value")
+            : GetTypedStoreValueType(name);
         var ptrValue = CoerceToPointer(ConvertOperand(call.Arguments[0]));
         var rawValue = ConvertOperand(call.Arguments[1]);
 

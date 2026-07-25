@@ -211,7 +211,7 @@ public sealed record MirTraitMethodInfo
     /// <summary>
     /// Gets the builtin role inferred for this trait method.
     /// </summary>
-    public TraitMethodRole MethodRole { get; init; } = TraitMethodRole.None;
+    public CompilerSemanticRole MethodRole { get; init; } = CompilerSemanticRole.None;
 
     /// <summary>
     /// Gets a value indicating whether this trait method has a default implementation.
@@ -479,27 +479,27 @@ public enum TraitInvokeHelperKind
     None,
 
     /// <summary>
-    /// Identifies <c>Std.TraitInvoke.eq_value</c>.
+    /// Identifies the Prelude <c>TraitInvoke.eq_value</c> helper.
     /// </summary>
     EqValue,
 
     /// <summary>
-    /// Identifies <c>Std.TraitInvoke.compare_value</c>.
+    /// Identifies the Prelude <c>TraitInvoke.compare_value</c> helper.
     /// </summary>
     CompareValue,
 
     /// <summary>
-    /// Identifies <c>Std.TraitInvoke.show_value</c>.
+    /// Identifies the Prelude <c>TraitInvoke.show_value</c> helper.
     /// </summary>
     ShowValue,
 
     /// <summary>
-    /// Identifies <c>Std.TraitInvoke.hash_value</c>.
+    /// Identifies the Prelude <c>TraitInvoke.hash_value</c> helper.
     /// </summary>
     HashValue,
 
     /// <summary>
-    /// Identifies <c>Std.TraitInvoke.clone_value</c>.
+    /// Identifies the Prelude <c>TraitInvoke.clone_value</c> helper.
     /// </summary>
     CloneValue
 }

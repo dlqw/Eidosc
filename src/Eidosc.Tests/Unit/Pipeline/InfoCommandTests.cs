@@ -9,13 +9,15 @@ public class InfoCommandTests
     {
         var text = InfoCommand.RenderStdlibText();
 
+        Assert.Contains("Prelude Core Image（自动导入，无 package）:", text, StringComparison.Ordinal);
+        Assert.Contains("Std package（显式依赖与 import）:", text, StringComparison.Ordinal);
         Assert.Contains("[函数式能力]", text, StringComparison.Ordinal);
         Assert.Contains("摘要     - 函数组合、可选/错误流水线、trait 与 HKT 抽象（Functor/Applicative/Foldable/Traversable/Monad）。", text, StringComparison.Ordinal);
         Assert.Contains("代表接口 - Functions.compose, Predicate.accept, Predicate.is, Option.map, Option.apply, Option.traverse, Seq.traverse, Result.and_then, Ordering.show", text, StringComparison.Ordinal);
-        Assert.Contains("    std.Predicate", text, StringComparison.Ordinal);
-        Assert.Contains("    std.Applicative", text, StringComparison.Ordinal);
-        Assert.Contains("    std.Foldable", text, StringComparison.Ordinal);
-        Assert.Contains("    std.Traversable", text, StringComparison.Ordinal);
+        Assert.Contains("    Prelude.Predicate", text, StringComparison.Ordinal);
+        Assert.Contains("    Prelude.Applicative", text, StringComparison.Ordinal);
+        Assert.Contains("    Prelude.Foldable", text, StringComparison.Ordinal);
+        Assert.Contains("    Prelude.Traversable", text, StringComparison.Ordinal);
         Assert.Contains("[数学能力]", text, StringComparison.Ordinal);
         Assert.Contains("摘要     - 标量数学、角度/插值辅助，以及面向网格与几何的游戏数学类型/运算。", text, StringComparison.Ordinal);
         Assert.Contains("代表接口 - Math.abs, Math.wrap, FloatMath.smoothstep, FloatMath.move_toward, GameMath.ivec2, GameMath.grid_cell_rect, GameMath.move_toward", text, StringComparison.Ordinal);

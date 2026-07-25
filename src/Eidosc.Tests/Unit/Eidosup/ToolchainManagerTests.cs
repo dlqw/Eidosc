@@ -21,7 +21,7 @@ public sealed class ToolchainManagerTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, requestedChannel: null, CancellationToken.None);
@@ -39,7 +39,7 @@ public sealed class ToolchainManagerTests
             CancellationToken.None);
         var removed = await manager.UninstallAsync(
             fixture.Options,
-            [ToolchainSpec.Parse("0.4.0-alpha.3")],
+            [ToolchainSpec.Parse("0.5.0-alpha.1")],
             dryRun: false,
             CancellationToken.None);
         var state = await ToolchainStateStore.ReadVerifiedAsync(fixture.Layout, CancellationToken.None);
@@ -58,7 +58,7 @@ public sealed class ToolchainManagerTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, requestedChannel: null, CancellationToken.None);
@@ -67,7 +67,7 @@ public sealed class ToolchainManagerTests
 
         var result = await manager.UninstallAsync(
             fixture.Options,
-            [ToolchainSpec.Parse("0.4.0-alpha.3")],
+            [ToolchainSpec.Parse("0.5.0-alpha.1")],
             dryRun: true,
             CancellationToken.None);
 
@@ -82,7 +82,7 @@ public sealed class ToolchainManagerTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, requestedChannel: null, CancellationToken.None);
@@ -92,7 +92,7 @@ public sealed class ToolchainManagerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => manager.UninstallAsync(
             fixture.Options,
-            [ToolchainSpec.Parse("0.4.0-alpha.3")],
+            [ToolchainSpec.Parse("0.5.0-alpha.1")],
             dryRun: false,
             CancellationToken.None));
         var state = await ToolchainStateStore.ReadVerifiedAsync(fixture.Layout, CancellationToken.None);
@@ -107,7 +107,7 @@ public sealed class ToolchainManagerTests
     {
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
-        var second = await fixture.CreateToolchainAsync("0.4.0-alpha.3", SecondHash);
+        var second = await fixture.CreateToolchainAsync("0.5.0-alpha.1", SecondHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
         await store.RegisterInstallAsync(fixture.Layout, second.Directory, requestedChannel: null, CancellationToken.None);
@@ -117,7 +117,7 @@ public sealed class ToolchainManagerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => manager.UninstallAsync(
             fixture.Options,
-            [ToolchainSpec.Parse("0.4.0-alpha.3")],
+            [ToolchainSpec.Parse("0.5.0-alpha.1")],
             dryRun: false,
             CancellationToken.None));
         var state = await ToolchainStateStore.ReadVerifiedAsync(fixture.Layout, CancellationToken.None);
@@ -157,7 +157,7 @@ public sealed class ToolchainManagerTests
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", FirstHash);
         var store = new ToolchainStateStore(() => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
-        var latest = CreateRelease("0.4.0-alpha.3", bundleSize: 123);
+        var latest = CreateRelease("0.5.0-alpha.1", bundleSize: 123);
         var exact = CreateRelease("0.4.0-alpha.4", bundleSize: 123);
         var manager = new ToolchainManager(
             releaseSourceFactory: _ => new MappingReleaseSource(latest, exact),
@@ -170,7 +170,7 @@ public sealed class ToolchainManagerTests
 
         Assert.Equal(ToolchainCheckStatus.UpdateAvailable, results[0].Status);
         Assert.Equal("0.4.0-alpha.2", results[0].InstalledVersion);
-        Assert.Equal("0.4.0-alpha.3", results[0].AvailableVersion);
+        Assert.Equal("0.5.0-alpha.1", results[0].AvailableVersion);
         Assert.Equal(ToolchainCheckStatus.Missing, results[1].Status);
     }
 
@@ -180,7 +180,7 @@ public sealed class ToolchainManagerTests
         using var fixture = new EidosupToolchainTestFixture();
         var platform = PlatformContext.Detect();
         var firstAsset = CreateReleaseAssetSet("0.4.0-alpha.2", platform);
-        var secondAsset = CreateReleaseAssetSet("0.4.0-alpha.3", platform);
+        var secondAsset = CreateReleaseAssetSet("0.5.0-alpha.1", platform);
         using var handler = new MappingAssetHandler(firstAsset, secondAsset);
         using var httpClient = new HttpClient(handler);
         using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);
@@ -202,7 +202,7 @@ public sealed class ToolchainManagerTests
                 CancellationToken.None),
             manager.InstallAsync(
                 fixture.Options,
-                ToolchainSpec.Parse("0.4.0-alpha.3"),
+                ToolchainSpec.Parse("0.5.0-alpha.1"),
                 force: false,
                 dryRun: false,
                 progress: null,
@@ -211,9 +211,9 @@ public sealed class ToolchainManagerTests
 
         Assert.Equal(2, state.Toolchains.Count);
         Assert.Contains(state.Toolchains, toolchain => toolchain.Version == "0.4.0-alpha.2");
-        Assert.Contains(state.Toolchains, toolchain => toolchain.Version == "0.4.0-alpha.3");
+        Assert.Contains(state.Toolchains, toolchain => toolchain.Version == "0.5.0-alpha.1");
         Assert.Contains(state.Selectors, selector => selector.Selector == "0.4.0-alpha.2");
-        Assert.Contains(state.Selectors, selector => selector.Selector == "0.4.0-alpha.3");
+        Assert.Contains(state.Selectors, selector => selector.Selector == "0.5.0-alpha.1");
         Assert.Empty(Directory.EnumerateFiles(fixture.Layout.TransactionDirectory, "*.json"));
     }
 
@@ -427,7 +427,7 @@ public sealed class ToolchainManagerTests
         using var fixture = new EidosupToolchainTestFixture();
         var platform = PlatformContext.Detect();
         var first = CreateReleaseAssetSet("0.4.0-alpha.2", platform);
-        var second = CreateReleaseAssetSet("0.4.0-alpha.3", platform);
+        var second = CreateReleaseAssetSet("0.5.0-alpha.1", platform);
         using var handler = new MappingAssetHandler(first, second);
         using var httpClient = new HttpClient(handler);
         using var downloadManager = new DownloadManager(httpClient, static (_, _) => Task.CompletedTask);

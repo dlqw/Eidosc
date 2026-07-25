@@ -305,7 +305,7 @@ public static class ProfileBatchCommand
         var projectConfig = inputResolution.ImportResolution.ProjectFilePath != null
             ? ProjectSystem.EidosProjectConfigurationLoader.TryLoadFromPath(inputResolution.ImportResolution.ProjectFilePath)?.Configuration
             : ProjectSystem.EidosProjectConfigurationLoader.TryLoadNearest(sourcePath)?.Configuration;
-        var ffiConfig = inputResolution.ProjectTarget?.Ffi ?? projectConfig?.Ffi;
+        var ffiConfig = inputResolution.GetFfiConfiguration() ?? projectConfig?.Ffi;
         var compileOptions = new CompilationOptions
         {
             InputFile = sourcePath,
@@ -321,7 +321,7 @@ public static class ProfileBatchCommand
             UseColors = false,
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal),
+            PackageImportRoots = inputResolution.GetPackageImportRoots(),
             LlvmTargetTriple = benchmarkCase.TargetTriple,
             NativeLinkMode = ResolveNativeLinkMode(benchmarkCase.NativeLinkMode),
             LlvmOptimizationLevel = ResolveOptimizationLevel(benchmarkCase),

@@ -50,6 +50,25 @@ public sealed record ResolvedEidosProjectTarget(
 
 public static class EidosProjectGraphResolver
 {
+    public static ResolvedPackageGraph ResolvePackageGraph(LoadedEidosProjectConfiguration project)
+    {
+        var config = project.Configuration;
+        if (config.VersionedDependencies == null || config.VersionedDependencies.Count == 0)
+        {
+            return new ResolvedPackageGraph();
+        }
+
+        var lockPath = Path.Combine(project.ProjectDirectory, "eidos.lock.json");
+        EidosLockFile? lockFile = null;
+        if (File.Exists(lockPath) && !EidosLockFile.TryLoad(lockPath, out lockFile))
+        {
+            throw new InvalidOperationException(PipelineMessages.FailedToDeserializeLockFile);
+        }
+
+        var resolver = new PackageDependencyResolver(project.ProjectDirectory);
+        return resolver.Resolve(config, lockFile);
+    }
+
     public static ResolvedEidosProjectTarget ResolveTarget(
         string projectPath,
         string? targetName = null,
@@ -102,7 +121,7 @@ public static class EidosProjectGraphResolver
 
             var packageGraph = ResolvePackageGraph(_rootProject);
             var packageSearchRoots = packageGraph.GetAllSearchRoots();
-            var packageImportRoots = ResolvePackageImportRoots(packageGraph);
+            var packageImportRoots = packageGraph.GetPackageImportRoots();
             var packageFfi = packageGraph.GetCombinedFfiConfiguration();
 
             var allDepRoots = EidosProjectConfigurationLoader.CombineSearchRoots(
@@ -444,44 +463,6 @@ public static class EidosProjectGraphResolver
                     Visit(targetDependencyNode);
                 }
             }
-        }
-
-        private static ResolvedPackageGraph ResolvePackageGraph(LoadedEidosProjectConfiguration project)
-        {
-            var config = project.Configuration;
-            if (config.VersionedDependencies == null || config.VersionedDependencies.Count == 0)
-            {
-                return new ResolvedPackageGraph();
-            }
-
-            var lockPath = Path.Combine(project.ProjectDirectory, "eidos.lock.json");
-            EidosLockFile? lockFile = null;
-            if (File.Exists(lockPath) && !EidosLockFile.TryLoad(lockPath, out lockFile))
-            {
-                throw new InvalidOperationException(PipelineMessages.FailedToDeserializeLockFile);
-            }
-
-            var resolver = new PackageDependencyResolver(project.ProjectDirectory);
-            return resolver.Resolve(config, lockFile);
-        }
-
-        private static Dictionary<string, string[]> ResolvePackageImportRoots(ResolvedPackageGraph graph)
-        {
-            var result = new Dictionary<string, string[]>(StringComparer.Ordinal);
-            foreach (var (alias, package) in graph.Packages)
-            {
-                var roots = package.SourceRoots
-                    .Concat(package.ImportRoots)
-                    .Where(static root => !string.IsNullOrWhiteSpace(root))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-                if (roots.Length > 0)
-                {
-                    result[alias] = roots;
-                }
-            }
-
-            return result;
         }
 
         private static EidosFfiConfiguration? CombineFfi(EidosFfiConfiguration? first, EidosFfiConfiguration? second)

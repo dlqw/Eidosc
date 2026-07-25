@@ -76,9 +76,9 @@ caller :: Int -> Int
 
         File.WriteAllText(moduleFile, """
 Cap :: module {
-    io :: effect;
+    export io :: effect;
 
-    write :: Int -> Int need io
+    export write :: Int -> Int need io
     {
         value => value
     }

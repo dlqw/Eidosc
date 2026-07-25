@@ -105,7 +105,7 @@ public sealed record EidosProjectConfiguration
     public EidosProjectTargetConfiguration[] Targets { get; init; } = [];
     public EidosProjectDependencyConfiguration[] Dependencies { get; init; } = [];
     public Dictionary<string, DependencySpec>? VersionedDependencies { get; init; }
-    public bool NoImplicitStdlib { get; init; }
+    public bool NoImplicitPrelude { get; init; }
     public EidosBuildConfiguration? Build { get; init; }
     public EidosFfiConfiguration? Ffi { get; init; }
     public EidosMetaConfiguration? Meta { get; init; }
@@ -312,7 +312,7 @@ public static class EidosProjectConfigurationLoader
                     Targets = targets,
                     Dependencies = legacyDeps,
                     VersionedDependencies = versionedDeps,
-                    NoImplicitStdlib = configDocument.NoImplicitStdlib ?? false,
+                    NoImplicitPrelude = configDocument.NoImplicitPrelude ?? false,
                     Build = buildConfig,
                     Ffi = ffiConfig,
                     Meta = metaConfig

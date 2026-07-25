@@ -20,14 +20,14 @@ public partial class EffectAuthorizationCheckerTests
 
         const string moduleSource = """
 Cap :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap.Writer
+    export helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -75,14 +75,14 @@ main :: Unit -> Unit need Cap.Writer
 
         const string moduleSource = """
 Cap :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap.Writer
+    export helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -127,14 +127,14 @@ main :: Unit -> Unit need C.Writer
 
         const string moduleSource = """
 Cap :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap.Writer
+    export helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }
@@ -173,9 +173,9 @@ main :: Unit -> Unit need Writer
     {
         const string source = """
 Cap :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
@@ -211,8 +211,8 @@ import std.Ffi
 int_compare :: RawPtr -> RawPtr -> Int need ffi
 {
     a => b => {
-        va := ptr_load_as[Int](a);
-        vb := ptr_load_as[Int](b);
+        va := Ffi.load[Int](a);
+        vb := Ffi.load[Int](b);
         va - vb
     }
 }
@@ -262,15 +262,15 @@ import std.Task
 
 store_result :: RawPtr -> RawPtr -> Unit need ffi
 {
-    slot => value => ptr_store_as[RawPtr](slot, value)
+    slot => value => Ffi.store[RawPtr](slot)(value)
 }
 
 main :: Unit -> Unit need ffi
 {
     _ => {
-        payload := ptr_null();
+        payload := Ffi.null_pointer();
         pending_task := Task.completed_raw[RawPtr](payload);
-        slot := ptr_null();
+        slot := Ffi.null_pointer();
         awaited := pending_task.await_raw(store_result(slot));
         ()
     }
@@ -362,7 +362,7 @@ main :: Unit -> Int
             manifestSchema = 3
             sourceRoots = ["."]
             [language]
-            version = "0.7.0-alpha.1"
+            version = "0.8.0-alpha.1"
             """);
     }
 
@@ -379,7 +379,11 @@ main :: Unit -> Int
             StopAtPhase = stopAtPhase,
             UseColors = false,
             ImportSearchRoots = importSearchRoots?.ToArray() ?? [],
-            LanguageVersion = languageVersion ?? EidosLanguageVersions.Current
+            LanguageVersion = languageVersion ?? EidosLanguageVersions.Current,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         };
 
         return new CompilationPipeline(source, options).Run();

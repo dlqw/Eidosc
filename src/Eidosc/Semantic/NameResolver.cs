@@ -65,7 +65,9 @@ public sealed partial class NameResolver
     private readonly Dictionary<SymbolId, SymbolId> _patternValueAdtBindings = [];
     private int _traitSignatureDepth;
     private int _instanceMethodDeclarationDepth;
+    private readonly Stack<bool> _instanceMethodPublicContexts = new();
     private int _forcedPrivateGeneratedDeclarationDepth;
+    private int _selectionPlaceholderDeclarationDepth;
     private SymbolId _rootModule = SymbolId.None;
     private SymbolId _currentModule = SymbolId.None;
     private string? _rootInputFilePath;
@@ -329,7 +331,8 @@ public sealed partial class NameResolver
                 module.Span,
                 usesExplicitExports: module.UsesExplicitExports,
                 packageAlias: module.PackageAlias,
-                packageInstanceKey: module.PackageInstanceKey);
+                packageInstanceKey: module.PackageInstanceKey,
+                allowsCompilerInternalAccess: CompilerOwnedSourceGrant.Allows(module.Span));
             _rootModule = _currentModule;
             module.SymbolId = _currentModule;
             _moduleDeclarations[_currentModule] = module;
@@ -928,6 +931,11 @@ public sealed partial class NameResolver
             }
         }
 
+        if (TryResolveUnqualifiedLocalPath(path, allowedKinds, out var localResult))
+        {
+            return localResult;
+        }
+
         if (TryResolveImportedModulePath(path, out var importedModuleResult, allowedKinds))
         {
             return importedModuleResult;
@@ -964,6 +972,61 @@ public sealed partial class NameResolver
         }
 
         return result;
+    }
+
+    private bool TryResolveUnqualifiedLocalPath(
+        IReadOnlyList<string> path,
+        IReadOnlySet<ResolutionKind>? allowedKinds,
+        out PathResolutionResult result)
+    {
+        result = PathResolutionResult.NotFound(string.Empty);
+        if (path.Count != 1)
+        {
+            return false;
+        }
+
+        var name = path[0];
+        var candidates = new List<PathResolutionResult>();
+        AddCandidate(_symbolTable.LookupValue(name), ResolutionKind.Value);
+        AddCandidate(_symbolTable.LookupType(name), ResolutionKind.Type);
+        AddCandidate(_symbolTable.LookupConstructor(name), ResolutionKind.Constructor);
+        AddCandidate(_symbolTable.LookupModule(name), ResolutionKind.Module);
+        AddCandidate(_symbolTable.LookupEffect(name), ResolutionKind.Effect);
+
+        var distinct = candidates
+            .DistinctBy(static candidate => (candidate.SymbolId, candidate.Kind))
+            .ToArray();
+        if (distinct.Length == 0)
+        {
+            return false;
+        }
+
+        if (distinct.Length == 1)
+        {
+            result = distinct[0];
+            return true;
+        }
+
+        result = PathResolutionResult.NotFound(
+            $"Identifier '{name}' is ambiguous across local semantic namespaces.");
+        return true;
+
+        void AddCandidate(SymbolId? symbolId, ResolutionKind kind)
+        {
+            if (symbolId is not { IsValid: true } id ||
+                (allowedKinds != null && !allowedKinds.Contains(kind)))
+            {
+                return;
+            }
+
+            if (_symbolTable.Modules.TryGetOwningModule(id, out var owner) &&
+                (!_currentModule.IsValid || owner.Id != _currentModule))
+            {
+                return;
+            }
+
+            candidates.Add(PathResolutionResult.Found(id, kind));
+        }
     }
 
     private bool TryResolveCurrentModuleQualifiedPath(
@@ -1324,6 +1387,12 @@ public sealed partial class NameResolver
 
     private bool TryReportReservedInternalNameDeclaration(string name, SourceSpan span, string declarationKind)
     {
+        if (_selectionPlaceholderDeclarationDepth == 0 && SelectionPlaceholderSyntax.LooksLikePlaceholder(name))
+        {
+            AddError(span, DiagnosticMessages.SelectionPlaceholderOutsideArm(name), "E4020");
+            return true;
+        }
+
         if (!ReservedInternalNames.TryMatch(name, out var prefix))
         {
             return false;

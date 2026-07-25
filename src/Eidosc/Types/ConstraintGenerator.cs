@@ -156,6 +156,21 @@ public sealed class ConstraintGenerator
                 GenerateMatchConstraints(match);
                 break;
 
+            case SelectionExpr selection:
+                if (selection.Subject != null)
+                {
+                    GenerateConstraints(selection.Subject);
+                }
+                if (selection.ThenArm != null)
+                {
+                    GenerateConstraints(selection.ThenArm);
+                }
+                if (selection.ElseArm != null)
+                {
+                    GenerateConstraints(selection.ElseArm);
+                }
+                break;
+
             case PatternBranch patternBranch:
                 GeneratePatternBranchConstraints(patternBranch);
                 break;

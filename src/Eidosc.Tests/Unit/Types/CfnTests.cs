@@ -16,7 +16,7 @@ public class CfnTests
 main :: Int -> Int
 {
     _ => {
-        fn_ptr: Cfn[Int, Int] := ptr_null();
+        fn_ptr: Cfn[Int, Int] := null_pointer();
         0
     }
 }
@@ -54,7 +54,7 @@ main :: Int -> Int {
         const string source = """
 main :: Int -> Int {
     _ => {
-        fn_ptr: Cfn[Int, Int] := ptr_null();
+        fn_ptr: Cfn[Int, Int] := null_pointer();
         result := cfn_call(fn_ptr, 42);
         result
     }
@@ -161,9 +161,15 @@ main :: Int -> Int need ffi {
         {
             InputFile = "cfn_test.eidos",
             StopAtPhase = stopAtPhase,
+            AllowVirtualInputFile = true,
             UseColors = false
         };
 
-        return new CompilationPipeline(source, options).Run();
+        const string ffiImports = "import std.Ffi\n\n";
+        options.PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            [WellKnownStrings.Std.Module] = []
+        };
+        return new CompilationPipeline(ffiImports + source, options).Run();
     }
 }

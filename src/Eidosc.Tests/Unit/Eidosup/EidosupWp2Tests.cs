@@ -13,10 +13,19 @@ using NSec.Cryptography;
 
 namespace Eidosc.Tests.Unit.Eidosup;
 
-[Collection("Eidosup environment")]
-public sealed class EidosupWp2Tests
+[Collection(EidosupEnvironmentTestCollection.Name)]
+public sealed class EidosupWp2Tests : IDisposable
 {
     private const string AssetHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private readonly string? _previousToolchainSelector;
+
+    public EidosupWp2Tests()
+    {
+        _previousToolchainSelector = Environment.GetEnvironmentVariable("EIDOSUP_TOOLCHAIN");
+        Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", null);
+    }
+
+    public void Dispose() => Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", _previousToolchainSelector);
 
     [Theory]
     [InlineData("custom:local", ToolchainSpecKind.Custom)]
@@ -139,7 +148,7 @@ public sealed class EidosupWp2Tests
         using var fixture = new EidosupToolchainTestFixture();
         var first = await fixture.CreateToolchainAsync("0.4.0-alpha.2", AssetHash);
         var second = await fixture.CreateToolchainAsync(
-            "0.4.0-alpha.3",
+            "0.5.0-alpha.1",
             "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
         var store = new ToolchainStateStore(static () => EidosupToolchainTestFixture.FixedTime);
         await store.RegisterInstallAsync(fixture.Layout, first.Directory, ReleaseChannel.Preview, CancellationToken.None);
@@ -150,7 +159,7 @@ public sealed class EidosupWp2Tests
         var previous = Environment.GetEnvironmentVariable("EIDOSUP_TOOLCHAIN");
         try
         {
-            Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", "0.4.0-alpha.3");
+            Environment.SetEnvironmentVariable("EIDOSUP_TOOLCHAIN", "0.5.0-alpha.1");
             var resolved = await new ToolchainResolver().ResolveAsync(
                 fixture.Layout,
                 "eidosc",
@@ -158,7 +167,7 @@ public sealed class EidosupWp2Tests
                 CancellationToken.None,
                 fixture.Root);
 
-            Assert.Equal("0.4.0-alpha.3", resolved.Selector);
+            Assert.Equal("0.5.0-alpha.1", resolved.Selector);
             Assert.Equal(ToolchainSelectionSource.Environment, resolved.SelectionSource);
         }
         finally
@@ -448,15 +457,15 @@ public sealed class EidosupWp2Tests
         var previous = Environment.GetEnvironmentVariable("EIDOSUP_TRUSTED_ED25519_KEYS");
         var content = Path.Combine(fixture.Root, "bundle-content");
         Directory.CreateDirectory(Path.Combine(content, "assets"));
-        var bundleAssetPath = Path.Combine(content, "assets", "eidosc-v0.4.0-alpha.3-win-x64.zip");
+        var bundleAssetPath = Path.Combine(content, "assets", "eidosc-v0.5.0-alpha.1-win-x64.zip");
         await File.WriteAllTextAsync(bundleAssetPath, "bundle");
         var checksumPath = Path.Combine(content, "assets", "SHA256SUMS");
         await File.WriteAllTextAsync(checksumPath, $"{Hash(bundleAssetPath)}  {Path.GetFileName(bundleAssetPath)}\n");
         var index = CreateIndex(1) with
         {
             Releases = [new SignedReleaseEntry(
-                "eidosc-v0.4.0-alpha.3",
-                "eidosc-v0.4.0-alpha.3",
+                "eidosc-v0.5.0-alpha.1",
+                "eidosc-v0.5.0-alpha.1",
                 true,
                 DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
                 [
@@ -691,8 +700,8 @@ public sealed class EidosupWp2Tests
         DateTimeOffset.Parse("2026-08-12T00:00:00Z"),
         [],
         [new SignedReleaseEntry(
-            "eidosc-v0.4.0-alpha.3",
-            "eidosc-v0.4.0-alpha.3",
+            "eidosc-v0.5.0-alpha.1",
+            "eidosc-v0.5.0-alpha.1",
             true,
             DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
             [new SignedReleaseAsset(

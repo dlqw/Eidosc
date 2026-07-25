@@ -210,7 +210,11 @@ public sealed partial class HirBuilder
             HirCallSurfaceSyntax.Pipe);
     }
 
-    private HirNode BuildStdlibCall(BinaryExpr bin, string modulePath, string funcName, bool swapArgs)
+    private HirNode BuildStdlibCall(
+        BinaryExpr bin,
+        string funcName,
+        bool swapArgs,
+        CompilerSemanticRole role)
     {
         // a <op> b  →  Module.func(first, second)
         // swapArgs=false: first=left, second=right
@@ -220,7 +224,7 @@ public sealed partial class HirBuilder
 
         var first = swapArgs ? right : left;
         var second = swapArgs ? left : right;
-        var functionRef = BuildStdlibFunctionVar(modulePath, funcName, bin.Span);
+        var functionRef = BuildCompilerRoleFunctionVar(role, funcName, bin.Span);
         return BuildCallableApplication(
             functionRef,
             [first, second],
@@ -230,78 +234,33 @@ public sealed partial class HirBuilder
             HirCallSurfaceSyntax.OperatorDesugaring);
     }
 
-    private HirVar BuildStdlibFunctionVar(string modulePath, string funcName, SourceSpan span)
+    internal HirVar BuildCompilerRoleFunctionVar(
+        CompilerSemanticRole role,
+        string fallbackName,
+        SourceSpan span)
     {
-        var path = modulePath
-            .Replace(WellKnownStrings.Separators.ModulePath, WellKnownStrings.Separators.Path, StringComparison.Ordinal)
-            .Split(WellKnownStrings.Separators.Path, StringSplitOptions.RemoveEmptyEntries)
-            .Append(funcName)
+        var matches = _symbolTable.Symbols.Values
+            .OfType<FuncSymbol>()
+            .Where(symbol => symbol.CompilerSemanticRole == role)
+            .OrderBy(symbol => symbol.Id.Value)
             .ToArray();
-        var symbolId = ResolveStdlibFunctionSymbol(modulePath, funcName) ??
-                       _symbolTable.ResolvePath(path) ??
-                       SymbolId.None;
+        if (matches.Length != 1)
+        {
+            Diagnostics.Add(CreateDiagnostic(
+                $"Prelude Core Image must register exactly one function for compiler role '{role}', found {matches.Length}.",
+                span,
+                "E5208",
+                "compiler-owned elaboration role resolution failed"));
+        }
 
+        var selected = matches.FirstOrDefault();
         return new HirVar
         {
-            Name = $"{modulePath}{WellKnownStrings.Separators.Path}{funcName}",
-            SymbolId = symbolId,
+            Name = selected?.Name ?? fallbackName,
+            SymbolId = selected?.Id ?? SymbolId.None,
             Span = span,
             TypeId = TypeId.None
         };
-    }
-
-    private SymbolId? ResolveStdlibFunctionSymbol(string modulePath, string funcName)
-    {
-        var parts = modulePath
-            .Replace(WellKnownStrings.Separators.ModulePath, WellKnownStrings.Separators.Path, StringComparison.Ordinal)
-            .Split(WellKnownStrings.Separators.Path, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2)
-        {
-            return null;
-        }
-
-        var packageAlias = parts[0];
-        var packageModulePath = parts.Skip(1).ToArray();
-        var moduleId = _symbolTable.Modules.LookupModuleByPath(packageAlias, packageModulePath);
-        if (!moduleId.HasValue ||
-            !_symbolTable.Modules.TryLookupAccessibleBinding(moduleId.Value, funcName, requesterModuleId: null, out var binding))
-        {
-            return ResolveStdlibTraitOrEffectFunctionSymbol(parts, funcName);
-        }
-
-        return binding.SymbolId.IsValid ? binding.SymbolId : null;
-    }
-
-    private SymbolId? ResolveStdlibTraitOrEffectFunctionSymbol(IReadOnlyList<string> parts, string funcName)
-    {
-        if (parts.Count < 3)
-        {
-            return null;
-        }
-
-        var packageAlias = parts[0];
-        var ownerName = parts[^1];
-        var packageModulePath = parts.Skip(1).Take(parts.Count - 2).ToArray();
-        var moduleId = _symbolTable.Modules.LookupModuleByPath(packageAlias, packageModulePath);
-        if (!moduleId.HasValue ||
-            !_symbolTable.Modules.TryLookupAccessibleBinding(moduleId.Value, ownerName, requesterModuleId: null, out var ownerBinding))
-        {
-            return null;
-        }
-
-        if (_symbolTable.GetSymbol(ownerBinding.SymbolId) is TraitSymbol trait)
-        {
-            foreach (var methodId in trait.Methods)
-            {
-                if (_symbolTable.GetSymbol(methodId) is FuncSymbol method &&
-                    string.Equals(method.Name, funcName, StringComparison.Ordinal))
-                {
-                    return methodId;
-                }
-            }
-        }
-
-        return null;
     }
 
     private HirNode ConvertBinaryExpr(BinaryExpr bin)
@@ -320,7 +279,11 @@ public sealed partial class HirBuilder
 
         if (StdlibOperatorDesugaring.TryGetValue(bin.Operator, out var desugaring))
         {
-            return BuildStdlibCall(bin, desugaring.ModulePath, desugaring.FuncName, desugaring.SwapArgs);
+            return BuildStdlibCall(
+                bin,
+                desugaring.FuncName,
+                desugaring.SwapArgs,
+                desugaring.Role);
         }
 
         return new HirBinOp
@@ -336,7 +299,10 @@ public sealed partial class HirBuilder
     private HirNode BuildAppendLastCall(BinaryExpr bin)
     {
         var listArg = ConvertExprOrFallback(bin.Left, "operator left operand", bin.Span);
-        var singletonFunc = BuildStdlibFunctionVar("std.Seq", "singleton", bin.Span);
+        var singletonFunc = BuildCompilerRoleFunctionVar(
+            CompilerSemanticRole.AppendLastSingleton,
+            "singleton",
+            bin.Span);
         var singletonCall = BuildCallableApplication(
             singletonFunc,
             [ConvertExprOrFallback(bin.Right, "operator right operand", bin.Span)],
@@ -344,7 +310,10 @@ public sealed partial class HirBuilder
             bin.Span,
             TypeId.None,
             HirCallSurfaceSyntax.OperatorDesugaring);
-        var appendFunc = BuildStdlibFunctionVar("std.Seq", "append", bin.Span);
+        var appendFunc = BuildCompilerRoleFunctionVar(
+            CompilerSemanticRole.AppendLastAppend,
+            "append",
+            bin.Span);
         return BuildCallableApplication(
             appendFunc,
             [listArg, singletonCall],

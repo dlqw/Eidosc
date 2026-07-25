@@ -352,9 +352,9 @@ public partial class MirBuilderTests
     {
         var floatType = new TypeId(BaseTypes.FloatId);
         var symbolTable = new SymbolTable();
-        var maybeMathSinSymbol = symbolTable.LookupValue("math_sin");
-        Assert.True(maybeMathSinSymbol.HasValue);
-        var mathSinSymbol = maybeMathSinSymbol.Value;
+        var mathSinSymbol = Assert.Single(
+            symbolTable.Symbols.Values.OfType<FuncSymbol>(),
+            static symbol => symbol.Name == "math_sin").Id;
 
         var module = new HirModule
         {
@@ -1068,7 +1068,7 @@ public partial class MirBuilderTests
     }
 
     [Fact]
-    public void Build_BuiltinPrintStringCall_NonCopyArgumentIsMoved()
+    public void Build_InternalWriteTextRawCall_NonCopyArgumentIsMoved()
     {
         var unitType = new TypeId(BaseTypes.UnitId);
         var stringType = new TypeId(BaseTypes.StringId);
@@ -1097,7 +1097,7 @@ public partial class MirBuilderTests
                     {
                         Function = new HirVar
                         {
-                            Name = "print_string",
+                            Name = "write_text_raw",
                             SymbolId = builtinSymbol,
                             TypeId = unitType
                         },
@@ -1117,7 +1117,7 @@ public partial class MirBuilderTests
         };
 
         var effectMap = new ParameterEffectMap();
-        effectMap.Add("print_string", builtinSymbol.Value, [ParameterEffect.Read]);
+        effectMap.Add("write_text_raw", builtinSymbol.Value, [ParameterEffect.Read]);
 
         var builder = new MirBuilder(null, parameterEffects: effectMap);
         var mirModule = builder.Build(module);
@@ -1125,7 +1125,7 @@ public partial class MirBuilderTests
         var entry = Assert.Single(callerFunc.BasicBlocks, block => block.IsEntry);
         var call = Assert.Single(entry.Instructions.OfType<MirCall>());
         var funcRef = Assert.IsType<MirFunctionRef>(call.Function);
-        Assert.Equal("print_string", funcRef.Name);
+        Assert.Equal("write_text_raw", funcRef.Name);
         Assert.Single(call.Arguments);
 
         var sourceLocal = Assert.Single(callerFunc.Locals, local => local.IsParameter && local.Name == "src").Id;

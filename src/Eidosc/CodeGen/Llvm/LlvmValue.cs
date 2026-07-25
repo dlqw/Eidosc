@@ -165,6 +165,18 @@ public sealed class LlvmInstructionRef : LlvmValue
 }
 
 /// <summary>
+/// Reuses an SSA value with the equivalent opaque-pointer type expected by a use site.
+/// </summary>
+public sealed class LlvmTypeView : LlvmValue
+{
+    public LlvmValue Value { get; init; } = LlvmUndef.Instance;
+
+    public override string ToIrString() => Value.ToIrString();
+
+    public override string ToString() => ToIrString();
+}
+
+/// <summary>
 /// 未定义值 (用于未初始化变量)
 /// </summary>
 public sealed class LlvmUndef : LlvmValue

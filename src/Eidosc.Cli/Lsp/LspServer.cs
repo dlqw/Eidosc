@@ -386,8 +386,15 @@ public sealed class LspServer : IDisposable
         }
 
         var snapshot = GetOrCompileSnapshot(uri);
+        _documents.TryGetDocument(uri, out var document);
         var actions = snapshot != null && TryGetRange(params_, out var range)
-            ? LspSemanticMapper.MapCodeActions(snapshot, uri, UriToFilePath(uri), range)
+            ? LspSemanticMapper.MapCodeActions(
+                snapshot,
+                uri,
+                UriToFilePath(uri),
+                range,
+                document?.Text,
+                document?.Version)
             : [];
 
         await SendResponseAsync(id, actions, ct);
@@ -890,7 +897,7 @@ public sealed class LspServer : IDisposable
 
     private IdeSemanticSnapshot CompileDocument(string uri, string text, int? version = null)
     {
-        var filePath = UriToFilePath(uri);
+        var filePath = UriToCanonicalFilePath(uri);
         try
         {
             if (_compileDocumentOverride != null)
@@ -920,9 +927,8 @@ public sealed class LspServer : IDisposable
                     .Concat(buildHostResult?.GeneratedSourceRoots ?? [])
                     .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
                     .ToArray(),
-                PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                     new Dictionary<string, string[]>(StringComparer.Ordinal),
-                NoImplicitPrelude = project?.Configuration.NoImplicitStdlib ?? false,
+                PackageImportRoots = inputResolution.GetPackageImportRoots(),
+                NoImplicitPrelude = project?.Configuration.NoImplicitPrelude ?? false,
                 BuildHostFingerprint = buildHostResult?.CacheFingerprint,
                 BuildGraphFingerprint = buildHostResult?.Graph?.CanonicalHash,
                 GeneratedSourceUriMap = buildHostResult?.GeneratedSourceUris ?? new Dictionary<string, string>(),
@@ -958,9 +964,8 @@ public sealed class LspServer : IDisposable
             TargetTriple = Eidosc.CodeGen.TargetInfo.Default.Triple,
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                 new Dictionary<string, string[]>(StringComparer.Ordinal),
-            NoImplicitPrelude = project.Configuration.NoImplicitStdlib,
+            PackageImportRoots = inputResolution.GetPackageImportRoots(),
+            NoImplicitPrelude = project.Configuration.NoImplicitPrelude,
             UseCache = true,
             ReleaseProfile = false,
             TraceBuild = false
@@ -1064,7 +1069,7 @@ public sealed class LspServer : IDisposable
     {
         await SendNotificationAsync("textDocument/publishDiagnostics", new
         {
-            uri,
+            uri = NormalizeFileUri(uri),
             version,
             diagnostics
         }, ct);
@@ -1177,10 +1182,75 @@ public sealed class LspServer : IDisposable
         if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed) &&
             string.Equals(parsed.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
         {
-            return parsed.LocalPath;
+            var localPath = parsed.LocalPath;
+            if (OperatingSystem.IsWindows() &&
+                localPath.Length >= 4 &&
+                localPath[0] is '/' or '\\' &&
+                char.IsAsciiLetter(localPath[1]) &&
+                localPath[2] == ':' &&
+                localPath[3] is '/' or '\\')
+            {
+                localPath = localPath[1..].Replace('/', Path.DirectorySeparatorChar);
+            }
+
+            return localPath;
         }
 
         return Uri.UnescapeDataString(uri);
+    }
+
+    internal static string UriToCanonicalFilePath(string uri) =>
+        ResolveExistingWindowsFileNameCasing(UriToFilePath(uri));
+
+    internal static string NormalizeFileUri(string uri)
+    {
+        if (!OperatingSystem.IsWindows() ||
+            !Uri.TryCreate(uri, UriKind.Absolute, out var parsed) ||
+            !string.Equals(parsed.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+        {
+            return uri;
+        }
+
+        try
+        {
+            return new Uri(Path.GetFullPath(UriToCanonicalFilePath(uri))).AbsoluteUri;
+        }
+        catch
+        {
+            return uri;
+        }
+    }
+
+    private static string ResolveExistingWindowsFileNameCasing(string path)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var directoryPath = Path.GetDirectoryName(fullPath);
+            var fileName = Path.GetFileName(fullPath);
+            if (string.IsNullOrWhiteSpace(directoryPath) ||
+                string.IsNullOrWhiteSpace(fileName) ||
+                !Directory.Exists(directoryPath))
+            {
+                return path;
+            }
+
+            var actualEntry = new DirectoryInfo(directoryPath)
+                .EnumerateFileSystemInfos(fileName, SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(entry => string.Equals(entry.Name, fileName, StringComparison.OrdinalIgnoreCase));
+            return actualEntry == null
+                ? path
+                : Path.Combine(directoryPath, actualEntry.Name);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return path;
+        }
     }
 
     private static LspRange GetFullDocumentRange(string text)

@@ -22,14 +22,14 @@ install command; Eidosup does not silently choose another installed version.
 
 ```toml
 [toolchain]
-channel = "0.4.0-alpha.3"
+channel = "0.5.0-alpha.1"
 profile = "default"
 components = []
 targets = []
 ```
 
 `channel` accepts `stable`, `preview`, an exact Eidosc SemVer, an explicit host
-form such as `0.4.0-alpha.3@linux-arm64`, or `custom:<name>`. Unqualified
+form such as `0.5.0-alpha.1@linux-arm64`, or `custom:<name>`. Unqualified
 downloadable selectors use the validated `set default-host <rid>` setting. The
 file uses strict UTF-8 TOML scalar and string-array parsing. Assignments outside
 `[toolchain]`, unknown sections or keys, duplicate sections or keys, unknown

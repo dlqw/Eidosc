@@ -29,7 +29,8 @@ public static partial class IdeSemanticSnapshotBuilder
         SymbolTable? symbolTable,
         string sourceText,
         IReadOnlyDictionary<string, SymbolId> modulePathSymbolIds,
-        IReadOnlyDictionary<string, SymbolId> importedModuleAliases)
+        IReadOnlyDictionary<string, SymbolId> importedModuleAliases,
+        IdeSourceCoordinateResolver coordinates)
     {
         var occurrences = new List<IdeOccurrenceEntry>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -147,7 +148,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 for (var i = 0; i < count; i++)
                 {
                     if (!effectfulType.EffectSymbolIds[i].IsValid ||
-                        !IdeSpan.TryFrom(effectfulType.EffectPathSpans[i], out var effectSpan))
+                        !IdeSpan.TryFrom(effectfulType.EffectPathSpans[i], coordinates, out var effectSpan))
                     {
                         continue;
                     }
@@ -179,7 +180,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 occurrenceSpan = identifierSpan;
             }
 
-            if (node.SymbolId.IsValid && IdeSpan.TryFrom(occurrenceSpan, out var span))
+            if (node.SymbolId.IsValid && IdeSpan.TryFrom(occurrenceSpan, coordinates, out var span))
             {
                 if (IsDefinitionNode(node) &&
                     symbolTable?.GetSymbol(node.SymbolId)?.GeneratedOrigin is { } generatedOrigin)
@@ -200,7 +201,7 @@ public static partial class IdeSemanticSnapshotBuilder
 
             if (node is Assignment assignment &&
                 assignment.TargetSymbolId.IsValid &&
-                IdeSpan.TryFrom(assignment.Span, out var assignSpan))
+                IdeSpan.TryFrom(assignment.Span, coordinates, out var assignSpan))
             {
                 AddOccurrence(assignment.TargetSymbolId.Value, "reference", "AssignmentTarget", assignSpan);
             }
@@ -248,7 +249,7 @@ public static partial class IdeSemanticSnapshotBuilder
                     leafName,
                     out var segmentSpans))
             {
-                if (IdeSpan.TryFrom(sourceSpan, out var fallbackSpan))
+                if (IdeSpan.TryFrom(sourceSpan, coordinates, out var fallbackSpan))
                 {
                     AddOccurrence(leafSymbolId.Value, "reference", source, fallbackSpan);
                 }
@@ -264,7 +265,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 if (!prefixSymbolId.HasValue ||
                     !prefixSymbolId.Value.IsValid ||
                     prefixSymbolId.Value == leafSymbolId ||
-                    !IdeSpan.TryFrom(segmentSpans[i], out var prefixSpan))
+                    !IdeSpan.TryFrom(segmentSpans[i], coordinates, out var prefixSpan))
                 {
                     continue;
                 }
@@ -272,7 +273,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 AddOccurrence(prefixSymbolId.Value.Value, "reference", $"{source}Prefix", prefixSpan);
             }
 
-            if (IdeSpan.TryFrom(segmentSpans[^1], out var leafSpan))
+            if (IdeSpan.TryFrom(segmentSpans[^1], coordinates, out var leafSpan))
             {
                 AddOccurrence(leafSymbolId.Value, "reference", source, leafSpan);
             }
@@ -454,12 +455,14 @@ public static partial class IdeSemanticSnapshotBuilder
     }
 
     private static List<IdeCompletionEntry> BuildCompletions(
-        SymbolTable? symbolTable,
+        CompilationResult compilationResult,
         IReadOnlyList<IdeSymbolEntry> symbols,
         IReadOnlyList<IdeOverloadGroupEntry> overloadGroups)
     {
+        var symbolTable = compilationResult.SymbolTable;
         var result = new List<IdeCompletionEntry>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var accessibleSymbolIds = BuildAccessibleCompletionSymbolIds(compilationResult);
         var qualifiedLabelsBySymbolId = symbolTable != null
             ? BuildQualifiedCompletionLabels(symbolTable)
             : new Dictionary<int, List<string>>();
@@ -467,7 +470,8 @@ public static partial class IdeSemanticSnapshotBuilder
 
         foreach (var symbol in symbols)
         {
-            if (string.IsNullOrWhiteSpace(symbol.Name))
+            if (string.IsNullOrWhiteSpace(symbol.Name) ||
+                symbol.SymbolId > 0 && !accessibleSymbolIds.Contains(symbol.SymbolId))
             {
                 continue;
             }
@@ -604,6 +608,77 @@ public static partial class IdeSemanticSnapshotBuilder
         return result;
     }
 
+    private static HashSet<int> BuildAccessibleCompletionSymbolIds(CompilationResult result)
+    {
+        var accessible = new HashSet<int>();
+        if (result.SymbolTable is not { } symbolTable)
+        {
+            return accessible;
+        }
+
+        var inputFile = NormalizeCompletionPath(result.InputFile);
+        foreach (var symbol in symbolTable.Symbols.Values)
+        {
+            if (symbol.IsPublic ||
+                inputFile != null && string.Equals(
+                    NormalizeCompletionPath(symbol.Span.FilePath),
+                    inputFile,
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                accessible.Add(symbol.Id.Value);
+            }
+        }
+
+        if (result.Ast is not ModuleDecl { SymbolId.IsValid: true } rootModule)
+        {
+            return accessible;
+        }
+
+        AddModuleBindings(rootModule.SymbolId, rootModule.SymbolId);
+        foreach (var importedSymbol in rootModule.Declarations
+                     .OfType<ImportDecl>()
+                     .SelectMany(static import => import.ResolvedSymbols))
+        {
+            accessible.Add(importedSymbol.SymbolId.Value);
+        }
+
+        if (symbolTable.Modules.GetModule(rootModule.SymbolId) is { } module)
+        {
+            foreach (var importedModuleId in module.Imports)
+            {
+                accessible.Add(importedModuleId.Value);
+                AddModuleBindings(importedModuleId, rootModule.SymbolId);
+            }
+        }
+
+        return accessible;
+
+        void AddModuleBindings(SymbolId moduleId, SymbolId requesterModuleId)
+        {
+            foreach (var binding in symbolTable.Modules.GetAccessibleBindings(moduleId, requesterModuleId))
+            {
+                accessible.Add(binding.SymbolId.Value);
+            }
+        }
+    }
+
+    private static string? NormalizeCompletionPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
     private static Dictionary<int, IdeOverloadGroupEntry> BuildOverloadGroupMap(
         IReadOnlyList<IdeOverloadGroupEntry> overloadGroups)
     {
@@ -650,7 +725,8 @@ public static partial class IdeSemanticSnapshotBuilder
                     useModulePathSeparator: true);
             }
 
-            if (!string.IsNullOrWhiteSpace(module.PackageAlias))
+            if (!string.IsNullOrWhiteSpace(module.PackageAlias) &&
+                !module.PackageAlias.StartsWith("__", StringComparison.Ordinal))
             {
                 var packagePrefix = $"{module.PackageAlias}{WellKnownStrings.Separators.Path}{fullPrefix}";
                 AddQualifiedCompletionLabels(
@@ -1048,9 +1124,11 @@ public static partial class IdeSemanticSnapshotBuilder
         return fallback;
     }
 
-    private static IdeSpan? TryConvertIdeSpan(SourceSpan? span)
+    private static IdeSpan? TryConvertIdeSpan(
+        SourceSpan? span,
+        IdeSourceCoordinateResolver coordinates)
     {
-        if (span is { } value && IdeSpan.TryFrom(value, out var ideSpan))
+        if (span is { } value && IdeSpan.TryFrom(value, coordinates, out var ideSpan))
         {
             return ideSpan;
         }

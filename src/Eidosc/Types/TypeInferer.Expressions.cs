@@ -53,6 +53,7 @@ public sealed partial class TypeInferer
             IfLetExpr ifLetExpr => InferIfLet(ifLetExpr),
             WhileLetExpr whileLetExpr => InferWhileLet(whileLetExpr),
             MatchExpr match => InferMatch(match),
+            SelectionExpr selection => InferSelection(selection),
             PatternGuardExpr patternGuard => InferPatternGuardExpr(patternGuard),
             SequentialGuardExpr sequentialGuard => InferSequentialGuardExpr(sequentialGuard),
             DoExpr doExpr => InferDoExpr(doExpr),
@@ -1585,6 +1586,12 @@ public sealed partial class TypeInferer
     {
         call.InferredEffects = null;
 
+        if (call.Function is CallExpr or MethodCallExpr { ResolvedAsStaticPath: true } &&
+            TryInferCandidateApplicationSpine(call, out var applicationSpineResult))
+        {
+            return applicationSpineResult;
+        }
+
         if (call.Function is IdentifierExpr { Name: "cfn_from" } &&
             call.PositionalArgs.Count == 1)
         {
@@ -1770,35 +1777,9 @@ public sealed partial class TypeInferer
                 var argSpan = i < argSpans.Count ? argSpans[i] : call.Span;
                 var argType = InferCallArgument(currentType, argumentExpr, argSpan);
 
-                // Auto-deref: wrap Ref[T]/MRef[T] args in synthetic deref when param expects non-ref
                 if (argumentExpr != null && i < call.PositionalArgs.Count)
                 {
-                    var resolvedFunc = _substitution.Apply(currentType);
-                    if (resolvedFunc is TyFun { Params.Count: > 0 } fn)
-                    {
-                        var resolvedParam = _substitution.Apply(fn.Params[0]);
-                        var resolvedArg = _substitution.Apply(argType);
-
-                        if (resolvedParam is not (TyRef or TyMutRef) &&
-                            resolvedArg is TyRef or TyMutRef)
-                        {
-                            var innerType = resolvedArg switch
-                            {
-                                TyRef r => _substitution.Apply(r.Inner),
-                                TyMutRef mr => _substitution.Apply(mr.Inner),
-                                _ => resolvedArg
-                            };
-
-                            var syntheticDeref = new UnaryExpr();
-                            syntheticDeref.SetOperator(UnaryOp.Deref);
-                            syntheticDeref.SetOperand(call.PositionalArgs[i]);
-                            syntheticDeref.SetSpan(call.PositionalArgs[i].Span);
-                            syntheticDeref.InferredType = innerType;
-
-                            call.PositionalArgs[i] = syntheticDeref;
-                            argType = innerType;
-                        }
-                    }
+                    argType = AutoAdjustCallArgumentIfNeeded(call, i, currentType, argType);
                 }
 
                 currentType = ApplyCallArgument(call, currentType, argType, argSpan);
@@ -1861,6 +1842,12 @@ public sealed partial class TypeInferer
             PathExpr path => path.SymbolId,
             _ => SymbolId.None
         };
+        if (symbolId.IsValid &&
+            _symbolTable.GetSymbol<AdtSymbol>(symbolId) is { } adt &&
+            TryResolveSameNamedAdtConstructor(adt, constructorTarget, out var constructorId))
+        {
+            symbolId = constructorId;
+        }
         if (!symbolId.IsValid || _symbolTable.GetSymbol<CtorSymbol>(symbolId) is not { } constructor)
         {
             resultType = null!;

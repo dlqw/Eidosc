@@ -92,6 +92,17 @@ public static class TestSourceLoader
             ?? EidosLanguageVersions.DefaultForExistingProjects;
     }
 
+    public static Dictionary<string, string[]> GetPackageImportRoots(string relativeOrFullPath)
+    {
+        var fullPath = Path.IsPathRooted(relativeOrFullPath)
+            ? relativeOrFullPath
+            : GetFullPath(relativeOrFullPath);
+        var project = EidosProjectConfigurationLoader.TryLoadNearest(fullPath);
+        return project == null
+            ? new Dictionary<string, string[]>(StringComparer.Ordinal)
+            : EidosProjectGraphResolver.ResolvePackageGraph(project).GetPackageImportRoots();
+    }
+
     public static TestSourceLoaderCacheSnapshot GetCacheSnapshot() =>
         new(
             Interlocked.Read(ref _sourceTextCacheHits),

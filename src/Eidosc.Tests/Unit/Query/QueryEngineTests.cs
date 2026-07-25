@@ -1145,12 +1145,12 @@ main :: Unit -> Int
 """);
         var libFile = workspace.WriteFile("lib.eidos", """
 Lib :: module {
-    parse :: Int -> Int
+    export parse :: Int -> Int
     {
         value => value
     }
 
-    parse :: String -> Int
+    export parse :: String -> Int
     {
         _ => 2
     }
@@ -1166,7 +1166,7 @@ Lib :: module {
 
         workspace.WriteFile("lib.eidos", """
 Lib :: module {
-    parse :: Int -> Int
+    export parse :: Int -> Int
     {
         value => value
     }
@@ -1179,12 +1179,12 @@ Lib :: module {
 
         workspace.WriteFile("lib.eidos", """
 Lib :: module {
-    parse :: Int -> Int
+    export parse :: Int -> Int
     {
         value => value
     }
 
-    parse :: String -> Int
+    export parse :: String -> Int
     {
         _ => 2
     }

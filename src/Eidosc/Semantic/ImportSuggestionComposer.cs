@@ -117,7 +117,7 @@ internal static class ImportSuggestionComposer
                 GetLineIndentation(sourceText, declarations[0].Span.Location.Position));
 
         return new EditContext(
-            CreateInsertionSpan(position, filePath),
+            CreateInsertionSpan(sourceText, position, filePath),
             indentation,
             DetectPreferredLineBreak(sourceText));
     }
@@ -297,14 +297,29 @@ internal static class ImportSuggestionComposer
 
     private static string DetectPreferredLineBreak(string sourceText)
     {
-        _ = sourceText;
-        return "\n";
+        return sourceText.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
     }
 
-    private static SourceSpan CreateInsertionSpan(int position, string filePath)
+    private static SourceSpan CreateInsertionSpan(string sourceText, int position, string filePath)
     {
+        var boundedPosition = Math.Clamp(position, 0, sourceText.Length);
+        var line = 0;
+        var column = 0;
+        for (var index = 0; index < boundedPosition; index++)
+        {
+            if (sourceText[index] == '\n')
+            {
+                line++;
+                column = 0;
+            }
+            else if (sourceText[index] != '\r')
+            {
+                column++;
+            }
+        }
+
         return new SourceSpan(
-            new SourceLocation(position, 1, 1, filePath),
+            new SourceLocation(boundedPosition, line, column, filePath),
             0);
     }
 

@@ -649,7 +649,11 @@ Point :: type
             {
                 InputFile = inputFile,
                 StopAtPhase = stopAt,
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    [WellKnownStrings.Std.Module] = []
+                }
             }).Run();
         }
         finally
@@ -660,12 +664,7 @@ Point :: type
 
     private static string WithStdTraitImports(string source)
     {
-        return """
-import std.Traits
-import std.TraitInvoke
-import std.Ordering
-
-""" + source;
+        return source;
     }
 
     private static string FormatDiagnostics(CompilationResult result)

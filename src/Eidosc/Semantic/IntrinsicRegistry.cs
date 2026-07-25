@@ -77,9 +77,13 @@ public static class IntrinsicRegistry
     {
         var firstByName = new Dictionary<string, IntrinsicDeclaration>(StringComparer.Ordinal);
         var byNameAndSignature = new Dictionary<string, Dictionary<string, IntrinsicDeclaration>>(StringComparer.Ordinal);
-        foreach (var modulePath in PrecompiledModuleRegistry.GetAvailableModulePaths())
+        var modulePaths = PrecompiledModuleRegistry.GetAvailableModulePaths()
+            .Concat(PreludeCoreImageRegistry.GetAvailableModulePaths()
+                .Select(moduleName => $"{WellKnownStrings.Std.Module}/{moduleName}"))
+            .Distinct(StringComparer.Ordinal);
+        foreach (var modulePath in modulePaths)
         {
-            if (!PrecompiledModuleRegistry.TryGetSource(modulePath, out var source) ||
+            if (!PrecompiledModuleRegistry.TryGetDistributionSource(modulePath, out var source) ||
                 !PrecompiledModuleRegistry.TryParseModuleDeclForTest(source, modulePath, out var moduleDecl) ||
                 moduleDecl == null)
             {

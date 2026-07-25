@@ -3,6 +3,7 @@ using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Mir;
 using Eidosc.Semantic;
+using Eidosc.Tests.Fixtures;
 
 namespace Eidosc.Tests.Unit.Semantic;
 
@@ -126,7 +127,8 @@ public sealed class PackageQualifiedModuleResolutionTests
                 UseColors = false,
                 PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
                 {
-                    ["pkg"] = [packageRoot]
+                    ["pkg"] = [packageRoot],
+                    [WellKnownStrings.Std.Module] = []
                 }
             }).Run();
 
@@ -311,7 +313,8 @@ public sealed class PackageQualifiedModuleResolutionTests
                 LanguageVersion = EidosLanguageVersions.Current,
                 StopAtPhase = CompilationPhase.Namer,
                 NoImplicitPrelude = true,
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = StdPackageRoots()
             }).Run();
 
             Assert.True(result.Success, FormatDiagnostics(result));
@@ -328,7 +331,7 @@ public sealed class PackageQualifiedModuleResolutionTests
     }
 
     [Fact]
-    public void CompilationPipeline_ProjectWithoutStdlibImportRoot_ResolvesPrecompiledStdPackage()
+    public void CompilationPipeline_ProjectWithoutStdlibDependency_RejectsPrecompiledStdPackage()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_pkg_implicit_std_{Guid.NewGuid():N}");
         var projectDir = Path.Combine(tempDir, "app");
@@ -364,9 +367,10 @@ public sealed class PackageQualifiedModuleResolutionTests
                 UseColors = false
             }).Run();
 
-            Assert.True(result.Success, FormatDiagnostics(result));
-            Assert.NotNull(result.SymbolTable);
-            Assert.True(result.SymbolTable.Modules.ModulePaths.ContainsKey("std.Seq"));
+            Assert.False(result.Success);
+            Assert.Contains(result.Diagnostics, diagnostic =>
+                diagnostic.Code == "E3000" &&
+                diagnostic.Message.Contains("Unable to resolve imported module 'std.Seq'", StringComparison.Ordinal));
         }
         finally
         {
@@ -414,7 +418,8 @@ public sealed class PackageQualifiedModuleResolutionTests
                 LanguageVersion = EidosLanguageVersions.Current,
                 StopAtPhase = CompilationPhase.Types,
                 NoImplicitPrelude = true,
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = StdPackageRoots()
             }).Run();
 
             Assert.True(result.Success, FormatDiagnostics(result));
@@ -451,7 +456,8 @@ public sealed class PackageQualifiedModuleResolutionTests
                 LanguageVersion = EidosLanguageVersions.Current,
                 StopAtPhase = CompilationPhase.Namer,
                 NoImplicitPrelude = true,
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = StdPackageRoots()
             }).Run();
 
             Assert.True(result.Success, FormatDiagnostics(result));
@@ -501,7 +507,8 @@ public sealed class PackageQualifiedModuleResolutionTests
                 UseColors = false,
                 PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
                 {
-                    ["pkg"] = [pkgRoot]
+                    ["pkg"] = [pkgRoot],
+                    [WellKnownStrings.Std.Module] = []
                 }
             }).Run();
 
@@ -556,7 +563,7 @@ public sealed class PackageQualifiedModuleResolutionTests
 
                 main :: Unit -> Int
                 {
-                    _ => GameMath.scale_i(GameMath.east_i, 4).x
+                    _ => GameMath.scale(GameMath.east_i, 4).x
                 }
                 """);
 
@@ -567,7 +574,8 @@ public sealed class PackageQualifiedModuleResolutionTests
                 StopAtPhase = CompilationPhase.Types,
                 NoImplicitPrelude = true,
                 EnableDetailedProfiling = true,
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = StdPackageRoots()
             }).Run();
 
             Assert.True(result.Success, FormatDiagnostics(result));
@@ -666,7 +674,8 @@ public sealed class PackageQualifiedModuleResolutionTests
 
     private static CompilationResult RunStdlibRootInput(string fileName, CompilationPhase phase)
     {
-        var stdlibFile = FindWorkspaceFile("src", "Eidosc", "Stdlib", "Precompiled", "std", fileName);
+        var stdlibFile = EidosFixtureInventory.StdlibPrecompiledFiles()
+            .Single(path => string.Equals(Path.GetFileName(path), fileName, StringComparison.Ordinal));
         return new CompilationPipeline(File.ReadAllText(stdlibFile), new CompilationOptions
         {
             InputFile = stdlibFile,
@@ -677,26 +686,9 @@ public sealed class PackageQualifiedModuleResolutionTests
         }).Run();
     }
 
-    private static string FindWorkspaceFile(params string[] segments)
-    {
-        var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 8; i++)
+    private static Dictionary<string, string[]> StdPackageRoots() =>
+        new(StringComparer.Ordinal)
         {
-            var candidate = Path.Combine([dir, .. segments]);
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-
-            var parent = Directory.GetParent(dir);
-            if (parent == null)
-            {
-                break;
-            }
-
-            dir = parent.FullName;
-        }
-
-        throw new FileNotFoundException($"Unable to locate workspace file: {Path.Combine(segments)}");
-    }
+            [WellKnownStrings.Std.Module] = []
+        };
 }

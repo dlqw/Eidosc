@@ -203,7 +203,7 @@ public sealed class ToolchainStateStoreTests
         var firstToolchain = await CreateVerifiedToolchainAsync(layout);
         var secondToolchain = await CreateVerifiedToolchainAsync(
             layout,
-            "0.4.0-alpha.3",
+            "0.5.0-alpha.1",
             "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789");
         var store = new ToolchainStateStore(static () => FixedTime);
         await store.RegisterInstallAsync(

@@ -502,7 +502,7 @@ use :: 1 `join` 2;
 
         const string moduleSource = """
 ProbeMath :: module {
-    add :: Int -> Int -> Int { x => y => x + y }
+    export add :: Int -> Int -> Int { x => y => x + y }
 }
 """;
 

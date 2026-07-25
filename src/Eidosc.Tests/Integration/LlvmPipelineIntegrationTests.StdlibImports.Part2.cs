@@ -266,16 +266,16 @@ main :: Unit -> Int
 
         Assert.Contains(
             mirModule.Functions,
-            function => function.Name.StartsWith("std__Seq__append__spec_", StringComparison.Ordinal));
+            function => function.Name.StartsWith("__eidos_prelude_core__Seq__append__spec_", StringComparison.Ordinal));
         Assert.Contains(
             mirModule.Functions,
-            function => function.Name.StartsWith("std__Seq__take__spec_", StringComparison.Ordinal));
+            function => function.Name.StartsWith("__eidos_prelude_core__Seq__take__spec_", StringComparison.Ordinal));
         Assert.Contains(
             mirModule.Functions,
-            function => function.Name.StartsWith("std__Seq__drop__spec_", StringComparison.Ordinal));
+            function => function.Name.StartsWith("__eidos_prelude_core__Seq__drop__spec_", StringComparison.Ordinal));
         Assert.Contains(
             mirModule.Functions,
-            function => function.Name.StartsWith("std__Seq__reverse__spec_", StringComparison.Ordinal));
+            function => function.Name.StartsWith("__eidos_prelude_core__Seq__reverse__spec_", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -291,40 +291,40 @@ main :: Unit -> Int
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__head", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__head", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__last", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__last", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__map", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__map", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__FunctorSeq__fmap", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__FunctorSeq__fmap", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__ApplicativeSeq__pure", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__ApplicativeSeq__pure", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__ApplicativeSeq__apply", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__ApplicativeSeq__apply", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__MonadSeq__bind", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__MonadSeq__bind", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__fold_left", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__fold_left", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__take", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__take", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__zip_with", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__zip_with", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__append", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__append", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Seq__reverse", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Seq__reverse", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -357,85 +357,85 @@ main :: Unit -> Int
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__map", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__map", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__map_or", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__map_or", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__map_or_else", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__map_or_else", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__and_then", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__and_then", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__and_", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__and_", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__or_", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__or_", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__xor", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__xor", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__unwrap_or", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__unwrap_or", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__unwrap_or_else", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__unwrap_or_else", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__contains", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__contains", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__filter", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__filter", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__zip", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__zip", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__zip_with", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__zip_with", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__flatten", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__flatten", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__FunctorOption__fmap", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__FunctorOption__fmap", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__ApplicativeOption__pure", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__ApplicativeOption__pure", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__ApplicativeOption__apply", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__ApplicativeOption__apply", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__sequence", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__sequence", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__FoldableOption__fold_left", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__FoldableOption__fold_left", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__FoldableOption__fold_right", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__FoldableOption__fold_right", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__MonadOption__bind", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__MonadOption__bind", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__TraversableOption__traverse", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__TraversableOption__traverse", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__EqOptionT__eq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__EqOptionT__eq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__OrdOptionT__compare", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__OrdOptionT__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__ShowOptionT__show", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__ShowOptionT__show", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__is_some", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__is_some", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Option__or_else_with", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Option__or_else_with", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -451,73 +451,73 @@ main :: Unit -> Int
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__compare_int", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__compare_char", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__compare_bool", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__EqOrdering__eq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__EqOrdering__eq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__OrdOrdering__compare", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__OrdOrdering__compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__ShowOrdering__show", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__ShowOrdering__show", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__then_with", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__then_with", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__is_le", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__is_le", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__is_ge", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__is_ge", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__is_ne", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__is_ne", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__to_int", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__to_int", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__from_int", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__from_int", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__fold", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__fold", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__select_le", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__select_le", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__select_ge", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__select_ge", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__then_compare_char", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__then_compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__then_compare_int", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__then_compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__then_compare_bool", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__then_compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__then_compare_ordering", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__then_compare", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__compare_int_desc", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__compare_desc", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__compare_char_desc", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__compare_desc", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__compare_bool_desc", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__compare_desc", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Ordering__reverse", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Ordering__reverse", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -531,15 +531,9 @@ main :: Unit -> Int
         Assert.NotNull(result.LlvmModule);
 
         var llvmModule = result.LlvmModule!;
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Hash__int", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Hash__bool", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Hash__string", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("std__Hash__hash_", StringComparison.Ordinal)) >= 3);
         Assert.Contains(
             llvmModule.Functions,
             function => function.Name.Contains("std__Hash__bucket_index", StringComparison.Ordinal));
@@ -579,46 +573,40 @@ main :: Unit -> Int
         var llvmModule = result.LlvmModule!;
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__empty_seq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__empty_seq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__or_else_seq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__AlternativeSeq__or_else", StringComparison.Ordinal));
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("__eidos_prelude_core__Alternative__is_empty_", StringComparison.Ordinal)) >= 2);
+        Assert.True(
+            llvmModule.Functions.Count(function =>
+                function.Name.Contains("__eidos_prelude_core__Alternative__or_else_with_", StringComparison.Ordinal)) >= 2);
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__is_empty_seq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__guard_seq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__or_else_seq_with", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__when_seq", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__guard_seq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__empty_option", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__when_seq", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__AlternativeOption__or_else", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__empty_option", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__guard_option", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__or_else_option", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__when_option", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__is_empty_option", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__empty_for", StringComparison.Ordinal));
         Assert.Contains(
             llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__or_else_option_with", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__guard_option", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__when_option", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__empty_for", StringComparison.Ordinal));
-        Assert.Contains(
-            llvmModule.Functions,
-            function => function.Name.Contains("std__Alternative__choose", StringComparison.Ordinal));
+            function => function.Name.Contains("__eidos_prelude_core__Alternative__choose", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -631,6 +619,16 @@ main :: Unit -> Int
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.NotNull(result.LlvmModule);
         Assert.False(string.IsNullOrWhiteSpace(result.LlvmIrText));
+        var collectValuesMethod = Assert.Single(
+            AstStableNodeTraversal.Enumerate(Assert.IsType<Eidosc.Ast.Declarations.ModuleDecl>(result.Ast))
+                .Select(static entry => entry.Node)
+                .OfType<Eidosc.Ast.Expressions.MethodCallExpr>(),
+            static method =>
+                string.Equals(method.MethodName, "try_await_value_or", StringComparison.Ordinal) &&
+                method.Span.FilePath?.EndsWith("task_group.eidos", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.True(collectValuesMethod.SymbolId.IsValid);
+        Assert.IsType<FuncSymbol>(Assert.IsType<SymbolTable>(result.SymbolTable).GetSymbol(collectValuesMethod.SymbolId));
+        Assert.DoesNotContain("<mir-poison", MirFormatter.FormatMir(Assert.IsType<MirModule>(result.MirModule)), StringComparison.Ordinal);
         Assert.DoesNotContain("closure_stack", result.LlvmIrText, StringComparison.Ordinal);
 
         var llvmModule = result.LlvmModule!;

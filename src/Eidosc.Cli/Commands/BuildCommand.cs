@@ -390,7 +390,7 @@ public static partial class BuildCommand
                 .Configuration
             : EidosProjectConfigurationLoader.TryLoadNearest(sourcePath)?
                 .Configuration;
-        var ffiConfig = inputResolution.ProjectTarget?.Ffi ?? projectConfig?.Ffi;
+        var ffiConfig = inputResolution.GetFfiConfiguration() ?? projectConfig?.Ffi;
 
         EidosBuildHostResult? buildHostResult = null;
         if (projectConfig?.Build != null)
@@ -406,9 +406,8 @@ public static partial class BuildCommand
                 TargetTriple = (targetInfo ?? TargetInfo.Default).Triple,
                 ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                     inputResolution.ImportResolution.EffectiveSearchRoots,
-                PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ??
-                                     new Dictionary<string, string[]>(StringComparer.Ordinal),
-                NoImplicitPrelude = projectConfig.NoImplicitStdlib,
+                PackageImportRoots = inputResolution.GetPackageImportRoots(),
+                NoImplicitPrelude = projectConfig.NoImplicitPrelude,
                 UseCache = !options.NoCache,
                 ReleaseProfile = options.BuildMode == BuildMode.Release,
                 TraceBuild = options.TraceBuild
@@ -491,7 +490,7 @@ public static partial class BuildCommand
                 .Concat(buildHostResult?.GeneratedSourceRoots ?? [])
                 .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
                 .ToArray(),
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal),
+            PackageImportRoots = inputResolution.GetPackageImportRoots(),
             ConfigFfiLibraries = ffiConfig?.Libraries ?? [],
             ConfigFfiLibraryPaths = ffiConfig?.LibraryPaths ?? [],
             ConfigFfiIncludePaths = ffiConfig?.IncludePaths ?? [],

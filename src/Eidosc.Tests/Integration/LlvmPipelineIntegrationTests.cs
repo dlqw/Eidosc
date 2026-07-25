@@ -13,6 +13,7 @@ using Eidosc.Pipeline;
 using Eidosc.Semantic;
 using Eidosc.Types;
 using Eidosc.Tests.Fixtures;
+using Eidosc.Utils;
 using Xunit;
 
 namespace Eidosc.Tests.Integration;
@@ -170,7 +171,8 @@ main :: Int -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(relativePath),
             StopAtPhase = CompilationPhase.Llvm,
-                UseColors = false
+            UseColors = false,
+            PackageImportRoots = ExplicitStdPackageRoots
         };
 
         return new CompilationPipeline(source, options).Run();
@@ -182,7 +184,8 @@ main :: Int -> Int
         {
             InputFile = inputFile,
             StopAtPhase = CompilationPhase.Llvm,
-                UseColors = false
+            UseColors = false,
+            PackageImportRoots = ExplicitStdPackageRoots
         };
 
         return new CompilationPipeline(source, options).Run();
@@ -195,7 +198,8 @@ main :: Int -> Int
         {
             InputFile = TestSourceLoader.GetFullPath(relativePath),
             StopAtPhase = CompilationPhase.Mir,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = ExplicitStdPackageRoots
         };
 
         return new CompilationPipeline(source, options).Run();
@@ -205,13 +209,21 @@ main :: Int -> Int
     {
         var options = new CompilationOptions
         {
-            InputFile = inputFile,
+            InputFile = Path.GetFullPath(inputFile),
             StopAtPhase = CompilationPhase.Mir,
-                UseColors = false
+            UseColors = false,
+            AllowVirtualInputFile = true,
+            PackageImportRoots = ExplicitStdPackageRoots
         };
 
         return new CompilationPipeline(source, options).Run();
     }
+
+    private static Dictionary<string, string[]> ExplicitStdPackageRoots { get; } =
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            [WellKnownStrings.Std.Module] = []
+        };
 
     private static ProcessExecutionResult CompileAndRunSourceAtNative(
         string source,

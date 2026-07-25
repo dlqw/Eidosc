@@ -263,7 +263,7 @@ public static class MirFunctionFingerprintBuilder
                 }
 
                 writer.Add(functionRef.TraitSelfInResult);
-                writer.Add((int)functionRef.TraitMethodRole);
+                writer.Add((int)functionRef.CompilerSemanticRole);
                 break;
             case MirPlace place:
                 AddPlaceBody(writer, place);

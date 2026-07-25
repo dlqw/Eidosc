@@ -372,6 +372,9 @@ internal static partial class ComptimeEvaluator
             case MatchExpr match:
                 return TryEvaluateMatch(match, context, out value, out reason);
 
+            case SelectionExpr selection:
+                return TryEvaluateSelection(selection, context, out value, out reason);
+
             case BlockExpr block:
                 return TryEvaluateBlock(block, context, out value, out reason);
 
@@ -660,6 +663,90 @@ internal static partial class ComptimeEvaluator
         value = ComptimeUnitValue.Instance;
         reason = "comptime match expression has no matching branch";
         return false;
+    }
+
+    private static bool TryEvaluateSelection(
+        SelectionExpr selection,
+        ComptimeEvaluationContext context,
+        out ComptimeValue value,
+        out string reason)
+    {
+        value = ComptimeUnitValue.Instance;
+        reason = string.Empty;
+        if (selection.Subject == null ||
+            !TryEvaluate(selection.Subject, context, out var evaluatedSubject, out reason))
+        {
+            reason = selection.Subject == null ? "selection expression is missing a subject" : reason;
+            return false;
+        }
+
+        var subjectValues = selection.IsGroup
+            ? evaluatedSubject is ComptimeSequenceValue { Kind: ComptimeSequenceKind.Tuple } tuple
+                ? tuple.Elements
+                : []
+            : [evaluatedSubject];
+        if (subjectValues.Count != selection.Subjects.Count)
+        {
+            reason = "selection subject shape does not match its type-directed lowering";
+            return false;
+        }
+
+        var positivePayloads = new List<ComptimeValue>();
+        var negativePayloads = new List<ComptimeValue>();
+        var allPositive = true;
+        for (var index = 0; index < selection.Subjects.Count; index++)
+        {
+            var desugaring = selection.Subjects[index];
+            var subjectValue = subjectValues[index];
+            var isPositive = desugaring.Kind switch
+            {
+                SelectionSubjectKind.Bool when subjectValue is ComptimeBoolValue boolean => boolean.Value,
+                SelectionSubjectKind.Option or SelectionSubjectKind.Result or SelectionSubjectKind.Either
+                    when subjectValue is ComptimeAdtValue adt => adt.HasSameConstructor(
+                        desugaring.PositiveConstructorSymbolId,
+                        desugaring.Kind switch
+                        {
+                            SelectionSubjectKind.Option => "Some",
+                            SelectionSubjectKind.Result => "Ok",
+                            _ => "Right"
+                        }),
+                _ => false
+            };
+            allPositive &= isPositive;
+
+            if (subjectValue is ComptimeAdtValue payloadAdt)
+            {
+                if (isPositive)
+                {
+                    positivePayloads.AddRange(payloadAdt.PositionalValues);
+                }
+                else if (!selection.IsGroup)
+                {
+                    negativePayloads.AddRange(payloadAdt.PositionalValues);
+                }
+            }
+        }
+
+        var arm = allPositive ? selection.ThenArm : selection.ElseArm;
+        if (arm == null)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        var payloads = allPositive ? positivePayloads : negativePayloads;
+        var symbols = allPositive ? selection.ThenPlaceholderSymbols : selection.ElsePlaceholderSymbols;
+        var bindings = new Dictionary<SymbolId, ComptimeValue>();
+        foreach (var (payloadIndex, symbolId) in symbols)
+        {
+            if (symbolId.IsValid && payloadIndex >= 0 && payloadIndex < payloads.Count)
+            {
+                bindings[symbolId] = payloads[payloadIndex];
+            }
+        }
+
+        var armContext = context with { Values = MergeValues(context.Values, bindings) };
+        return TryEvaluate(arm, armContext, out value, out reason);
     }
 
     private static bool TryEvaluateGuard(

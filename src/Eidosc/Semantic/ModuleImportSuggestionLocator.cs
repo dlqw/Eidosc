@@ -182,6 +182,11 @@ internal static class ModuleImportSuggestionLocator
         string currentInputFile,
         IReadOnlyList<string> importSearchRoots)
     {
+        if (!File.Exists(currentInputFile) && importSearchRoots.Count == 0)
+        {
+            yield break;
+        }
+
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var root in WorkspaceModuleLocator.EnumerateImportSearchRoots(currentInputFile, importSearchRoots))
         {

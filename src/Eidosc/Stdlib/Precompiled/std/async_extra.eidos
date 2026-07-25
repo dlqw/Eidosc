@@ -6,19 +6,19 @@ AsyncExtra :: module {
     import TraitInvoke
 
     /// Map a spawning function over each element of a Seq.
-    distribute[A, B, E: effects] :: Seq[A] -> (A -> Task[B] need E) -> Seq[Task[B]] need E
+    export distribute[A, B, E: effects] :: Seq[A] -> (A -> Task[B] need E) -> Seq[Task[B]] need E
     {
         xs => spawn_fn => Seq.map(xs)(spawn_fn)
     }
 
     /// Apply a pure transformation to the result of a spawn.
-    map_spawn[A, B, E1: effects, E2: effects] :: (Unit -> A need E1) -> (A -> B need E2) -> Unit -> B need E1, E2
+    export map_spawn[A, B, E1: effects, E2: effects] :: (Unit -> A need E1) -> (A -> B need E2) -> Unit -> B need E1, E2
     {
         thunk => f => _ => f(thunk(()))
     }
 
     /// Sequence two computations, passing the result of the first to the second.
-    bind_spawn[A, B, E1: effects, E2: effects] :: (Unit -> A need E1) -> (A -> Unit -> B need E2) -> Unit -> B need E1, E2
+    export bind_spawn[A, B, E1: effects, E2: effects] :: (Unit -> A need E1) -> (A -> Unit -> B need E2) -> Unit -> B need E1, E2
     {
         first => next => _ => next(first(()))(())
     }
@@ -31,13 +31,13 @@ AsyncExtra :: module {
     }
 
     /// Apply a side-effecting action to each element, returning thunks.
-    for_each_thunk[A, E: effects] :: Seq[A] -> (A -> Unit need E) -> Seq[Unit -> Unit need E]
+    export for_each_thunk[A, E: effects] :: Seq[A] -> (A -> Unit need E) -> Seq[Unit -> Unit need E]
     {
         xs => action => Seq.map(xs)(AsyncExtra.make_action_thunk(action))
     }
 
     /// Chunk a Seq into groups of `n` elements each.
-    chunk[A] :: Seq[A] -> Int -> Seq[Seq[A]]
+    export chunk[A] :: Seq[A] -> Int -> Seq[Seq[A]]
     {
         xs => n => if n <= 0 then { [] } else { AsyncExtra.chunk_positive(xs)(n) }
     }
@@ -68,7 +68,7 @@ AsyncExtra :: module {
     }
 
     /// Pair each element with its index.
-    indexed[T] :: Seq[T] -> Seq[(Int, T)]
+    export indexed[T] :: Seq[T] -> Seq[(Int, T)]
     {
         xs => AsyncExtra.indexed_from(xs)(0)
     }
@@ -82,7 +82,7 @@ AsyncExtra :: module {
     }
 
     /// Select elements at the given indices from a Seq.
-    select_at[A: Traits.Clone] :: Seq[A] -> Seq[Int] -> Seq[A]
+    export select_at[A: Traits.Clone] :: Seq[A] -> Seq[Int] -> Seq[A]
     {
         xs => indices => AsyncExtra.select_at_inner(ref xs)(indices)
     }
@@ -111,7 +111,7 @@ AsyncExtra :: module {
     }
 
     /// Repeat a computation `n` times and collect results into a Seq.
-    replicate[A, E: effects] :: Int -> (Unit -> A need E) -> Seq[A] need E
+    export replicate[A, E: effects] :: Int -> (Unit -> A need E) -> Seq[A] need E
     {
         n => thunk => AsyncExtra.replicate_from(n)(0)(thunk)
     }
@@ -126,7 +126,7 @@ AsyncExtra :: module {
     }
 
     /// Build a Seq of thunks from a range [start, end).
-    range_thunks[A, E: effects] :: Int -> Int -> (Int -> A need E) -> Seq[A] need E
+    export range_thunks[A, E: effects] :: Int -> Int -> (Int -> A need E) -> Seq[A] need E
     {
         start => end => f => if start >= end then { [] } else {
             Seq.append([f(start)])(AsyncExtra.range_thunks(start + 1)(end)(f))
@@ -134,13 +134,13 @@ AsyncExtra :: module {
     }
 
     /// Zip two lists and apply a function to each pair.
-    zip_apply[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
+    export zip_apply[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
     {
         left => right => f => Seq.zip_with(left)(right)(f)
     }
 
     /// Take the first `n` elements that satisfy a predicate.
-    take_while[A: Traits.Clone, E: effects] :: Seq[A] -> (A -> Bool need E) -> Seq[A] need E
+    export take_while[A: Traits.Clone, E: effects] :: Seq[A] -> (A -> Bool need E) -> Seq[A] need E
     {
         [] => _ => [],
         [head, ..tail] => pred => if pred(TraitInvoke.clone_value(ref head)) then {
@@ -149,7 +149,7 @@ AsyncExtra :: module {
     }
 
     /// Partition a Seq into two groups based on a predicate.
-    partition[A, E: effects] :: Seq[A] -> (A -> Bool need E) -> (Seq[A], Seq[A]) need E
+    export partition[A, E: effects] :: Seq[A] -> (A -> Bool need E) -> (Seq[A], Seq[A]) need E
     {
         xs => pred => Seq.partition(xs)(pred)
     }

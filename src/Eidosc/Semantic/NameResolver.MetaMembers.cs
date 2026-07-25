@@ -584,7 +584,7 @@ public sealed partial class NameResolver
                 TraitSelfPosition = selfUsage.Position,
                 TraitSelfParameterIndices = selfUsage.ParameterIndices,
                 TraitSelfInResult = selfUsage.InResult,
-                TraitMethodRole = ResolveTraitMethodRole(trait, method),
+                CompilerSemanticRole = ResolveCompilerSemanticRole(method),
                 IsDefaultImplementation = hasDefaultBody,
                 GeneratedOrigin = origin
             });
@@ -634,12 +634,14 @@ public sealed partial class NameResolver
                     instance.AppendMember(method);
                 }
                 _instanceMethodDeclarationDepth++;
+                _instanceMethodPublicContexts.Push(IsDeclarationPublic(instance));
                 try
                 {
                     CollectFuncDef(method);
                 }
                 finally
                 {
+                    _instanceMethodPublicContexts.Pop();
                     _instanceMethodDeclarationDepth--;
                 }
                 if (!method.SymbolId.IsValid)

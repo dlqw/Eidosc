@@ -94,6 +94,22 @@ public static class Scanner
         Token? newToken;
         char previewChar = stream.PreviewChar;
 
+        // Selection placeholders such as _0 are identifiers, not the wildcard
+        // token followed by a numeric literal. Route this reserved spelling
+        // through the identifier rules before the single-character '_' rule.
+        if (previewChar == '_' &&
+            stream.RemainingSpan.Length > 1 &&
+            char.IsAsciiDigit(stream.RemainingSpan[1]))
+        {
+            newToken = TokenizeLongest(context.OtherLexerSymbols, context);
+            if (newToken != null)
+            {
+                stream.Step(newToken.Length);
+                return newToken;
+            }
+            stream.ResetPreviewPosition();
+        }
+
         // ── Keyword trie fast path ──────────────────────────────
         // For ASCII lowercase letters, try the trie first to get O(L)
         // longest-keyword match instead of O(K) sequential MatchSymbol calls.

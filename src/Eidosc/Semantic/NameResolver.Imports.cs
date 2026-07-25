@@ -45,7 +45,7 @@ public sealed partial class NameResolver
             }
             else
             {
-                importScope.AddImport(symbol);
+                importScope.AddImport(symbol, import.IsCompilerInjectedPrelude);
             }
 
             if (import.IsExported)

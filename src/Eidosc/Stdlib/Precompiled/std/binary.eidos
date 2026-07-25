@@ -80,64 +80,64 @@ Binary :: module {
         parts => [x | xs <- parts, x <- xs]
     }
 
-    is_byte :: Int -> Bool
+    export is_byte :: Int -> Bool
     {
         value => value >= 0 && value <= 255
     }
 
-    all_bytes :: Seq[Int] -> Bool
+    export all_bytes :: Seq[Int] -> Bool
     {
         [] => true,
         [head, ..tail] => Binary.is_byte(head) && Binary.all_bytes(tail)
     }
 
-    normalize_bytes :: Seq[Int] -> Seq[Int]
+    export normalize_bytes :: Seq[Int] -> Seq[Int]
     {
         [] => [],
         [head, ..tail] => Seq.append([Binary.byte(head)])(Binary.normalize_bytes(tail))
     }
 
-    checksum8 :: Seq[Int] -> Int
+    export checksum8 :: Seq[Int] -> Int
     {
         [] => 0,
         [head, ..tail] => Binary.byte(Binary.byte(head) + Binary.checksum8(tail))
     }
 
-    encode_bool :: Bool -> Seq[Int]
+    export encode_bool :: Bool -> Seq[Int]
     {
         true => [1],
         false => [0]
     }
 
-    decode_bool :: Seq[Int] -> Option[Bool]
+    export decode_bool :: Seq[Int] -> Option[Bool]
     {
         [1] => Some(true),
         [0] => Some(false),
         _ => None()
     }
 
-    decode_bool_or_false :: Seq[Int] -> Bool
+    export decode_bool_or_false :: Seq[Int] -> Bool
     {
         bytes => Option.unwrap_or(Binary.decode_bool(bytes))(false)
     }
 
-    encode_u8 :: Int -> Seq[Int]
+    export encode_u8 :: Int -> Seq[Int]
     {
         value => [Binary.byte(value)]
     }
 
-    decode_u8 :: Seq[Int] -> Option[Int]
+    export decode_u8 :: Seq[Int] -> Option[Int]
     {
         [b0] => Some(Binary.byte(b0)),
         _ => None()
     }
 
-    decode_u8_or_zero :: Seq[Int] -> Int
+    export decode_u8_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_u8(bytes))(0)
     }
 
-    encode_u16_le :: Int -> Seq[Int]
+    export encode_u16_le :: Int -> Seq[Int]
     {
         value => {
             normalized := Binary.u16(value);
@@ -148,18 +148,18 @@ Binary :: module {
         }
     }
 
-    decode_u16_le :: Seq[Int] -> Option[Int]
+    export decode_u16_le :: Seq[Int] -> Option[Int]
     {
         [b0, b1] => Some(Binary.byte(b0) + Binary.byte(b1) * 256),
         _ => None()
     }
 
-    decode_u16_le_or_zero :: Seq[Int] -> Int
+    export decode_u16_le_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_u16_le(bytes))(0)
     }
 
-    encode_u16_be :: Int -> Seq[Int]
+    export encode_u16_be :: Int -> Seq[Int]
     {
         value => {
             normalized := Binary.u16(value);
@@ -170,18 +170,18 @@ Binary :: module {
         }
     }
 
-    decode_u16_be :: Seq[Int] -> Option[Int]
+    export decode_u16_be :: Seq[Int] -> Option[Int]
     {
         [b0, b1] => Some(Binary.byte(b0) * 256 + Binary.byte(b1)),
         _ => None()
     }
 
-    decode_u16_be_or_zero :: Seq[Int] -> Int
+    export decode_u16_be_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_u16_be(bytes))(0)
     }
 
-    encode_u32_le :: Int -> Seq[Int]
+    export encode_u32_le :: Int -> Seq[Int]
     {
         value => {
             normalized := Binary.u32(value);
@@ -194,18 +194,18 @@ Binary :: module {
         }
     }
 
-    decode_u32_le :: Seq[Int] -> Option[Int]
+    export decode_u32_le :: Seq[Int] -> Option[Int]
     {
         [b0, b1, b2, b3] => Some(Binary.byte(b0) + Binary.byte(b1) * 256 + Binary.byte(b2) * 65536 + Binary.byte(b3) * 16777216),
         _ => None()
     }
 
-    decode_u32_le_or_zero :: Seq[Int] -> Int
+    export decode_u32_le_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_u32_le(bytes))(0)
     }
 
-    encode_u32_be :: Int -> Seq[Int]
+    export encode_u32_be :: Int -> Seq[Int]
     {
         value => {
             normalized := Binary.u32(value);
@@ -218,23 +218,23 @@ Binary :: module {
         }
     }
 
-    decode_u32_be :: Seq[Int] -> Option[Int]
+    export decode_u32_be :: Seq[Int] -> Option[Int]
     {
         [b0, b1, b2, b3] => Some(Binary.byte(b0) * 16777216 + Binary.byte(b1) * 65536 + Binary.byte(b2) * 256 + Binary.byte(b3)),
         _ => None()
     }
 
-    decode_u32_be_or_zero :: Seq[Int] -> Int
+    export decode_u32_be_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_u32_be(bytes))(0)
     }
 
-    encode_i8 :: Int -> Seq[Int]
+    export encode_i8 :: Int -> Seq[Int]
     {
         value => Binary.encode_u8(value)
     }
 
-    decode_i8 :: Seq[Int] -> Option[Int]
+    export decode_i8 :: Seq[Int] -> Option[Int]
     {
         bytes => match Binary.decode_u8(bytes)
         {
@@ -243,17 +243,17 @@ Binary :: module {
         }
     }
 
-    decode_i8_or_zero :: Seq[Int] -> Int
+    export decode_i8_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_i8(bytes))(0)
     }
 
-    encode_i16_le :: Int -> Seq[Int]
+    export encode_i16_le :: Int -> Seq[Int]
     {
         value => Binary.encode_u16_le(value)
     }
 
-    decode_i16_le :: Seq[Int] -> Option[Int]
+    export decode_i16_le :: Seq[Int] -> Option[Int]
     {
         bytes => match Binary.decode_u16_le(bytes)
         {
@@ -262,17 +262,17 @@ Binary :: module {
         }
     }
 
-    decode_i16_le_or_zero :: Seq[Int] -> Int
+    export decode_i16_le_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_i16_le(bytes))(0)
     }
 
-    encode_i16_be :: Int -> Seq[Int]
+    export encode_i16_be :: Int -> Seq[Int]
     {
         value => Binary.encode_u16_be(value)
     }
 
-    decode_i16_be :: Seq[Int] -> Option[Int]
+    export decode_i16_be :: Seq[Int] -> Option[Int]
     {
         bytes => match Binary.decode_u16_be(bytes)
         {
@@ -281,17 +281,17 @@ Binary :: module {
         }
     }
 
-    decode_i16_be_or_zero :: Seq[Int] -> Int
+    export decode_i16_be_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_i16_be(bytes))(0)
     }
 
-    encode_i32_le :: Int -> Seq[Int]
+    export encode_i32_le :: Int -> Seq[Int]
     {
         value => Binary.encode_u32_le(value)
     }
 
-    decode_i32_le :: Seq[Int] -> Option[Int]
+    export decode_i32_le :: Seq[Int] -> Option[Int]
     {
         bytes => match Binary.decode_u32_le(bytes)
         {
@@ -300,17 +300,17 @@ Binary :: module {
         }
     }
 
-    decode_i32_le_or_zero :: Seq[Int] -> Int
+    export decode_i32_le_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_i32_le(bytes))(0)
     }
 
-    encode_i32_be :: Int -> Seq[Int]
+    export encode_i32_be :: Int -> Seq[Int]
     {
         value => Binary.encode_u32_be(value)
     }
 
-    decode_i32_be :: Seq[Int] -> Option[Int]
+    export decode_i32_be :: Seq[Int] -> Option[Int]
     {
         bytes => match Binary.decode_u32_be(bytes)
         {
@@ -319,7 +319,7 @@ Binary :: module {
         }
     }
 
-    decode_i32_be_or_zero :: Seq[Int] -> Int
+    export decode_i32_be_or_zero :: Seq[Int] -> Int
     {
         bytes => Option.unwrap_or(Binary.decode_i32_be(bytes))(0)
     }
@@ -333,12 +333,12 @@ Binary :: module {
             else { Binary.append([string_char_at_ref(src)(index)])(Binary.string_to_bytes_loop(src)(index + 1)) }
     }
 
-    string_to_bytes :: String -> Seq[Int]
+    export string_to_bytes :: String -> Seq[Int]
     {
         src => Binary.string_to_bytes_loop(ref src)(0)
     }
 
-    bytes_to_string :: Seq[Int] -> String
+    export bytes_to_string :: Seq[Int] -> String
     {
         [] => "",
         [head, ..tail] => string_from_char(Binary.byte(head)) ++ Binary.bytes_to_string(tail)
@@ -366,7 +366,7 @@ Binary :: module {
             }
     }
 
-    decode_string :: Seq[Int] -> Option[String]
+    export decode_string :: Seq[Int] -> Option[String]
     {
         [b0, ..tail0] => match tail0
         {
@@ -388,7 +388,7 @@ Binary :: module {
         _ => None()
     }
 
-    encode_string :: String -> Seq[Int]
+    export encode_string :: String -> Seq[Int]
     {
         src => Binary.append(Binary.encode_u32_le(string_length_ref(ref src)))(Binary.string_to_bytes(src))
     }

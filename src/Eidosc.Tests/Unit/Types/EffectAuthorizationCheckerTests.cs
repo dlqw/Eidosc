@@ -342,9 +342,9 @@ Demo.Logger :: module {
 
         const string moduleSource = """
 Cap.Io :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Int need Writer
+    export write :: String -> Int need Writer
     {
         _ => 0
     }
@@ -411,9 +411,9 @@ main :: Unit -> Int need Io.Writer
 
         const string moduleSource = """
 Cap.Io :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Int need Writer
+    export write :: String -> Int need Writer
     {
         _ => 0
     }
@@ -477,9 +477,9 @@ main :: Unit -> Int need Io.Writer
 
         const string moduleSource = """
 Cap.Io :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Int need Writer
+    export write :: String -> Int need Writer
     {
         _ => 0
     }
@@ -544,9 +544,9 @@ main :: Unit -> Int need Io.Writer
 
         const string moduleSource = """
 Cap.Io :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Int need Writer
+    export write :: String -> Int need Writer
     {
         _ => 0
     }
@@ -571,7 +571,7 @@ main :: Unit -> Int need Io.Writer
             importRoots = ["shared_modules"]
 
             [language]
-            version = "0.7.0-alpha.1"
+            version = "0.8.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);
@@ -617,9 +617,9 @@ main :: Unit -> Int need Io.Writer
 
         const string moduleSource = """
 Cap.Io :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Int need Writer
+    export write :: String -> Int need Writer
     {
         _ => 0
     }
@@ -644,7 +644,7 @@ main :: Unit -> Int need Io.Writer
             sourceRoots = ["src"]
 
             [language]
-            version = "0.7.0-alpha.1"
+            version = "0.8.0-alpha.1"
             """);
         File.WriteAllText(moduleFile, moduleSource);
         File.WriteAllText(entryFile, entrySource);
@@ -683,14 +683,14 @@ main :: Unit -> Int need Io.Writer
 
         const string moduleSource = """
 Cap :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap.Writer
+    export helper :: Int -> Unit need Cap.Writer
     {
         _ => write("from_cap")
     }
@@ -740,18 +740,18 @@ main :: Unit -> Unit
     {
         const string source = """
 A :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
 }
 
 B :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
@@ -781,9 +781,9 @@ f :: Unit -> Unit need Writer
     {
         const string source = """
 A :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
@@ -816,14 +816,14 @@ f :: Unit -> Unit need Writer
 
         const string moduleSource = """
 Cap :: module {
-    Writer :: effect;
+    export Writer :: effect;
 
-    write :: String -> Unit need Writer
+    export write :: String -> Unit need Writer
     {
         _ => ()
     }
 
-    helper :: Int -> Unit need Cap.Writer
+    export helper :: Int -> Unit need Cap.Writer
     {
         _ => write("x")
     }

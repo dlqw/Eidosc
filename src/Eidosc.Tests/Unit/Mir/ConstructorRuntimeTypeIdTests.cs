@@ -42,6 +42,34 @@ public sealed class ConstructorRuntimeTypeIdTests
         Assert.Equal(first, second);
     }
 
+    [Fact]
+    public void Compute_FunctionIdentity_UsesModuleConstructorKeyWithoutIdentityWrapper()
+    {
+        const string stableIdentityKey = "module-ctor:std@builtin.Option::Option::Some";
+        var functionId = new FunctionId
+        {
+            StableIdentityKey = stableIdentityKey
+        };
+
+        var runtimeTypeId = AdtConstructorTypeId.Compute(functionId, default, "Some");
+
+        Assert.Equal(AdtConstructorTypeId.Compute(stableIdentityKey), runtimeTypeId);
+    }
+
+    [Fact]
+    public void Compute_FunctionIdentity_DecodesPreservedRuntimeConstructorId()
+    {
+        const int expectedRuntimeTypeId = 1309831412;
+        var functionId = new FunctionId
+        {
+            StableIdentityKey = $"runtime-ctor:{expectedRuntimeTypeId}"
+        };
+
+        var runtimeTypeId = AdtConstructorTypeId.Compute(functionId, default, "Some");
+
+        Assert.Equal(expectedRuntimeTypeId, runtimeTypeId);
+    }
+
     private static (SymbolTable SymbolTable, SymbolId ConstructorId) CreateModuleSymbols(
         int moduleIdValue,
         int adtIdValue,

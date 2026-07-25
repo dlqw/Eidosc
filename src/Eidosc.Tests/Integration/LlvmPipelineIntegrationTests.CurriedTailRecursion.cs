@@ -67,9 +67,8 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int need ffi, io
             {
                 _ => {
-                    print_string("result=");
-                    print_int(count_down(5000000)(0));
-                    print_newline();
+                    print("result=");
+                    println(count_down(5000000)(0));
                     0
                 }
             }
@@ -117,9 +116,8 @@ public partial class LlvmPipelineIntegrationTests
             main :: Unit -> Int need ffi, io
             {
                 _ => {
-                    print_string("result=");
-                    print_int(build_acc(200000)(0));
-                    print_newline();
+                    print("result=");
+                    println(build_acc(200000)(0));
                     0
                 }
             }

@@ -101,43 +101,59 @@ Ffi :: module {
 
 
 
-    cfn_from[A] :: A -> RawPtr compiler(internal, intrinsic: "cfn_from") need ffi;
+    ptr_load_as[T] :: RawPtr -> T compiler(internal, intrinsic: "ptr_load_as") need ffi;
 
 
 
 
 
-    cfn_call[A, R] :: Cfn[A, R] -> A -> R compiler(internal, intrinsic: "cfn_call") need ffi;
+    ptr_store_as[T] :: RawPtr -> T -> Unit compiler(internal, intrinsic: "ptr_store_as") need ffi;
+
+
+
+
+
+    export cfn_from[A] :: A -> RawPtr compiler(intrinsic: "cfn_from") need ffi;
+
+
+
+
+
+    export cfn_call[A, R] :: Cfn[A, R] -> A -> R compiler(intrinsic: "cfn_call") need ffi;
+
+
+
+    string_to_cstr :: String -> RawPtr compiler(internal, intrinsic: "string_to_cstr") need ffi;
 
 
 
     @[extern(c, name: "malloc")]
-    malloc :: Int -> RawPtr need ffi;
+    export malloc :: Int -> RawPtr need ffi;
 
 
 
     @[extern(c, name: "free")]
-    free :: RawPtr -> Unit need ffi;
+    export free :: RawPtr -> Unit need ffi;
 
 
 
     @[extern(c, name: "calloc")]
-    calloc :: Int -> Int -> RawPtr need ffi;
+    export calloc :: Int -> Int -> RawPtr need ffi;
 
 
 
     @[extern(c, name: "realloc")]
-    realloc :: RawPtr -> Int -> RawPtr need ffi;
+    export realloc :: RawPtr -> Int -> RawPtr need ffi;
 
 
 
     @[extern(c, name: "memcpy")]
-    memcpy :: RawPtr -> RawPtr -> Int -> RawPtr need ffi;
+    export memcpy :: RawPtr -> RawPtr -> Int -> RawPtr need ffi;
 
 
 
     @[extern(c, name: "memset")]
-    memset :: RawPtr -> Int -> Int -> RawPtr need ffi;
+    export memset :: RawPtr -> Int -> Int -> RawPtr need ffi;
 
 
 
@@ -158,54 +174,84 @@ Ffi :: module {
     value_box_free :: RawPtr -> Unit compiler(internal, intrinsic: "value_box_free") need ffi;
 
 
-    is_null :: RawPtr -> Bool need ffi
+    export is_null :: RawPtr -> Bool need ffi
     {
         ptr => ptr_is_null(ptr)
     }
 
-    is_non_null :: RawPtr -> Bool need ffi
+    export null_pointer :: Unit -> RawPtr
+    {
+        _ => ptr_null()
+    }
+
+    export pointer_eq :: RawPtr -> RawPtr -> Bool
+    {
+        left => right => ptr_equals(left)(right)
+    }
+
+    export offset_bytes :: RawPtr -> Int -> RawPtr need ffi
+    {
+        ptr => byte_offset => ptr_add(ptr)(byte_offset)
+    }
+
+    export load[T] :: RawPtr -> T need ffi
+    {
+        ptr => ptr_load_as[T](ptr)
+    }
+
+    export store[T] :: RawPtr -> T -> Unit need ffi
+    {
+        ptr => value => ptr_store_as[T](ptr)(value)
+    }
+
+    export to_c_string :: String -> RawPtr need ffi
+    {
+        text => string_to_cstr(text)
+    }
+
+    export is_non_null :: RawPtr -> Bool need ffi
     {
         ptr => !ptr_is_null(ptr)
     }
 
-    free_if_non_null :: RawPtr -> Unit need ffi
+    export free_if_non_null :: RawPtr -> Unit need ffi
     {
         ptr => if ptr_is_null(ptr) then { () } else { Ffi.free(ptr) }
     }
 
-    alloc_or_null :: Int -> RawPtr need ffi
+    export alloc_or_null :: Int -> RawPtr need ffi
     {
         size => if size <= 0 then { ptr_null() } else { Ffi.malloc(size) }
     }
 
-    zero_memory :: RawPtr -> Int -> RawPtr need ffi
+    export zero_memory :: RawPtr -> Int -> RawPtr need ffi
     {
         ptr => size => if size <= 0 then { ptr } else { Ffi.memset(ptr)(0)(size) }
     }
 
-    copy_memory :: RawPtr -> RawPtr -> Int -> RawPtr need ffi
+    export copy_memory :: RawPtr -> RawPtr -> Int -> RawPtr need ffi
     {
         dest => src => size => if size <= 0 then { dest } else { Ffi.memcpy(dest)(src)(size) }
     }
 
-    box_value[A] :: A -> RawPtr need ffi
+    export box_value[A] :: A -> RawPtr need ffi
     {
         value => value_box(value)
     }
 
-    unbox_value[A] :: RawPtr -> A need ffi
+    export unbox_value[A] :: RawPtr -> A need ffi
     {
         ptr => value_unbox(ptr)
     }
 
-    free_boxed_value :: RawPtr -> Unit need ffi
+    export free_boxed_value :: RawPtr -> Unit need ffi
     {
         ptr => value_box_free(ptr)
     }
 
     // 安全包装：分配 + 自动释放
 
-    with_malloc[A, E: effects] :: Int -> (RawPtr -> A need E) -> A need ffi, E
+    export with_malloc[A, E: effects] :: Int -> (RawPtr -> A need E) -> A need ffi, E
     {
         size => body => {
             ptr := Ffi.malloc(size);
@@ -215,7 +261,7 @@ Ffi :: module {
         }
     }
 
-    with_malloc_zeroed[A, E: effects] :: Int -> (RawPtr -> A need E) -> A need ffi, E
+    export with_malloc_zeroed[A, E: effects] :: Int -> (RawPtr -> A need E) -> A need ffi, E
     {
         size => body => {
             ptr := Ffi.calloc(1)(size);
@@ -225,7 +271,7 @@ Ffi :: module {
         }
     }
 
-    with_calloc[A, E: effects] :: Int -> Int -> (RawPtr -> A need E) -> A need ffi, E
+    export with_calloc[A, E: effects] :: Int -> Int -> (RawPtr -> A need E) -> A need ffi, E
     {
         count => size => body => {
             ptr := Ffi.calloc(count)(size);

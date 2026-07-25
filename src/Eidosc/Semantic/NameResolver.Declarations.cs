@@ -63,9 +63,16 @@ public sealed partial class NameResolver
         }
 
         if (_currentModule.IsValid &&
-            _symbolTable.GetSymbol(decl.SymbolId) is { DefinitionModuleId.IsValid: false } symbol)
+            _symbolTable.GetSymbol(decl.SymbolId) is { } symbol)
         {
-            _symbolTable.UpdateSymbol(symbol with { DefinitionModuleId = _currentModule });
+            var isCompilerInternal = CompilerDirectiveIR.FromDeclaration(decl) is { IsInternal: true };
+            _symbolTable.UpdateSymbol(symbol with
+            {
+                DefinitionModuleId = symbol.DefinitionModuleId.IsValid
+                    ? symbol.DefinitionModuleId
+                    : _currentModule,
+                IsCompilerInternal = isCompilerInternal
+            });
         }
 
         _declarationsBySymbol[decl.SymbolId] = decl;
@@ -92,9 +99,19 @@ public sealed partial class NameResolver
             return false;
         }
 
-        return !_moduleDeclarations.TryGetValue(_currentModule, out var moduleDecl) ||
-               !moduleDecl.UsesExplicitExports ||
-               declaration.IsExported;
+        return declaration.IsExported;
+    }
+
+    private bool IsCollectedFunctionPublic(FuncDef function)
+    {
+        if (_instanceMethodPublicContexts.Count == 0)
+        {
+            return IsDeclarationPublic(function);
+        }
+
+        return _forcedPrivateGeneratedDeclarationDepth == 0 &&
+               _instanceMethodPublicContexts.Peek() &&
+               CompilerDirectiveIR.FromDeclaration(function) is not { IsInternal: true };
     }
 
     private void TryAddExportBinding(
@@ -103,6 +120,11 @@ public sealed partial class NameResolver
         SourceSpan span)
     {
         if (string.IsNullOrWhiteSpace(binding.Name) || !binding.SymbolId.IsValid)
+        {
+            return;
+        }
+
+        if (_symbolTable.GetSymbol(binding.SymbolId) is not { IsPublic: true })
         {
             return;
         }
@@ -216,11 +238,15 @@ public sealed partial class NameResolver
             bindingName,
             func.Span,
             hasBody: hasBody,
-            isPublic: IsDeclarationPublic(func),
+            isPublic: IsCollectedFunctionPublic(func),
             isComptime: func.IsComptime);
         if (_symbolTable.GetSymbol<FuncSymbol>(symbolId) is { } declaredFunction)
         {
-            _symbolTable.UpdateSymbol(declaredFunction with { DefinitionModuleId = _currentModule });
+            _symbolTable.UpdateSymbol(declaredFunction with
+            {
+                DefinitionModuleId = _currentModule,
+                CompilerSemanticRole = ResolveCompilerSemanticRole(func)
+            });
         }
         AddAllocationCounter(
             "Namer.collect.funcDef.declareFunction.allocatedBytes",
@@ -343,6 +369,15 @@ public sealed partial class NameResolver
         RegisterGenericParameterKinds(symbolId, func.TypeParams);
         RegisterFunctionOverloadDeclaration(bindingName, func.Signature, func.TypeParams, func.Span, symbolId);
         UpdateFunctionSymbolSignature(symbolId, GetDeclaredArity(func, defaultUnaryWhenUnknown: false));
+
+        if (_symbolTable.GetSymbol<FuncSymbol>(symbolId) is { } declaredFunction)
+        {
+            _symbolTable.UpdateSymbol(declaredFunction with
+            {
+                DefinitionModuleId = _currentModule,
+                CompilerSemanticRole = ResolveCompilerSemanticRole(func)
+            });
+        }
 
         if (ffiInfo != null)
         {
@@ -1053,7 +1088,7 @@ public sealed partial class NameResolver
                     TraitSelfPosition = methodSelfUsage.Position,
                     TraitSelfParameterIndices = methodSelfUsage.ParameterIndices,
                     TraitSelfInResult = methodSelfUsage.InResult,
-                    TraitMethodRole = ResolveTraitMethodRole(trait, method),
+                    CompilerSemanticRole = ResolveCompilerSemanticRole(method),
                     IsDefaultImplementation = hasDefaultBody
                 });
             }
@@ -1201,6 +1236,7 @@ public sealed partial class NameResolver
         }
 
         _instanceMethodDeclarationDepth++;
+        _instanceMethodPublicContexts.Push(instanceIsPublic);
         try
         {
             foreach (var method in instance.Methods)
@@ -1222,6 +1258,7 @@ public sealed partial class NameResolver
         }
         finally
         {
+            _instanceMethodPublicContexts.Pop();
             _instanceMethodDeclarationDepth--;
         }
     }
@@ -1844,21 +1881,42 @@ public sealed partial class NameResolver
             : AnalyzeSelfUsage(method.Signature, GetTraitSelfTypeNames(trait));
     }
 
-    private static TraitMethodRole ResolveTraitMethodRole(TraitDef trait, FuncDef method)
+    private CompilerSemanticRole ResolveCompilerSemanticRole(Declaration declaration)
     {
-        if (string.Equals(trait.Name, BuiltinTraits.TraitNames.Eq, StringComparison.Ordinal) &&
-            string.Equals(method.Name, BuiltinTraits.MethodNames.Eq, StringComparison.Ordinal))
+        if (!declaration.BoundClauses.Any(static clause =>
+                clause.Kind == DeclarationClauseKind.Compiler && clause.HasCompilerOwnedSourceGrant))
         {
-            return TraitMethodRole.Equality;
+            return CompilerSemanticRole.None;
         }
 
-        if (string.Equals(trait.Name, BuiltinTraits.TraitNames.Show, StringComparison.Ordinal) &&
-            string.Equals(method.Name, BuiltinTraits.MethodNames.Show, StringComparison.Ordinal))
+        var role = CompilerDirectiveIR.FromDeclaration(declaration)?.Role;
+        if (string.IsNullOrWhiteSpace(role))
         {
-            return TraitMethodRole.Show;
+            return CompilerSemanticRole.None;
         }
 
-        return TraitMethodRole.None;
+        return role switch
+        {
+            "trait.equality" => CompilerSemanticRole.Equality,
+            "trait.show" => CompilerSemanticRole.Show,
+            "trait.display" => CompilerSemanticRole.Display,
+            "elaborator.do.bind" => CompilerSemanticRole.MonadBind,
+            "operator.fmap" => CompilerSemanticRole.FunctorMap,
+            "operator.apply" => CompilerSemanticRole.ApplicativeApply,
+            "operator.append" => CompilerSemanticRole.SemigroupAppend,
+            "operator.coalesce" => CompilerSemanticRole.Coalesce,
+            "operator.compose" => CompilerSemanticRole.Compose,
+            "operator.prepend" => CompilerSemanticRole.Prepend,
+            "operator.append_last.singleton" => CompilerSemanticRole.AppendLastSingleton,
+            "operator.append_last.append" => CompilerSemanticRole.AppendLastAppend,
+            _ => ReportUnknownCompilerSemanticRole(role, declaration.Span)
+        };
+    }
+
+    private CompilerSemanticRole ReportUnknownCompilerSemanticRole(string role, SourceSpan span)
+    {
+        AddError(span, $"unknown compiler semantic role '{role}'", "E3058");
+        return CompilerSemanticRole.None;
     }
 
     private static SelfPosition DeriveSelfPositionFromSignature(

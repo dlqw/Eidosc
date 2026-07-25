@@ -32,23 +32,23 @@ public sealed partial class MirGenericSpecializer
 
     private static MirCall MarkBuiltinShowTraitCall(MirCall call, MirFunctionRef functionRef)
     {
-        return functionRef.TraitMethodRole == TraitMethodRole.Show
+        return functionRef.CompilerSemanticRole == CompilerSemanticRole.Show
             ? call
             : call with
             {
-                Function = functionRef with { TraitMethodRole = TraitMethodRole.Show }
+                Function = functionRef with { CompilerSemanticRole = CompilerSemanticRole.Show }
             };
     }
 
     private bool IsBuiltinShowTraitCall(MirFunc containingFunction, MirFunctionRef functionRef)
     {
-        return HasMirTraitMethodRole(functionRef, TraitMethodRole.Show) ||
+        return HasMirCompilerSemanticRole(functionRef, CompilerSemanticRole.Show) ||
                containingFunction.TraitInvokeHelper == TraitInvokeHelperKind.ShowValue;
     }
 
-    private bool HasMirTraitMethodRole(MirFunctionRef functionRef, TraitMethodRole role)
+    private bool HasMirCompilerSemanticRole(MirFunctionRef functionRef, CompilerSemanticRole role)
     {
-        return functionRef.TraitMethodRole == role ||
+        return functionRef.CompilerSemanticRole == role ||
                (TryGetTraitMethodInfo(functionRef, out var traitMethodInfo) &&
                 traitMethodInfo.MethodRole == role);
     }
@@ -57,7 +57,10 @@ public sealed partial class MirGenericSpecializer
     {
         return (containingFunction.TraitInvokeHelper == TraitInvokeHelperKind.CloneValue &&
                 string.Equals(functionRef.Name, "clone", StringComparison.Ordinal)) ||
-               string.Equals(functionRef.Name, "std__TraitInvoke__clone_value", StringComparison.Ordinal);
+               string.Equals(
+                   functionRef.Name,
+                   "__eidos_prelude_core__TraitInvoke__clone_value",
+                   StringComparison.Ordinal);
     }
 
     private bool HasExplicitTraitImpl(MirFunc containingFunction, MirFunctionRef functionRef, TypeId receiverTypeId)
@@ -126,7 +129,7 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        if (!HasMirTraitMethodRole(functionRef, TraitMethodRole.Equality))
+        if (!HasMirCompilerSemanticRole(functionRef, CompilerSemanticRole.Equality))
         {
             return false;
         }
@@ -197,7 +200,7 @@ public sealed partial class MirGenericSpecializer
                 Target: { Kind: PlaceKind.Local } target,
                 Arguments.Count: 1
             } ||
-            !HasMirTraitMethodRole(functionRef, TraitMethodRole.Equality))
+            !HasMirCompilerSemanticRole(functionRef, CompilerSemanticRole.Equality))
         {
             return false;
         }

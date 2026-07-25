@@ -132,7 +132,7 @@ public sealed class ToolchainSelectionResolver
         EidosupErrorCode.InvalidArgument,
         EidosupExitCodes.InvalidArgument,
         $"EIDOSUP_TOOLCHAIN value '{value}' contains leading or trailing whitespace.",
-        "Set EIDOSUP_TOOLCHAIN to a canonical selector such as preview, 0.4.0-alpha.3, or custom:local.");
+        "Set EIDOSUP_TOOLCHAIN to a canonical selector such as preview, 0.5.0-alpha.1, or custom:local.");
 
     private static EidosupException Corrupt(string message) => new(
         EidosupErrorCode.StateCorrupt,

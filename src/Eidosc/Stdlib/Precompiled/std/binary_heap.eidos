@@ -5,36 +5,36 @@ BinaryHeap :: module {
     import Traits
     import TraitInvoke
 
-    BinaryHeap[T] :: type {items:: Seq[T]}
+    export BinaryHeap[T] :: type {items:: Seq[T]}
 
-    empty[T] :: Unit -> BinaryHeap[T]
+    export empty[T] :: Unit -> BinaryHeap[T]
     {
         _ => BinaryHeap{items: []}
     }
 
-    singleton[T] :: T -> BinaryHeap[T]
+    export singleton[T] :: T -> BinaryHeap[T]
     {
         value => BinaryHeap{items: [value]}
     }
 
-    len[T] :: Ref[BinaryHeap[T]] -> Int
+    export len[T] :: Ref[BinaryHeap[T]] -> Int
     {
         heap => match *heap {
             BinaryHeap{items: items} => Seq.len_ref(ref items)
         }
     }
 
-    is_empty[T] :: Ref[BinaryHeap[T]] -> Bool
+    export is_empty[T] :: Ref[BinaryHeap[T]] -> Bool
     {
         heap => BinaryHeap.len(heap) == 0
     }
 
-    to_seq[T] :: BinaryHeap[T] -> Seq[T]
+    export to_seq[T] :: BinaryHeap[T] -> Seq[T]
     {
         BinaryHeap{items: items} => items
     }
 
-    CloneBinaryHeapT :: instance Traits.Clone {
+    export CloneBinaryHeapT :: instance Traits.Clone {
         clone[T: Traits.Clone] :: Ref[BinaryHeap[T]] -> BinaryHeap[T]
             {
                 value => match *value {
@@ -65,7 +65,7 @@ BinaryHeap :: module {
     }
 
 
-    sift_up_from[T: Traits.Ord] :: Seq[T] -> Int -> Seq[T]
+    sift_up_from[T: Traits.Ord + Traits.Clone] :: Seq[T] -> Int -> Seq[T]
      compiler(internal)
 {
         values => start => {
@@ -74,7 +74,9 @@ BinaryHeap :: module {
             loop {
                 if index <= 0 then { break } else {
                     parent := BinaryHeap.parent_index(index)
-                    if heap[index] > heap[parent] then {
+                    index_value := TraitInvoke.clone_value(ref heap[index])
+                    parent_value := TraitInvoke.clone_value(ref heap[parent])
+                    if index_value > parent_value then {
                         RuntimeArray.swap(mref heap, index, parent)
                         index := parent
                     } else { break }
@@ -85,7 +87,7 @@ BinaryHeap :: module {
     }
 
 
-    sift_down_from[T: Traits.Ord] :: Seq[T] -> Int -> Seq[T]
+    sift_down_from[T: Traits.Ord + Traits.Clone] :: Seq[T] -> Int -> Seq[T]
      compiler(internal)
 {
         values => start => {
@@ -97,10 +99,15 @@ BinaryHeap :: module {
                 if left >= len then { break } else {
                     right := BinaryHeap.right_child_index(index)
                     mut largest := left
-                    if right < len && heap[right] > heap[left] then {
+                    right_value := if right < len then { TraitInvoke.clone_value(ref heap[right]) }
+                        else { TraitInvoke.clone_value(ref heap[left]) }
+                    left_value := TraitInvoke.clone_value(ref heap[left])
+                    if right < len && right_value > left_value then {
                         largest := right
                     } else { () }
-                    if heap[largest] > heap[index] then {
+                    largest_value := TraitInvoke.clone_value(ref heap[largest])
+                    index_value := TraitInvoke.clone_value(ref heap[index])
+                    if largest_value > index_value then {
                         RuntimeArray.swap(mref heap, largest, index)
                         index := largest
                     } else { break }
@@ -110,7 +117,7 @@ BinaryHeap :: module {
         }
     }
 
-    push[T: Traits.Ord] :: BinaryHeap[T] -> T -> BinaryHeap[T]
+    export push[T: Traits.Ord + Traits.Clone] :: BinaryHeap[T] -> T -> BinaryHeap[T]
     {
         BinaryHeap{items: items} => value => {
             pushed := RuntimeArray.push(items)(value)
@@ -119,43 +126,31 @@ BinaryHeap :: module {
         }
     }
 
-    from_seq[T: Traits.Ord] :: Seq[T] -> BinaryHeap[T]
+    heapify_from[T: Traits.Ord + Traits.Clone] :: Seq[T] -> Int -> Seq[T]
+     compiler(internal)
+    {
+        values => index => if index < 0 then { values }
+            else {
+                next := BinaryHeap.sift_down_from(values)(index)
+                BinaryHeap.heapify_from(next)(index - 1)
+            }
+    }
+
+    export from_seq[T: Traits.Ord + Traits.Clone] :: Seq[T] -> BinaryHeap[T]
     {
         values => {
-            mut heap := values
-            len := Seq.len_ref(ref heap)
-            mut index := (len / 2) - 1
-            loop {
-                if index < 0 then { break } else {
-                    mut current := index
-                    loop {
-                        left := BinaryHeap.left_child_index(current)
-                        if left >= len then { break } else {
-                            right := BinaryHeap.right_child_index(current)
-                            mut largest := left
-                            if right < len && heap[right] > heap[left] then {
-                                largest := right
-                            } else { () }
-                            if heap[largest] > heap[current] then {
-                                RuntimeArray.swap(mref heap, largest, current)
-                                current := largest
-                            } else { break }
-                        }
-                    }
-                    index := index - 1
-                }
-            }
-            BinaryHeap{items: heap}
+            last_parent := (Seq.len_ref(ref values) / 2) - 1
+            BinaryHeap{items: BinaryHeap.heapify_from(values)(last_parent)}
         }
     }
 
-    peek[T] :: BinaryHeap[T] -> Option[T]
+    export peek[T] :: BinaryHeap[T] -> Option[T]
     {
         BinaryHeap{items: []} => None(),
         BinaryHeap{items: [top, ..]} => Some(top)
     }
 
-    pop[T: Traits.Ord] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
+    export pop[T: Traits.Ord + Traits.Clone] :: BinaryHeap[T] -> Option[(T, BinaryHeap[T])]
     {
         BinaryHeap{items: []} => None(),
         BinaryHeap{items: [top, ..rest]} => Some((top, BinaryHeap.from_seq(rest)))

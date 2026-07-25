@@ -56,9 +56,11 @@ main :: Unit -> Option[Int]
     }
 
     [Fact]
-    public void Types_InfixCall_UsesPrecompiledCallableWithoutImport()
+    public void Types_InfixCall_UsesExplicitlyImportedPrecompiledCallable()
     {
         const string source = """
+import std.Math.{pow}
+
 main :: Unit -> Float
 {
     _ => 2.0 `pow` 3.0

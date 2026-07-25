@@ -72,7 +72,8 @@ internal static class PrecompiledModuleCache
 
         if (source.Length == 0)
         {
-            if (!PrecompiledModuleRegistry.TryGetSource(modulePath, out source))
+            if (!PreludeCoreImageRegistry.TryGetSource(modulePath, out source) &&
+                !PrecompiledModuleRegistry.TryGetSource(modulePath, out source))
             {
                 return false;
             }
@@ -131,7 +132,8 @@ internal static class PrecompiledModuleCache
             }
         }
 
-        if (!PrecompiledModuleRegistry.TryGetSourceFilePath(modulePath, out filePath))
+        if (!PreludeCoreImageRegistry.TryGetSourceFilePath(modulePath, out filePath) &&
+            !PrecompiledModuleRegistry.TryGetSourceFilePath(modulePath, out filePath))
         {
             return false;
         }

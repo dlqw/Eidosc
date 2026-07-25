@@ -78,6 +78,26 @@ public sealed record ResolvedPackageGraph
             };
     }
 
+    public Dictionary<string, string[]> GetPackageImportRoots()
+    {
+        var result = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var (alias, package) in Packages)
+        {
+            var roots = package.SourceRoots
+                .Concat(package.ImportRoots)
+                .Where(static root => !string.IsNullOrWhiteSpace(root))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (roots.Length > 0 ||
+                string.Equals(alias, WellKnownStrings.Std.Module, StringComparison.Ordinal))
+            {
+                result[alias] = roots;
+            }
+        }
+
+        return result;
+    }
+
     private static string[] DistinctOrdinal(IEnumerable<string> values) =>
         values.Where(static value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.Ordinal)

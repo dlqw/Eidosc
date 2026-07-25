@@ -88,6 +88,7 @@ public sealed partial class MirToLlvmConverter
         LlvmFunctionType Signature,
         List<LlvmValue> BoundArguments,
         List<bool> BoundArgumentManagedFlags,
+        List<TypeId> BoundArgumentTypeIds,
         int CapturedArgumentCount,
         LlvmFunctionType? VisibleSignature);
 

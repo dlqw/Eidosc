@@ -449,7 +449,7 @@ JsonParser :: module {
 
     // ── Main entry point ──
 
-    parse :: String -> Result[JsonValue, String]
+    export parse :: String -> Result[JsonValue, String]
     {
         src => {
             start := JsonParser.skip_whitespace(ref src)(0);
@@ -466,27 +466,27 @@ JsonParser :: module {
         }
     }
 
-    parse_opt :: String -> Option[JsonValue]
+    export parse_opt :: String -> Option[JsonValue]
     {
         src => Result.ok(JsonParser.parse(src))
     }
 
-    parse_or :: String -> JsonValue -> JsonValue
+    export parse_or :: String -> JsonValue -> JsonValue
     {
         src => fallback => Result.unwrap_or(JsonParser.parse(src))(fallback)
     }
 
-    parse_or_else[E: effects] :: String -> (String -> JsonValue need E) -> JsonValue need E
+    export parse_or_else[E: effects] :: String -> (String -> JsonValue need E) -> JsonValue need E
     {
         src => fallback => Result.unwrap_or_else(JsonParser.parse(src))(fallback)
     }
 
-    is_valid :: String -> Bool
+    export is_valid :: String -> Bool
     {
         src => Result.is_ok(JsonParser.parse(src))
     }
 
-    parse_as_bool :: String -> Result[Bool, String]
+    export parse_as_bool :: String -> Result[Bool, String]
     {
         src =>
             match JsonParser.parse(src)
@@ -497,17 +497,17 @@ JsonParser :: module {
             }
     }
 
-    parse_bool_opt :: String -> Option[Bool]
+    export parse_bool_opt :: String -> Option[Bool]
     {
         src => Result.ok(JsonParser.parse_as_bool(src))
     }
 
-    parse_bool_or :: String -> Bool -> Bool
+    export parse_bool_or :: String -> Bool -> Bool
     {
         src => fallback => Result.unwrap_or(JsonParser.parse_as_bool(src))(fallback)
     }
 
-    parse_as_float :: String -> Result[Float, String]
+    export parse_as_float :: String -> Result[Float, String]
     {
         src =>
             match JsonParser.parse(src)
@@ -518,17 +518,17 @@ JsonParser :: module {
             }
     }
 
-    parse_float_opt :: String -> Option[Float]
+    export parse_float_opt :: String -> Option[Float]
     {
         src => Result.ok(JsonParser.parse_as_float(src))
     }
 
-    parse_float_or :: String -> Float -> Float
+    export parse_float_or :: String -> Float -> Float
     {
         src => fallback => Result.unwrap_or(JsonParser.parse_as_float(src))(fallback)
     }
 
-    parse_as_string :: String -> Result[String, String]
+    export parse_as_string :: String -> Result[String, String]
     {
         src =>
             match JsonParser.parse(src)
@@ -539,17 +539,17 @@ JsonParser :: module {
             }
     }
 
-    parse_string_opt :: String -> Option[String]
+    export parse_string_opt :: String -> Option[String]
     {
         src => Result.ok(JsonParser.parse_as_string(src))
     }
 
-    parse_string_or :: String -> String -> String
+    export parse_string_or :: String -> String -> String
     {
         src => fallback => Result.unwrap_or(JsonParser.parse_as_string(src))(fallback)
     }
 
-    parse_as_array :: String -> Result[Seq[JsonValue], String]
+    export parse_as_array :: String -> Result[Seq[JsonValue], String]
     {
         src =>
             match JsonParser.parse(src)
@@ -560,17 +560,17 @@ JsonParser :: module {
             }
     }
 
-    parse_array_opt :: String -> Option[Seq[JsonValue]]
+    export parse_array_opt :: String -> Option[Seq[JsonValue]]
     {
         src => Result.ok(JsonParser.parse_as_array(src))
     }
 
-    parse_array_or :: String -> Seq[JsonValue] -> Seq[JsonValue]
+    export parse_array_or :: String -> Seq[JsonValue] -> Seq[JsonValue]
     {
         src => fallback => Result.unwrap_or(JsonParser.parse_as_array(src))(fallback)
     }
 
-    parse_as_object :: String -> Result[Seq[(String, JsonValue)], String]
+    export parse_as_object :: String -> Result[Seq[(String, JsonValue)], String]
     {
         src =>
             match JsonParser.parse(src)
@@ -581,12 +581,12 @@ JsonParser :: module {
             }
     }
 
-    parse_object_opt :: String -> Option[Seq[(String, JsonValue)]]
+    export parse_object_opt :: String -> Option[Seq[(String, JsonValue)]]
     {
         src => Result.ok(JsonParser.parse_as_object(src))
     }
 
-    parse_object_or :: String -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
+    export parse_object_or :: String -> Seq[(String, JsonValue)] -> Seq[(String, JsonValue)]
     {
         src => fallback => Result.unwrap_or(JsonParser.parse_as_object(src))(fallback)
     }

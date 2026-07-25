@@ -671,7 +671,8 @@ public static class SymbolTableStateBuilder
             ParentModule = payloads
                 .Select(static payload => payload.ParentModule)
                 .FirstOrDefault(parentId => parentId > 0 && parentId != preferred.Id),
-            UsesExplicitExports = payloads.Any(static payload => payload.UsesExplicitExports)
+            UsesExplicitExports = payloads.Any(static payload => payload.UsesExplicitExports),
+            AllowsCompilerInternalAccess = payloads.Any(static payload => payload.AllowsCompilerInternalAccess)
         };
     }
 
@@ -1456,11 +1457,13 @@ public static class SymbolTableStateBuilder
         }
 
         var definitionModuleId = RemapSymbolId(GetFactInt(payload, "definitionModule", SymbolId.None.Value), symbolRemap);
-        if (definitionModuleId.IsValid || payload.GeneratedOrigin != null)
+        if (definitionModuleId.IsValid || payload.GeneratedOrigin != null ||
+            ParseBool(GetFact(payload, "isCompilerInternal")))
         {
             symbol = symbol with
             {
                 DefinitionModuleId = definitionModuleId,
+                IsCompilerInternal = ParseBool(GetFact(payload, "isCompilerInternal")),
                 GeneratedOrigin = payload.GeneratedOrigin == null
                     ? null
                     : RestoreGeneratedOrigin(payload.GeneratedOrigin, symbolRemap)
@@ -1513,7 +1516,8 @@ public static class SymbolTableStateBuilder
             ExportedBindings = ParseModuleBindings(GetFact(payload, "exports"), symbolRemap).ToList(),
             UsesExplicitExports = ParseBool(GetFact(payload, "usesExplicitExports")),
             Imports = RemapSymbolIds(GetFact(payload, "imports"), symbolRemap).ToList(),
-            ParentModule = RemapOptionalSymbolId(GetFact(payload, "parentModule"), symbolRemap)
+            ParentModule = RemapOptionalSymbolId(GetFact(payload, "parentModule"), symbolRemap),
+            AllowsCompilerInternalAccess = ParseBool(GetFact(payload, "allowsCompilerInternalAccess"))
         };
 
     private static FuncSymbol CreateFunctionSymbol(
@@ -1543,7 +1547,7 @@ public static class SymbolTableStateBuilder
             TraitSelfPosition = ParseEnum(GetFact(payload, "traitSelfPosition"), SelfPosition.Unknown),
             TraitSelfParameterIndices = ParseNonNegativeInts(GetFact(payload, "traitSelfParameterIndices")).ToList(),
             TraitSelfInResult = ParseBool(GetFact(payload, "traitSelfInResult")),
-            TraitMethodRole = ParseEnum(GetFact(payload, "traitMethodRole"), TraitMethodRole.None),
+            CompilerSemanticRole = ParseEnum(GetFact(payload, "compilerSemanticRole"), CompilerSemanticRole.None),
             HasBody = ParseBool(GetFact(payload, "hasBody")),
             IsDefaultImplementation = ParseBool(GetFact(payload, "isDefaultImplementation")),
             IsTraitImplementation = ParseBool(GetFact(payload, "isTraitImplementation")),

@@ -365,6 +365,7 @@ public sealed partial class MirToLlvmConverter
             functionType,
             boundArguments,
             boundArgumentManagedFlags,
+            call.Arguments.Select(static argument => argument.TypeId).ToList(),
             0,
             null);
         _locals.LocalMap.Remove(targetLocal.Local);

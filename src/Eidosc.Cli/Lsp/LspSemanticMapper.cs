@@ -959,25 +959,26 @@ public static class LspSemanticMapper
         IdeSemanticSnapshot snapshot,
         string uri,
         string? documentFilePath,
-        LspRange requestedRange)
+        LspRange requestedRange,
+        string? sourceText = null,
+        int? documentVersion = null)
     {
         var actions = new List<LspCodeAction>();
-        foreach (var diagnostic in snapshot.Diagnostics)
+        foreach (var diagnostic in snapshot.Diagnostics.Concat(snapshot.Refactors))
         {
             var diagnosticInRange = diagnostic.Span != null &&
                                     IsSpanInDocument(snapshot, diagnostic.Span, documentFilePath) &&
-                                    RangesIntersect(MapIdeSpanToRange(diagnostic.Span), requestedRange);
+                                    RangesIntersect(MapIdeSpanToRange(diagnostic.Span, sourceText), requestedRange);
 
             foreach (var suggestion in diagnostic.Suggestions)
             {
-                if (string.IsNullOrEmpty(suggestion.Replacement) ||
-                    suggestion.Span == null ||
+                if (suggestion.Span == null ||
                     !IsSpanInDocument(snapshot, suggestion.Span, documentFilePath))
                 {
                     continue;
                 }
 
-                var suggestionRange = MapIdeSpanToRange(suggestion.Span);
+                var suggestionRange = MapIdeSpanToRange(suggestion.Span, sourceText);
                 if (!diagnosticInRange && !RangesIntersect(suggestionRange, requestedRange))
                 {
                     continue;
@@ -985,7 +986,13 @@ public static class LspSemanticMapper
 
                 var semanticRename = string.Equals(suggestion.Kind, "RenameSymbol", StringComparison.OrdinalIgnoreCase) &&
                                      suggestion.OriginalSymbolId is { } originalSymbolId
-                    ? BuildSemanticRenameEdit(snapshot, originalSymbolId, suggestion.Replacement)
+                    ? BuildSemanticRenameEdit(
+                        snapshot,
+                        originalSymbolId,
+                        suggestion.Replacement ?? string.Empty,
+                        uri,
+                        sourceText,
+                        documentVersion)
                     : null;
 
                 actions.Add(new LspCodeAction
@@ -993,22 +1000,32 @@ public static class LspSemanticMapper
                     Title = string.IsNullOrWhiteSpace(suggestion.Message)
                         ? "Apply suggestion"
                         : suggestion.Message,
-                    Kind = "quickfix",
+                    Kind = string.Equals(suggestion.Kind, "StyleRewrite", StringComparison.OrdinalIgnoreCase)
+                        ? "refactor.rewrite"
+                        : "quickfix",
                     IsPreferred = string.Equals(suggestion.Kind, "AddImport", StringComparison.OrdinalIgnoreCase) ||
                                   semanticRename != null,
                     Edit = semanticRename ?? new LspWorkspaceEdit
                     {
-                        Changes = new Dictionary<string, List<LspTextEdit>>
-                        {
-                            [uri] =
-                            [
-                                new LspTextEdit
+                        DocumentChanges =
+                        [
+                            new LspTextDocumentEdit
+                            {
+                                TextDocument = new LspVersionedTextDocumentIdentifier
                                 {
-                                    Range = suggestionRange,
-                                    NewText = suggestion.Replacement
-                                }
-                            ]
-                        }
+                                    Uri = uri,
+                                    Version = documentVersion
+                                },
+                                Edits =
+                                [
+                                    new LspTextEdit
+                                    {
+                                        Range = suggestionRange,
+                                        NewText = suggestion.Replacement ?? string.Empty
+                                    }
+                                ]
+                            }
+                        ]
                     }
                 });
             }
@@ -1085,7 +1102,10 @@ public static class LspSemanticMapper
     private static LspWorkspaceEdit? BuildSemanticRenameEdit(
         IdeSemanticSnapshot snapshot,
         int symbolId,
-        string replacement)
+        string replacement,
+        string currentUri,
+        string? currentSourceText,
+        int? currentDocumentVersion)
     {
         var changes = new Dictionary<string, List<LspTextEdit>>(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -1114,12 +1134,37 @@ public static class LspSemanticMapper
 
             edits.Add(new LspTextEdit
             {
-                Range = MapIdeSpanToRange(occurrence.Span),
+                Range = MapIdeSpanToRange(
+                    occurrence.Span,
+                    string.Equals(targetUri, currentUri, StringComparison.OrdinalIgnoreCase)
+                        ? currentSourceText
+                        : null),
                 NewText = replacement
             });
         }
 
-        return changes.Count == 0 ? null : new LspWorkspaceEdit { Changes = changes };
+        if (changes.Count == 0)
+        {
+            return null;
+        }
+
+        return new LspWorkspaceEdit
+        {
+            DocumentChanges = changes
+                .OrderBy(static change => change.Key, StringComparer.Ordinal)
+                .Select(change => (object)new LspTextDocumentEdit
+                {
+                    TextDocument = new LspVersionedTextDocumentIdentifier
+                    {
+                        Uri = change.Key,
+                        Version = string.Equals(change.Key, currentUri, StringComparison.OrdinalIgnoreCase)
+                            ? currentDocumentVersion
+                            : null
+                    },
+                    Edits = change.Value
+                })
+                .ToList()
+        };
     }
 
 
@@ -2057,8 +2102,20 @@ public static class LspSemanticMapper
         };
     }
 
-    private static LspRange MapIdeSpanToRange(IdeSpan span)
+    private static LspRange MapIdeSpanToRange(IdeSpan span, string? sourceText = null)
     {
+        if (sourceText != null)
+        {
+            var coordinates = new SourceTextCoordinateMap(sourceText);
+            var start = coordinates.PositionAt(span.Start);
+            var end = coordinates.PositionAt((int)Math.Clamp((long)span.Start + span.Length, span.Start, sourceText.Length));
+            return new LspRange
+            {
+                Start = new LspPosition { Line = start.Line, Character = start.Character },
+                End = new LspPosition { Line = end.Line, Character = end.Character }
+            };
+        }
+
         return new LspRange
         {
             Start = new LspPosition { Line = span.StartLine, Character = span.StartCharacter },

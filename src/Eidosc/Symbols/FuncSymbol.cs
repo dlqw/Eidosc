@@ -60,9 +60,9 @@ public sealed record FuncSymbol : Symbol
     public bool TraitSelfInResult { get; init; }
 
     /// <summary>
-    /// Structured compiler role for trait methods that participate in builtin lowering.
+    /// Structured compiler semantic role for declarations that participate in typed lowering.
     /// </summary>
-    public TraitMethodRole TraitMethodRole { get; init; } = TraitMethodRole.None;
+    public CompilerSemanticRole CompilerSemanticRole { get; init; } = CompilerSemanticRole.None;
 
     /// <summary>
     /// 是否有函数体
@@ -152,11 +152,21 @@ public sealed record FuncSymbol : Symbol
     public bool IsCompilerIntrinsic => !string.IsNullOrWhiteSpace(IntrinsicName);
 }
 
-public enum TraitMethodRole
+public enum CompilerSemanticRole
 {
     None,
     Equality,
-    Show
+    Show,
+    Display,
+    MonadBind,
+    FunctorMap,
+    ApplicativeApply,
+    SemigroupAppend,
+    Coalesce,
+    Compose,
+    Prepend,
+    AppendLastSingleton,
+    AppendLastAppend
 }
 
 public enum BuiltinIntrinsicRole

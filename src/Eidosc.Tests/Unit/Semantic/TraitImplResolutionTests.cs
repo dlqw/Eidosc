@@ -1200,7 +1200,7 @@ PairingPersonAlso :: instance Pairing[AlsoResultWith[String], Box] {
     {
         const string source = """
 M :: module {
-    Show :: trait {
+    export Show :: trait {
         show :: Self -> String
     }
 
@@ -1239,70 +1239,6 @@ M :: module {
     }
 
     [Fact]
-    public void CompilationPipeline_Instance_QualifiedTraitPath_FromImportedModuleFile_Registers()
-    {
-        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_trait_impl_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
-
-        var moduleFile = Path.Combine(tempDir, "M.eidos");
-        var entryFile = Path.Combine(tempDir, "main.eidos");
-
-        const string moduleSource = """
-M :: module {
-    Show :: trait {
-        show :: Self -> String
-    }
-}
-""";
-
-        const string entrySource = """
-import M
-
-Person :: type {
-    Person:: type(String)
-}
-
-
-ShowPerson :: instance M.Show {
-    show :: Person -> String {
-        p => "ok"
-    }
-}
-""";
-
-        File.WriteAllText(moduleFile, moduleSource);
-        File.WriteAllText(entryFile, entrySource);
-
-        try
-        {
-            var result = new CompilationPipeline(File.ReadAllText(entryFile), new CompilationOptions
-            {
-                InputFile = entryFile,
-                StopAtPhase = CompilationPhase.Namer,
-                UseColors = false
-            }).Run();
-
-            Assert.True(result.Success);
-
-            var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
-            var traitResolution = symbolTable.ResolvePathWithResult(["M", "Show"]);
-            Assert.True(traitResolution.IsSuccess);
-
-            var personId = symbolTable.LookupType("Person");
-            Assert.True(personId.HasValue);
-
-            var personSymbol = Assert.IsAssignableFrom<Symbol>(symbolTable.GetSymbol(personId.Value));
-            var impl = symbolTable.LookupImplForTrait(personSymbol.TypeId, traitResolution.SymbolId);
-
-            Assert.NotNull(impl);
-        }
-        finally
-        {
-            Directory.Delete(tempDir, recursive: true);
-        }
-    }
-
-    [Fact]
     public void CompilationPipeline_Instance_ImportedStdTrait_RegistersForUserType()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_trait_impl_std_trait_{Guid.NewGuid():N}");
@@ -1332,13 +1268,19 @@ EqPerson :: instance Traits.Eq {
             {
                 InputFile = entryFile,
                 StopAtPhase = CompilationPhase.Namer,
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+                {
+                    [WellKnownStrings.Std.Module] = []
+                }
             }).Run();
 
             Assert.True(result.Success);
 
             var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
-            var traitModuleId = symbolTable.Modules.LookupModuleByPath("std", ["Traits"]);
+            var traitModuleId = symbolTable.Modules.LookupModuleByPath(
+                PreludeCoreImageRegistry.PackageAlias,
+                ["Traits"]);
             Assert.True(traitModuleId.HasValue);
             Assert.True(symbolTable.Modules.TryLookupAccessibleBinding(
                 traitModuleId.Value,

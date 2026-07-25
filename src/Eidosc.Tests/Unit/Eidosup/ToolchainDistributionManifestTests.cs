@@ -254,12 +254,12 @@ public sealed class ToolchainDistributionManifestTests
     private static ToolchainDistributionManifest CreateManifest()
     {
         var host = PlatformContext.Detect().Rid;
-        const string version = "0.4.0-alpha.3";
+        const string version = "0.5.0-alpha.1";
         var asset = new ToolchainComponentArtifact($"eidosc-v{version}-{host}.zip", 4096, Digest);
         var components = new ToolchainComponentDefinition[]
         {
             Component("eidosc-core", "eidosc-core", version, required: true, null, [], asset, PlatformContext.Detect().ExecutableName, executable: true),
-            Component("eidos-std", "eidos-std", "0.1.0-alpha.1", required: true, null, ["eidosc-core"], asset, "stdlib/Std/Core.eidos"),
+            Component("eidos-std", "eidos-std", "0.2.0-alpha.1", required: true, null, ["eidosc-core"], asset, "stdlib/Std/Core.eidos"),
             Component($"eidos-runtime@{host}", "eidos-runtime", "0.1.0-alpha.1", required: false, host, ["eidosc-core"], asset, "runtime/runtime.h"),
             Component("eidos-docs", "eidos-docs", version, required: false, null, ["eidosc-core"], asset, "docs/index.html"),
             Component("eidos-bindgen", "eidos-bindgen", "0.1.0-alpha.1", required: false, null, ["eidosc-core"], asset, "tools/eidos-bindgen/eidos-bindgen")
@@ -270,7 +270,7 @@ public sealed class ToolchainDistributionManifestTests
             "preview",
             host,
             new ToolchainProductIdentity(version, new string('a', 40)),
-            new ToolchainLanguageIdentity("0.7.0-alpha.1"),
+            new ToolchainLanguageIdentity("0.8.0-alpha.1"),
             [
                 new ToolchainProfileDefinition("minimal", ["eidosc-core", "eidos-std"]),
                 new ToolchainProfileDefinition("default", ["eidosc-core", "eidos-std", $"eidos-runtime@{host}"]),

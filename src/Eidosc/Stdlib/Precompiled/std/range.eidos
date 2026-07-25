@@ -2,31 +2,31 @@ Range :: module {
     import Option
 
     @[derive(Copy, Clone)]
-    Range :: type {start:: Int, end:: Int}
+    export Range :: type {start:: Int, end:: Int}
 
-    make :: Int -> Int -> Range
+    export make :: Int -> Int -> Range
     {
         start => end => Range{start: start, end: end}
     }
 
-    from_start_len :: Int -> Int -> Range
+    export from_start_len :: Int -> Int -> Range
     {
         start => len => if len <= 0
             then { Range{start: start, end: start} }
             else { Range{start: start, end: start + len} }
     }
 
-    start :: Range -> Int
+    export start :: Range -> Int
     {
         Range{start: from, end: _} => from
     }
 
-    end :: Range -> Int
+    export end :: Range -> Int
     {
         Range{start: _, end: to} => to
     }
 
-    normalize :: Range -> Range
+    export normalize :: Range -> Range
     {
         Range{start: from, end: to} =>
             if from <= to
@@ -34,27 +34,27 @@ Range :: module {
                 else { Range{start: to, end: from} }
     }
 
-    is_normalized :: Range -> Bool
+    export is_normalized :: Range -> Bool
     {
         Range{start: from, end: to} => from <= to
     }
 
-    is_empty :: Range -> Bool
+    export is_empty :: Range -> Bool
     {
         Range{start: from, end: to} => to <= from
     }
 
-    len :: Range -> Int
+    export len :: Range -> Int
     {
         Range{start: from, end: to} => if to <= from then { 0 } else { to - from }
     }
 
-    is_singleton :: Range -> Bool
+    export is_singleton :: Range -> Bool
     {
         range => Range.len(range) == 1
     }
 
-    midpoint_floor :: Range -> Int
+    export midpoint_floor :: Range -> Int
     {
         range => match Range.normalize(range)
         {
@@ -62,12 +62,12 @@ Range :: module {
         }
     }
 
-    contains :: Range -> Int -> Bool
+    export contains :: Range -> Int -> Bool
     {
         Range{start: from, end: to} => value => value >= from && value < to
     }
 
-    contains_range :: Range -> Range -> Bool
+    export contains_range :: Range -> Range -> Bool
     {
         outer => inner => match Range.normalize(outer)
         {
@@ -78,7 +78,7 @@ Range :: module {
         }
     }
 
-    clamp_value :: Range -> Int -> Int
+    export clamp_value :: Range -> Int -> Int
     {
         range => value => match Range.normalize(range)
         {
@@ -90,7 +90,7 @@ Range :: module {
         }
     }
 
-    intersects :: Range -> Range -> Bool
+    export intersects :: Range -> Range -> Bool
     {
         left => right => match Range.normalize(left)
         {
@@ -101,7 +101,7 @@ Range :: module {
         }
     }
 
-    intersection_opt :: Range -> Range -> Option[Range]
+    export intersection_opt :: Range -> Range -> Option[Range]
     {
         left => right => match Range.normalize(left)
         {
@@ -119,12 +119,12 @@ Range :: module {
         }
     }
 
-    overlap_len :: Range -> Range -> Int
+    export overlap_len :: Range -> Range -> Int
     {
         left => right => Range.len(Option.unwrap_or(Range.intersection_opt(left)(right))(Range.make(0)(0)))
     }
 
-    cover :: Range -> Range -> Range
+    export cover :: Range -> Range -> Range
     {
         left => right => match Range.normalize(left)
         {
@@ -139,12 +139,12 @@ Range :: module {
         }
     }
 
-    shift :: Range -> Int -> Range
+    export shift :: Range -> Int -> Range
     {
         Range{start: from, end: to} => delta => Range{start: from + delta, end: to + delta}
     }
 
-    touches :: Range -> Range -> Bool
+    export touches :: Range -> Range -> Bool
     {
         left => right => match Range.normalize(left)
         {
@@ -155,7 +155,7 @@ Range :: module {
         }
     }
 
-    is_before :: Range -> Range -> Bool
+    export is_before :: Range -> Range -> Bool
     {
         left => right => match Range.normalize(left)
         {
@@ -166,12 +166,12 @@ Range :: module {
         }
     }
 
-    is_after :: Range -> Range -> Bool
+    export is_after :: Range -> Range -> Bool
     {
         left => right => Range.is_before(right)(left)
     }
 
-    union_opt :: Range -> Range -> Option[Range]
+    export union_opt :: Range -> Range -> Option[Range]
     {
         left => right =>
             if Range.touches(left)(right)
@@ -179,7 +179,7 @@ Range :: module {
                 else { None() }
     }
 
-    gap_opt :: Range -> Range -> Option[Range]
+    export gap_opt :: Range -> Range -> Option[Range]
     {
         left => right => match Range.normalize(left)
         {
@@ -193,7 +193,7 @@ Range :: module {
         }
     }
 
-    distance :: Range -> Range -> Int
+    export distance :: Range -> Range -> Int
     {
         left => right => Range.len(Option.unwrap_or(Range.gap_opt(left)(right))(Range.make(0)(0)))
     }

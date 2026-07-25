@@ -20,13 +20,15 @@ public partial class LlvmPipelineIntegrationTests
         }
 
         const string source = """
+import std.Console
+
 main :: Unit -> Int need ffi, io
 {
     _ => {
-        line := read_line();
-        terminal_set_raw();
-        ch := read_char();
-        terminal_restore();
+        line := Console.read_line();
+        Console.set_raw_mode();
+        ch := Console.read_char_code();
+        Console.restore_terminal();
         if ch == 113 then { 0 } else { 10 }
     }
 }

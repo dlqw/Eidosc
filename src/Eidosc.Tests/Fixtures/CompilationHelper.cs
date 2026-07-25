@@ -47,7 +47,10 @@ public sealed class CompilationHelper
             {
                 InputFile = inputFile,
                 LanguageVersion = TestSourceLoader.GetLanguageVersion(relativePath),
-                UseColors = false
+                UseColors = false,
+                PackageImportRoots = isolateSingleFile
+                    ? new Dictionary<string, string[]>(StringComparer.Ordinal)
+                    : TestSourceLoader.GetPackageImportRoots(relativePath)
             });
     }
 

@@ -174,7 +174,7 @@ public static class AnalyzeCommand
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.ProjectTarget?.PackageImportRoots ?? new Dictionary<string, string[]>(StringComparer.Ordinal)
+            PackageImportRoots = inputResolution.GetPackageImportRoots()
             ,MetaConfiguration = projectConfig?.Meta
         };
 

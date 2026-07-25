@@ -323,7 +323,7 @@ main :: Unit -> DeclItemListResult
     {
         const string source = """
 Core :: module {
-    Emitter :: effect;
+    export Emitter :: effect;
 
     emit :: String -> Unit need Emitter
     {
@@ -333,7 +333,7 @@ Core :: module {
 
 helper :: Unit -> Unit need Core.Emitter
 {
-    _ => print_newline()
+    _ => ()
 }
 """;
 
@@ -356,7 +356,7 @@ helper :: Unit -> Unit need Core.Emitter
         const string source = """
 Core.Io :: module
 {
-    Emitter :: effect;
+    export Emitter :: effect;
 
     emit :: String -> Unit need Emitter
     {
@@ -366,7 +366,7 @@ Core.Io :: module
 
 helper :: Unit -> Unit need Core.Io.Emitter
 {
-    _ => print_newline()
+    _ => ()
 }
 """;
 
@@ -403,7 +403,7 @@ log :: String -> Unit need Logger
 
 helper :: Unit -> Unit need Emitter, Logger
 {
-    _ => print_newline()
+    _ => ()
 }
 """;
 
@@ -471,7 +471,9 @@ Nested :: module {
 
         Assert.True(result.Success);
         var root = Assert.IsType<ModuleDecl>(result.Ast);
-        var nestedModule = Assert.Single(root.Declarations.OfType<ModuleDecl>());
+        var nestedModule = Assert.Single(
+            root.Declarations.OfType<ModuleDecl>(),
+            module => module.Path.SequenceEqual(["Nested"]));
         var nestedFunction = Assert.Single(nestedModule.Declarations.OfType<FuncDef>(), function => function.Name == "is_positive");
         var inferredType = Assert.IsType<TyFun>(nestedFunction.InferredType);
         var inferredResult = Assert.IsType<TyCon>(inferredType.Result);
@@ -527,7 +529,7 @@ caller :: String -> Int -> Int
 
 pairLater :: String -> Int -> Int
 {
-    (src, n) => string_length(src) + n
+    (_, n) => n
 }
 
 result :: caller("ab")(1);

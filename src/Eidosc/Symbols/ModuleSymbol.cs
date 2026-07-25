@@ -42,6 +42,11 @@ public sealed record ModuleSymbol : Symbol
     public bool UsesExplicitExports { get; init; }
 
     /// <summary>
+    /// Whether this module was loaded from an exact compiler-distributed source grant.
+    /// </summary>
+    public bool AllowsCompilerInternalAccess { get; init; }
+
+    /// <summary>
     /// 导入的模块
     /// </summary>
     public List<SymbolId> Imports { get; init; } = [];

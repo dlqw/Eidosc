@@ -130,7 +130,7 @@ ord_self[T: Traits.Ord] :: T -> Bool
 main :: Unit -> Int
 {
     _ => {
-        lessLabel := Ordering.show(Ordering.compare_int(1)(2));
+        lessLabel := Ordering.show(Ordering.compare(1)(2));
         echo := Text.show(clone_text("ok"));
 
         if eq_self(41) &&
@@ -431,7 +431,7 @@ bad :: Person -> Person
     {
         const string source = """
 Core :: module {
-    Functor[F: kind2] :: trait {
+    export Functor[F: kind2] :: trait {
         fmap :: Self -> F[Int]
     }
 }
@@ -473,7 +473,7 @@ good :: Person -> Person
     {
         const string source = """
 Core :: module {
-    Functor[F: kind2] :: trait {
+    export Functor[F: kind2] :: trait {
         fmap :: Self -> F[Int]
     }
 }
@@ -528,7 +528,7 @@ bad :: Person -> Person
 
         const string moduleSource = """
 Core :: module {
-    Functor[F: kind2] :: trait {
+    export Functor[F: kind2] :: trait {
         fmap :: Self -> F[Int]
     }
 }
@@ -595,7 +595,7 @@ good :: Person -> Person
 
         const string moduleSource = """
 Core :: module {
-    Functor[F: kind2] :: trait {
+    export Functor[F: kind2] :: trait {
         fmap :: Self -> F[Int]
     }
 }

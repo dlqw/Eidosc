@@ -24,8 +24,8 @@ specification forms:
 ```text
 stable
 preview
-0.4.0-alpha.3
-0.4.0-alpha.3@linux-arm64
+0.5.0-alpha.1
+0.5.0-alpha.1@linux-arm64
 custom:local
 ```
 
@@ -39,10 +39,10 @@ overrides, and project files use the same resolver described in
 
 ```powershell
 eidosup toolchain install preview
-eidosup toolchain install 0.4.0-alpha.3
+eidosup toolchain install 0.5.0-alpha.1
 eidosup toolchain list --verbose
 eidosup toolchain list --json
-eidosup toolchain uninstall 0.4.0-alpha.3
+eidosup toolchain uninstall 0.5.0-alpha.1
 ```
 
 Installation uses the same release validation, checksum, content-addressed
@@ -106,8 +106,8 @@ eidosup show active-toolchain --verbose
 eidosup show home
 eidosup show profile
 eidosup which eidosc
-eidosup which eidosc --toolchain 0.4.0-alpha.3 --json
-eidosup run 0.4.0-alpha.3 -- eidosc build ./project
+eidosup which eidosc --toolchain 0.5.0-alpha.1 --json
+eidosup run 0.5.0-alpha.1 -- eidosc build ./project
 ```
 
 `show active-toolchain` and `which` fully verify the selected install before

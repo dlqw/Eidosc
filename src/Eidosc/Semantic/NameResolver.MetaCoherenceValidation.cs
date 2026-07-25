@@ -404,8 +404,7 @@ public sealed partial class NameResolver
                 if (!TryGetImplTargetType(
                         method,
                         out var methodType,
-                        out var methodTypeId,
-                        cloneReceiver: _symbolTable.GetSymbol(traitId)?.Name == "Clone"))
+                        out var methodTypeId))
                 {
                     reason = $"method '{method.Name}' has no concrete implementation target type";
                     return false;

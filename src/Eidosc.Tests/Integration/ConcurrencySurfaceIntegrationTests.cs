@@ -20,7 +20,8 @@ public class ConcurrencySurfaceIntegrationTests
         {
             InputFile = TestSourceLoader.GetFullPath(fixturePath),
             StopAtPhase = CompilationPhase.Send,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = TestSourceLoader.GetPackageImportRoots(fixturePath)
         }).Run();
 
         Assert.Equal(CompilationPhase.Send, result.CompletedPhase);

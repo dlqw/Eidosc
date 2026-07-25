@@ -1,26 +1,26 @@
 Traits :: module {
     import Ordering.{Ordering}
 
-    Eq :: trait {
-        eq :: Self -> Self -> Bool
+    export Eq :: trait {
+        eq :: Self -> Self -> Bool compiler(role: "trait.equality")
     }
 
-    Ord :: trait {
+    export Ord :: trait {
         compare :: Self -> Self -> Ordering
     }
 
-    Show :: trait {
-        show :: Self -> String
+    export Show :: trait {
+        show :: Self -> String compiler(role: "trait.show")
     }
 
-    Hash :: trait {
+    export Hash :: trait {
         hash :: Self -> Int
     }
 
-    Clone :: trait {
+    export Clone :: trait {
         clone :: Ref[Self] -> Self
     }
 
-    Copy :: trait {
+    export Copy :: trait {
     }
 }

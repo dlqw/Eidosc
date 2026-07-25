@@ -1380,7 +1380,7 @@ public sealed partial class MirGenericSpecializerTests
                         TraitOwnerId = traitId,
                         TraitSelfPosition = SelfPosition.InParameter,
                         TraitSelfParameterIndices = [0],
-                        TraitMethodRole = TraitMethodRole.Show
+                        CompilerSemanticRole = CompilerSemanticRole.Show
                     },
                     Arguments = [receiver]
                 }
@@ -1453,7 +1453,7 @@ public sealed partial class MirGenericSpecializerTests
         var rewrittenCall = Assert.Single(rewrittenHelper.BasicBlocks.Single().Instructions.OfType<MirCall>());
         var rewrittenRef = Assert.IsType<MirFunctionRef>(rewrittenCall.Function);
         Assert.Equal(SymbolId.None, rewrittenRef.SymbolId);
-        Assert.Equal(TraitMethodRole.Show, rewrittenRef.TraitMethodRole);
+        Assert.Equal(CompilerSemanticRole.Show, rewrittenRef.CompilerSemanticRole);
     }
 
 }

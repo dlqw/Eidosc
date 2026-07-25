@@ -39,18 +39,21 @@ public sealed partial class HirBuilder
         [Ast.BinaryOp.Concat] = Hir.BinaryOp.Concat,
     }.ToFrozenDictionary();
 
-    private sealed record StdlibDesugaring(string ModulePath, string FuncName, bool SwapArgs);
+    private sealed record StdlibDesugaring(
+        string FuncName,
+        bool SwapArgs,
+        CompilerSemanticRole Role);
 
     private static readonly FrozenDictionary<Ast.BinaryOp, StdlibDesugaring> StdlibOperatorDesugaring = new Dictionary<Ast.BinaryOp, StdlibDesugaring>
     {
-        [Ast.BinaryOp.Bind] = new("std.Monad.Monad", "bind", false),
-        [Ast.BinaryOp.Coalesce] = new("std.Option", "unwrap_or", false),
-        [Ast.BinaryOp.ComposeRight] = new("std.Functions", "compose", true),
-        [Ast.BinaryOp.ComposeLeft] = new("std.Functions", "compose", false),
-        [Ast.BinaryOp.Fmap] = new("std.Functor.Functor", "fmap", true),
-        [Ast.BinaryOp.Ap] = new("std.Applicative.Applicative", "apply", false),
-        [Ast.BinaryOp.Append] = new("std.Semigroup.Semigroup", "append", false),
-        [Ast.BinaryOp.Prepend] = new("std.Seq", "cons", false),
+        [Ast.BinaryOp.Bind] = new("bind", false, CompilerSemanticRole.MonadBind),
+        [Ast.BinaryOp.Coalesce] = new("unwrap_or", false, CompilerSemanticRole.Coalesce),
+        [Ast.BinaryOp.ComposeRight] = new("compose", true, CompilerSemanticRole.Compose),
+        [Ast.BinaryOp.ComposeLeft] = new("compose", false, CompilerSemanticRole.Compose),
+        [Ast.BinaryOp.Fmap] = new("fmap", true, CompilerSemanticRole.FunctorMap),
+        [Ast.BinaryOp.Ap] = new("apply", false, CompilerSemanticRole.ApplicativeApply),
+        [Ast.BinaryOp.Append] = new("append", false, CompilerSemanticRole.SemigroupAppend),
+        [Ast.BinaryOp.Prepend] = new("cons", false, CompilerSemanticRole.Prepend),
     }.ToFrozenDictionary();
 
     private readonly SymbolTable _symbolTable;
@@ -1275,6 +1278,7 @@ public sealed partial class HirBuilder
             ContinueExpr continueExpr => ConvertContinue(continueExpr),
             UnreachableExpr unreachableExpr => ConvertUnreachable(unreachableExpr),
             MatchExpr match => ConvertMatch(match),
+            SelectionExpr selection => ConvertSelection(selection),
             PatternGuardExpr patternGuard => ConvertPatternGuard(patternGuard),
             SequentialGuardExpr sequentialGuard => ConvertSequentialGuard(sequentialGuard),
             LambdaExpr lambda => ConvertLambda(lambda),
@@ -2146,6 +2150,158 @@ public sealed partial class HirBuilder
 
         return hirMatch;
     }
+
+    private HirMatch ConvertSelection(SelectionExpr selection)
+    {
+        var subjectNodes = selection.Subject is TupleExpr tuple
+            ? tuple.Elements.Cast<EidosAstNode>().ToArray()
+            : selection.Subject != null
+                ? [selection.Subject]
+                : [];
+        var hirMatch = new HirMatch
+        {
+            Scrutinee = ConvertExprOrFallback(selection.Subject, "selection subject", selection.Span),
+            Span = selection.Span,
+            TypeId = GetTypeId(selection),
+            IsExhaustive = true
+        };
+
+        var positivePattern = BuildSelectionPattern(selection, subjectNodes, positive: true);
+        var negativePattern = selection.IsGroup
+            ? CreateSelectionWildcard(selection.Span)
+            : BuildSelectionPattern(selection, subjectNodes, positive: false);
+        var unit = new HirLiteral
+        {
+            LiteralKind = LiteralKind.Unit,
+            Value = null,
+            Span = selection.Span,
+            TypeId = new TypeId(BaseTypes.UnitId)
+        };
+
+        if (selection.ThenArm != null)
+        {
+            hirMatch.Branches.Add(new HirMatchBranch
+            {
+                Pattern = positivePattern,
+                Body = ConvertExpr(selection.ThenArm)
+            });
+        }
+
+        if (selection.ElseArm != null)
+        {
+            hirMatch.Branches.Add(new HirMatchBranch
+            {
+                Pattern = negativePattern,
+                Body = ConvertExpr(selection.ElseArm)
+            });
+        }
+
+        if (selection.ThenArm == null || selection.ElseArm == null)
+        {
+            hirMatch.Branches.Add(new HirMatchBranch
+            {
+                Pattern = CreateSelectionWildcard(selection.Span),
+                Body = unit
+            });
+        }
+
+        return hirMatch;
+    }
+
+    private HirPattern BuildSelectionPattern(
+        SelectionExpr selection,
+        IReadOnlyList<EidosAstNode> subjectNodes,
+        bool positive)
+    {
+        var payloadIndex = 0;
+        var elements = new List<HirPattern>(selection.Subjects.Count);
+        for (var i = 0; i < selection.Subjects.Count; i++)
+        {
+            var subject = selection.Subjects[i];
+            var node = i < subjectNodes.Count ? subjectNodes[i] : selection;
+            elements.Add(BuildSelectionSubjectPattern(selection, subject, node, positive, ref payloadIndex));
+        }
+
+        if (!selection.IsGroup)
+        {
+            return elements.Count == 1 ? elements[0] : CreateSelectionWildcard(selection.Span);
+        }
+
+        return new HirTuplePattern
+        {
+            Elements = elements,
+            Span = selection.Span,
+            TypeId = GetTypeId(selection.Subject)
+        };
+    }
+
+    private HirPattern BuildSelectionSubjectPattern(
+        SelectionExpr selection,
+        SelectionSubjectDesugaring subject,
+        EidosAstNode subjectNode,
+        bool positive,
+        ref int payloadIndex)
+    {
+        if (subject.Kind == SelectionSubjectKind.Bool)
+        {
+            return new HirLiteralPattern
+            {
+                Value = positive,
+                Span = subjectNode.Span,
+                TypeId = new TypeId(BaseTypes.BoolId)
+            };
+        }
+
+        var payloadTypes = positive ? subject.PositivePayloadTypes : subject.NegativePayloadTypes;
+        var symbols = positive ? selection.ThenPlaceholderSymbols : selection.ElsePlaceholderSymbols;
+        var fields = new List<HirFieldPattern>(payloadTypes.Count);
+        for (var i = 0; i < payloadTypes.Count; i++)
+        {
+            var index = payloadIndex++;
+            var payloadTypeId = payloadTypes[i] is DrivenType payloadType
+                ? GetTypeTypeId(payloadType)
+                : TypeId.None;
+            var pattern = symbols.TryGetValue(index, out var symbolId)
+                ? new HirVarPattern
+                {
+                    Name = $"_{index}",
+                    SymbolId = symbolId,
+                    Span = subjectNode.Span,
+                    TypeId = payloadTypeId
+                }
+                : CreateSelectionWildcard(subjectNode.Span, payloadTypeId);
+            fields.Add(new HirFieldPattern
+            {
+                FieldName = $"_{i}",
+                Pattern = pattern
+            });
+        }
+
+        var constructorName = subject.Kind switch
+        {
+            SelectionSubjectKind.Option => positive ? "Some" : "None",
+            SelectionSubjectKind.Result => positive ? "Ok" : "Err",
+            SelectionSubjectKind.Either => positive ? "Right" : "Left",
+            _ => string.Empty
+        };
+        return new HirCtorPattern
+        {
+            ConstructorName = constructorName,
+            ConstructorSymbolId = positive
+                ? subject.PositiveConstructorSymbolId
+                : subject.NegativeConstructorSymbolId,
+            Fields = fields,
+            Span = subjectNode.Span,
+            TypeId = GetTypeId(subjectNode)
+        };
+    }
+
+    private static HirVarPattern CreateSelectionWildcard(SourceSpan span, TypeId typeId = default) => new()
+    {
+        IsWildcard = true,
+        Span = span,
+        TypeId = typeId
+    };
 
     private HirPatternGuard ConvertPatternGuard(PatternGuardExpr patternGuard)
     {

@@ -31,6 +31,7 @@ public sealed class IdeSemanticSnapshot
     public int SuppressedTypeDiagnosticCount { get; init; }
     public int SuppressedTypeConstraintCount { get; init; }
     public List<IdeDiagnosticEntry> Diagnostics { get; init; } = [];
+    public List<IdeDiagnosticEntry> Refactors { get; init; } = [];
     public List<IdeOutlineEntry> Outline { get; init; } = [];
     public List<IdeSymbolEntry> Symbols { get; init; } = [];
     public List<IdeOverloadGroupEntry> OverloadGroups { get; init; } = [];
@@ -338,6 +339,20 @@ public sealed class IdeSpan
         return true;
     }
 
+    internal static bool TryFrom(
+        SourceSpan span,
+        IdeSourceCoordinateResolver coordinates,
+        out IdeSpan result)
+    {
+        if (!HasSpan(span))
+        {
+            result = Empty;
+            return false;
+        }
+
+        return coordinates.TryCreateSpan(span, out result) || TryFrom(span, out result);
+    }
+
     private static bool HasSpan(SourceSpan span)
     {
         return !string.IsNullOrWhiteSpace(span.FilePath) ||
@@ -381,12 +396,13 @@ public static partial class IdeSemanticSnapshotBuilder
 
     public static IdeSemanticSnapshot Build(CompilationResult result)
     {
+        var coordinates = new IdeSourceCoordinateResolver(result.InputFile, result.SourceText);
         var symbolMetadata = result.Ast != null
             ? CollectSymbolMetadata(result.Ast)
             : new Dictionary<int, IdeSymbolMetadata>();
         var canBuildFingerprints = CanBuildDefinitionFingerprints(result);
         var ownershipContracts = BuildOwnershipContracts(result);
-        var symbols = BuildSymbols(result.SymbolTable, symbolMetadata, ownershipContracts, canBuildFingerprints);
+        var symbols = BuildSymbols(result.SymbolTable, symbolMetadata, ownershipContracts, canBuildFingerprints, coordinates);
         var overloadGroups = BuildOverloadGroups(result.SymbolTable, symbols);
         var modulePathSymbolIds = AddSyntheticModulePrefixSymbols(result.SymbolTable, symbols);
         var importedModuleAliases = result.Ast != null
@@ -394,25 +410,33 @@ public static partial class IdeSemanticSnapshotBuilder
             : new Dictionary<string, SymbolId>();
         var symbolMap = symbols.ToDictionary(s => s.SymbolId, s => s);
         var occurrences = result.Ast != null
-            ? CollectOccurrences(result.Ast, symbolMap, result.SymbolTable, result.SourceText, modulePathSymbolIds, importedModuleAliases)
+            ? CollectOccurrences(result.Ast, symbolMap, result.SymbolTable, result.SourceText, modulePathSymbolIds, importedModuleAliases, coordinates)
             : [];
         var outline = result.Ast != null
-            ? BuildOutline(result.Ast)
+            ? BuildOutline(result.Ast, coordinates)
             : [];
         var recoveredNodes = result.Ast != null
-            ? CollectRecoveredNodes(result.Ast)
+            ? CollectRecoveredNodes(result.Ast, coordinates)
             : [];
         var allowsTypeSensitiveRewrites = CanEmitTypeSensitiveSuggestions(result);
+        var styleDiagnostics = CollectStyleDiagnostics(result, symbols);
         var diagnostics = BuildDiagnostics(
-            CollectDiagnostics(result, symbols),
+            CollectDiagnostics(result, styleDiagnostics),
             symbols,
-            allowsTypeSensitiveRewrites);
-        var completions = BuildCompletions(result.SymbolTable, symbols, overloadGroups);
+            allowsTypeSensitiveRewrites,
+            coordinates);
+        var refactors = BuildDiagnostics(
+            styleDiagnostics.Where(IdeStyleSuggestionBuilder.IsInteractiveRefactor).ToList(),
+            symbols,
+            allowsTypeSensitiveRewrites,
+            coordinates);
+        var completions = BuildCompletions(result, symbols, overloadGroups);
+        var generatedFunctionBodies = BuildGeneratedFunctionBodies(result);
         var generatedDocuments = symbols
             .Where(static symbol => symbol.IsGenerated && symbol.GeneratedOrigin != null)
             .GroupBy(static symbol => symbol.GeneratedOrigin!.VirtualDocumentPath, StringComparer.Ordinal)
             .OrderBy(static group => group.Key, StringComparer.Ordinal)
-            .Select(static group => GeneratedDocumentRenderer.Create(group.ToArray()))
+            .Select(group => GeneratedDocumentRenderer.Create(group.ToArray(), generatedFunctionBodies))
             .ToList();
         var borrowCapabilities = BuildBorrowCapabilities(result.BorrowCheckResult);
 
@@ -440,6 +464,7 @@ public static partial class IdeSemanticSnapshotBuilder
             SuppressedTypeDiagnosticCount = result.SuppressedTypeDiagnosticCount,
             SuppressedTypeConstraintCount = result.SuppressedTypeConstraintCount,
             Diagnostics = diagnostics,
+            Refactors = refactors,
             Outline = outline,
             Symbols = symbols,
             OverloadGroups = overloadGroups,
@@ -449,6 +474,109 @@ public static partial class IdeSemanticSnapshotBuilder
             BorrowCapabilities = borrowCapabilities,
             RecoveredNodes = recoveredNodes
         };
+    }
+
+    private static IReadOnlyDictionary<int, string> BuildGeneratedFunctionBodies(CompilationResult result)
+    {
+        if (result.Ast == null || result.SymbolTable == null || string.IsNullOrEmpty(result.SourceText))
+        {
+            return new Dictionary<int, string>();
+        }
+
+        var bodies = new Dictionary<int, string>();
+        foreach (var function in AstStableNodeTraversal.Enumerate(result.Ast)
+                     .Select(static entry => entry.Node)
+                     .OfType<FuncDef>())
+        {
+            if (!function.SymbolId.IsValid ||
+                result.SymbolTable.GetSymbol(function.SymbolId)?.GeneratedOrigin is not { } symbolOrigin ||
+                function.Body.Count == 0 ||
+                !function.Body.Any(branch => branch.Expression?.GeneratedOriginChain.Any(origin =>
+                    string.Equals(
+                        origin.VirtualDocumentPath,
+                        symbolOrigin.VirtualDocumentPath,
+                        StringComparison.Ordinal)) == true) ||
+                !TryRenderGeneratedFunctionBody(function, result.SourceText, out var body))
+            {
+                continue;
+            }
+
+            bodies[function.SymbolId.Value] = body;
+        }
+
+        return bodies;
+    }
+
+    private static bool TryRenderGeneratedFunctionBody(FuncDef function, string sourceText, out string body)
+    {
+        body = "";
+        if (function.HasImplicitUnitBody &&
+            function.Body.Count == 1 &&
+            function.Body[0].Expression is { } implicitExpression &&
+            TrySliceSource(implicitExpression.Span, sourceText, out var implicitBody))
+        {
+            body = implicitBody;
+            return true;
+        }
+
+        var branches = new List<string>(function.Body.Count);
+        foreach (var branch in function.Body)
+        {
+            if (branch.Expression == null ||
+                !TryRenderGeneratedExpression(branch.Expression, sourceText, out var expressionText))
+            {
+                return false;
+            }
+
+            var patternText = branch.Pattern != null &&
+                              TrySliceSource(branch.Pattern.Span, sourceText, out var renderedPattern)
+                ? renderedPattern
+                : "_";
+            var guardText = branch.Guard != null &&
+                            TrySliceSource(branch.Guard.Span, sourceText, out var renderedGuard)
+                ? $" when {renderedGuard}"
+                : "";
+            branches.Add($"    {patternText}{guardText} => {IndentContinuation(expressionText, 8)}");
+        }
+
+        body = $"{{{Environment.NewLine}{string.Join($",{Environment.NewLine}", branches)}{Environment.NewLine}}}";
+        return true;
+    }
+
+    private static bool TryRenderGeneratedExpression(EidosAstNode expression, string sourceText, out string text)
+    {
+        switch (expression)
+        {
+            case LiteralExpr { RawText.Length: > 0 } literal:
+                text = literal.RawText;
+                return true;
+            case IdentifierExpr identifier when !string.IsNullOrWhiteSpace(identifier.Name):
+                text = identifier.Name;
+                return true;
+            default:
+                return TrySliceSource(expression.Span, sourceText, out text);
+        }
+    }
+
+    private static string IndentContinuation(string text, int spaces)
+    {
+        var indent = new string(' ', spaces);
+        return text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal)
+            .Replace("\n", Environment.NewLine + indent, StringComparison.Ordinal);
+    }
+
+    private static bool TrySliceSource(SourceSpan span, string sourceText, out string text)
+    {
+        text = "";
+        var start = span.Location.Position;
+        if (start < 0 || span.Length <= 0 || start + span.Length > sourceText.Length)
+        {
+            return false;
+        }
+
+        text = sourceText.Substring(start, span.Length).Trim();
+        return text.Length > 0;
     }
 
     private static IdeSnapshotContract BuildSnapshotContract(
@@ -540,10 +668,10 @@ public static partial class IdeSemanticSnapshotBuilder
         };
     }
 
-    private static List<IdeOutlineEntry> BuildOutline(ModuleDecl root)
+    private static List<IdeOutlineEntry> BuildOutline(ModuleDecl root, IdeSourceCoordinateResolver coordinates)
     {
         var entries = new List<IdeOutlineEntry>();
-        AddModuleOutline(root, depth: 0, containerName: null, includeModuleEntry: root.Path.Count > 0, entries);
+        AddModuleOutline(root, depth: 0, containerName: null, includeModuleEntry: root.Path.Count > 0, entries, coordinates);
         return entries;
     }
 
@@ -552,7 +680,8 @@ public static partial class IdeSemanticSnapshotBuilder
         int depth,
         string? containerName,
         bool includeModuleEntry,
-        List<IdeOutlineEntry> entries)
+        List<IdeOutlineEntry> entries,
+        IdeSourceCoordinateResolver coordinates)
     {
         var moduleName = FormatModulePath(module.Path);
         var childDepth = depth;
@@ -564,7 +693,8 @@ public static partial class IdeSemanticSnapshotBuilder
                 detail: "",
                 depth,
                 containerName,
-                module.Span));
+                module.Span,
+                coordinates));
             childDepth++;
             containerName = moduleName;
         }
@@ -578,11 +708,12 @@ public static partial class IdeSemanticSnapshotBuilder
                     childDepth,
                     containerName,
                     includeModuleEntry: true,
-                    entries);
+                    entries,
+                    coordinates);
                 continue;
             }
 
-            if (TryCreateDeclarationOutlineEntry(declaration, childDepth, containerName, out var entry))
+            if (TryCreateDeclarationOutlineEntry(declaration, childDepth, containerName, coordinates, out var entry))
             {
                 entries.Add(entry);
             }
@@ -593,6 +724,7 @@ public static partial class IdeSemanticSnapshotBuilder
         Declaration declaration,
         int depth,
         string? containerName,
+        IdeSourceCoordinateResolver coordinates,
         out IdeOutlineEntry entry)
     {
         entry = declaration switch
@@ -603,38 +735,43 @@ public static partial class IdeSemanticSnapshotBuilder
                 "",
                 depth,
                 containerName,
-                func.Span),
+                func.Span,
+                coordinates),
             FuncDecl func => CreateOutlineEntry(
                 func.Name,
                 DiagnosticMessages.IdeSymbolDetailFunction,
                 DiagnosticMessages.IdeOutlineDetailDeclaration,
                 depth,
                 containerName,
-                func.Span),
+                func.Span,
+                coordinates),
             LetDecl { Pattern: VarPattern { Name.Length: > 0 } varPattern } letDecl => CreateOutlineEntry(
                 varPattern.Name,
                 letDecl.IsMutable ? DiagnosticMessages.IdeSymbolDetailMutableVariable : DiagnosticMessages.IdeSymbolDetailValue,
                 "",
                 depth,
                 containerName,
-                letDecl.Span),
-            AdtDef adt => CreateOutlineEntry(adt.Name, WellKnownStrings.Keywords.Type, "", depth, containerName, adt.Span),
-            TraitDef trait => CreateOutlineEntry(trait.Name, WellKnownStrings.Keywords.Trait, "", depth, containerName, trait.Span),
-            EffectDef ability => CreateOutlineEntry(ability.Name, WellKnownStrings.Keywords.Effect, "", depth, containerName, ability.Span),
-            ImportDecl import => CreateOutlineEntry(
+                letDecl.Span,
+                coordinates),
+            AdtDef adt => CreateOutlineEntry(adt.Name, WellKnownStrings.Keywords.Type, "", depth, containerName, adt.Span, coordinates),
+            TraitDef trait => CreateOutlineEntry(trait.Name, WellKnownStrings.Keywords.Trait, "", depth, containerName, trait.Span, coordinates),
+            EffectDef ability => CreateOutlineEntry(ability.Name, WellKnownStrings.Keywords.Effect, "", depth, containerName, ability.Span, coordinates),
+            ImportDecl { IsCompilerInjectedPrelude: false } import => CreateOutlineEntry(
                 GetImportOutlineName(import),
                 DiagnosticMessages.IdeSymbolDetailImport,
                 import.Kind.ToString(),
                 depth,
                 containerName,
-                import.Span),
+                import.Span,
+                coordinates),
             OperatorDecl op => CreateOutlineEntry(
                 op.OperatorSymbol,
                 DiagnosticMessages.IdeSymbolDetailOperator,
                 op.Fixity.ToString(),
                 depth,
                 containerName,
-                op.Span),
+                op.Span,
+                coordinates),
             _ => new IdeOutlineEntry()
         };
 
@@ -647,7 +784,8 @@ public static partial class IdeSemanticSnapshotBuilder
         string detail,
         int depth,
         string? containerName,
-        SourceSpan span)
+        SourceSpan span,
+        IdeSourceCoordinateResolver coordinates)
     {
         return new IdeOutlineEntry
         {
@@ -656,7 +794,7 @@ public static partial class IdeSemanticSnapshotBuilder
             Detail = detail,
             Depth = depth,
             ContainerName = containerName,
-            Span = IdeSpan.TryFrom(span, out var ideSpan) ? ideSpan : null
+            Span = IdeSpan.TryFrom(span, coordinates, out var ideSpan) ? ideSpan : null
         };
     }
 
@@ -690,36 +828,37 @@ public static partial class IdeSemanticSnapshotBuilder
 
     private static IReadOnlyList<Diagnostic.Diagnostic> CollectDiagnostics(
         CompilationResult result,
+        IReadOnlyList<Diagnostic.Diagnostic> styleDiagnostics)
+    {
+        var diagnostics = result.Diagnostics
+            .Where(static diagnostic => !IdeStyleSuggestionBuilder.IsInteractiveRefactor(diagnostic));
+        var publishedStyleDiagnostics = styleDiagnostics
+            .Where(static diagnostic => !IdeStyleSuggestionBuilder.IsInteractiveRefactor(diagnostic));
+        return diagnostics.Concat(publishedStyleDiagnostics).ToList();
+    }
+
+    private static IReadOnlyList<Diagnostic.Diagnostic> CollectStyleDiagnostics(
+        CompilationResult result,
         IReadOnlyList<IdeSymbolEntry> symbols)
     {
-        if (result.Ast is not ModuleDecl module)
+        if (result.Ast is not ModuleDecl module || !CanEmitTypeSensitiveSuggestions(result))
         {
-            return result.Diagnostics;
+            return [];
         }
 
-        if (!CanEmitTypeSensitiveSuggestions(result))
-        {
-            return result.Diagnostics;
-        }
-
-        var styleDiagnostics = IdeStyleSuggestionBuilder.Build(
+        return IdeStyleSuggestionBuilder.Build(
             module,
             result.SourceText,
             !string.IsNullOrWhiteSpace(result.InputFile) ? Path.GetFullPath(result.InputFile) : result.InputFile,
             result.SymbolTable,
             CreateRewritePreviewValidator(result, symbols));
-        if (styleDiagnostics.Count == 0)
-        {
-            return result.Diagnostics;
-        }
-
-        return result.Diagnostics.Concat(styleDiagnostics).ToList();
     }
 
     private static List<IdeDiagnosticEntry> BuildDiagnostics(
         IReadOnlyList<Diagnostic.Diagnostic> diagnostics,
         IReadOnlyList<IdeSymbolEntry> symbols,
-        bool allowsTypeSensitiveRewrites)
+        bool allowsTypeSensitiveRewrites,
+        IdeSourceCoordinateResolver coordinates)
     {
         var result = new List<IdeDiagnosticEntry>(diagnostics.Count);
         var fingerprintsBySymbolId = symbols
@@ -734,7 +873,7 @@ public static partial class IdeSemanticSnapshotBuilder
             foreach (var label in diagnostic.Labels)
             {
                 IdeSpan? labelSpan = null;
-                if (IdeSpan.TryFrom(label.Span, out var convertedLabelSpan))
+                if (IdeSpan.TryFrom(label.Span, coordinates, out var convertedLabelSpan))
                 {
                     labelSpan = convertedLabelSpan;
                     span ??= convertedLabelSpan;
@@ -753,7 +892,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 IdeSpan? relatedSpan = null;
                 foreach (var relatedLabel in relatedDiagnostic.Labels)
                 {
-                    if (IdeSpan.TryFrom(relatedLabel.Span, out var convertedRelatedSpan))
+                    if (IdeSpan.TryFrom(relatedLabel.Span, coordinates, out var convertedRelatedSpan))
                     {
                         relatedSpan = convertedRelatedSpan;
                         break;
@@ -793,7 +932,7 @@ public static partial class IdeSemanticSnapshotBuilder
                 {
                     Kind = suggestion.Kind.ToString(),
                     Message = suggestion.Message,
-                    Span = suggestion.Span is { } suggestionSpan ? TryConvertIdeSpan(suggestionSpan) : null,
+                    Span = suggestion.Span is { } suggestionSpan ? TryConvertIdeSpan(suggestionSpan, coordinates) : null,
                     Replacement = suggestion.Replacement,
                     HelpUrl = suggestion.HelpUrl,
                     Confidence = suggestion.Confidence,
@@ -954,6 +1093,11 @@ public static partial class IdeSemanticSnapshotBuilder
         {
             InputFile = originalResult.InputFile,
             ImportSearchRoots = [.. originalResult.ImportSearchRoots],
+            PackageImportRoots = originalResult.PackageImportRoots.ToDictionary(
+                static pair => pair.Key,
+                static pair => pair.Value.ToArray(),
+                StringComparer.Ordinal),
+            LanguageVersion = originalResult.LanguageVersion,
             NoImplicitPrelude = originalResult.NoImplicitPrelude,
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
@@ -993,7 +1137,8 @@ public static partial class IdeSemanticSnapshotBuilder
             preview.SymbolTable,
             previewMetadata,
             BuildOwnershipContracts(preview),
-            canBuildDefinitionFingerprints: true);
+            canBuildDefinitionFingerprints: true,
+            new IdeSourceCoordinateResolver(preview.InputFile, preview.SourceText));
         var replacementSymbol = previewSymbols.FirstOrDefault(symbol => symbol.SymbolId == replacementSymbolId);
         if (replacementSymbol == null)
         {
@@ -1109,6 +1254,8 @@ public static partial class IdeSemanticSnapshotBuilder
             case MethodCallExpr method when method.SymbolId.IsValid:
                 symbolId = method.SymbolId.Value;
                 return true;
+            case IndexExpr { IsTypeApplication: true, Object: not null } application:
+                return TryGetCallableSymbolId(application.Object, out symbolId);
             case CallExpr call:
                 return TryGetCallableSymbolId(call.Function, out symbolId);
             default:
@@ -1131,7 +1278,8 @@ public static partial class IdeSemanticSnapshotBuilder
         SymbolTable? symbolTable,
         IReadOnlyDictionary<int, IdeSymbolMetadata> symbolMetadata,
         IReadOnlyDictionary<int, OwnershipContract> ownershipContracts,
-        bool canBuildDefinitionFingerprints)
+        bool canBuildDefinitionFingerprints,
+        IdeSourceCoordinateResolver coordinates)
     {
         if (symbolTable == null)
         {
@@ -1149,7 +1297,7 @@ public static partial class IdeSemanticSnapshotBuilder
             {
                 span = CreateGeneratedVirtualSpan(generatedOrigin.VirtualDocumentPath);
             }
-            else if (IdeSpan.TryFrom(symbol.Span, out var symbolSpan))
+            else if (IdeSpan.TryFrom(symbol.Span, coordinates, out var symbolSpan))
             {
                 span = symbolSpan;
             }
@@ -1180,10 +1328,10 @@ public static partial class IdeSemanticSnapshotBuilder
                 OwnershipContract = CreateOwnershipContractEntry(ownershipContract),
                 VisibilitySpan = symbol.IsModuleLevel
                     ? null
-                    : TryConvertIdeSpan(metadata?.VisibilitySpan),
+                    : TryConvertIdeSpan(metadata?.VisibilitySpan, coordinates),
                 IsBuiltin = isBuiltin,
                 IsGenerated = symbol.GeneratedOrigin != null,
-                GeneratedOrigin = CreateGeneratedOriginEntry(symbol.GeneratedOrigin),
+                GeneratedOrigin = CreateGeneratedOriginEntry(symbol.GeneratedOrigin, coordinates),
                 ExternalLibrary = symbol is FuncSymbol { IsExternal: true, ExternalLibrary: not null } func
                     ? func.ExternalLibrary
                     : null,
@@ -1270,7 +1418,9 @@ public static partial class IdeSemanticSnapshotBuilder
             IsDeferred = slot.Projection.IsDeferred
         };
 
-    private static IdeGeneratedOriginEntry? CreateGeneratedOriginEntry(GeneratedDeclarationOrigin? origin)
+    private static IdeGeneratedOriginEntry? CreateGeneratedOriginEntry(
+        GeneratedDeclarationOrigin? origin,
+        IdeSourceCoordinateResolver coordinates)
     {
         if (origin == null)
         {
@@ -1291,7 +1441,7 @@ public static partial class IdeSemanticSnapshotBuilder
             ExpansionOutputIndex = origin.ExpansionOutputIndex,
             CanonicalArgumentsHash = origin.CanonicalArgumentsHash,
             MetaSchemaVersion = origin.MetaSchemaVersion,
-            ClauseSpan = IdeSpan.TryFrom(origin.ClauseSpan, out var clauseSpan) ? clauseSpan : null,
+            ClauseSpan = IdeSpan.TryFrom(origin.ClauseSpan, coordinates, out var clauseSpan) ? clauseSpan : null,
             VirtualDocumentPath = origin.VirtualDocumentPath
         };
     }
@@ -1660,6 +1810,11 @@ public static partial class IdeSemanticSnapshotBuilder
                     case ListComprehension listComprehension:
                         VisitListComprehension(listComprehension, visibilitySpan);
                         return;
+                    case SelectionExpr selectionExpr:
+                        Visit(selectionExpr.Subject, visibilitySpan);
+                        Visit(selectionExpr.ThenArm, GetNodeSpanOrFallback(selectionExpr.ThenArm, selectionExpr.Span));
+                        Visit(selectionExpr.ElseArm, GetNodeSpanOrFallback(selectionExpr.ElseArm, selectionExpr.Span));
+                        return;
                 }
 
                 var childVisibility = ResolveChildVisibility(node, visibilitySpan);
@@ -1710,7 +1865,9 @@ public static partial class IdeSemanticSnapshotBuilder
 
         void AddNodeMetadata(EidosAstNode node, SourceSpan? visibilitySpan)
         {
-            if (!node.SymbolId.IsValid || !IsDefinitionNode(node))
+            var isSelectionPlaceholder = node is IdentifierExpr identifier &&
+                                         SelectionPlaceholderSyntax.LooksLikePlaceholder(identifier.Name);
+            if (!node.SymbolId.IsValid || (!IsDefinitionNode(node) && !isSelectionPlaceholder))
             {
                 return;
             }
@@ -1783,7 +1940,9 @@ public static partial class IdeSemanticSnapshotBuilder
         return leftValue;
     }
 
-    private static List<IdeRecoveredNodeEntry> CollectRecoveredNodes(EidosAstNode root)
+    private static List<IdeRecoveredNodeEntry> CollectRecoveredNodes(
+        EidosAstNode root,
+        IdeSourceCoordinateResolver coordinates)
     {
         var entries = new List<IdeRecoveredNodeEntry>();
         var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
@@ -1811,7 +1970,7 @@ public static partial class IdeSemanticSnapshotBuilder
                     {
                         Kind = node.GetType().Name,
                         Reason = node.RecoveryReason ?? AstRecoveryReasons.ParserRecoveredLiteral,
-                        Span = TryConvertIdeSpan(node.Span)
+                        Span = TryConvertIdeSpan(node.Span, coordinates)
                     });
                 }
 

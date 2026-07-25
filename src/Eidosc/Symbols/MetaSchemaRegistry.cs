@@ -216,6 +216,7 @@ internal static class MetaSchemaRegistry
                 TypeParams = Enumerable.Repeat(SymbolId.None, typeSpec.Arity).ToList()
             });
             symbolTable.AddMemberToModule(moduleId, typeId);
+            Export(symbolTable, moduleId, typeSpec.Name, typeId, ResolutionKind.Type);
             if (string.Equals(typeSpec.Name, WellKnownStrings.Meta.Types.TypeShape, StringComparison.Ordinal))
             {
                 typeShapeId = typeId;
@@ -322,6 +323,25 @@ internal static class MetaSchemaRegistry
                 IntrinsicName = IntrinsicPrefix + functionSpec.Name
             });
             symbolTable.AddMemberToModule(moduleId, functionId);
+            Export(symbolTable, moduleId, functionSpec.Name, functionId, ResolutionKind.Value);
+        }
+    }
+
+    private static void Export(
+        SymbolTable symbolTable,
+        SymbolId moduleId,
+        string name,
+        SymbolId symbolId,
+        ResolutionKind kind)
+    {
+        if (!symbolTable.Modules.TryAddExportToModule(moduleId, new ModuleBindingEntry
+            {
+                Name = name,
+                SymbolId = symbolId,
+                Kind = kind
+            }))
+        {
+            throw new InvalidOperationException($"Unable to register compiler-owned meta export '{name}'.");
         }
     }
 

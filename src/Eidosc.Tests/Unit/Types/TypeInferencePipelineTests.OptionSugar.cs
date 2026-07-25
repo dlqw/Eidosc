@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Eidosc.Ast.Declarations;
 using Eidosc.Hir;
 using Eidosc.Pipeline;
+using Eidosc.Symbols;
 using Eidosc.Tests.Fixtures;
 using Eidosc.Types;
+using Eidosc.Utils;
 using Xunit;
 
 namespace Eidosc.Tests.Unit.Types;
@@ -80,7 +83,10 @@ fallback :: Int? -> Int
         var fallbackValue = Assert.IsType<HirLiteral>(unwrapCall.Arguments[1]);
 
         Assert.Equal(HirCallSurfaceSyntax.OperatorDesugaring, unwrapCall.SurfaceSyntax);
-        Assert.Equal("std.Option.unwrap_or", unwrapFunction.Name);
+        Assert.Equal("unwrap_or", unwrapFunction.Name);
+        Assert.Equal(
+            CompilerSemanticRole.Coalesce,
+            Assert.IsType<FuncSymbol>(result.SymbolTable!.GetSymbol(unwrapFunction.SymbolId)).CompilerSemanticRole);
         Assert.Equal("value", optionValue.Name);
         Assert.Equal(42, fallbackValue.Value);
     }
@@ -88,6 +94,10 @@ fallback :: Int? -> Int
     private static void UseOptionSugarFixturePath(CompilationOptions options)
     {
         options.InputFile = TestSourceLoader.GetFullPath("projects/test/src/types/option_suffix_coalesce.eidos");
+        options.PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            [WellKnownStrings.Std.Module] = []
+        };
     }
 }
 

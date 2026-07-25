@@ -15,6 +15,8 @@ $eidoscVersion = if ($eidoscVersionSuffix) { "$eidoscVersionPrefix-$eidoscVersio
 $eidosupVersionPrefix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionPrefix
 $eidosupVersionSuffix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionSuffix
 $eidosupVersion = if ($eidosupVersionSuffix) { "$eidosupVersionPrefix-$eidosupVersionSuffix" } else { $eidosupVersionPrefix }
+[xml]$stdVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Std.Version.props")
+$stdVersion = [string]$stdVersionProps.Project.PropertyGroup.EidosStdVersion
 $commit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$')
 {
@@ -82,7 +84,7 @@ try
             }
             Add-ZipText $archive $binaryName "fixture-$rid"
             Add-ZipText $archive "compatibility.json" (Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/compatibility.json"))
-            Add-ZipText $archive "stdlib/eidos.toml" "[package]`nname = `"EidosStd`"`nversion = `"0.1.0-alpha.1`"`n"
+            Add-ZipText $archive "stdlib/eidos.toml" "[package]`nname = `"EidosStd`"`nversion = `"$stdVersion`"`n"
             Add-ZipText $archive "stdlib/Std/Core.eidos" "module Std::Core"
             Add-ZipText $archive "runtime/eidos_runtime.h" "host runtime"
             Add-ZipText $archive "docs/index.md" "# docs"

@@ -96,10 +96,7 @@ keep_package_task[A] :: std.Task.Task[A] -> std.Task.Task[A] { task => task }
             UseColors = false,
             PackageImportRoots =
             {
-                ["Std"] =
-                [
-                    TestSourceLoader.GetFullPath("Eidosc/src/Eidosc/Stdlib/Precompiled")
-                ]
+                [WellKnownStrings.Std.Module] = []
             }
         }).Run();
 

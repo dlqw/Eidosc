@@ -99,14 +99,19 @@ public sealed partial class MirToLlvmConverter
         var coercedArguments = CoerceArgumentsForSignature(fullSignature, boundArguments);
 
         // 构建 payload 条目（带类型 + RC 标记）
-        var payload = coercedArguments
+        var payload = LayoutClosurePayload(coercedArguments
             .Select((argument, index) => new ClosurePayloadEntry(
                 argument,
                 fullSignature.ParameterTypes[index],
                 boundArgumentManagedFlags.Count > index
                     ? boundArgumentManagedFlags[index]
-                    : IsManagedRcPayloadValue(argument, fullSignature.ParameterTypes[index])))
-            .ToList();
+                    : IsManagedRcPayloadValue(argument, fullSignature.ParameterTypes[index]))
+            {
+                TypeId = call.Arguments.Count > index
+                    ? call.Arguments[index].TypeId
+                    : TypeId.None
+            })
+            .ToList());
 
         // 计算可见签名（移除已捕获的参数）
         var visibleSignature = BuildRemainingSignature(fullSignature, coercedArguments.Count);
@@ -117,7 +122,7 @@ public sealed partial class MirToLlvmConverter
             directFunction,
             fullSignature,
             visibleSignature,
-            payload.Select(entry => entry.Type).ToList());
+            payload);
 
         // 合成 release thunk（对 RC payload 执行 decref）
         var releaseThunk = SynthesizeReleaseThunk(payload);
@@ -125,7 +130,7 @@ public sealed partial class MirToLlvmConverter
         // ── 栈分配闭包 buffer ──
         // Layout: [header(8)] [invoke_fn(8)] [release_fn(8)] [payload_word_count(8)] [payload...]
         // Total: 32 + payload_count * 8
-        var totalBytes = (int)(ClosurePayloadOffset + payload.Count * 8L);
+        var totalBytes = checked((int)(ClosurePayloadOffset + ComputeClosurePayloadByteSize(payload)));
 
         var allocaType = new LlvmArrayType { Element = LlvmIntType.I8, Size = totalBytes };
         var alloca = new LlvmAlloca
@@ -231,7 +236,7 @@ public sealed partial class MirToLlvmConverter
         var countFieldPtr = EmitClosureFieldPointer(basePtr, ClosurePayloadWordCountOffset, "stack_count_field");
         _currentBlock!.Instructions.Add(new LlvmStore
         {
-            Value = new LlvmConstant { Value = (long)payload.Count, Type = LlvmIntType.I64 },
+            Value = new LlvmConstant { Value = ComputeClosurePayloadWordCount(payload), Type = LlvmIntType.I64 },
             Pointer = countFieldPtr
         });
 
@@ -244,7 +249,7 @@ public sealed partial class MirToLlvmConverter
 
             var slotPtr = EmitClosureFieldPointer(
                 basePtr,
-                ClosurePayloadOffset + (index * 8L),
+                ClosurePayloadOffset + entry.Offset,
                 $"stack_closure_slot_{index}");
             _currentBlock!.Instructions.Add(new LlvmStore
             {

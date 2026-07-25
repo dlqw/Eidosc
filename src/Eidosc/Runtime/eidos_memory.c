@@ -2536,6 +2536,16 @@ EidosString* eidos_int_to_string(int64_t value) {
     return eidos_string_new(buffer, (size_t)written);
 }
 
+EidosString* eidos_float_to_string(double value) {
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%.17g", value);
+    if (written < 0) {
+        return eidos_string_new("", 0);
+    }
+
+    return eidos_string_new(buffer, (size_t)written);
+}
+
 double eidos_int_to_float(int64_t value) {
     return (double)value;
 }
@@ -2555,25 +2565,17 @@ double eidos_string_to_float(EidosString* str) {
  * I/O Implementation
  * ============================================================ */
 
-void eidos_print_int(int64_t value) {
-    printf("%lld", (long long)value);
-}
-
-void eidos_print_float(double value) {
-    printf("%g", value);
-}
-
-void eidos_print_string(EidosString* str) {
+void eidos_write_text_raw(EidosString* str) {
     if (str != NULL) {
         printf("%.*s", (int)str->length, str->data);
     }
 }
 
-void eidos_print_newline(void) {
+void eidos_write_newline_raw(void) {
     printf("\n");
 }
 
-void eidos_print_char(int64_t value) {
+void eidos_write_char_code_raw(int64_t value) {
     putchar((unsigned char)(value & 0xFF));
 }
 

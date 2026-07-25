@@ -103,7 +103,7 @@ public sealed partial class HirBuilder
 
         return new HirCall
         {
-            Function = BuildStdlibFunctionVar("std.Monad.Monad", "bind", binding.Span),
+            Function = BuildCompilerRoleFunctionVar(CompilerSemanticRole.MonadBind, "bind", binding.Span),
             Arguments = [value, lambda],
             Span = binding.Span,
             TypeId = rest.TypeId
@@ -161,7 +161,7 @@ public sealed partial class HirBuilder
 
         return new HirCall
         {
-            Function = BuildStdlibFunctionVar("std.Monad.Monad", "bind", binding.Span),
+            Function = BuildCompilerRoleFunctionVar(CompilerSemanticRole.MonadBind, "bind", binding.Span),
             Arguments = [value, lambda],
             Span = binding.Span,
             TypeId = rest.TypeId

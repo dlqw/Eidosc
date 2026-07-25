@@ -296,7 +296,7 @@ public sealed partial class MirGenericSpecializer
                left.TraitSelfPosition == right.TraitSelfPosition &&
                IntArgumentsEqual(left.TraitSelfParameterIndices, right.TraitSelfParameterIndices) &&
                left.TraitSelfInResult == right.TraitSelfInResult &&
-               left.TraitMethodRole == right.TraitMethodRole &&
+               left.CompilerSemanticRole == right.CompilerSemanticRole &&
                string.Equals(left.Name, right.Name, StringComparison.Ordinal);
     }
 

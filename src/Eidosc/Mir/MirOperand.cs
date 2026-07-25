@@ -126,7 +126,7 @@ public sealed record MirFunctionRef : MirOperand
     /// <summary>
     /// Gets the structured role of a known trait method.
     /// </summary>
-    public TraitMethodRole TraitMethodRole { get; init; } = TraitMethodRole.None;
+    public CompilerSemanticRole CompilerSemanticRole { get; init; } = CompilerSemanticRole.None;
 
     public override string ToString() => $"@{Name}";
 }

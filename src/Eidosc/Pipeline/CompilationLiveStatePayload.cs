@@ -25,7 +25,7 @@ public sealed record CompilationLiveStatePayload(
     LiveStateRemapPlan RemapPlan,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "compilation-live-state-payload-v10";
+    public const string CurrentSchemaVersion = "compilation-live-state-payload-v11";
 
     public static CompilationLiveStatePayload Create(
         string sourceText,
@@ -196,7 +196,7 @@ public sealed record SymbolTablePayload(
     IReadOnlyDictionary<string, int> GlobalAbilities,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "symbol-table-payload-v7";
+    public const string CurrentSchemaVersion = "symbol-table-payload-v8";
 
     public static SymbolTablePayload Create(SymbolTable? symbolTable)
     {
@@ -277,6 +277,7 @@ public sealed record SymbolPayload(
     {
         var facts = new SortedDictionary<string, string>(StringComparer.Ordinal);
         facts["definitionModule"] = symbol.DefinitionModuleId.Value.ToString();
+        facts["isCompilerInternal"] = symbol.IsCompilerInternal.ToString();
 
         switch (symbol)
         {
@@ -292,7 +293,7 @@ public sealed record SymbolPayload(
                 facts["traitSelfPosition"] = func.TraitSelfPosition.ToString();
                 facts["traitSelfParameterIndices"] = string.Join(",", func.TraitSelfParameterIndices);
                 facts["traitSelfInResult"] = func.TraitSelfInResult.ToString();
-                facts["traitMethodRole"] = func.TraitMethodRole.ToString();
+                facts["compilerSemanticRole"] = func.CompilerSemanticRole.ToString();
                 facts["hasBody"] = func.HasBody.ToString();
                 facts["isDefaultImplementation"] = func.IsDefaultImplementation.ToString();
                 facts["isTraitImplementation"] = func.IsTraitImplementation.ToString();
@@ -397,6 +398,7 @@ public sealed record SymbolPayload(
                 facts["usesExplicitExports"] = module.UsesExplicitExports.ToString();
                 facts["imports"] = JoinSymbolIds(module.Imports);
                 facts["parentModule"] = (module.ParentModule?.Value ?? SymbolId.None.Value).ToString();
+                facts["allowsCompilerInternalAccess"] = module.AllowsCompilerInternalAccess.ToString();
                 break;
         }
 
@@ -521,7 +523,7 @@ public sealed record ModuleRegistryPayload(
     IReadOnlyList<ModuleRegistryModulePayload> Modules,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-registry-payload-v1";
+    public const string CurrentSchemaVersion = "module-registry-payload-v2";
 
     public static ModuleRegistryPayload Create(ModuleRegistry? registry)
     {
@@ -583,7 +585,8 @@ public sealed record ModuleRegistryModulePayload(
     IReadOnlyList<ModuleBindingPayload> Exports,
     IReadOnlyList<int> Imports,
     int ParentModule,
-    bool UsesExplicitExports)
+    bool UsesExplicitExports,
+    bool AllowsCompilerInternalAccess)
 {
     public static ModuleRegistryModulePayload Create(SymbolId id, ModuleSymbol module) =>
         new(
@@ -597,7 +600,8 @@ public sealed record ModuleRegistryModulePayload(
             module.ExportedBindings.Select(ModuleBindingPayload.Create).ToArray(),
             module.Imports.Select(static value => value.Value).ToArray(),
             module.ParentModule?.Value ?? SymbolId.None.Value,
-            module.UsesExplicitExports);
+            module.UsesExplicitExports,
+            module.AllowsCompilerInternalAccess);
 }
 
 public sealed record ModuleBindingPayload(string Name, int SymbolId, string Kind)

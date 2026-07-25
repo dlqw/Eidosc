@@ -33,7 +33,7 @@ public sealed partial class MirGenericSpecializerTests
             ReturnType = boolType,
             TraitSelfPosition = SelfPosition.InParameter,
             TraitSelfParameterIndices = [0, 1],
-            TraitMethodRole = TraitMethodRole.Equality
+            CompilerSemanticRole = CompilerSemanticRole.Equality
         });
 
         var left = LocalPlace(1, intType);
@@ -57,7 +57,7 @@ public sealed partial class MirGenericSpecializerTests
                         Name = "eq",
                         SymbolId = traitMethodSymbol,
                         TypeId = boolType,
-                        TraitMethodRole = TraitMethodRole.Equality
+                        CompilerSemanticRole = CompilerSemanticRole.Equality
                     },
                     Arguments = [left, right]
                 }

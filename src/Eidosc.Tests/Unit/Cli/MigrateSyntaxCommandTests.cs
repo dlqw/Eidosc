@@ -81,7 +81,7 @@ OptionI :: type {
 
 answer::Int = std::option::unwrap_or(Some(42))(0);
 """;
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.PreviousPrevious);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version05);
 
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
         Assert.Contains("OptionI :: type", rewritten, StringComparison.Ordinal);
@@ -118,11 +118,11 @@ version = "0.5.0-alpha.1"
         {
             var plan = SyntaxMigrationPlanner.CreatePlan(
                 tempDir,
-                EidosLanguageVersions.PreviousPrevious,
+                EidosLanguageVersions.Version05,
                 EidosLanguageVersions.Current);
 
             Assert.True(plan.ManifestNeedsUpdate);
-            Assert.Equal(EidosLanguageVersions.PreviousPrevious, plan.CurrentManifestSyntax);
+            Assert.Equal(EidosLanguageVersions.Version05, plan.CurrentManifestSyntax);
             Assert.Equal("ready", plan.SourceRewriteStatus);
             Assert.Contains(
                 GetAllEdits(plan),
@@ -169,7 +169,7 @@ OptionI :: type
 }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("import std.Option", rewritten, StringComparison.Ordinal);
@@ -188,7 +188,7 @@ OptionI :: type
     {
         const string source = "import Std.Fn\nimport Std.Trait\ncomposed :: Fn.compose(id)(id)\ntrait_name :: Trait.show(1)\n";
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("import std.Functions", rewritten, StringComparison.Ordinal);
@@ -206,7 +206,7 @@ import std.Option
 main :: Unit -> Int { _ => 0 }
 """;
 
-        var (plan, _) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, _) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
 
         Assert.Empty(GetAllEdits(plan));
         Assert.All(plan.FilePlans, file => Assert.Equal("unchanged", file.Status));
@@ -220,7 +220,7 @@ main :: Unit -> Int { _ => 0 }
 Payload :: type { Payload(Int) }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("@[derive(Eq), expand(URLCodec), expand(deriveMarker)]", rewritten, StringComparison.Ordinal);
@@ -240,7 +240,7 @@ Api :: module {
 }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("need ffi", rewritten, StringComparison.Ordinal);
@@ -261,7 +261,7 @@ Api :: module {
 Payload :: type { Payload(Int) }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("@[expand(generator(target, 1))]", rewritten, StringComparison.Ordinal);
@@ -281,7 +281,7 @@ main :: Payload -> Payload {
 }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
 
         Assert.Equal("blocked", plan.SourceRewriteStatus);
         var file = Assert.Single(plan.FilePlans);
@@ -311,7 +311,7 @@ main :: Payload -> Payload {
         {
             var plan = SyntaxMigrationPlanner.CreatePlan(
                 tempDir,
-                EidosLanguageVersions.Previous,
+                EidosLanguageVersions.Version06,
                 EidosLanguageVersions.Current);
 
             Assert.Equal("blocked", plan.SourceRewriteStatus);
@@ -365,7 +365,7 @@ custom_meta :: comptime Meta.userDefinedMember(User);
 custom_build :: comptime Build.UserDefinedMember();
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("meta.shape_of(User)", rewritten, StringComparison.Ordinal);
@@ -386,7 +386,7 @@ GameState :: type {
 }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("score:: Int", rewritten, StringComparison.Ordinal);
@@ -405,7 +405,7 @@ Direction[A] :: type {
 }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("North :: type case Direction[Int] {}", rewritten, StringComparison.Ordinal);
@@ -430,7 +430,7 @@ impl Show
 }
 """;
 
-        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Previous);
+        var (plan, sourceText) = CreatePlanForSource(source, EidosLanguageVersions.Version06);
         var rewritten = ApplyEdits(sourceText, GetAllEdits(plan));
 
         Assert.Contains("ShowPerson :: instance Show", rewritten, StringComparison.Ordinal);

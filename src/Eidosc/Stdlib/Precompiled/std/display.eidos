@@ -1,0 +1,57 @@
+Display :: module {
+    string_length_ref :: Ref[String] -> Int compiler(internal, intrinsic: "string_length");
+    string_slice_ref :: Ref[String] -> Int -> Int -> String compiler(internal, intrinsic: "string_slice");
+    string_from_char :: Int -> String compiler(internal, intrinsic: "string_from_char");
+    char_to_code :: Char -> Int compiler(internal, intrinsic: "char_to_code");
+    int_to_string :: Int -> String compiler(internal, intrinsic: "int_to_string");
+    float_to_string :: Float -> String compiler(internal, intrinsic: "float_to_string");
+    write_text_raw :: String -> Unit compiler(internal, intrinsic: "write_text_raw") need io;
+    write_newline_raw :: Unit -> Unit compiler(internal, intrinsic: "write_newline_raw") need io;
+
+    export Display :: trait {
+        display :: Ref[Self] -> String compiler(role: "trait.display")
+    }
+
+    export DisplayString :: instance Display {
+        display :: Ref[String] -> String {
+            value => string_slice_ref(value)(0)(string_length_ref(value))
+        }
+    }
+
+    export DisplayInt :: instance Display {
+        display :: Ref[Int] -> String { value => int_to_string(*value) }
+    }
+
+    export DisplayFloat :: instance Display {
+        display :: Ref[Float] -> String { value => float_to_string(*value) }
+    }
+
+    export DisplayBool :: instance Display {
+        display :: Ref[Bool] -> String {
+            value => if *value then { "true" } else { "false" }
+        }
+    }
+
+    export DisplayChar :: instance Display {
+        display :: Ref[Char] -> String { value => string_from_char(char_to_code(*value)) }
+    }
+
+    export render[T: Display] :: Ref[T] -> String {
+        value => Display.display(value)
+    }
+
+    export print[T: Display] :: Ref[T] -> Unit need io {
+        value => write_text_raw(Display.render(value))
+    }
+
+    export println[T: Display] :: Ref[T] -> Unit need io {
+        value => {
+            write_text_raw(Display.render(value));
+            write_newline_raw()
+        }
+    }
+
+    export println :: Unit -> Unit need io {
+        _ => write_newline_raw()
+    }
+}

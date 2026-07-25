@@ -491,7 +491,7 @@ public sealed partial class MirBuilder
                             SelfPosition = method.TraitSelfPosition,
                             SelfParameterIndices = method.TraitSelfParameterIndices.ToList(),
                             SelfInResult = method.TraitSelfInResult,
-                            MethodRole = method.TraitMethodRole,
+                            MethodRole = method.CompilerSemanticRole,
                             HasDefaultImplementation = method.IsDefaultImplementation
                         })
                         .ToList()
@@ -951,7 +951,7 @@ public sealed partial class MirBuilder
             TraitSelfPosition = method.TraitSelfPosition,
             TraitSelfParameterIndices = method.TraitSelfParameterIndices.ToList(),
             TraitSelfInResult = method.TraitSelfInResult,
-            TraitMethodRole = method.TraitMethodRole
+            CompilerSemanticRole = method.CompilerSemanticRole
         };
     }
 
@@ -1244,7 +1244,7 @@ public sealed partial class MirBuilder
 
         var matches = _symbolTable.Symbols.Values
             .OfType<FuncSymbol>()
-            .Where(static symbol => symbol.TraitMethodRole == TraitMethodRole.Equality)
+            .Where(static symbol => symbol.CompilerSemanticRole == CompilerSemanticRole.Equality)
             .ToList();
         if (operandType.IsValid)
         {

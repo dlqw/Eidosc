@@ -9,6 +9,8 @@ internal sealed record ProjectCommandInputResolution(
     ProjectImportSearchResolution ImportResolution,
     ResolvedEidosProjectTarget? ProjectTarget)
 {
+    private ResolvedPackageGraph? _resolvedPackageGraph;
+
     public string GetLanguageVersion()
     {
         var config = ImportResolution.ProjectFilePath != null
@@ -16,6 +18,68 @@ internal sealed record ProjectCommandInputResolution(
             : EidosProjectConfigurationLoader.TryLoadNearest(SourceFilePath)?.Configuration;
 
         return config?.LanguageVersion ?? EidosLanguageVersions.DefaultForExistingProjects;
+    }
+
+    public Dictionary<string, string[]> GetPackageImportRoots()
+    {
+        if (ProjectTarget != null)
+        {
+            return ProjectTarget.PackageImportRoots;
+        }
+
+        var project = LoadProjectContext();
+        return project == null
+            ? new Dictionary<string, string[]>(StringComparer.Ordinal)
+            : GetPackageGraph(project).GetPackageImportRoots();
+    }
+
+    public EidosFfiConfiguration? GetFfiConfiguration()
+    {
+        if (ProjectTarget != null)
+        {
+            return ProjectTarget.Ffi;
+        }
+
+        var project = LoadProjectContext();
+        if (project == null)
+        {
+            return null;
+        }
+
+        var packageFfi = GetPackageGraph(project).GetCombinedFfiConfiguration();
+        return CombineFfi(project.Configuration.Ffi, packageFfi);
+    }
+
+    private ResolvedPackageGraph GetPackageGraph(LoadedEidosProjectConfiguration project) =>
+        _resolvedPackageGraph ??= EidosProjectGraphResolver.ResolvePackageGraph(project);
+
+    private LoadedEidosProjectConfiguration? LoadProjectContext() =>
+        ImportResolution.ProjectFilePath != null
+            ? EidosProjectConfigurationLoader.TryLoadFromPath(ImportResolution.ProjectFilePath)
+            : EidosProjectConfigurationLoader.TryLoadNearest(SourceFilePath);
+
+    private static EidosFfiConfiguration? CombineFfi(
+        EidosFfiConfiguration? project,
+        EidosFfiConfiguration? package)
+    {
+        if (project == null)
+        {
+            return package;
+        }
+
+        if (package == null)
+        {
+            return project;
+        }
+
+        return new EidosFfiConfiguration
+        {
+            Libraries = project.Libraries.Concat(package.Libraries).Distinct(StringComparer.Ordinal).ToArray(),
+            LibraryPaths = project.LibraryPaths.Concat(package.LibraryPaths).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            IncludePaths = project.IncludePaths.Concat(package.IncludePaths).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            NativeSources = project.NativeSources.Concat(package.NativeSources).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            LinkerFlags = project.LinkerFlags.Concat(package.LinkerFlags).Distinct(StringComparer.Ordinal).ToArray()
+        };
     }
 }
 
