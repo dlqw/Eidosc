@@ -220,7 +220,7 @@ int_compare :: RawPtr -> RawPtr -> Int need ffi
 main :: Unit -> Int need ffi
 {
     _ => {
-        cmp := cfn_from(int_compare);
+        cmp := Ffi.cfn_from(int_compare);
         0
     }
 }

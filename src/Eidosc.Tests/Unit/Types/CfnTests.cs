@@ -16,7 +16,7 @@ public class CfnTests
 main :: Int -> Int
 {
     _ => {
-        fn_ptr: Cfn[Int, Int] := null_pointer();
+        fn_ptr: Cfn[Int, Int] := Ffi.null_pointer();
         0
     }
 }
@@ -37,7 +37,7 @@ my_func :: Int -> Int {
 
 main :: Int -> Int {
     _ => {
-        fn_ptr := cfn_from(my_func);
+        fn_ptr := Ffi.cfn_from(my_func);
         0
     }
 }
@@ -54,8 +54,8 @@ main :: Int -> Int {
         const string source = """
 main :: Int -> Int {
     _ => {
-        fn_ptr: Cfn[Int, Int] := null_pointer();
-        result := cfn_call(fn_ptr, 42);
+        fn_ptr: Cfn[Int, Int] := Ffi.null_pointer();
+        result := Ffi.cfn_call(fn_ptr, 42);
         result
     }
 }
@@ -73,7 +73,7 @@ main :: Int -> Int {
 main :: Int -> Int {
     _ => {
         not_fn := 1;
-        result := cfn_call(not_fn, 42);
+        result := Ffi.cfn_call(not_fn, 42);
         result
     }
 }
@@ -94,7 +94,7 @@ main :: Int -> Int {
 main :: Int -> Int {
     _ => {
         not_fn := 1;
-        result := cfn_call(not_fn, 42);
+        result := Ffi.cfn_call(not_fn, 42);
         result
     }
 }
@@ -122,8 +122,8 @@ add :: Int -> Int -> Int {
 
 main :: Int -> Int {
     _ => {
-        fn_ptr := cfn_from(add);
-        result := cfn_call(fn_ptr, 3, 4);
+        fn_ptr := Ffi.cfn_from(add);
+        result := Ffi.cfn_call(fn_ptr, 3, 4);
         result
     }
 }
@@ -135,13 +135,89 @@ main :: Int -> Int {
     }
 
     [Fact]
+    public void CfnFromAndCall_ZeroArgumentFunction_Compiles()
+    {
+        const string source = """
+answer :: Unit -> Int {
+    42
+}
+
+main :: Unit -> Int {
+    fn_ptr := Ffi.cfn_from(answer);
+    Ffi.cfn_call(fn_ptr)
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Llvm);
+
+        Assert.True(result.Success, $"Expected success but got errors: {string.Join(", ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => d.Message))}");
+    }
+
+    [Theory]
+    [InlineData("Ffi.cfn_call(fn_ptr)", 1, 0)]
+    [InlineData("Ffi.cfn_call(fn_ptr, 1, 2)", 1, 2)]
+    public void CfnCall_WithWrongArity_Fails(string call, int expected, int actual)
+    {
+        var source = $$"""
+main :: Unit -> Int {
+    fn_ptr: Cfn[Int, Int] := Ffi.null_pointer();
+    {{call}}
+}
+""";
+
+        var result = RunPipeline(source);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Level == DiagnosticLevel.Error &&
+            diagnostic.Message.Contains($"expects {expected} C argument(s), but got {actual}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CfnCall_WithWrongArgumentType_Fails()
+    {
+        const string source = """
+main :: Unit -> Int {
+    fn_ptr: Cfn[Int, Int] := Ffi.null_pointer();
+    Ffi.cfn_call(fn_ptr, true)
+}
+""";
+
+        var result = RunPipeline(source);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Level == DiagnosticLevel.Error &&
+            diagnostic.Message.Contains("cfn_call argument 1 type mismatch", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CfnFromAndCall_HighArityFunction_CompilesThroughLlvm()
+    {
+        const string source = """
+sum_seven :: Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int {
+    a => b => c => d => e => f => g => a + b + c + d + e + f + g
+}
+
+main :: Unit -> Int {
+    fn_ptr := Ffi.cfn_from(sum_seven);
+    Ffi.cfn_call(fn_ptr, 1, 2, 3, 4, 5, 6, 7)
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Llvm);
+
+        Assert.True(result.Success, $"Expected success but got errors: {string.Join(", ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => d.Message))}");
+    }
+
+    [Fact]
     public void CfnFrom_CapturingClosure_ReportsE3053BeforeNative()
     {
         const string source = """
 main :: Int -> Int need ffi {
     captured => {
         closure := x => x + captured;
-        fn_ptr := cfn_from(closure);
+        fn_ptr := Ffi.cfn_from(closure);
         0
     }
 }

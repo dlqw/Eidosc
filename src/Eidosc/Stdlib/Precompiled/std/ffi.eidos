@@ -113,17 +113,29 @@ Ffi :: module {
 
 
 
-    export cfn_from[A] :: A -> RawPtr compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[R] :: (Unit -> R) -> Cfn[R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, R] :: (A -> R) -> Cfn[A, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, R] :: (A -> B -> R) -> Cfn[A, B, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, R] :: (A -> B -> C -> R) -> Cfn[A, B, C, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> Cfn[A, B, C, D, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> Cfn[A, B, C, D, E, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> Cfn[A, B, C, D, E, F, R] compiler(intrinsic: "cfn_from") need ffi;
 
-
-
-
-
+    export cfn_call[R] :: Cfn[R] -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, R] :: Cfn[A, R] -> A -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, R] :: Cfn[A, B, R] -> A -> B -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, R] :: Cfn[A, B, C, R] -> A -> B -> C -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, R] :: Cfn[A, B, C, D, R] -> A -> B -> C -> D -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, R] :: Cfn[A, B, C, D, E, R] -> A -> B -> C -> D -> E -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, R] :: Cfn[A, B, C, D, E, F, R] -> A -> B -> C -> D -> E -> F -> R compiler(intrinsic: "cfn_call") need ffi;
 
 
 
     string_to_cstr :: String -> RawPtr compiler(internal, intrinsic: "string_to_cstr") need ffi;
+
+
+
+    cstr_to_string :: RawPtr -> String compiler(internal, intrinsic: "cstr_to_string") need ffi;
 
 
 
@@ -207,6 +219,11 @@ Ffi :: module {
     export to_c_string :: String -> RawPtr need ffi
     {
         text => string_to_cstr(text)
+    }
+
+    export from_c_string :: RawPtr -> String need ffi
+    {
+        ptr => cstr_to_string(ptr)
     }
 
     export is_non_null :: RawPtr -> Bool need ffi

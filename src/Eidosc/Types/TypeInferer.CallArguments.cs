@@ -616,17 +616,27 @@ public sealed partial class TypeInferer
         cfnType = BaseTypes.Cfn;
         var args = new List<Type>();
         var current = _substitution.Apply(callbackType);
+        var encounteredFunction = false;
 
         while (current is TyFun functionType)
         {
+            encounteredFunction = true;
             foreach (var param in functionType.Params)
             {
-                args.Add(_substitution.Apply(param));
+                var resolvedParam = _substitution.Apply(param);
+                if (args.Count == 0 &&
+                    functionType.Params.Count == 1 &&
+                    IsUnitType(resolvedParam))
+                {
+                    continue;
+                }
+
+                args.Add(resolvedParam);
             }
             current = _substitution.Apply(functionType.Result);
         }
 
-        if (args.Count == 0)
+        if (!encounteredFunction)
         {
             return false;
         }
