@@ -173,6 +173,12 @@ internal static partial class DiagnosticMessages
 
     public static string CfnCallFirstArgumentNotCfn => Get(nameof(CfnCallFirstArgumentNotCfn));
 
+    public static string CfnCallArgumentCountMismatch(int expected, int actual) =>
+        Format(nameof(CfnCallArgumentCountMismatch), expected, actual);
+
+    public static string CfnCallArgumentTypeMismatch(int index) =>
+        Format(nameof(CfnCallArgumentTypeMismatch), index);
+
     public static string CfnFromArgumentNotFunction => Get(nameof(CfnFromArgumentNotFunction));
 
     public static string CfnFromCapturedClosureUnsupported =>

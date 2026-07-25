@@ -122,10 +122,12 @@ a :: Int = "text";
     public void Build_CfnCallRecovery_DoesNotExposeTrustworthyTypeText()
     {
         const string source = """
+import std.Ffi
+
 main :: Int -> Int {
     _ => {
         not_fn := 1;
-        result := cfn_call(not_fn, 42);
+        result := Ffi.cfn_call(not_fn, 42);
         result
     }
 }
@@ -135,7 +137,11 @@ main :: Int -> Int {
         {
             InputFile = "ide_cfn_call_recovery.eidos",
             StopAtPhase = CompilationPhase.Types,
-            UseColors = false
+            UseColors = false,
+            PackageImportRoots = new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [WellKnownStrings.Std.Module] = []
+            }
         }).Run();
 
         Assert.False(result.Success);

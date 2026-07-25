@@ -465,6 +465,12 @@
   <data name="CfnCallFirstArgumentNotCfn" xml:space="preserve">
     <value>Cannot infer cfn_call return type because the first argument is not a Cfn[..., Ret] value</value>
   </data>
+  <data name="CfnCallArgumentCountMismatch" xml:space="preserve">
+    <value>cfn_call expects {0} C argument(s), but got {1}</value>
+  </data>
+  <data name="CfnCallArgumentTypeMismatch" xml:space="preserve">
+    <value>cfn_call argument {0} type mismatch</value>
+  </data>
   <data name="CfnFromArgumentNotFunction" xml:space="preserve">
     <value>Cannot infer cfn_from result type because the argument is not a function value</value>
   </data>

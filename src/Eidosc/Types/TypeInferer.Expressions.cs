@@ -1592,55 +1592,14 @@ public sealed partial class TypeInferer
             return applicationSpineResult;
         }
 
-        if (call.Function is IdentifierExpr { Name: "cfn_from" } &&
-            call.PositionalArgs.Count == 1)
+        if (TryInferCfnFromCall(call, out var cfnFromResult))
         {
-            var callbackType = SafeInferExpression(call.PositionalArgs[0]);
-            if (InferNamedArgumentValues(call.NamedArgs))
-            {
-                return CreateErrorRecoveryType();
-            }
-
-            if (TryBuildCfnType(callbackType, out var cfnType))
-            {
-                return cfnType;
-            }
-
-            AddError(
-                call.Span,
-                DiagnosticMessages.CfnFromArgumentNotFunction,
-                TypeErrorCode);
-            return CreateErrorRecoveryType();
+            return cfnFromResult;
         }
 
-        // cfn_call 特殊处理：接受可变参数（fn_ptr + N 个调用参数）
-        if (call.Function is IdentifierExpr { Name: "cfn_call" } &&
-            call.PositionalArgs.Count >= 1)
+        if (TryInferCfnCall(call, out var cfnCallResult))
         {
-            // 推断所有参数类型（用于副作用，如名称解析验证）
-            var positionalArgTypes = new List<Type>(call.PositionalArgs.Count);
-            foreach (var arg in call.PositionalArgs)
-            {
-                positionalArgTypes.Add(SafeInferExpression(arg));
-            }
-
-            if (InferNamedArgumentValues(call.NamedArgs))
-            {
-                return CreateErrorRecoveryType();
-            }
-
-            // 从第一个参数的 Cfn[A..., Ret] 类型提取返回类型
-            var firstArgType = _substitution.Apply(positionalArgTypes[0]);
-            if (firstArgType is TyCon { Name: WellKnownStrings.BuiltinTypes.Cfn, Args.Count: > 0 } cfnTy)
-            {
-                return _substitution.Apply(cfnTy.Args[^1]);
-            }
-
-            AddError(
-                call.Span,
-                DiagnosticMessages.CfnCallFirstArgumentNotCfn,
-                TypeErrorCode);
-            return CreateErrorRecoveryType();
+            return cfnCallResult;
         }
 
         if (!_allowComptimeFunctionReferences &&
