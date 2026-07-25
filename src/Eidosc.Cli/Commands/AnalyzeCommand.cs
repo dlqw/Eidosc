@@ -155,6 +155,7 @@ public static class AnalyzeCommand
         var projectConfig = inputResolution.ImportResolution.ProjectFilePath != null
             ? EidosProjectConfigurationLoader.TryLoadFromPath(inputResolution.ImportResolution.ProjectFilePath)?.Configuration
             : EidosProjectConfigurationLoader.TryLoadNearest(inputResolution.SourceFilePath)?.Configuration;
+        var ffiConfig = inputResolution.GetFfiConfiguration() ?? projectConfig?.Ffi;
 
         // 创建编译选项
         var compileOptions = new CompilationOptions
@@ -174,8 +175,13 @@ public static class AnalyzeCommand
             WarningCodesAsErrors = WarningOptionParser.ParseWarningCodes(options.Werror),
             ImportSearchRoots = inputResolution.ProjectTarget?.EffectiveSearchRoots ??
                                 inputResolution.ImportResolution.EffectiveSearchRoots,
-            PackageImportRoots = inputResolution.GetPackageImportRoots()
-            ,MetaConfiguration = projectConfig?.Meta
+            PackageImportRoots = inputResolution.GetPackageImportRoots(),
+            ConfigFfiLibraries = ffiConfig?.Libraries ?? [],
+            ConfigFfiLibraryPaths = ffiConfig?.LibraryPaths ?? [],
+            ConfigFfiIncludePaths = ffiConfig?.IncludePaths ?? [],
+            ConfigFfiNativeSources = ffiConfig?.NativeSources ?? [],
+            ConfigFfiLinkerFlags = ffiConfig?.LinkerFlags ?? [],
+            MetaConfiguration = projectConfig?.Meta
         };
 
         // 运行编译管道

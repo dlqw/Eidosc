@@ -134,6 +134,58 @@ main :: Int -> Int {
     }
 
     [Fact]
+    public async Task AnalyzeCommand_ProjectManifestFfiLibraries_AuthorizeStructuredExternLibrary()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_project_input");
+        var tempDir = workspace.Root;
+        var output = Console.Out;
+        var error = Console.Error;
+        try
+        {
+            Console.SetOut(TextWriter.Null);
+            Console.SetError(TextWriter.Null);
+            Directory.CreateDirectory(Path.Combine(tempDir, "src"));
+            File.WriteAllText(
+                Path.Combine(tempDir, EidosProjectConfigurationLoader.DefaultFileName),
+                """
+                manifestSchema = 3
+                sourceRoots = ["src"]
+
+                [language]
+                version = "0.8.0-alpha.1"
+
+                [ffi]
+                libraries = ["demo"]
+                """);
+            File.WriteAllText(
+                Path.Combine(tempDir, "src", "Main.eidos"),
+                """
+                @[extern(c, library: "demo", name: "demo_value")]
+                demo_value :: Unit -> Int need ffi;
+
+                main :: Unit -> Int need ffi {
+                    demo_value()
+                }
+                """);
+
+            var parser = new CommandLineBuilder(AnalyzeCommand.Create()).Build();
+            var exitCode = await parser.InvokeAsync([
+                tempDir,
+                "--phase",
+                "hir",
+                "--no-color"
+            ]);
+
+            Assert.Equal(0, exitCode);
+        }
+        finally
+        {
+            Console.SetOut(output);
+            Console.SetError(error);
+        }
+    }
+
+    [Fact]
     public async Task BuildCommand_ProjectManifestSyntax_EmitsEntryWrapperForNameFirstTarget()
     {
         using var workspace = TestTempWorkspace.Create("eidosc_project_input");
