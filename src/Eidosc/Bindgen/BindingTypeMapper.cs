@@ -51,7 +51,8 @@ public sealed class BindingTypeMapper
             "char" or "signed char" or "unsigned char" or "int8_t" or "uint8_t" => new("Int8", BindingTypeCategory.Direct),
             "short" or "unsigned short" or "int16_t" or "uint16_t" => new("Int16", BindingTypeCategory.Direct),
             "int" or "unsigned int" or "int32_t" or "uint32_t" => new("Int32", BindingTypeCategory.Direct),
-            "long" or "unsigned long" or "long long" or "unsigned long long" or "int64_t" or "uint64_t" or
+            "int64_t" => new("Int", BindingTypeCategory.Direct),
+            "long" or "unsigned long" or "long long" or "unsigned long long" or "uint64_t" or
                 "size_t" or "uintptr_t" => new("Int64", BindingTypeCategory.Direct),
             _ => new("RawPtr", BindingTypeCategory.Unsupported, $"unknown type: {type.Spelling}")
         };
