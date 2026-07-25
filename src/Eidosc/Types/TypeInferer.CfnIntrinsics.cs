@@ -8,8 +8,6 @@ namespace Eidosc.Types;
 
 public sealed partial class TypeInferer
 {
-    private const int MaxCfnArity = 16;
-
     private bool TryInferCfnFromCall(CallExpr call, out Type resultType)
     {
         resultType = BaseTypes.Unit;
@@ -29,22 +27,9 @@ public sealed partial class TypeInferer
         if (TryBuildCfnType(callbackType, out var cfnType) &&
             cfnType is TyCon cfnConstructor)
         {
-            var arity = cfnConstructor.Args.Count - 1;
-            if (arity > MaxCfnArity)
-            {
-                AddError(
-                    call.Span,
-                    DiagnosticMessages.CfnArityExceedsMaximum(arity, MaxCfnArity),
-                    TypeErrorCode);
-                resultType = CreateErrorRecoveryType();
-                return true;
-            }
-
-            BindCompilerIntrinsicCallee(
+            BindBuiltinIntrinsicCallee(
                 call.Function,
-                candidates,
-                cfnConstructor.Args.Count,
-                runtimeParameterCount: 1);
+                "cfn_from");
             resultType = cfnType;
             return true;
         }
@@ -91,16 +76,6 @@ public sealed partial class TypeInferer
         }
 
         var expectedArgumentCount = cfnType.Args.Count - 1;
-        if (expectedArgumentCount > MaxCfnArity)
-        {
-            AddError(
-                call.Span,
-                DiagnosticMessages.CfnArityExceedsMaximum(expectedArgumentCount, MaxCfnArity),
-                TypeErrorCode);
-            resultType = CreateErrorRecoveryType();
-            return true;
-        }
-
         var actualArgumentCount = positionalArgTypes.Count - 1;
         if (actualArgumentCount != expectedArgumentCount)
         {
@@ -131,11 +106,9 @@ public sealed partial class TypeInferer
             return true;
         }
 
-        BindCompilerIntrinsicCallee(
+        BindBuiltinIntrinsicCallee(
             call.Function,
-            candidates,
-            cfnType.Args.Count,
-            call.PositionalArgs.Count);
+            "cfn_call");
         resultType = _substitution.Apply(cfnType.Args[^1]);
         return true;
     }
@@ -162,20 +135,18 @@ public sealed partial class TypeInferer
             .ToList();
     }
 
-    private void BindCompilerIntrinsicCallee(
+    private void BindBuiltinIntrinsicCallee(
         EidosAstNode? callee,
-        IReadOnlyList<SymbolId> candidates,
-        int typeParameterCount,
-        int runtimeParameterCount)
+        string intrinsicName)
     {
-        var selected = candidates.FirstOrDefault(symbolId =>
-            _symbolTable.GetSymbol<FuncSymbol>(symbolId) is { } symbol &&
-            symbol.TypeParams.Count == typeParameterCount &&
-            symbol.Parameters.Count == runtimeParameterCount);
-        if (!selected.IsValid)
-        {
-            selected = candidates.FirstOrDefault();
-        }
+        var selected = _symbolTable.Symbols.Values
+            .OfType<FuncSymbol>()
+            .Where(static symbol =>
+                symbol.Span.Equals(Eidosc.Utils.SourceSpan.Empty) &&
+                !symbol.IsCompilerIntrinsic)
+            .Where(symbol => string.Equals(symbol.Name, intrinsicName, StringComparison.Ordinal))
+            .Select(static symbol => symbol.Id)
+            .FirstOrDefault();
 
         if (!selected.IsValid)
         {

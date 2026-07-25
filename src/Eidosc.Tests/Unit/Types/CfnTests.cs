@@ -211,28 +211,6 @@ main :: Unit -> Int {
     }
 
     [Fact]
-    public void CfnFrom_ArityAboveSupportedMaximum_FailsDuringTypes()
-    {
-        const string source = """
-too_many :: Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int {
-    a => b => c => d => e => f => g => h => i => j => k => l => m => n => o => p => q => a
-}
-
-main :: Unit -> Int {
-    Ffi.cfn_from(too_many);
-    0
-}
-""";
-
-        var result = RunPipeline(source);
-
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic =>
-            diagnostic.Level == DiagnosticLevel.Error &&
-            diagnostic.Message.Contains("arity 17 exceeds the supported maximum of 16", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void CfnFrom_CapturingClosure_ReportsE3053BeforeNative()
     {
         const string source = """

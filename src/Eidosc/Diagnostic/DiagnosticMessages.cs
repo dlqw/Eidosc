@@ -173,9 +173,6 @@ internal static partial class DiagnosticMessages
 
     public static string CfnCallFirstArgumentNotCfn => Get(nameof(CfnCallFirstArgumentNotCfn));
 
-    public static string CfnArityExceedsMaximum(int actual, int maximum) =>
-        Format(nameof(CfnArityExceedsMaximum), actual, maximum);
-
     public static string CfnCallArgumentCountMismatch(int expected, int actual) =>
         Format(nameof(CfnCallArgumentCountMismatch), expected, actual);
 
