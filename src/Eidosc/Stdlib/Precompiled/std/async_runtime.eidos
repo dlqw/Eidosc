@@ -39,13 +39,13 @@ export start_default :: Unit -> Unit need ffi
 /// Shut down the runtime scheduler if it is running.
 export shutdown :: Unit -> Unit need ffi
 {
-    _ => AsyncRuntime.shutdown_runtime(())
+    _ => AsyncRuntime.shutdown_runtime()
 }
 
 /// Return the current runtime worker index, or the runtime sentinel outside worker threads.
 export worker_index :: Unit -> Int need ffi
 {
-    _ => AsyncRuntime.worker_index_runtime(())
+    _ => AsyncRuntime.worker_index_runtime()
 }
 
 /// Start the scheduler for a synchronous action, then shut it down before returning.

@@ -67,6 +67,50 @@ Main :: module {
     }
 
     [Fact]
+    public void SelectiveImport_AdtRootAlsoImportsPublicConstructors()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_selective_adt_{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(tempDir, "Lib"));
+            var entryFile = Path.Combine(tempDir, "Main.eidos");
+            var apiFile = Path.Combine(tempDir, "Lib", "Api.eidos");
+            File.WriteAllText(apiFile, """
+Lib.Api :: module {
+    export Choice :: type { Selected :: type(Int), Empty :: type {} }
+}
+""");
+            File.WriteAllText(entryFile, """
+Main :: module {
+    import Lib.Api.{Choice}
+
+    selected :: Choice = Selected(1);
+    empty :: Choice = Empty();
+}
+""");
+
+            var result = new CompilationPipeline(File.ReadAllText(entryFile), new CompilationOptions
+            {
+                InputFile = entryFile,
+                LanguageVersion = EidosLanguageVersions.Current,
+                StopAtPhase = CompilationPhase.Types,
+                ImportSearchRoots = [tempDir],
+                NoImplicitPrelude = true,
+                UseColors = false
+            }).Run();
+
+            Assert.True(result.Success, FormatDiagnostics(result));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void ModuleQualifiedTraitMember_UsesAccessibleBindingNameIndexForOwnerLookup()
     {
         var source = """

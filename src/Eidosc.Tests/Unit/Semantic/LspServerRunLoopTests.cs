@@ -194,6 +194,68 @@ public sealed class LspServerRunLoopTests
     }
 
     [Fact]
+    public async Task RunAsync_ProjectContextChange_InvalidatesExistingSnapshots()
+    {
+        var projectRoot = Path.Combine(Path.GetTempPath(), $"eidos-lsp-project-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(projectRoot);
+        File.WriteAllText(
+            Path.Combine(projectRoot, "eidos.toml"),
+            "manifestSchema = 3\n[language]\nversion = \"0.8.0-alpha.1\"\n");
+
+        try
+        {
+            using var input = new MemoryStream();
+            using var output = new MemoryStream();
+            var uri = new Uri(Path.GetFullPath("project_context_snapshot.eidos")).AbsoluteUri;
+            using var didOpen = CreateDidOpen(uri, 1, "value :: 1;");
+            using var hover = CreateHover(uri, 2);
+            using var setProject = JsonDocument.Parse($$"""
+            {
+              "jsonrpc": "2.0",
+              "method": "eidos/setProjectContext",
+              "params": { "projectUri": {{JsonSerializer.Serialize(new Uri(projectRoot).AbsoluteUri)}} }
+            }
+            """);
+            using var shutdown = JsonDocument.Parse("""{"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}""");
+            using var exit = JsonDocument.Parse("""{"jsonrpc":"2.0","method":"exit","params":null}""");
+
+            await JsonRpc.WriteMessageAsync(input, didOpen.RootElement);
+            await JsonRpc.WriteMessageAsync(input, hover.RootElement);
+            await JsonRpc.WriteMessageAsync(input, setProject.RootElement);
+            await JsonRpc.WriteMessageAsync(input, hover.RootElement);
+            await JsonRpc.WriteMessageAsync(input, shutdown.RootElement);
+            await JsonRpc.WriteMessageAsync(input, exit.RootElement);
+            input.Position = 0;
+
+            var compileCount = 0;
+            using var server = new LspServer(
+                input,
+                output,
+                [],
+                compileDocumentOverride: (path, _) =>
+                {
+                    Interlocked.Increment(ref compileCount);
+                    return new IdeSemanticSnapshot
+                    {
+                        Success = true,
+                        InputFile = path,
+                        CompletedPhase = "types"
+                    };
+                },
+                diagnosticDebounce: TimeSpan.FromMinutes(5));
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await server.RunAsync(timeout.Token);
+
+            Assert.Equal(2, compileCount);
+        }
+        finally
+        {
+            Directory.Delete(projectRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_UnrelatedOpenDocumentChange_DoesNotInvalidateCurrentSnapshot()
     {
         using var input = new MemoryStream();

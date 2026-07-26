@@ -7,6 +7,7 @@ using Eidosc.Ide;
 using Eidosc.Pipeline;
 using Eidosc.Query;
 using Eidosc.BuildSystem;
+using Eidosc.Semantic;
 
 namespace Eidosc.Cli.Lsp;
 
@@ -81,6 +82,7 @@ public sealed class LspServer : IDisposable
     private readonly Func<string, string, IdeSemanticSnapshot>? _compileDocumentOverride;
     private readonly CancellationTokenSource _cts = new();
     private readonly LspDependencyFingerprintCache _dependencyFingerprintCache = new();
+    private readonly LspWorkspaceContext _workspaceContext = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly object _snapshotLock = new();
     private readonly object _diagnosticLock = new();
@@ -158,6 +160,11 @@ public sealed class LspServer : IDisposable
         switch (method)
         {
             case "initialize":
+                if (message.TryGetProperty("params", out var initializeParams) &&
+                    initializeParams.ValueKind == JsonValueKind.Object)
+                {
+                    _workspaceContext.Initialize(initializeParams);
+                }
                 await SendResponseAsync(id!.Value, new
                 {
                     capabilities = new LspServerCapabilities()
@@ -166,6 +173,26 @@ public sealed class LspServer : IDisposable
 
             case "initialized":
                 // Notification, no response needed
+                break;
+
+            case "workspace/didChangeWorkspaceFolders":
+                if (message.TryGetProperty("params", out var workspaceFolderParams) &&
+                    workspaceFolderParams.ValueKind == JsonValueKind.Object &&
+                    _workspaceContext.UpdateWorkspaceFolders(workspaceFolderParams))
+                {
+                    InvalidateAllSnapshots();
+                }
+                break;
+
+            case "eidos/setProjectContext":
+                if (message.TryGetProperty("params", out var projectContextParams) &&
+                    projectContextParams.ValueKind == JsonValueKind.Object &&
+                    _workspaceContext.SetActiveProject(projectContextParams))
+                {
+                    InvalidateAllSnapshots();
+                }
+                if (isRequest)
+                    await SendResponseAsync(id!.Value, true, ct);
                 break;
 
             case "shutdown":
@@ -430,11 +457,12 @@ public sealed class LspServer : IDisposable
             tabSize = Math.Max(1, tabSizeElement.GetInt32());
         }
 
-        var result = EidosFormatter.Format(text, UriToFilePath(uri), new EidosFormatterOptions
+        var filePath = UriToFilePath(uri);
+        var project = LoadProjectForDocument(filePath);
+        var result = EidosFormatter.Format(text, filePath, new EidosFormatterOptions
         {
             IndentSize = tabSize,
-            LanguageVersion = EidosProjectConfigurationLoader.TryLoadNearest(UriToFilePath(uri))?
-                .Configuration.LanguageVersion ?? EidosLanguageVersions.DefaultForExistingProjects
+            LanguageVersion = project?.Configuration.LanguageVersion ?? EidosLanguageVersions.DefaultForExistingProjects
         });
         if (!result.Success || string.Equals(text, result.FormattedText, StringComparison.Ordinal))
         {
@@ -687,6 +715,15 @@ public sealed class LspServer : IDisposable
         }
     }
 
+    private void InvalidateAllSnapshots()
+    {
+        lock (_snapshotLock)
+        {
+            _snapshots.Clear();
+            _snapshotBuildLocks.Clear();
+        }
+    }
+
     private void ScheduleDiagnostics(string uri, string text, int version, CancellationToken ct)
     {
         CancelPendingDiagnostics(uri);
@@ -810,7 +847,7 @@ public sealed class LspServer : IDisposable
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         var filePath = UriToFilePath(uri);
 
-        var project = EidosProjectConfigurationLoader.TryLoadNearest(filePath);
+        var project = LoadProjectForDocument(filePath);
         if (project != null)
         {
             AppendFileFingerprint(builder, project.FilePath);
@@ -920,7 +957,7 @@ public sealed class LspServer : IDisposable
             }
 
             var inputResolution = ResolveLspDocumentInput(filePath);
-            var project = EidosProjectConfigurationLoader.TryLoadNearest(filePath);
+            var project = LoadProjectForInput(inputResolution);
             var buildHostResult = RunBuildHost(project, inputResolution);
             if (buildHostResult is { Success: false })
             {
@@ -942,6 +979,7 @@ public sealed class LspServer : IDisposable
                     .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
                     .ToArray(),
                 PackageImportRoots = inputResolution.GetPackageImportRoots(),
+                ToolchainOwnedSourcePaths = GetOpenToolchainOwnedSourcePaths(filePath),
                 NoImplicitPrelude = project?.Configuration.NoImplicitPrelude ?? false,
                 BuildHostFingerprint = buildHostResult?.CacheFingerprint,
                 BuildGraphFingerprint = buildHostResult?.Graph?.CanonicalHash,
@@ -1046,7 +1084,7 @@ public sealed class LspServer : IDisposable
     {
         try
         {
-            var projectPath = EidosProjectConfigurationLoader.TryLoadNearest(filePath)?.FilePath;
+            var projectPath = _workspaceContext.ResolveProjectFilePath(filePath);
             if (!string.IsNullOrWhiteSpace(projectPath))
             {
                 return ProjectCommandInputResolver.ResolveDocument(
@@ -1065,6 +1103,33 @@ public sealed class LspServer : IDisposable
             project: null,
             targetName: null,
             _importRoots);
+    }
+
+    private LoadedEidosProjectConfiguration? LoadProjectForDocument(string filePath)
+    {
+        var projectFilePath = _workspaceContext.ResolveProjectFilePath(filePath);
+        return string.IsNullOrWhiteSpace(projectFilePath)
+            ? null
+            : EidosProjectConfigurationLoader.TryLoadFromPath(projectFilePath);
+    }
+
+    private static LoadedEidosProjectConfiguration? LoadProjectForInput(
+        ProjectCommandInputResolution inputResolution)
+    {
+        var projectFilePath = inputResolution.ImportResolution.ProjectFilePath;
+        return string.IsNullOrWhiteSpace(projectFilePath)
+            ? null
+            : EidosProjectConfigurationLoader.TryLoadFromPath(projectFilePath);
+    }
+
+    private string[] GetOpenToolchainOwnedSourcePaths(string currentFilePath)
+    {
+        return _documents.GetOpenDocuments()
+            .Select(static entry => UriToCanonicalFilePath(entry.Uri))
+            .Append(currentFilePath)
+            .Where(CompilerOwnedSourceGrant.IsTrustedStdlibSourcePath)
+            .Distinct(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)
+            .ToArray();
     }
 
     private bool IsCurrentDocumentVersion(string uri, int version, string text)

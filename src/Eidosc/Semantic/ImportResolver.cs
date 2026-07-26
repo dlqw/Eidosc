@@ -131,7 +131,7 @@ public sealed class ImportResolver
             }
         };
 
-        if (import.Alias == null && !IsCompilerStdlibModule(currentModule))
+        if (import.Alias == null)
         {
             AppendPublicModuleMemberImports(importedSymbols, sourceModule, currentModule);
             AppendPublicModuleInstanceMethodImports(importedSymbols, sourceModule);
@@ -185,10 +185,40 @@ public sealed class ImportResolver
                     Kind = binding.Kind,
                     IsAliased = selective.Alias != null
                 });
+
+                if (_symbolTable.GetSymbol(binding.SymbolId) is AdtSymbol adt)
+                {
+                    AppendPublicAdtConstructorImports(importedSymbols, adt);
+                }
             }
         }
 
         return ImportResolutionResult.Success(importedSymbols);
+    }
+
+    private void AppendPublicAdtConstructorImports(
+        List<ImportedSymbol> importedSymbols,
+        AdtSymbol adt)
+    {
+        foreach (var constructorId in adt.Constructors)
+        {
+            if (_symbolTable.GetSymbol(constructorId) is not CtorSymbol { IsPublic: true } constructor ||
+                importedSymbols.Any(imported =>
+                    imported.SymbolId == constructorId &&
+                    string.Equals(imported.Name, constructor.Name, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            importedSymbols.Add(new ImportedSymbol
+            {
+                Name = constructor.Name,
+                SymbolId = constructorId,
+                Kind = ResolutionKind.Constructor,
+                IsAliased = false,
+                IsImplicitModuleMember = true
+            });
+        }
     }
 
     /// <summary>
@@ -259,17 +289,6 @@ public sealed class ImportResolver
                 IsImplicitModuleMember = true
             });
         }
-    }
-
-    private bool IsCompilerStdlibModule(SymbolId moduleId)
-    {
-        if (_moduleRegistry.GetModule(moduleId) is not { Path.Count: > 0 } module)
-        {
-            return false;
-        }
-
-        return string.Equals(module.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) ||
-               module.Path[0] is "Core";
     }
 
     /// <summary>

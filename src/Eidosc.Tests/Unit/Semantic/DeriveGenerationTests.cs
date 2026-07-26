@@ -11,6 +11,53 @@ namespace Eidosc.Tests.Unit.Semantic;
 public class DeriveGenerationTests
 {
     [Fact]
+    public void SameNamedTypesInDifferentModules_GenerateDistinctDerivedInstanceNames()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_derive_modules_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        var firstPath = Path.Combine(tempDir, "First.eidos");
+        var secondPath = Path.Combine(tempDir, "Second.eidos");
+        var mainPath = Path.Combine(tempDir, "Main.eidos");
+        File.WriteAllText(firstPath, """
+First :: module {
+    @[derive(Copy)]
+    export Status :: type { Ready :: type {} }
+}
+""");
+        File.WriteAllText(secondPath, """
+Second :: module {
+    @[derive(Copy)]
+    export Status :: type { Ready :: type {} }
+}
+""");
+        File.WriteAllText(mainPath, """
+Main :: module {
+    import First
+    import Second
+}
+""");
+
+        try
+        {
+            var result = new CompilationPipeline(File.ReadAllText(mainPath), new CompilationOptions
+            {
+                InputFile = mainPath,
+                StopAtPhase = CompilationPhase.Namer,
+                ImportSearchRoots = [tempDir],
+                UseColors = false
+            }).Run();
+
+            Assert.True(result.Success, FormatDiagnostics(result));
+            Assert.DoesNotContain(result.Diagnostics, diagnostic =>
+                diagnostic.Message.Contains("Duplicate instance declaration", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void CaseSpecificDerive_GeneratesAnExactCaseImplementation()
     {
         const string source = """

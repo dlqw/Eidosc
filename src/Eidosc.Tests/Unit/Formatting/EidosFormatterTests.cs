@@ -389,6 +389,19 @@ else render_error(_0)
     }
 
     [Fact]
+    public void Format_SyntaxValidation_DoesNotResolveImports()
+    {
+        const string source = "import unavailable.Dependency\nmain :: Unit -> Int { _ => 0 }";
+
+        var result = EidosFormatter.Format(source, "stdin_project.eidos", NameFirstValidation());
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E3000");
+    }
+
+    [Fact]
     public void Format_NameFirstLanguageVersion_Validates2026Q31Source()
     {
         const string source = "Main :: module { main :: Unit -> Int { _ => 0 } }";

@@ -198,13 +198,32 @@ public sealed class LspServerCapabilities
         Full = true
     };
 
+    [JsonPropertyName("workspace")]
+    public LspWorkspaceServerCapabilities Workspace { get; set; } = new();
+
     [JsonPropertyName("experimental")]
     public Dictionary<string, bool> Experimental { get; set; } = new()
     {
         ["eidosProofStates"] = true,
         ["eidosProofSearch"] = true,
-        ["eidosPatternCoverageExplain"] = true
+        ["eidosPatternCoverageExplain"] = true,
+        ["eidosProjectContext"] = true
     };
+}
+
+public sealed class LspWorkspaceServerCapabilities
+{
+    [JsonPropertyName("workspaceFolders")]
+    public LspWorkspaceFolderCapabilities WorkspaceFolders { get; set; } = new();
+}
+
+public sealed class LspWorkspaceFolderCapabilities
+{
+    [JsonPropertyName("supported")]
+    public bool Supported { get; set; } = true;
+
+    [JsonPropertyName("changeNotifications")]
+    public bool ChangeNotifications { get; set; } = true;
 }
 
 public sealed class LspProofSearchEntry
