@@ -18,7 +18,7 @@ public sealed record AstTypesStatePayload(
     IReadOnlyList<AstTypesStateEntryPayload> Entries,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "ast-types-state-payload-v6";
+    public const string CurrentSchemaVersion = "ast-types-state-payload-v7";
 
     public static AstTypesStatePayload Create(
         ModuleDecl? ast,
@@ -130,6 +130,7 @@ public sealed record AstTypesStateEntryPayload(
     bool? MethodResolvedAsStaticPath,
     int? SynthesizedUnitArgumentCount,
     bool? UsesFfiUnitArgumentElision,
+    IReadOnlyList<ImplicitCallAdjustmentPayload> ImplicitCallAdjustments,
     bool? ResolvedAsFieldAccess,
     int? FieldSymbolId,
     string? CStructGetterName,
@@ -203,6 +204,7 @@ public sealed record AstTypesStateEntryPayload(
                 MethodCallExpr method => method.UsesFfiUnitArgumentElision,
                 _ => null
             },
+            CreateImplicitCallAdjustments(node),
             node is MethodCallExpr methodField ? methodField.ResolvedAsFieldAccess : null,
             node is MethodCallExpr methodFieldSymbol ? methodFieldSymbol.FieldSymbolId.Value : null,
             node is MethodCallExpr methodCStruct ? methodCStruct.CStructGetterName : null,
@@ -225,7 +227,62 @@ public sealed record AstTypesStateEntryPayload(
             implementationStableKey);
         return true;
     }
+
+    private static IReadOnlyList<ImplicitCallAdjustmentPayload> CreateImplicitCallAdjustments(
+        EidosAstNode node)
+    {
+        var adjustments = new List<ImplicitCallAdjustmentPayload>();
+        if (node is MethodCallExpr { Receiver: UnaryExpr receiver })
+        {
+            TryAddImplicitCallAdjustment(adjustments, -1, receiver);
+        }
+
+        var arguments = node switch
+        {
+            CallExpr call => call.PositionalArgs,
+            MethodCallExpr method => method.PositionalArgs,
+            _ => null
+        };
+        if (arguments == null)
+        {
+            return adjustments;
+        }
+
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (arguments[index] is UnaryExpr unary)
+            {
+                TryAddImplicitCallAdjustment(adjustments, index, unary);
+            }
+        }
+
+        return adjustments;
+    }
+
+    private static void TryAddImplicitCallAdjustment(
+        List<ImplicitCallAdjustmentPayload> adjustments,
+        int position,
+        UnaryExpr unary)
+    {
+        if (!unary.IsImplicitCallAdjustment ||
+            unary.Operand == null ||
+            unary.InferredType is not Eidosc.Types.Type inferredType ||
+            unary.Operator is not UnaryOp.Ref and not UnaryOp.Deref)
+        {
+            return;
+        }
+
+        adjustments.Add(new ImplicitCallAdjustmentPayload(
+            position,
+            unary.Operator.ToString(),
+            TypeShapePayload.Create(inferredType)));
+    }
 }
+
+public sealed record ImplicitCallAdjustmentPayload(
+    int Position,
+    string Operator,
+    TypeShapePayload InferredType);
 
 public sealed record AstTypesStateRestoreResult(
     bool Applied,
@@ -373,6 +430,16 @@ public static class AstTypesStateRestorer
             bindingKind = parsedKind;
         }
 
+        var implicitCallAdjustments = RestoreImplicitCallAdjustments(
+            entry.ImplicitCallAdjustments,
+            remapper);
+        if (implicitCallAdjustments == null ||
+            !AreImplicitCallAdjustmentPositionsValid(node, implicitCallAdjustments))
+        {
+            failure = $"invalid implicit call adjustment state: {entry.StableIdentity.StableKey}";
+            return false;
+        }
+
         state = new PendingAstTypesState(
             node,
             resolvedSymbolId,
@@ -381,6 +448,7 @@ public static class AstTypesStateRestorer
             entry.MethodResolvedAsStaticPath,
             entry.SynthesizedUnitArgumentCount,
             entry.UsesFfiUnitArgumentElision,
+            implicitCallAdjustments,
             entry.ResolvedAsFieldAccess,
             fieldSymbolId,
             entry.CStructGetterName,
@@ -396,6 +464,43 @@ public static class AstTypesStateRestorer
             methodAssociatedConstImplementationValue,
             implementationValue);
         return true;
+    }
+
+    private static bool AreImplicitCallAdjustmentPositionsValid(
+        EidosAstNode node,
+        IReadOnlyList<RestoredImplicitCallAdjustment> adjustments)
+    {
+        return node switch
+        {
+            CallExpr call => adjustments.All(adjustment =>
+                adjustment.Position >= 0 && adjustment.Position < call.PositionalArgs.Count),
+            MethodCallExpr method => adjustments.All(adjustment =>
+                adjustment.Position == -1 && method.Receiver != null ||
+                adjustment.Position >= 0 && adjustment.Position < method.PositionalArgs.Count),
+            _ => adjustments.Count == 0
+        };
+    }
+
+    private static IReadOnlyList<RestoredImplicitCallAdjustment>? RestoreImplicitCallAdjustments(
+        IReadOnlyList<ImplicitCallAdjustmentPayload> payloads,
+        LiveStateIdRemapper? remapper)
+    {
+        var restored = new List<RestoredImplicitCallAdjustment>(payloads.Count);
+        foreach (var payload in payloads)
+        {
+            if (!Enum.TryParse<UnaryOp>(payload.Operator, out var op) ||
+                op is not UnaryOp.Ref and not UnaryOp.Deref ||
+                !(remapper == null
+                    ? payload.InferredType.TryRestoreType(out var inferredType)
+                    : payload.InferredType.TryRestoreType(remapper, out inferredType)))
+            {
+                return null;
+            }
+
+            restored.Add(new RestoredImplicitCallAdjustment(payload.Position, op, inferredType));
+        }
+
+        return restored;
     }
 
     private static bool TryMapOptionalSymbol(
@@ -452,10 +557,12 @@ public static class AstTypesStateRestorer
         if (state.Node is CallExpr call)
         {
             ApplyEmptyCallState(call, state.SynthesizedUnitArgumentCount, state.UsesFfiUnitArgumentElision);
+            ApplyImplicitCallAdjustments(call, state.ImplicitCallAdjustments);
         }
         else if (state.Node is MethodCallExpr method)
         {
             ApplyEmptyCallState(method, state.SynthesizedUnitArgumentCount, state.UsesFfiUnitArgumentElision);
+            ApplyImplicitCallAdjustments(method, state.ImplicitCallAdjustments);
             if (state.MethodResolvedAsStaticPath == true)
             {
                 method.MarkResolvedAsStaticPath();
@@ -537,6 +644,55 @@ public static class AstTypesStateRestorer
         }
     }
 
+    private static void ApplyImplicitCallAdjustments(
+        CallExpr call,
+        IReadOnlyList<RestoredImplicitCallAdjustment>? adjustments)
+    {
+        foreach (var adjustment in adjustments ?? [])
+        {
+            if (adjustment.Position < 0 || adjustment.Position >= call.PositionalArgs.Count)
+            {
+                continue;
+            }
+
+            call.PositionalArgs[adjustment.Position] = CreateImplicitCallAdjustment(
+                call.PositionalArgs[adjustment.Position],
+                adjustment);
+        }
+    }
+
+    private static void ApplyImplicitCallAdjustments(
+        MethodCallExpr method,
+        IReadOnlyList<RestoredImplicitCallAdjustment>? adjustments)
+    {
+        foreach (var adjustment in adjustments ?? [])
+        {
+            if (adjustment.Position == -1 && method.Receiver != null)
+            {
+                method.SetReceiver(CreateImplicitCallAdjustment(method.Receiver, adjustment));
+            }
+            else if (adjustment.Position >= 0 && adjustment.Position < method.PositionalArgs.Count)
+            {
+                method.PositionalArgs[adjustment.Position] = CreateImplicitCallAdjustment(
+                    method.PositionalArgs[adjustment.Position],
+                    adjustment);
+            }
+        }
+    }
+
+    private static UnaryExpr CreateImplicitCallAdjustment(
+        EidosAstNode operand,
+        RestoredImplicitCallAdjustment adjustment)
+    {
+        var unary = new UnaryExpr();
+        unary.SetOperator(adjustment.Operator);
+        unary.SetOperand(operand);
+        unary.SetSpan(operand.Span);
+        unary.MarkImplicitCallAdjustment();
+        unary.InferredType = adjustment.InferredType;
+        return unary;
+    }
+
     private sealed record PendingAstTypesState(
         EidosAstNode Node,
         SymbolId? ResolvedSymbolId,
@@ -545,6 +701,7 @@ public static class AstTypesStateRestorer
         bool? MethodResolvedAsStaticPath,
         int? SynthesizedUnitArgumentCount,
         bool? UsesFfiUnitArgumentElision,
+        IReadOnlyList<RestoredImplicitCallAdjustment>? ImplicitCallAdjustments,
         bool? ResolvedAsFieldAccess,
         SymbolId? FieldSymbolId,
         string? CStructGetterName,
@@ -559,4 +716,9 @@ public static class AstTypesStateRestorer
         Eidosc.Types.Type? ShortCircuitReturnType,
         EidosAstNode? MethodAssociatedConstImplementationValue,
         EidosAstNode? AssociatedConstImplementationValue);
+
+    private sealed record RestoredImplicitCallAdjustment(
+        int Position,
+        UnaryOp Operator,
+        Eidosc.Types.Type InferredType);
 }

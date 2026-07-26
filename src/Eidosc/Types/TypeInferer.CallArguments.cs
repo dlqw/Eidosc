@@ -218,6 +218,7 @@ public sealed partial class TypeInferer
             syntheticBorrow.SetOperator(UnaryOp.Ref);
             syntheticBorrow.SetOperand(originalArgument);
             syntheticBorrow.SetSpan(originalArgument.Span);
+            syntheticBorrow.MarkImplicitCallAdjustment();
             syntheticBorrow.InferredType = borrowedType;
             call.PositionalArgs[positionalIndex] = syntheticBorrow;
             return borrowedType;
@@ -239,6 +240,7 @@ public sealed partial class TypeInferer
         syntheticDeref.SetOperator(UnaryOp.Deref);
         syntheticDeref.SetOperand(originalArgument);
         syntheticDeref.SetSpan(originalArgument.Span);
+        syntheticDeref.MarkImplicitCallAdjustment();
         syntheticDeref.InferredType = innerType;
         call.PositionalArgs[positionalIndex] = syntheticDeref;
         return innerType;

@@ -66,7 +66,7 @@ caller :: Int -> Int need io
     }
 
     [Fact]
-    public void Authorize_HigherOrderEffect_WithoutCallerNeed_ReportsMissingEffect()
+    public void Authorize_HigherOrderEffect_WithoutCallerNeed_InfersEffect()
     {
         const string caller = """
 
@@ -78,8 +78,8 @@ caller :: Int -> Int
 
         var result = Run(Prelude + caller, CompilationPhase.Effects);
 
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "E3003");
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E3003");
     }
 
     [Fact]
@@ -168,7 +168,7 @@ second :: Int -> Int
     }
 
     [Fact]
-    public void Authorize_ReturnedEffectfulFunction_RequiresEffectOnlyWhenInvoked()
+    public void Authorize_ReturnedEffectfulFunction_InfersEffectWhenInvoked()
     {
         const string source = """
 io :: effect;
@@ -201,8 +201,8 @@ caller :: Int -> Int
 
         var result = Run(source, CompilationPhase.Effects);
 
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "E3003");
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E3003");
     }
 
     [Fact]
@@ -241,8 +241,8 @@ caller :: Int -> Int
 
         var result = Run(source, CompilationPhase.Effects);
 
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "E3003");
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E3003");
     }
 
     private static CompilationResult Run(string source, CompilationPhase phase) =>

@@ -53,7 +53,7 @@ public sealed record ProjectModuleExecutionPlan(
     public static bool IsPrecompiledReadyArtifact(ProjectModuleBuildItem module)
     {
         return module.SourcePaths.Count > 0 &&
-               module.SourcePaths.All(IsPrecompiledSourcePath);
+               module.SourcePaths.All(IsMaterializedPrecompiledArtifactPath);
     }
 
     private static ProjectModuleExecutionAction SelectAction(
@@ -71,15 +71,10 @@ public sealed record ProjectModuleExecutionPlan(
             : ProjectModuleExecutionAction.Restore;
     }
 
-    private static bool IsPrecompiledSourcePath(string sourcePath)
+    private static bool IsMaterializedPrecompiledArtifactPath(string sourcePath)
     {
-        if (sourcePath.StartsWith("<precompiled:", StringComparison.Ordinal) &&
-            sourcePath.EndsWith('>'))
-        {
-            return true;
-        }
-
-        return Eidosc.Semantic.PrecompiledModuleRegistry.IsStdlibSourcePath(sourcePath);
+        return sourcePath.StartsWith("<precompiled:", StringComparison.Ordinal) &&
+               sourcePath.EndsWith('>');
     }
 }
 

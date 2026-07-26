@@ -33,7 +33,7 @@ choose :: Int -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_DecisionTable_PropagatesTemplateEffectRequirement()
+    public void CompilationPipeline_DecisionTable_InfersTemplateEffectRequirement()
     {
         const string source = """
 Poll :: effect;
@@ -54,7 +54,8 @@ choose :: Int -> Int
 
         var result = Run(source, CompilationPhase.Effects);
 
-        Assert.Contains(
+        Assert.True(result.Success);
+        Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E3003");
     }

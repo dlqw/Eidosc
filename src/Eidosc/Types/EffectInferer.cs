@@ -15,9 +15,11 @@ public sealed class EffectInferer
 {
     private readonly SymbolTable _symbolTable;
     private readonly EffectContext _abilityContext;
-    private readonly Dictionary<FuncDef, FunctionEffectSummary> _functionSummaries = new();
+    private readonly Dictionary<FuncDef, FunctionEffectSummary> _functionSummaries =
+        new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<SymbolId, FuncDef> _functionDefinitionsBySymbol = new();
-    private readonly Dictionary<FuncDef, List<FunctionCallSite>> _functionCallSites = new();
+    private readonly Dictionary<FuncDef, List<FunctionCallSite>> _functionCallSites =
+        new(ReferenceEqualityComparer.Instance);
     private FuncDef? _currentFunction;
     private readonly EffectVariableGenerator _abilityVarGen = new();
     private readonly Dictionary<string, EffectVariable> _typeParamEffectVars = [];
@@ -55,6 +57,7 @@ public sealed class EffectInferer
         }
 
         PropagateFunctionCallAbilities();
+        ApplyEffectiveFunctionEffects();
 
         return new EffectInferenceResult(_functionSummaries);
     }
@@ -77,6 +80,8 @@ public sealed class EffectInferer
                 StoreFunctionSummary(function, summary);
             }
         }
+
+        ApplyEffectiveFunctionEffects();
 
         return new EffectInferenceResult(_functionSummaries);
     }
@@ -548,15 +553,6 @@ public sealed class EffectInferer
 
     private EffectRow ResolveFunctionDeclaredAbilities(FuncDef func)
     {
-        if (func.InferredType is Type inferredType)
-        {
-            var abilitiesFromType = ExtractFunctionEffects(inferredType);
-            if (!abilitiesFromType.IsPure)
-            {
-                return abilitiesFromType;
-            }
-        }
-
         var declared = EffectRow.Pure;
         foreach (var requirement in func.RequiredAbilities)
         {
@@ -735,7 +731,7 @@ public sealed class EffectInferer
             return;
         }
 
-        var dependents = new Dictionary<FuncDef, HashSet<FuncDef>>();
+        var dependents = new Dictionary<FuncDef, HashSet<FuncDef>>(ReferenceEqualityComparer.Instance);
         foreach (var (caller, callSites) in _functionCallSites)
         {
             foreach (var callSite in callSites)
@@ -747,7 +743,7 @@ public sealed class EffectInferer
 
                 if (!dependents.TryGetValue(callee, out var callers))
                 {
-                    callers = [];
+                    callers = new HashSet<FuncDef>(ReferenceEqualityComparer.Instance);
                     dependents[callee] = callers;
                 }
                 callers.Add(caller);
@@ -755,7 +751,7 @@ public sealed class EffectInferer
         }
 
         var queue = new Queue<FuncDef>(_functionCallSites.Keys);
-        var queued = new HashSet<FuncDef>(_functionCallSites.Keys);
+        var queued = new HashSet<FuncDef>(_functionCallSites.Keys, ReferenceEqualityComparer.Instance);
         while (queue.TryDequeue(out var caller))
         {
             queued.Remove(caller);
@@ -919,6 +915,36 @@ public sealed class EffectInferer
         {
             _symbolTable.UpdateSymbol(functionSymbol with { EffectSummary = summary });
         }
+    }
+
+    private void ApplyEffectiveFunctionEffects()
+    {
+        foreach (var (function, summary) in _functionSummaries)
+        {
+            function.InferredEffects = summary.DeclaredUpperBound.IsPure
+                ? summary.InferredEffects
+                : null;
+            if (function.InferredEffects is { IsPure: false } effectiveEffects &&
+                function.InferredType is Type functionType)
+            {
+                function.InferredType = ApplyEffectsToFunctionType(functionType, effectiveEffects);
+            }
+        }
+    }
+
+    private static Type ApplyEffectsToFunctionType(Type type, EffectRow effects)
+    {
+        if (type is not TyFun function)
+        {
+            return type;
+        }
+
+        if (function.Result is TyFun nested)
+        {
+            return function with { Result = ApplyEffectsToFunctionType(nested, effects) };
+        }
+
+        return function with { Effects = function.Effects.Union(effects) };
     }
 
     private readonly record struct FunctionCallSite(SymbolId CalleeSymbolId);

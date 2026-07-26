@@ -15,6 +15,11 @@ namespace Eidosc.Ast.Expressions;
 public record UnaryExpr : Expression
 {
     /// <summary>
+    /// 该节点是否由类型推断器为调用参数的隐式借用或解引用调整生成。
+    /// </summary>
+    internal bool IsImplicitCallAdjustment { get; private set; }
+
+    /// <summary>
     /// 运算符
     /// </summary>
     public UnaryOp Operator { get; private set; }
@@ -38,6 +43,8 @@ public record UnaryExpr : Expression
     /// 设置操作数
     /// </summary>
     public void SetOperand(EidosAstNode operand) => Operand = operand;
+
+    internal void MarkImplicitCallAdjustment() => IsImplicitCallAdjustment = true;
 
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {

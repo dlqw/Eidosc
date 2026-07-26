@@ -212,7 +212,7 @@ public sealed partial class QueryDrivenPipeline
 
         if (handwrittenAst != null)
         {
-            ApplyPackageInstanceKeyToModuleTree(handwrittenAst, BuildCurrentPackageInstanceKey());
+            ApplyRootPackageIdentity(handwrittenAst, _sourcePath);
             PreloadImportedModules(handwrittenAst, tokens);
         }
 
@@ -300,6 +300,16 @@ public sealed partial class QueryDrivenPipeline
 
         var effectInferer = new EffectInferer(nameRes.SymbolTable);
         effectInferer.Infer(parse.Ast);
+        if (effectInferer.FunctionSummaries.Any(static binding =>
+                binding.Key.RequiredAbilities.Count == 0 &&
+                !binding.Value.InferredEffects.IsPure))
+        {
+            var previousDiagnosticCount = typeInferer.Diagnostics.Count;
+            typeInferer.Infer(parse.Ast);
+            _diagnostics.AddRange(typeInferer.Diagnostics.Skip(previousDiagnosticCount));
+            effectInferer = new EffectInferer(nameRes.SymbolTable);
+            effectInferer.Infer(parse.Ast);
+        }
 
         SetProfilingCounters(typeInferer.GetProfilingCounters());
         RecordPhase(CompilationPhase.Types, sw, allocatedBytesBefore);
@@ -790,8 +800,9 @@ public sealed partial class QueryDrivenPipeline
 
         if (!_options.NoImplicitPrelude)
         {
-            var rootPath = GetRootModulePath(ast);
-            var isStdlib = rootPath.Count > 0 && string.Equals(rootPath[0], WellKnownStrings.Std.Module, StringComparison.Ordinal);
+            var isStdlib = IsPrecompiledStdSourcePath(entryFilePath) ||
+                           string.Equals(ast.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) ||
+                           string.Equals(ast.PackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal);
             if (!isStdlib &&
                 !string.Equals(ast.PackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal) &&
                 !ast.Declarations.OfType<ImportDecl>().Any(static import => import.IsCompilerInjectedPrelude))
@@ -959,6 +970,11 @@ public sealed partial class QueryDrivenPipeline
         try
         {
             sourceText = ReadImportedSourceText(filePath);
+            if (CompilerOwnedSourceGrant.IsVerifiedStdlibSource(filePath, sourceText))
+            {
+                _compilerOwnedSourcePaths.Add(filePath);
+            }
+
             if (ShouldUsePrecompiledImportSignaturesOnly() && IsPrecompiledStdSourcePath(filePath))
             {
                 var signatureSource = PrecompiledModuleCache.GetOrCreateSignatureSource(filePath, sourceText);
@@ -1126,6 +1142,29 @@ public sealed partial class QueryDrivenPipeline
                 }
             }
         }
+    }
+
+    private void ApplyRootPackageIdentity(ModuleDecl moduleDecl, string entryFilePath)
+    {
+        if (!IsPrecompiledStdSourcePath(entryFilePath))
+        {
+            ApplyPackageInstanceKeyToModuleTree(moduleDecl, BuildCurrentPackageInstanceKey());
+            return;
+        }
+
+        if (PreludeCoreImageRegistry.TryGetModulePathFromSourcePath(entryFilePath, out _))
+        {
+            ApplyPackageIdentityToImportedModuleTree(
+                moduleDecl,
+                PreludeCoreImageRegistry.PackageAlias,
+                $"precompiled:{PreludeCoreImageRegistry.PackageAlias}");
+            return;
+        }
+
+        ApplyPackageIdentityToImportedModuleTree(
+            moduleDecl,
+            WellKnownStrings.Std.Module,
+            "precompiled:std");
     }
 
     private static void ApplyPackageInstanceKeyToModuleTree(ModuleDecl moduleDecl, string? packageInstanceKey)

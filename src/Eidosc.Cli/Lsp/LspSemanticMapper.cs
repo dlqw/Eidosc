@@ -182,11 +182,18 @@ public static class LspSemanticMapper
         }
     }
 
-    public static List<LspDiagnostic> MapDiagnostics(IdeSemanticSnapshot snapshot)
+    public static List<LspDiagnostic> MapDiagnostics(
+        IdeSemanticSnapshot snapshot,
+        string? documentFilePath = null)
     {
         var diagnostics = new List<LspDiagnostic>();
         foreach (var entry in snapshot.Diagnostics)
         {
+            if (!IsDiagnosticForDocument(entry, snapshot.InputFile, documentFilePath))
+            {
+                continue;
+            }
+
             var diag = new LspDiagnostic
             {
                 Severity = MapSeverity(entry.Severity),
@@ -227,6 +234,47 @@ public static class LspSemanticMapper
         }
 
         return diagnostics;
+    }
+
+    private static bool IsDiagnosticForDocument(
+        IdeDiagnosticEntry entry,
+        string snapshotInputFile,
+        string? documentFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(documentFilePath))
+        {
+            return true;
+        }
+
+        var diagnosticPath = entry.Span?.FilePath;
+        if (string.IsNullOrWhiteSpace(diagnosticPath))
+        {
+            diagnosticPath = snapshotInputFile;
+        }
+
+        if (string.IsNullOrWhiteSpace(diagnosticPath))
+        {
+            return true;
+        }
+
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(diagnosticPath),
+                Path.GetFullPath(documentFilePath),
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return string.Equals(
+                diagnosticPath,
+                documentFilePath,
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal);
+        }
     }
 
     public static LspPatternCoverageExplainReport MapPatternCoverageExplain(
@@ -791,6 +839,37 @@ public static class LspSemanticMapper
         }
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var effect in snapshot.InferredEffects)
+        {
+            if (!IsSpanInDocument(snapshot, effect.InsertionSpan, documentFilePath) ||
+                requestedRange != null && !ContainsPosition(
+                    requestedRange,
+                    effect.InsertionSpan.StartLine,
+                    effect.InsertionSpan.StartCharacter))
+            {
+                continue;
+            }
+
+            var key = $"effect:{effect.InsertionSpan.StartLine}:{effect.InsertionSpan.StartCharacter}:{effect.EffectText}";
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            hints.Add(new LspInlayHint
+            {
+                Position = new LspPosition
+                {
+                    Line = effect.InsertionSpan.StartLine,
+                    Character = effect.InsertionSpan.StartCharacter
+                },
+                Label = effect.NeedText,
+                Kind = LspInlayHintKind.Type,
+                Tooltip = $"Inferred effects for '{effect.FunctionName}'. Use the code action to materialize this need clause.",
+                PaddingLeft = true
+            });
+        }
+
         foreach (var occurrence in snapshot.Occurrences)
         {
             if (!string.Equals(occurrence.Role, "definition", StringComparison.Ordinal) ||
@@ -964,6 +1043,47 @@ public static class LspSemanticMapper
         int? documentVersion = null)
     {
         var actions = new List<LspCodeAction>();
+        foreach (var effect in snapshot.InferredEffects)
+        {
+            if (!IsSpanInDocument(snapshot, effect.InsertionSpan, documentFilePath) ||
+                !ContainsPosition(
+                    requestedRange,
+                    effect.InsertionSpan.StartLine,
+                    effect.InsertionSpan.StartCharacter))
+            {
+                continue;
+            }
+
+            actions.Add(new LspCodeAction
+            {
+                Title = $"Materialize inferred effects for {effect.FunctionName}",
+                Kind = "refactor.rewrite",
+                IsPreferred = false,
+                Edit = new LspWorkspaceEdit
+                {
+                    DocumentChanges =
+                    [
+                        new LspTextDocumentEdit
+                        {
+                            TextDocument = new LspVersionedTextDocumentIdentifier
+                            {
+                                Uri = uri,
+                                Version = documentVersion
+                            },
+                            Edits =
+                            [
+                                new LspTextEdit
+                                {
+                                    Range = MapIdeSpanToRange(effect.InsertionSpan),
+                                    NewText = effect.NeedText
+                                }
+                            ]
+                        }
+                    ]
+                }
+            });
+        }
+
         foreach (var diagnostic in snapshot.Diagnostics.Concat(snapshot.Refactors))
         {
             var diagnosticInRange = diagnostic.Span != null &&

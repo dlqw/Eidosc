@@ -163,7 +163,7 @@ public sealed partial class CompilationPipeline
         var success = RunFfiTypeValidator();
         if (success)
         {
-            BuildFunctionEffectSummaries();
+            success = BuildFunctionEffectSummaries();
         }
         BuildTypedSemanticSnapshot();
         if (success)
@@ -198,6 +198,12 @@ public sealed partial class CompilationPipeline
             return false;
         }
 
+        if (_moduleTypedArtifactRestorePlan.RestoreModules == 0)
+        {
+            SetProfilingCounter("Types.moduleRestore.skippedWithoutReusableModules", 1);
+            return false;
+        }
+
         var payloadByModule = BuildTypesPayloadLookup(previousPayloads);
         var semanticByModule = BuildTypesSemanticLookup();
         var syntheticPayload = ProjectModuleArtifactRestorePayloadSnapshot.LoadTypesStatePayload(
@@ -210,6 +216,11 @@ public sealed partial class CompilationPipeline
         _moduleTypedArtifactRestorePlan = GateModuleArtifactRestorePlanWithDependencySignatures(
             _moduleTypedArtifactRestorePlan,
             ProjectModuleDependencySignatureRequirement.SemanticOnly);
+        if (_moduleTypedArtifactRestorePlan.RestoreModules == 0)
+        {
+            SetProfilingCounter("Types.moduleRestore.skippedWithoutReusableModules", 1);
+            return false;
+        }
 
         var restoredPayloads = new ConcurrentDictionary<string, ModuleTypesStatePayload>(StringComparer.Ordinal);
         var compiledPayloads = new ConcurrentDictionary<string, ModuleTypesStatePayload>(StringComparer.Ordinal);
@@ -1115,9 +1126,31 @@ public sealed partial class CompilationPipeline
         return authorizationSuccess;
     }
 
-    private void BuildFunctionEffectSummaries()
+    private bool BuildFunctionEffectSummaries()
     {
         _abilityInferer = new EffectInferer(_symbolTable!);
         _abilityInferer.Infer(_ast!);
+        if (!_abilityInferer.FunctionSummaries.Any(static binding =>
+                binding.Key.RequiredAbilities.Count == 0 &&
+                !binding.Value.InferredEffects.IsPure))
+        {
+            return true;
+        }
+
+        using (MeasureSubphase(CompilationPhase.Types, "stabilize_inferred_effect_types"))
+        {
+            _options.BuildComptimeContext?.AttachSymbolTable(_symbolTable!);
+            var previousDiagnosticCount = _typeInferer!.Diagnostics.Count;
+            var success = _typeInferer.Infer(_ast!);
+            var diagnostics = FilterTrustedPrecompiledDiagnostics(
+                    _typeInferer.Diagnostics.Skip(previousDiagnosticCount))
+                .ToList();
+            _diagnostics.AddRange(diagnostics);
+
+            _abilityInferer = new EffectInferer(_symbolTable!);
+            _abilityInferer.Infer(_ast!);
+            return success || !diagnostics.Any(static diagnostic =>
+                diagnostic.Level == Diagnostic.DiagnosticLevel.Error);
+        }
     }
 }

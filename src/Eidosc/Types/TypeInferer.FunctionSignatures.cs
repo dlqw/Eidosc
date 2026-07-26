@@ -9,7 +9,13 @@ public sealed partial class TypeInferer
 {
     private Type InferFunctionType(FuncDef funcDef)
     {
-        return InferFunctionSignatureType(funcDef.Signature, funcDef.TypeParams, requiredAbilities: funcDef.RequiredAbilities);
+        var functionType = InferFunctionSignatureType(
+            funcDef.Signature,
+            funcDef.TypeParams,
+            requiredAbilities: funcDef.RequiredAbilities);
+        return funcDef.RequiredAbilities.Count == 0 && funcDef.InferredEffects is { IsPure: false } inferredEffects
+            ? ApplyRequiredAbilitiesToFunction(functionType, inferredEffects)
+            : functionType;
     }
 
     private TypeScheme InferFunctionSignatureScheme(FuncDef funcDef)
@@ -53,6 +59,11 @@ public sealed partial class TypeInferer
             functionType = ApplyRequiredAbilitiesToFunction(
                 functionType,
                 ResolveRequiredAbilities(funcDef.RequiredAbilities ?? [], typeVarEnv));
+            if (funcDef.RequiredAbilities is not { Count: > 0 } &&
+                funcDef.InferredEffects is { IsPure: false } inferredEffects)
+            {
+                functionType = ApplyRequiredAbilitiesToFunction(functionType, inferredEffects);
+            }
 
             var scheme = _env.Generalize(functionType, signatureConstraintGenerator.Constraints.Constraints.ToList());
             RegisterFunctionGenericParameterTypes(funcDef, typeVarEnv, valueGenericParameterTypes);

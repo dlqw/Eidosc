@@ -138,6 +138,12 @@ public sealed partial class CompilationPipeline
             return false;
         }
 
+        if (_moduleArtifactRestorePlan.RestoreModules == 0)
+        {
+            SetProfilingCounter("Namer.moduleRestore.skippedWithoutReusableModules", 1);
+            return false;
+        }
+
         var payloadByModule = BuildNamerPayloadLookup(previousPayloads);
         var semanticByModule = BuildNamerSemanticLookup(_moduleSemanticSignatureSnapshot);
         var syntheticPayload = ProjectModuleArtifactRestorePayloadSnapshot.LoadSemantic(
@@ -152,6 +158,11 @@ public sealed partial class CompilationPipeline
         _moduleArtifactRestorePlan = GateModuleArtifactRestorePlanWithDependencySignatures(
             _moduleArtifactRestorePlan,
             ProjectModuleDependencySignatureRequirement.SemanticOnly);
+        if (_moduleArtifactRestorePlan.RestoreModules == 0)
+        {
+            SetProfilingCounter("Namer.moduleRestore.skippedWithoutReusableModules", 1);
+            return false;
+        }
 
         var restoredPayloads = new ConcurrentDictionary<string, ModuleNamerStatePayload>(StringComparer.Ordinal);
         var compiledPayloads = new ConcurrentDictionary<string, ModuleNamerStatePayload>(StringComparer.Ordinal);

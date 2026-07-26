@@ -15,7 +15,7 @@ http_server[t, comptime count: Int] :: type {
     some_case :: type { BadField :: Int }
 }
 
-IO :: effect;
+bad_effect :: effect;
 
 BadFunction :: Int -> Int {
     BadParam => BadParam
@@ -27,7 +27,7 @@ BadFunction :: Int -> Int {
         Assert.True(result.Success, FormatDiagnostics(result));
         AssertNaming(result, "S1102", "http_server", "HttpServer", originalSymbolRequired: true);
         AssertNaming(result, "S1102", "some_case", "SomeCase", originalSymbolRequired: true);
-        AssertNaming(result, "S1101", "IO", "io", originalSymbolRequired: true);
+        AssertNaming(result, "S1102", "bad_effect", "BadEffect", originalSymbolRequired: true);
         AssertNaming(result, "S1101", "BadFunction", "bad_function", originalSymbolRequired: true);
         AssertNaming(result, "S1102", "t", "T", originalSymbolRequired: true);
         AssertNaming(result, "S1103", "count", "COUNT", originalSymbolRequired: true);

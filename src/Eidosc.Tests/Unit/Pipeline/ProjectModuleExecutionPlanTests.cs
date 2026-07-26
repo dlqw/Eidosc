@@ -88,7 +88,7 @@ public sealed class ProjectModuleExecutionPlanTests
     }
 
     [Fact]
-    public void IsPrecompiledReadyArtifact_RecognizesStdlibPrecompiledSourcePath()
+    public void IsPrecompiledReadyArtifact_RequiresMaterializedArtifactInsteadOfStdlibSource()
     {
         var item = new ProjectModuleBuildItem(
             0,
@@ -97,7 +97,7 @@ public sealed class ProjectModuleExecutionPlanTests
             [],
             []);
 
-        Assert.True(ProjectModuleExecutionPlan.IsPrecompiledReadyArtifact(item));
+        Assert.False(ProjectModuleExecutionPlan.IsPrecompiledReadyArtifact(item));
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class ProjectModuleExecutionPlanTests
     }
 
     [Fact]
-    public void ArtifactRestorePlan_RestoresOnlyWhenAllArtifactsReady()
+    public void ArtifactRestorePlan_CompilesModulesWithMissingArtifacts()
     {
         var graph = new ModuleDependencyGraph();
         graph.RegisterModuleIdentity("<precompiled:Std.Core>", "Std.Core");
@@ -216,13 +216,13 @@ public sealed class ProjectModuleExecutionPlanTests
 
         Assert.Equal(3, restore.TotalModules);
         Assert.Equal(1, restore.RestoreModules);
-        Assert.Equal(1, restore.BlockedModules);
+        Assert.Equal(0, restore.BlockedModules);
         Assert.Equal(1, restore.ReadyArtifactModules);
-        Assert.Equal(0, restore.CompileModules);
+        Assert.Equal(1, restore.CompileModules);
         Assert.Contains(restore.Layers.SelectMany(static layer => layer.Modules), static item =>
             item.ModuleKey == "A" && item.Action == ProjectModuleArtifactRestoreAction.Restore);
         Assert.Contains(restore.Layers.SelectMany(static layer => layer.Modules), static item =>
-            item.ModuleKey == "B" && item.Action == ProjectModuleArtifactRestoreAction.Blocked);
+            item.ModuleKey == "B" && item.Action == ProjectModuleArtifactRestoreAction.Compile);
         Assert.Contains(restore.Layers.SelectMany(static layer => layer.Modules), static item =>
             item.ModuleKey == "Std.Core" && item.Action == ProjectModuleArtifactRestoreAction.ReadyArtifact);
     }

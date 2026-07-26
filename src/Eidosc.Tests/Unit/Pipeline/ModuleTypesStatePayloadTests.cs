@@ -6,6 +6,7 @@ using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
 using Eidosc.Types;
 using Xunit;
+using AstUnaryOp = Eidosc.Ast.UnaryOp;
 
 namespace Eidosc.Tests.Unit.Pipeline;
 
@@ -73,6 +74,14 @@ public sealed class ModuleTypesStatePayloadTests
         implementation.SetLiteral("7");
         var call = new CallExpr();
         call.MarkSyntheticUnitArguments(1);
+        var callArgument = new LiteralExpr();
+        callArgument.SetLiteral("value");
+        var implicitBorrow = new UnaryExpr();
+        implicitBorrow.SetOperator(AstUnaryOp.Ref);
+        implicitBorrow.SetOperand(callArgument);
+        implicitBorrow.MarkImplicitCallAdjustment();
+        implicitBorrow.InferredType = new TyRef { Inner = BaseTypes.String };
+        call.AddPositionalArg(implicitBorrow);
         var method = new MethodCallExpr();
         method.MarkSyntheticUnitArguments(1);
         method.MarkResolvedAsFieldAccess(new SymbolId(201));
@@ -107,6 +116,9 @@ public sealed class ModuleTypesStatePayloadTests
         var restoredImplementation = new LiteralExpr();
         restoredImplementation.SetLiteral("7");
         var restoredCall = new CallExpr();
+        var restoredCallArgument = new LiteralExpr();
+        restoredCallArgument.SetLiteral("value");
+        restoredCall.AddPositionalArg(restoredCallArgument);
         var restoredMethod = new MethodCallExpr();
         restoredMethod.SetResolvedStaticExpression(new AssociatedConstExpr());
         var restoredInfix = new InfixCallExpr();
@@ -127,6 +139,11 @@ public sealed class ModuleTypesStatePayloadTests
 
         Assert.True(restore.Applied, string.Join(Environment.NewLine, restore.Failures));
         Assert.Equal(1, restoredCall.SynthesizedUnitArgumentCount);
+        var restoredBorrow = Assert.IsType<UnaryExpr>(Assert.Single(restoredCall.PositionalArgs));
+        Assert.True(restoredBorrow.IsImplicitCallAdjustment);
+        Assert.Equal(AstUnaryOp.Ref, restoredBorrow.Operator);
+        Assert.Same(restoredCallArgument, restoredBorrow.Operand);
+        Assert.Equal("Ref[String]", restoredBorrow.InferredType?.ToString());
         Assert.Equal(1, restoredMethod.SynthesizedUnitArgumentCount);
         Assert.True(restoredMethod.ResolvedAsFieldAccess);
         Assert.Equal(new SymbolId(201), restoredMethod.FieldSymbolId);
@@ -615,8 +632,8 @@ LibA :: module {
             var source = File.ReadAllText(entryFile);
             var first = RunPhase(entryFile, source, CompilationPhase.Effects, static _ => { });
 
-            Assert.False(first.Success);
-            Assert.Contains(first.Diagnostics, static diagnostic => diagnostic.Code == "E3003");
+            Assert.True(first.Success, FormatDiagnostics(first));
+            Assert.DoesNotContain(first.Diagnostics, static diagnostic => diagnostic.Code == "E3003");
             var payloads = Assert.IsAssignableFrom<IReadOnlyList<ModuleTypesStatePayload>>(
                 first.ModuleTypesStatePayloads);
             var payloadByModule = payloads.ToDictionary(static payload => payload.ModuleKey, StringComparer.Ordinal);
@@ -652,8 +669,8 @@ Changed :: module {
                 ConfigurePreviousTypesPayloads(options, first, payloads, payloadByModule);
             });
 
-            Assert.False(second.Success);
-            Assert.Contains(second.Diagnostics, static diagnostic => diagnostic.Code == "E3003");
+            Assert.True(second.Success, FormatDiagnostics(second));
+            Assert.DoesNotContain(second.Diagnostics, static diagnostic => diagnostic.Code == "E3003");
             Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault("Types.moduleRestore.fallbackFullInfer"));
             Assert.True(second.ProfilingCounters.GetValueOrDefault("Types.moduleRestore.applied") > 0);
             Assert.True(second.ProfilingCounters.GetValueOrDefault("Types.moduleRestore.restoredInferredTypes") > 0);

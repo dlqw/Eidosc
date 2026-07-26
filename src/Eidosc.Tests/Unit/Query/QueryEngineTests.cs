@@ -337,6 +337,40 @@ public sealed class QueryEngineTests
 public sealed class PipelineQuerySessionTests
 {
     [Fact]
+    public void Compile_PhysicalStdlibEntry_PreservesCompilerPackageIdentity()
+    {
+        var eidoscRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var inputPath = Path.Combine(
+            eidoscRoot,
+            "src",
+            "Eidosc",
+            "Stdlib",
+            "Precompiled",
+            "std",
+            "trait_invoke.eidos");
+        var options = new CompilationOptions
+        {
+            InputFile = inputPath,
+            StopAtPhase = CompilationPhase.Types,
+            LanguageVersion = EidosLanguageVersions.Current,
+            UseColors = false
+        };
+
+        var result = new QueryDrivenPipeline(inputPath, File.ReadAllText(inputPath), options).Run();
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.NotNull(result.Ast);
+        Assert.Equal(Eidosc.Semantic.PreludeCoreImageRegistry.PackageAlias, result.Ast.PackageAlias);
+        Assert.Equal(
+            $"precompiled:{Eidosc.Semantic.PreludeCoreImageRegistry.PackageAlias}",
+            result.Ast.PackageInstanceKey);
+        Assert.DoesNotContain(
+            result.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("Duplicate instance declaration", StringComparison.Ordinal) ||
+                          diagnostic.Message.Contains("reserved for toolchain-owned source", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Compile_TypesQuery_ProvidesDeclaredAndInferredEffectSummaries()
     {
         const string source = """

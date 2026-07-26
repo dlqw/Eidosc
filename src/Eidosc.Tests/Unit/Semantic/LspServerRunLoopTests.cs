@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Eidosc.Cli.Lsp;
 using Eidosc.Ide;
@@ -9,6 +10,62 @@ namespace Eidosc.Tests.Unit.Semantic;
 
 public sealed class LspServerRunLoopTests
 {
+    [Fact]
+    public async Task RunAsync_OpeningPhysicalPreludeModule_DoesNotPublishDuplicateInstances()
+    {
+        var eidoscRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var inputPath = Path.Combine(
+            eidoscRoot,
+            "src",
+            "Eidosc",
+            "Stdlib",
+            "Precompiled",
+            "std",
+            "trait_invoke.eidos");
+        var source = File.ReadAllText(inputPath);
+        var uri = new Uri(inputPath).AbsoluteUri;
+        using var prefix = new MemoryStream();
+        using var suffix = new MemoryStream();
+        using var didOpen = CreateDidOpen(uri, 1, source);
+        using var hover = CreateHover(uri, 2);
+        using var shutdown = JsonDocument.Parse("""{"jsonrpc":"2.0","id":3,"method":"shutdown","params":null}""");
+        using var exit = JsonDocument.Parse("""{"jsonrpc":"2.0","method":"exit","params":null}""");
+        await JsonRpc.WriteMessageAsync(prefix, didOpen.RootElement);
+        await JsonRpc.WriteMessageAsync(prefix, hover.RootElement);
+        await JsonRpc.WriteMessageAsync(suffix, shutdown.RootElement);
+        await JsonRpc.WriteMessageAsync(suffix, exit.RootElement);
+        var prefixBytes = prefix.ToArray();
+        var published = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var input = new PublicationGatedInputStream(
+            prefixBytes.Concat(suffix.ToArray()).ToArray(),
+            prefixBytes.Length,
+            published.Task);
+        using var output = new PublicationSignalingStream(published);
+
+        using var server = new LspServer(input, output, [], diagnosticDebounce: TimeSpan.Zero);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await server.RunAsync(timeout.Token);
+
+        output.Position = 0;
+        JsonElement? publication = null;
+        while (await JsonRpc.ReadMessageAsync(output, timeout.Token) is { } message)
+        {
+            if (message.TryGetProperty("method", out var method) &&
+                method.GetString() == "textDocument/publishDiagnostics")
+            {
+                publication = message.Clone();
+            }
+        }
+
+        Assert.True(publication.HasValue);
+        var diagnostics = publication.Value.GetProperty("params").GetProperty("diagnostics").EnumerateArray().ToArray();
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.TryGetProperty("severity", out var severity) && severity.GetInt32() == 1);
+        Assert.DoesNotContain(diagnostics, diagnostic =>
+            diagnostic.GetProperty("message").GetString()?.Contains("Duplicate instance declaration", StringComparison.Ordinal) == true ||
+            diagnostic.GetProperty("message").GetString()?.Contains("reserved for toolchain-owned source", StringComparison.Ordinal) == true);
+    }
+
     [Fact]
     public async Task RunAsync_DiagnosticsAndHoverSameVersion_ShareSnapshotCompile()
     {
@@ -669,4 +726,58 @@ version = "0.8.0-alpha.1"
           }
         }
         """);
+
+    private sealed class PublicationGatedInputStream(
+        byte[] buffer,
+        long gatePosition,
+        Task publication) : MemoryStream(buffer)
+    {
+        private bool _gatePassed;
+
+        public override int ReadByte()
+        {
+            if (!_gatePassed && Position >= gatePosition)
+            {
+                if (!publication.Wait(TimeSpan.FromSeconds(30)))
+                {
+                    throw new TimeoutException("LSP diagnostics were not published before shutdown");
+                }
+                _gatePassed = true;
+            }
+
+            return base.ReadByte();
+        }
+    }
+
+    private sealed class PublicationSignalingStream(
+        TaskCompletionSource<bool> published) : MemoryStream
+    {
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            await base.WriteAsync(buffer, cancellationToken);
+            SignalWhenDiagnosticsArePublished(buffer.Span);
+        }
+
+        public override async Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            await base.WriteAsync(buffer, offset, count, cancellationToken);
+            SignalWhenDiagnosticsArePublished(buffer.AsSpan(offset, count));
+        }
+
+        private void SignalWhenDiagnosticsArePublished(ReadOnlySpan<byte> buffer)
+        {
+            if (Encoding.UTF8.GetString(buffer).Contains(
+                    "textDocument/publishDiagnostics",
+                    StringComparison.Ordinal))
+            {
+                published.TrySetResult(true);
+            }
+        }
+    }
 }

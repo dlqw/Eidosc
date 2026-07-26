@@ -127,6 +127,12 @@ public sealed class EffectAuthorizationChecker
     private void VisitFunction(FuncDef func)
     {
         var declaredCapabilities = ResolveDeclaredFunctionCapabilities(func);
+        if (_functionSummaries.TryGetValue(func, out var functionSummary) &&
+            functionSummary.DeclaredUpperBound.IsPure)
+        {
+            declaredCapabilities = declaredCapabilities.Union(functionSummary.InferredEffects);
+        }
+
         if (func.IsComptime)
         {
             var comptimeCapabilities = declaredCapabilities;
@@ -613,25 +619,6 @@ public sealed class EffectAuthorizationChecker
 
     private EffectRow ResolveDeclaredFunctionCapabilities(FuncDef func)
     {
-        if (func.InferredType is Type inferredType)
-        {
-            var inferredCapabilities = ExtractFunctionEffects(inferredType);
-            if (!inferredCapabilities.IsPure)
-            {
-                var expanded = ExpandEffectRow(inferredCapabilities);
-
-                // If the declared ability set is polymorphic (e.g., {T} where T: Emitter),
-                // resolve the type parameter constraints into concrete abilities.
-                // The function body can use any ability that satisfies the constraint.
-                if (expanded.IsPolymorphic)
-                {
-                    return ResolvePolymorphicConstraints(func, expanded);
-                }
-
-                return expanded;
-            }
-        }
-
         var declared = EffectRow.Pure;
 
         foreach (var requirement in func.RequiredAbilities)
@@ -698,12 +685,12 @@ public sealed class EffectAuthorizationChecker
         }
 
         var calleeSymbolId = ResolveCalleeSymbolId(calleeExpr);
-        if (!calleeSymbolId.IsValid)
+        if (calleeSymbolId.IsValid)
         {
-            return EffectRow.Pure;
+            return ResolveFunctionRequiredAbilities(calleeSymbolId, inferredCallRequirements: null);
         }
 
-        return ResolveFunctionRequiredAbilities(calleeSymbolId, inferredCallRequirements: null);
+        return EffectRow.Pure;
     }
 
     private EffectRow ResolveInfixCallRequiredAbilities(InfixCallExpr infixCall)
@@ -758,9 +745,12 @@ public sealed class EffectAuthorizationChecker
         if (_functionDefinitionsBySymbol.TryGetValue(calleeSymbolId, out var calleeDef) &&
             _functionSummaries.TryGetValue(calleeDef, out var summary))
         {
+            var effectiveEffects = summary.DeclaredUpperBound.IsPure
+                ? summary.InferredEffects
+                : summary.DeclaredUpperBound;
             var expanded = inferredCallRequirements == null
-                ? ExpandEffectRow(summary.DeclaredUpperBound)
-                : ExpandEffectRow(summary.DeclaredUpperBound.Union(inferredCallRequirements));
+                ? ExpandEffectRow(effectiveEffects)
+                : ExpandEffectRow(effectiveEffects.Union(inferredCallRequirements));
 
             if (expanded.IsPolymorphic)
             {
