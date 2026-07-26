@@ -10,7 +10,7 @@ namespace Eidosc.Tests.Unit.Types;
 public partial class EffectAuthorizationCheckerTests
 {
     [Fact]
-    public void CompilationPipeline_EffectOperationCallWithoutCapability_ReportsE3003()
+    public void CompilationPipeline_EffectOperationCallWithoutNeed_InfersCapability()
     {
         const string source = """
 Emitter :: effect;
@@ -29,7 +29,8 @@ main :: Unit -> Unit
         var result = RunPipeline(source, "ability_auth_basic.eidos");
 
         Assert.Equal(CompilationPhase.Effects, result.CompletedPhase);
-        Assert.Contains(
+        Assert.True(result.Success);
+        Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E3003");
     }
@@ -116,7 +117,7 @@ main :: Unit -> RawPtr need ffi
     }
 
     [Fact]
-    public void CompilationPipeline_NameFirstFfiCallInsideEntryFunctionWithoutNeed_ReportsE3003()
+    public void CompilationPipeline_NameFirstFfiCallInsideEntryFunctionWithoutNeed_InfersFfi()
     {
         const string source = """
  @[extern(c, name: "malloc")]
@@ -134,15 +135,10 @@ main :: Unit -> RawPtr
             languageVersion: EidosLanguageVersions.Current);
 
         Assert.Equal(CompilationPhase.Effects, result.CompletedPhase);
-        var diagnostic = Assert.Single(
+        Assert.True(result.Success);
+        Assert.DoesNotContain(
             result.Diagnostics,
             item => item.Level == DiagnosticLevel.Error && item.Code == "E3003");
-        Assert.Contains("caller: main", diagnostic.Notes, StringComparer.Ordinal);
-        Assert.Contains("callee: malloc", diagnostic.Notes, StringComparer.Ordinal);
-        Assert.Contains(
-            diagnostic.Notes,
-            note => note.StartsWith("missing:", StringComparison.Ordinal) &&
-                    note.Contains("ffi", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -242,7 +238,7 @@ read :: Ref[Range] -> Int
     }
 
     [Fact]
-    public void CompilationPipeline_FunctionDeclaredWithBraceEffectRow_RequiresAllDeclaredCapabilities()
+    public void CompilationPipeline_CallerWithoutNeed_InfersAllCalleeCapabilities()
     {
         const string source = """
 Emitter :: effect;
@@ -276,14 +272,10 @@ main :: Unit -> Unit
         var result = RunPipeline(source, "ability_auth_declared_brace_ability_set.eidos");
 
         Assert.Equal(CompilationPhase.Effects, result.CompletedPhase);
-        var diagnostic = Assert.Single(
+        Assert.True(result.Success);
+        Assert.DoesNotContain(
             result.Diagnostics,
             item => item.Level == DiagnosticLevel.Error && item.Code == "E3003");
-        Assert.Contains(
-            diagnostic.Notes,
-            note => note.StartsWith("required:", StringComparison.Ordinal) &&
-                    note.Contains("Emitter", StringComparison.Ordinal) &&
-                    note.Contains("Logger", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -673,7 +665,7 @@ main :: Unit -> Int need Io.Writer
     }
 
     [Fact]
-    public void CompilationPipeline_ImportedQualifiedEffectFunctionCallWithoutCapability_ReportsStructuredE3003()
+    public void CompilationPipeline_ImportedQualifiedEffectFunctionCallWithoutNeed_InfersCapability()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_ability_auth_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -714,20 +706,10 @@ main :: Unit -> Unit
             var result = RunPipeline(entrySource, entryFile);
 
             Assert.Equal(CompilationPhase.Effects, result.CompletedPhase);
-            var diagnostic = Assert.Single(
+            Assert.True(result.Success);
+            Assert.DoesNotContain(
                 result.Diagnostics,
                 item => item.Level == DiagnosticLevel.Error && item.Code == "E3003");
-            Assert.Contains("caller: main", diagnostic.Notes, StringComparer.Ordinal);
-            Assert.Contains("callee: helper", diagnostic.Notes, StringComparer.Ordinal);
-            Assert.Contains(
-                diagnostic.Notes,
-                note => note.StartsWith("required:", StringComparison.Ordinal) &&
-                        note.Contains("Writer", StringComparison.Ordinal));
-            Assert.Contains(
-                diagnostic.Notes,
-                note => note.StartsWith("missing:", StringComparison.Ordinal) &&
-                        note.Contains("Writer", StringComparison.Ordinal));
-            Assert.Contains(diagnostic.Notes, note => note.StartsWith("available:", StringComparison.Ordinal));
         }
         finally
         {

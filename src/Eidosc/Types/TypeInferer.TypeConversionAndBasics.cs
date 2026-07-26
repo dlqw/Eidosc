@@ -888,6 +888,11 @@ public sealed partial class TypeInferer
 
     private bool ValidateReferenceBorrowOperand(UnaryExpr unary)
     {
+        if (unary.IsImplicitCallAdjustment)
+        {
+            return true;
+        }
+
         if (unary.Operand == null ||
             unary.Operator is not UnaryOp.AddressOf and not UnaryOp.Ref and not UnaryOp.MRef)
         {

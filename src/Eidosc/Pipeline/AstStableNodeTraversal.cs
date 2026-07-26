@@ -125,7 +125,7 @@ internal static class AstStableNodeTraversal
             var value = property.GetValue(node);
             if (value is EidosAstNode child)
             {
-                yield return child;
+                yield return NormalizeStructuralChild(child);
                 continue;
             }
 
@@ -138,10 +138,24 @@ internal static class AstStableNodeTraversal
             {
                 if (item is EidosAstNode itemNode)
                 {
-                    yield return itemNode;
+                    yield return NormalizeStructuralChild(itemNode);
                 }
             }
         }
+    }
+
+    private static EidosAstNode NormalizeStructuralChild(EidosAstNode node)
+    {
+        while (node is UnaryExpr
+               {
+                   IsImplicitCallAdjustment: true,
+                   Operand: EidosAstNode operand
+               })
+        {
+            node = operand;
+        }
+
+        return node;
     }
 
     private static void Visit(

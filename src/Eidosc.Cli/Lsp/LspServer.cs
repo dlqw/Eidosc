@@ -26,14 +26,24 @@ public sealed class LspServer : IDisposable
     private sealed class SnapshotDerivedCache
     {
         private readonly object _lock = new();
-        private List<LspDiagnostic>? _diagnostics;
+        private readonly Dictionary<string, List<LspDiagnostic>> _diagnostics =
+            new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         private readonly Dictionary<string, LspSemanticTokens> _semanticTokens = new(StringComparer.Ordinal);
 
-        public List<LspDiagnostic> GetDiagnostics(IdeSemanticSnapshot snapshot)
+        public List<LspDiagnostic> GetDiagnostics(
+            IdeSemanticSnapshot snapshot,
+            string documentFilePath)
         {
             lock (_lock)
             {
-                return _diagnostics ??= LspSemanticMapper.MapDiagnostics(snapshot);
+                if (_diagnostics.TryGetValue(documentFilePath, out var cached))
+                {
+                    return cached;
+                }
+
+                var mapped = LspSemanticMapper.MapDiagnostics(snapshot, documentFilePath);
+                _diagnostics[documentFilePath] = mapped;
+                return mapped;
             }
         }
 
@@ -785,7 +795,11 @@ public sealed class LspServer : IDisposable
             return;
         }
 
-        await PublishDiagnosticsAsync(uri, snapshotEntry.DerivedCache.GetDiagnostics(snapshotEntry.Snapshot), version, ct);
+        await PublishDiagnosticsAsync(
+            uri,
+            snapshotEntry.DerivedCache.GetDiagnostics(snapshotEntry.Snapshot, filePath),
+            version,
+            ct);
     }
 
     private DependencyState CreateDependencyState(string uri)

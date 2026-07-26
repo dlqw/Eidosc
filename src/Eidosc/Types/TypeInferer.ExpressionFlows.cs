@@ -1106,6 +1106,7 @@ public sealed partial class TypeInferer
                     syntheticBorrow.SetOperator(UnaryOp.Ref);
                     syntheticBorrow.SetOperand(originalArgument);
                     syntheticBorrow.SetSpan(originalArgument.Span);
+                    syntheticBorrow.MarkImplicitCallAdjustment();
                     syntheticBorrow.InferredType = borrowedType;
 
                     if (i == 0)
@@ -1135,6 +1136,7 @@ public sealed partial class TypeInferer
                         syntheticDeref.SetOperator(UnaryOp.Deref);
                         syntheticDeref.SetOperand(originalArgument);
                         syntheticDeref.SetSpan(originalArgument.Span);
+                        syntheticDeref.MarkImplicitCallAdjustment();
                         syntheticDeref.InferredType = innerType;
 
                         if (i == 0)

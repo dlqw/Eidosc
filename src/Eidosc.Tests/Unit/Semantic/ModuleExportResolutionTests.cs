@@ -354,11 +354,11 @@ run :: entity -> entity
             ("Cap/Io.eidos", """
 Cap.Io :: module
 {
-    export writer :: effect;
+    export Writer :: effect;
 }
 """),
             ("main.eidos", """
-import Cap.Io.{writer as WriterCap}
+import Cap.Io.{Writer as WriterCap}
 
 run :: Unit -> Unit need WriterCap
 {
@@ -367,9 +367,8 @@ run :: Unit -> Unit need WriterCap
 """));
 
         Assert.True(result.Success, FormatDiagnostics(result));
-        var style = Assert.Single(result.Diagnostics, diagnostic =>
+        Assert.DoesNotContain(result.Diagnostics, diagnostic =>
             diagnostic.Code == "S1101" && diagnostic.Message.Contains("'WriterCap'", StringComparison.Ordinal));
-        Assert.Contains(style.Suggestions, suggestion => suggestion.Replacement == "writer_cap");
     }
 
     [Fact]

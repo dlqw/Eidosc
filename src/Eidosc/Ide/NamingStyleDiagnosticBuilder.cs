@@ -139,7 +139,7 @@ internal static class NamingStyleDiagnosticBuilder
                 category = "function or method";
                 return true;
             case EffectSymbol:
-                convention = NamingConvention.LowerSnakeCase;
+                convention = NamingConvention.UpperCamelCase;
                 category = "effect or capability";
                 return true;
             case TraitSymbol:

@@ -300,7 +300,7 @@ main :: Unit -> Unit need ffi
     }
 
     [Fact]
-    public void CompilationPipeline_IndexExpressionIndexEffectWithoutNeed_ReportsCapability()
+    public void CompilationPipeline_IndexExpressionIndexEffectWithoutNeed_InfersCapability()
     {
         const string source = """
 Emitter :: effect;
@@ -318,14 +318,14 @@ main :: Unit -> Int
 
         var result = RunPipeline(source, "ability_auth_index_expr_effect.eidos");
 
-        Assert.False(result.Success);
-        Assert.Contains(
+        Assert.True(result.Success);
+        Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E3003");
     }
 
     [Fact]
-    public void CompilationPipeline_InfixCallEffectfulCalleeWithoutNeed_ReportsCapability()
+    public void CompilationPipeline_InfixCallEffectfulCalleeWithoutNeed_InfersCapability()
     {
         const string source = """
 Emitter :: effect;
@@ -348,8 +348,8 @@ main :: Unit -> Int
 
         var result = RunPipeline(source, "ability_auth_infix_call_effect.eidos");
 
-        Assert.False(result.Success);
-        Assert.Contains(
+        Assert.True(result.Success);
+        Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E3003");
     }

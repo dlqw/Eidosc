@@ -124,7 +124,7 @@ main :: Unit -> Unit
     }
 
     [Fact]
-    public void NeedBound_MissingCallerEffectIsRejected()
+    public void NeedBound_OmittedCallerEffectIsInferred()
     {
         const string source = """
 IO :: effect;
@@ -142,7 +142,7 @@ caller :: Unit -> Unit
 
         var result = Run(source, CompilationPhase.Effects);
 
-        Assert.False(result.Success);
+        Assert.True(result.Success);
         Assert.Equal(CompilationPhase.Effects, result.CompletedPhase);
     }
 

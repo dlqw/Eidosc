@@ -276,6 +276,11 @@ public sealed partial class TypeInferer
             funcType = ApplyRequiredAbilitiesToFunction(
                 funcType,
                 ResolveRequiredAbilities(func.RequiredAbilities, typeVarEnv));
+            if (func.RequiredAbilities.Count == 0 &&
+                func.InferredEffects is { IsPure: false } inferredEffects)
+            {
+                funcType = ApplyRequiredAbilitiesToFunction(funcType, inferredEffects);
+            }
             RejectComptimeFunctionAbilities(func, funcType);
 
             if (func.HasImplicitUnitBody &&

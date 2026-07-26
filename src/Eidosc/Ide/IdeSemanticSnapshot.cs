@@ -40,6 +40,17 @@ public sealed class IdeSemanticSnapshot
     public List<IdeGeneratedDocumentEntry> GeneratedDocuments { get; init; } = [];
     public List<IdeBorrowCapabilityEntry> BorrowCapabilities { get; init; } = [];
     public List<IdeRecoveredNodeEntry> RecoveredNodes { get; init; } = [];
+    public List<IdeInferredEffectEntry> InferredEffects { get; init; } = [];
+}
+
+public sealed class IdeInferredEffectEntry
+{
+    public int SymbolId { get; init; }
+    public string FunctionName { get; init; } = "";
+    public string EffectText { get; init; } = "";
+    public string NeedText { get; init; } = "";
+    public bool IsExported { get; init; }
+    public IdeSpan InsertionSpan { get; init; } = IdeSpan.Empty;
 }
 
 public sealed class IdeSnapshotContract
@@ -439,6 +450,7 @@ public static partial class IdeSemanticSnapshotBuilder
             .Select(group => GeneratedDocumentRenderer.Create(group.ToArray(), generatedFunctionBodies))
             .ToList();
         var borrowCapabilities = BuildBorrowCapabilities(result.BorrowCheckResult);
+        var inferredEffects = BuildInferredEffects(result, coordinates);
 
         var snapshotConfidence = DetermineSnapshotConfidence(result);
         var snapshotContract = BuildSnapshotContract(
@@ -472,8 +484,72 @@ public static partial class IdeSemanticSnapshotBuilder
             Completions = completions,
             GeneratedDocuments = generatedDocuments,
             BorrowCapabilities = borrowCapabilities,
-            RecoveredNodes = recoveredNodes
+            RecoveredNodes = recoveredNodes,
+            InferredEffects = inferredEffects
         };
+    }
+
+    private static List<IdeInferredEffectEntry> BuildInferredEffects(
+        CompilationResult result,
+        IdeSourceCoordinateResolver coordinates)
+    {
+        if (result.Ast == null || result.FunctionEffectSummaries == null)
+        {
+            return [];
+        }
+
+        var entries = new List<IdeInferredEffectEntry>();
+        foreach (var function in AstStableNodeTraversal.Enumerate(result.Ast)
+                     .Select(static item => item.Node)
+                     .OfType<FuncDef>())
+        {
+            if (!function.SymbolId.IsValid ||
+                function.Body.Count == 0 ||
+                function.RequiredAbilities.Count > 0 ||
+                function.Signature.Count == 0 ||
+                !result.FunctionEffectSummaries.TryGetValue(function, out var summary) ||
+                !summary.DeclaredUpperBound.IsPure ||
+                summary.InferredEffects.IsPure ||
+                !IdeSpan.TryFrom(function.Signature[^1].Span, coordinates, out var signatureEnd))
+            {
+                continue;
+            }
+
+            var effectText = string.Join(", ", summary.InferredEffects.Effects
+                .Select(static effect => !string.IsNullOrWhiteSpace(effect.Name)
+                    ? effect.Name
+                    : effect.Symbol.IsValid
+                        ? $"#{effect.Symbol.Value}"
+                        : "<unknown>")
+                .Concat(summary.InferredEffects.Variables.Select(static variable => variable.Name))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal));
+            if (string.IsNullOrWhiteSpace(effectText))
+            {
+                continue;
+            }
+
+            entries.Add(new IdeInferredEffectEntry
+            {
+                SymbolId = function.SymbolId.Value,
+                FunctionName = function.Name,
+                EffectText = effectText,
+                NeedText = $" need {effectText}",
+                IsExported = function.IsExported,
+                InsertionSpan = new IdeSpan
+                {
+                    StartLine = signatureEnd.EndLine,
+                    StartCharacter = signatureEnd.EndCharacter,
+                    EndLine = signatureEnd.EndLine,
+                    EndCharacter = signatureEnd.EndCharacter,
+                    Start = signatureEnd.Start + signatureEnd.Length,
+                    Length = 0,
+                    FilePath = signatureEnd.FilePath
+                }
+            });
+        }
+
+        return entries;
     }
 
     private static IReadOnlyDictionary<int, string> BuildGeneratedFunctionBodies(CompilationResult result)
@@ -608,7 +684,8 @@ public static partial class IdeSemanticSnapshotBuilder
             nameof(IdeSemanticSnapshot.SnapshotConfidence),
             nameof(IdeSemanticSnapshot.SnapshotContract),
             nameof(IdeSemanticSnapshot.Diagnostics),
-            nameof(IdeSemanticSnapshot.Completions)
+            nameof(IdeSemanticSnapshot.Completions),
+            nameof(IdeSemanticSnapshot.InferredEffects)
         };
 
         if (hasLexicalTokens)

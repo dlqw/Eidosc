@@ -27,6 +27,12 @@ public sealed partial class CompilationPipeline
             return false;
         }
 
+        if (_moduleTypedArtifactRestorePlan.RestoreModules == 0)
+        {
+            SetProfilingCounter("Mir.moduleRestore.skippedWithoutReusableModules", 1);
+            return false;
+        }
+
         var payloadByModule = BuildMirPayloadLookup(previousPayloads);
         _moduleTypedArtifactRestorePayload = ProjectModuleArtifactRestorePayloadSnapshot.LoadTypesStatePayload(
             _moduleTypedArtifactRestorePlan,
@@ -41,6 +47,11 @@ public sealed partial class CompilationPipeline
         _moduleTypedArtifactRestorePlan = GateModuleArtifactRestorePlanWithDependencySignatures(
             _moduleTypedArtifactRestorePlan,
             ProjectModuleDependencySignatureRequirement.SemanticTyped);
+        if (_moduleTypedArtifactRestorePlan.RestoreModules == 0)
+        {
+            SetProfilingCounter("Mir.moduleRestore.skippedWithoutReusableModules", 1);
+            return false;
+        }
 
         var restoredPayloads = new ConcurrentDictionary<string, ModuleMirStateArtifactPayload>(StringComparer.Ordinal);
         var compiledPayloads = new ConcurrentDictionary<string, ModuleMirStateArtifactPayload>(StringComparer.Ordinal);

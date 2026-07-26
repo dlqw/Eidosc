@@ -8,6 +8,75 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public sealed class LiveStateStableIdentityTests
 {
     [Fact]
+    public void ColdModuleCache_MissingPayloadsUsesSingleFreshNamerPass()
+    {
+        const string source = """
+main :: Unit -> Int
+{
+    _ => 0
+}
+""";
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "cold_module_cache.eidos",
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Namer,
+            NoImplicitPrelude = true,
+            EnableDetailedProfiling = true,
+            EnableIncrementalCompilation = true,
+            UseColors = false,
+            ModuleArtifactAvailability = static (_, _, _, _) => false,
+            ModuleNamerStatePayloadLoader = static (_, _, _, _) => null
+        }).Run();
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.Equal(
+            1,
+            result.ProfilingCounters.GetValueOrDefault(
+                "Namer.moduleRestore.skippedWithoutReusableModules"));
+        Assert.Equal(0, result.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.fallbackFullResolve"));
+    }
+
+    [Fact]
+    public void WarmModuleReadiness_MissingPayloadsSkipsPerModuleCompilation()
+    {
+        const string source = """
+main :: Unit -> Int
+{
+    _ => 0
+}
+""";
+        var first = RunToNamer(source);
+        Assert.True(first.Success, FormatDiagnostics(first));
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "missing_warm_module_payload.eidos",
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Namer,
+            NoImplicitPrelude = true,
+            EnableDetailedProfiling = true,
+            EnableIncrementalCompilation = true,
+            UseColors = false,
+            PreviousModuleSemanticSignatureSnapshot = first.ModuleSemanticSignatureSnapshot,
+            PreviousModuleDependencySignatureSnapshot = first.ModuleDependencySignatureSnapshot,
+            ModuleArtifactAvailability = static (_, _, _, _) => true,
+            ModuleNamerStatePayloadLoader = static (_, _, _, _) => null
+        }).Run();
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.Equal(
+            1,
+            result.ProfilingCounters.GetValueOrDefault(
+                "Namer.moduleRestore.skippedWithoutReusableModules"));
+        Assert.Equal(0, result.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.fallbackFullResolve"));
+        Assert.Equal(0, result.ProfilingCounters.GetValueOrDefault(
+            "Build.moduleStage.Namer.realTaskExecution"));
+    }
+
+    [Fact]
     public void LiveStateIdRemapper_PreservesNoneAndRemapsZeroIds()
     {
         var plan = new LiveStateRemapPlan(
@@ -731,23 +800,22 @@ Helper :: module {
 
         Assert.True(second.Success, FormatDiagnostics(second));
         Assert.NotNull(second.SymbolTable);
-        Assert.True(
-            second.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.applied") == 1,
-            FormatCounters(second));
-        Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.fallbackFullResolve"));
         Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault(
+            "Namer.moduleRestore.skippedWithoutReusableModules"));
+        Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault("Namer.moduleRestore.fallbackFullResolve"));
+        Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault(
             "Build.moduleArtifactRestoreExecution.realTaskExecution"));
         Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault(
             "Build.moduleArtifactRestoreExecution.restoredModules"));
         Assert.True(
             second.ProfilingCounters.GetValueOrDefault("Build.moduleArtifactRestoreExecution.compiledModules") > 0,
             FormatCounters(second));
-        Assert.Equal(1, second.ProfilingCounters.GetValueOrDefault(
+        Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault(
             "Build.moduleStage.Namer.realTaskExecution"));
         Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault(
             "Build.moduleStage.Namer.restoredModules"));
-        Assert.True(second.ProfilingCounters.GetValueOrDefault(
-            "Build.moduleStage.Namer.compiledModules") > 0);
+        Assert.Equal(0, second.ProfilingCounters.GetValueOrDefault(
+            "Build.moduleStage.Namer.compiledModules"));
         var cold = RunToNamer(changedSource);
         Assert.True(cold.Success, FormatDiagnostics(cold));
         Assert.NotNull(cold.SymbolTable);

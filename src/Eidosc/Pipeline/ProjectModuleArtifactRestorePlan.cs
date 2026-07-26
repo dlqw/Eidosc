@@ -129,7 +129,7 @@ public sealed record ProjectModuleArtifactRestorePlan(
         {
             return new ProjectModuleArtifactRestoreItem(
                 module.ModuleKey,
-                ProjectModuleArtifactRestoreAction.Blocked,
+                ProjectModuleArtifactRestoreAction.Compile,
                 SemanticReady: false,
                 TypedSemanticReady: false,
                 MirReady: false);
@@ -148,6 +148,7 @@ public sealed record ProjectModuleArtifactRestorePlan(
             ProjectModuleExecutionAction.ReadyArtifact => ProjectModuleArtifactRestoreAction.ReadyArtifact,
             ProjectModuleExecutionAction.Restore when IsReady(readiness, requirement) =>
                 ProjectModuleArtifactRestoreAction.Restore,
+            ProjectModuleExecutionAction.Restore => ProjectModuleArtifactRestoreAction.Compile,
             _ => ProjectModuleArtifactRestoreAction.Blocked
         };
 

@@ -1,3 +1,4 @@
+using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
 using Eidosc.Pipeline;
@@ -27,7 +28,7 @@ caller :: Unit -> Int
 
         var result = Run(source);
 
-        AssertMissingIo(result);
+        AssertInferredIo(result);
         var call = Assert.Single(EnumerateNodes(result).OfType<CallExpr>());
         AssertIo(call.InferredEffects);
     }
@@ -56,7 +57,7 @@ caller :: Int -> Int
 
         var result = Run(source);
 
-        AssertMissingIo(result);
+        AssertInferredIo(result);
         var call = Assert.Single(EnumerateNodes(result).OfType<CallExpr>());
         AssertIo(call.InferredEffects);
     }
@@ -80,7 +81,7 @@ caller :: Int -> Int
 
         var result = Run(source);
 
-        AssertMissingIo(result);
+        AssertInferredIo(result);
         var call = Assert.Single(EnumerateNodes(result).OfType<MethodCallExpr>());
         AssertIo(call.InferredEffects);
     }
@@ -104,7 +105,7 @@ caller :: Int -> Int
 
         var result = Run(source);
 
-        AssertMissingIo(result);
+        AssertInferredIo(result);
         var call = Assert.Single(EnumerateNodes(result).OfType<InfixCallExpr>());
         AssertIo(call.InferredEffects);
     }
@@ -132,6 +133,34 @@ partial :: join(1);
         Assert.True(resultType.Effects.ContainsName("io"));
     }
 
+    [Fact]
+    public void Infer_OmittedEffectWithImplicitLiteralBorrow_IsStableAcrossEffectTypePass()
+    {
+        const string source = """
+Emitter :: effect;
+
+emit :: Ref[String] -> Unit need Emitter
+{
+    _ => ()
+}
+
+caller :: Unit -> Unit
+{
+    _ => emit("literal")
+}
+""";
+
+        var result = Run(source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Code == "E4000");
+        var call = Assert.Single(EnumerateNodes(result).OfType<CallExpr>());
+        var borrow = Assert.IsType<UnaryExpr>(Assert.Single(call.PositionalArgs));
+        Assert.Equal(UnaryOp.Ref, borrow.Operator);
+        Assert.True(borrow.IsImplicitCallAdjustment);
+        Assert.IsType<LiteralExpr>(borrow.Operand);
+    }
+
     private static CompilationResult Run(string source) =>
         new CompilationPipeline(source, new CompilationOptions
         {
@@ -145,10 +174,10 @@ partial :: join(1);
         AstStableNodeTraversal.Enumerate(Assert.IsType<ModuleDecl>(result.Ast))
             .Select(static entry => entry.Node);
 
-    private static void AssertMissingIo(CompilationResult result)
+    private static void AssertInferredIo(CompilationResult result)
     {
-        Assert.False(result.Success);
-        Assert.Contains(result.Diagnostics, static diagnostic => diagnostic.Code == "E3003");
+        Assert.True(result.Success, FormatDiagnostics(result));
+        Assert.DoesNotContain(result.Diagnostics, static diagnostic => diagnostic.Code == "E3003");
     }
 
     private static void AssertIo(EffectRow? effects)
