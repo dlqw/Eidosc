@@ -248,7 +248,10 @@ internal static class PrecompiledModuleCache
 
             if (ch == '{' && IsFunctionBodyBrace(source, index))
             {
-                builder.Append(';');
+                // Keep a syntactic branch so signature-only imports preserve the callable
+                // shape of source-defined Unit functions. Namer/types deliberately skip this
+                // trusted placeholder body, so its value is never type-checked or executed.
+                builder.Append("{ _ => () }");
                 functionBodyReplacementCount++;
                 index = SkipBalancedBraceBlock(source, index);
                 continue;
@@ -317,6 +320,14 @@ internal static class PrecompiledModuleCache
     {
         if (!trimmedLine.StartsWith("import ".AsSpan(), StringComparison.Ordinal) &&
             !trimmedLine.StartsWith("import\t".AsSpan(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // A module import contributes the module identity to the semantic graph even when
+        // its alias is not mentioned textually. Generated derives and meta expansion may
+        // qualify helpers through that identity after signature stripping.
+        if (trimmedLine.IndexOf('{') < 0)
         {
             return false;
         }

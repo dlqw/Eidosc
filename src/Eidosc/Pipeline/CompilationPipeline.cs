@@ -213,12 +213,12 @@ public sealed partial class CompilationPipeline
                 }
 
                 completedPhase = step.Phase;
-                step.AfterSuccess?.Invoke();
-
                 if (ShouldStop(step.Phase))
                 {
                     break;
                 }
+
+                step.AfterSuccess?.Invoke();
             }
 
             totalSw.Stop();

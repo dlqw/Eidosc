@@ -60,7 +60,7 @@ join_closure_raw_runtime[E: effects] :: RawPtr -> (Unit -> Unit need E) -> Unit 
 /// Create an empty runtime-backed task group.
 export new :: Unit -> TaskGroup need ffi
 {
-    _ => TaskGroup{handle: TaskGroup.new_runtime(())}
+    _ => TaskGroup{handle: TaskGroup.new_runtime()}
 }
 
 /// Request cancellation for a runtime-backed task group.

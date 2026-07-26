@@ -45,13 +45,13 @@ try_get_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 /// Create a runtime-backed RawPtr payload Promise.
 export new[A] :: Unit -> Promise[A] need ffi
 {
-    _ => Promise{promise: Promise.new_runtime(())}
+    _ => Promise{promise: Promise.new_runtime()}
 }
 
 /// Create a runtime-backed promise that owns one boxed Eidos value.
 export new_value[A] :: Unit -> Promise[A] need ffi
 {
-    _ => Promise{promise: Promise.new_value_runtime(())}
+    _ => Promise{promise: Promise.new_value_runtime()}
 }
 
 /// Fulfill the promise with a non-null raw pointer. Returns false after the first fulfillment.

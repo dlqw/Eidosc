@@ -56,6 +56,32 @@ sample :: module {
     }
 
     [Fact]
+    public void SignatureSource_KeepsModuleImportForGeneratedQualifiedReferences()
+    {
+        const string source = "sample :: module { import TraitInvoke value :: Int -> Int { value => value } }";
+
+        var result = PrecompiledModuleCache.GetOrCreateSignatureSource(
+            $"module-signature-{Guid.NewGuid():N}",
+            source);
+
+        Assert.Contains("import TraitInvoke", result.Source, StringComparison.Ordinal);
+        Assert.Equal(0, result.ImportRemovalCount);
+    }
+
+    [Fact]
+    public void SignatureSource_FunctionPlaceholderPreservesSourceDefinedCallableShape()
+    {
+        const string source = "sample :: module { export empty :: Unit -> Int { _ => 0 } }";
+
+        var result = PrecompiledModuleCache.GetOrCreateSignatureSource(
+            $"unit-callable-signature-{Guid.NewGuid():N}",
+            source);
+
+        Assert.Contains("{ _ => () }", result.Source, StringComparison.Ordinal);
+        Assert.DoesNotContain("empty :: Unit -> Int;", result.Source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AuditEmbeddedStdlib_BodylessRuntimeFunctionsUseImplementationClauses()
     {
         var issues = PrecompiledStdlibDeclarationAuditor.AuditEmbeddedStdlib();

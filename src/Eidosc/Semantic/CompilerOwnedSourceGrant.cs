@@ -40,6 +40,11 @@ internal sealed class CompilerOwnedSourceGrant
                string.Equals(sourceText, registeredSource, StringComparison.Ordinal);
     }
 
+    internal static bool IsTrustedStdlibSourcePath(string? sourcePath)
+    {
+        return PrecompiledModuleRegistry.IsTrustedStdlibSourcePath(sourcePath);
+    }
+
     private static string Normalize(string path)
     {
         if (path.StartsWith('<') && path.EndsWith('>'))

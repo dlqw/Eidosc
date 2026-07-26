@@ -800,20 +800,7 @@ public sealed partial class QueryDrivenPipeline
 
         if (!_options.NoImplicitPrelude)
         {
-            var isStdlib = IsPrecompiledStdSourcePath(entryFilePath) ||
-                           string.Equals(ast.PackageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal) ||
-                           string.Equals(ast.PackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal);
-            if (!isStdlib &&
-                !string.Equals(ast.PackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal) &&
-                !ast.Declarations.OfType<ImportDecl>().Any(static import => import.IsCompilerInjectedPrelude))
-            {
-                var import = new ImportDecl();
-                import.SetPackageAlias(PreludeCoreImageRegistry.PackageAlias);
-                import.SetModulePath(["Prelude"]);
-                import.SetImportKind(ImportKind.Wildcard);
-                import.SetCompilerInjectedPrelude(true);
-                ast.Declarations.Insert(0, import);
-            }
+            InjectImplicitPreludeImports(ast);
         }
 
         EnqueueImports(ast, pendingImports, null, null);
@@ -863,7 +850,7 @@ public sealed partial class QueryDrivenPipeline
                 if (!loadedFiles.Add(importFile)) continue;
                 parseSuccess = TryParseModuleFile(importFile, out importedRoot, out parseDiagnostics);
             }
-            else if ((IsExplicitStdDependency(packageAlias) ||
+            else if ((CanResolvePrecompiledStdPackage(packageAlias) ||
                       string.Equals(effectivePackageAlias, PreludeCoreImageRegistry.PackageAlias, StringComparison.Ordinal)) &&
                      PrecompiledModuleCache.TryGetSource(
                          effectiveModulePath,
@@ -914,6 +901,7 @@ public sealed partial class QueryDrivenPipeline
                 importedRoot!,
                 effectivePackageAlias,
                 BuildPackageInstanceKey(effectivePackageAlias, resolved));
+            InjectImplicitPreludeImports(importedRoot!);
 
             var hasAddedModule = false;
             foreach (var moduleDecl in importedRoot!.Declarations.OfType<ModuleDecl>())
@@ -928,6 +916,33 @@ public sealed partial class QueryDrivenPipeline
 
             if (!hasAddedModule)
                 EnqueueImports(importedRoot, pendingImports, effectivePackageAlias, importKey);
+        }
+    }
+
+    private void InjectImplicitPreludeImports(ModuleDecl root)
+    {
+        if (_options.NoImplicitPrelude)
+        {
+            return;
+        }
+
+        foreach (var module in EnumerateModuleTree(root))
+        {
+            if (string.Equals(
+                    module.PackageAlias,
+                    PreludeCoreImageRegistry.PackageAlias,
+                    StringComparison.Ordinal) ||
+                module.Declarations.OfType<ImportDecl>().Any(static import => import.IsCompilerInjectedPrelude))
+            {
+                continue;
+            }
+
+            var import = new ImportDecl();
+            import.SetPackageAlias(PreludeCoreImageRegistry.PackageAlias);
+            import.SetModulePath(["Prelude"]);
+            import.SetImportKind(ImportKind.Wildcard);
+            import.SetCompilerInjectedPrelude(true);
+            module.Declarations.Insert(0, import);
         }
     }
 
@@ -1198,15 +1213,16 @@ public sealed partial class QueryDrivenPipeline
         return string.Equals(packageAlias, WellKnownStrings.Std.Module, StringComparison.Ordinal);
     }
 
-    private bool IsExplicitStdDependency(string? packageAlias) =>
+    private bool CanResolvePrecompiledStdPackage(string? packageAlias) =>
         IsStdPackageAlias(packageAlias) &&
-        _options.PackageImportRoots.ContainsKey(WellKnownStrings.Std.Module);
+        (_options.PackageImportRoots.ContainsKey(WellKnownStrings.Std.Module) ||
+         IsPrecompiledStdSourcePath(_options.InputFile));
 
     private string? ResolveEffectivePrecompiledPackageAlias(
         string? packageAlias,
         IReadOnlyList<string> modulePath)
     {
-        return IsExplicitStdDependency(packageAlias) &&
+        return CanResolvePrecompiledStdPackage(packageAlias) &&
                modulePath.Count == 1 &&
                PreludeCoreImageRegistry.IsCoreModuleName(modulePath[0])
             ? PreludeCoreImageRegistry.PackageAlias

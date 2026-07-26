@@ -96,6 +96,38 @@ public static class PrecompiledModuleRegistry
         return TryGetStdlibRelativePath(path, out _);
     }
 
+    internal static bool IsTrustedStdlibSourcePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) ||
+            !TryGetModulePathFromSourcePath(path, out var modulePath) ||
+            !ModuleSources.Value.ContainsKey(modulePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            foreach (var root in EnumerateTrustedStdlibRoots())
+            {
+                var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+                var relative = Path.GetRelativePath(normalizedRoot, fullPath);
+                if (!Path.IsPathRooted(relative) &&
+                    relative != ".." &&
+                    !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) &&
+                    !relative.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+        }
+
+        return false;
+    }
+
     public static bool TryGetModulePathFromSourcePath(string? path, out string modulePath)
     {
         modulePath = string.Empty;
@@ -506,6 +538,50 @@ public static class PrecompiledModuleRegistry
     {
         yield return AppContext.BaseDirectory;
         yield return Directory.GetCurrentDirectory();
+    }
+
+    private static IEnumerable<string> EnumerateTrustedStdlibRoots()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var configured = Environment.GetEnvironmentVariable("EIDOS_STDLIB_PATH");
+        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
+        {
+            var configuredRoot = Path.GetFullPath(configured);
+            if (seen.Add(configuredRoot))
+            {
+                yield return configuredRoot;
+            }
+        }
+
+        var distributionRoot = Path.GetFullPath(StdlibRoot.Value);
+        if (seen.Add(distributionRoot))
+        {
+            yield return distributionRoot;
+        }
+
+        var current = Path.GetFullPath(AppContext.BaseDirectory);
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            foreach (var candidate in GetPrecompiledRootCandidates(current))
+            {
+                if (Directory.Exists(candidate))
+                {
+                    var root = Path.GetFullPath(candidate);
+                    if (seen.Add(root))
+                    {
+                        yield return root;
+                    }
+                }
+            }
+
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrWhiteSpace(parent) || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            current = parent;
+        }
     }
 
     private static ModuleExportAnalysisResult AnalyzeSource(

@@ -13,7 +13,7 @@ CommandLine :: module {
 
     export argc :: Unit -> Int need io
     {
-        _ => command_line_argc(())
+        _ => command_line_argc()
     }
 
     export arg_or :: Int -> String -> String need io

@@ -291,16 +291,41 @@ public sealed partial class NameResolver
         return instance;
     }
 
-    private static string CreateDerivedInstanceName(
+    private string CreateDerivedInstanceName(
         string traitName,
         string typeName,
         IReadOnlyList<string>? targetPath)
     {
-        var path = targetPath is { Count: > 0 } ? targetPath : [typeName];
-        return $"Derived{traitName}{string.Concat(path.Select(static segment =>
-            string.IsNullOrEmpty(segment)
-                ? string.Empty
-                : char.ToUpperInvariant(segment[0]) + segment[1..]))}";
+        var targetSegments = targetPath is { Count: > 0 } ? targetPath : [typeName];
+        var ownerSegments = new List<string>();
+        if (_symbolTable.Modules.GetModule(_currentModule) is { } module)
+        {
+            if (!string.IsNullOrWhiteSpace(module.PackageAlias))
+            {
+                ownerSegments.Add(module.PackageAlias);
+            }
+
+            ownerSegments.AddRange(module.Path);
+        }
+
+        var identity = ownerSegments
+            .Concat(targetSegments)
+            .Where(static segment => !string.IsNullOrWhiteSpace(segment))
+            .Select(SanitizeDerivedInstanceNameSegment);
+        return $"Derived{traitName}_{string.Join("_", identity)}";
+    }
+
+    private static string SanitizeDerivedInstanceNameSegment(string segment)
+    {
+        var builder = new StringBuilder(segment.Length);
+        foreach (var character in segment)
+        {
+            builder.Append(char.IsLetterOrDigit(character) || character == '_'
+                ? character
+                : '_');
+        }
+
+        return builder.ToString();
     }
 
     private static string? GetDeriveRequiredConstraint(string traitName)

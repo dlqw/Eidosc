@@ -215,7 +215,7 @@ main :: Unit -> Int
         Assert.True(
             result.ProfilingCounters.TryGetValue("Query.precompiledSignatureSource.removedNonExportImports", out var removedNonExportImports),
             FormatCounters(result));
-        Assert.True(removedNonExportImports > 0, FormatCounters(result));
+        Assert.Equal(0, removedNonExportImports);
     }
 
     [Fact]
