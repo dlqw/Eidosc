@@ -97,7 +97,7 @@ cleaned :: wrap(normalize(trim(input)));
     public void Run_StyleSuggestionsEnabled_DoesNotAppendBacktickInfixRewriteForGroupedCall()
     {
         const string source = """
-combine :: Int -> Int -> Int { (x, y) => x + y }
+combine :: Int -> Int -> Int { x, y => x + y }
 
 a :: 1;
 b :: 2;
@@ -137,7 +137,7 @@ use_local :: Int -> Int {
     public void Run_StyleSuggestionsEnabled_IgnoresImportedStdlibAstSpans()
     {
         const string source = """
-append :: Int -> Int -> Int { (x, y) => x + y }
+append :: Int -> Int -> Int { x, y => x + y }
 
 a :: 1;
 b :: 2;
@@ -162,7 +162,7 @@ combined :: append(a)(b);
     private static CompilationResult RunStylePipeline(bool emitStyleSuggestions)
     {
         const string source = """
-append :: Int -> Int -> Int { (x, y) => x + y }
+append :: Int -> Int -> Int { x, y => x + y }
 
 a :: 1;
 b :: 2;

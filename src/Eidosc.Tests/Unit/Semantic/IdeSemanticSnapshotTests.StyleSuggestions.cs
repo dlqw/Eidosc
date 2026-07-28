@@ -692,14 +692,14 @@ b :: 2;
     {
         return $$"""
 List :: module {
-    export append :: Int -> Int -> Int { (x, y) => x + y }
-    export map :: Int -> Int -> Int { (items, inc) => items + inc }
+    export append :: Int -> Int -> Int { x, y => x + y }
+    export map :: Int -> Int -> Int { items, inc => items + inc }
 }
 
-append :: Int -> Int -> Int { (x, y) => x + y }
-map :: Int -> Int -> Int { (items, inc) => items + inc }
-combine :: Int -> Int -> Int { (x, y) => x + y }
-range_list :: Int -> Int -> Seq[Int] { (start, stop) => [] }
+append :: Int -> Int -> Int { x, y => x + y }
+map :: Int -> Int -> Int { items, inc => items + inc }
+combine :: Int -> Int -> Int { x, y => x + y }
+range_list :: Int -> Int -> Seq[Int] { start, stop => [] }
 
 a :: 1;
 b :: 2;

@@ -104,12 +104,12 @@ import std.Option
 
 consume :: Int -> Int -> Unit
 {
-    (left, right) => ()
+    left, right => ()
 }
 
 choose :: Option[Int] -> Option[Int] -> Unit
 {
-    (left, right) => (left, right) then consume(_0)(_1) else ()
+    left, right => (left, right) then consume(_0)(_1) else ()
 }
 """;
 

@@ -35,21 +35,21 @@ Result :: module {
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
      compiler(internal)
 {
-        (g, f, value) => g(f(value))
+        g, f, value => g(f(value))
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
      compiler(internal)
 {
-        (value, f) => f(value)
+        value, f => f(value)
     }
 
 
     bind_then[A, B, C, E, E1: effects, E2: effects] :: (A -> With[E, B] need E1) -> (B -> With[E, C] need E2) -> A -> With[E, C] need E1, E2
      compiler(internal)
 {
-        (f, g, value) => f(value).bind(g)
+        f, g, value => f(value).bind(g)
     }
 
 
@@ -196,20 +196,20 @@ Result :: module {
     export EqResultTe :: instance Traits.Eq {
         eq[T: Traits.Eq, E: Traits.Eq] :: Result[T, E] -> Result[T, E] -> Bool
             {
-                (Ok(left_value), Ok(right_value)) => TraitInvoke.eq_value(left_value)(right_value),
-                (Ok(value), Err(error)) => false,
-                (Err(error), Ok(value)) => false,
-                (Err(left_value), Err(right_value)) => TraitInvoke.eq_value(left_value)(right_value)
+                Ok(left_value), Ok(right_value)   => TraitInvoke.eq_value(left_value)(right_value),
+                Ok(value), Err(error)             => false,
+                Err(error), Ok(value)             => false,
+                Err(left_value), Err(right_value) => TraitInvoke.eq_value(left_value)(right_value)
             }
     }
 
     export OrdResultTe :: instance Traits.Ord {
         compare[T: Traits.Ord, E: Traits.Ord] :: Result[T, E] -> Result[T, E] -> Ordering
             {
-                (Ok(left_value), Ok(right_value)) => TraitInvoke.compare_value(left_value)(right_value),
-                (Ok(value), Err(error)) => Greater(),
-                (Err(error), Ok(value)) => Less(),
-                (Err(left_value), Err(right_value)) => TraitInvoke.compare_value(left_value)(right_value)
+                Ok(left_value), Ok(right_value)   => TraitInvoke.compare_value(left_value)(right_value),
+                Ok(value), Err(error)             => Greater(),
+                Err(error), Ok(value)             => Less(),
+                Err(left_value), Err(right_value) => TraitInvoke.compare_value(left_value)(right_value)
             }
     }
 

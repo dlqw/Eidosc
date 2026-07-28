@@ -117,27 +117,27 @@ Ordering :: module {
 
     export compare :: Ordering -> Ordering -> Ordering
     {
-        (Less(), Less()) => Equal(),
-        (Less(), _) => Less(),
-        (Equal(), Less()) => Greater(),
-        (Equal(), Equal()) => Equal(),
-        (Equal(), Greater()) => Less(),
-        (Greater(), Greater()) => Equal(),
-        (Greater(), _) => Greater()
+        Less(), Less()       => Equal(),
+        Less(), _            => Less(),
+        Equal(), Less()      => Greater(),
+        Equal(), Equal()     => Equal(),
+        Equal(), Greater()   => Less(),
+        Greater(), Greater() => Equal(),
+        Greater(), _         => Greater()
     }
 
     export compare :: Int -> Int -> Ordering
     {
-        (left, right) when left < right => Less(),
-        (left, right) when left > right => Greater(),
-        _ => Equal()
+        left, right when left < right => Less(),
+        left, right when left > right => Greater(),
+        _, _                          => Equal()
     }
 
     export compare :: Char -> Char -> Ordering
     {
-        (left, right) when left < right => Less(),
-        (left, right) when left > right => Greater(),
-        _ => Equal()
+        left, right when left < right => Less(),
+        left, right when left > right => Greater(),
+        _, _                          => Equal()
     }
 
     export compare :: Bool -> Bool -> Ordering
@@ -166,10 +166,10 @@ Ordering :: module {
     export EqOrdering :: instance Traits.Eq {
         eq :: Ordering -> Ordering -> Bool
             {
-                (Less(), Less()) => true,
-                (Equal(), Equal()) => true,
-                (Greater(), Greater()) => true,
-                _ => false
+                Less(), Less()       => true,
+                Equal(), Equal()     => true,
+                Greater(), Greater() => true,
+                _, _                 => false
             }
     }
 

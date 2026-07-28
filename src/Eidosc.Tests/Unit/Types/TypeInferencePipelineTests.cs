@@ -508,7 +508,7 @@ add1ViaBlock :: Int -> Int
         const string source = """
 add :: Int -> Int -> Int
 {
-    (x, y) => x + y
+    x, y => x + y
 }
 nested :: add(1)(2);
 """;
@@ -524,12 +524,12 @@ nested :: add(1)(2);
         const string source = """
 caller :: String -> Int -> Int
 {
-    (src, n) => pairLater(src)(n)
+    src, n => pairLater(src)(n)
 }
 
 pairLater :: String -> Int -> Int
 {
-    (_, n) => n
+    _, n => n
 }
 
 result :: caller("ab")(1);
@@ -578,7 +578,7 @@ use :: Int -> Int { n => n.inc.double }
     public void Types_DotApplication_WithArgs_Succeeds()
     {
         const string source = """
-add :: Int -> Int -> Int { (x, y) => x + y }
+        add :: Int -> Int -> Int { x, y => x + y }
 use :: Int -> Int { n => n.add(1) }
 """;
 

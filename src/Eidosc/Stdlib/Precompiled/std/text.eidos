@@ -170,7 +170,7 @@ Text :: module {
         s => Text.trim(s) == ""
     }
 
-    export char_code_at :: String -> Int -> Int { (s, i) => string_char_at(s, i) }
+    export char_code_at :: String -> Int -> Int { s, i => string_char_at(s, i) }
 
     export char_code_at_opt :: String -> Int -> Option[Int]
     {
@@ -192,7 +192,7 @@ Text :: module {
         s => i => fallback => Option.unwrap_or(Text.char_at_opt(s)(i))(fallback)
     }
 
-    export slice :: String -> Int -> Int -> String { (s, start, count) => string_slice(s, start, count) }
+    export slice :: String -> Int -> Int -> String { s, start, count => string_slice(s, start, count) }
 
     export take :: String -> Int -> String
     {
