@@ -15,9 +15,9 @@ TraitInvoke :: module {
 
     export compare_value[T: Traits.Ord] :: T -> T -> Ordering
     {
-        (left, right) when left < right => Less(),
-        (left, right) when left > right => Greater(),
-        _ => Equal()
+        left, right when left < right => Less(),
+        left, right when left > right => Greater(),
+        _, _                          => Equal()
     }
 
     export lt_value[T: Traits.Ord] :: T -> T -> Bool

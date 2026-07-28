@@ -6,6 +6,7 @@ using System.Reflection;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
+using Eidosc.Ast.Patterns;
 using Eidosc.Mir;
 using Eidosc.ProjectSystem;
 using Eidosc.Symbols;
@@ -237,6 +238,7 @@ internal static class AstStableNodeTraversal
         (node is InstanceDecl { Members.Count: > 0 } &&
          propertyName is nameof(InstanceDecl.Methods) or nameof(InstanceDecl.AssociatedTypes) or nameof(InstanceDecl.AssociatedConsts)) ||
         (node is BlockExpr && propertyName == nameof(BlockExpr.ResultExpression)) ||
+        (node is PatternBranch { ParameterPatterns.Count: > 0 } && propertyName == nameof(PatternBranch.Pattern)) ||
         (node is MethodCallExpr && propertyName == nameof(MethodCallExpr.ResolvedStaticExpression)) ||
         (node is AssociatedConstExpr && propertyName == nameof(AssociatedConstExpr.ImplementationValue)) ||
         (node is ContextualRecordLiteralExpr && propertyName == nameof(ContextualRecordLiteralExpr.DesugaredCtor)) ||

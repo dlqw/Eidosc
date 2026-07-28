@@ -2288,23 +2288,7 @@ public sealed class DeclParser(ParserContext ctx)
     {
         var startToken = ctx.Current;
         var patterns = new List<Pattern>();
-        patterns.Add(_patternParser.ParsePattern());
-
-        while (!IsBranchTerminator())
-        {
-            var pos = ctx.Position;
-            patterns.Add(_patternParser.ParsePattern());
-            if (ctx.Position == pos)
-            {
-                ctx.Error(DiagnosticMessages.ParserUnexpectedTokenInPattern(ctx.GetText()));
-                ctx.Advance();
-                break;
-            }
-        }
-
-        var mainPattern = patterns.Count == 1
-            ? patterns[0]
-            : new TuplePattern { Elements = patterns };
+        ParseFunctionBranchPatternSegment(patterns);
 
         var guards = new List<EidosAstNode>();
         while (ctx.Match("when"))
@@ -2315,17 +2299,7 @@ public sealed class DeclParser(ParserContext ctx)
         ctx.Expect("=>");
         while (HasCurriedPatternBeforeNextArrow())
         {
-            while (!ctx.Check("when") && !ctx.Check("=>") && !ctx.IsEof)
-            {
-                var pos = ctx.Position;
-                patterns.Add(_patternParser.ParsePattern());
-                if (ctx.Position == pos)
-                {
-                    ctx.Error(DiagnosticMessages.ParserUnexpectedTokenInPattern(ctx.GetText()));
-                    ctx.Advance();
-                    break;
-                }
-            }
+            ParseFunctionBranchPatternSegment(patterns);
 
             while (ctx.Match("when"))
             {
@@ -2333,17 +2307,13 @@ public sealed class DeclParser(ParserContext ctx)
             }
 
             ctx.Expect("=>");
-            mainPattern = patterns.Count == 1
-                ? patterns[0]
-                : new TuplePattern { Elements = patterns };
         }
 
         var body = _exprParser.ParseExpr();
-        NormalizeCurriedPatternBranch(ref mainPattern, ref body);
 
         var branch = new PatternBranch();
         branch.SetSpan(ctx.SpanFrom(startToken));
-        branch.SetPattern(mainPattern);
+        branch.SetParameterPatterns(patterns);
         var guard = CombineGuards(guards);
         if (guard is not null)
         {
@@ -2351,6 +2321,45 @@ public sealed class DeclParser(ParserContext ctx)
         }
         branch.SetExpression(body);
         return branch;
+    }
+
+    private void ParseFunctionBranchPatternSegment(List<Pattern> patterns)
+    {
+        ParseFunctionBranchPattern(patterns);
+        while (true)
+        {
+            if (ctx.Match(","))
+            {
+                if (ctx.Check("when") || ctx.Check("=>") || ctx.Check("}") || ctx.IsEof)
+                {
+                    ctx.Error(DiagnosticMessages.ParserExpectedPattern(ctx.GetText()));
+                    return;
+                }
+
+                ParseFunctionBranchPattern(patterns);
+                continue;
+            }
+
+            if (IsBranchTerminator())
+            {
+                return;
+            }
+
+            ParseFunctionBranchPattern(patterns);
+        }
+    }
+
+    private void ParseFunctionBranchPattern(List<Pattern> patterns)
+    {
+        var position = ctx.Position;
+        patterns.Add(_patternParser.ParsePattern());
+        if (ctx.Position != position)
+        {
+            return;
+        }
+
+        ctx.Error(DiagnosticMessages.ParserUnexpectedTokenInPattern(ctx.GetText()));
+        ctx.Advance();
     }
 
     private bool HasCurriedPatternBeforeNextArrow()
@@ -2387,39 +2396,6 @@ public sealed class DeclParser(ParserContext ctx)
         }
 
         return false;
-    }
-
-    private static void NormalizeCurriedPatternBranch(ref Pattern mainPattern, ref EidosAstNode body)
-    {
-        if (body is not LambdaExpr lambda || lambda.Parameters.Count == 0)
-        {
-            return;
-        }
-
-        var patterns = new List<Pattern> { mainPattern };
-
-        var current = lambda;
-        while (true)
-        {
-            patterns.AddRange(current.Parameters);
-
-            if (current.Body is LambdaExpr nested && nested.Parameters.Count > 0)
-            {
-                current = nested;
-                continue;
-            }
-
-            if (current.Body is not null)
-            {
-                body = current.Body;
-            }
-
-            break;
-        }
-
-        mainPattern = patterns.Count == 1
-            ? patterns[0]
-            : new TuplePattern { Elements = patterns };
     }
 
     private EidosAstNode ParseGuardExpression()

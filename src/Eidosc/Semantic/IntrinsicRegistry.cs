@@ -84,6 +84,7 @@ public static class IntrinsicRegistry
         foreach (var modulePath in modulePaths)
         {
             if (!PrecompiledModuleRegistry.TryGetDistributionSource(modulePath, out var source) ||
+                !ContainsIntrinsicClause(source) ||
                 !PrecompiledModuleRegistry.TryParseModuleDeclForTest(source, modulePath, out var moduleDecl) ||
                 moduleDecl == null)
             {
@@ -100,6 +101,37 @@ public static class IntrinsicRegistry
                 pair => (IReadOnlyDictionary<string, IntrinsicDeclaration>)pair.Value,
                 StringComparer.Ordinal));
     }
+
+    private static bool ContainsIntrinsicClause(string source)
+    {
+        const string marker = "intrinsic";
+        var searchStart = 0;
+        while (source.IndexOf(marker, searchStart, StringComparison.Ordinal) is var markerStart && markerStart >= 0)
+        {
+            var markerEnd = markerStart + marker.Length;
+            var hasIdentifierPrefix = markerStart > 0 && IsIdentifierContinuation(source[markerStart - 1]);
+            var hasIdentifierSuffix = markerEnd < source.Length && IsIdentifierContinuation(source[markerEnd]);
+            if (!hasIdentifierPrefix && !hasIdentifierSuffix)
+            {
+                while (markerEnd < source.Length && char.IsWhiteSpace(source[markerEnd]))
+                {
+                    markerEnd++;
+                }
+
+                if (markerEnd < source.Length && source[markerEnd] == ':')
+                {
+                    return true;
+                }
+            }
+
+            searchStart = markerStart + marker.Length;
+        }
+
+        return false;
+    }
+
+    private static bool IsIdentifierContinuation(char character) =>
+        character == '_' || char.IsLetterOrDigit(character);
 
     private static void CollectModuleIntrinsics(
         ModuleDecl module,

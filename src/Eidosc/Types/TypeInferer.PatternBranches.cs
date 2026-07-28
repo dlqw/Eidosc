@@ -17,6 +17,18 @@ public sealed partial class TypeInferer
             return (null, 0);
         }
 
+        if (branch.ParameterPatterns.Count > 0)
+        {
+            var consumedParameterCount = Math.Min(branch.ParameterPatterns.Count, parameterCount);
+            var expectedParameterType = consumedParameterCount == 1
+                ? parameterTypes[0]
+                : new TyTuple
+                {
+                    Elements = parameterTypes.Take(consumedParameterCount).ToList()
+                };
+            return (expectedParameterType, consumedParameterCount);
+        }
+
         if (branch.Pattern is TuplePattern tuplePattern &&
             tuplePattern.Elements.Count > 0)
         {

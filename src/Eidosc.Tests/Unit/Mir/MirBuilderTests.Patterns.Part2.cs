@@ -20,7 +20,7 @@ normalize :: Int -> Int
 
 select_view :: Bool -> Int -> Int
 {
-    (b, value) => if b then { normalize(value) } else { normalize(value) }
+    b, value => if b then { normalize(value) } else { normalize(value) }
 }
 
 classify :: Int -> Int

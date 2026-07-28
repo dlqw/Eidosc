@@ -111,6 +111,6 @@ public sealed class WrapperBindingGenerator
         var args = Enumerable.Range(0, fn.Parameters.Count)
             .Select(i => $"arg{i}")
             .ToArray();
-        return $"({string.Join(", ", args)}) => Raw.{rawName}({string.Join(", ", args)})";
+        return $"{string.Join(", ", args)} => Raw.{rawName}({string.Join(", ", args)})";
     }
 }

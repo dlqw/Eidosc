@@ -259,14 +259,32 @@ public sealed partial class TypeInferer
     {
         if (!targetSymbolId.IsValid ||
             !_functionTypeParametersBySymbol.TryGetValue(targetSymbolId, out var declaredParameters) ||
-            explicitTypeArgs.Count != scheme.ForAll.Count)
+            _symbolTable.GetSymbol<FuncSymbol>(targetSymbolId) is not { } functionSymbol)
         {
             return _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
         }
 
         var quantifiedVariables = scheme.ForAll;
-        var declarationOrder = new List<int>(declaredParameters.Count);
-        foreach (var declaredParameter in declaredParameters)
+        var explicitDeclaredParameters = new List<Type>(declaredParameters.Count);
+        var parameterCount = Math.Min(declaredParameters.Count, functionSymbol.TypeParams.Count);
+        for (var index = 0; index < parameterCount; index++)
+        {
+            if (_symbolTable.GetSymbol<TypeParamSymbol>(functionSymbol.TypeParams[index]) is
+                { ParameterKind: GenericParameterKind.Value })
+            {
+                continue;
+            }
+
+            explicitDeclaredParameters.Add(declaredParameters[index]);
+        }
+
+        if (explicitTypeArgs.Count != explicitDeclaredParameters.Count)
+        {
+            return _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
+        }
+
+        var declarationOrder = new List<int>(explicitDeclaredParameters.Count);
+        foreach (var declaredParameter in explicitDeclaredParameters)
         {
             var parameterVariables = _substitution
                 .Apply(declaredParameter)
@@ -282,7 +300,7 @@ public sealed partial class TypeInferer
             declarationOrder.Add(parameterVariables[0]);
         }
 
-        if (declarationOrder.Count != quantifiedVariables.Count)
+        if (declarationOrder.Count != explicitTypeArgs.Count)
         {
             return _substitution.InstantiateSchemeWithTypeArgs(scheme, explicitTypeArgs);
         }
@@ -292,7 +310,9 @@ public sealed partial class TypeInferer
             .ToDictionary(static item => item.variable, static item => item.argument);
         var orderedArguments = quantifiedVariables
             .OrderBy(static variable => variable)
-            .Select(variable => argumentByVariable[variable])
+            .Select(variable => argumentByVariable.TryGetValue(variable, out var argument)
+                ? argument
+                : _substitution.FreshTypeVariable())
             .ToArray();
         return _substitution.InstantiateSchemeWithTypeArgs(scheme, orderedArguments);
     }

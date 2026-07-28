@@ -13,6 +13,13 @@ namespace Eidosc.Ast.Patterns;
 public record PatternBranch : EidosAstNode
 {
     /// <summary>
+    /// Function-branch parameter patterns in curried application order.
+    /// A single tuple parameter is represented as one <see cref="TuplePattern"/>,
+    /// while an unparenthesized binder list contains one entry per parameter.
+    /// </summary>
+    public IReadOnlyList<Pattern> ParameterPatterns { get; private set; } = Array.Empty<Pattern>();
+
+    /// <summary>
     /// 模式
     /// </summary>
     public Pattern? Pattern { get; private set; }
@@ -33,6 +40,7 @@ public record PatternBranch : EidosAstNode
     {
         Span = node.Span;
         Pattern = null;
+        ParameterPatterns = Array.Empty<Pattern>();
         Guard = null;
         Expression = null;
 
@@ -1345,7 +1353,17 @@ public record PatternBranch : EidosAstNode
     {
         var element = CreateElement(doc, WellKnownStrings.XmlElements.PatternBranch);
 
-        if (Pattern != null)
+        if (ParameterPatterns.Count > 0)
+        {
+            var parametersElement = doc.CreateElement(WellKnownStrings.XmlElements.Parameters);
+            foreach (var parameterPattern in ParameterPatterns)
+            {
+                parametersElement.AppendChild(parameterPattern.ToXmlElement(doc));
+            }
+            element.AppendChild(parametersElement);
+        }
+
+        else if (Pattern != null)
         {
             var patternElement = doc.CreateElement(WellKnownStrings.XmlElements.Pattern);
             patternElement.AppendChild(Pattern.ToXmlElement(doc));
@@ -1371,6 +1389,21 @@ public record PatternBranch : EidosAstNode
 
     internal void SetSpan(Utils.SourceSpan span) => Span = span;
     internal void SetPatterns(List<Pattern> patterns) => Pattern = patterns.Count == 1 ? patterns[0] : new TuplePattern { Elements = patterns };
+    internal void SetParameterPatterns(List<Pattern> patterns)
+    {
+        for (var index = 0; index < patterns.Count; index++)
+        {
+            patterns[index] = Pattern.NormalizePatternNode(patterns[index]);
+        }
+
+        ParameterPatterns = patterns;
+        Pattern = patterns.Count switch
+        {
+            0 => null,
+            1 => patterns[0],
+            _ => new TuplePattern { Elements = patterns }
+        };
+    }
     internal void SetPattern(Pattern pattern) => Pattern = pattern;
     internal void SetGuard(EidosAstNode guard) => Guard = guard;
     internal void SetBody(EidosAstNode body) => Expression = body;

@@ -1687,6 +1687,8 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                     stmt = ParseNameFirstLocalBinding();
                 else if (ctx.IsNameFirstSyntax && IsNameFirstAssignmentStart())
                     stmt = ParseNameFirstAssignment();
+                else if (_allowLambda && HasBinderListLambdaBeforeBlockItemEnd())
+                    stmt = ParseBinderListLambda();
                 else
                     stmt = ParseExpr();
 
@@ -1718,6 +1720,84 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         ctx.Expect("}");
         block.SetSpan(ctx.SpanFrom(startToken));
         return block;
+    }
+
+    private LambdaExpr ParseBinderListLambda()
+    {
+        var startToken = ctx.Current;
+        var lambda = new LambdaExpr();
+        lambda.AddParameter(patternParser.ParsePattern());
+
+        while (ctx.Match(","))
+        {
+            if (ctx.Check("=>") || ctx.Check("}") || ctx.IsEof)
+            {
+                ctx.Error(DiagnosticMessages.ParserExpectedPattern(ctx.GetText()));
+                break;
+            }
+
+            lambda.AddParameter(patternParser.ParsePattern());
+        }
+
+        ctx.Expect("=>");
+        lambda.SetBody(ParseExpr());
+        lambda.SetSpan(ctx.SpanFrom(startToken));
+        return lambda;
+    }
+
+    private bool HasBinderListLambdaBeforeBlockItemEnd()
+    {
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        var braceDepth = 0;
+        var hasTopLevelComma = false;
+
+        for (var offset = 0; ctx.Peek(offset) is not EofToken; offset++)
+        {
+            var text = ctx.GetText(ctx.Peek(offset));
+            if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
+            {
+                if (text == ",")
+                {
+                    hasTopLevelComma = true;
+                    continue;
+                }
+
+                if (text == "=>")
+                {
+                    return hasTopLevelComma;
+                }
+
+                if (text is ";" or "}")
+                {
+                    return false;
+                }
+            }
+
+            switch (text)
+            {
+                case "(":
+                    parenDepth++;
+                    break;
+                case ")":
+                    parenDepth = Math.Max(0, parenDepth - 1);
+                    break;
+                case "[":
+                    bracketDepth++;
+                    break;
+                case "]":
+                    bracketDepth = Math.Max(0, bracketDepth - 1);
+                    break;
+                case "{":
+                    braceDepth++;
+                    break;
+                case "}":
+                    braceDepth = Math.Max(0, braceDepth - 1);
+                    break;
+            }
+        }
+
+        return false;
     }
 
     internal BlockExpr ParseFunctionBlock() => ParseBlock();

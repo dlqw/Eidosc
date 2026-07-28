@@ -34,21 +34,21 @@ Option :: module {
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
      compiler(internal)
 {
-        (g, f, value) => g(f(value))
+        g, f, value => g(f(value))
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
      compiler(internal)
 {
-        (value, f) => f(value)
+        value, f => f(value)
     }
 
 
     bind_then[A, B, C, E1: effects, E2: effects] :: (A -> Option[B] need E1) -> (B -> Option[C] need E2) -> A -> Option[C] need E1, E2
      compiler(internal)
 {
-        (f, g, value) => f(value).bind(g)
+        f, g, value => f(value).bind(g)
     }
 
 
@@ -96,10 +96,10 @@ Option :: module {
 
     export xor[T] :: Option[T] -> Option[T] -> Option[T]
     {
-        (Some(left_value), Some(right_value)) => None(),
-        (Some(left_value), None()) => Some(left_value),
-        (None(), Some(right_value)) => Some(right_value),
-        (None(), None()) => None()
+        Some(left_value), Some(right_value) => None(),
+        Some(left_value), None()            => Some(left_value),
+        None(), Some(right_value)            => Some(right_value),
+        None(), None()                       => None()
     }
 
     export map_or[T, U, E: effects] :: Option[T] -> U -> (T -> U need E) -> U need E
@@ -143,19 +143,19 @@ Option :: module {
 
     export zip[A, B] :: Option[A] -> Option[B] -> Option[(A, B)]
     {
-        (Some(left_value), Some(right_value)) => Some((left_value, right_value)),
-        (Some(left_value), None()) => None(),
-        (None(), Some(right_value)) => None(),
-        (None(), None()) => None()
+        Some(left_value), Some(right_value) => Some((left_value, right_value)),
+        Some(left_value), None()            => None(),
+        None(), Some(right_value)            => None(),
+        None(), None()                       => None()
     }
 
     export zip_with[A, B, C, E: effects] :: Option[A] -> Option[B] -> (A -> B -> C need E) -> Option[C] need E
     {
-        (Some(left_value), Some(right_value), f) => Some(f(left_value)(right_value)),
-        (Some(left_value), None(), _) => None(),
-        (None(), Some(right_value), _) => None(),
-        (None(), None(), _) => None(),
-        _ => None()
+        Some(left_value), Some(right_value), f => Some(f(left_value)(right_value)),
+        Some(left_value), None(), _            => None(),
+        None(), Some(right_value), _            => None(),
+        None(), None(), _                       => None(),
+        _, _, _                                 => None()
     }
 
     export flatten[T] :: Option[Option[T]] -> Option[T]
@@ -193,20 +193,20 @@ Option :: module {
     export EqOptionT :: instance Traits.Eq {
         eq[T: Traits.Eq] :: Option[T] -> Option[T] -> Bool
             {
-                (Some(left_value), Some(right_value)) => TraitInvoke.eq_value(left_value)(right_value),
-                (Some(left_value), None()) => false,
-                (None(), Some(right_value)) => false,
-                (None(), None()) => true
+                Some(left_value), Some(right_value) => TraitInvoke.eq_value(left_value)(right_value),
+                Some(left_value), None()            => false,
+                None(), Some(right_value)            => false,
+                None(), None()                       => true
             }
     }
 
     export OrdOptionT :: instance Traits.Ord {
         compare[T: Traits.Ord] :: Option[T] -> Option[T] -> Ordering
             {
-                (Some(left_value), Some(right_value)) => TraitInvoke.compare_value(left_value)(right_value),
-                (Some(left_value), None()) => Greater(),
-                (None(), Some(right_value)) => Less(),
-                (None(), None()) => Equal()
+                Some(left_value), Some(right_value) => TraitInvoke.compare_value(left_value)(right_value),
+                Some(left_value), None()            => Greater(),
+                None(), Some(right_value)            => Less(),
+                None(), None()                       => Equal()
             }
     }
 
