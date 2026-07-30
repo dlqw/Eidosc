@@ -53,7 +53,7 @@ public static class TypeSemantics
     {
         targetTypeId = default;
 
-        if (instr is not MirCall call)
+        if (instr is not MirCall { RecordUpdate: null } call)
             return false;
 
         if (call.Function is not MirFunctionRef funcRef)

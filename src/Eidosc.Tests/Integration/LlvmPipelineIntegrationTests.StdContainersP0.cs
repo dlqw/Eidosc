@@ -110,7 +110,11 @@ main :: Unit -> Int
             StdlibListImportInputFile(),
             "std_hash_containers_noncopy_string");
 
-        Assert.Equal(42, execution.ExitCode);
+        Assert.True(
+            execution.ExitCode == 42,
+            $"Expected exit code 42, got {execution.ExitCode}.{Environment.NewLine}" +
+            $"stdout:{Environment.NewLine}{execution.StandardOutput}{Environment.NewLine}" +
+            $"stderr:{Environment.NewLine}{execution.StandardError}");
     }
 
     private static ProcessExecutionResult CompileAndRunSourceAtNativeWithContext(

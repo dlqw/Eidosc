@@ -397,7 +397,54 @@ public sealed partial class MirToLlvmConverter
             return null;
         }
 
-        var payloadSize = ComputeConstructorPayloadSize(call.Arguments);
+        if (call.Arguments.Count == 0 && _typeLowering.IsScalarTagType(targetPlace.TypeId))
+        {
+            AssignPlaceFromValue(targetPlace, new LlvmConstant
+            {
+                Value = ComputeRuntimeConstructorTypeId(ctorRef),
+                Type = LlvmIntType.I32
+            });
+            return null;
+        }
+
+        if (_typeLowering.IsInlineValueRecordType(targetPlace.TypeId) &&
+            _typeLowering.TryGetStructType(targetPlace.TypeId, out var inlineRecordType))
+        {
+            var inlineFieldTypeIds = ResolveConstructorFieldTypeIds(targetPlace.TypeId, ctorRef.Name);
+            LlvmValue aggregate = new LlvmUndef { Type = inlineRecordType };
+            for (var index = 0; index < call.Arguments.Count; index++)
+            {
+                var expectedTypeId = GetExpectedConstructorFieldTypeId(
+                    call.Arguments[index],
+                    inlineFieldTypeIds,
+                    index);
+                var fieldType = inlineRecordType.Fields[index];
+                var fieldValue = ConvertConstructorFieldValue(
+                    call.Arguments[index],
+                    expectedTypeId,
+                    fieldType,
+                    index);
+                var insert = new LlvmInsertValue
+                {
+                    Aggregate = aggregate,
+                    Element = fieldValue,
+                    Indices = [index],
+                    ResultName = _nameMangler.NewTempName($"record_field{index}")
+                };
+                _currentBlock!.Instructions.Add(insert);
+                aggregate = new LlvmInstructionRef
+                {
+                    Instruction = insert,
+                    Type = inlineRecordType
+                };
+            }
+
+            AssignPlaceFromValue(targetPlace, aggregate);
+            return null;
+        }
+
+        var fieldTypeIds = ResolveConstructorFieldTypeIds(targetPlace.TypeId, ctorRef.Name);
+        var payloadSize = ComputeConstructorPayloadSize(call.Arguments, fieldTypeIds);
         var typeId = ComputeRuntimeConstructorTypeId(ctorRef);
 
         var allocCall = new LlvmCall
@@ -430,6 +477,7 @@ public sealed partial class MirToLlvmConverter
         EmitConstructorFieldStoresByType(
             allocResult,
             call.Arguments,
+            fieldTypeIds,
             retainBorrowedProjectionFields: true);
         AssignPlaceFromValue(targetPlace, allocResult);
 

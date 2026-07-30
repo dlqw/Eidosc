@@ -1,3 +1,4 @@
+using Eidosc.Borrow;
 using Eidosc.Types;
 
 namespace Eidosc.Mir.Optimize;
@@ -102,12 +103,25 @@ public sealed partial class MirOptimizer
         optimizer.RegisterPass(new CommonSubexpressionElimination());
         optimizer.RegisterPass(new LoopInvariantCodeMotion());
         optimizer.RegisterPass(new DeadCodeElimination());
+        optimizer.RegisterPass(new RuntimeArrayFusionPass());
 
-        // Round 2: Tail call optimization.
-        // Inlining and DropInsertion are intentionally kept out of the default
-        // path until their native-code edge cases are fully proven.
+        // Round 2: Tail call optimization followed by ownership finalization.
+        // Drop insertion must run after tail-call formation so it cannot place
+        // cleanup after a tail call, and before borrow/codegen hint analyses so
+        // their instruction-site identities include the inserted drops.
         optimizer.RegisterPass(new TailCallOptimization(convertSelfRecursionToLoop: true));
+        optimizer.RegisterPass(new DropInsertionPass());
+        optimizer.RegisterPass(new CopyDropElisionPass());
+        optimizer.RegisterPass(new ReusePreparationPass());
+        optimizer.RegisterPass(new DestructiveProjectionMovePass());
+        // Reuse preparation and destructive projection can turn borrowed loads
+        // into independently owned values after the first ownership pass. Run
+        // ownership finalization again so those new references are consumed or
+        // dropped exactly once, then elide the resulting copy/drop pairs.
+        optimizer.RegisterPass(new DropInsertionPass());
+        optimizer.RegisterPass(new CopyDropElisionPass());
         optimizer.RegisterPass(new DeadCodeElimination());
+        optimizer.RegisterPass(new RecordUpdateFusionPass());
 
         return optimizer;
     }

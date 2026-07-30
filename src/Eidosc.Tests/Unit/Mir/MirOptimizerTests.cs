@@ -6,7 +6,7 @@ using Xunit;
 
 namespace Eidosc.Tests.Unit.Mir;
 
-public class MirOptimizerTests
+public partial class MirOptimizerTests
 {
     [Fact]
     public void Optimize_DefaultOptimizer_PreservesSpecializationFailures()
@@ -815,7 +815,7 @@ public class MirOptimizerTests
     }
 
     [Fact]
-    public void DropInsertion_LastUse_InsertsDropAfterInstruction()
+    public void DropInsertion_ByValueCall_ConsumesPreparedCopyAndDropsOriginal()
     {
         var local = new MirLocal
         {
@@ -830,10 +830,15 @@ public class MirOptimizerTests
             IsEntry = true,
             Instructions =
             [
+                new MirCopy
+                {
+                    Target = LocalPlace(new LocalId { Value = 2 }) with { TypeId = local.TypeId },
+                    Source = LocalPlace(local.Id) with { TypeId = local.TypeId }
+                },
                 new MirCall
                 {
                     Function = new MirFunctionRef { Name = "consume" },
-                    Arguments = [LocalPlace(local.Id) with { TypeId = local.TypeId }]
+                    Arguments = [LocalPlace(new LocalId { Value = 2 }) with { TypeId = local.TypeId }]
                 }
             ],
             Terminator = new MirReturn()
@@ -847,7 +852,16 @@ public class MirOptimizerTests
                 {
                     Name = "main",
                     EntryBlockId = block.Id,
-                    Locals = [local],
+                    Locals =
+                    [
+                        local,
+                        new MirLocal
+                        {
+                            Id = new LocalId { Value = 2 },
+                            Name = "argument",
+                            TypeId = local.TypeId
+                        }
+                    ],
                     BasicBlocks = [block]
                 }
             ]
@@ -856,14 +870,15 @@ public class MirOptimizerTests
         var optimized = new DropInsertionPass().Run(module);
         var instructions = Assert.Single(optimized.Functions).BasicBlocks.Single().Instructions;
 
-        Assert.IsType<MirCall>(instructions[0]);
+        Assert.IsType<MirCopy>(instructions[0]);
         var drop = Assert.IsType<MirDrop>(instructions[1]);
+        Assert.IsType<MirCall>(instructions[2]);
         var dropPlace = Assert.IsType<MirPlace>(drop.Value);
         Assert.Equal(local.TypeId, dropPlace.TypeId);
     }
 
     [Fact]
-    public void DropInsertion_BranchLastUse_InsertsDropBeforeTerminator()
+    public void DropInsertion_BorrowedBranchUse_DropsOnEachExitPath()
     {
         var stringType = new TypeId(BaseTypes.StringId);
         var boolType = new TypeId(BaseTypes.BoolId);
@@ -878,7 +893,8 @@ public class MirOptimizerTests
                 new MirCall
                 {
                     Function = new MirFunctionRef { Name = "observe" },
-                    Arguments = [LocalPlace(text.Id, stringType)]
+                    Arguments = [LocalPlace(text.Id, stringType)],
+                    BorrowedArgumentIndices = new HashSet<int> { 0 }
                 }
             ],
             Terminator = new MirSwitch
@@ -902,10 +918,51 @@ public class MirOptimizerTests
         ]);
 
         var optimized = new DropInsertionPass().Run(module);
-        var instructions = Assert.Single(optimized.Functions).BasicBlocks.Single(block => block.Id == entry.Id).Instructions;
+        var blocks = Assert.Single(optimized.Functions).BasicBlocks;
 
-        Assert.IsType<MirCall>(instructions[0]);
-        Assert.IsType<MirDrop>(instructions[1]);
+        var entryInstructions = blocks.Single(block => block.Id == entry.Id).Instructions;
+        Assert.IsType<MirCall>(entryInstructions[0]);
+        Assert.IsType<MirDrop>(entryInstructions[1]);
+        Assert.DoesNotContain(blocks.Single(block => block.Id.Value == 2).Instructions, static instruction => instruction is MirDrop);
+        Assert.DoesNotContain(blocks.Single(block => block.Id.Value == 3).Instructions, static instruction => instruction is MirDrop);
+    }
+
+    [Fact]
+    public void DropInsertion_ReferenceTypedCallArgument_DoesNotConsumeUnderlyingOwner()
+    {
+        var sequenceType = new TypeId(7020);
+        var mutableReferenceType = new TypeId(7021);
+        var sequence = new MirLocal
+        {
+            Id = new LocalId { Value = 1 },
+            Name = "sequence",
+            TypeId = sequenceType,
+            IsParameter = true
+        };
+        var block = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Instructions =
+            [
+                new MirCall
+                {
+                    Function = new MirFunctionRef { Name = "mutate" },
+                    Arguments = [LocalPlace(sequence.Id, mutableReferenceType)]
+                }
+            ],
+            Terminator = new MirReturn()
+        };
+        var module = CreateDropInsertionModule([sequence], [block]);
+        module.TypeDescriptors[mutableReferenceType.Value] = new TypeDescriptor.MutRef(sequenceType);
+
+        var optimized = new DropInsertionPass().Run(module);
+        var instructions = Assert.Single(optimized.Functions).BasicBlocks.Single().Instructions;
+
+        var call = Assert.IsType<MirCall>(instructions[0]);
+        Assert.Contains(0, call.BorrowedArgumentIndices);
+        var drop = Assert.IsType<MirDrop>(instructions[1]);
+        Assert.Equal(sequence.Id, Assert.IsType<MirPlace>(drop.Value).Local);
     }
 
     [Fact]
@@ -965,7 +1022,8 @@ public class MirOptimizerTests
                 new MirCall
                 {
                     Function = new MirFunctionRef { Name = "observe" },
-                    Arguments = [LocalPlace(text.Id, stringType)]
+                    Arguments = [LocalPlace(text.Id, stringType)],
+                    BorrowedArgumentIndices = new HashSet<int> { 0 }
                 }
             ],
             Terminator = new MirSwitch
@@ -1076,9 +1134,12 @@ public class MirOptimizerTests
 
         var optimized = new DropInsertionPass().Run(module);
 
+        var instructions = Assert.Single(optimized.Functions).BasicBlocks.Single().Instructions;
         Assert.DoesNotContain(
-            Assert.Single(optimized.Functions).BasicBlocks.Single().Instructions,
-            static instruction => instruction is MirDrop);
+            instructions.OfType<MirDrop>(),
+            drop => drop.Value is MirPlace { Local: var local } && local == source.Id);
+        var targetDrop = Assert.Single(instructions.OfType<MirDrop>());
+        Assert.Equal(target.Id, Assert.IsType<MirPlace>(targetDrop.Value).Local);
     }
 
     [Fact]
@@ -1097,7 +1158,7 @@ public class MirOptimizerTests
     }
 
     [Fact]
-    public void DropInsertion_BeforeTailCallOptimization_DocumentsTailCallBlockedByDrop()
+    public void DropInsertion_BeforeTailCallOptimization_PreservesEligibleCall()
     {
         var stringType = new TypeId(BaseTypes.StringId);
         var text = new MirLocal { Id = new LocalId { Value = 1 }, Name = "text", TypeId = stringType, IsParameter = true };
@@ -1109,8 +1170,7 @@ public class MirOptimizerTests
         var instructions = Assert.Single(optimized.Functions).BasicBlocks.Single().Instructions;
 
         var call = Assert.IsType<MirCall>(instructions[0]);
-        Assert.False(call.IsTailCall);
-        Assert.IsType<MirDrop>(instructions[1]);
+        Assert.True(call.IsTailCall);
     }
 
     private static MirPlace LocalPlace(LocalId localId)
@@ -1137,7 +1197,8 @@ public class MirOptimizerTests
                 new MirCall
                 {
                     Function = new MirFunctionRef { Name = "observe" },
-                    Arguments = [LocalPlace(localId, typeId)]
+                    Arguments = [LocalPlace(localId, typeId)],
+                    BorrowedArgumentIndices = new HashSet<int> { 0 }
                 }
             ],
             Terminator = new MirReturn()
@@ -1146,7 +1207,8 @@ public class MirOptimizerTests
 
     private static MirModule CreateDropInsertionModule(
         List<MirLocal> locals,
-        List<MirBasicBlock> blocks)
+        List<MirBasicBlock> blocks,
+        Dictionary<int, List<ConstructorTypeLayout>>? constructorLayouts = null)
     {
         return new MirModule
         {
@@ -1160,7 +1222,8 @@ public class MirOptimizerTests
                     Locals = locals,
                     BasicBlocks = blocks
                 }
-            ]
+            ],
+            ConstructorLayouts = constructorLayouts ?? []
         };
     }
 

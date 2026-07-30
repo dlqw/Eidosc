@@ -354,6 +354,7 @@ public sealed partial class MirBuilder
             DynamicTypeKeys = new Dictionary<int, string>(_dynamicTypeKeysById),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(_typeDescriptorsById),
             ConstructorLayouts = new Dictionary<int, List<ConstructorTypeLayout>>(_constructorLayouts),
+            CopyLikeTypeIds = new HashSet<int>(_extraCopyLikeTypeIds),
             TraitImpls = hirModule.Declarations
                 .OfType<HirImpl>()
                 .Select(static impl => impl.ImplMetadata)
@@ -446,6 +447,9 @@ public sealed partial class MirBuilder
         {
             mirModule.ConstructorLayouts[typeId] = layouts;
         }
+
+        mirModule.CopyLikeTypeIds.Clear();
+        mirModule.CopyLikeTypeIds.UnionWith(_extraCopyLikeTypeIds);
     }
 
     private List<MirTraitInfo> CollectTraitInfos()
@@ -940,18 +944,26 @@ public sealed partial class MirBuilder
     private MirFunctionRef AttachTraitMethodMetadata(MirFunctionRef functionRef)
     {
         if (!functionRef.SymbolId.IsValid ||
-            _symbolTable?.GetSymbol<FuncSymbol>(functionRef.SymbolId) is not { OwnerTrait: { IsValid: true } ownerTrait } method)
+            _symbolTable?.GetSymbol<FuncSymbol>(functionRef.SymbolId) is not { } method)
         {
             return functionRef;
         }
 
-        return functionRef with
+        var enriched = functionRef with
+        {
+            CompilerSemanticRole = method.CompilerSemanticRole
+        };
+        if (method.OwnerTrait is not { IsValid: true } ownerTrait)
+        {
+            return enriched;
+        }
+
+        return enriched with
         {
             TraitOwnerId = ownerTrait,
             TraitSelfPosition = method.TraitSelfPosition,
             TraitSelfParameterIndices = method.TraitSelfParameterIndices.ToList(),
-            TraitSelfInResult = method.TraitSelfInResult,
-            CompilerSemanticRole = method.CompilerSemanticRole
+            TraitSelfInResult = method.TraitSelfInResult
         };
     }
 

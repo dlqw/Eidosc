@@ -258,6 +258,7 @@ public sealed partial class MirGenericSpecializer
         return RequiresSpecializationPass(functionRef) ||
                ReferencesGenericTemplateCandidate(functionRef) ||
                includeKnownTemplateReferences && TryResolveTemplateKey(functionRef, out _) ||
+               functionRef.CompilerSemanticRole == CompilerSemanticRole.Equality ||
                FunctionRefRequiresLateTraitDispatch(functionRef);
     }
 

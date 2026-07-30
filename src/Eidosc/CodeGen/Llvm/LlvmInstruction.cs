@@ -348,7 +348,7 @@ public sealed class LlvmInsertValue : LlvmInstruction
     public override string ToIrString()
     {
         var indicesStr = string.Join(", ", Indices.Select(i => i.ToString()));
-        return $"{FormatResultName(ResultName)} = insertvalue {Element.Type.ToIrString()} {Element.ToIrString()}, {Aggregate.Type.ToIrString()} {Aggregate.ToIrString()}, {indicesStr}";
+        return $"{FormatResultName(ResultName)} = insertvalue {Aggregate.Type.ToIrString()} {Aggregate.ToIrString()}, {Element.Type.ToIrString()} {Element.ToIrString()}, {indicesStr}";
     }
 }
 

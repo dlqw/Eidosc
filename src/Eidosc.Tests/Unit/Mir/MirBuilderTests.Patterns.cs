@@ -882,11 +882,27 @@ head_or_zero :: Int -> Int
             .ToList();
         Assert.NotEmpty(runtimeArrayLoads);
 
-        var arrayPushCalls = instructions
-            .OfType<MirCall>()
-            .Where(call => call.Function is MirFunctionRef { Name: "array_push" })
-            .ToList();
-        Assert.NotEmpty(arrayPushCalls);
+        var arraySliceCall = Assert.Single(
+            instructions.OfType<MirCall>(),
+            call => call.Function is MirFunctionRef
+            {
+                Name: WellKnownStrings.InternalNames.ArraySlice
+            });
+        Assert.Empty(arraySliceCall.BorrowedArgumentIndices);
+        Assert.Equal(3, arraySliceCall.Arguments.Count);
+
+        var ownedSource = Assert.IsType<MirPlace>(arraySliceCall.Arguments[0]);
+        Assert.Contains(
+            instructions.OfType<MirLoad>(),
+            load => load.Target.Local == ownedSource.Local && !load.CreatesBorrowAlias);
+        Assert.Equal(
+            1,
+            Assert.IsType<MirConstantValue.IntValue>(
+                Assert.IsType<MirConstant>(arraySliceCall.Arguments[1]).Value).Value);
+        Assert.Equal(
+            0,
+            Assert.IsType<MirConstantValue.IntValue>(
+                Assert.IsType<MirConstant>(arraySliceCall.Arguments[2]).Value).Value);
     }
 
     [Fact]

@@ -136,8 +136,8 @@ public sealed class SpecializationLoopDiagnosticsTests
 
         Assert.Equal(1, result.SpecializerRunCount);
         Assert.Equal(0, result.SpecializerChangedIterationCount);
-        Assert.Equal(0, result.OptimizerChangedIterationCount);
-        Assert.Equal("fixed-point", result.ConvergenceReason);
+        Assert.Equal(1, result.OptimizerChangedIterationCount);
+        Assert.Equal("dirty-worklist-local-optimizer", result.ConvergenceReason);
         Assert.Empty(result.Diagnostics);
     }
 

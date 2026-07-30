@@ -1,5 +1,6 @@
 using Eidosc.Symbols;
 using Eidosc;
+using Eidosc.Borrow;
 using Eidosc.CodeGen.Llvm;
 using Eidosc.Mir;
 using Eidosc.Semantic;
@@ -11,6 +12,70 @@ namespace Eidosc.Tests.Unit.Llvm;
 
 public partial class MirToLlvmConverterTests
 {
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void ConvertFunction_ManagedDerefLoad_RetainsOnlyOwnedResult(
+        bool createsBorrowAlias,
+        bool expectsRetain)
+    {
+        var stringType = new TypeId(BaseTypes.StringId);
+        var referenceType = new TypeId(9701);
+        var reference = LocalPlace(1, referenceType);
+        var loaded = LocalPlace(2, stringType);
+        var function = BuildFunction(
+            new TypeId(BaseTypes.IntId),
+            locals:
+            [
+                new MirLocal
+                {
+                    Id = reference.Local,
+                    Name = "value_ref",
+                    TypeId = referenceType,
+                    IsParameter = true
+                },
+                new MirLocal { Id = loaded.Local, Name = "loaded", TypeId = stringType }
+            ],
+            instructions:
+            [
+                new MirLoad
+                {
+                    Target = loaded,
+                    Source = new MirPlace
+                    {
+                        Kind = PlaceKind.Deref,
+                        Base = reference,
+                        TypeId = stringType
+                    },
+                    CreatesBorrowAlias = createsBorrowAlias
+                }
+            ],
+            returnValue: new MirConstant
+            {
+                TypeId = new TypeId(BaseTypes.IntId),
+                Value = new MirConstantValue.IntValue(0)
+            },
+            name: createsBorrowAlias ? "borrowed_deref" : "owned_deref");
+        var module = new MirModule
+        {
+            Name = "managed_deref",
+            TypeDescriptors =
+            {
+                [referenceType.Value] = new TypeDescriptor.Ref(stringType)
+            },
+            Functions = [function]
+        };
+
+        var converted = new MirToLlvmConverter().Convert(module);
+        var convertedFunction = Assert.Single(converted.Functions);
+        var hasRetain = convertedFunction.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<LlvmCall>()
+            .Any(static call => call.Function is LlvmGlobal { Name: WellKnownStrings.Runtime.IncRefLocal });
+
+        Assert.Equal(expectsRetain, hasRetain);
+    }
+
     [Fact]
     public void TryInferFunctionReferenceValueType_ShowNameWithoutRole_DoesNotInferBuiltinShow()
     {
@@ -664,6 +729,71 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
+    public void ConvertFunction_RuntimeTypeIdBuiltin_InlineCopyRecordUsesStaticConstructorTag()
+    {
+        var intType = new TypeId(BaseTypes.IntId);
+        var recordType = new TypeId(1912);
+        var recordParam = LocalPlace(1, recordType);
+        var resultPlace = LocalPlace(2, intType);
+        const int runtimeTypeId = 0x12345678;
+        var caller = BuildFunction(
+            intType,
+            locals:
+            [
+                new MirLocal { Id = recordParam.Local, Name = "value", TypeId = recordType, IsParameter = true },
+                new MirLocal { Id = resultPlace.Local, Name = "tag", TypeId = intType }
+            ],
+            instructions:
+            [
+                new MirCall
+                {
+                    Target = resultPlace,
+                    Function = new MirFunctionRef
+                    {
+                        Name = WellKnownStrings.InternalNames.TypeId,
+                        SymbolId = SymbolId.None,
+                        FunctionId = MirRuntimeFunctions.CreateFunctionId(WellKnownStrings.InternalNames.TypeId),
+                        TypeId = intType
+                    },
+                    Arguments = [recordParam]
+                }
+            ],
+            returnValue: resultPlace,
+            name: "caller_inline_record_type_id",
+            symbolId: new SymbolId(1913));
+
+        var llvmModule = new MirToLlvmConverter().Convert(new MirModule
+        {
+            Name = "inline_record_type_id",
+            Functions = [caller],
+            CopyLikeTypeIds = [recordType.Value],
+            ConstructorLayouts = new Dictionary<int, List<ConstructorTypeLayout>>
+            {
+                [recordType.Value] =
+                [
+                    new ConstructorTypeLayout
+                    {
+                        TypeName = "Range",
+                        ConstructorName = "Range",
+                        RuntimeTypeId = runtimeTypeId,
+                        FieldTypeIds = [intType, intType]
+                    }
+                ]
+            }
+        });
+
+        var llvmFunction = SingleFunctionBySourceName(llvmModule, "caller_inline_record_type_id");
+        Assert.DoesNotContain(
+            llvmFunction.BasicBlocks.SelectMany(block => block.Instructions).OfType<LlvmCall>(),
+            call => call.Function is LlvmGlobal { Name: "eidos_type_id" });
+        var materializedTag = Assert.Single(
+            llvmFunction.BasicBlocks.SelectMany(block => block.Instructions).OfType<LlvmBinOp>());
+        var tag = Assert.IsType<LlvmConstant>(materializedTag.Right);
+        Assert.Equal((long)runtimeTypeId, tag.Value);
+        Assert.Equal(64, Assert.IsType<LlvmIntType>(tag.Type).Bits);
+    }
+
+    [Fact]
     public void Convert_ModuleUnknownAdtConstructor_InlinesAllocationWithFieldStores()
     {
         var adtType = new TypeId(1920);
@@ -726,6 +856,145 @@ public partial class MirToLlvmConverterTests
 
         Assert.DoesNotContain(llvmModule.Functions, function => function.Name == "eidos_TokCons");
         Assert.DoesNotContain(llvmModule.Declarations, declaration => declaration.Name == "eidos_TokCons");
+    }
+
+    [Fact]
+    public void Convert_PayloadlessAdtConstructor_UsesScalarTagWithoutAllocation()
+    {
+        var directionType = new TypeId(1925);
+        var result = LocalPlace(1, directionType);
+        var constructor = new MirFunctionRef
+        {
+            Name = "West",
+            SymbolId = new SymbolId(1926),
+            SymbolKind = SymbolKind.Constructor,
+            TypeId = directionType
+        };
+        var caller = BuildFunction(
+            directionType,
+            locals: [new MirLocal { Id = result.Local, Name = "direction", TypeId = directionType }],
+            instructions: [new MirCall { Target = result, Function = constructor }],
+            returnValue: result,
+            name: "mk_west",
+            symbolId: new SymbolId(1927));
+        var runtimeTag = AdtConstructorTypeId.ComputeFromSymbol("West");
+
+        var llvmModule = new MirToLlvmConverter().Convert(new MirModule
+        {
+            Name = "scalar_adt_ctor",
+            Functions = [caller],
+            ConstructorLayouts = new Dictionary<int, List<ConstructorTypeLayout>>
+            {
+                [directionType.Value] =
+                [
+                    new ConstructorTypeLayout
+                    {
+                        TypeName = "Direction",
+                        ConstructorName = "West",
+                        RuntimeTypeId = runtimeTag,
+                        FieldTypeIds = []
+                    },
+                    new ConstructorTypeLayout
+                    {
+                        TypeName = "Direction",
+                        ConstructorName = "East",
+                        RuntimeTypeId = AdtConstructorTypeId.ComputeFromSymbol("East"),
+                        FieldTypeIds = []
+                    }
+                ]
+            }
+        });
+
+        var llvmFunction = Assert.Single(llvmModule.Functions);
+        Assert.DoesNotContain(
+            llvmFunction.BasicBlocks.Single().Instructions.OfType<LlvmCall>(),
+            call => call.Function is LlvmGlobal { Name: "eidos_alloc" });
+        var materializedTag = Assert.Single(llvmFunction.BasicBlocks.Single().Instructions.OfType<LlvmBinOp>());
+        var tag = Assert.IsType<LlvmConstant>(materializedTag.Right);
+        Assert.Equal(runtimeTag, tag.Value);
+        Assert.Equal(32, Assert.IsType<LlvmIntType>(tag.Type).Bits);
+        var ret = Assert.IsType<LlvmRet>(llvmFunction.BasicBlocks.Single().Terminator);
+        Assert.Equal(32, Assert.IsType<LlvmIntType>(Assert.IsType<LlvmLocal>(ret.Value).Type).Bits);
+    }
+
+    [Fact]
+    public void Convert_ReuseSlot_ZeroInitializesBeforeDropAndAllocation()
+    {
+        var recordType = new TypeId(1928);
+        var intType = new TypeId(BaseTypes.IntId);
+        var functionSymbol = new SymbolId(1929);
+        var oldValue = LocalPlace(1, recordType);
+        var replacement = LocalPlace(2, recordType);
+        var blockId = new BlockId { Value = 1 };
+        var caller = BuildFunction(
+            recordType,
+            locals:
+            [
+                new MirLocal { Id = oldValue.Local, Name = "old", TypeId = recordType, IsParameter = true },
+                new MirLocal { Id = replacement.Local, Name = "replacement", TypeId = recordType }
+            ],
+            instructions:
+            [
+                new MirDrop { Value = oldValue },
+                new MirCall
+                {
+                    Target = replacement,
+                    Function = new MirFunctionRef
+                    {
+                        Name = "Record",
+                        SymbolId = new SymbolId(1930),
+                        SymbolKind = SymbolKind.Constructor,
+                        TypeId = recordType
+                    },
+                    Arguments =
+                    [
+                        new MirConstant
+                        {
+                            TypeId = intType,
+                            Value = new MirConstantValue.IntValue(7)
+                        }
+                    ]
+                }
+            ],
+            returnValue: replacement,
+            name: "reuse_record",
+            symbolId: functionSymbol);
+        var hints = new ReuseHints { SlotCount = 1 };
+        hints.DropReuseSites[(blockId, 0)] = 0;
+        hints.AllocReuseSites[(blockId, 1)] = 0;
+        var borrowResult = new ModuleBorrowCheckResult();
+        borrowResult.AddResult(new BorrowCheckResult
+        {
+            FunctionName = caller.Name,
+            FunctionSymbolId = functionSymbol,
+            ReuseHints = hints
+        });
+        var converter = new MirToLlvmConverter();
+        converter.SetReuseHints(borrowResult);
+
+        var llvmModule = converter.Convert(new MirModule { Name = "reuse_slot", Functions = [caller] });
+
+        var instructions = Assert.Single(llvmModule.Functions).BasicBlocks.Single().Instructions;
+        var allocaIndex = instructions.FindIndex(static instruction => instruction is LlvmAlloca
+        {
+            AllocatedType: LlvmStructType { Fields.Count: 3 }
+        });
+        var initializeIndex = instructions.FindIndex(static instruction => instruction is LlvmStore
+        {
+            Value: LlvmZeroInitializer
+        });
+        var dropIndex = instructions.FindIndex(static instruction => instruction is LlvmCall
+        {
+            Function: LlvmGlobal { Name: "eidos_drop_reuse" }
+        });
+        var allocIndex = instructions.FindIndex(static instruction => instruction is LlvmCall
+        {
+            Function: LlvmGlobal { Name: "eidos_alloc_reuse" }
+        });
+        Assert.True(allocaIndex >= 0);
+        Assert.True(initializeIndex > allocaIndex);
+        Assert.True(dropIndex > initializeIndex);
+        Assert.True(allocIndex > dropIndex);
     }
 
     [Fact]

@@ -130,6 +130,21 @@ public static class MirFunctionFingerprintBuilder
                 AddOperand(writer, call.Function);
                 AddOperands(writer, call.Arguments);
                 writer.Add(call.IsTailCall);
+                writer.Add(call.BorrowedArgumentIndices.Count);
+                foreach (var argumentIndex in call.BorrowedArgumentIndices.Order())
+                {
+                    writer.Add(argumentIndex);
+                }
+                writer.Add(call.RecordUpdate != null);
+                if (call.RecordUpdate != null)
+                {
+                    AddPlace(writer, call.RecordUpdate.Source);
+                    writer.Add(call.RecordUpdate.UpdatedFieldIndices.Count);
+                    foreach (var fieldIndex in call.RecordUpdate.UpdatedFieldIndices)
+                    {
+                        writer.Add(fieldIndex);
+                    }
+                }
                 break;
             case MirBinOp binOp:
                 AddOperand(writer, binOp.Target);
@@ -147,6 +162,7 @@ public static class MirFunctionFingerprintBuilder
                 AddOperand(writer, load.Source);
                 writer.Add(load.IsMutableBorrow);
                 writer.Add(load.CreatesBorrowAlias);
+                writer.Add(load.MovesOutOfSource);
                 break;
             case MirStore store:
                 AddPlace(writer, store.Target);

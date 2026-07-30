@@ -81,8 +81,7 @@ public sealed partial class MirGenericSpecializer
         {
             return functionRef.TraitSelfPosition != SelfPosition.Unknown ||
                    functionRef.TraitSelfParameterIndices.Count > 0 ||
-                   functionRef.TraitSelfInResult ||
-                   functionRef.CompilerSemanticRole != CompilerSemanticRole.None;
+                   functionRef.TraitSelfInResult;
         }
 
         private void RecordNoConcreteTraitDispatchType(

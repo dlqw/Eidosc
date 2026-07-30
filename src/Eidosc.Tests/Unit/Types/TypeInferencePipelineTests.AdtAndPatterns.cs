@@ -188,9 +188,17 @@ choose :: Bool -> Anim
         Assert.False(TypeDescriptorStructuralComparer.Instance.Equals(sourceDescriptor, targetDescriptor));
         Assert.True(mir.ConstructorLayouts.ContainsKey(injection.SourceTypeId.Value));
         Assert.True(mir.ConstructorLayouts.ContainsKey(injection.TargetTypeId.Value));
-        Assert.Equal(
-            mir.ConstructorLayouts[injection.TargetTypeId.Value],
-            mir.ConstructorLayouts[injection.SourceTypeId.Value]);
+        var targetLayouts = mir.ConstructorLayouts[injection.TargetTypeId.Value]
+            .Select(static layout =>
+                $"{layout.TypeName}:{layout.ConstructorName}:{layout.TagValue}:{layout.RuntimeTypeId}:" +
+                string.Join(',', layout.FieldTypeIds.Select(static field => field.Value)))
+            .ToArray();
+        var sourceLayouts = mir.ConstructorLayouts[injection.SourceTypeId.Value]
+            .Select(static layout =>
+                $"{layout.TypeName}:{layout.ConstructorName}:{layout.TagValue}:{layout.RuntimeTypeId}:" +
+                string.Join(',', layout.FieldTypeIds.Select(static field => field.Value)))
+            .ToArray();
+        Assert.Equal(targetLayouts, sourceLayouts);
     }
 
     [Fact]

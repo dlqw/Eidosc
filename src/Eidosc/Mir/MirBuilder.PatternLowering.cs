@@ -711,6 +711,7 @@ public sealed partial class MirBuilder
             Target = tagPlace,
             Function = MirRuntimeFunctions.CreateFunctionRef("type_id", intType, ctorPattern.Span),
             Arguments = [scrutineeValue],
+            BorrowedArgumentIndices = new HashSet<int> { 0 },
             Span = ctorPattern.Span
         });
 
@@ -1413,12 +1414,42 @@ public sealed partial class MirBuilder
             return sourcePlace;
         }
 
+        var ownedSource = NewTemp(listTypeId);
+        _currentBlock!.Instructions.Add(new MirLoad
+        {
+            Target = ownedSource,
+            Source = sourcePlace,
+            CreatesBorrowAlias = false,
+            Span = span
+        });
+        var tail = NewTemp(listTypeId);
+        _currentBlock.Instructions.Add(new MirCall
+        {
+            Target = tail,
+            Function = MirRuntimeFunctions.CreateFunctionRef(
+                WellKnownStrings.InternalNames.ArraySlice,
+                listTypeId,
+                span),
+            Arguments =
+            [
+                ownedSource,
+                CreateIntConstant(startIndex, span),
+                CreateIntConstant(suffixCount, span)
+            ],
+            Span = span
+        });
+        RegisterRuntimeArrayLocal(tail);
+
         if (TryGetKnownListLength(sourcePlace, out var knownLength))
         {
-            return MaterializeKnownLengthListSlice(sourcePlace, knownLength, startIndex, suffixCount, listTypeId, elementTypeId, span);
+            RegisterKnownListLength(tail, Math.Max(knownLength - startIndex - suffixCount, 0));
+        }
+        else
+        {
+            ClearKnownListLength(tail);
         }
 
-        return MaterializeDynamicListSlice(sourcePlace, startIndex, suffixCount, listTypeId, elementTypeId, span);
+        return tail;
     }
 
     private MirPlace MaterializeKnownLengthListSlice(

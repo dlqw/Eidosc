@@ -1853,7 +1853,10 @@ public sealed partial class MirToLlvmConverter
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayGet, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArraySet, LlvmVoidType.Instance, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayPush, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayPrepend, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayExtend, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayTake, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArraySlice, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayPop, LlvmVoidType.Instance, LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArraySwap, LlvmVoidType.Instance, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayLength, LlvmIntType.I64, LlvmPointerType.VoidPtr());
@@ -1894,6 +1897,8 @@ public sealed partial class MirToLlvmConverter
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.HttpLastHeaders, LlvmPointerType.VoidPtr());
 
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.RegisterDestructor, LlvmVoidType.Instance, LlvmIntType.I32, LlvmPointerType.VoidPtr());
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.RegisterRetainer, LlvmVoidType.Instance, LlvmIntType.I32, LlvmPointerType.VoidPtr());
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.RecordUpdateCow, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I32);
 
         // 时间操作
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.TimeNow, LlvmIntType.I64);

@@ -54,6 +54,13 @@ public sealed partial class CompilationPipeline
         }
         builder.Append(']');
 
+        builder.Append("copy-like[");
+        foreach (var typeId in module.CopyLikeTypeIds.Order())
+        {
+            Append(builder, typeId);
+        }
+        builder.Append(']');
+
         builder.Append("trait-impls[");
         foreach (var impl in module.TraitImpls.OrderBy(static impl => impl.Id.Value))
         {

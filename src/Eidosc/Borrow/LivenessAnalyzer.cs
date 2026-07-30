@@ -203,7 +203,11 @@ public sealed class LivenessAnalyzer
                 if (store.Target?.Kind == PlaceKind.Local &&
                     TryGetLocalIndex(store.Target.Local, out var storeTargetIndex))
                 {
-                    use.Add(storeTargetIndex);
+                    def.Add(storeTargetIndex);
+                }
+                else
+                {
+                    CollectOperandUse(store.Target, use, def);
                 }
                 break;
 
@@ -214,7 +218,8 @@ public sealed class LivenessAnalyzer
             case MirCopy copy:
                 if (MirLocalTransferAnalysis.TryGetBinding(copy, out var copyBinding))
                 {
-                    if (TryGetLocalIndex(copyBinding.Source, out var copySourceIndex))
+                    if (TryGetLocalIndex(copyBinding.Source, out var copySourceIndex) &&
+                        !def.Contains(copySourceIndex))
                     {
                         use.Add(copySourceIndex);
                     }
@@ -227,7 +232,8 @@ public sealed class LivenessAnalyzer
                 else
                 {
                     if (copy.Source?.Kind == PlaceKind.Local &&
-                        TryGetLocalIndex(copy.Source.Local, out var copySourceLocalIndex))
+                        TryGetLocalIndex(copy.Source.Local, out var copySourceLocalIndex) &&
+                        !def.Contains(copySourceLocalIndex))
                     {
                         use.Add(copySourceLocalIndex);
                     }
@@ -242,7 +248,8 @@ public sealed class LivenessAnalyzer
             case MirMove move:
                 if (MirLocalTransferAnalysis.TryGetBinding(move, out var moveBinding))
                 {
-                    if (TryGetLocalIndex(moveBinding.Source, out var moveSourceIndex))
+                    if (TryGetLocalIndex(moveBinding.Source, out var moveSourceIndex) &&
+                        !def.Contains(moveSourceIndex))
                     {
                         use.Add(moveSourceIndex);
                     }
@@ -255,7 +262,8 @@ public sealed class LivenessAnalyzer
                 else
                 {
                     if (move.Source?.Kind == PlaceKind.Local &&
-                        TryGetLocalIndex(move.Source.Local, out var moveSourceLocalIndex))
+                        TryGetLocalIndex(move.Source.Local, out var moveSourceLocalIndex) &&
+                        !def.Contains(moveSourceLocalIndex))
                     {
                         use.Add(moveSourceLocalIndex);
                     }
@@ -424,14 +432,25 @@ public sealed class LivenessAnalyzer
             var firstDef = _usageAnalyzer.GetFirstDef(local.Id);
             var lastUse = _usageAnalyzer.GetLastUse(local.Id);
             List<(BlockId Block, int Index)> lastUses = lastUse != null ? [lastUse.Value] : [];
-            var liveBlocks = liveBlocksByLocalIndex[_localIndexById[local.Id]];
+            var liveBlocks = liveBlocksByLocalIndex[_localIndexById[local.Id]] ?? [];
+            if (firstDef is { } definition && definition.Block.IsValid &&
+                !liveBlocks.Contains(definition.Block.Value))
+            {
+                liveBlocks.Add(definition.Block.Value);
+            }
+
+            if (lastUse is { } use && use.Block.IsValid &&
+                !liveBlocks.Contains(use.Block.Value))
+            {
+                liveBlocks.Add(use.Block.Value);
+            }
 
             LiveRanges[local.Id] = new LiveRange
             {
                 Variable = local.Id,
                 Definition = firstDef ?? default,
                 LastUses = lastUses,
-                LiveBlocks = liveBlocks is not { Count: > 0 }
+                LiveBlocks = liveBlocks.Count == 0
                     ? CompactBlockIdSet.Empty
                     : new CompactBlockIdSet(liveBlocks)
             };

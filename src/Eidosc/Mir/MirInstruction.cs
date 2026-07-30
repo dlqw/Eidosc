@@ -64,6 +64,21 @@ public sealed record MirCall : MirInstruction
     public List<MirOperand> Arguments { get; init; } = [];
 
     /// <summary>
+    /// Argument positions observed without transferring ownership. Ordinary
+    /// calls express borrows through Ref/MRef operands; this metadata is for
+    /// compiler/runtime operations that bypass normal argument preparation.
+    /// </summary>
+    public IReadOnlySet<int> BorrowedArgumentIndices { get; init; } = new HashSet<int>();
+
+    /// <summary>
+    /// Describes a consuming same-constructor record update. The argument list
+    /// contains only replacement values, in the order given by
+    /// <see cref="MirRecordUpdateInfo.UpdatedFieldIndices"/>; all other fields
+    /// are preserved from the source record by the backend's COW path.
+    /// </summary>
+    public MirRecordUpdateInfo? RecordUpdate { get; init; }
+
+    /// <summary>
     /// 是否为尾调用（由 TailCallOptimization pass 设置）。
     /// 自递归尾调用会被转换为循环；此标记用于非自递归尾调用，
     /// 提示 LLVM codegen 发射 tail call 指令。
@@ -77,6 +92,13 @@ public sealed record MirCall : MirInstruction
         var tailStr = IsTailCall ? "tail " : "";
         return $"{targetStr}{tailStr}call {Function}({args})";
     }
+}
+
+public sealed record MirRecordUpdateInfo
+{
+    public MirPlace Source { get; init; } = null!;
+
+    public List<int> UpdatedFieldIndices { get; init; } = [];
 }
 
 /// <summary>
@@ -156,9 +178,18 @@ public sealed record MirLoad : MirInstruction
     /// </summary>
     public bool CreatesBorrowAlias { get; init; } = true;
 
+    /// <summary>
+    /// Whether this projected by-value load transfers ownership out of its
+    /// source place. LLVM lowering clears the source slot after loading so the
+    /// later aggregate drop releases only the fields that remain initialized.
+    /// </summary>
+    public bool MovesOutOfSource { get; init; }
+
     public override string ToString() => IsMutableBorrow
         ? $"{Target} = load_mut {Source}"
-        : $"{Target} = load {Source}";
+        : MovesOutOfSource
+            ? $"{Target} = load_move {Source}"
+            : $"{Target} = load {Source}";
 }
 
 /// <summary>

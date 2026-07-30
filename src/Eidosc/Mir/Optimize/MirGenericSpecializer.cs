@@ -333,8 +333,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
                functionRef.SymbolId.IsValid && _traitMethodInfoById.ContainsKey(functionRef.SymbolId) ||
                functionRef.TraitSelfPosition != SelfPosition.Unknown ||
                functionRef.TraitSelfParameterIndices.Count > 0 ||
-               functionRef.TraitSelfInResult ||
-               functionRef.CompilerSemanticRole != CompilerSemanticRole.None;
+               functionRef.TraitSelfInResult;
     }
 
     private bool ReferencesGenericTemplateCandidate(MirFunctionRef functionRef)
@@ -405,6 +404,9 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             DynamicTypeKeys = new Dictionary<int, string>(_dynamicTypes.KeyByIdDict),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(_dynamicTypes.DescriptorByIdDict),
             ConstructorLayouts = constructorLayouts,
+            CopyLikeTypeIds = source.CopyLikeTypeIds
+                .Concat(_extraCopyLikeTypeIds)
+                .ToHashSet(),
             TraitImpls = source.TraitImpls.ToList(),
             TraitInfos = source.TraitInfos.ToList(),
             TypeAliases = source.TypeAliases.ToList(),
@@ -906,7 +908,11 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             TraitSelfPosition = SelfPosition.Unknown,
             TraitSelfParameterIndices = [],
             TraitSelfInResult = false,
-            CompilerSemanticRole = CompilerSemanticRole.None
+            CompilerSemanticRole = functionRef.CompilerSemanticRole is
+                CompilerSemanticRole.AppendLastAppend or
+                CompilerSemanticRole.AppendLastSingleton
+                    ? functionRef.CompilerSemanticRole
+                    : CompilerSemanticRole.None
         };
     }
 

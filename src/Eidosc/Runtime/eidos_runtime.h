@@ -48,6 +48,12 @@ void* eidos_alloc(size_t size, uint32_t type_id);
  */
 void eidos_free(void* ptr);
 
+/** Optional allocation-balance instrumentation. */
+void eidos_memory_counters_reset(void);
+int64_t eidos_memory_alloc_count(void);
+int64_t eidos_memory_free_count(void);
+int64_t eidos_memory_reuse_count(void);
+
 /**
  * Increment reference count
  * @param ptr Pointer to the object
@@ -577,7 +583,7 @@ void* eidos_array_get(EidosArray* arr, size_t index);
  * Set array element
  * @param arr Array
  * @param index Element index
- * @param value Pointer to value
+ * @param value Pointer to a by-value element whose ownership is transferred into the array
  * @param element_size Size of element (reserved for ABI compatibility; runtime uses array element size)
  */
 void eidos_array_set(EidosArray* arr, size_t index, void* value, size_t element_size);
@@ -585,11 +591,14 @@ void eidos_array_set(EidosArray* arr, size_t index, void* value, size_t element_
 /**
  * Push element to array end
  * @param arr Array
- * @param value Pointer to value
+ * @param value Pointer to a by-value element whose ownership is transferred into the array
  * @param element_size Size of element (reserved for ABI compatibility; runtime uses array element size)
  * @return Array (possibly reallocated)
  */
 EidosArray* eidos_array_push(EidosArray* arr, void* value, size_t element_size);
+
+/** Consume an array and insert one owned element at the front. */
+EidosArray* eidos_array_prepend(EidosArray* arr, void* value, size_t element_size);
 
 /**
  * Append all elements from src array to dst array.
@@ -600,6 +609,18 @@ EidosArray* eidos_array_push(EidosArray* arr, void* value, size_t element_size);
  * @return Destination array (possibly reallocated)
  */
 EidosArray* eidos_array_extend(EidosArray* dst, EidosArray* src, size_t element_size);
+
+/**
+ * Consume an array and keep at most the requested prefix. Reuses uniquely
+ * owned storage and clones only when aliases still exist.
+ */
+EidosArray* eidos_array_take(EidosArray* arr, int64_t count);
+
+/**
+ * Consume an array and keep the range after removing a prefix and suffix.
+ * Reuses uniquely owned storage and clones only when aliases still exist.
+ */
+EidosArray* eidos_array_slice(EidosArray* arr, int64_t start, int64_t suffix_count);
 
 /**
  * Remove the last array element by shortening the logical length.
@@ -644,12 +665,24 @@ void eidos_assert(int condition, const char* message);
  */
 typedef void (*EidosDestructor)(void* ptr);
 
+/** Retains every managed field stored in an object payload. */
+typedef void (*EidosRetainer)(void* ptr);
+
 /**
  * Register a destructor for a type
  * @param type_id Type identifier
  * @param destructor Destructor function
  */
 void eidos_register_destructor(uint32_t type_id, EidosDestructor destructor);
+
+void eidos_register_retainer(uint32_t type_id, EidosRetainer retainer);
+
+/**
+ * Consumes a record and returns writable storage with identical fields.
+ * Unshared records are returned in place. Shared records are cloned and their
+ * managed fields retained through the registered type retainer.
+ */
+void* eidos_record_update_cow(void* ptr, size_t obj_size, uint32_t type_id);
 
 /* ============================================================
  * Type Information

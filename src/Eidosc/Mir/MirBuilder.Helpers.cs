@@ -230,6 +230,7 @@ public sealed partial class MirBuilder
             Target = lengthTemp,
             Function = MirRuntimeFunctions.CreateFunctionRef(WellKnownStrings.InternalNames.ArrayLength, intType, span),
             Arguments = [sourcePlace],
+            BorrowedArgumentIndices = new HashSet<int> { 0 },
             Span = span
         });
         ClearKnownListLength(lengthTemp);

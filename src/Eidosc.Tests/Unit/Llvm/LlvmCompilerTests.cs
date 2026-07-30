@@ -95,6 +95,13 @@ public sealed class LlvmCompilerTests
     }
 
     [Fact]
+    public void GetLtoLinkerFlags_Windows_UsesLld()
+    {
+        Assert.Equal(["-fuse-ld=lld"], LlvmCompiler.GetLtoLinkerFlags(TargetInfo.X86_64Windows));
+        Assert.Empty(LlvmCompiler.GetLtoLinkerFlags(TargetInfo.X86_64Linux));
+    }
+
+    [Fact]
     public void CompileToObject_WithAvailableLlvmOrClangToolchain_ProducesObjectFile()
     {
         if (!ToolExists("llc") && !ToolExists("clang"))
