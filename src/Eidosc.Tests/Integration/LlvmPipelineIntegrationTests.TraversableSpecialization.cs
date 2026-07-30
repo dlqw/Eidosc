@@ -260,7 +260,11 @@ public partial class LlvmPipelineIntegrationTests
             "seq_partition_tuple_result.eidos",
             "seq_partition_tuple_result");
 
-        Assert.Equal(4, execution.ExitCode);
+        Assert.True(
+            execution.ExitCode == 4,
+            $"Expected exit code 4, got {execution.ExitCode}.{Environment.NewLine}" +
+            $"stdout:{Environment.NewLine}{execution.StandardOutput}{Environment.NewLine}" +
+            $"stderr:{Environment.NewLine}{execution.StandardError}");
     }
 
     [Fact]

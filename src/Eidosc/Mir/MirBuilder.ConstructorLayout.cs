@@ -69,10 +69,6 @@ public sealed partial class MirBuilder
         if (!adt.TypeId.IsValid)
             return;
 
-        // Skip if already populated (e.g. from HirBuilder)
-        if (_constructorLayouts.ContainsKey(adt.TypeId.Value))
-            return;
-
         var typeName = adt.Name;
         if (adt.TypeParams.Count > 0)
         {
@@ -111,7 +107,10 @@ public sealed partial class MirBuilder
         if (layouts.Count == 0)
             return;
 
-        // Store under the ADT's TypeId
+        // HIR is authoritative for product-record fields. Earlier type-ID
+        // collection can only see the synthetic constructor symbol and may
+        // seed an empty layout for `Record :: type { fields... }`. Always
+        // replace the declared ADT entry with the complete HIR layout.
         _constructorLayouts[adt.TypeId.Value] = layouts;
 
         // Also store under each constructor's SymbolId-resolved TypeId

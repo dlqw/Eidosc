@@ -22,6 +22,7 @@ public sealed class StackPromotionHints
 /// </summary>
 public sealed class StackPromotionAnalyzer
 {
+    private const long MaxSmallCopyRecordPayloadBytes = 32;
     private readonly MirFunc _function;
 
     public StackPromotionHints Hints { get; } = new();
@@ -37,8 +38,8 @@ public sealed class StackPromotionAnalyzer
         Hints.StackAllocInfoByLocal.Clear();
         Hints.PromotedLocals.Clear();
 
-        var escaped = CollectEscapedLocals();
-        IdentifyPromotableConstructorCalls(escaped);
+        var escaped = CollectEscapedLocals(out var aliases);
+        IdentifyPromotableConstructorCalls(escaped, aliases);
     }
 
     public static bool MayHavePromotableConstructorCalls(MirFunc function)
@@ -57,10 +58,11 @@ public sealed class StackPromotionAnalyzer
         return false;
     }
 
-    private HashSet<LocalId> CollectEscapedLocals()
+    private HashSet<LocalId> CollectEscapedLocals(
+        out Dictionary<LocalId, HashSet<LocalId>> aliases)
     {
         var escaped = new HashSet<LocalId>();
-        var aliases = new Dictionary<LocalId, HashSet<LocalId>>();
+        aliases = [];
 
         foreach (var block in _function.BasicBlocks)
         {
@@ -124,7 +126,14 @@ public sealed class StackPromotionAnalyzer
                 break;
 
             case MirStore store:
-                CollectLocalsFromOperand(store.Value, escaped);
+                if (store.Target.Kind == PlaceKind.Local)
+                {
+                    AddAlias(store.Value, store.Target, aliases);
+                }
+                else
+                {
+                    CollectLocalsFromOperand(store.Value, escaped);
+                }
                 break;
 
             case MirCopy copy:
@@ -196,7 +205,9 @@ public sealed class StackPromotionAnalyzer
         }
     }
 
-    private void IdentifyPromotableConstructorCalls(HashSet<LocalId> escaped)
+    private void IdentifyPromotableConstructorCalls(
+        HashSet<LocalId> escaped,
+        IReadOnlyDictionary<LocalId, HashSet<LocalId>> aliases)
     {
         foreach (var block in _function.BasicBlocks)
         {
@@ -230,11 +241,37 @@ public sealed class StackPromotionAnalyzer
                     var fieldCount = call.Arguments.Count;
                     var typeId = AdtConstructorTypeId.Compute(ctorRef.FunctionId, ctorRef.SymbolId, ctorName);
                     var payloadSize = Math.Max(8L, fieldCount * 8L);
+                    if (payloadSize > MaxSmallCopyRecordPayloadBytes)
+                    {
+                        continue;
+                    }
 
                     Hints.StackAllocSites.Add((block.Id, i));
                     Hints.StackAllocInfoByLocal[targetLocal] = new StackAllocInfo(fieldCount, typeId, payloadSize);
-                    Hints.PromotedLocals.Add(targetLocal);
+                    AddAliasClosure(targetLocal, aliases, Hints.PromotedLocals);
                 }
+            }
+        }
+    }
+
+    private static void AddAliasClosure(
+        LocalId local,
+        IReadOnlyDictionary<LocalId, HashSet<LocalId>> aliases,
+        HashSet<LocalId> result)
+    {
+        var pending = new Stack<LocalId>();
+        pending.Push(local);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (!result.Add(current) || !aliases.TryGetValue(current, out var currentAliases))
+            {
+                continue;
+            }
+
+            foreach (var alias in currentAliases)
+            {
+                pending.Push(alias);
             }
         }
     }

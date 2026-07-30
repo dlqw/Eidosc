@@ -319,6 +319,81 @@ public sealed partial class MirToLlvmConverter
         return destructor;
     }
 
+    private LlvmFunction GenerateRetainer(ConstructorTypeLayout layout, int typeId)
+    {
+        var sanitizedTypeName = NameMangler.SanitizeIdentifier(layout.TypeName);
+        var sanitizedCtorName = NameMangler.SanitizeIdentifier(layout.ConstructorName);
+        var constructorSymbol = $"{WellKnownStrings.Mangling.Prefix}{sanitizedTypeName}__{sanitizedCtorName}";
+        var retainerName = $"eidos_retain_fields__{sanitizedTypeName}__{sanitizedCtorName}__{typeId:X8}";
+        var retainer = new LlvmFunction
+        {
+            Name = retainerName,
+            ReturnType = LlvmVoidType.Instance,
+            Linkage = LlvmLinkage.Private
+        };
+        retainer.Parameters.Add(new LlvmParameter
+        {
+            Name = "ptr",
+            Type = LlvmPointerType.VoidPtr()
+        });
+
+        var previousBlock = _currentBlock;
+        var block = new LlvmBasicBlock { Label = WellKnownStrings.InternalNames.Entry };
+        _currentBlock = block;
+        _typeLowering.TryGetStructTypeByConstructorName(constructorSymbol, out var structType);
+        var pointer = new LlvmLocal { Name = "%ptr", Type = LlvmPointerType.VoidPtr() };
+
+        for (var index = 0; index < layout.FieldTypeIds.Count; index++)
+        {
+            var fieldTypeId = layout.FieldTypeIds[index];
+            if (!PayloadContainsManagedRc(fieldTypeId))
+            {
+                continue;
+            }
+
+            var storageType = LowerStorageTypeIdOrReport(fieldTypeId, "record retainer field");
+            LlvmGetElementPtr fieldPointer;
+            if (structType != null)
+            {
+                fieldPointer = new LlvmGetElementPtr
+                {
+                    Pointer = pointer,
+                    StructType = structType,
+                    StructFieldIndex = ComputeStructFieldIndex(false, index),
+                    ResultName = $"%field{index}_ptr"
+                };
+            }
+            else
+            {
+                fieldPointer = new LlvmGetElementPtr
+                {
+                    Pointer = pointer,
+                    ElementType = LlvmIntType.I8,
+                    Index = new LlvmConstant { Value = (long)index * 8L, Type = LlvmIntType.I64 },
+                    ResultName = $"%field{index}_ptr"
+                };
+            }
+
+            block.Instructions.Add(fieldPointer);
+            var load = new LlvmLoad
+            {
+                Pointer = new LlvmInstructionRef { Instruction = fieldPointer, Type = LlvmPointerType.VoidPtr() },
+                LoadType = storageType,
+                ResultName = $"%field{index}_value"
+            };
+            block.Instructions.Add(load);
+            EmitRetainManagedPayloadValue(
+                fieldTypeId,
+                new LlvmInstructionRef { Instruction = load, Type = storageType },
+                storageType);
+        }
+
+        block.Terminator = new LlvmRet();
+        retainer.BasicBlocks.Add(block);
+        _currentBlock = previousBlock;
+        return retainer;
+    }
+
     private LlvmFunction GenerateValueBoxDestructor(TypeId payloadTypeId, int boxRuntimeTypeId)
     {
         var destructorName = $"{WellKnownStrings.SpecialNames.DestructorPrefix}value_box__{payloadTypeId.Value:X8}__{boxRuntimeTypeId:X8}";
@@ -413,7 +488,8 @@ public sealed partial class MirToLlvmConverter
     /// </summary>
     /// <param name="destructors">析构器列表: (typeId, destructorName)</param>
     /// <returns>初始化函数</returns>
-    public LlvmFunction GenerateModuleInit(List<(int typeId, string destructorName)> destructors)
+    public LlvmFunction GenerateModuleInit(
+        List<(int typeId, string destructorName, string retainerName)> typeOperations)
     {
         var initFunc = new LlvmFunction
         {
@@ -428,7 +504,7 @@ public sealed partial class MirToLlvmConverter
         };
 
         // 为每个析构器生成注册调用
-        foreach (var (typeId, destructorName) in destructors)
+        foreach (var (typeId, destructorName, retainerName) in typeOperations)
         {
             var registerCall = new LlvmCall
             {
@@ -450,6 +526,28 @@ public sealed partial class MirToLlvmConverter
                 ResultName = ""
             };
             entryBlock.Instructions.Add(registerCall);
+            if (!string.IsNullOrEmpty(retainerName))
+            {
+                entryBlock.Instructions.Add(new LlvmCall
+                {
+                    Function = new LlvmGlobal
+                    {
+                        Name = WellKnownStrings.Runtime.RegisterRetainer,
+                        Type = new LlvmFunctionType
+                        {
+                            ReturnType = LlvmVoidType.Instance,
+                            ParameterTypes = [LlvmIntType.I32, LlvmPointerType.VoidPtr()]
+                        }
+                    },
+                    Arguments =
+                    [
+                        new LlvmConstant { Value = typeId, Type = LlvmIntType.I32 },
+                        new LlvmGlobal { Name = retainerName, Type = LlvmPointerType.VoidPtr() }
+                    ],
+                    ReturnType = LlvmVoidType.Instance,
+                    ResultName = ""
+                });
+            }
         }
 
         entryBlock.Terminator = new LlvmRet();
@@ -470,7 +568,7 @@ public sealed partial class MirToLlvmConverter
             return;
         }
 
-        var destructorPairs = new List<(int typeId, string destructorName)>();
+        var typeOperations = new List<(int typeId, string destructorName, string retainerName)>();
         var layoutsByRuntimeTypeId = new Dictionary<int, List<ConstructorTypeLayout>>();
 
         if (mirModule.ConstructorLayouts.Count > 0)
@@ -504,8 +602,10 @@ public sealed partial class MirToLlvmConverter
             }
 
             var destructorFunc = GenerateDestructor(layout, IsManagedRcType, typeId);
+            var retainerFunc = GenerateRetainer(layout, typeId);
             llvmModule.Functions.Add(destructorFunc);
-            destructorPairs.Add((typeId, destructorFunc.Name));
+            llvmModule.Functions.Add(retainerFunc);
+            typeOperations.Add((typeId, destructorFunc.Name, retainerFunc.Name));
         }
 
         foreach (var (boxRuntimeTypeId, payloadTypeId) in _valueBoxPayloadTypeByRuntimeTypeId)
@@ -518,15 +618,15 @@ public sealed partial class MirToLlvmConverter
 
             var destructorFunc = GenerateValueBoxDestructor(payloadTypeId, boxRuntimeTypeId);
             llvmModule.Functions.Add(destructorFunc);
-            destructorPairs.Add((boxRuntimeTypeId, destructorFunc.Name));
+            typeOperations.Add((boxRuntimeTypeId, destructorFunc.Name, string.Empty));
         }
 
-        if (destructorPairs.Count == 0)
+        if (typeOperations.Count == 0)
         {
             return;
         }
 
-        var moduleInit = GenerateModuleInit(destructorPairs);
+        var moduleInit = GenerateModuleInit(typeOperations);
         llvmModule.Functions.Add(moduleInit);
     }
 
@@ -615,22 +715,27 @@ public sealed partial class MirToLlvmConverter
             return false;
         }
 
-        var selectedMask = GetManagedFieldMask(layouts[0]);
+        var completeFieldCount = layouts.Max(static candidate => candidate.FieldTypeIds.Count);
+        var completeLayouts = layouts
+            .Where(candidate => candidate.FieldTypeIds.Count == completeFieldCount)
+            .ToArray();
+        var selectedLayout = completeLayouts[0];
+        var selectedMask = GetManagedFieldMask(selectedLayout);
         if (!selectedMask.Any(static isManaged => isManaged))
         {
             return false;
         }
 
-        for (var index = 1; index < layouts.Count; index++)
+        for (var index = 1; index < completeLayouts.Length; index++)
         {
-            var candidateMask = GetManagedFieldMask(layouts[index]);
+            var candidateMask = GetManagedFieldMask(completeLayouts[index]);
             if (!HasSameManagedFieldShape(selectedMask, candidateMask))
             {
                 return false;
             }
         }
 
-        layout = layouts[0];
+        layout = selectedLayout;
         return true;
     }
 

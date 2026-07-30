@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Eidosc.CodeGen.Llvm;
 using Eidosc.Mir;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
@@ -136,6 +137,59 @@ Main :: module {
         Assert.True(payload.IsRestorable, string.Join(Environment.NewLine, payload.UnsupportedNodeKinds));
         Assert.True(payload.TryRestore(out var restored));
         AssertEquivalentFingerprints(module, restored);
+    }
+
+    [Fact]
+    public void Create_RestoredSmallCopyRecord_PreservesInlineLlvmValueAbi()
+    {
+        var result = new CompilationPipeline("""
+Main :: module {
+    @[derive(Copy)]
+    Point :: type { Point :: type(Int, Int) }
+
+    sum :: Point -> Int
+    {
+        Point(x, y) => x + y
+    }
+}
+""", new CompilationOptions
+        {
+            InputFile = "Main.eidos",
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Mir,
+            NoImplicitPrelude = false,
+            EnableDetailedProfiling = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.ToString())));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        Assert.Contains(
+            module.ConstructorLayouts,
+            entry => module.CopyLikeTypeIds.Contains(entry.Key) &&
+                     entry.Value.Any(static layout =>
+                         string.Equals(layout.TypeName, "Point", StringComparison.Ordinal)));
+
+        var payload = ModuleMirStatePayload.Create(module);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = JsonSerializer.Deserialize<ModuleMirStatePayload>(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped!.TryRestore(out var restored));
+        var llvmModule = new MirToLlvmConverter().Convert(restored);
+        var llvmIr = new LlvmEmitter().Emit(llvmModule);
+        var sumDefinition = Assert.Single(
+            llvmIr.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries),
+            static line =>
+                line.StartsWith("define external i64 @", StringComparison.Ordinal) &&
+                line.Contains("_Function_u0000_sum_", StringComparison.Ordinal) &&
+                !line.Contains("__eidos_prelude_core__", StringComparison.Ordinal));
+
+        Assert.Contains("(%struct.eidos_Point ", sumDefinition, StringComparison.Ordinal);
+        Assert.DoesNotContain("(ptr ", sumDefinition, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -850,10 +904,10 @@ Main :: module {
                                     },
                                     Span = Span(31)
                                 },
-                                new MirCall { Target = field, Function = functionRef, Arguments = [ConstString("arg"), temp, deref], IsTailCall = true, Span = Span(32) },
+                                new MirCall { Target = field, Function = functionRef, Arguments = [ConstString("arg"), temp, deref], IsTailCall = true, BorrowedArgumentIndices = new HashSet<int> { 0, 2 }, Span = Span(32) },
                                 new MirBinOp { Target = temp, Operator = BinaryOp.Add, Left = ConstInt(1, intType), Right = ConstInt(2, intType), Span = Span(38) },
                                 new MirUnaryOp { Target = temp, Operator = UnaryOp.Neg, Operand = ConstInt(3, intType), Span = Span(39) },
-                                new MirLoad { Target = local, Source = index, IsMutableBorrow = true, CreatesBorrowAlias = false, Span = Span(40) },
+                                new MirLoad { Target = local, Source = index, IsMutableBorrow = true, CreatesBorrowAlias = false, MovesOutOfSource = true, Span = Span(40) },
                                 new MirStore { Target = local, Value = ConstFloat(3.5), Span = Span(41) },
                                 new MirDrop { Value = new MirPoison { Reason = "synthetic", TypeId = unitType, Span = Span(42) }, Span = Span(43) },
                                 new MirCopy { Target = local, Source = field, Span = Span(44) },

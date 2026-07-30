@@ -476,6 +476,11 @@ public sealed partial class MirToLlvmConverter
             }
             else
             {
+                for (var index = 0; index < payload.Count; index++)
+                {
+                    RetainClosurePayloadForOwnedCall(payload[index], callArguments[index]);
+                }
+
                 var result = new LlvmCall
                 {
                     Function = directFunction,
@@ -559,7 +564,9 @@ public sealed partial class MirToLlvmConverter
             for (var index = 1; index < payload.Count; index++)
             {
                 var entryInfo = payload[index];
-                callArguments.Add(LoadClosurePayloadValue(entryInfo.Type, entryInfo.Offset, "nested_payload"));
+                var argument = LoadClosurePayloadValue(entryInfo.Type, entryInfo.Offset, "nested_payload");
+                RetainClosurePayloadForOwnedCall(entryInfo, argument);
+                callArguments.Add(argument);
             }
 
             for (var index = 0; index < visibleSignature.ParameterTypes.Count; index++)
@@ -601,6 +608,30 @@ public sealed partial class MirToLlvmConverter
 
         _synthesizedClosureHelpers.Add(thunk);
         return thunk;
+    }
+
+    private void RetainClosurePayloadForOwnedCall(ClosurePayloadEntry entry, LlvmValue value)
+    {
+        RetainManagedClosureArgument(entry.TypeId, entry.IsManagedRc, value, entry.Type);
+    }
+
+    private void RetainManagedClosureArgument(
+        TypeId typeId,
+        bool isManagedRc,
+        LlvmValue value,
+        LlvmType storageType)
+    {
+        if (typeId.IsValid && PayloadContainsManagedRc(typeId))
+        {
+            EmitRetainManagedPayloadValue(typeId, value, storageType);
+            return;
+        }
+
+        if (isManagedRc)
+        {
+            _currentBlock?.Instructions.Add(
+                CreateRuntimeRcCall(WellKnownStrings.Runtime.IncRefLocal, value));
+        }
     }
 
     private LlvmFunction? SynthesizeReleaseThunk(IReadOnlyList<ClosurePayloadEntry> payload)

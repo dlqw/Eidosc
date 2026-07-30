@@ -95,13 +95,17 @@ public sealed partial class MirToLlvmConverter
             return false;
         }
 
-        if (_typeLowering.IsOpenDynamicType(typeId))
+        if (_typeLowering.TryGetTypeDescriptor(typeId, out var descriptor) &&
+            descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef or TypeDescriptor.TypeVar)
         {
             return false;
         }
 
-        if (_typeLowering.TryGetTypeDescriptor(typeId, out var descriptor) &&
-            descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef)
+        // An outer runtime type keeps its representation even while one of its
+        // generic arguments is still open.  RuntimeArray[T], Seq[T], and closure
+        // types are therefore managed pointers; only a bare unresolved type
+        // variable is representation-unknown and must be rejected above.
+        if (descriptor == null && _typeLowering.IsOpenDynamicType(typeId))
         {
             return false;
         }
@@ -450,12 +454,6 @@ public sealed partial class MirToLlvmConverter
             };
         }
 
-        // Deduplicate: if we already created an EidosString for this value, reuse it.
-        if (_stringLiteralPool.TryGetValue(value, out var pooled))
-        {
-            return pooled;
-        }
-
         var cstrRef = CreateCStringPointer(value, "str");
         var byteLength = Encoding.UTF8.GetByteCount(value);
 
@@ -477,12 +475,7 @@ public sealed partial class MirToLlvmConverter
             ReturnType = LlvmPointerType.VoidPtr(),
             ResultName = _nameMangler.NewTempName("strobj")
         };
-        // Emit into the entry block so the result dominates all uses across branches.
-        // Fall back to _currentBlock when the entry block is not yet materialized.
-        var entryBlock = _currentFunction?.BasicBlocks.Count > 0
-            ? _currentFunction.BasicBlocks[0]
-            : _currentBlock;
-        entryBlock?.Instructions.Add(stringCtorCall);
+        _currentBlock?.Instructions.Add(stringCtorCall);
 
         var result = new LlvmInstructionRef
         {
@@ -490,7 +483,6 @@ public sealed partial class MirToLlvmConverter
             Type = LlvmPointerType.VoidPtr()
         };
 
-        _stringLiteralPool[value] = result;
         return result;
     }
 

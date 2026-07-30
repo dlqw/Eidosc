@@ -968,6 +968,7 @@ public sealed partial class CompilationPipeline
             ConstructorLayouts = borrowModule.ConstructorLayouts.ToDictionary(
                 static pair => pair.Key,
                 static pair => pair.Value.ToList()),
+            CopyLikeTypeIds = new HashSet<int>(borrowModule.CopyLikeTypeIds),
             TraitImpls = borrowModule.TraitImpls.ToList(),
             TraitInfos = borrowModule.TraitInfos.ToList(),
             TypeAliases = borrowModule.TypeAliases.ToList(),

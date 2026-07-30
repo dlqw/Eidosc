@@ -370,6 +370,25 @@ public sealed partial class MirToLlvmConverter
 
     private LlvmValue ResolveAggregateBasePointer(MirPlace basePlace, string tempPrefix)
     {
+        if (basePlace.Kind == PlaceKind.Local &&
+            IsSlotBackedLocal(basePlace.Local) &&
+            _locals.LocalSlots.TryGetValue(basePlace.Local, out var slot))
+        {
+            var slotValueType = LowerStorageTypeIdOrReport(
+                basePlace.TypeId,
+                "resolve slot-backed aggregate base pointer");
+            if (slotValueType is LlvmPointerType)
+            {
+                return LoadFromLocalSlot(basePlace.Local, basePlace.TypeId);
+            }
+
+            return new LlvmInstructionRef
+            {
+                Instruction = slot,
+                Type = LlvmPointerType.VoidPtr()
+            };
+        }
+
         var baseValue = basePlace.Kind switch
         {
             PlaceKind.Local or PlaceKind.Deref => ConvertPlace(basePlace),
@@ -1137,7 +1156,38 @@ public sealed partial class MirToLlvmConverter
             }
         }
 
+        foreach (var load in func.BasicBlocks
+                     .SelectMany(static block => block.Instructions)
+                     .OfType<MirLoad>()
+                     .Where(static load => load.MovesOutOfSource))
+        {
+            if (load.Source is MirPlace sourcePlace &&
+                TryGetProjectionRootLocal(sourcePlace) is { } rootLocal)
+            {
+                slotBacked.Add(rootLocal);
+            }
+        }
+
         return slotBacked;
+    }
+
+    private static LocalId? TryGetProjectionRootLocal(MirPlace place)
+    {
+        var current = place;
+        while (true)
+        {
+            if (current.Kind == PlaceKind.Local)
+            {
+                return current.Local;
+            }
+
+            if (current.Base == null)
+            {
+                return null;
+            }
+
+            current = current.Base;
+        }
     }
 
     private struct LocalDefinitionStats(BlockId firstBlock, int count, bool hasMultipleBlocks)

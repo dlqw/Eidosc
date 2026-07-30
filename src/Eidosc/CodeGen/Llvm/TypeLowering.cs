@@ -30,6 +30,9 @@ public sealed class TypeLowering
     /// ADT 构造器布局数据。
     /// </summary>
     private Dictionary<int, List<ConstructorTypeLayout>> _constructorLayouts = [];
+    private HashSet<int> _scalarTagTypeIds = [];
+    private HashSet<int> _inlineValueRecordTypeIds = [];
+    private HashSet<int> _copyLikeTypeIds = [];
 
     /// <summary>
     /// Gets the dynamic type keys currently registered for lowering.
@@ -311,7 +314,15 @@ public sealed class TypeLowering
         }
 
         LlvmType result;
-        if (_dynamicTypeKeyById.TryGetValue(typeId.Value, out var dynamicTypeKey) &&
+        if (IsScalarTagType(typeId))
+        {
+            result = LlvmIntType.I32;
+        }
+        else if (IsInlineValueRecordType(typeId) && TryGetStructType(typeId, out var inlineRecordType))
+        {
+            result = inlineRecordType;
+        }
+        else if (_dynamicTypeKeyById.TryGetValue(typeId.Value, out var dynamicTypeKey) &&
             TryLowerDynamicType(dynamicTypeKey, allowOpenDynamicTypes, out var loweredDynamicType))
         {
             result = loweredDynamicType;
@@ -583,6 +594,24 @@ public sealed class TypeLowering
         _constructorLayouts = layouts != null
             ? layouts.ToDictionary(kv => kv.Key, kv => kv.Value)
             : [];
+        RecomputeInlineValueRecordTypes();
+        _structTypeByTypeId.Clear();
+        _cache.Clear();
+        _storageCache.Clear();
+    }
+
+    public void SetScalarTagTypeIds(IEnumerable<int>? typeIds)
+    {
+        _scalarTagTypeIds = typeIds?.ToHashSet() ?? [];
+        RecomputeInlineValueRecordTypes();
+        _cache.Clear();
+        _storageCache.Clear();
+    }
+
+    public void SetCopyLikeTypeIds(IEnumerable<int>? typeIds)
+    {
+        _copyLikeTypeIds = typeIds?.ToHashSet() ?? [];
+        RecomputeInlineValueRecordTypes();
         _structTypeByTypeId.Clear();
         _cache.Clear();
         _storageCache.Clear();
@@ -692,6 +721,95 @@ public sealed class TypeLowering
     public bool TryGetConstructorLayouts(TypeId typeId, [NotNullWhen(true)] out List<ConstructorTypeLayout>? layouts)
     {
         return _constructorLayouts.TryGetValue(typeId.Value, out layouts);
+    }
+
+    public bool IsScalarTagType(TypeId typeId) =>
+        typeId.IsValid && _scalarTagTypeIds.Contains(typeId.Value);
+
+    public bool IsInlineValueRecordType(TypeId typeId) =>
+        typeId.IsValid && _inlineValueRecordTypeIds.Contains(typeId.Value);
+
+    private void RecomputeInlineValueRecordTypes()
+    {
+        _inlineValueRecordTypeIds = [];
+        var copyRecordTypeNames = _copyLikeTypeIds
+            .Select(typeId => _constructorLayouts.GetValueOrDefault(typeId))
+            .Where(static layouts => layouts is { Count: 1 })
+            .Select(static layouts => layouts![0].TypeName)
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.Ordinal);
+        var copyRecordConstructorNames = _copyLikeTypeIds
+            .Select(typeId => _constructorLayouts.GetValueOrDefault(typeId))
+            .Where(static layouts => layouts is { Count: 1 })
+            .Select(static layouts => layouts![0].ConstructorName)
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.Ordinal);
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var (typeId, layouts) in _constructorLayouts)
+            {
+                if (_inlineValueRecordTypeIds.Contains(typeId) ||
+                    (!_copyLikeTypeIds.Contains(typeId) &&
+                     !copyRecordTypeNames.Contains(layouts[0].TypeName) &&
+                     !copyRecordConstructorNames.Contains(layouts[0].ConstructorName)) ||
+                    layouts.Count != 1 ||
+                    layouts[0].FieldTypeIds.Count is 0 or > 4)
+                {
+                    continue;
+                }
+
+                long payloadSize = 0;
+                var eligible = true;
+                foreach (var fieldTypeId in layouts[0].FieldTypeIds)
+                {
+                    var fieldSize = GetInlineValueFieldSize(fieldTypeId);
+                    if (fieldSize <= 0)
+                    {
+                        eligible = false;
+                        break;
+                    }
+
+                    payloadSize += ((fieldSize + 7L) / 8L) * 8L;
+                }
+
+                if (!eligible || payloadSize > 32)
+                {
+                    continue;
+                }
+
+                _inlineValueRecordTypeIds.Add(typeId);
+                changed = true;
+            }
+        }
+    }
+
+    private long GetInlineValueFieldSize(TypeId typeId)
+    {
+        if (_scalarTagTypeIds.Contains(typeId.Value))
+        {
+            return 4;
+        }
+
+        if (_inlineValueRecordTypeIds.Contains(typeId.Value) &&
+            _constructorLayouts.TryGetValue(typeId.Value, out var layouts))
+        {
+            return layouts[0].FieldTypeIds.Sum(field =>
+            {
+                var size = GetInlineValueFieldSize(field);
+                return size <= 0 ? 0 : ((size + 7L) / 8L) * 8L;
+            });
+        }
+
+        return typeId.Value switch
+        {
+            BaseTypes.IntId or BaseTypes.Int64Id or BaseTypes.FloatId or BaseTypes.Float64Id => 8,
+            BaseTypes.Int32Id or BaseTypes.Float32Id or BaseTypes.CharId => 4,
+            BaseTypes.Int16Id or BaseTypes.Float16Id => 2,
+            BaseTypes.Int8Id or BaseTypes.BoolId or BaseTypes.UnitId => 1,
+            _ => 0
+        };
     }
 
     /// <summary>

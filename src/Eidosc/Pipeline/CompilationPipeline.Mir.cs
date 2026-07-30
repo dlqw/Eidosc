@@ -114,6 +114,7 @@ public sealed partial class CompilationPipeline
                     optimizer,
                     MeasureMirSpecializerSubphase);
                 _mirModule = specializationResult.Module;
+                _borrowMirModule = _mirModule;
                 specializerRunCount = specializationResult.SpecializerRunCount;
                 specializerChangedIterationCount = specializationResult.SpecializerChangedIterationCount;
                 optimizerChangedIterationCount = specializationResult.OptimizerChangedIterationCount;

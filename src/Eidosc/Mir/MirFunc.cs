@@ -68,6 +68,12 @@ public sealed class MirModule
     public Dictionary<int, List<ConstructorTypeLayout>> ConstructorLayouts { get; init; } = [];
 
     /// <summary>
+    /// Structurally Copy types proven by HIR/type analysis. Backends may choose
+    /// inline value representations for small closed records in this set.
+    /// </summary>
+    public HashSet<int> CopyLikeTypeIds { get; init; } = [];
+
+    /// <summary>
     /// Structured trait implementation metadata carried from HIR for MIR-level dispatch.
     /// </summary>
     public List<ImplSymbol> TraitImpls { get; init; } = [];

@@ -58,12 +58,6 @@ public sealed partial class MirToLlvmConverter
     private readonly Dictionary<string, LlvmGlobal> _runtimeFunctionGlobalCache = new(StringComparer.Ordinal);
     private readonly Dictionary<TypeId, ArrayElementPolicy> _arrayElementPolicies = [];
 
-    /// <summary>
-    /// Per-function string constant pool: maps string value to the eidos_string_intern
-    /// call result. Deduplicates repeated string literals within a function.
-    /// </summary>
-    private readonly Dictionary<string, LlvmValue> _stringLiteralPool = new(StringComparer.Ordinal);
-
     private LlvmFunction? _builtinShowBoolHelper;
     private LlvmFunction? _erasedShowHelper;
     private LlvmModule? _currentModule;
@@ -481,7 +475,6 @@ public sealed partial class MirToLlvmConverter
             _postInstructionBuffer.Clear();
             _blockMap.Clear();
             _nameMangler.ResetCounters();
-            _stringLiteralPool.Clear();
             _currentMirFunction = func;
             _currentFunctionAllowsOpenLocalTypes = false;
 
@@ -842,12 +835,55 @@ public sealed partial class MirToLlvmConverter
             return ReportUnsupportedInstruction(injection);
         }
 
-        return ConvertAssign(new MirAssign
+        var sourceTypeId = injection.SourceTypeId.IsValid
+            ? injection.SourceTypeId
+            : injection.Operand.TypeId;
+        var targetTypeId = injection.TargetTypeId.IsValid
+            ? injection.TargetTypeId
+            : target.TypeId;
+        var value = MaterializeScalarTagForNonScalarTarget(
+            ConvertOperand(injection.Operand),
+            sourceTypeId,
+            targetTypeId,
+            "case_inject");
+        AssignPlaceFromValue(target, value);
+        return null;
+    }
+
+    private LlvmValue MaterializeScalarTagForNonScalarTarget(
+        LlvmValue value,
+        TypeId sourceTypeId,
+        TypeId targetTypeId,
+        string namePrefix)
+    {
+        if (value.Type is not LlvmIntType ||
+            !_typeLowering.IsScalarTagType(sourceTypeId) ||
+            _typeLowering.IsScalarTagType(targetTypeId) ||
+            LowerStorageTypeIdOrReport(targetTypeId, $"{namePrefix} target") is not LlvmPointerType)
         {
-            Target = target,
-            Source = injection.Operand,
-            Span = injection.Span
-        });
+            return value;
+        }
+
+        var allocation = new LlvmCall
+        {
+            Function = CreateRuntimeFunctionGlobal(
+                WellKnownStrings.Runtime.Alloc,
+                LlvmPointerType.VoidPtr(),
+                [LlvmIntType.I64, LlvmIntType.I32]),
+            Arguments =
+            [
+                new LlvmConstant { Value = 8L, Type = LlvmIntType.I64 },
+                CoerceValueToType(value, LlvmIntType.I32, $"{namePrefix}_tag")
+            ],
+            ReturnType = LlvmPointerType.VoidPtr(),
+            ResultName = _nameMangler.NewTempName(namePrefix)
+        };
+        _currentBlock!.Instructions.Add(allocation);
+        return new LlvmInstructionRef
+        {
+            Instruction = allocation,
+            Type = LlvmPointerType.VoidPtr()
+        };
     }
 
     private LlvmInstruction? ConvertStore(MirStore store)
@@ -1040,7 +1076,9 @@ public sealed partial class MirToLlvmConverter
                 _locals.RuntimeWordLocals.Remove(load.Target.Local);
             }
             CopyGenericLocal(load.Target.Local, sourceLocal.Local);
-            PropagateBorrowedProjectionLocal(load.Target.Local, sourceLocal.Local);
+            SetBorrowedProjectionLocal(
+                load.Target.Local,
+                load.CreatesBorrowAlias || _borrowedProjectionLocals.Contains(sourceLocal.Local));
 
             return null;
         }
@@ -1050,7 +1088,22 @@ public sealed partial class MirToLlvmConverter
         if (load.Source is MirPlace { Kind: PlaceKind.Deref } derefSource &&
             ResolveDerefValueType(derefSource) is LlvmPointerType)
         {
-            AssignPlaceFromValue(load.Target, ConvertPlace(derefSource));
+            var dereferencedValue = ConvertPlace(derefSource);
+            AssignPlaceFromValue(load.Target, dereferencedValue);
+            SetBorrowedProjectionLocal(load.Target.Local, load.CreatesBorrowAlias);
+
+            var dereferencedTypeId = load.Target.TypeId.IsValid
+                ? load.Target.TypeId
+                : derefSource.TypeId;
+            if (!load.CreatesBorrowAlias &&
+                dereferencedTypeId.IsValid &&
+                IsManagedRcType(dereferencedTypeId))
+            {
+                return CreateRuntimeRcCall(
+                    WellKnownStrings.Runtime.IncRefLocal,
+                    dereferencedValue);
+            }
+
             return null;
         }
 
@@ -1084,13 +1137,45 @@ public sealed partial class MirToLlvmConverter
             };
         }
 
-        return new LlvmLoad
+        var loadInstruction = new LlvmLoad
         {
             Pointer = sourcePointer,
             LoadType = loadType,
             IsVolatile = false,
             ResultName = resultName
         };
+
+        var loadedTypeId = load.Target.TypeId.IsValid
+            ? load.Target.TypeId
+            : _locals.LocalTypeById.GetValueOrDefault(load.Target.Local, load.Source.TypeId);
+        if (load.MovesOutOfSource &&
+            load.Source is MirPlace { Kind: not PlaceKind.Local })
+        {
+            _currentBlock!.Instructions.Add(loadInstruction);
+            return new LlvmStore
+            {
+                Value = loadType is LlvmPointerType
+                    ? LlvmNullPointer.Instance
+                    : new LlvmZeroInitializer { Type = loadType },
+                Pointer = sourcePointer
+            };
+        }
+
+        if (load.CreatesBorrowAlias ||
+            !loadedTypeId.IsValid ||
+            !IsManagedRcType(loadedTypeId) ||
+            loadType is not LlvmPointerType)
+        {
+            return loadInstruction;
+        }
+
+        // A projected load with CreatesBorrowAlias=false is the MIR form of a
+        // by-value Copy read. Materialize the load before retaining the loaded
+        // pointer so the target owns an independent reference.
+        _currentBlock!.Instructions.Add(loadInstruction);
+        return CreateRuntimeRcCall(
+            WellKnownStrings.Runtime.IncRefLocal,
+            new LlvmLocal { Name = resultName, Type = loadType });
     }
 
     private bool IsBorrowedProjectionLoad(MirLoad load)
@@ -1099,7 +1184,7 @@ public sealed partial class MirToLlvmConverter
                load.Source is MirPlace { Kind: not PlaceKind.Local } &&
                load.Target is { TypeId.IsValid: true } &&
                !IsFfiNonRcPointerType(load.Target.TypeId) &&
-               LowerStorageTypeIdOrReport(load.Target.TypeId, "borrowed projection load") is LlvmPointerType;
+               PayloadContainsManagedRc(load.Target.TypeId);
     }
 
     private bool IsBorrowedProjectionOperand(MirOperand operand)
@@ -1140,6 +1225,22 @@ public sealed partial class MirToLlvmConverter
         _currentBlock!.Instructions.Add(CreateRuntimeRcCall(WellKnownStrings.Runtime.IncRefLocal, value));
     }
 
+    private void RetainBorrowedProjectionConsumedValue(
+        MirOperand operand,
+        LlvmValue value,
+        TypeId typeId,
+        LlvmType storageType)
+    {
+        if ((!IsBorrowedProjectionOperand(operand) && !IsBorrowedProjectionConstructorArgument(operand)) ||
+            !typeId.IsValid ||
+            !PayloadContainsManagedRc(typeId))
+        {
+            return;
+        }
+
+        EmitRetainManagedPayloadValue(typeId, value, storageType);
+    }
+
     private bool IsBorrowedProjectionConstructorArgument(MirOperand operand)
     {
         if (operand is not MirPlace { Kind: PlaceKind.Local, Local: var local } ||
@@ -1152,6 +1253,7 @@ public sealed partial class MirToLlvmConverter
         foreach (var definition in definitions)
         {
             if (definition is not MirLoad load ||
+                !load.CreatesBorrowAlias ||
                 load.Source is not MirPlace { Kind: not PlaceKind.Local } ||
                 !load.Target.TypeId.IsValid ||
                 IsFfiNonRcPointerType(load.Target.TypeId) ||
@@ -1175,6 +1277,7 @@ public sealed partial class MirToLlvmConverter
         var indexValue = CoerceToI64(ConvertOperand(store.Target.Index));
         var value = ConvertOperand(store.Value);
         var elementType = LowerStorageTypeIdOrReport(store.Target.TypeId, "indexed store element");
+        RetainBorrowedProjectionConsumedValue(store.Value, value, store.Target.TypeId, elementType);
         var valuePointer = CreateAddressableValuePointer(value, elementType);
 
         return new LlvmCall
@@ -1274,6 +1377,23 @@ public sealed partial class MirToLlvmConverter
                 Name = resultName,
                 Type = elementType
             };
+        }
+
+        SetBorrowedProjectionLocal(targetLocalId, IsBorrowedProjectionLoad(load));
+
+        var loadedTypeId = load.Target.TypeId.IsValid
+            ? load.Target.TypeId
+            : indexSource.TypeId;
+        if (!load.CreatesBorrowAlias &&
+            loadedTypeId.IsValid &&
+            PayloadContainsManagedRc(loadedTypeId))
+        {
+            _currentBlock!.Instructions.Add(typedLoad);
+            EmitRetainManagedPayloadValue(
+                loadedTypeId,
+                new LlvmInstructionRef { Instruction = typedLoad, Type = elementType },
+                elementType);
+            return null;
         }
 
         return typedLoad;
@@ -1594,8 +1714,6 @@ public sealed partial class MirToLlvmConverter
 
     private LlvmInstruction? ConvertCopy(MirCopy copy)
     {
-        var sourceIsBorrowedProjection = _borrowedProjectionLocals.Contains(copy.Source.Local);
-
         if (copy.Source.Kind == PlaceKind.Local &&
             _partialCallStates.TryGetValue(copy.Source.Local, out var partial))
         {
@@ -1632,7 +1750,20 @@ public sealed partial class MirToLlvmConverter
             return null;
         }
 
-        if (!IsManagedRcType(copy.Source.TypeId))
+        var copiedTypeId = copy.Source.TypeId.IsValid
+            ? copy.Source.TypeId
+            : _locals.LocalTypeById.GetValueOrDefault(copy.Source.Local, TypeId.None);
+        if (TryConvertInlineAggregateRcOperation(
+                copiedTypeId,
+                ResolveInlineAggregateRcPointer(copy.Source, sourceValue),
+                WellKnownStrings.Runtime.IncRefLocal,
+                "copy",
+                out var aggregateRetain))
+        {
+            return aggregateRetain;
+        }
+
+        if (!IsManagedRcType(copiedTypeId))
         {
             return null;
         }
@@ -1640,14 +1771,6 @@ public sealed partial class MirToLlvmConverter
         // Stack Promotion 优化：栈分配的值无需 RC incref
         if (copy.Source.Kind == PlaceKind.Local &&
             _currentStackPromotionHints?.PromotedLocals.Contains(copy.Source.Local) == true)
-        {
-            return null;
-        }
-
-        // Perceus 优化：如果此位置的 dup 可以省略，跳过 incref
-        if (!sourceIsBorrowedProjection &&
-            _currentOmitDup != null && _currentBlockId.HasValue &&
-            _currentOmitDup.Contains((_currentBlockId.Value, _currentInstructionIndex)))
         {
             return null;
         }
@@ -1715,6 +1838,18 @@ public sealed partial class MirToLlvmConverter
             ClearGenericLocal(localPlace.Local);
         }
 
+        if (TryConvertInlineAggregateRcOperation(
+                drop.Value.TypeId,
+                drop.Value is MirPlace dropPlace
+                    ? ResolveInlineAggregateRcPointer(dropPlace, value)
+                    : value,
+                WellKnownStrings.Runtime.DecRefLocal,
+                "drop",
+                out var aggregateDrop))
+        {
+            return aggregateDrop;
+        }
+
         if (!IsManagedRcType(drop.Value.TypeId))
         {
             return null;
@@ -1730,13 +1865,6 @@ public sealed partial class MirToLlvmConverter
         if (drop.Value is MirPlace { Kind: PlaceKind.Local } dropLocal &&
             (_currentStackPromotionHints?.PromotedLocals.Contains(dropLocal.Local) == true ||
              _currentUnifiedHints?.PromotedLocals.Contains(dropLocal.Local) == true))
-        {
-            return null;
-        }
-
-        // Perceus 优化：如果此位置的 drop 可以省略（值已被移动），跳过 decref
-        if (_currentOmitDrop != null && _currentBlockId.HasValue &&
-            _currentOmitDrop.Contains((_currentBlockId.Value, _currentInstructionIndex)))
         {
             return null;
         }
@@ -1766,6 +1894,132 @@ public sealed partial class MirToLlvmConverter
 
         // 对托管类型 drop 需要减少引用计数。
         return CreateRuntimeRcCall(WellKnownStrings.Runtime.DecRefLocal, value);
+    }
+
+    private LlvmValue ResolveInlineAggregateRcPointer(MirPlace place, LlvmValue fallback)
+    {
+        if (place.Kind == PlaceKind.Local &&
+            IsSlotBackedLocal(place.Local) &&
+            _locals.LocalSlots.TryGetValue(place.Local, out var slot))
+        {
+            return new LlvmInstructionRef
+            {
+                Instruction = slot,
+                Type = LlvmPointerType.VoidPtr()
+            };
+        }
+
+        return fallback;
+    }
+
+    private bool TryConvertInlineAggregateRcOperation(
+        TypeId typeId,
+        LlvmValue aggregatePointer,
+        string runtimeFunctionName,
+        string namePrefix,
+        out LlvmInstruction? finalInstruction)
+    {
+        finalInstruction = null;
+        if (!TryGetInlineAggregateLayout(typeId, namePrefix, out var tuple, out var structType))
+        {
+            return false;
+        }
+
+        var fieldCount = Math.Min(tuple.FieldTypes.Length, structType.Fields.Count);
+        for (var fieldIndex = fieldCount - 1; fieldIndex >= 0; fieldIndex--)
+        {
+            var fieldTypeId = tuple.FieldTypes[fieldIndex];
+            var fieldStorageType = structType.Fields[fieldIndex];
+            var isNestedAggregate = TryGetInlineAggregateLayout(
+                fieldTypeId,
+                namePrefix,
+                out _,
+                out _);
+            if (!isNestedAggregate &&
+                (!IsManagedRcType(fieldTypeId) || fieldStorageType is not LlvmPointerType))
+            {
+                continue;
+            }
+
+            var fieldPointer = new LlvmGetElementPtr
+            {
+                Pointer = CoerceToPointer(aggregatePointer),
+                ElementType = fieldStorageType,
+                StructType = structType,
+                StructFieldIndex = fieldIndex,
+                ResultName = _nameMangler.NewTempName($"{namePrefix}_field{fieldIndex}_ptr")
+            };
+            _currentBlock!.Instructions.Add(fieldPointer);
+
+            var fieldPointerValue = new LlvmInstructionRef
+            {
+                Instruction = fieldPointer,
+                Type = LlvmPointerType.VoidPtr()
+            };
+            if (isNestedAggregate &&
+                TryConvertInlineAggregateRcOperation(
+                    fieldTypeId,
+                    fieldPointerValue,
+                    runtimeFunctionName,
+                    namePrefix,
+                    out var nestedFinal))
+            {
+                AppendAggregateRcInstruction(nestedFinal, ref finalInstruction);
+                continue;
+            }
+
+            if (fieldStorageType is not LlvmPointerType pointerStorageType)
+            {
+                continue;
+            }
+
+            var fieldLoad = new LlvmLoad
+            {
+                Pointer = fieldPointerValue,
+                LoadType = pointerStorageType,
+                ResultName = _nameMangler.NewTempName($"{namePrefix}_field{fieldIndex}")
+            };
+            _currentBlock.Instructions.Add(fieldLoad);
+            AppendAggregateRcInstruction(
+                CreateRuntimeRcCall(
+                    runtimeFunctionName,
+                    new LlvmInstructionRef { Instruction = fieldLoad, Type = pointerStorageType }),
+                ref finalInstruction);
+        }
+
+        return true;
+    }
+
+    private bool TryGetInlineAggregateLayout(
+        TypeId typeId,
+        string context,
+        out TypeDescriptor.Tuple tuple,
+        out LlvmStructType structType)
+    {
+        tuple = null!;
+        structType = null!;
+        return _typeLowering.TryGetTypeDescriptor(typeId, out var descriptor) &&
+               descriptor is TypeDescriptor.Tuple resolvedTuple &&
+               LowerStorageTypeIdOrReport(typeId, $"{context} aggregate") is LlvmStructType resolvedStruct &&
+               (tuple = resolvedTuple) != null &&
+               (structType = resolvedStruct) != null;
+    }
+
+    private void AppendAggregateRcInstruction(
+        LlvmInstruction? instruction,
+        ref LlvmInstruction? finalInstruction)
+    {
+        if (instruction == null)
+        {
+            return;
+        }
+
+        if (finalInstruction != null)
+        {
+            _currentBlock!.Instructions.Add(finalInstruction);
+        }
+
+        finalInstruction = instruction;
     }
 
 
@@ -1887,13 +2141,20 @@ public sealed partial class MirToLlvmConverter
         };
 
         _reuseSlotAllocas[slotNumber] = alloca;
-        _currentFunction!.BasicBlocks[0].Instructions.Insert(0, alloca);
+        EmitAllocaInEntryBlock(alloca);
 
-        return new LlvmInstructionRef
+        var allocaRef = new LlvmInstructionRef
         {
             Instruction = alloca,
             Type = new LlvmPointerType { ElementType = EidosReuseType }
         };
+        GetAllocaInsertionBlock().Instructions.Insert(1, new LlvmStore
+        {
+            Value = new LlvmZeroInitializer { Type = EidosReuseType },
+            Pointer = allocaRef
+        });
+
+        return allocaRef;
     }
 
     private void InvalidateLocalAlias(LocalId localId, TypeId typeId)

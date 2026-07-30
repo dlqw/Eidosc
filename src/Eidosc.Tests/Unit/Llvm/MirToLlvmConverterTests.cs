@@ -513,7 +513,8 @@ public partial class MirToLlvmConverterTests
                         Name = "observe",
                         TypeId = intType
                     },
-                    Arguments = [textPlace]
+                    Arguments = [textPlace],
+                    BorrowedArgumentIndices = new HashSet<int> { 0 }
                 }
             ],
             returnValue: new MirConstant

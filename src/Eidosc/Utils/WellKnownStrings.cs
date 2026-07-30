@@ -259,6 +259,7 @@ public static class WellKnownStrings
         public const string Alloc = "eidos_alloc";
         public const string AllocReuse = "eidos_alloc_reuse";
         public const string DropReuse = "eidos_drop_reuse";
+        public const string RecordUpdateCow = "eidos_record_update_cow";
         public const string IncRef = "eidos_incref";
         public const string DecRef = "eidos_decref";
         public const string IncRefLocal = "eidos_incref_local";
@@ -303,7 +304,10 @@ public static class WellKnownStrings
         public const string ArrayNew = "eidos_array_new";
         public const string ArrayNewWithPolicy = "eidos_array_new_with_policy";
         public const string ArrayPush = "eidos_array_push";
+        public const string ArrayPrepend = "eidos_array_prepend";
         public const string ArrayExtend = "eidos_array_extend";
+        public const string ArrayTake = "eidos_array_take";
+        public const string ArraySlice = "eidos_array_slice";
         public const string ArrayPop = "eidos_array_pop";
         public const string ArraySwap = "eidos_array_swap";
         public const string ArrayGet = "eidos_array_get";
@@ -345,6 +349,7 @@ public static class WellKnownStrings
 
         // Destructor
         public const string RegisterDestructor = "eidos_register_destructor";
+        public const string RegisterRetainer = "eidos_register_retainer";
 
         // Type ID
         public const string TypeId = "eidos_type_id";
@@ -504,13 +509,17 @@ public static class WellKnownStrings
     {
         public const string Show = "show";
         public const string ArrayPush = "array_push";
+        public const string ArrayPrepend = "array_prepend";
         public const string ArrayNew = "array_new";
         public const string ArrayExtend = "array_extend";
+        public const string ArrayTake = "array_take";
+        public const string ArraySlice = "array_slice";
         public const string ArrayPop = "array_pop";
         public const string ArraySwap = "array_swap";
         public const string Entry = "entry";
         public const string Bitcast = "bitcast";
         public const string Closure = "closure";
+        public const string TypeId = "type_id";
 
         // Array
         public const string ArrayLength = "array_length";

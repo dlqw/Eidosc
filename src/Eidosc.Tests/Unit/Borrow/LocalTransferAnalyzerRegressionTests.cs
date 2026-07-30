@@ -9,7 +9,49 @@ namespace Eidosc.Tests.Unit.Borrow;
 public class LocalTransferAnalyzerRegressionTests
 {
     [Fact]
-    public void LivenessAnalyzer_LoadCopyMoveLocalTransfer_PreservesLiveInSet()
+    public void LivenessAnalyzer_SameBlockDefinitionAndUse_IncludesBlockInLiveRange()
+    {
+        var stringType = new TypeId(BaseTypes.StringId);
+        var value = new LocalId { Value = 1 };
+        var blockId = new BlockId { Value = 1 };
+        var func = new MirFunc
+        {
+            Name = "same_block_live_range",
+            EntryBlockId = blockId,
+            Locals = [new MirLocal { Id = value, Name = "value", TypeId = stringType }],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = blockId,
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCall
+                        {
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = stringType },
+                            Function = new MirFunctionRef { Name = "make" }
+                        },
+                        new MirDrop
+                        {
+                            Value = new MirPlace { Kind = PlaceKind.Local, Local = value, TypeId = stringType }
+                        }
+                    ],
+                    Terminator = new MirReturn()
+                }
+            ]
+        };
+
+        var usage = new VariableUsageAnalyzer(func);
+        usage.Analyze();
+        var liveness = new LivenessAnalyzer(func, usage);
+        liveness.Analyze();
+
+        Assert.Contains(blockId, liveness.LiveRanges[value].LiveBlocks);
+    }
+
+    [Fact]
+    public void LivenessAnalyzer_LoadCopyMoveLocalTransfer_OnlyReportsUpwardExposedLiveIn()
     {
         var intType = new TypeId(BaseTypes.IntId);
         var x = new LocalId { Value = 1 };
@@ -69,8 +111,8 @@ public class LocalTransferAnalyzerRegressionTests
 
         Assert.True(liveness.LiveIn.TryGetValue(blockId, out var liveIn));
         Assert.Contains(x, liveIn);
-        Assert.Contains(a, liveIn);
-        Assert.Contains(b, liveIn);
+        Assert.DoesNotContain(a, liveIn);
+        Assert.DoesNotContain(b, liveIn);
         Assert.DoesNotContain(c, liveIn);
     }
 

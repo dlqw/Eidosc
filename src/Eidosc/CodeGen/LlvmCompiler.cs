@@ -459,6 +459,7 @@ public sealed partial class LlvmCompiler
         if (_enableLto)
         {
             arguments.Add("-flto");
+            arguments.AddRange(GetLtoLinkerFlags(_targetInfo));
         }
 
         // CPU tuning for linker (affects LTO codegen).
@@ -550,6 +551,11 @@ public sealed partial class LlvmCompiler
             _ => []
         };
     }
+
+    internal static IReadOnlyList<string> GetLtoLinkerFlags(TargetInfo targetInfo) =>
+        targetInfo.Os == TargetOs.Windows
+            ? ["-fuse-ld=lld"]
+            : [];
 
     internal static NativeObjectRelocationFlags GetDefaultObjectRelocationFlags(
         TargetInfo targetInfo,
