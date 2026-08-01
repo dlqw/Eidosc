@@ -322,7 +322,7 @@ public sealed record LlvmModuleEnvelopeSnapshot(
             FormatDeclaration(declaration));
 
     private static string FormatAttributeGroup(LlvmAttributeGroup attributeGroup) =>
-        $"attributes #{attributeGroup.Id} = {{ {attributeGroup.Attributes} }}";
+        $"attributes #{attributeGroup.Id} = {{ {string.Join(' ', attributeGroup.Attributes)} }}";
 }
 
 public sealed record LlvmGlobalEnvelopeFragment(

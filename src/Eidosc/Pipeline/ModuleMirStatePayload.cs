@@ -418,13 +418,17 @@ public sealed record MirStateFunctionPayload(
             GenericParameters = function.GenericParameters
                 .Select(MirStateGenericParameterPayload.Create)
                 .ToArray(),
-            OwnershipContract = MirStateOwnershipContractPayload.Create(function.OwnershipContract)
+            OwnershipContract = MirStateOwnershipContractPayload.Create(function.OwnershipContract),
+            CallerOwnedAggregateAbi = MirStateCallerOwnedAggregateAbiPayload.Create(function.CallerOwnedAggregateAbi)
         };
 
     public IReadOnlyList<MirStateGenericParameterPayload> GenericParameters { get; init; } = [];
 
     public MirStateOwnershipContractPayload OwnershipContract { get; init; } =
         MirStateOwnershipContractPayload.Empty;
+
+    public MirStateCallerOwnedAggregateAbiPayload CallerOwnedAggregateAbi { get; init; } =
+        MirStateCallerOwnedAggregateAbiPayload.Empty;
 
     public MirFunc Restore() =>
         new()
@@ -450,8 +454,81 @@ public sealed record MirStateFunctionPayload(
             OwnershipContract = OwnershipContract.Restore(),
             IsEntry = IsEntry,
             TraitInvokeHelper = Enum.Parse<TraitInvokeHelperKind>(TraitInvokeHelper),
-            TraitInvokeHelperTraitId = new SymbolId(TraitInvokeHelperTraitId)
+            TraitInvokeHelperTraitId = new SymbolId(TraitInvokeHelperTraitId),
+            CallerOwnedAggregateAbi = CallerOwnedAggregateAbi.Restore()
         };
+}
+
+public sealed record MirStateCallerOwnedAggregateAbiPayload(
+    int OutReturnType,
+    IReadOnlyList<int> OutReturnLocals,
+    IReadOnlyList<MirStateCallerOwnedArrayStoragePayload> OutArrayStorages,
+    IReadOnlyList<MirStateCallerOwnedAggregateGroupPayload> LocalGroups)
+{
+    public static MirStateCallerOwnedAggregateAbiPayload Empty { get; } =
+        new(0, [], [], []);
+
+    public static MirStateCallerOwnedAggregateAbiPayload Create(MirCallerOwnedAggregateAbi abi) =>
+        new(
+            abi.OutReturnType.Value,
+            abi.OutReturnLocals.Select(static local => local.Value).Order().ToArray(),
+            abi.OutArrayStorages.Select(MirStateCallerOwnedArrayStoragePayload.Create).ToArray(),
+            abi.LocalGroups.Select(MirStateCallerOwnedAggregateGroupPayload.Create).ToArray());
+
+    public MirCallerOwnedAggregateAbi Restore() => new()
+    {
+        OutReturnType = new TypeId(OutReturnType),
+        OutReturnLocals = OutReturnLocals.Select(static local => new LocalId { Value = local }).ToHashSet(),
+        OutArrayStorages = (OutArrayStorages ?? []).Select(static storage => storage.Restore()).ToArray(),
+        LocalGroups = LocalGroups.Select(static group => group.Restore()).ToArray()
+    };
+}
+
+public sealed record MirStateCallerOwnedAggregateGroupPayload(
+    int CanonicalLocal,
+    int TypeId,
+    IReadOnlyList<int> Locals,
+    IReadOnlyList<MirStateCallerOwnedArrayStoragePayload> ArrayStorages,
+    int ParameterIndex)
+{
+    public static MirStateCallerOwnedAggregateGroupPayload Create(MirCallerOwnedAggregateGroup group) =>
+        new(
+            group.CanonicalLocal.Value,
+            group.TypeId.Value,
+            group.Locals.Select(static local => local.Value).Order().ToArray(),
+            group.ArrayStorages.Select(MirStateCallerOwnedArrayStoragePayload.Create).ToArray(),
+            group.ParameterIndex);
+
+    public MirCallerOwnedAggregateGroup Restore() => new()
+    {
+        CanonicalLocal = new LocalId { Value = CanonicalLocal },
+        TypeId = new TypeId(TypeId),
+        Locals = Locals.Select(static local => new LocalId { Value = local }).ToHashSet(),
+        ArrayStorages = (ArrayStorages ?? []).Select(static storage => storage.Restore()).ToArray(),
+        ParameterIndex = ParameterIndex
+    };
+}
+
+public sealed record MirStateCallerOwnedArrayStoragePayload(
+    string Key,
+    int ArrayLocal,
+    int ArrayTypeId,
+    long Capacity,
+    long ElementSize,
+    long StorageBytes)
+{
+    public static MirStateCallerOwnedArrayStoragePayload Create(MirCallerOwnedArrayStorage storage) =>
+        new(storage.Key, storage.ArrayLocal.Value, storage.ArrayTypeId.Value, storage.Capacity, storage.ElementSize, storage.StorageBytes);
+
+    public MirCallerOwnedArrayStorage Restore() => new()
+    {
+        Key = Key,
+        ArrayLocal = new LocalId { Value = ArrayLocal },
+        ArrayTypeId = new TypeId(ArrayTypeId),
+        Capacity = Capacity,
+        ElementSize = ElementSize,
+        StorageBytes = StorageBytes
+    };
 }
 
 public sealed record MirStateOwnershipContractPayload(
@@ -606,6 +683,7 @@ public sealed record MirStateInstructionPayload(
     IReadOnlyList<int>? BorrowedArgumentIndices = null,
     MirStateOperandPayload? RecordUpdateSource = null,
     IReadOnlyList<int>? UpdatedFieldIndices = null,
+    bool RecordUpdateIsKnownUnique = false,
     string? Operator = null,
     MirStateOperandPayload? Left = null,
     MirStateOperandPayload? Right = null,
@@ -650,7 +728,8 @@ public sealed record MirStateInstructionPayload(
                 RecordUpdateSource: call.RecordUpdate == null
                     ? null
                     : MirStateOperandPayload.Create(call.RecordUpdate.Source, context),
-                UpdatedFieldIndices: call.RecordUpdate?.UpdatedFieldIndices.ToArray()),
+                UpdatedFieldIndices: call.RecordUpdate?.UpdatedFieldIndices.ToArray(),
+                RecordUpdateIsKnownUnique: call.RecordUpdate?.IsKnownUnique == true),
             MirBinOp binOp => new MirStateInstructionPayload(
                 nameof(MirBinOp),
                 span,
@@ -727,7 +806,8 @@ public sealed record MirStateInstructionPayload(
                     : new MirRecordUpdateInfo
                     {
                         Source = RestorePlace(RecordUpdateSource),
-                        UpdatedFieldIndices = (UpdatedFieldIndices ?? []).ToList()
+                        UpdatedFieldIndices = (UpdatedFieldIndices ?? []).ToList(),
+                        IsKnownUnique = RecordUpdateIsKnownUnique
                     }
             },
             nameof(MirBinOp) => new MirBinOp { Span = Span.ToSourceSpan(), Target = RestoreOperand(Target), Operator = Enum.Parse<BinaryOp>(Operator ?? ""), Left = RestoreOperand(Left), Right = RestoreOperand(Right) },

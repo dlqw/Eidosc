@@ -22,6 +22,13 @@ namespace Eidosc.Borrow;
 /// </summary>
 public sealed class DropInsertionPass : IMirOptimizationPass
 {
+    private readonly DropInsertionAnalysisWorkspace _workspace;
+
+    public DropInsertionPass(DropInsertionAnalysisWorkspace? workspace = null)
+    {
+        _workspace = workspace ?? new DropInsertionAnalysisWorkspace();
+    }
+
     public string Name => "DropInsertion";
 
     private readonly HashSet<int> _nonRcBaseTypeIds =
@@ -39,7 +46,8 @@ public sealed class DropInsertionPass : IMirOptimizationPass
     public MirModule Run(MirModule module)
     {
         var optimizedFunctions = new List<MirFunc>();
-        var scalarTagTypeIds = PayloadlessAdtRepresentationAnalysis.Analyze(module);
+        var scalarTagTypeIds = _workspace.GetScalarTagTypeIds(module);
+        var referenceTypeIds = CollectReferenceTypeIds(module.TypeDescriptors, module.DynamicTypeKeys);
 
         foreach (var func in module.Functions)
         {
@@ -47,7 +55,8 @@ public sealed class DropInsertionPass : IMirOptimizationPass
                 func,
                 module.TypeDescriptors,
                 module.DynamicTypeKeys,
-                scalarTagTypeIds));
+                scalarTagTypeIds,
+                referenceTypeIds));
         }
 
         return new MirModule
@@ -78,7 +87,8 @@ public sealed class DropInsertionPass : IMirOptimizationPass
         MirFunc func,
         IReadOnlyDictionary<int, TypeDescriptor> typeDescriptors,
         IReadOnlyDictionary<int, string> dynamicTypeKeys,
-        IReadOnlySet<int> scalarTagTypeIds)
+        IReadOnlySet<int> scalarTagTypeIds,
+        IReadOnlySet<int> referenceTypeIds)
     {
         // Declarations have no CFG to transform. This covers FFI declarations,
         // compiler intrinsics and other bodyless functions without relying on a
@@ -88,12 +98,13 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             return func;
         }
 
+        var workspace = _workspace.Prepare(func);
+
         // 收集需要 RC 管理的局部变量（排除基本类型）
         var rcLocals = new HashSet<LocalId>();
-        var localTypes = new Dictionary<LocalId, TypeId>();
+        var localTypes = workspace.LocalTypes;
         foreach (var local in func.Locals)
         {
-            localTypes[local.Id] = local.TypeId;
             if (IsManagedRcType(local.TypeId, typeDescriptors, dynamicTypeKeys, scalarTagTypeIds))
 
             {
@@ -103,8 +114,11 @@ public sealed class DropInsertionPass : IMirOptimizationPass
 
         var usageAnalyzer = new VariableUsageAnalyzer(func);
         usageAnalyzer.Analyze();
-        var livenessAnalyzer = new LivenessAnalyzer(func, usageAnalyzer);
+        var livenessAnalyzer = new LivenessAnalyzer(func, usageAnalyzer, workspace.ControlFlow);
         livenessAnalyzer.Analyze();
+        var liveAfterByBlock = func.BasicBlocks.ToDictionary(
+            static block => block.Id,
+            block => workspace.ComputeLiveAfter(block, livenessAnalyzer));
         var earlyDroppableLocals = CollectEarlyDroppableLocals(func, rcLocals);
         var borrowAliasValueLocals = func.Locals
             .Where(local => rcLocals.Contains(local.Id) ||
@@ -114,7 +128,6 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             .ToHashSet();
         var borrowAliasesByBase = CollectBorrowAliasesByBase(func, borrowAliasValueLocals);
         var ownershipAliasesByBase = CollectOwnershipAliasesByBase(func);
-        var referenceTypeIds = CollectReferenceTypeIds(typeDescriptors, dynamicTypeKeys);
         var ownedAtBlockEntry = AnalyzeOwnedLocals(
             func,
             rcLocals,
@@ -122,7 +135,9 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             earlyDroppableLocals,
             borrowAliasesByBase,
             ownershipAliasesByBase,
-            referenceTypeIds);
+            referenceTypeIds,
+            workspace,
+            liveAfterByBlock);
 
         // 处理每个基本块
         var newBlocks = new List<MirBasicBlock>();
@@ -132,6 +147,7 @@ public sealed class DropInsertionPass : IMirOptimizationPass
                 block,
                 rcLocals,
                 localTypes,
+                liveAfterByBlock[block.Id],
                 livenessAnalyzer,
                 earlyDroppableLocals,
                 borrowAliasesByBase,
@@ -171,6 +187,7 @@ public sealed class DropInsertionPass : IMirOptimizationPass
         MirBasicBlock block,
         HashSet<LocalId> rcLocals,
         IReadOnlyDictionary<LocalId, TypeId> localTypes,
+        IReadOnlyList<HashSet<LocalId>> liveAfterInstruction,
         LivenessAnalyzer livenessAnalyzer,
         IReadOnlySet<LocalId> earlyDroppableLocals,
         IReadOnlyDictionary<LocalId, HashSet<LocalId>> borrowAliasesByBase,
@@ -180,7 +197,6 @@ public sealed class DropInsertionPass : IMirOptimizationPass
     {
         var owned = new HashSet<LocalId>(ownedAtEntry);
         var newInstructions = new List<MirInstruction>(block.Instructions.Count);
-        var liveAfterInstruction = ComputeLiveAfterInstructions(block, livenessAnalyzer);
         for (int i = 0; i < block.Instructions.Count; i++)
         {
             MirInstruction instruction = block.Instructions[i];
@@ -496,25 +512,6 @@ public sealed class DropInsertionPass : IMirOptimizationPass
         CollectPlaceLocals(place.Index, collect);
     }
 
-    private static IReadOnlyList<HashSet<LocalId>> ComputeLiveAfterInstructions(
-        MirBasicBlock block,
-        LivenessAnalyzer livenessAnalyzer)
-    {
-        var result = new HashSet<LocalId>[block.Instructions.Count];
-        var live = livenessAnalyzer.TryGetLiveOutSet(block.Id, out var liveOut)
-            ? new HashSet<LocalId>(liveOut)
-            : [];
-        AddTerminatorUses(block.Terminator, live);
-
-        for (int i = block.Instructions.Count - 1; i >= 0; i--)
-        {
-            result[i] = new HashSet<LocalId>(live);
-            UpdateLivenessForInstruction(block.Instructions[i], live);
-        }
-
-        return result;
-    }
-
     private static bool DefinitionReusesSameLocal(MirInstruction instruction, LocalId target) =>
         instruction switch
         {
@@ -556,19 +553,24 @@ public sealed class DropInsertionPass : IMirOptimizationPass
         IReadOnlySet<LocalId> earlyDroppableLocals,
         IReadOnlyDictionary<LocalId, HashSet<LocalId>> borrowAliasesByBase,
         IReadOnlyDictionary<LocalId, HashSet<LocalId>> ownershipAliasesByBase,
-        IReadOnlySet<int> referenceTypeIds)
+        IReadOnlySet<int> referenceTypeIds,
+        DropInsertionAnalysisWorkspace.FunctionStorage workspace,
+        IReadOnlyDictionary<BlockId, IReadOnlyList<HashSet<LocalId>>> liveAfterByBlock)
     {
-        var cfg = new ControlFlowGraph(function);
+        var cfg = workspace.ControlFlow;
         var entryOwnership = function.Locals
             .Where(local => local.IsParameter && rcLocals.Contains(local.Id))
             .Select(static local => local.Id)
             .ToHashSet();
-        var ownedIn = function.BasicBlocks.ToDictionary(
-            static block => block.Id,
-            _ => new HashSet<LocalId>(rcLocals));
-        var ownedOut = function.BasicBlocks.ToDictionary(
-            static block => block.Id,
-            _ => new HashSet<LocalId>(rcLocals));
+        var ownedIn = workspace.OwnedIn;
+        var ownedOut = workspace.OwnedOut;
+        var scratchIn = workspace.ScratchIn;
+        var scratchOut = workspace.ScratchOut;
+        foreach (var block in function.BasicBlocks)
+        {
+            ownedIn[block.Id].UnionWith(rcLocals);
+            ownedOut[block.Id].UnionWith(rcLocals);
+        }
 
         var changed = true;
         while (changed)
@@ -576,30 +578,35 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             changed = false;
             foreach (var block in function.BasicBlocks)
             {
-                var incoming = new List<IReadOnlySet<LocalId>>();
+                var nextIn = scratchIn[block.Id];
+                nextIn.Clear();
+                var hasIncoming = false;
                 if (block.Id == function.EntryBlockId)
                 {
-                    incoming.Add(entryOwnership);
+                    nextIn.UnionWith(entryOwnership);
+                    hasIncoming = true;
                 }
 
                 foreach (var predecessor in cfg.GetPredecessors(block.Id))
                 {
                     if (ownedOut.TryGetValue(predecessor, out var predecessorOut))
                     {
-                        incoming.Add(predecessorOut);
+                        if (!hasIncoming)
+                        {
+                            nextIn.UnionWith(predecessorOut);
+                            hasIncoming = true;
+                        }
+                        else
+                        {
+                            nextIn.IntersectWith(predecessorOut);
+                        }
                     }
                 }
 
-                var nextIn = incoming.Count == 0
-                    ? []
-                    : new HashSet<LocalId>(incoming[0]);
-                for (int i = 1; i < incoming.Count; i++)
-                {
-                    nextIn.IntersectWith(incoming[i]);
-                }
-
-                var nextOut = new HashSet<LocalId>(nextIn);
-                var liveAfterInstruction = ComputeLiveAfterInstructions(block, livenessAnalyzer);
+                var nextOut = scratchOut[block.Id];
+                nextOut.Clear();
+                nextOut.UnionWith(nextIn);
+                var liveAfterInstruction = liveAfterByBlock[block.Id];
                 for (int i = 0; i < block.Instructions.Count; i++)
                 {
                     var instruction = block.Instructions[i] is MirCall call
@@ -636,13 +643,15 @@ public sealed class DropInsertionPass : IMirOptimizationPass
 
                 if (!ownedIn[block.Id].SetEquals(nextIn))
                 {
-                    ownedIn[block.Id] = nextIn;
+                    ownedIn[block.Id].Clear();
+                    ownedIn[block.Id].UnionWith(nextIn);
                     changed = true;
                 }
 
                 if (!ownedOut[block.Id].SetEquals(nextOut))
                 {
-                    ownedOut[block.Id] = nextOut;
+                    ownedOut[block.Id].Clear();
+                    ownedOut[block.Id].UnionWith(nextOut);
                     changed = true;
                 }
             }
@@ -1083,7 +1092,7 @@ public sealed class DropInsertionPass : IMirOptimizationPass
         CollectOperand(place.Index, result);
     }
 
-    private static void AddTerminatorUses(MirTerminator? terminator, HashSet<LocalId> result)
+    internal static void AddTerminatorUsesForWorkspace(MirTerminator? terminator, HashSet<LocalId> result)
     {
         switch (terminator)
         {
@@ -1111,7 +1120,7 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             Span = span
         };
 
-    private static void UpdateLivenessForInstruction(MirInstruction instr, HashSet<LocalId> live)
+    internal static void UpdateLivenessForWorkspace(MirInstruction instr, HashSet<LocalId> live)
     {
         // 移除 def
         var definedVar = GetDefinedVariable(instr);

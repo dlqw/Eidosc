@@ -533,6 +533,101 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
+    public void Convert_RuntimeArrayRangeAndTailShift_DeclareNativeRuntimeSignatures()
+    {
+        var llvmModule = new MirToLlvmConverter().Convert(new MirModule
+        {
+            Name = "runtime_array_range_declarations"
+        });
+
+        var tailShift = Assert.Single(
+            llvmModule.Declarations,
+            declaration => declaration.Name == WellKnownStrings.Runtime.ArrayTailShiftPrepend);
+        var rangeLength = Assert.Single(
+            llvmModule.Declarations,
+            declaration => declaration.Name == WellKnownStrings.Runtime.ArrayRangeLength);
+        var rangeGet = Assert.Single(
+            llvmModule.Declarations,
+            declaration => declaration.Name == WellKnownStrings.Runtime.ArrayRangeGet);
+        var uniqueUnmanaged16 = Assert.Single(
+            llvmModule.Declarations,
+            declaration => declaration.Name == WellKnownStrings.Runtime.ArrayTailShiftPrependUniqueUnmanaged16);
+
+        var tailShiftType = Assert.IsType<LlvmFunctionType>(tailShift.Type);
+        Assert.IsType<LlvmPointerType>(tailShiftType.ReturnType);
+        Assert.Equal(4, tailShiftType.ParameterTypes.Count);
+
+        var rangeLengthType = Assert.IsType<LlvmFunctionType>(rangeLength.Type);
+        Assert.IsType<LlvmIntType>(rangeLengthType.ReturnType);
+        Assert.Equal(3, rangeLengthType.ParameterTypes.Count);
+
+        var rangeGetType = Assert.IsType<LlvmFunctionType>(rangeGet.Type);
+        Assert.IsType<LlvmPointerType>(rangeGetType.ReturnType);
+        Assert.Equal(4, rangeGetType.ParameterTypes.Count);
+
+        var uniqueUnmanaged16Type = Assert.IsType<LlvmFunctionType>(uniqueUnmanaged16.Type);
+        Assert.IsType<LlvmPointerType>(uniqueUnmanaged16Type.ReturnType);
+        Assert.Equal(3, uniqueUnmanaged16Type.ParameterTypes.Count);
+    }
+
+    [Fact]
+    public void Convert_OptimizationVariantCaller_IsAlwaysInlineWithoutPrivateLinkage()
+    {
+        var unitType = new TypeId(BaseTypes.UnitId);
+        var unit = new MirConstant
+        {
+            TypeId = unitType,
+            Value = new MirConstantValue.UnitValue()
+        };
+        var variantId = new FunctionId
+        {
+            Name = "variant",
+            QualifiedName = "variant",
+            StableIdentityKey = "test:variant|unique:0"
+        };
+        var variant = BuildFunction(
+            unitType,
+            locals: [],
+            instructions: [],
+            returnValue: unit,
+            name: "variant",
+            functionId: variantId);
+        var caller = BuildFunction(
+            unitType,
+            locals: [],
+            instructions:
+            [
+                new MirCall
+                {
+                    Function = new MirFunctionRef
+                    {
+                        Name = "variant",
+                        FunctionId = variantId,
+                        TypeId = unitType
+                    },
+                    Arguments = []
+                }
+            ],
+            returnValue: unit,
+            name: "caller");
+
+        var llvmModule = new MirToLlvmConverter().Convert(new MirModule
+        {
+            Name = "variant_caller_linkage",
+            Functions = [caller, variant]
+        });
+
+        var llvmCaller = SingleFunctionBySourceName(llvmModule, "caller");
+        Assert.Equal(LlvmLinkage.External, llvmCaller.Linkage);
+        Assert.Contains(0, llvmCaller.AttributeIds);
+        var llvmVariant = SingleFunctionBySourceName(llvmModule, "variant");
+        Assert.Equal(LlvmLinkage.Private, llvmVariant.Linkage);
+        Assert.Contains(0, llvmVariant.AttributeIds);
+        var attributes = Assert.Single(llvmModule.AttributeGroups);
+        Assert.Contains("alwaysinline", attributes.Attributes);
+    }
+
+    [Fact]
     public void ConvertFunction_RuntimeStringBuiltinCalls_UseRuntimeNamesAndI64Return()
     {
         var intType = new TypeId(BaseTypes.IntId);
@@ -729,7 +824,7 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
-    public void ConvertFunction_RuntimeTypeIdBuiltin_InlineCopyRecordUsesStaticConstructorTag()
+    public void ConvertFunction_RuntimeTypeIdBuiltin_ExactSingleConstructorTypeUsesStaticTag()
     {
         var intType = new TypeId(BaseTypes.IntId);
         var recordType = new TypeId(1912);
@@ -766,7 +861,6 @@ public partial class MirToLlvmConverterTests
         {
             Name = "inline_record_type_id",
             Functions = [caller],
-            CopyLikeTypeIds = [recordType.Value],
             ConstructorLayouts = new Dictionary<int, List<ConstructorTypeLayout>>
             {
                 [recordType.Value] =

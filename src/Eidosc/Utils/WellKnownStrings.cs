@@ -303,11 +303,19 @@ public static class WellKnownStrings
         // Array operations
         public const string ArrayNew = "eidos_array_new";
         public const string ArrayNewWithPolicy = "eidos_array_new_with_policy";
+        public const string ArrayNewInStorage = "eidos_array_new_in_storage";
         public const string ArrayPush = "eidos_array_push";
         public const string ArrayPrepend = "eidos_array_prepend";
+        public const string ArrayShiftPrepend = "eidos_array_shift_prepend";
+        public const string ArrayTailShiftPrepend = "eidos_array_tail_shift_prepend";
+        public const string ArrayTailShiftPrependUnique = "eidos_array_tail_shift_prepend_unique";
+        public const string ArrayTailShiftPrependUniqueUnmanaged = "eidos_array_tail_shift_prepend_unique_unmanaged";
+        public const string ArrayTailShiftPrependUniqueUnmanaged16 = "eidos_array_tail_shift_prepend_unique_unmanaged_16";
         public const string ArrayExtend = "eidos_array_extend";
         public const string ArrayTake = "eidos_array_take";
         public const string ArraySlice = "eidos_array_slice";
+        public const string ArrayRangeLength = "eidos_array_range_length";
+        public const string ArrayRangeGet = "eidos_array_range_get";
         public const string ArrayPop = "eidos_array_pop";
         public const string ArraySwap = "eidos_array_swap";
         public const string ArrayGet = "eidos_array_get";
@@ -510,10 +518,15 @@ public static class WellKnownStrings
         public const string Show = "show";
         public const string ArrayPush = "array_push";
         public const string ArrayPrepend = "array_prepend";
+        public const string ArrayShiftPrepend = "array_shift_prepend";
+        public const string ArrayTailShiftPrepend = "array_tail_shift_prepend";
+        public const string ArrayTailShiftPrependUnique = "array_tail_shift_prepend_unique";
         public const string ArrayNew = "array_new";
         public const string ArrayExtend = "array_extend";
         public const string ArrayTake = "array_take";
         public const string ArraySlice = "array_slice";
+        public const string ArrayRangeLength = "array_range_length";
+        public const string ArrayRangeGet = "array_range_get";
         public const string ArrayPop = "array_pop";
         public const string ArraySwap = "array_swap";
         public const string Entry = "entry";

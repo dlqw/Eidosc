@@ -1909,6 +1909,7 @@ public sealed partial class NameResolver
             "operator.prepend" => CompilerSemanticRole.Prepend,
             "operator.append_last.singleton" => CompilerSemanticRole.AppendLastSingleton,
             "operator.append_last.append" => CompilerSemanticRole.AppendLastAppend,
+            "sequence.take" => CompilerSemanticRole.SequenceTake,
             _ => ReportUnknownCompilerSemanticRole(role, declaration.Span)
         };
     }

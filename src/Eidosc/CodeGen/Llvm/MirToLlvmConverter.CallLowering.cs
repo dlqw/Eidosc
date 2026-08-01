@@ -10,6 +10,17 @@ public sealed partial class MirToLlvmConverter
 {
     private LlvmCall? ConvertCall(MirCall call)
     {
+        if (TryConvertCallerOwnedOutCall(call, out var callerOwnedOutCall))
+        {
+            return callerOwnedOutCall;
+        }
+
+        if (call.Function is MirFunctionRef callerOwnedConstructor &&
+            TryConvertCallerOwnedReturnConstructor(call, callerOwnedConstructor, out var callerOwnedConstructorCall))
+        {
+            return callerOwnedConstructorCall;
+        }
+
         if (call.RecordUpdate != null && call.Function is MirFunctionRef recordConstructor)
         {
             return ConvertRecordUpdateCall(call, recordConstructor);
@@ -67,15 +78,14 @@ public sealed partial class MirToLlvmConverter
             return null;
         }
 
-        if (call.Function is MirFunctionRef inlineTypeIdRef &&
-            IsRuntimeFunctionRef(inlineTypeIdRef, WellKnownStrings.InternalNames.TypeId) &&
+        if (call.Function is MirFunctionRef exactTypeIdRef &&
+            IsRuntimeFunctionRef(exactTypeIdRef, WellKnownStrings.InternalNames.TypeId) &&
             call.Arguments.Count == 1)
         {
-            var argumentTypeId = call.Arguments[0] is MirPlace inlineRecordPlace
-                ? ResolvePlaceTypeId(inlineRecordPlace)
+            var argumentTypeId = call.Arguments[0] is MirPlace exactNominalPlace
+                ? ResolvePlaceTypeId(exactNominalPlace)
                 : call.Arguments[0].TypeId;
-            if (_typeLowering.IsInlineValueRecordType(argumentTypeId) &&
-                _typeLowering.TryGetConstructorLayouts(argumentTypeId, out var layouts) &&
+            if (_typeLowering.TryGetConstructorLayouts(argumentTypeId, out var layouts) &&
                 layouts.Count == 1)
             {
                 if (call.Target is MirPlace target)
@@ -119,6 +129,26 @@ public sealed partial class MirToLlvmConverter
             return ConvertRuntimeArrayPrependCall(call);
         }
 
+        if (call.Function is MirFunctionRef arrayShiftPrependRef &&
+            IsArrayIntrinsicCall(arrayShiftPrependRef, WellKnownStrings.InternalNames.ArrayShiftPrepend))
+        {
+            return ConvertRuntimeArrayShiftPrependCall(call);
+        }
+
+        if (call.Function is MirFunctionRef arrayTailShiftPrependUniqueRef &&
+            IsArrayIntrinsicCall(
+                arrayTailShiftPrependUniqueRef,
+                WellKnownStrings.InternalNames.ArrayTailShiftPrependUnique))
+        {
+            return ConvertRuntimeArrayTailShiftPrependCall(call, knownUnique: true);
+        }
+
+        if (call.Function is MirFunctionRef arrayTailShiftPrependRef &&
+            IsArrayIntrinsicCall(arrayTailShiftPrependRef, WellKnownStrings.InternalNames.ArrayTailShiftPrepend))
+        {
+            return ConvertRuntimeArrayTailShiftPrependCall(call, knownUnique: false);
+        }
+
         if (call.Function is MirFunctionRef arrayExtendRef &&
             IsArrayIntrinsicCall(arrayExtendRef, WellKnownStrings.InternalNames.ArrayExtend))
         {
@@ -154,6 +184,18 @@ public sealed partial class MirToLlvmConverter
             IsArrayIntrinsicCall(arraySetRef, WellKnownStrings.InternalNames.ArraySet))
         {
             return ConvertRuntimeArraySetCall(call);
+        }
+
+        if (call.Function is MirFunctionRef arrayRangeLengthRef &&
+            IsArrayIntrinsicCall(arrayRangeLengthRef, WellKnownStrings.InternalNames.ArrayRangeLength))
+        {
+            return ConvertProvenRuntimeArrayRangeLength(call);
+        }
+
+        if (call.Function is MirFunctionRef arrayRangeGetRef &&
+            IsArrayIntrinsicCall(arrayRangeGetRef, WellKnownStrings.InternalNames.ArrayRangeGet))
+        {
+            return ConvertProvenRuntimeArrayRangeGet(call);
         }
 
         if (call.Function is MirFunctionRef { CompilerSemanticRole: CompilerSemanticRole.Show } &&
@@ -1592,6 +1634,33 @@ public sealed partial class MirToLlvmConverter
             ? GetArrayElementPolicy(elementTypeId)
             : new ArrayElementPolicy(LlvmNullPointer.Instance, LlvmNullPointer.Instance);
 
+        if (call.Target is MirPlace { Kind: PlaceKind.Local, Local: var targetLocal } &&
+            _callerOwnedOutArrayStorageByLocal.TryGetValue(targetLocal, out var callerStorage))
+        {
+            return EmitDirectCall(
+                call,
+                CreateRuntimeFunctionGlobal(
+                    WellKnownStrings.Runtime.ArrayNewInStorage,
+                    LlvmPointerType.VoidPtr(),
+                    [
+                        LlvmPointerType.VoidPtr(),
+                        LlvmIntType.I64,
+                        LlvmIntType.I64,
+                        LlvmIntType.I64,
+                        LlvmPointerType.VoidPtr(),
+                        LlvmPointerType.VoidPtr()
+                    ]),
+                [
+                    callerStorage.Pointer,
+                    new LlvmConstant { Value = callerStorage.StorageBytes, Type = LlvmIntType.I64 },
+                    capacityArg,
+                    sizeArg,
+                    policy.Retain,
+                    policy.Release
+                ],
+                LlvmPointerType.VoidPtr());
+        }
+
         return EmitDirectCall(
             call,
             CreateRuntimeFunctionGlobal(
@@ -1780,6 +1849,185 @@ public sealed partial class MirToLlvmConverter
                 LlvmPointerType.VoidPtr(),
                 [LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64]),
             Arguments = [arrayArg, valueArg, sizeArg],
+            ReturnType = LlvmPointerType.VoidPtr(),
+            ResultName = resultName
+        };
+
+        if (targetPlace != null)
+        {
+            ClearGenericLocal(targetPlace.Local);
+            if (targetUsesSlot)
+            {
+                QueueStoreToLocalSlot(targetPlace.Local, new LlvmInstructionRef
+                {
+                    Instruction = runtimeCall,
+                    Type = LlvmPointerType.VoidPtr()
+                });
+            }
+            else
+            {
+                _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+                {
+                    Name = resultName,
+                    Type = LlvmPointerType.VoidPtr()
+                };
+            }
+        }
+
+        return runtimeCall;
+    }
+
+    private LlvmCall ConvertRuntimeArrayShiftPrependCall(MirCall call)
+    {
+        var targetPlace = call.Target is MirPlace { Kind: PlaceKind.Local } localTarget
+            ? localTarget
+            : null;
+        var targetUsesSlot = targetPlace != null && IsSlotBackedLocal(targetPlace.Local);
+        var resultName = call.Target is MirPlace target
+            ? _nameMangler.NewTempName(targetUsesSlot ? $"l{target.Local.Value}_shift_prepend" : $"l{target.Local.Value}")
+            : _nameMangler.NewTempName(WellKnownStrings.InternalNames.ArrayShiftPrepend);
+        var arrayArg = call.Arguments.Count > 0
+            ? CoerceToPointer(ConvertOperand(call.Arguments[0]))
+            : LlvmNullPointer.Instance;
+        var firstOperand = call.Arguments.Count > 1 ? call.Arguments[1] : null;
+        var secondOperand = call.Arguments.Count > 2 ? call.Arguments[2] : null;
+        var firstRaw = firstOperand != null ? ConvertOperand(firstOperand) : LlvmNullPointer.Instance;
+        var secondRaw = secondOperand != null ? ConvertOperand(secondOperand) : LlvmNullPointer.Instance;
+        var valueTypeId = TryResolveConcreteRuntimeArrayElementTypeId(
+                call,
+                firstOperand,
+                out var elementTypeId)
+            ? elementTypeId
+            : firstOperand?.TypeId ?? TypeId.None;
+        var valueType = LowerStorageTypeIdOrReport(valueTypeId, "array shift prepend value");
+        if (firstOperand != null)
+        {
+            RetainBorrowedProjectionConsumedValue(firstOperand, firstRaw, valueTypeId, valueType);
+        }
+        if (secondOperand != null)
+        {
+            RetainBorrowedProjectionConsumedValue(secondOperand, secondRaw, valueTypeId, valueType);
+        }
+
+        var firstArg = CreateAddressableValuePointer(firstRaw, valueType);
+        var secondArg = CreateAddressableValuePointer(secondRaw, valueType);
+        var growArg = call.Arguments.Count > 3
+            ? CoerceToI64(ConvertOperand(call.Arguments[3]))
+            : new LlvmConstant { Value = 0L, Type = LlvmIntType.I64 };
+        var originalSizeArg = call.Arguments.Count > 4
+            ? CoerceToI64(ConvertOperand(call.Arguments[4]))
+            : new LlvmConstant { Value = 0L, Type = LlvmIntType.I64 };
+        var sizeArg = ResolveRuntimeArrayElementSizeArgument(call, firstOperand, originalSizeArg);
+        var runtimeCall = new LlvmCall
+        {
+            Function = CreateRuntimeFunctionGlobal(
+                WellKnownStrings.Runtime.ArrayShiftPrepend,
+                LlvmPointerType.VoidPtr(),
+                [
+                    LlvmPointerType.VoidPtr(),
+                    LlvmPointerType.VoidPtr(),
+                    LlvmPointerType.VoidPtr(),
+                    LlvmIntType.I64,
+                    LlvmIntType.I64
+                ]),
+            Arguments = [arrayArg, firstArg, secondArg, growArg, sizeArg],
+            ReturnType = LlvmPointerType.VoidPtr(),
+            ResultName = resultName
+        };
+
+        if (targetPlace != null)
+        {
+            ClearGenericLocal(targetPlace.Local);
+            if (targetUsesSlot)
+            {
+                QueueStoreToLocalSlot(targetPlace.Local, new LlvmInstructionRef
+                {
+                    Instruction = runtimeCall,
+                    Type = LlvmPointerType.VoidPtr()
+                });
+            }
+            else
+            {
+                _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+                {
+                    Name = resultName,
+                    Type = LlvmPointerType.VoidPtr()
+                };
+            }
+        }
+
+        return runtimeCall;
+    }
+
+    private LlvmCall ConvertRuntimeArrayTailShiftPrependCall(MirCall call, bool knownUnique)
+    {
+        var targetPlace = call.Target is MirPlace { Kind: PlaceKind.Local } localTarget
+            ? localTarget
+            : null;
+        var targetUsesSlot = targetPlace != null && IsSlotBackedLocal(targetPlace.Local);
+        var resultName = call.Target is MirPlace target
+            ? _nameMangler.NewTempName(targetUsesSlot ? $"l{target.Local.Value}_tail_shift_prepend" : $"l{target.Local.Value}")
+            : _nameMangler.NewTempName(WellKnownStrings.InternalNames.ArrayTailShiftPrepend);
+        var arrayArg = call.Arguments.Count > 0
+            ? CoerceToPointer(ConvertOperand(call.Arguments[0]))
+            : LlvmNullPointer.Instance;
+        var firstOperand = call.Arguments.Count > 1 ? call.Arguments[1] : null;
+        var firstRaw = firstOperand != null ? ConvertOperand(firstOperand) : LlvmNullPointer.Instance;
+        var valueTypeId = TryResolveConcreteRuntimeArrayElementTypeId(
+                call,
+                firstOperand,
+                out var elementTypeId)
+            ? elementTypeId
+            : firstOperand?.TypeId ?? TypeId.None;
+        var valueType = LowerStorageTypeIdOrReport(valueTypeId, "array tail shift prepend value");
+        if (firstOperand != null)
+        {
+            RetainBorrowedProjectionConsumedValue(firstOperand, firstRaw, valueTypeId, valueType);
+        }
+
+        var firstArg = CreateAddressableValuePointer(firstRaw, valueType);
+        var growArg = call.Arguments.Count > 2
+            ? CoerceToI64(ConvertOperand(call.Arguments[2]))
+            : new LlvmConstant { Value = 0L, Type = LlvmIntType.I64 };
+        var originalSizeArg = call.Arguments.Count > 3
+            ? CoerceToI64(ConvertOperand(call.Arguments[3]))
+            : new LlvmConstant { Value = 0L, Type = LlvmIntType.I64 };
+        var sizeArg = ResolveRuntimeArrayElementSizeArgument(call, firstOperand, originalSizeArg);
+        var runtimeName = WellKnownStrings.Runtime.ArrayTailShiftPrepend;
+        var useUnmanaged16 = false;
+        if (knownUnique)
+        {
+            if (IsManagedRcType(valueTypeId))
+            {
+                runtimeName = WellKnownStrings.Runtime.ArrayTailShiftPrependUnique;
+            }
+            else if (GetRuntimeElementSize(valueTypeId) == 16)
+            {
+                runtimeName = WellKnownStrings.Runtime.ArrayTailShiftPrependUniqueUnmanaged16;
+                useUnmanaged16 = true;
+            }
+            else
+            {
+                runtimeName = WellKnownStrings.Runtime.ArrayTailShiftPrependUniqueUnmanaged;
+            }
+        }
+
+        var runtimeCall = new LlvmCall
+        {
+            Function = CreateRuntimeFunctionGlobal(
+                runtimeName,
+                LlvmPointerType.VoidPtr(),
+                useUnmanaged16
+                    ? [LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64]
+                    : [
+                        LlvmPointerType.VoidPtr(),
+                        LlvmPointerType.VoidPtr(),
+                        LlvmIntType.I64,
+                        LlvmIntType.I64
+                    ]),
+            Arguments = useUnmanaged16
+                ? [arrayArg, firstArg, growArg]
+                : [arrayArg, firstArg, growArg, sizeArg],
             ReturnType = LlvmPointerType.VoidPtr(),
             ResultName = resultName
         };
@@ -2000,6 +2248,142 @@ public sealed partial class MirToLlvmConverter
             Arguments = [arrayArg, indexArg, valueArg, sizeArg],
             ReturnType = LlvmVoidType.Instance
         };
+    }
+
+    private LlvmCall? ConvertProvenRuntimeArrayRangeLength(MirCall call)
+    {
+        if (call.Target is not MirPlace target || call.Arguments.Count != 3)
+        {
+            return null;
+        }
+
+        var array = CoerceToPointer(ConvertOperand(call.Arguments[0]));
+        var start = CoerceToI64(ConvertOperand(call.Arguments[1]));
+        var suffix = CoerceToI64(ConvertOperand(call.Arguments[2]));
+        var length = EmitRuntimeArrayHeaderLoad(array, 8, "range_length");
+        var prefix = EmitPositiveClamp(start, length, "range_prefix");
+        var available = EmitI64Binary("sub", length, prefix, "range_available");
+        var suffixLength = EmitPositiveClamp(suffix, available, "range_suffix");
+        var result = EmitI64Binary("sub", available, suffixLength, "range_count");
+        AssignPlaceFromValue(target, result);
+        return null;
+    }
+
+    private LlvmCall? ConvertProvenRuntimeArrayRangeGet(MirCall call)
+    {
+        if (call.Target is not MirPlace target || call.Arguments.Count != 4)
+        {
+            return null;
+        }
+
+        var array = CoerceToPointer(ConvertOperand(call.Arguments[0]));
+        var start = CoerceToI64(ConvertOperand(call.Arguments[1]));
+        var index = CoerceToI64(ConvertOperand(call.Arguments[3]));
+        var length = EmitRuntimeArrayHeaderLoad(array, 8, "range_get_length");
+        var prefix = EmitPositiveClamp(start, length, "range_get_prefix");
+        var physicalIndex = EmitI64Binary("add", prefix, index, "range_physical_index");
+        var elementSize = TryResolveConcreteRuntimeArrayElementTypeId(call, valueOperand: null, out var elementTypeId)
+            ? (LlvmValue)new LlvmConstant
+            {
+                Value = (long)GetRuntimeElementSize(elementTypeId),
+                Type = LlvmIntType.I64
+            }
+            : EmitRuntimeArrayHeaderLoad(array, 24, "range_element_size");
+        var byteOffset = EmitI64Binary("mul", physicalIndex, elementSize, "range_byte_offset");
+        var data = EmitBytePointer(array, 48, "range_data");
+        var element = new LlvmGetElementPtr
+        {
+            Pointer = data,
+            ElementType = LlvmIntType.I8,
+            Index = byteOffset,
+            ResultName = _nameMangler.NewTempName("range_element")
+        };
+        _currentBlock!.Instructions.Add(element);
+        AssignPlaceFromValue(target, new LlvmInstructionRef
+        {
+            Instruction = element,
+            Type = LlvmPointerType.VoidPtr()
+        });
+        return null;
+    }
+
+    private LlvmValue EmitRuntimeArrayHeaderLoad(LlvmValue array, long offset, string name)
+    {
+        var field = EmitBytePointer(array, offset, $"{name}_ptr");
+        var load = new LlvmLoad
+        {
+            Pointer = field,
+            LoadType = LlvmIntType.I64,
+            ResultName = _nameMangler.NewTempName(name)
+        };
+        _currentBlock!.Instructions.Add(load);
+        return new LlvmInstructionRef { Instruction = load, Type = LlvmIntType.I64 };
+    }
+
+    private LlvmValue EmitBytePointer(LlvmValue pointer, long offset, string name)
+    {
+        var gep = new LlvmGetElementPtr
+        {
+            Pointer = pointer,
+            ElementType = LlvmIntType.I8,
+            Index = new LlvmConstant { Value = offset, Type = LlvmIntType.I64 },
+            ResultName = _nameMangler.NewTempName(name)
+        };
+        _currentBlock!.Instructions.Add(gep);
+        return new LlvmInstructionRef { Instruction = gep, Type = LlvmPointerType.VoidPtr() };
+    }
+
+    private LlvmValue EmitPositiveClamp(LlvmValue value, LlvmValue upperBound, string name)
+    {
+        var zero = new LlvmConstant { Value = 0L, Type = LlvmIntType.I64 };
+        var isPositive = new LlvmIcmp
+        {
+            Predicate = "sgt",
+            Left = value,
+            Right = zero,
+            ResultName = _nameMangler.NewTempName($"{name}_positive")
+        };
+        _currentBlock!.Instructions.Add(isPositive);
+        var positive = new LlvmSelect
+        {
+            Condition = new LlvmInstructionRef { Instruction = isPositive, Type = LlvmIntType.I1 },
+            TrueValue = value,
+            FalseValue = zero,
+            ResultName = _nameMangler.NewTempName($"{name}_nonnegative")
+        };
+        _currentBlock.Instructions.Add(positive);
+        var positiveValue = new LlvmInstructionRef { Instruction = positive, Type = LlvmIntType.I64 };
+        var exceeds = new LlvmIcmp
+        {
+            Predicate = "ugt",
+            Left = positiveValue,
+            Right = upperBound,
+            ResultName = _nameMangler.NewTempName($"{name}_exceeds")
+        };
+        _currentBlock.Instructions.Add(exceeds);
+        var clamped = new LlvmSelect
+        {
+            Condition = new LlvmInstructionRef { Instruction = exceeds, Type = LlvmIntType.I1 },
+            TrueValue = upperBound,
+            FalseValue = positiveValue,
+            ResultName = _nameMangler.NewTempName(name)
+        };
+        _currentBlock.Instructions.Add(clamped);
+        return new LlvmInstructionRef { Instruction = clamped, Type = LlvmIntType.I64 };
+    }
+
+    private LlvmValue EmitI64Binary(string operation, LlvmValue left, LlvmValue right, string name)
+    {
+        var instruction = new LlvmBinOp
+        {
+            Op = operation,
+            Left = left,
+            Right = right,
+            ResultType = LlvmIntType.I64,
+            ResultName = _nameMangler.NewTempName(name)
+        };
+        _currentBlock!.Instructions.Add(instruction);
+        return new LlvmInstructionRef { Instruction = instruction, Type = LlvmIntType.I64 };
     }
 
     private LlvmValue ResolveRuntimeArrayElementSizeArgument(

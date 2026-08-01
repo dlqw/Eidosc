@@ -44,6 +44,27 @@ public static class MirFunctionFingerprintBuilder
         writer.Add((int)function.BuiltinIntrinsicRole);
         writer.Add(function.IsEntry);
         writer.Add(function.EntryBlockId.Value);
+        writer.Add(function.CallerOwnedAggregateAbi.OutReturnType.Value);
+        writer.Add(function.CallerOwnedAggregateAbi.OutReturnLocals.Count);
+        foreach (var local in function.CallerOwnedAggregateAbi.OutReturnLocals.OrderBy(static local => local.Value))
+        {
+            writer.Add(local.Value);
+        }
+        AddCallerOwnedArrayStorages(writer, function.CallerOwnedAggregateAbi.OutArrayStorages);
+        writer.Add(function.CallerOwnedAggregateAbi.LocalGroups.Count);
+        foreach (var group in function.CallerOwnedAggregateAbi.LocalGroups
+                     .OrderBy(static group => group.CanonicalLocal.Value))
+        {
+            writer.Add(group.CanonicalLocal.Value);
+            writer.Add(group.TypeId.Value);
+            writer.Add(group.ParameterIndex);
+            writer.Add(group.Locals.Count);
+            foreach (var local in group.Locals.OrderBy(static local => local.Value))
+            {
+                writer.Add(local.Value);
+            }
+            AddCallerOwnedArrayStorages(writer, group.ArrayStorages);
+        }
 
         writer.Add(function.GenericTypeParameterIds.Count);
         foreach (var typeParameterId in function.GenericTypeParameterIds)
@@ -102,6 +123,22 @@ public static class MirFunctionFingerprintBuilder
             parameterCount);
     }
 
+    private static void AddCallerOwnedArrayStorages(
+        HashWriter writer,
+        IReadOnlyList<MirCallerOwnedArrayStorage> storages)
+    {
+        writer.Add(storages.Count);
+        foreach (var storage in storages.OrderBy(static storage => storage.Key, StringComparer.Ordinal))
+        {
+            writer.Add(storage.Key);
+            writer.Add(storage.ArrayLocal.Value);
+            writer.Add(storage.ArrayTypeId.Value);
+            writer.Add(storage.Capacity);
+            writer.Add(storage.ElementSize);
+            writer.Add(storage.StorageBytes);
+        }
+    }
+
     public static IReadOnlyList<MirFunctionFingerprint> ComputeModule(MirModule module)
     {
         return module.Functions
@@ -139,6 +176,7 @@ public static class MirFunctionFingerprintBuilder
                 if (call.RecordUpdate != null)
                 {
                     AddPlace(writer, call.RecordUpdate.Source);
+                    writer.Add(call.RecordUpdate.IsKnownUnique);
                     writer.Add(call.RecordUpdate.UpdatedFieldIndices.Count);
                     foreach (var fieldIndex in call.RecordUpdate.UpdatedFieldIndices)
                     {

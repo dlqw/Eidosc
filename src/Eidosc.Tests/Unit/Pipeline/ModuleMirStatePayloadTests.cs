@@ -109,6 +109,136 @@ public sealed class ModuleMirStatePayloadTests
     }
 
     [Fact]
+    public void Create_RestoresKnownUniqueRecordUpdateProof()
+    {
+        var recordType = new TypeId(9010);
+        var source = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 1 },
+            TypeId = recordType
+        };
+        var result = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 2 },
+            TypeId = recordType
+        };
+        var block = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Instructions =
+            [
+                new MirCall
+                {
+                    Target = result,
+                    Function = new MirFunctionRef { Name = "Record", TypeId = recordType },
+                    Arguments = [source],
+                    RecordUpdate = new MirRecordUpdateInfo
+                    {
+                        Source = source,
+                        UpdatedFieldIndices = [0],
+                        IsKnownUnique = true
+                    }
+                }
+            ],
+            Terminator = new MirReturn { Value = result }
+        };
+        var module = new MirModule
+        {
+            Name = "known_unique_record_update",
+            Functions =
+            [
+                new MirFunc
+                {
+                    Name = "update",
+                    ReturnType = recordType,
+                    Locals =
+                    [
+                        new MirLocal { Id = source.Local, Name = "source", TypeId = recordType, IsParameter = true },
+                        new MirLocal { Id = result.Local, Name = "result", TypeId = recordType }
+                    ],
+                    EntryBlockId = block.Id,
+                    BasicBlocks = [block]
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(ModuleMirStatePayload.Create(module));
+        var payload = Assert.IsType<ModuleMirStatePayload>(
+            JsonSerializer.Deserialize<ModuleMirStatePayload>(json));
+
+        Assert.True(payload.TryRestore(out var restored));
+        var call = Assert.IsType<MirCall>(Assert.Single(restored.Functions[0].BasicBlocks[0].Instructions));
+        Assert.True(call.RecordUpdate!.IsKnownUnique);
+    }
+
+    [Fact]
+    public void Create_RestoresCallerOwnedAggregateAbi()
+    {
+        var resultType = new TypeId(9011);
+        var arrayType = new TypeId(9012);
+        var local = new LocalId { Value = 1 };
+        var arrayLocal = new LocalId { Value = 2 };
+        var arrayStorage = new MirCallerOwnedArrayStorage
+        {
+            Key = "test:caller_owned|array:2",
+            ArrayLocal = arrayLocal,
+            ArrayTypeId = arrayType,
+            Capacity = 3,
+            ElementSize = 16,
+            StorageBytes = 112
+        };
+        var function = new MirFunc
+        {
+            Name = "caller_owned",
+            ReturnType = resultType,
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals = [new MirLocal { Id = local, Name = "result", TypeId = resultType }],
+            CallerOwnedAggregateAbi = new MirCallerOwnedAggregateAbi
+            {
+                OutReturnType = resultType,
+                OutReturnLocals = new HashSet<LocalId> { local },
+                OutArrayStorages = [arrayStorage],
+                LocalGroups =
+                [
+                    new MirCallerOwnedAggregateGroup
+                    {
+                        CanonicalLocal = local,
+                        TypeId = resultType,
+                        Locals = new HashSet<LocalId> { local },
+                        ArrayStorages = [arrayStorage],
+                        ParameterIndex = -1
+                    }
+                ]
+            },
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Terminator = new MirReturn { Value = new MirPlace { Kind = PlaceKind.Local, Local = local, TypeId = resultType } }
+                }
+            ]
+        };
+        var payload = ModuleMirStatePayload.Create(new MirModule { Name = "caller_owned", Functions = [function] });
+
+        Assert.True(payload.TryRestore(out var restored));
+        var abi = Assert.Single(restored.Functions).CallerOwnedAggregateAbi;
+        Assert.Equal(resultType, abi.OutReturnType);
+        Assert.Contains(local, abi.OutReturnLocals);
+        var restoredOutStorage = Assert.Single(abi.OutArrayStorages);
+        Assert.Equal(arrayStorage, restoredOutStorage);
+        var group = Assert.Single(abi.LocalGroups);
+        Assert.Equal(local, group.CanonicalLocal);
+        Assert.Contains(local, group.Locals);
+        var restoredGroupStorage = Assert.Single(group.ArrayStorages);
+        Assert.Equal(arrayStorage, restoredGroupStorage);
+    }
+
+    [Fact]
     public void Create_FromCompiledMir_RestoresEquivalentFingerprints()
     {
         var result = new CompilationPipeline("""

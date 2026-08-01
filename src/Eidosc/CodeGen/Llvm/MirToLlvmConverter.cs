@@ -15,6 +15,8 @@ namespace Eidosc.CodeGen.Llvm;
 public sealed partial class MirToLlvmConverter
 {
     private const int UnknownGenericRemainingArity = -1;
+    private const long CallerOwnedArrayStorageOverheadBytes = 64;
+    private const long MaxCallerOwnedInlineArrayStorageBytes = 4096;
     private readonly TypeLowering _typeLowering;
     private readonly NameMangler _nameMangler;
     private readonly LlvmSymbolNameAllocator _symbolNameAllocator;
@@ -75,6 +77,12 @@ public sealed partial class MirToLlvmConverter
     private ReuseHints? _currentReuseHints;
     private StackPromotionHints? _currentStackPromotionHints;
     private UnifiedStackPromotionHints? _currentUnifiedHints;
+    private readonly Dictionary<LocalId, MirCallerOwnedAggregateGroup> _callerOwnedGroupByLocal = [];
+    private readonly Dictionary<LocalId, LlvmValue> _callerOwnedStorageByCanonicalLocal = [];
+    private readonly Dictionary<LocalId, LlvmStructType> _callerOwnedWrapperTypeByCanonicalLocal = [];
+    private readonly Dictionary<(LocalId CanonicalLocal, string Key), LlvmValue> _callerOwnedArrayStorageByGroup = [];
+    private readonly Dictionary<LocalId, (LlvmValue Pointer, long StorageBytes)> _callerOwnedOutArrayStorageByLocal = [];
+    private LlvmValue? _callerOwnedOutDestination;
     public List<Diagnostic.Diagnostic> Diagnostics { get; } = [];
 
     private sealed record PartialCallState(
@@ -255,6 +263,14 @@ public sealed partial class MirToLlvmConverter
             };
         }
         _currentModule = llvmModule;
+        if (module.Functions.Any(ShouldAlwaysInline))
+        {
+            llvmModule.AttributeGroups.Add(new LlvmAttributeGroup
+            {
+                Id = 0,
+                Attributes = ["alwaysinline"]
+            });
+        }
 
         // Collect all named struct types from TypeLowering into the module
         using (MeasureConverterSubphase("collect_named_struct_types"))
@@ -355,6 +371,35 @@ public sealed partial class MirToLlvmConverter
     {
         return function.IntrinsicName != null && function.BasicBlocks.Count == 0;
     }
+
+    private static bool IsCompilerOptimizationVariant(MirFunc function)
+    {
+        var identity = function.FunctionId.StableIdentityKey;
+        return identity.Contains("|unique:", StringComparison.Ordinal) ||
+               identity.Contains("|range:", StringComparison.Ordinal) ||
+               identity.Contains("|caller-owned:", StringComparison.Ordinal) ||
+               identity.Contains("|caller-out", StringComparison.Ordinal);
+    }
+
+    private static bool ShouldAlwaysInline(MirFunc function)
+    {
+        if (IsCompilerOptimizationVariant(function))
+        {
+            return true;
+        }
+
+        return function.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .Any(static call => call.Function is MirFunctionRef functionRef &&
+                                IsCompilerOptimizationVariant(functionRef.FunctionId.StableIdentityKey));
+    }
+
+    private static bool IsCompilerOptimizationVariant(string identity) =>
+        identity.Contains("|unique:", StringComparison.Ordinal) ||
+        identity.Contains("|range:", StringComparison.Ordinal) ||
+        identity.Contains("|caller-owned:", StringComparison.Ordinal) ||
+        identity.Contains("|caller-out", StringComparison.Ordinal);
 
     private void IndexSpecializationFailures(IEnumerable<MirSpecializationFailureInfo> failures)
     {
@@ -472,11 +517,25 @@ public sealed partial class MirToLlvmConverter
             _inferredLocalTypeCache.Clear();
             _failedLocalTypeInferenceCache.Clear();
             _borrowedProjectionLocals.Clear();
+            _callerOwnedGroupByLocal.Clear();
+            _callerOwnedStorageByCanonicalLocal.Clear();
+            _callerOwnedWrapperTypeByCanonicalLocal.Clear();
+            _callerOwnedArrayStorageByGroup.Clear();
+            _callerOwnedOutArrayStorageByLocal.Clear();
+            _callerOwnedOutDestination = null;
             _postInstructionBuffer.Clear();
             _blockMap.Clear();
             _nameMangler.ResetCounters();
             _currentMirFunction = func;
             _currentFunctionAllowsOpenLocalTypes = false;
+
+            foreach (var group in func.CallerOwnedAggregateAbi.LocalGroups)
+            {
+                foreach (var local in group.Locals)
+                {
+                    _callerOwnedGroupByLocal[local] = group;
+                }
+            }
 
             // 加载当前函数的 Perceus 优化提示
             _currentOmitDup = null;
@@ -570,15 +629,24 @@ public sealed partial class MirToLlvmConverter
         {
             // 创建 LLVM 函数
             var isRuntimeWordAbi = func.IsRuntimeWordAbi;
+            var isOptimizationVariant = IsCompilerOptimizationVariant(func);
+            var shouldAlwaysInline = ShouldAlwaysInline(func);
             _currentFunction = new LlvmFunction
             {
                 Name = funcName,
                 ReturnType = isRuntimeWordAbi
                     ? LlvmIntType.I64
+                    : func.CallerOwnedAggregateAbi.HasOutReturn
+                        ? LlvmVoidType.Instance
                     : LowerFunctionSignatureType(func.ReturnType, func, "return type", allowUnresolvedSignatureTypes),
-                Linkage = LlvmLinkage.External,
-                Parameters = new List<LlvmParameter>(CountParameters(func)),
-                BasicBlocks = new List<LlvmBasicBlock>(Math.Max(1, func.BasicBlocks.Count))
+                Linkage = isOptimizationVariant ? LlvmLinkage.Private : LlvmLinkage.External,
+                Parameters = new List<LlvmParameter>(
+                    CountParameters(func) +
+                    (func.CallerOwnedAggregateAbi.HasOutReturn
+                        ? 1 + func.CallerOwnedAggregateAbi.OutArrayStorages.Count
+                        : 0)),
+                BasicBlocks = new List<LlvmBasicBlock>(Math.Max(1, func.BasicBlocks.Count)),
+                AttributeIds = shouldAlwaysInline && _currentModule != null ? [0] : []
             };
 
             // 添加参数
@@ -611,6 +679,46 @@ public sealed partial class MirToLlvmConverter
                     Type = loweredParameterType
                 };
                 _locals.LocalMap[local.Id] = llvmLocal;
+            }
+
+            if (func.CallerOwnedAggregateAbi.HasOutReturn)
+            {
+                var outParameter = new LlvmParameter
+                {
+                    Name = "__aggregate_out",
+                    Type = LlvmPointerType.VoidPtr()
+                };
+                _currentFunction.Parameters.Add(outParameter);
+                _callerOwnedOutDestination = new LlvmLocal
+                {
+                    Name = outParameter.Name,
+                    Type = outParameter.Type
+                };
+
+                for (var index = 0; index < func.CallerOwnedAggregateAbi.OutArrayStorages.Count; index++)
+                {
+                    var storage = func.CallerOwnedAggregateAbi.OutArrayStorages[index];
+                    var storageParameter = new LlvmParameter
+                    {
+                        Name = $"__array_storage_{index}",
+                        Type = LlvmPointerType.VoidPtr()
+                    };
+                    _currentFunction.Parameters.Add(storageParameter);
+                    _callerOwnedOutArrayStorageByLocal[storage.ArrayLocal] =
+                    (
+                        new LlvmLocal { Name = storageParameter.Name, Type = storageParameter.Type },
+                        ResolveCallerOwnedArrayStorageBytes(storage)
+                    );
+                }
+            }
+
+            foreach (var group in func.CallerOwnedAggregateAbi.LocalGroups.Where(static group => group.ParameterIndex >= 0))
+            {
+                var parameterLocal = func.Locals.Where(static local => local.IsParameter).ElementAt(group.ParameterIndex);
+                if (_locals.LocalMap.TryGetValue(parameterLocal.Id, out var parameterValue))
+                {
+                    _callerOwnedStorageByCanonicalLocal[group.CanonicalLocal] = parameterValue;
+                }
             }
         }
 
@@ -1848,6 +1956,11 @@ public sealed partial class MirToLlvmConverter
                 out var aggregateDrop))
         {
             return aggregateDrop;
+        }
+
+        if (TryDropCallerOwnedAggregate(drop, value))
+        {
+            return null;
         }
 
         if (!IsManagedRcType(drop.Value.TypeId))

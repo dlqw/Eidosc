@@ -61,31 +61,35 @@ public sealed partial class MirToLlvmConverter
         payloadSize = Math.Max(8L, payloadSize);
 
         var source = CoerceToPointer(ConvertOperand(update.Source));
-        var cowCall = new LlvmCall
+        LlvmValue recordPointer = source;
+        if (!update.IsKnownUnique)
         {
-            Function = CreateRuntimeFunctionGlobal(
-                WellKnownStrings.Runtime.RecordUpdateCow,
-                LlvmPointerType.VoidPtr(),
-                [LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I32]),
-            Arguments =
-            [
-                source,
-                new LlvmConstant { Value = payloadSize, Type = LlvmIntType.I64 },
-                new LlvmConstant
-                {
-                    Value = ComputeRuntimeConstructorTypeId(constructor),
-                    Type = LlvmIntType.I32
-                }
-            ],
-            ReturnType = LlvmPointerType.VoidPtr(),
-            ResultName = _nameMangler.NewTempName("record_update")
-        };
-        _currentBlock!.Instructions.Add(cowCall);
-        var recordPointer = new LlvmInstructionRef
-        {
-            Instruction = cowCall,
-            Type = LlvmPointerType.VoidPtr()
-        };
+            var cowCall = new LlvmCall
+            {
+                Function = CreateRuntimeFunctionGlobal(
+                    WellKnownStrings.Runtime.RecordUpdateCow,
+                    LlvmPointerType.VoidPtr(),
+                    [LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I32]),
+                Arguments =
+                [
+                    source,
+                    new LlvmConstant { Value = payloadSize, Type = LlvmIntType.I64 },
+                    new LlvmConstant
+                    {
+                        Value = ComputeRuntimeConstructorTypeId(constructor),
+                        Type = LlvmIntType.I32
+                    }
+                ],
+                ReturnType = LlvmPointerType.VoidPtr(),
+                ResultName = _nameMangler.NewTempName("record_update")
+            };
+            _currentBlock!.Instructions.Add(cowCall);
+            recordPointer = new LlvmInstructionRef
+            {
+                Instruction = cowCall,
+                Type = LlvmPointerType.VoidPtr()
+            };
+        }
         var hasTag = HasTagFieldForType(targetPlace.TypeId);
 
         for (var updateIndex = 0; updateIndex < update.UpdatedFieldIndices.Count; updateIndex++)
@@ -123,7 +127,7 @@ public sealed partial class MirToLlvmConverter
                 };
             }
 
-            _currentBlock.Instructions.Add(fieldPointer);
+            _currentBlock!.Instructions.Add(fieldPointer);
             var fieldPointerRef = new LlvmInstructionRef
             {
                 Instruction = fieldPointer,
@@ -340,7 +344,7 @@ public sealed partial class MirToLlvmConverter
     /// 支持 struct-typed GEP（当 structType 非 null 时）和 byte-offset GEP（回退）。
     /// </summary>
     private void EmitInlineConstructorFieldStores(
-        LlvmInstructionRef basePointer,
+        LlvmValue basePointer,
         IReadOnlyList<MirOperand> arguments,
         IReadOnlyList<TypeId> fieldTypeIds,
         LlvmStructType? structType,
@@ -405,7 +409,7 @@ public sealed partial class MirToLlvmConverter
     }
 
     private void EmitConstructorFieldStoresByType(
-        LlvmInstructionRef basePointer,
+        LlvmValue basePointer,
         IReadOnlyList<MirOperand> arguments,
         IReadOnlyList<TypeId> fieldTypeIds,
         bool retainBorrowedProjectionFields)
