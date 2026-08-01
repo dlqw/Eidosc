@@ -8,6 +8,47 @@ namespace Eidosc.Tests.Integration;
 public partial class LlvmPipelineIntegrationTests
 {
     [Fact]
+    public void SmallCopyRecord_UsesInlineValueAbiAcrossCallsAndNativeExecution()
+    {
+        const string source = """
+@[derive(Copy)]
+Point :: type { Point :: type(Int, Int) }
+
+sum :: Point -> Int
+{
+    Point(x, y) => x + y
+}
+
+main :: Unit -> Int
+{
+    _ => sum(Point(20, 22))
+}
+""";
+
+        var llvm = RunSourceAtLlvm(source, StdlibListImportInputFile());
+        Assert.True(
+            llvm.Success,
+            string.Join(Environment.NewLine, llvm.Diagnostics.Select(static diagnostic =>
+                $"{diagnostic.Code}: {diagnostic.Message}")));
+        var llvmIr = Assert.IsType<string>(llvm.LlvmIrText);
+        Assert.Contains("%struct.eidos_Point", llvmIr, StringComparison.Ordinal);
+        var sumDefinition = Assert.Single(
+            llvmIr.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries),
+            static line =>
+                line.StartsWith("define external i64 @", StringComparison.Ordinal) &&
+                line.Contains("_Function_u0000_sum_", StringComparison.Ordinal) &&
+                !line.Contains("__eidos_prelude_core__", StringComparison.Ordinal));
+        Assert.Contains("(%struct.eidos_Point ", sumDefinition, StringComparison.Ordinal);
+        Assert.DoesNotContain("(ptr ", sumDefinition, StringComparison.Ordinal);
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_inline_copy_record.eidos",
+            "native_inline_copy_record");
+        Assert.Equal(42, execution.ExitCode);
+    }
+
+    [Fact]
     public void RuntimeArrayImportSource_LowersRuntimeArrayPrimitivesToLlvmCalls()
     {
         const string source = """
@@ -66,6 +107,99 @@ main :: Unit -> Int
             "native_std_array_pop_last.eidos",
             "native_std_array_pop_last");
 
+        Assert.Equal(0, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SeqTake_LowersToConsumingRuntimePrimitiveAndPreservesPrefix()
+    {
+        const string source = """
+import std.Seq
+
+main :: Unit -> Int
+{
+    _ => {
+        prefix := Seq.take([10, 20, 30])(2)
+        if Seq.len(ref prefix) == 2 && prefix[0] == 10 && prefix[1] == 20 then { 0 } else { 99 }
+    }
+}
+""";
+
+        var llvm = RunSourceAtLlvm(source, StdlibListImportInputFile());
+        Assert.True(
+            llvm.Success,
+            string.Join(Environment.NewLine, llvm.Diagnostics.Select(static diagnostic =>
+                $"{diagnostic.Code}: {diagnostic.Message}")));
+        Assert.Contains("@eidos_array_take", Assert.IsType<string>(llvm.LlvmIrText), StringComparison.Ordinal);
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_std_seq_take.eidos",
+            "native_std_seq_take");
+        Assert.Equal(0, execution.ExitCode);
+    }
+
+    [Fact]
+    public void ListRestPattern_LowersToCowSliceAndPreservesSuffixRules()
+    {
+        const string source = """
+import std.Seq
+
+main :: Unit -> Int
+{
+    _ => match [10, 20, 30, 40] {
+        [head, ..middle, last] =>
+            if head == 10 && last == 40 && Seq.len(ref middle) == 2 &&
+               middle[0] == 20 && middle[1] == 30
+            then { 0 }
+            else { 99 },
+        _ => 98
+    }
+}
+""";
+
+        var llvm = RunSourceAtLlvm(source, StdlibListImportInputFile());
+        Assert.True(
+            llvm.Success,
+            string.Join(Environment.NewLine, llvm.Diagnostics.Select(static diagnostic =>
+                $"{diagnostic.Code}: {diagnostic.Message}")));
+        Assert.Contains("@eidos_array_slice", Assert.IsType<string>(llvm.LlvmIrText), StringComparison.Ordinal);
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_std_list_rest_slice.eidos",
+            "native_std_list_rest_slice");
+        Assert.Equal(0, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SingletonAppend_LowersToConsumingPrependWithoutTemporaryArray()
+    {
+        const string source = """
+import std.Seq
+
+main :: Unit -> Int
+{
+    _ => {
+        values := [10].append([20, 30])
+        if Seq.len(ref values) == 3 && values[0] == 10 && values[2] == 30 then { 0 } else { 99 }
+    }
+}
+""";
+
+        var llvm = RunSourceAtLlvm(source, StdlibListImportInputFile());
+        Assert.True(
+            llvm.Success,
+            string.Join(Environment.NewLine, llvm.Diagnostics.Select(static diagnostic =>
+                $"{diagnostic.Code}: {diagnostic.Message}")));
+        var llvmIr = Assert.IsType<string>(llvm.LlvmIrText);
+        Assert.Contains("@eidos_array_prepend", llvmIr, StringComparison.Ordinal);
+        Assert.DoesNotContain(llvm.Diagnostics, diagnostic => diagnostic.Code == "E5310");
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_std_singleton_append.eidos",
+            "native_std_singleton_append");
         Assert.Equal(0, execution.ExitCode);
     }
 

@@ -1248,9 +1248,11 @@ public sealed partial class TypeInferer
     {
         var paramTypes = new List<Type>();
         var hasRecovery = false;
-        var expectedParams = expectedFunctionType is { Params.Count: var expectedCount } &&
-                             expectedCount >= lambda.Parameters.Count
-            ? expectedFunctionType.Params
+        var flattenedExpectedParams = expectedFunctionType != null
+            ? CollectParamTypes(expectedFunctionType)
+            : null;
+        var expectedParams = flattenedExpectedParams?.Count >= lambda.Parameters.Count
+            ? flattenedExpectedParams
             : null;
 
         for (var i = 0; i < lambda.Parameters.Count; i++)
@@ -1292,26 +1294,27 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
-        return new TyFun
+        if (expectedFunctionType != null)
         {
-            Params = paramTypes,
-            Result = _substitution.Apply(resultType)
-        };
+            return _substitution.Apply(expectedFunctionType);
+        }
+
+        Type lambdaType = _substitution.Apply(resultType);
+        for (var index = paramTypes.Count - 1; index >= 0; index--)
+        {
+            lambdaType = new TyFun
+            {
+                Params = [_substitution.Apply(paramTypes[index])],
+                Result = lambdaType
+            };
+        }
+
+        return lambdaType;
     }
 
     private Type GetExpectedLambdaResultType(TyFun expectedFunctionType, int consumedParameterCount)
     {
-        if (consumedParameterCount < expectedFunctionType.Params.Count)
-        {
-            return _substitution.Apply(new TyFun
-            {
-                Params = CopyParamsFrom(expectedFunctionType.Params, consumedParameterCount),
-                Result = expectedFunctionType.Result,
-                Effects = expectedFunctionType.Effects
-            });
-        }
-
-        return _substitution.Apply(expectedFunctionType.Result);
+        return GetBranchResultType(expectedFunctionType, consumedParameterCount);
     }
 
     private Type InferExpressionWithExpectedType(EidosAstNode expr, Type expectedType)
@@ -1572,11 +1575,17 @@ public sealed partial class TypeInferer
 
     private Type CreateLambdaShape(LambdaExpr lambda)
     {
-        return new TyFun
+        Type shape = _substitution.FreshTypeVariable();
+        for (var index = lambda.Parameters.Count - 1; index >= 0; index--)
         {
-            Params = lambda.Parameters.Select(_ => (Type)_substitution.FreshTypeVariable()).ToList(),
-            Result = _substitution.FreshTypeVariable()
-        };
+            shape = new TyFun
+            {
+                Params = [_substitution.FreshTypeVariable()],
+                Result = shape
+            };
+        }
+
+        return shape;
     }
 
     /// <summary>

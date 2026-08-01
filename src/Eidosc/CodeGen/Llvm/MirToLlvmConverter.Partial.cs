@@ -94,6 +94,8 @@ public sealed partial class MirToLlvmConverter
             _typeLowering.SetDynamicTypeKeys(module.DynamicTypeKeys);
             _typeLowering.SetTypeDescriptors(module.TypeDescriptors);
             _typeLowering.SetConstructorLayouts(module.ConstructorLayouts);
+            _typeLowering.SetScalarTagTypeIds(PayloadlessAdtRepresentationAnalysis.Analyze(module));
+            _typeLowering.SetCopyLikeTypeIds(module.CopyLikeTypeIds);
             if (module.CStructAccessors.Count > 0)
             {
                 _cstructAccessors = module.CStructAccessors;

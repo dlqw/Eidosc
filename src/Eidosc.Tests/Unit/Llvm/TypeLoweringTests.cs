@@ -198,7 +198,82 @@ public class TypeLoweringTests
     }
 
     [Fact]
-    public void Lower_ADTTypeId_StillReturnsPointerNotStruct()
+    public void Lower_SmallCopyRecord_UsesInlineStructAbi()
+    {
+        var recordType = new TypeId(8010);
+        var intType = new TypeId(BaseTypes.IntId);
+        var lowering = new TypeLowering();
+        lowering.SetConstructorLayouts(new Dictionary<int, List<ConstructorTypeLayout>>
+        {
+            [recordType.Value] =
+            [
+                new ConstructorTypeLayout
+                {
+                    TypeName = "Vec2",
+                    ConstructorName = "Vec2",
+                    FieldTypeIds = [intType, intType]
+                }
+            ]
+        });
+        lowering.SetCopyLikeTypeIds([recordType.Value]);
+
+        var lowered = Assert.IsType<LlvmStructType>(lowering.Lower(recordType));
+
+        Assert.True(lowering.IsInlineValueRecordType(recordType));
+        Assert.Equal(2, lowered.Fields.Count);
+        Assert.All(lowered.Fields, field => Assert.Equal(64, Assert.IsType<LlvmIntType>(field).Bits));
+    }
+
+    [Fact]
+    public void Lower_ScalarRecordWithoutCopyEvidence_RemainsManagedPointer()
+    {
+        var recordType = new TypeId(8011);
+        var intType = new TypeId(BaseTypes.IntId);
+        var lowering = new TypeLowering();
+        lowering.SetConstructorLayouts(new Dictionary<int, List<ConstructorTypeLayout>>
+        {
+            [recordType.Value] =
+            [
+                new ConstructorTypeLayout
+                {
+                    TypeName = "OwnedCounter",
+                    ConstructorName = "OwnedCounter",
+                    FieldTypeIds = [intType]
+                }
+            ]
+        });
+
+        Assert.IsType<LlvmPointerType>(lowering.Lower(recordType));
+        Assert.False(lowering.IsInlineValueRecordType(recordType));
+    }
+
+    [Fact]
+    public void Lower_CopyRecordRepresentationPropagatesAcrossNominalSpecializationTypeIds()
+    {
+        var declaredType = new TypeId(8012);
+        var specializedType = new TypeId(8013);
+        var intType = new TypeId(BaseTypes.IntId);
+        var declaredLayout = new ConstructorTypeLayout
+        {
+            TypeName = "Math.Vec2",
+            ConstructorName = "Math.Vec2",
+            FieldTypeIds = [intType, intType]
+        };
+        var specializedLayout = declaredLayout with { TypeName = "Vec2" };
+        var lowering = new TypeLowering();
+        lowering.SetConstructorLayouts(new Dictionary<int, List<ConstructorTypeLayout>>
+        {
+            [declaredType.Value] = [declaredLayout],
+            [specializedType.Value] = [specializedLayout]
+        });
+        lowering.SetCopyLikeTypeIds([declaredType.Value]);
+
+        Assert.IsType<LlvmStructType>(lowering.Lower(declaredType));
+        Assert.IsType<LlvmStructType>(lowering.Lower(specializedType));
+    }
+
+    [Fact]
+    public void Lower_PayloadlessAdt_UsesScalarTag()
     {
         var adtTypeId = new TypeId(8003);
         var lowering = new TypeLowering();
@@ -215,10 +290,12 @@ public class TypeLoweringTests
                 }
             ]
         });
+        lowering.SetScalarTagTypeIds([adtTypeId.Value]);
 
-        // Lower() should still return ptr (ADT values are heap-allocated RC objects)
         var lowered = lowering.Lower(adtTypeId);
-        Assert.IsType<LlvmPointerType>(lowered);
+        var scalar = Assert.IsType<LlvmIntType>(lowered);
+        Assert.Equal(32, scalar.Bits);
+        Assert.True(lowering.IsScalarTagType(adtTypeId));
     }
 
     [Fact]

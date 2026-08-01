@@ -530,6 +530,9 @@ public sealed partial class CompilationPipeline
             ConstructorLayouts = stateSource.ConstructorLayouts.ToDictionary(
                 static entry => entry.Key,
                 static entry => entry.Value.ToList()),
+            CopyLikeTypeIds = orderedModules
+                .SelectMany(static entry => entry.Module.CopyLikeTypeIds)
+                .ToHashSet(),
             TraitImpls = stateSource.TraitImpls.ToList(),
             TraitInfos = stateSource.TraitInfos.ToList(),
             TypeAliases = stateSource.TypeAliases.ToList(),

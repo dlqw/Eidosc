@@ -1696,7 +1696,44 @@ public sealed partial class SymbolTable
         }
 
         impls.Add(impl);
+        IndexImplForCaseTypes(impl);
         AddImplToTraitIndex(impl);
+    }
+
+    /// <summary>
+    /// Values of a sealed-sum ADT built through an exact case type (for example
+    /// `Point:: type(Int)`) carry the case identity, while trait instances are
+    /// declared on the root ADT type. Index the impl under every case type so
+    /// trait constraints and dispatch resolve for both identities.
+    /// </summary>
+    private void IndexImplForCaseTypes(ImplSymbol impl)
+    {
+        if (!impl.ImplementingType.IsValid ||
+            GetSymbolByTypeId(impl.ImplementingType) is not AdtSymbol rootAdt ||
+            rootAdt.DirectCases.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var caseId in rootAdt.DirectCases)
+        {
+            if (_symbols.TryGetValue(caseId, out var caseSymbol) &&
+                caseSymbol is AdtSymbol { TypeId.IsValid: true } caseAdt &&
+                caseAdt.TypeId != impl.ImplementingType)
+            {
+                var caseKey = new ImplLookupKey(
+                    impl.Trait,
+                    caseAdt.TypeId,
+                    NormalizeTraitTypeArgKeys(impl.TraitTypeArgKeys, impl.TraitTypeArgs));
+                if (!_impls.TryGetValue(caseKey, out var caseImpls))
+                {
+                    caseImpls = [];
+                    _impls[caseKey] = caseImpls;
+                }
+
+                caseImpls.Add(impl);
+            }
+        }
     }
 
     private void RemoveImplFromIndexes(SymbolId implId)

@@ -251,4 +251,68 @@ public sealed partial class MirGenericSpecializerTests
         Assert.Equal("display", diagnostic.Metadata["templateName"]);
         Assert.Equal(failure.SignatureKey, diagnostic.Metadata["signatureKey"]);
     }
+
+    [Fact]
+    public void Run_OrdinaryCompilerSemanticRole_DoesNotBecomeTraitDispatchIdentity()
+    {
+        var typeVariable = new TypeId(2021);
+        var unitType = new TypeId(BaseTypes.UnitId);
+        var appendSymbol = new SymbolId(2022);
+        var callerSymbol = new SymbolId(2023);
+        var left = LocalPlace(1, typeVariable);
+        var right = LocalPlace(2, typeVariable);
+        var result = LocalPlace(3, typeVariable);
+        var caller = BuildFunction(
+            returnType: unitType,
+            locals:
+            [
+                new MirLocal { Id = left.Local, Name = "left", TypeId = typeVariable },
+                new MirLocal { Id = right.Local, Name = "right", TypeId = typeVariable },
+                new MirLocal { Id = result.Local, Name = "result", TypeId = typeVariable }
+            ],
+            instructions:
+            [
+                new MirCall
+                {
+                    Target = result,
+                    Function = new MirFunctionRef
+                    {
+                        Name = "append",
+                        SymbolId = appendSymbol,
+                        TypeId = typeVariable,
+                        CompilerSemanticRole = CompilerSemanticRole.SemigroupAppend
+                    },
+                    Arguments = [left, right]
+                }
+            ],
+            returnValue: new MirConstant
+            {
+                TypeId = unitType,
+                Value = new MirConstantValue.UnitValue()
+            },
+            name: "caller_ordinary_semantic_role",
+            symbolId: callerSymbol);
+
+        var specializer = new MirGenericSpecializer();
+        var specialized = specializer.Run(new MirModule
+        {
+            Name = "ordinary_semantic_role",
+            Functions = [caller],
+            TypeDescriptors = new Dictionary<int, TypeDescriptor>
+            {
+                [typeVariable.Value] = new TypeDescriptor.TypeVar(0)
+            }
+        });
+
+        Assert.Empty(specialized.SpecializationFailures);
+        Assert.DoesNotContain(specializer.Diagnostics, diagnostic => diagnostic.Code == "E5310");
+        var rewrittenCaller = specialized.Functions.Single(function => function.SymbolId == callerSymbol);
+        var rewrittenCall = Assert.Single(rewrittenCaller.BasicBlocks.Single().Instructions.OfType<MirCall>());
+        var rewrittenRef = Assert.IsType<MirFunctionRef>(rewrittenCall.Function);
+        Assert.Equal(CompilerSemanticRole.SemigroupAppend, rewrittenRef.CompilerSemanticRole);
+        Assert.False(rewrittenRef.TraitOwnerId.IsValid);
+        Assert.Equal(SelfPosition.Unknown, rewrittenRef.TraitSelfPosition);
+        Assert.Empty(rewrittenRef.TraitSelfParameterIndices);
+        Assert.False(rewrittenRef.TraitSelfInResult);
+    }
 }

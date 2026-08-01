@@ -45,7 +45,8 @@ internal sealed class MirConstructorLayoutSpecializer(
                 continue;
             }
 
-            if (outputLayouts.ContainsKey(typeIdValue))
+            if (outputLayouts.TryGetValue(typeIdValue, out var existingLayouts) &&
+                existingLayouts.Any(static layout => layout.FieldTypeIds.Count > 0))
             {
                 EnqueueKnownDescriptors();
                 continue;
@@ -88,7 +89,9 @@ internal sealed class MirConstructorLayoutSpecializer(
                 });
             }
 
-            outputLayouts[typeIdValue] = clonedLayouts;
+            outputLayouts[typeIdValue] = LayoutsAreIdentical(baseMatch.Layouts, clonedLayouts)
+                ? baseMatch.Layouts
+                : clonedLayouts;
             EnqueueKnownDescriptors();
         }
 
@@ -110,6 +113,32 @@ internal sealed class MirConstructorLayoutSpecializer(
         }
     }
 
+    private static bool LayoutsAreIdentical(
+        IReadOnlyList<ConstructorTypeLayout> original,
+        IReadOnlyList<ConstructorTypeLayout> specialized)
+    {
+        if (original.Count != specialized.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < original.Count; index++)
+        {
+            var left = original[index];
+            var right = specialized[index];
+            if (!string.Equals(left.TypeName, right.TypeName, StringComparison.Ordinal) ||
+                !string.Equals(left.ConstructorName, right.ConstructorName, StringComparison.Ordinal) ||
+                left.TagValue != right.TagValue ||
+                left.RuntimeTypeId != right.RuntimeTypeId ||
+                !left.FieldTypeIds.SequenceEqual(right.FieldTypeIds))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private bool TryFindBaseConstructorLayout(
         MirModule module,
         int specializedTypeIdValue,
@@ -122,12 +151,13 @@ internal sealed class MirConstructorLayoutSpecializer(
             matchingSpecializedDescriptors.Add(expandedSpecializedTyCon);
         }
 
+        BaseConstructorLayoutMatch? bestMatch = null;
+        var bestScore = int.MinValue;
         foreach (var (candidateTypeIdValue, candidateLayouts) in module.ConstructorLayouts)
         {
             if (candidateLayouts.Count == 0 ||
                 candidateTypeIdValue == specializedTypeIdValue ||
-                !TryGetConstructorLayoutDescriptor(new TypeId(candidateTypeIdValue), out var candidateTyCon) ||
-                !CanUseAsGenericLayoutBase(candidateTyCon))
+                !TryGetConstructorLayoutDescriptor(new TypeId(candidateTypeIdValue), out var candidateTyCon))
             {
                 continue;
             }
@@ -142,17 +172,29 @@ internal sealed class MirConstructorLayoutSpecializer(
                     continue;
                 }
 
-                match = new BaseConstructorLayoutMatch(
+                var fieldCount = candidateLayouts.Sum(static layout => layout.FieldTypeIds.Count);
+                if (!CanUseAsGenericLayoutBase(candidateTyCon) && fieldCount == 0)
+                {
+                    continue;
+                }
+
+                var score = fieldCount * 10 + (CanUseAsGenericLayoutBase(candidateTyCon) ? 1 : 0);
+                if (score <= bestScore)
+                {
+                    continue;
+                }
+
+                bestScore = score;
+                bestMatch = new BaseConstructorLayoutMatch(
                     new TypeId(candidateTypeIdValue),
                     candidateTyCon,
                     matchingSpecializedTyCon,
                     candidateLayouts);
-                return true;
             }
         }
 
-        match = default!;
-        return false;
+        match = bestMatch!;
+        return bestMatch != null;
     }
 
     private bool TryGetConstructorLayoutDescriptor(TypeId typeId, out TypeDescriptor.TyCon descriptor)

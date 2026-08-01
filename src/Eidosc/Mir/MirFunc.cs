@@ -68,6 +68,12 @@ public sealed class MirModule
     public Dictionary<int, List<ConstructorTypeLayout>> ConstructorLayouts { get; init; } = [];
 
     /// <summary>
+    /// Structurally Copy types proven by HIR/type analysis. Backends may choose
+    /// inline value representations for small closed records in this set.
+    /// </summary>
+    public HashSet<int> CopyLikeTypeIds { get; init; } = [];
+
+    /// <summary>
     /// Structured trait implementation metadata carried from HIR for MIR-level dispatch.
     /// </summary>
     public List<ImplSymbol> TraitImpls { get; init; } = [];
@@ -91,6 +97,33 @@ public sealed class MirModule
     /// Gets the MIR specialization failures that should be visible to later lowering phases.
     /// </summary>
     public List<MirSpecializationFailureInfo> SpecializationFailures { get; init; } = [];
+
+    /// <summary>
+    /// Returns a new module that shares every field except the function list
+    /// reference, so in-place optimization passes can report a change by
+    /// wrapping their mutated state in a fresh object (the optimizer detects
+    /// changes by reference identity).
+    /// </summary>
+    public MirModule WithFunctions(List<MirFunc> functions) => new()
+    {
+        Name = Name,
+        PackageAlias = PackageAlias,
+        PackageInstanceKey = PackageInstanceKey,
+        Path = Path,
+        Functions = functions,
+        DynamicTypeKeys = DynamicTypeKeys,
+        TypeDescriptors = TypeDescriptors,
+        LinkLibraries = LinkLibraries,
+        Span = Span,
+        CStructAccessors = CStructAccessors,
+        ConstructorLayouts = ConstructorLayouts,
+        CopyLikeTypeIds = CopyLikeTypeIds,
+        TraitImpls = TraitImpls,
+        TraitInfos = TraitInfos,
+        TypeAliases = TypeAliases,
+        TypeConstructors = TypeConstructors,
+        SpecializationFailures = SpecializationFailures
+    };
 
     public override string ToString() => $"module {Name}";
 }
@@ -461,11 +494,93 @@ public sealed class MirFunc
     public SymbolId TraitInvokeHelperTraitId { get; init; } = SymbolId.None;
 
     /// <summary>
+    /// Compiler-owned aggregate ABI selected for proven non-escaping record
+    /// lifetimes. This metadata is never part of the source language contract.
+    /// </summary>
+    public MirCallerOwnedAggregateAbi CallerOwnedAggregateAbi { get; set; } = new();
+
+    /// <summary>
     /// 获取入口块
     /// </summary>
     public MirBasicBlock? EntryBlock => BasicBlocks.FirstOrDefault(b => b.Id.Equals(EntryBlockId));
 
     public override string ToString() => $"func {Name}";
+}
+
+public sealed record MirCallerOwnedAggregateAbi
+{
+    /// <summary>
+    /// A non-default value means the LLVM function receives a hidden final
+    /// destination pointer and constructs its result directly in caller storage.
+    /// </summary>
+    public TypeId OutReturnType { get; init; } = TypeId.None;
+
+    /// <summary>
+    /// Locals whose constructor/call result is the caller-owned return object.
+    /// </summary>
+    public IReadOnlySet<LocalId> OutReturnLocals { get; init; } = new HashSet<LocalId>();
+
+    /// <summary>
+    /// Constant-size runtime arrays constructed into storage supplied alongside
+    /// the hidden aggregate destination.
+    /// </summary>
+    public IReadOnlyList<MirCallerOwnedArrayStorage> OutArrayStorages { get; init; } = [];
+
+    /// <summary>
+    /// Local alias groups backed by caller-owned aggregate storage.
+    /// </summary>
+    public IReadOnlyList<MirCallerOwnedAggregateGroup> LocalGroups { get; init; } = [];
+
+    public bool HasOutReturn => OutReturnType.IsValid;
+
+    public bool IsEmpty => !HasOutReturn && LocalGroups.Count == 0;
+}
+
+public sealed record MirCallerOwnedAggregateGroup
+{
+    public LocalId CanonicalLocal { get; init; } = LocalId.None;
+
+    public TypeId TypeId { get; init; } = TypeId.None;
+
+    public IReadOnlySet<LocalId> Locals { get; init; } = new HashSet<LocalId>();
+
+    /// <summary>
+    /// Inline array buffers carried by the same caller-owned object group.
+    /// </summary>
+    public IReadOnlyList<MirCallerOwnedArrayStorage> ArrayStorages { get; init; } = [];
+
+    /// <summary>
+    /// Parameter position providing the storage pointer, or -1 when the caller
+    /// owns an entry-block alloca for this group.
+    /// </summary>
+    public int ParameterIndex { get; init; } = -1;
+}
+
+public sealed record MirCallerOwnedArrayStorage
+{
+    public string Key { get; init; } = string.Empty;
+
+    public LocalId ArrayLocal { get; init; } = LocalId.None;
+
+    /// <summary>
+    /// Concrete runtime container type used to recover the post-specialization
+    /// element layout during target lowering.
+    /// </summary>
+    public TypeId ArrayTypeId { get; init; } = TypeId.None;
+
+    public long Capacity { get; init; }
+
+    public long ElementSize { get; init; }
+
+    public long StorageBytes { get; init; }
+
+    /// <summary>
+    /// When true, the array is uniquely owned, stack-resident and backed by a
+    /// compile-time capacity with a known unmanaged element layout, so length
+    /// reads, indexed loads/stores and push can be lowered inline against the
+    /// caller-owned storage instead of dispatching through the runtime.
+    /// </summary>
+    public bool PromoteInline { get; init; }
 }
 
 /// <summary>

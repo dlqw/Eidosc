@@ -373,9 +373,11 @@ main :: Unit -> Int
                 timeoutMs: isNetworkTest ? 90_000 : 30_000,
                 environmentVariables: isNetworkTest ? CreateHttpEnvironment(httpBackend: null) : null);
 
-            Assert.Equal(
-                expectedExitCode,
-                execution.ExitCode);
+            Assert.True(
+                execution.ExitCode == expectedExitCode,
+                $"Expected exit code {expectedExitCode}, got {execution.ExitCode}.{Environment.NewLine}" +
+                $"stdout:{Environment.NewLine}{execution.StandardOutput}{Environment.NewLine}" +
+                $"stderr:{Environment.NewLine}{execution.StandardError}");
         }
         finally
         {
@@ -407,7 +409,7 @@ main :: Unit -> Int
         Assert.NotEmpty(fixturePaths);
 
         var targetInfo = TargetInfo.Default;
-        var runtimeDirectory = TestSourceLoader.GetFullPath("Eidosc/src/Eidosc/Runtime");
+        var runtimeDirectory = Path.GetDirectoryName(ResolveRuntimeSourcePath())!;
 
         foreach (var fixturePath in fixturePaths)
         {

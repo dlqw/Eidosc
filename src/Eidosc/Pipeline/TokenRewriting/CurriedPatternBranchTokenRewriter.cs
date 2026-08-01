@@ -17,23 +17,63 @@ internal static class CurriedPatternBranchTokenRewriter
             return;
         }
 
-        var pendingMatchBodies = new List<PendingContainer>();
-        var pendingFunctionBodies = new List<PendingContainer>();
-        var parenDepth = 0;
-        var bracketDepth = 0;
-        var braceDepth = 0;
-
         for (var index = 0; index < tokens.Count; index++)
         {
             var text = GetTokenText(tokens[index]);
 
-            if (text is WellKnownStrings.Keywords.Match)
+            switch (text)
             {
-                pendingMatchBodies.Add(new PendingContainer(parenDepth, bracketDepth, braceDepth));
+                case "{":
+                    RewriteContainer(tokens, terminals, index);
+                    break;
             }
-            else if (text is WellKnownStrings.Keywords.Func)
+        }
+    }
+
+    private static void RewriteContainer(List<Token> tokens, TerminalSet terminals, int openBraceIndex)
+    {
+        if (!TryFindMatchingCloseBrace(tokens, openBraceIndex, out var closeBraceIndex) ||
+            closeBraceIndex <= openBraceIndex + 1 ||
+            HasTopLevelPipeAfterArrow(tokens, openBraceIndex + 1, closeBraceIndex))
+        {
+            return;
+        }
+
+        var branchRanges = CollectTopLevelBranchRanges(tokens, openBraceIndex + 1, closeBraceIndex);
+        for (var index = branchRanges.Count - 1; index >= 0; index--)
+        {
+            var range = branchRanges[index];
+            RewriteBranch(tokens, terminals, range.Start, range.EndExclusive);
+        }
+    }
+
+    private static bool HasTopLevelPipeAfterArrow(
+        IReadOnlyList<Token> tokens,
+        int startIndex,
+        int endExclusive)
+    {
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        var braceDepth = 0;
+        var hasArrow = false;
+
+        for (var index = startIndex; index < endExclusive; index++)
+        {
+            var text = GetTokenText(tokens[index]);
+            if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
             {
-                pendingFunctionBodies.Add(new PendingContainer(parenDepth, bracketDepth, braceDepth));
+                if (text == WellKnownStrings.Punctuation.FatArrow)
+                {
+                    hasArrow = true;
+                }
+                else if (text == "|" && hasArrow)
+                {
+                    return true;
+                }
+                else if (text == ",")
+                {
+                    hasArrow = false;
+                }
             }
 
             switch (text)
@@ -51,40 +91,15 @@ internal static class CurriedPatternBranchTokenRewriter
                     bracketDepth = Math.Max(0, bracketDepth - 1);
                     break;
                 case "{":
-                    if (TryConsumePendingContainer(pendingMatchBodies, parenDepth, bracketDepth, braceDepth) ||
-                        (!IsTokenTextAt(tokens, index - 1, WellKnownStrings.Punctuation.RightArrow) &&
-                         TryConsumePendingContainer(pendingFunctionBodies, parenDepth, bracketDepth, braceDepth)))
-                    {
-                        RewriteContainer(tokens, terminals, index);
-                    }
-
                     braceDepth++;
                     break;
                 case "}":
                     braceDepth = Math.Max(0, braceDepth - 1);
-                    pendingFunctionBodies.RemoveAll(pending =>
-                        pending.ParenDepth == parenDepth &&
-                        pending.BracketDepth == bracketDepth &&
-                        pending.BraceDepth > braceDepth);
                     break;
             }
         }
-    }
 
-    private static void RewriteContainer(List<Token> tokens, TerminalSet terminals, int openBraceIndex)
-    {
-        if (!TryFindMatchingCloseBrace(tokens, openBraceIndex, out var closeBraceIndex) ||
-            closeBraceIndex <= openBraceIndex + 1)
-        {
-            return;
-        }
-
-        var branchRanges = CollectTopLevelBranchRanges(tokens, openBraceIndex + 1, closeBraceIndex);
-        for (var index = branchRanges.Count - 1; index >= 0; index--)
-        {
-            var range = branchRanges[index];
-            RewriteBranch(tokens, terminals, range.Start, range.EndExclusive);
-        }
+        return false;
     }
 
     private static List<TokenRange> CollectTopLevelBranchRanges(
@@ -144,7 +159,6 @@ internal static class CurriedPatternBranchTokenRewriter
         }
 
         var segments = new List<TokenRange>(arrows.Count);
-        var guards = new List<TokenRange>();
         var segmentStart = startIndex;
 
         foreach (var arrowIndex in arrows)
@@ -155,9 +169,9 @@ internal static class CurriedPatternBranchTokenRewriter
             }
 
             segments.Add(patternRange);
-            if (guardRange is { } guard)
+            if (guardRange is not null)
             {
-                guards.Add(guard);
+                return;
             }
 
             segmentStart = arrowIndex + 1;
@@ -170,10 +184,7 @@ internal static class CurriedPatternBranchTokenRewriter
 
         var finalExpression = new TokenRange(segmentStart, endExclusive);
         var replacement = new List<Token>();
-        var firstPatternToken = tokens[segments[0].Start];
-        var lastArrowToken = tokens[arrows[^1]];
 
-        replacement.Add(CreateToken(terminals.LParen, "(", firstPatternToken.Location));
         for (var index = 0; index < segments.Count; index++)
         {
             AppendRange(tokens, replacement, segments[index]);
@@ -181,13 +192,6 @@ internal static class CurriedPatternBranchTokenRewriter
             {
                 replacement.Add(CreateToken(terminals.Comma, ",", tokens[segments[index].EndExclusive - 1].Location));
             }
-        }
-
-        replacement.Add(CreateToken(terminals.RParen, ")", lastArrowToken.Location));
-
-        foreach (var guard in guards)
-        {
-            AppendRange(tokens, replacement, guard);
         }
 
         replacement.Add(tokens[arrows[^1]]);
@@ -250,6 +254,11 @@ internal static class CurriedPatternBranchTokenRewriter
             return false;
         }
 
+        if (ContainsTopLevelNonPatternBindingToken(tokens, startIndex, endExclusive))
+        {
+            return false;
+        }
+
         var whenIndex = FindTopLevelWhen(tokens, startIndex, endExclusive);
         if (whenIndex < 0)
         {
@@ -265,6 +274,37 @@ internal static class CurriedPatternBranchTokenRewriter
         patternRange = new TokenRange(startIndex, whenIndex);
         guardRange = new TokenRange(whenIndex, endExclusive);
         return true;
+    }
+
+    private static bool ContainsTopLevelNonPatternBindingToken(
+        IReadOnlyList<Token> tokens,
+        int startIndex,
+        int endExclusive)
+    {
+        var parenDepth = 0;
+        var bracketDepth = 0;
+        var braceDepth = 0;
+        for (var index = startIndex; index < endExclusive; index++)
+        {
+            var text = GetTokenText(tokens[index]);
+            if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 &&
+                text is ":=" or "=" or ";")
+            {
+                return true;
+            }
+
+            switch (text)
+            {
+                case "(": parenDepth++; break;
+                case ")": parenDepth = Math.Max(0, parenDepth - 1); break;
+                case "[": bracketDepth++; break;
+                case "]": bracketDepth = Math.Max(0, bracketDepth - 1); break;
+                case "{": braceDepth++; break;
+                case "}": braceDepth = Math.Max(0, braceDepth - 1); break;
+            }
+        }
+
+        return false;
     }
 
     private static int FindTopLevelWhen(IReadOnlyList<Token> tokens, int startIndex, int endExclusive)
@@ -339,45 +379,15 @@ internal static class CurriedPatternBranchTokenRewriter
         }
     }
 
-    private static bool TryConsumePendingContainer(
-        List<PendingContainer> pendingContainers,
-        int parenDepth,
-        int bracketDepth,
-        int braceDepth)
-    {
-        for (var index = pendingContainers.Count - 1; index >= 0; index--)
-        {
-            var pending = pendingContainers[index];
-            if (pending.ParenDepth != parenDepth ||
-                pending.BracketDepth != bracketDepth ||
-                pending.BraceDepth != braceDepth)
-            {
-                continue;
-            }
-
-            pendingContainers.RemoveAt(index);
-            return true;
-        }
-
-        return false;
-    }
-
     private static ContentToken CreateToken(Terminal terminal, string text, SourceLocation location)
     {
         var kind = SyntaxKindHelper.TryFromText(text, out var k) ? k : SyntaxKind.None;
-        return new ContentToken(location, kind, terminal, text.GetOrIntern(), text.Length, text);
+        return new ContentToken(location, kind, terminal, text.GetOrIntern(), 0, text);
     }
 
     private static bool IsTokenText(Token token, string expected)
     {
         return string.Equals(GetTokenText(token), expected, StringComparison.Ordinal);
-    }
-
-    private static bool IsTokenTextAt(IReadOnlyList<Token> tokens, int index, string expected)
-    {
-        return index >= 0 &&
-               index < tokens.Count &&
-               IsTokenText(tokens[index], expected);
     }
 
     private static string GetTokenText(Token token)
@@ -393,21 +403,17 @@ internal static class CurriedPatternBranchTokenRewriter
 
     private readonly record struct TokenRange(int Start, int EndExclusive);
 
-    private sealed record PendingContainer(int ParenDepth, int BracketDepth, int BraceDepth);
-
-    private sealed record TerminalSet(Terminal LParen, Terminal RParen, Terminal Comma)
+    private sealed record TerminalSet(Terminal Comma)
     {
         public static bool TryCreate(LexerContext compileContext, out TerminalSet terminals)
         {
             terminals = null!;
-            if (FindTerminal(compileContext, "(") is not { } lParen ||
-                FindTerminal(compileContext, ")") is not { } rParen ||
-                FindTerminal(compileContext, ",") is not { } comma)
+            if (FindTerminal(compileContext, ",") is not { } comma)
             {
                 return false;
             }
 
-            terminals = new TerminalSet(lParen, rParen, comma);
+            terminals = new TerminalSet(comma);
             return true;
         }
 

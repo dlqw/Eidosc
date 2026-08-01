@@ -703,7 +703,6 @@ public sealed partial class QueryDrivenPipeline
         converter.SetPerceusHints(borrowOut.BorrowCheckResult);
         converter.SetReuseHints(borrowOut.BorrowCheckResult);
         converter.SetStackPromotionHints(borrowOut.BorrowCheckResult);
-        converter.SetUnifiedStackPromotionHints(borrowOut.BorrowCheckResult);
 
         if (!nameRes.IsIncomplete && nameRes.SymbolTable != null)
         {

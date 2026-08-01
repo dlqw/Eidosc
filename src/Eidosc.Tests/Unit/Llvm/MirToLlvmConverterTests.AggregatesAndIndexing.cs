@@ -93,6 +93,69 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
+    public void Convert_FieldLoadFromMutablePointerRecord_LoadsSlotValueBeforeStructGep()
+    {
+        var intType = new TypeId(BaseTypes.IntId);
+        var recordType = new TypeId(1924);
+        var recordPlace = LocalPlace(1, recordType);
+        var resultPlace = LocalPlace(2, intType);
+        var function = BuildFunction(
+            intType,
+            locals:
+            [
+                new MirLocal
+                {
+                    Id = recordPlace.Local,
+                    Name = "state",
+                    TypeId = recordType,
+                    IsParameter = true,
+                    IsMutable = true
+                },
+                new MirLocal { Id = resultPlace.Local, Name = "value", TypeId = intType }
+            ],
+            instructions:
+            [
+                new MirLoad
+                {
+                    Target = resultPlace,
+                    Source = new MirPlace
+                    {
+                        Kind = PlaceKind.Field,
+                        Base = recordPlace,
+                        FieldName = "_0",
+                        TypeId = intType
+                    }
+                }
+            ],
+            returnValue: resultPlace,
+            name: "load_mutable_record_field");
+        var module = new MirModule
+        {
+            Name = "mutable_record_field",
+            Functions = [function],
+            ConstructorLayouts = new Dictionary<int, List<ConstructorTypeLayout>>
+            {
+                [recordType.Value] =
+                [
+                    new ConstructorTypeLayout
+                    {
+                        TypeName = "State",
+                        ConstructorName = "State",
+                        FieldTypeIds = [intType]
+                    }
+                ]
+            }
+        };
+
+        var llvmModule = new MirToLlvmConverter().Convert(module);
+        var ir = new LlvmEmitter().Emit(llvmModule);
+
+        Assert.Matches(@"%l1_ld_\d+ = load ptr, ptr %l1_slot_\d+", ir);
+        Assert.Matches(@"getelementptr %struct\.eidos_State, ptr %l1_ld_\d+, i32 0, i32 0", ir);
+        Assert.DoesNotMatch(@"getelementptr %struct\.eidos_State, ptr %l1_slot_\d+", ir);
+    }
+
+    [Fact]
     public void ConvertFunction_RuntimeStringSliceBuiltin_UsesRuntimeNameAndPointerReturn()
     {
         var intType = new TypeId(BaseTypes.IntId);
@@ -346,6 +409,84 @@ public partial class MirToLlvmConverterTests
             entry.Instructions.OfType<LlvmCall>(),
             call => call.Function is LlvmGlobal { Name: "eidos_array_get" });
         Assert.Contains(entry.Instructions, instr => instr is LlvmLoad);
+    }
+
+    [Fact]
+    public void ConvertFunction_AggregateProjectionMove_ClearsSourceWithZeroInitializer()
+    {
+        var intType = new TypeId(BaseTypes.IntId);
+        var stringType = new TypeId(BaseTypes.StringId);
+        var elementType = new TypeId(905);
+        var ownerType = new TypeId(906);
+        var owner = LocalPlace(1, ownerType);
+        var value = LocalPlace(2, elementType);
+        var moved = LocalPlace(3, elementType);
+        var function = BuildFunction(
+            elementType,
+            locals:
+            [
+                new MirLocal { Id = owner.Local, Name = "owner", TypeId = ownerType },
+                new MirLocal { Id = value.Local, Name = "value", TypeId = elementType, IsParameter = true },
+                new MirLocal { Id = moved.Local, Name = "moved", TypeId = elementType }
+            ],
+            instructions:
+            [
+                new MirAlloc { Target = owner },
+                new MirStore
+                {
+                    Target = new MirPlace
+                    {
+                        Kind = PlaceKind.Index,
+                        Base = owner,
+                        Index = new MirConstant
+                        {
+                            TypeId = intType,
+                            Value = new MirConstantValue.IntValue(0)
+                        },
+                        IndexAccessKind = MirIndexAccessKind.Aggregate,
+                        TypeId = elementType
+                    },
+                    Value = value
+                },
+                new MirLoad
+                {
+                    Target = moved,
+                    Source = new MirPlace
+                    {
+                        Kind = PlaceKind.Index,
+                        Base = owner,
+                        Index = new MirConstant
+                        {
+                            TypeId = intType,
+                            Value = new MirConstantValue.IntValue(0)
+                        },
+                        IndexAccessKind = MirIndexAccessKind.Aggregate,
+                        TypeId = elementType
+                    },
+                    CreatesBorrowAlias = false,
+                    MovesOutOfSource = true
+                }
+            ],
+            returnValue: moved,
+            name: "move_aggregate_projection");
+        var module = new MirModule
+        {
+            Name = "move_aggregate_projection",
+            TypeDescriptors = new Dictionary<int, TypeDescriptor>
+            {
+                [elementType.Value] = new TypeDescriptor.Tuple([stringType, stringType]),
+                [ownerType.Value] = new TypeDescriptor.Tuple([elementType])
+            },
+            Functions = [function]
+        };
+
+        var llvmFunction = Assert.Single(new MirToLlvmConverter().Convert(module).Functions);
+        var clear = Assert.Single(
+            llvmFunction.BasicBlocks.Single().Instructions.OfType<LlvmStore>(),
+            static store => store.Value is LlvmZeroInitializer);
+        var zero = Assert.IsType<LlvmZeroInitializer>(clear.Value);
+        var tuple = Assert.IsType<LlvmStructType>(zero.Type);
+        Assert.Equal(2, tuple.Fields.Count);
     }
 
     [Fact]

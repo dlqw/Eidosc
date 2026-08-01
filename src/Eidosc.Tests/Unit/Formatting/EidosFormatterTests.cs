@@ -446,7 +446,7 @@ else render_error(_0)
         var result = EidosFormatter.Format(source, options: DefaultValidation());
 
         Assert.True(result.Success);
-        Assert.Contains("North() => North() => true", result.FormattedText);
+        Assert.Contains("North(), North() => true", result.FormattedText);
         Assert.DoesNotContain("N North())North() = =>", result.FormattedText);
     }
 
@@ -464,7 +464,7 @@ else render_error(_0)
         var result = EidosFormatter.Format(source, options: DefaultValidation());
 
         Assert.True(result.Success);
-        Assert.Contains("x => y => Pos", result.FormattedText);
+        Assert.Contains("x, y => Pos", result.FormattedText);
         Assert.DoesNotContain("x x x y = =>", result.FormattedText);
     }
 
@@ -485,7 +485,7 @@ else render_error(_0)
         var result = EidosFormatter.Format(source, options: DefaultValidation());
 
         Assert.True(result.Success);
-        Assert.Contains("[head, ..rest] => left => top => cell =>", result.FormattedText);
+        Assert.Contains("[head, ..rest], left, top, cell =>", result.FormattedText);
         Assert.DoesNotContain("[[head, ..rest]]left l top t cell = =>", result.FormattedText);
     }
 
@@ -567,6 +567,31 @@ else render_error(_0)
         Assert.Contains("is_even(_):", result.FormattedText, StringComparison.Ordinal);
         Assert.Contains("2 | 4 => 20", result.FormattedText, StringComparison.Ordinal);
         Assert.Contains("6 when enabled    => 60", result.FormattedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_SimpleCurriedBinders_UsesListAndPreservesTupleParameter()
+    {
+        const string source = """
+add :: Int -> Int -> Int { left => right => left + right }
+add_parenthesized :: Int -> Int -> Int { left => (right) => left + right }
+sum_pair :: (Int, Int) -> Int { (left, right) => left + right }
+guarded :: Int -> Int -> Int { left when left > 0 => right => left + right }
+""";
+
+        var first = EidosFormatter.Format(source, options: NameFirstValidation());
+        var second = EidosFormatter.Format(first.FormattedText, options: NameFirstValidation());
+
+        Assert.True(
+            first.Success,
+            string.Join(Environment.NewLine, first.Diagnostics.Select(diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
+        Assert.True(second.Success);
+        Assert.Contains("left, right => left + right", first.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("(left, right) => left + right", first.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("left when left > 0 => right => left + right", first.FormattedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("left, right when left > 0", first.FormattedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("left => right =>", first.FormattedText, StringComparison.Ordinal);
+        Assert.Equal(first.FormattedText, second.FormattedText);
     }
 
     private static EidosFormatterOptions NoValidation() => new()

@@ -638,6 +638,7 @@ public sealed class MirValidator
             MirCopy copy => copy.Target,
             MirMove move => move.Target,
             MirAlloc alloc => alloc.Target,
+            MirStore { Target.Kind: PlaceKind.Local } store => store.Target,
             _ => null
         };
 
@@ -1307,6 +1308,7 @@ public sealed class MirValidator
             case MirCall call:
                 yield return call.Target;
                 yield return call.Function;
+                yield return call.RecordUpdate?.Source;
                 foreach (var argument in call.Arguments)
                 {
                     yield return argument;

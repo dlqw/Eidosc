@@ -233,7 +233,8 @@ public sealed partial class MirGenericSpecializer
             MirLoad load => load with
             {
                 Target = ClonePlaceWithTypeSubstitution(load.Target, bindings, substitutionService, resolvingTypeIds),
-                Source = CloneOperandWithTypeSubstitution(load.Source, bindings, substitutionService, resolvingTypeIds)
+                Source = CloneOperandWithTypeSubstitution(load.Source, bindings, substitutionService, resolvingTypeIds),
+                CreatesBorrowAlias = RecomputeBorrowAliasForSubstitutedLoad(load, bindings, substitutionService, resolvingTypeIds)
             },
             MirStore store => store with
             {
@@ -258,6 +259,33 @@ public sealed partial class MirGenericSpecializer
             },
             _ => CloneInstruction(instruction)
         };
+    }
+
+    /// <summary>
+    /// A generic template marks projected loads as borrow aliases when the
+    /// element type is still open (not known to be Copy). Once the element
+    /// type is substituted to a concrete Copy or reference type, the load
+    /// produces an independent value and must stop creating an alias.
+    /// </summary>
+    private bool RecomputeBorrowAliasForSubstitutedLoad(
+        MirLoad load,
+        SpecializationBindings bindings,
+        SpecializationTypeSubstitutionService substitutionService,
+        HashSet<int> resolvingTypeIds)
+    {
+        if (!load.CreatesBorrowAlias ||
+            load.Source is not MirPlace { TypeId.IsValid: true } source)
+        {
+            return load.CreatesBorrowAlias;
+        }
+
+        var substitutedType = substitutionService.SubstituteTypeId(source.TypeId, bindings, resolvingTypeIds);
+        if (!substitutedType.IsValid || ContainsOpenTypeVariable(substitutedType))
+        {
+            return load.CreatesBorrowAlias;
+        }
+
+        return !IsReferenceTypeDescriptorId(substitutedType) && !IsCopySafeType(substitutedType);
     }
 
     private List<MirOperand> CloneOperandsWithTypeSubstitution(

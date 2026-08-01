@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using Eidosc.CodeGen.Llvm;
 using Eidosc.Mir;
 using Eidosc.Pipeline;
 using Eidosc.ProjectSystem;
@@ -108,6 +109,136 @@ public sealed class ModuleMirStatePayloadTests
     }
 
     [Fact]
+    public void Create_RestoresKnownUniqueRecordUpdateProof()
+    {
+        var recordType = new TypeId(9010);
+        var source = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 1 },
+            TypeId = recordType
+        };
+        var result = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 2 },
+            TypeId = recordType
+        };
+        var block = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Instructions =
+            [
+                new MirCall
+                {
+                    Target = result,
+                    Function = new MirFunctionRef { Name = "Record", TypeId = recordType },
+                    Arguments = [source],
+                    RecordUpdate = new MirRecordUpdateInfo
+                    {
+                        Source = source,
+                        UpdatedFieldIndices = [0],
+                        IsKnownUnique = true
+                    }
+                }
+            ],
+            Terminator = new MirReturn { Value = result }
+        };
+        var module = new MirModule
+        {
+            Name = "known_unique_record_update",
+            Functions =
+            [
+                new MirFunc
+                {
+                    Name = "update",
+                    ReturnType = recordType,
+                    Locals =
+                    [
+                        new MirLocal { Id = source.Local, Name = "source", TypeId = recordType, IsParameter = true },
+                        new MirLocal { Id = result.Local, Name = "result", TypeId = recordType }
+                    ],
+                    EntryBlockId = block.Id,
+                    BasicBlocks = [block]
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(ModuleMirStatePayload.Create(module));
+        var payload = Assert.IsType<ModuleMirStatePayload>(
+            JsonSerializer.Deserialize<ModuleMirStatePayload>(json));
+
+        Assert.True(payload.TryRestore(out var restored));
+        var call = Assert.IsType<MirCall>(Assert.Single(restored.Functions[0].BasicBlocks[0].Instructions));
+        Assert.True(call.RecordUpdate!.IsKnownUnique);
+    }
+
+    [Fact]
+    public void Create_RestoresCallerOwnedAggregateAbi()
+    {
+        var resultType = new TypeId(9011);
+        var arrayType = new TypeId(9012);
+        var local = new LocalId { Value = 1 };
+        var arrayLocal = new LocalId { Value = 2 };
+        var arrayStorage = new MirCallerOwnedArrayStorage
+        {
+            Key = "test:caller_owned|array:2",
+            ArrayLocal = arrayLocal,
+            ArrayTypeId = arrayType,
+            Capacity = 3,
+            ElementSize = 16,
+            StorageBytes = 112
+        };
+        var function = new MirFunc
+        {
+            Name = "caller_owned",
+            ReturnType = resultType,
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals = [new MirLocal { Id = local, Name = "result", TypeId = resultType }],
+            CallerOwnedAggregateAbi = new MirCallerOwnedAggregateAbi
+            {
+                OutReturnType = resultType,
+                OutReturnLocals = new HashSet<LocalId> { local },
+                OutArrayStorages = [arrayStorage],
+                LocalGroups =
+                [
+                    new MirCallerOwnedAggregateGroup
+                    {
+                        CanonicalLocal = local,
+                        TypeId = resultType,
+                        Locals = new HashSet<LocalId> { local },
+                        ArrayStorages = [arrayStorage],
+                        ParameterIndex = -1
+                    }
+                ]
+            },
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Terminator = new MirReturn { Value = new MirPlace { Kind = PlaceKind.Local, Local = local, TypeId = resultType } }
+                }
+            ]
+        };
+        var payload = ModuleMirStatePayload.Create(new MirModule { Name = "caller_owned", Functions = [function] });
+
+        Assert.True(payload.TryRestore(out var restored));
+        var abi = Assert.Single(restored.Functions).CallerOwnedAggregateAbi;
+        Assert.Equal(resultType, abi.OutReturnType);
+        Assert.Contains(local, abi.OutReturnLocals);
+        var restoredOutStorage = Assert.Single(abi.OutArrayStorages);
+        Assert.Equal(arrayStorage, restoredOutStorage);
+        var group = Assert.Single(abi.LocalGroups);
+        Assert.Equal(local, group.CanonicalLocal);
+        Assert.Contains(local, group.Locals);
+        var restoredGroupStorage = Assert.Single(group.ArrayStorages);
+        Assert.Equal(arrayStorage, restoredGroupStorage);
+    }
+
+    [Fact]
     public void Create_FromCompiledMir_RestoresEquivalentFingerprints()
     {
         var result = new CompilationPipeline("""
@@ -136,6 +267,59 @@ Main :: module {
         Assert.True(payload.IsRestorable, string.Join(Environment.NewLine, payload.UnsupportedNodeKinds));
         Assert.True(payload.TryRestore(out var restored));
         AssertEquivalentFingerprints(module, restored);
+    }
+
+    [Fact]
+    public void Create_RestoredSmallCopyRecord_PreservesInlineLlvmValueAbi()
+    {
+        var result = new CompilationPipeline("""
+Main :: module {
+    @[derive(Copy)]
+    Point :: type { Point :: type(Int, Int) }
+
+    sum :: Point -> Int
+    {
+        Point(x, y) => x + y
+    }
+}
+""", new CompilationOptions
+        {
+            InputFile = "Main.eidos",
+            AllowVirtualInputFile = true,
+            LanguageVersion = EidosLanguageVersions.Current,
+            StopAtPhase = CompilationPhase.Mir,
+            NoImplicitPrelude = false,
+            EnableDetailedProfiling = true,
+            UseColors = false
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.ToString())));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        Assert.Contains(
+            module.ConstructorLayouts,
+            entry => module.CopyLikeTypeIds.Contains(entry.Key) &&
+                     entry.Value.Any(static layout =>
+                         string.Equals(layout.TypeName, "Point", StringComparison.Ordinal)));
+
+        var payload = ModuleMirStatePayload.Create(module);
+        var json = JsonSerializer.Serialize(payload);
+        var roundTripped = JsonSerializer.Deserialize<ModuleMirStatePayload>(json);
+
+        Assert.NotNull(roundTripped);
+        Assert.True(roundTripped!.TryRestore(out var restored));
+        var llvmModule = new MirToLlvmConverter().Convert(restored);
+        var llvmIr = new LlvmEmitter().Emit(llvmModule);
+        var sumDefinition = Assert.Single(
+            llvmIr.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries),
+            static line =>
+                line.StartsWith("define external i64 @", StringComparison.Ordinal) &&
+                line.Contains("_Function_u0000_sum_", StringComparison.Ordinal) &&
+                !line.Contains("__eidos_prelude_core__", StringComparison.Ordinal));
+
+        Assert.Contains("(%struct.eidos_Point ", sumDefinition, StringComparison.Ordinal);
+        Assert.DoesNotContain("(ptr ", sumDefinition, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -850,10 +1034,10 @@ Main :: module {
                                     },
                                     Span = Span(31)
                                 },
-                                new MirCall { Target = field, Function = functionRef, Arguments = [ConstString("arg"), temp, deref], IsTailCall = true, Span = Span(32) },
+                                new MirCall { Target = field, Function = functionRef, Arguments = [ConstString("arg"), temp, deref], IsTailCall = true, BorrowedArgumentIndices = new HashSet<int> { 0, 2 }, Span = Span(32) },
                                 new MirBinOp { Target = temp, Operator = BinaryOp.Add, Left = ConstInt(1, intType), Right = ConstInt(2, intType), Span = Span(38) },
                                 new MirUnaryOp { Target = temp, Operator = UnaryOp.Neg, Operand = ConstInt(3, intType), Span = Span(39) },
-                                new MirLoad { Target = local, Source = index, IsMutableBorrow = true, CreatesBorrowAlias = false, Span = Span(40) },
+                                new MirLoad { Target = local, Source = index, IsMutableBorrow = true, CreatesBorrowAlias = false, MovesOutOfSource = true, Span = Span(40) },
                                 new MirStore { Target = local, Value = ConstFloat(3.5), Span = Span(41) },
                                 new MirDrop { Value = new MirPoison { Reason = "synthetic", TypeId = unitType, Span = Span(42) }, Span = Span(43) },
                                 new MirCopy { Target = local, Source = field, Span = Span(44) },

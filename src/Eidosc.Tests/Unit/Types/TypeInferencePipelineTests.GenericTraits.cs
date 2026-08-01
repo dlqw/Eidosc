@@ -958,7 +958,7 @@ main :: Unit -> Int
         const string source = """
 pair[A, B] :: A -> B -> (A, B)
 {
-    (a, b) => (a, b)
+    a, b => (a, b)
 }
 
 use :: Int -> (Int, Int)

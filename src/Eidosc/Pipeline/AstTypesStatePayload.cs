@@ -3,6 +3,7 @@ namespace Eidosc.Pipeline;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
+using Eidosc.Ast.Types;
 using Eidosc.Symbols;
 using Eidosc.Types;
 
@@ -397,13 +398,21 @@ public static class AstTypesStateRestorer
             return false;
         }
 
+        AssociatedConstExpr? methodAssociatedConstProjection = null;
         EidosAstNode? methodAssociatedConstImplementationValue = null;
         if (entry.MethodAssociatedConstImplementationStableKey != null)
         {
-            if (node is not MethodCallExpr
-                {
-                    ResolvedStaticExpression: AssociatedConstExpr
-                })
+            if (node is not MethodCallExpr method)
+            {
+                failure = $"missing resolved associated const projection: {entry.StableIdentity.StableKey}";
+                return false;
+            }
+
+            if (method.ResolvedStaticExpression is AssociatedConstExpr existingProjection)
+            {
+                methodAssociatedConstProjection = existingProjection;
+            }
+            else if (!TryCreateAssociatedConstProjection(method, out methodAssociatedConstProjection))
             {
                 failure = $"missing resolved associated const projection: {entry.StableIdentity.StableKey}";
                 return false;
@@ -461,8 +470,59 @@ public static class AstTypesStateRestorer
             successPayloadType,
             failurePayloadType,
             shortCircuitReturnType,
+            methodAssociatedConstProjection,
             methodAssociatedConstImplementationValue,
             implementationValue);
+        return true;
+    }
+
+    private static bool TryCreateAssociatedConstProjection(
+        MethodCallExpr method,
+        out AssociatedConstExpr projection)
+    {
+        projection = null!;
+        if (method.Receiver == null || string.IsNullOrWhiteSpace(method.MethodName))
+        {
+            return false;
+        }
+
+        IReadOnlyList<GenericArgumentNode> genericArguments = [];
+        var baseExpression = method.Receiver;
+        if (method.Receiver is IndexExpr { IsTypeApplication: true, Object: not null } application)
+        {
+            genericArguments = application.GenericArguments;
+            baseExpression = application.Object;
+        }
+
+        var target = new TypePath();
+        target.SetSpan(method.Receiver.Span);
+        switch (baseExpression)
+        {
+            case IdentifierExpr identifier:
+                target.SetTypeName(identifier.Name);
+                target.SymbolId = identifier.SymbolId;
+                break;
+            case PathExpr path:
+                target.SetPackageAlias(path.PackageAlias);
+                target.ModulePath = [.. path.ModulePath];
+                target.SetTypeName(path.Name);
+                target.SymbolId = path.SymbolId;
+                break;
+            default:
+                return false;
+        }
+
+        if (!target.SymbolId.IsValid)
+        {
+            return false;
+        }
+
+        target.SetGenericArguments(genericArguments);
+        projection = new AssociatedConstExpr();
+        projection.SetSpan(method.Span);
+        projection.SetTarget(target);
+        projection.SetMemberName(method.MethodName);
+        projection.SymbolId = method.SymbolId;
         return true;
     }
 
@@ -578,10 +638,11 @@ public static class AstTypesStateRestorer
                 method.MarkResolvedAsCStructAccess(state.CStructGetterName, state.CStructGetterSymbolId.Value);
             }
 
-            if (state.MethodAssociatedConstImplementationValue != null &&
-                method.ResolvedStaticExpression is AssociatedConstExpr associatedConst)
+            if (state.MethodAssociatedConstProjection != null)
             {
-                associatedConst.SetImplementationValue(state.MethodAssociatedConstImplementationValue);
+                state.MethodAssociatedConstProjection.SetImplementationValue(
+                    state.MethodAssociatedConstImplementationValue);
+                method.SetResolvedStaticExpression(state.MethodAssociatedConstProjection);
             }
         }
         else if (state.Node is InfixCallExpr infix && state.InfixFunctionSymbolId.HasValue)
@@ -714,6 +775,7 @@ public static class AstTypesStateRestorer
         Eidosc.Types.Type? SuccessPayloadType,
         Eidosc.Types.Type? FailurePayloadType,
         Eidosc.Types.Type? ShortCircuitReturnType,
+        AssociatedConstExpr? MethodAssociatedConstProjection,
         EidosAstNode? MethodAssociatedConstImplementationValue,
         EidosAstNode? AssociatedConstImplementationValue);
 

@@ -123,9 +123,16 @@ LibA :: module {
                 FormatTextDifference(
                     Eidosc.Mir.MirFormatter.FormatMir(expected.MirModule!),
                     Eidosc.Mir.MirFormatter.FormatMir(second.MirModule!)));
-            Assert.Equal(
-                FormatMirFunctionFingerprints(expected),
-                FormatMirFunctionFingerprints(second));
+            var expectedFingerprints = FormatMirFunctionFingerprints(expected);
+            var restoredFingerprints = FormatMirFunctionFingerprints(second);
+            Assert.True(
+                expectedFingerprints.SequenceEqual(restoredFingerprints, StringComparer.Ordinal),
+                string.Join(
+                    Environment.NewLine,
+                    $"expected fingerprints: {string.Join(", ", expectedFingerprints)}",
+                    $"restored fingerprints: {string.Join(", ", restoredFingerprints)}",
+                    $"expected ownership: {string.Join(", ", FormatOwnershipInstructions(expected))}",
+                    $"restored ownership: {string.Join(", ", FormatOwnershipInstructions(second))}"));
         }
         finally
         {
@@ -242,6 +249,20 @@ LibB :: module {
     private static string[] FormatMirFunctionFingerprints(CompilationResult result) =>
         result.MirFunctionFingerprints?.Functions
             .Select(static fingerprint => $"{fingerprint.FunctionKey}:{fingerprint.BodyHash}")
+            .ToArray() ?? [];
+
+    private static string[] FormatOwnershipInstructions(CompilationResult result) =>
+        result.MirModule?.Functions
+            .SelectMany(function => function.BasicBlocks.SelectMany(block => block.Instructions.Select(instruction =>
+                instruction switch
+                {
+                    Eidosc.Mir.MirCall call =>
+                        $"{function.SourceName}:bb{block.Id.Value}:call:{string.Join('.', call.BorrowedArgumentIndices.Order())}",
+                    Eidosc.Mir.MirLoad load =>
+                        $"{function.SourceName}:bb{block.Id.Value}:load:{load.CreatesBorrowAlias}:{load.MovesOutOfSource}",
+                    _ => ""
+                })))
+            .Where(static item => item.Length > 0)
             .ToArray() ?? [];
 
     private static void AssertNonCopyOwnedArgumentIsMoved(CompilationResult result)

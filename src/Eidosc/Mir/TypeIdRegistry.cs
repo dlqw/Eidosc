@@ -643,7 +643,14 @@ internal sealed class TypeIdRegistry
                     ConstructorName = ctor.Name,
                     TagValue = tagValue,
                     RuntimeTypeId = ComputeConstructorRuntimeTypeId(ctor.Id, ctor.Name),
-                    FieldTypeIds = [.. ctor.PositionalArgs]
+                    FieldTypeIds =
+                    [
+                        .. ctor.PositionalArgs,
+                        .. ctor.NamedFields.Select(fieldId =>
+                            _symbolTable.GetSymbol(fieldId)?.TypeId is { IsValid: true } fieldTypeId
+                                ? fieldTypeId
+                                : new TypeId(BaseTypes.IntId))
+                    ]
                 });
             }
         }

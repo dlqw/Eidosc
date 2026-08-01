@@ -246,19 +246,12 @@ Seq :: module {
 
     export append[T] :: Seq[T] -> Seq[T] -> Seq[T] compiler(role: "operator.append_last.append")
     {
-        left => right => [x | xs <- [left, right], x <- xs]
+        left => right => RuntimeArray.extend(left)(right)
     }
 
-    export take[T] :: Seq[T] -> Int -> Seq[T]
+    export take[T] :: Seq[T] -> Int -> Seq[T] compiler(role: "sequence.take")
     {
-        xs => n =>
-            if n <= 0 then { [] }
-            else {
-                match xs {
-                    [] => [],
-                    [head, ..tail] => [head, ..Seq.take(tail)(n - 1)]
-                }
-            }
+        xs => n => RuntimeArray.take(xs)(n)
     }
 
     export drop[T] :: Seq[T] -> Int -> Seq[T]

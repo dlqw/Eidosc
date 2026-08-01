@@ -3,6 +3,7 @@ using Eidosc.Ast.Declarations;
 using Eidosc.Debug;
 using Eidosc.Parsing.Lexer;
 using Eidosc.Pipeline;
+using Eidosc.Pipeline.TokenRewriting;
 using Eidosc.Utilities;
 using Eidosc.Utils;
 using EidosDiagnostic = Eidosc.Diagnostic.Diagnostic;
@@ -114,6 +115,8 @@ public static class EidosFormatter
             tokens.Add(context.TokenStream.Current);
         }
 
+        CurriedPatternBranchTokenRewriter.Rewrite(tokens, context);
+
         return new RawLexResult(tokens, context.Diagnostics);
     }
 
@@ -135,6 +138,7 @@ public static class EidosFormatter
         private bool _atLineStart = true;
         private string? _previousText;
         private bool _previousDoubleColonNeedsSpace;
+        private int _currentTokenIndex;
 
         public TokenFormatter(string sourceText, IReadOnlyList<Token> tokens, EidosFormatterOptions options)
         {
@@ -152,6 +156,7 @@ public static class EidosFormatter
                 var token = _tokens[i];
                 var text = GetTokenText(token);
                 var nextText = FindNextText(i + 1);
+                _currentTokenIndex = i;
 
                 ApplyOriginalLineBreak(token, text);
 
@@ -250,7 +255,9 @@ public static class EidosFormatter
                 case ",":
                     AppendRaw(text);
                     _previousText = text;
-                    if (_containers.TryPeek(out var container) && container == "{")
+                    if (_containers.TryPeek(out var container) &&
+                        container == "{" &&
+                        !IsBinderListComma(_currentTokenIndex))
                     {
                         LineBreak();
                     }
@@ -301,6 +308,104 @@ public static class EidosFormatter
             AppendRaw(text);
             _previousText = text;
             _previousDoubleColonNeedsSpace = false;
+        }
+
+        private bool IsBinderListComma(int commaIndex)
+        {
+            var parenDepth = 0;
+            var bracketDepth = 0;
+            var braceDepth = 0;
+
+            for (var index = commaIndex - 1; index >= 0; index--)
+            {
+                var text = GetTokenText(_tokens[index]);
+                switch (text)
+                {
+                    case ")":
+                        parenDepth++;
+                        continue;
+                    case "(" when parenDepth > 0:
+                        parenDepth--;
+                        continue;
+                    case "]":
+                        bracketDepth++;
+                        continue;
+                    case "[" when bracketDepth > 0:
+                        bracketDepth--;
+                        continue;
+                    case "}":
+                        braceDepth++;
+                        continue;
+                    case "{" when braceDepth > 0:
+                        braceDepth--;
+                        continue;
+                }
+
+                if (parenDepth != 0 || bracketDepth != 0 || braceDepth != 0)
+                {
+                    continue;
+                }
+
+                if (text == "=>")
+                {
+                    return false;
+                }
+
+                if (text is "," or "{" or ";")
+                {
+                    return HasTopLevelArrowAhead(commaIndex);
+                }
+            }
+
+            return HasTopLevelArrowAhead(commaIndex);
+        }
+
+        private bool HasTopLevelArrowAhead(int commaIndex)
+        {
+            var parenDepth = 0;
+            var bracketDepth = 0;
+            var braceDepth = 0;
+
+            for (var index = commaIndex + 1; index < _tokens.Count; index++)
+            {
+                var text = GetTokenText(_tokens[index]);
+                if (parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
+                {
+                    if (text == "=>")
+                    {
+                        return true;
+                    }
+
+                    if (text is "}" or ";")
+                    {
+                        return false;
+                    }
+                }
+
+                switch (text)
+                {
+                    case "(":
+                        parenDepth++;
+                        break;
+                    case ")":
+                        parenDepth = Math.Max(0, parenDepth - 1);
+                        break;
+                    case "[":
+                        bracketDepth++;
+                        break;
+                    case "]":
+                        bracketDepth = Math.Max(0, bracketDepth - 1);
+                        break;
+                    case "{":
+                        braceDepth++;
+                        break;
+                    case "}":
+                        braceDepth = Math.Max(0, braceDepth - 1);
+                        break;
+                }
+            }
+
+            return false;
         }
 
         private void ApplyOriginalLineBreak(Token token, string text)

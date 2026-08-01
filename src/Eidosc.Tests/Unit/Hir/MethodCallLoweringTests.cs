@@ -117,7 +117,7 @@ use :: Int -> Int { n => n.inc.double }
     public void HirBuilder_DotApplicationWithArgs_KeepsReceiverAsFirstArgument()
     {
         const string source = """
-add :: Int -> Int -> Int { (x, y) => x + y }
+add :: Int -> Int -> Int { x, y => x + y }
 use :: Int -> Int { n => n.add(1) }
 """;
 

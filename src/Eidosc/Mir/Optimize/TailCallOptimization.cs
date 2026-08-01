@@ -173,6 +173,7 @@ public sealed class TailCallOptimization : IMirOptimizationPass
             ConstructorLayouts = module.ConstructorLayouts.ToDictionary(
                 static pair => pair.Key,
                 static pair => pair.Value.ToList()),
+            CopyLikeTypeIds = new HashSet<int>(module.CopyLikeTypeIds),
             TraitImpls = module.TraitImpls.ToList(),
             TraitInfos = module.TraitInfos.ToList(),
             TypeAliases = module.TypeAliases.ToList(),

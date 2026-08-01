@@ -231,14 +231,16 @@ main :: Int -> Int
         string executableBaseName,
         IReadOnlyDictionary<string, string?>? environmentVariables = null,
         IReadOnlyDictionary<string, string>? additionalFiles = null,
-        NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable)
+        NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable,
+        string? runtimeExtraCFlags = null)
     {
         using var executable = CompileSourceToNativeExecutable(
             source,
             inputFile,
             executableBaseName,
             additionalFiles,
-            linkMode);
+            linkMode,
+            runtimeExtraCFlags);
 
         return ExecuteProcess(
             executable.ExecutablePath,
@@ -252,7 +254,13 @@ main :: Int -> Int
         string executableBaseName,
         NativeLinkMode linkMode)
     {
-        return CompileSourceToNativeExecutable(source, inputFile, executableBaseName, additionalFiles: null, linkMode);
+        return CompileSourceToNativeExecutable(
+            source,
+            inputFile,
+            executableBaseName,
+            additionalFiles: null,
+            linkMode,
+            runtimeExtraCFlags: null);
     }
 
     private static NativeExecutable CompileSourceToNativeExecutable(
@@ -260,7 +268,8 @@ main :: Int -> Int
         string inputFile,
         string executableBaseName,
         IReadOnlyDictionary<string, string>? additionalFiles,
-        NativeLinkMode linkMode)
+        NativeLinkMode linkMode,
+        string? runtimeExtraCFlags = null)
     {
         var sourceDir = Path.Combine(Path.GetTempPath(), $"eidosc_network_native_sources_{Guid.NewGuid():N}");
         Directory.CreateDirectory(sourceDir);
@@ -285,14 +294,13 @@ main :: Int -> Int
         Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.NotNull(result.LlvmModule);
-
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_native_source_smoke_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 
         try
         {
             var targetInfo = TargetInfo.Default;
-            var runtimeObjectPath = GetCachedRuntimeObjectPath(targetInfo, linkMode);
+            var runtimeObjectPath = GetCachedRuntimeObjectPath(targetInfo, linkMode, runtimeExtraCFlags);
 
             var executablePath = Path.Combine(
                 tempDir,
@@ -322,15 +330,32 @@ main :: Int -> Int
 
     private static string ResolveRuntimeSourcePath()
     {
+        var checkoutRuntime = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "Eidosc",
+            "Runtime",
+            "eidos_memory.c"));
+        if (File.Exists(checkoutRuntime))
+        {
+            return checkoutRuntime;
+        }
+
         return TestSourceLoader.GetFullPath(RuntimeSourceRelativePath);
     }
 
     private static string GetCachedRuntimeObjectPath(
         TargetInfo targetInfo,
-        NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable)
+        NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable,
+        string? runtimeExtraCFlags = null)
     {
         var runtimeSource = ResolveRuntimeSourcePath();
-        var extraCFlags = Environment.GetEnvironmentVariable("EIDOS_RUNTIME_EXTRA_CFLAGS") ?? "";
+        var extraCFlags = runtimeExtraCFlags ??
+                          Environment.GetEnvironmentVariable("EIDOS_RUNTIME_EXTRA_CFLAGS") ??
+                          "";
         var objectPath = GetRuntimeObjectCachePath(targetInfo, linkMode, extraCFlags, runtimeSource);
 
         lock (RuntimeObjectCacheLock)
@@ -341,7 +366,12 @@ main :: Int -> Int
             if (needsCompile)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(objectPath)!);
-                var runtimeCompile = CompileRuntimeObject(runtimeSource, objectPath, targetInfo, linkMode);
+                var runtimeCompile = CompileRuntimeObject(
+                    runtimeSource,
+                    objectPath,
+                    targetInfo,
+                    linkMode,
+                    extraCFlags);
                 Assert.True(runtimeCompile.Success, runtimeCompile.ErrorMessage);
                 Interlocked.Increment(ref _runtimeObjectCacheMisses);
             }
@@ -388,7 +418,8 @@ main :: Int -> Int
         string runtimeSourcePath,
         string outputObjectPath,
         TargetInfo targetInfo,
-        NativeLinkMode linkMode)
+        NativeLinkMode linkMode,
+        string? extraCFlags = null)
     {
         var clangPath = ResolveToolPath("clang");
         if (clangPath == null)
@@ -396,7 +427,7 @@ main :: Int -> Int
             return (false, "clang not found in PATH.");
         }
 
-        var extraCFlags = Environment.GetEnvironmentVariable("EIDOS_RUNTIME_EXTRA_CFLAGS");
+        extraCFlags ??= Environment.GetEnvironmentVariable("EIDOS_RUNTIME_EXTRA_CFLAGS");
         var argumentsBuilder = new StringBuilder()
             .Append($"-target {targetInfo.Triple} -c ");
         foreach (var flag in LlvmCompiler.GetDefaultObjectRelocationFlags(targetInfo, linkMode).ClangFlags)

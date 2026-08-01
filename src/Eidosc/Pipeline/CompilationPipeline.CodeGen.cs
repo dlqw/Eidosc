@@ -622,7 +622,6 @@ public sealed partial class CompilationPipeline
         converter.SetPerceusHints(_borrowCheckResult!);
         converter.SetReuseHints(_borrowCheckResult!);
         converter.SetStackPromotionHints(_borrowCheckResult!);
-        converter.SetUnifiedStackPromotionHints(_borrowCheckResult!);
 
         if (_symbolTable != null)
         {

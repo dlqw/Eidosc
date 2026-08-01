@@ -67,8 +67,14 @@ public sealed class ReuseAnalyzer
             AnalyzeBlock(block, ref slotCounter);
         }
 
-        // Phase 2: Cross-block pairing for unpaired constructors
-        AnalyzeCrossBlock(ref slotCounter);
+        var pairedSlots = Hints.AllocReuseSites.Values.ToHashSet();
+        foreach (var site in Hints.DropReuseSites
+                     .Where(entry => !pairedSlots.Contains(entry.Value))
+                     .Select(static entry => entry.Key)
+                     .ToArray())
+        {
+            Hints.DropReuseSites.Remove(site);
+        }
 
         Hints.SlotCount = slotCounter;
     }
@@ -88,12 +94,6 @@ public sealed class ReuseAnalyzer
                 var dropTypeId = drop.Value.TypeId;
                 if (!TypeSemantics.IsManagedType(dropTypeId))
                     continue;
-
-                if (_perceusHints != null &&
-                    _perceusHints.OmitDrop.Contains((block.Id, i)))
-                {
-                    continue;
-                }
 
                 var slot = slotCounter++;
                 Hints.DropReuseSites[(block.Id, i)] = slot;

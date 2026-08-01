@@ -381,6 +381,54 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
+    public void Convert_ModuleWithRepeatedStringLiteralInOneFunction_AcquiresEachOwnedValue()
+    {
+        var unitType = new TypeId(BaseTypes.UnitId);
+        var stringType = new TypeId(BaseTypes.StringId);
+        var write = new MirFunctionRef
+        {
+            Name = "write_text_raw",
+            SymbolId = new SymbolId(8130),
+            FunctionId = MirBuiltinFunctions.CreateIntrinsicFunctionId(
+                new SymbolId(8130),
+                "write_text_raw")
+        };
+        MirConstant Literal() => new()
+        {
+            TypeId = stringType,
+            Value = new MirConstantValue.StringValue("repeat")
+        };
+        var function = BuildFunction(
+            unitType,
+            locals: [],
+            instructions:
+            [
+                new MirCall { Function = write, Arguments = [Literal()] },
+                new MirCall { Function = write, Arguments = [Literal()] }
+            ],
+            returnValue: new MirConstant
+            {
+                TypeId = unitType,
+                Value = new MirConstantValue.UnitValue()
+            },
+            name: "repeat_in_one_function",
+            symbolId: new SymbolId(8131));
+
+        var llvmModule = new MirToLlvmConverter().Convert(new MirModule
+        {
+            Name = "repeated_literal_ownership",
+            Functions = [function]
+        });
+
+        Assert.Single(llvmModule.Globals);
+        var internCalls = Assert.Single(llvmModule.Functions).BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<LlvmCall>()
+            .Count(static call => call.Function is LlvmGlobal { Name: "eidos_string_intern" });
+        Assert.Equal(2, internCalls);
+    }
+
+    [Fact]
     public void Convert_ModuleWithSameSourceNameDifferentSignatures_UsesDistinctInstanceNames()
     {
         var intType = new TypeId(BaseTypes.IntId);
