@@ -99,6 +99,13 @@ public sealed record MirRecordUpdateInfo
     public MirPlace Source { get; init; } = null!;
 
     public List<int> UpdatedFieldIndices { get; init; } = [];
+
+    /// <summary>
+    /// Indicates that the source has one live owning reference at this call
+    /// site. The backend may update the payload directly without a COW check.
+    /// This is compiler-produced proof, never a source language promise.
+    /// </summary>
+    public bool IsKnownUnique { get; init; }
 }
 
 /// <summary>

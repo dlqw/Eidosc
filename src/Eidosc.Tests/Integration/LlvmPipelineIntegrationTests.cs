@@ -294,7 +294,6 @@ main :: Int -> Int
         Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.NotNull(result.LlvmModule);
-
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_native_source_smoke_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 

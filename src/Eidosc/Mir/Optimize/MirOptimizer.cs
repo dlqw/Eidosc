@@ -104,13 +104,15 @@ public sealed partial class MirOptimizer
         optimizer.RegisterPass(new LoopInvariantCodeMotion());
         optimizer.RegisterPass(new DeadCodeElimination());
         optimizer.RegisterPass(new RuntimeArrayFusionPass());
+        optimizer.RegisterPass(new RuntimeArrayRangeSpecializationPass());
 
         // Round 2: Tail call optimization followed by ownership finalization.
         // Drop insertion must run after tail-call formation so it cannot place
         // cleanup after a tail call, and before borrow/codegen hint analyses so
         // their instruction-site identities include the inserted drops.
         optimizer.RegisterPass(new TailCallOptimization(convertSelfRecursionToLoop: true));
-        optimizer.RegisterPass(new DropInsertionPass());
+        var dropInsertionWorkspace = new DropInsertionAnalysisWorkspace();
+        optimizer.RegisterPass(new DropInsertionPass(dropInsertionWorkspace));
         optimizer.RegisterPass(new CopyDropElisionPass());
         optimizer.RegisterPass(new ReusePreparationPass());
         optimizer.RegisterPass(new DestructiveProjectionMovePass());
@@ -118,10 +120,13 @@ public sealed partial class MirOptimizer
         // into independently owned values after the first ownership pass. Run
         // ownership finalization again so those new references are consumed or
         // dropped exactly once, then elide the resulting copy/drop pairs.
-        optimizer.RegisterPass(new DropInsertionPass());
+        optimizer.RegisterPass(new DropInsertionPass(dropInsertionWorkspace));
         optimizer.RegisterPass(new CopyDropElisionPass());
         optimizer.RegisterPass(new DeadCodeElimination());
+        optimizer.RegisterPass(new ReadOnlyProjectionFusionPass());
         optimizer.RegisterPass(new RecordUpdateFusionPass());
+        optimizer.RegisterPass(new UniqueRecordUpdateSpecializationPass());
+        optimizer.RegisterPass(new CallerOwnedAggregateSpecializationPass());
 
         return optimizer;
     }

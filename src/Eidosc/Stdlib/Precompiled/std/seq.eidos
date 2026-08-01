@@ -249,7 +249,7 @@ Seq :: module {
         left => right => RuntimeArray.extend(left)(right)
     }
 
-    export take[T] :: Seq[T] -> Int -> Seq[T]
+    export take[T] :: Seq[T] -> Int -> Seq[T] compiler(role: "sequence.take")
     {
         xs => n => RuntimeArray.take(xs)(n)
     }

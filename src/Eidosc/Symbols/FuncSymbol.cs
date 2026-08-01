@@ -166,7 +166,8 @@ public enum CompilerSemanticRole
     Compose,
     Prepend,
     AppendLastSingleton,
-    AppendLastAppend
+    AppendLastAppend,
+    SequenceTake
 }
 
 public enum BuiltinIntrinsicRole

@@ -703,7 +703,9 @@ public sealed partial class MirToLlvmConverter
 
         return new LlvmFunctionType
         {
-            ReturnType = LowerFunctionSignatureType(func.ReturnType, func, "return type", allowUnresolvedSignatureTypes),
+            ReturnType = func.CallerOwnedAggregateAbi.HasOutReturn
+                ? LlvmVoidType.Instance
+                : LowerFunctionSignatureType(func.ReturnType, func, "return type", allowUnresolvedSignatureTypes),
             ParameterTypes = func.Locals
                 .Where(local => local.IsParameter)
                 .Select(local =>
@@ -713,6 +715,11 @@ public sealed partial class MirToLlvmConverter
                             func,
                             $"parameter '{local.Name}'",
                             allowUnresolvedSignatureTypes)))
+                .Concat(func.CallerOwnedAggregateAbi.HasOutReturn
+                    ? Enumerable.Repeat<LlvmType>(
+                        LlvmPointerType.VoidPtr(),
+                        1 + func.CallerOwnedAggregateAbi.OutArrayStorages.Count)
+                    : [])
                 .ToList()
         };
     }
@@ -1312,6 +1319,9 @@ public sealed partial class MirToLlvmConverter
         // Compiler-generated runtime helpers that are not user-facing Std intrinsics.
         Add("type_id", i64, [ptr]);
         Add("array_get", ptr, [ptr, i64]);
+        Add("array_range_length", i64, [ptr, i64, i64]);
+        Add("array_range_get", ptr, [ptr, i64, i64, i64]);
+        Add("array_tail_shift_prepend_unique", ptr, [ptr, ptr, i64, i64]);
         Add("string_intern",  ptr, [ptr, i64]);
         Add("int_to_float",   f64, [i64]);
         Add("string_from_cstr", ptr, [ptr]);
@@ -1850,13 +1860,21 @@ public sealed partial class MirToLlvmConverter
 
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayNew, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayNewWithPolicy, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayNewInStorage, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64, LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayGet, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArraySet, LlvmVoidType.Instance, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayPush, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayPrepend, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayShiftPrepend, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayTailShiftPrepend, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayTailShiftPrependUnique, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayTailShiftPrependUniqueUnmanaged, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayTailShiftPrependUniqueUnmanaged16, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayExtend, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayTake, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArraySlice, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayRangeLength, LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayRangeGet, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayPop, LlvmVoidType.Instance, LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArraySwap, LlvmVoidType.Instance, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayLength, LlvmIntType.I64, LlvmPointerType.VoidPtr());

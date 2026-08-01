@@ -191,7 +191,7 @@ public sealed class LlvmEmitter
     /// </summary>
     private void EmitAttributeGroup(LlvmAttributeGroup attrGroup)
     {
-        EmitLine($"attributes #{attrGroup.Id} = {{ {attrGroup.Attributes} }}");
+        EmitLine($"attributes #{attrGroup.Id} = {{ {string.Join(' ', attrGroup.Attributes)} }}");
     }
 
     /// <summary>

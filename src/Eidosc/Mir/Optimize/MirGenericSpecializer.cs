@@ -910,7 +910,8 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             TraitSelfInResult = false,
             CompilerSemanticRole = functionRef.CompilerSemanticRole is
                 CompilerSemanticRole.AppendLastAppend or
-                CompilerSemanticRole.AppendLastSingleton
+                CompilerSemanticRole.AppendLastSingleton or
+                CompilerSemanticRole.SequenceTake
                     ? functionRef.CompilerSemanticRole
                     : CompilerSemanticRole.None
         };

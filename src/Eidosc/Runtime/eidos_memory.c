@@ -55,14 +55,9 @@
 #define EIDOS_ATOMIC_OR32(ptr, val) __atomic_or_fetch((ptr), (val), __ATOMIC_SEQ_CST)
 #endif
 
-/* Shared-bit reference counting model:
- * Bit 31 of ref_count is the SHARED flag. When set, the object has been
- * shared across threads and all RC mutations must use atomic operations.
- * Bits 0-30 hold the actual reference count (up to ~2 billion refs).
- * In single-threaded code bit 31 is always 0, so the branch check in
- * _local variants is perfectly predicted. */
-#define EIDOS_SHARED_BIT  0x80000000
-#define EIDOS_COUNT_MASK  0x7FFFFFFF
+/* Reference-count state:
+ * Bit 31 is the SHARED flag, bit 30 marks caller-owned stack storage, and
+ * bits 0-29 hold the count. The public runtime header owns these constants. */
 
 #if defined(EIDOS_ENABLE_MEMORY_COUNTERS)
 static volatile int64_t g_eidos_memory_alloc_count = 0;
@@ -82,10 +77,36 @@ static volatile int64_t g_eidos_memory_reuse_count = 0;
 #define EIDOS_MEMORY_COUNT_ALLOC() ((void)EIDOS_MEMORY_COUNTER_INC(&g_eidos_memory_alloc_count))
 #define EIDOS_MEMORY_COUNT_FREE() ((void)EIDOS_MEMORY_COUNTER_INC(&g_eidos_memory_free_count))
 #define EIDOS_MEMORY_COUNT_REUSE() ((void)EIDOS_MEMORY_COUNTER_INC(&g_eidos_memory_reuse_count))
+
+static int g_eidos_memory_report_registered = 0;
+
+static void eidos_memory_report_at_exit(void) {
+    fprintf(
+        stderr,
+        "EIDOS_MEMORY_COUNTERS alloc=%lld free=%lld reuse=%lld\n",
+        (long long)EIDOS_MEMORY_COUNTER_READ(&g_eidos_memory_alloc_count),
+        (long long)EIDOS_MEMORY_COUNTER_READ(&g_eidos_memory_free_count),
+        (long long)EIDOS_MEMORY_COUNTER_READ(&g_eidos_memory_reuse_count));
+}
+
+static void eidos_memory_register_reporter(void) {
+    if (g_eidos_memory_report_registered) {
+        return;
+    }
+
+    const char* enabled = getenv("EIDOS_MEMORY_COUNTERS_REPORT");
+    if (enabled == NULL || enabled[0] == '\0' || enabled[0] == '0') {
+        return;
+    }
+
+    g_eidos_memory_report_registered = 1;
+    atexit(eidos_memory_report_at_exit);
+}
 #else
 #define EIDOS_MEMORY_COUNT_ALLOC() ((void)0)
 #define EIDOS_MEMORY_COUNT_FREE() ((void)0)
 #define EIDOS_MEMORY_COUNT_REUSE() ((void)0)
+#define eidos_memory_register_reporter() ((void)0)
 #endif
 
 /* Thread-local IO status: each thread tracks its own last-operation state */
@@ -2107,6 +2128,7 @@ static EidosRetainer find_retainer(uint32_t type_id) {
 }
 
 void* eidos_alloc(size_t size, uint32_t type_id) {
+    eidos_memory_register_reporter();
     /* Allocate memory with space for reference-count header.
      * Layout: [EidosHeader(ref_count, type_id)] [user data of 'size' bytes]
      * The returned pointer points past the header to user data.
@@ -2137,6 +2159,9 @@ void eidos_free(void* ptr) {
     if (ptr == NULL) return;
 
     EidosHeader* header = get_header(ptr);
+    if (((uint32_t)header->ref_count & EIDOS_STACK_BIT) != 0) {
+        return;
+    }
     EIDOS_MEMORY_COUNT_FREE();
     EIDOS_FREE(header);
 }
@@ -2322,7 +2347,7 @@ void eidos_decref_local(void* ptr) {
 
     header->ref_count--;  /* Non-atomic: only safe for single-threaded objects */
 
-    if (header->ref_count == 0) {
+    if (((uint32_t)header->ref_count & EIDOS_COUNT_MASK) == 0) {
         if (g_decref_queue.active) {
             /* Inside a drain loop: defer to avoid stack overflow */
             eidos_defer_queue_push(ptr);
@@ -2398,6 +2423,7 @@ void eidos_drop_reuse(void* ptr, EidosReuse* reuse) {
     }
 
     if ((new_count & EIDOS_COUNT_MASK) == 0) {
+        int caller_owned_stack = (((uint32_t)new_count) & EIDOS_STACK_BIT) != 0;
         int outermost = !g_decref_queue.active;
         if (outermost) {
             g_decref_queue.active = 1;
@@ -2408,7 +2434,9 @@ void eidos_drop_reuse(void* ptr, EidosReuse* reuse) {
             destructor(ptr);
         }
 
-        if (reuse != NULL && reuse->header_ptr == NULL) {
+        if (caller_owned_stack) {
+            /* Caller-owned storage remains live until its containing frame exits. */
+        } else if (reuse != NULL && reuse->header_ptr == NULL) {
             reuse->header_ptr = header;
             reuse->total_size = 0;
             reuse->type_id = header->type_id;
@@ -3555,6 +3583,243 @@ EidosArray* eidos_array_prepend(EidosArray* arr, void* value, size_t element_siz
     return arr;
 }
 
+EidosArray* eidos_array_new_in_storage(
+    void* storage,
+    size_t storage_size,
+    size_t capacity,
+    size_t element_size,
+    void (*retain_element)(void* element),
+    void (*release_element)(void* element)) {
+    size_t normalized_element_size = element_size == 0 ? 1 : element_size;
+    if (capacity > (SIZE_MAX - sizeof(EidosHeader) - sizeof(EidosArray)) / normalized_element_size) {
+        return eidos_array_new_with_policy(
+            capacity,
+            normalized_element_size,
+            retain_element,
+            release_element);
+    }
+
+    size_t data_size = capacity * normalized_element_size;
+    size_t required_size = sizeof(EidosHeader) + sizeof(EidosArray) + data_size;
+    if (storage == NULL || storage_size < required_size ||
+        ((uintptr_t)storage % _Alignof(EidosArray)) != 0) {
+        return eidos_array_new_with_policy(
+            capacity,
+            normalized_element_size,
+            retain_element,
+            release_element);
+    }
+
+    eidos_memory_register_reporter();
+    eidos_ensure_array_destructor_registered();
+
+    EidosHeader* header = (EidosHeader*)storage;
+    header->ref_count = (int32_t)(EIDOS_STACK_BIT | 1u);
+    header->type_id = EIDOS_TYPE_ARRAY;
+
+    EidosArray* arr = (EidosArray*)((unsigned char*)storage + sizeof(EidosHeader));
+    memset(arr, 0, sizeof(EidosArray) + data_size);
+    arr->length = 0;
+    arr->capacity = capacity;
+    arr->element_size = normalized_element_size;
+    arr->retain_element = retain_element;
+    arr->release_element = release_element;
+    return arr;
+}
+
+EidosArray* eidos_array_shift_prepend(
+    EidosArray* arr,
+    void* first,
+    void* second,
+    int64_t grow,
+    size_t element_size) {
+    size_t normalized_element_size = element_size == 0 ? 1 : element_size;
+    size_t previous_length = arr == NULL ? 0 : arr->length;
+    size_t retained_length = previous_length;
+    if (!grow && retained_length > 0) {
+        retained_length--;
+    }
+
+    arr = eidos_array_prepare_consuming(
+        arr,
+        retained_length + 2,
+        normalized_element_size);
+    if (arr == NULL) return NULL;
+
+    if (!grow && previous_length > 0) {
+        eidos_array_release_range(arr, previous_length - 1, 1);
+        memset(
+            arr->data + (previous_length - 1) * arr->element_size,
+            0,
+            arr->element_size);
+    }
+
+    if (retained_length > 0) {
+        memmove(
+            arr->data + 2 * arr->element_size,
+            arr->data,
+            retained_length * arr->element_size);
+    }
+    if (first != NULL && arr->element_size > 0) {
+        memcpy(arr->data, first, arr->element_size);
+    } else if (arr->element_size > 0) {
+        memset(arr->data, 0, arr->element_size);
+    }
+    if (second != NULL && arr->element_size > 0) {
+        memcpy(arr->data + arr->element_size, second, arr->element_size);
+    } else if (arr->element_size > 0) {
+        memset(arr->data + arr->element_size, 0, arr->element_size);
+    }
+    arr->length = retained_length + 2;
+    return arr;
+}
+
+EidosArray* eidos_array_tail_shift_prepend(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size) {
+    size_t normalized_element_size = element_size == 0 ? 1 : element_size;
+    size_t previous_length = arr == NULL ? 0 : arr->length;
+    size_t retained_length = previous_length;
+    if (!grow && retained_length > 0) {
+        retained_length--;
+    }
+
+    arr = eidos_array_prepare_consuming(
+        arr,
+        retained_length + 1,
+        normalized_element_size);
+    if (arr == NULL) return NULL;
+
+    if (!grow && previous_length > 0) {
+        eidos_array_release_range(arr, previous_length - 1, 1);
+        memset(
+            arr->data + (previous_length - 1) * arr->element_size,
+            0,
+            arr->element_size);
+    }
+
+    if (retained_length > 0) {
+        memmove(
+            arr->data + arr->element_size,
+            arr->data,
+            retained_length * arr->element_size);
+    }
+    if (first != NULL && arr->element_size > 0) {
+        memcpy(arr->data, first, arr->element_size);
+    } else if (arr->element_size > 0) {
+        memset(arr->data, 0, arr->element_size);
+    }
+    arr->length = retained_length + 1;
+    return arr;
+}
+
+static EidosArray* eidos_array_tail_shift_prepend_unique_core(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size,
+    bool release_removed_element) {
+    if (arr == NULL) {
+        return eidos_array_tail_shift_prepend(arr, first, grow, element_size);
+    }
+
+    size_t previous_length = arr->length;
+    size_t retained_length = previous_length;
+    if (!grow && retained_length > 0) {
+        retained_length--;
+    }
+
+    size_t minimum_capacity = retained_length + 1;
+    if (arr->capacity < minimum_capacity) {
+        arr = eidos_array_grow_unique_consuming(arr, minimum_capacity);
+        if (arr == NULL) return NULL;
+    } else {
+        EIDOS_MEMORY_COUNT_REUSE();
+    }
+
+    if (!grow && previous_length > 0) {
+        if (release_removed_element) {
+            eidos_array_release_range(arr, previous_length - 1, 1);
+            memset(
+                arr->data + (previous_length - 1) * arr->element_size,
+                0,
+                arr->element_size);
+        }
+    }
+
+    if (retained_length > 0) {
+        memmove(
+            arr->data + arr->element_size,
+            arr->data,
+            retained_length * arr->element_size);
+    }
+    if (first != NULL && arr->element_size > 0) {
+        memcpy(arr->data, first, arr->element_size);
+    } else if (arr->element_size > 0) {
+        memset(arr->data, 0, arr->element_size);
+    }
+    arr->length = retained_length + 1;
+    return arr;
+}
+
+EidosArray* eidos_array_tail_shift_prepend_unique(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size) {
+    return eidos_array_tail_shift_prepend_unique_core(
+        arr,
+        first,
+        grow,
+        element_size,
+        true);
+}
+
+EidosArray* eidos_array_tail_shift_prepend_unique_unmanaged(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size) {
+    return eidos_array_tail_shift_prepend_unique_core(
+        arr,
+        first,
+        grow,
+        element_size,
+        false);
+}
+
+EidosArray* eidos_array_tail_shift_prepend_unique_unmanaged_16(
+    EidosArray* arr,
+    void* first,
+    int64_t grow) {
+    if (arr == NULL) {
+        return eidos_array_tail_shift_prepend(arr, first, grow, 16);
+    }
+
+    size_t previous_length = arr->length;
+    size_t retained_length = previous_length - ((!grow && previous_length > 0) ? 1 : 0);
+    size_t minimum_capacity = retained_length + 1;
+    if (arr->capacity < minimum_capacity) {
+        arr = eidos_array_grow_unique_consuming(arr, minimum_capacity);
+        if (arr == NULL) return NULL;
+    } else {
+        EIDOS_MEMORY_COUNT_REUSE();
+    }
+
+    if (retained_length > 0) {
+        memmove(arr->data + 16, arr->data, retained_length << 4);
+    }
+    if (first != NULL) {
+        memcpy(arr->data, first, 16);
+    } else {
+        memset(arr->data, 0, 16);
+    }
+    arr->length = retained_length + 1;
+    return arr;
+}
+
 EidosArray* eidos_array_extend(EidosArray* dst, EidosArray* src, size_t element_size) {
     if (src == NULL) {
         return dst;
@@ -3755,6 +4020,42 @@ EidosArray* eidos_array_slice(EidosArray* arr, int64_t start, int64_t suffix_cou
     arr->length = slice_length;
     EIDOS_MEMORY_COUNT_REUSE();
     return arr;
+}
+
+size_t eidos_array_range_length(EidosArray* arr, int64_t start, int64_t suffix_count) {
+    if (arr == NULL) {
+        return 0;
+    }
+
+    size_t prefix_length = start <= 0 ? 0 : (size_t)start;
+    if (prefix_length > arr->length) {
+        prefix_length = arr->length;
+    }
+
+    size_t available = arr->length - prefix_length;
+    size_t suffix_length = suffix_count <= 0 ? 0 : (size_t)suffix_count;
+    if (suffix_length > available) {
+        suffix_length = available;
+    }
+
+    return available - suffix_length;
+}
+
+void* eidos_array_range_get(
+    EidosArray* arr,
+    int64_t start,
+    int64_t suffix_count,
+    int64_t index) {
+    size_t range_length = eidos_array_range_length(arr, start, suffix_count);
+    if (arr == NULL || index < 0 || (size_t)index >= range_length) {
+        eidos_panic("eidos_array_range_get: index out of bounds");
+    }
+
+    size_t prefix_length = start <= 0 ? 0 : (size_t)start;
+    if (prefix_length > arr->length) {
+        prefix_length = arr->length;
+    }
+    return arr->data + (prefix_length + (size_t)index) * arr->element_size;
 }
 
 void eidos_array_pop(EidosArray* arr) {

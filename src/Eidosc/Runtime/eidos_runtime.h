@@ -32,7 +32,8 @@ typedef struct EidosHeader {
  * Bit 31 = SHARED flag. Bits 0-30 = actual count.
  * See eidos_memory.c for full documentation. */
 #define EIDOS_SHARED_BIT  0x80000000
-#define EIDOS_COUNT_MASK  0x7FFFFFFF
+#define EIDOS_STACK_BIT   0x40000000
+#define EIDOS_COUNT_MASK  0x3FFFFFFF
 
 /**
  * Allocate memory with Eidos header
@@ -565,6 +566,18 @@ EidosArray* eidos_array_new_with_policy(
     void (*release_element)(void* element));
 
 /**
+ * Initialize an array in compiler-provided caller-owned storage. If the
+ * storage is insufficient, returns an ordinary heap array instead.
+ */
+EidosArray* eidos_array_new_in_storage(
+    void* storage,
+    size_t storage_size,
+    size_t capacity,
+    size_t element_size,
+    void (*retain_element)(void* element),
+    void (*release_element)(void* element));
+
+/**
  * Get array length
  * @param arr Array
  * @return Array length (0 if null)
@@ -601,6 +614,44 @@ EidosArray* eidos_array_push(EidosArray* arr, void* value, size_t element_size);
 EidosArray* eidos_array_prepend(EidosArray* arr, void* value, size_t element_size);
 
 /**
+ * Consuming fused window update used for persistent sequence expressions.
+ * Prepends first and second in one buffer move. When grow is zero, the last
+ * existing element is removed first; otherwise the sequence grows by two.
+ */
+EidosArray* eidos_array_shift_prepend(
+    EidosArray* arr,
+    void* first,
+    void* second,
+    int64_t grow,
+    size_t element_size);
+
+/**
+ * Consume a full sequence whose logical tail was read as a range, prepend one
+ * owned element, and retain or remove the previous last element in one move.
+ */
+EidosArray* eidos_array_tail_shift_prepend(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size);
+
+/** Compiler-proven unique-owner variants. */
+EidosArray* eidos_array_tail_shift_prepend_unique(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size);
+EidosArray* eidos_array_tail_shift_prepend_unique_unmanaged(
+    EidosArray* arr,
+    void* first,
+    int64_t grow,
+    size_t element_size);
+EidosArray* eidos_array_tail_shift_prepend_unique_unmanaged_16(
+    EidosArray* arr,
+    void* first,
+    int64_t grow);
+
+/**
  * Append all elements from src array to dst array.
  * Elements are shallow-copied (pointer-sized values).
  * @param dst Destination array (possibly reallocated)
@@ -621,6 +672,14 @@ EidosArray* eidos_array_take(EidosArray* arr, int64_t count);
  * Reuses uniquely owned storage and clones only when aliases still exist.
  */
 EidosArray* eidos_array_slice(EidosArray* arr, int64_t start, int64_t suffix_count);
+
+/** Read-only range operations used by compiler-generated view variants. */
+size_t eidos_array_range_length(EidosArray* arr, int64_t start, int64_t suffix_count);
+void* eidos_array_range_get(
+    EidosArray* arr,
+    int64_t start,
+    int64_t suffix_count,
+    int64_t index);
 
 /**
  * Remove the last array element by shortening the logical length.

@@ -164,6 +164,11 @@ public sealed partial class MirToLlvmConverter
 
     private LlvmTerminator ConvertReturn(MirReturn ret)
     {
+        if (_currentMirFunction?.CallerOwnedAggregateAbi.HasOutReturn == true)
+        {
+            return new LlvmRet();
+        }
+
         var functionReturnType = _currentFunction?.ReturnType ?? LlvmVoidType.Instance;
 
         if (ret.Value == null)

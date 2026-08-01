@@ -266,6 +266,14 @@ public sealed class LlvmFunctionFingerprintTests
         {
             Name = "recompose",
             Functions = [CreateFunction("add")],
+            AttributeGroups =
+            [
+                new LlvmAttributeGroup
+                {
+                    Id = 0,
+                    Attributes = ["alwaysinline", "nounwind"]
+                }
+            ],
             Declarations =
             [
                 new LlvmDeclaration
