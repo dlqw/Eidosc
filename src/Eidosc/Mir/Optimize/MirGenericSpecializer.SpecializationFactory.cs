@@ -1,3 +1,5 @@
+using Eidosc.Types;
+
 namespace Eidosc.Mir.Optimize;
 
 public sealed partial class MirGenericSpecializer
@@ -58,6 +60,18 @@ public sealed partial class MirGenericSpecializer
             resolvingTypeIds);
         RewriteConstGenericValues(specializedBlocks, signature.GenericValueArguments);
 
+        var specializedReturnType = substitutionService.SubstituteTypeId(signature.ReturnType, typeBindings, resolvingTypeIds);
+        // A call-site borrow view (Ref/MutRef) must not become the value return
+        // type of a specialization whose template declares a value return: the
+        // view is an ABI artifact of an adjacent borrow use, not the function's
+        // result type. Prefer the substituted template return type in that case.
+        if (IsReferenceTypeDescriptorId(specializedReturnType) &&
+            template.ReturnType.IsValid &&
+            !IsReferenceTypeDescriptorId(template.ReturnType))
+        {
+            specializedReturnType = substitutionService.SubstituteTypeId(template.ReturnType, typeBindings, resolvingTypeIds);
+        }
+
         return new MirFunc
         {
             Name = specializationName,
@@ -65,7 +79,7 @@ public sealed partial class MirGenericSpecializer
             Locals = specializedLocals,
             BasicBlocks = specializedBlocks,
             EntryBlockId = template.EntryBlockId,
-            ReturnType = substitutionService.SubstituteTypeId(signature.ReturnType, typeBindings, resolvingTypeIds),
+            ReturnType = specializedReturnType,
             GenericParameterCount = 0,
             GenericParameters = [],
             GenericTypeParameterIds = [],
@@ -81,5 +95,12 @@ public sealed partial class MirGenericSpecializer
             IntrinsicName = template.IntrinsicName,
             BuiltinIntrinsicRole = template.BuiltinIntrinsicRole
         };
+    }
+
+    private bool IsReferenceTypeDescriptorId(TypeId typeId)
+    {
+        return typeId.IsValid &&
+               TryGetTypeDescriptor(typeId, out var descriptor) &&
+               descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef;
     }
 }

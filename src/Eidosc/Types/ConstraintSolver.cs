@@ -420,6 +420,27 @@ public sealed class ConstraintSolver
             return true;
         }
 
+        // Closed-case fallback: values of a single-constructor ADT built through
+        // its case type (e.g. `Point:: type(Int)`) carry the case identity, while
+        // trait instances are declared on the root ADT type. Resolve the parent
+        // ADT and retry the lookup against the root type.
+        if (con.Symbol.IsValid &&
+            _symbolTable.GetSymbol<AdtSymbol>(con.Symbol) is { } caseSymbol &&
+            caseSymbol.ParentAdt.IsValid &&
+            _symbolTable.GetSymbol<AdtSymbol>(caseSymbol.ParentAdt) is { } rootSymbol &&
+            rootSymbol.TypeId.IsValid &&
+            rootSymbol.TypeId != lookupRequest.TypeId &&
+            _symbolTable.LookupImplForTraitByKeys(
+                rootSymbol.TypeId,
+                traitId,
+                lookupRequest.TraitArgKeys) is { } rootImpl)
+        {
+            if (CheckImplTypeRequirements(con, rootImpl, out errorMessage))
+            {
+                return true;
+            }
+        }
+
         errorMessage ??= DiagnosticMessages.TypeDoesNotImplementTrait(con.Name, traitName);
         return false;
     }

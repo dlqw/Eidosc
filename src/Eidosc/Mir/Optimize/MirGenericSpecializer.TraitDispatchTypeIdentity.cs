@@ -98,6 +98,14 @@ public sealed partial class MirGenericSpecializer
         if (TryGetTypeDescriptor(receiverTypeId, out var descriptor) &&
             descriptor is TypeDescriptor.TyCon tyCon)
         {
+            // Closed-case fallback first: values built through an exact case
+            // type (e.g. `Point:: type(Int)`) carry the case identity, while
+            // trait instances are declared on the root ADT type.
+            if (TryResolveCaseRootTypeId(tyCon, out var rootTypeId))
+            {
+                return rootTypeId;
+            }
+
             if (TryResolveConstructorTypeId(tyCon.Constructor, out var typeId))
             {
                 return typeId;
@@ -105,6 +113,32 @@ public sealed partial class MirGenericSpecializer
         }
 
         return receiverTypeId;
+    }
+
+    private bool TryResolveCaseRootTypeId(TypeDescriptor.TyCon tyCon, out TypeId rootTypeId)
+    {
+        rootTypeId = TypeId.None;
+        AdtSymbol? caseSymbol = null;
+        switch (tyCon.Constructor.Kind)
+        {
+            case TypeConstructorKeyKind.Symbol:
+                caseSymbol = _symbolTable?.GetSymbol<AdtSymbol>(tyCon.Constructor.SymbolId);
+                break;
+            case TypeConstructorKeyKind.TypeId:
+                caseSymbol = _symbolTable?.GetSymbolByTypeId(tyCon.Constructor.TypeId) as AdtSymbol;
+                break;
+        }
+
+        if (caseSymbol is not { } resolvedCase ||
+            !resolvedCase.ParentAdt.IsValid ||
+            _symbolTable?.GetSymbol<AdtSymbol>(resolvedCase.ParentAdt) is not { } rootSymbol ||
+            !rootSymbol.TypeId.IsValid)
+        {
+            return false;
+        }
+
+        rootTypeId = rootSymbol.TypeId;
+        return true;
     }
 
     private bool TryResolveTypeConstructorSymbol(

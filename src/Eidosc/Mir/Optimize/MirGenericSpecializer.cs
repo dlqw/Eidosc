@@ -1553,7 +1553,6 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
         {
             return false;
         }
-
         if (!FunctionRefRequiresSpecialization(sourceFunctionRef, includeKnownTemplateReferences: true))
         {
             return true;
@@ -1855,7 +1854,12 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
 
         var destinationType = ResolvePlaceType(destination, localTypes);
         if (destinationType.IsValid &&
-            !ContainsOpenTypeVariable(destinationType))
+            !ContainsOpenTypeVariable(destinationType) &&
+            !(IsReferenceTypeDescriptorId(destinationType) &&
+              localTypes.TryGetValue(target.Local, out var existingTargetType) &&
+              existingTargetType.IsValid &&
+              !ContainsOpenTypeVariable(existingTargetType) &&
+              !IsReferenceTypeDescriptorId(existingTargetType)))
         {
             localTypes[target.Local] = destinationType;
         }
