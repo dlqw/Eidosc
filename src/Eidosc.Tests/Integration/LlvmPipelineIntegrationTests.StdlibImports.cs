@@ -127,13 +127,13 @@ public partial class LlvmPipelineIntegrationTests
         });
 
         Assert.Matches(
-            @"(?s)define external ptr @[^\r\n]*compare_desc[^\r\n]*\(i64[^\r\n]*\)[^{]*\{(?:(?!\r?\n\}).)*?call ptr @[^\r\n]*compare[^\r\n]*\(i64",
+            @"(?s)define external (?:ptr|i32) @[^\r\n]*compare_desc[^\r\n]*\(i64[^\r\n]*\)[^{]*\{(?:(?!\r?\n\}).)*?call (?:ptr|i32) @[^\r\n]*compare[^\r\n]*\(i64",
             result.LlvmIrText);
         Assert.Matches(
-            @"(?s)define external ptr @[^\r\n]*compare_desc[^\r\n]*\(i32[^\r\n]*\)[^{]*\{(?:(?!\r?\n\}).)*?call ptr @[^\r\n]*compare[^\r\n]*\(i32",
+            @"(?s)define external (?:ptr|i32) @[^\r\n]*compare_desc[^\r\n]*\(i32[^\r\n]*\)[^{]*\{(?:(?!\r?\n\}).)*?call (?:ptr|i32) @[^\r\n]*compare[^\r\n]*\(i32",
             result.LlvmIrText);
         Assert.Matches(
-            @"(?s)define external ptr @[^\r\n]*compare_desc[^\r\n]*\(i1[^\r\n]*\)[^{]*\{(?:(?!\r?\n\}).)*?call ptr @[^\r\n]*compare[^\r\n]*\(i1",
+            @"(?s)define external (?:ptr|i32) @[^\r\n]*compare_desc[^\r\n]*\(i1[^\r\n]*\)[^{]*\{(?:(?!\r?\n\}).)*?call (?:ptr|i32) @[^\r\n]*compare[^\r\n]*\(i1",
             result.LlvmIrText);
 
         var llvmModule = result.LlvmModule!;

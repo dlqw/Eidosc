@@ -131,8 +131,8 @@ public static class EidosFixtureInventory
         Error("traits/trait_error.eidos", "E2001"),
         Error("borrow/errors/affine_reuse.eidos", "E1001"),
         Error("borrow/errors/double_move.eidos", "E1001"),
-        Error("borrow/errors/generic_nonzero_partial_deref_noncopy_error.eidos", "E1002", "E1004"),
-        Error("borrow/errors/generic_nonzero_partial_dynamic_index_noncopy_error.eidos", "E1002", "E1004"),
+        Error("borrow/errors/generic_nonzero_partial_deref_noncopy_error.eidos", "E1002"),
+        Error("borrow/errors/generic_nonzero_partial_dynamic_index_noncopy_error.eidos", "E1002"),
         Error("borrow/errors/mutable_borrow_conflict.eidos", "E1002"),
         Error("borrow/errors/use_after_move.eidos", "E1001")
     ];

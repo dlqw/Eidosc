@@ -440,7 +440,10 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             MirCaseInject => false,
             MirBinOp => false,
             MirUnaryOp => false,
-            MirLoad => false,
+            // A load that creates a borrow has observable borrow-checker
+            // semantics (conflict detection, move/drop restrictions) and must
+            // survive even when its target local is unused.
+            MirLoad load => load.IsMutableBorrow || load.CreatesBorrowAlias,
             MirAlloc => false,            // Stack alloc, safe to remove if unused
             MirCopy => false,
             MirMove => true,              // Ownership transfer invalidates the source alias
