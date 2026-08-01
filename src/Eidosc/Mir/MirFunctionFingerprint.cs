@@ -136,6 +136,7 @@ public static class MirFunctionFingerprintBuilder
             writer.Add(storage.Capacity);
             writer.Add(storage.ElementSize);
             writer.Add(storage.StorageBytes);
+            writer.Add(storage.PromoteInline);
         }
     }
 

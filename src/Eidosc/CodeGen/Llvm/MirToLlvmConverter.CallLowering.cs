@@ -198,6 +198,13 @@ public sealed partial class MirToLlvmConverter
             return ConvertProvenRuntimeArrayRangeGet(call);
         }
 
+        if (call.Function is MirFunctionRef arrayLengthRef &&
+            IsArrayIntrinsicCall(arrayLengthRef, WellKnownStrings.InternalNames.ArrayLength) &&
+            TryConvertPromotedArrayLengthCall(call))
+        {
+            return null;
+        }
+
         if (call.Function is MirFunctionRef { CompilerSemanticRole: CompilerSemanticRole.Show } &&
             TryConvertBuiltinShowCall(call, out var builtinShowCall))
         {
@@ -1652,7 +1659,7 @@ public sealed partial class MirToLlvmConverter
                     ]),
                 [
                     callerStorage.Pointer,
-                    new LlvmConstant { Value = callerStorage.StorageBytes, Type = LlvmIntType.I64 },
+                    new LlvmConstant { Value = ResolveCallerOwnedArrayStorageBytes(callerStorage.Storage), Type = LlvmIntType.I64 },
                     capacityArg,
                     sizeArg,
                     policy.Retain,

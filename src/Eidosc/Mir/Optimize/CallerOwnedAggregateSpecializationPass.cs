@@ -244,6 +244,7 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                         if (_plans.TryGetValue(rewrite.Target, out var targetPlan))
                         {
                             changed |= AddArrayStorages(plan, targetPlan.ArrayStorages.Values);
+                            changed |= AddArrayStorages(targetPlan, plan.ArrayStorages.Values);
                         }
                     }
                 }
@@ -434,6 +435,7 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             if (_plans.TryGetValue(variant, out var variantPlan))
             {
                 plan.AddArrayStorages(variantPlan.ArrayStorages.Values);
+                variantPlan.AddArrayStorages(plan.ArrayStorages.Values);
             }
             return true;
         }
@@ -594,7 +596,11 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                     ArrayTypeId = target.TypeId,
                     Capacity = capacity,
                     ElementSize = elementSize,
-                    StorageBytes = storageBytes
+                    StorageBytes = storageBytes,
+                    // Constant capacity plus the alias-group proof make the
+                    // storage eligible for inline header/data lowering; the
+                    // converter applies the final element-layout gate.
+                    PromoteInline = true
                 });
             }
 
