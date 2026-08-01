@@ -49,7 +49,10 @@ public sealed class RuntimeArrayRangeSpecializationPass : IMirOptimizationPass
             }
         }
 
-        return module;
+        // The module is mutated in place; wrap it in a fresh object when
+        // variants were created so the optimizer's reference-identity change
+        // detection reports the specialization.
+        return addedVariants.Count > 0 ? module.WithFunctions(module.Functions) : module;
     }
 
     private static IEnumerable<SliceSite> FindSliceSites(MirFunc function)
