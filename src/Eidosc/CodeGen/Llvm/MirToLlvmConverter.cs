@@ -81,7 +81,8 @@ public sealed partial class MirToLlvmConverter
     private readonly Dictionary<LocalId, LlvmValue> _callerOwnedStorageByCanonicalLocal = [];
     private readonly Dictionary<LocalId, LlvmStructType> _callerOwnedWrapperTypeByCanonicalLocal = [];
     private readonly Dictionary<(LocalId CanonicalLocal, string Key), LlvmValue> _callerOwnedArrayStorageByGroup = [];
-    private readonly Dictionary<LocalId, (LlvmValue Pointer, long StorageBytes)> _callerOwnedOutArrayStorageByLocal = [];
+    private readonly Dictionary<LocalId, (LlvmValue Pointer, MirCallerOwnedArrayStorage Storage)> _callerOwnedOutArrayStorageByLocal = [];
+    private readonly Dictionary<string, int> _callerOwnedStorageFieldIndexByKey = [];
     private LlvmValue? _callerOwnedOutDestination;
     public List<Diagnostic.Diagnostic> Diagnostics { get; } = [];
 
@@ -250,6 +251,13 @@ public sealed partial class MirToLlvmConverter
             {
                 RegisterFunctionType(func);
             }
+        }
+
+        // Record caller-owned array storage field indexes up front so promoted
+        // array operations resolve regardless of function conversion order.
+        foreach (var func in module.Functions)
+        {
+            RecordCallerOwnedStorageFieldIndexes(func);
         }
 
         LlvmModule llvmModule;
@@ -707,7 +715,7 @@ public sealed partial class MirToLlvmConverter
                     _callerOwnedOutArrayStorageByLocal[storage.ArrayLocal] =
                     (
                         new LlvmLocal { Name = storageParameter.Name, Type = storageParameter.Type },
-                        ResolveCallerOwnedArrayStorageBytes(storage)
+                        storage
                     );
                 }
             }

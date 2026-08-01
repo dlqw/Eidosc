@@ -546,6 +546,14 @@ public sealed record MirCallerOwnedArrayStorage
     public long ElementSize { get; init; }
 
     public long StorageBytes { get; init; }
+
+    /// <summary>
+    /// When true, the array is uniquely owned, stack-resident and backed by a
+    /// compile-time capacity with a known unmanaged element layout, so length
+    /// reads, indexed loads/stores and push can be lowered inline against the
+    /// caller-owned storage instead of dispatching through the runtime.
+    /// </summary>
+    public bool PromoteInline { get; init; }
 }
 
 /// <summary>
