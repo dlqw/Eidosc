@@ -98,6 +98,33 @@ public sealed class MirModule
     /// </summary>
     public List<MirSpecializationFailureInfo> SpecializationFailures { get; init; } = [];
 
+    /// <summary>
+    /// Returns a new module that shares every field except the function list
+    /// reference, so in-place optimization passes can report a change by
+    /// wrapping their mutated state in a fresh object (the optimizer detects
+    /// changes by reference identity).
+    /// </summary>
+    public MirModule WithFunctions(List<MirFunc> functions) => new()
+    {
+        Name = Name,
+        PackageAlias = PackageAlias,
+        PackageInstanceKey = PackageInstanceKey,
+        Path = Path,
+        Functions = functions,
+        DynamicTypeKeys = DynamicTypeKeys,
+        TypeDescriptors = TypeDescriptors,
+        LinkLibraries = LinkLibraries,
+        Span = Span,
+        CStructAccessors = CStructAccessors,
+        ConstructorLayouts = ConstructorLayouts,
+        CopyLikeTypeIds = CopyLikeTypeIds,
+        TraitImpls = TraitImpls,
+        TraitInfos = TraitInfos,
+        TypeAliases = TypeAliases,
+        TypeConstructors = TypeConstructors,
+        SpecializationFailures = SpecializationFailures
+    };
+
     public override string ToString() => $"module {Name}";
 }
 

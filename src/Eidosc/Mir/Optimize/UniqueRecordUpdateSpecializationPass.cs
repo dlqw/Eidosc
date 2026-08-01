@@ -194,7 +194,10 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
             }
         }
 
-        return module;
+        // The module is mutated in place; wrap it in a fresh object when
+        // variants were created so the optimizer's reference-identity change
+        // detection reports the specialization.
+        return module.Functions.Count > originals.Count ? module.WithFunctions(module.Functions) : module;
     }
 
     private static HashSet<string> FindSpecializationCandidates(

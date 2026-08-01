@@ -622,4 +622,68 @@ public partial class MirOptimizerTests
         TypeId RecordType,
         TypeId ArrayType,
         LocalId ArrayLocal);
+
+    [Fact]
+    public void CallerOwnedAggregate_ReportsChangeWhenVariantsAreCreated()
+    {
+        var fixture = CreateCallerOwnedAggregateFixture();
+        var inputFunctionCount = fixture.Module.Functions.Count;
+        var optimizer = new MirOptimizer();
+        optimizer.RegisterPass(new CallerOwnedAggregateSpecializationPass());
+
+        var result = optimizer.OptimizeWithResult(fixture.Module);
+
+        Assert.True(result.Changed, "in-place variant creation must be reported as a change");
+        var stats = Assert.Single(result.PassStats);
+        Assert.True(stats.Changed);
+        Assert.Equal(inputFunctionCount + 1, stats.OutputFunctionCount);
+        Assert.NotEqual(MirOptimizationChangeKind.None, stats.ChangeKind);
+    }
+
+    [Fact]
+    public void CallerOwnedAggregate_NoCandidates_ReportsNoChange()
+    {
+        var fixture = CreateCallerOwnedAggregateFixture();
+        var module = new MirModule
+        {
+            Name = "plain",
+            Functions =
+            [
+                new MirFunc
+                {
+                    Name = "plain_fn",
+                    FunctionId = Identity("plain_fn"),
+                    ReturnType = new TypeId(BaseTypes.IntId),
+                    EntryBlockId = new BlockId { Value = 1 },
+                    Locals = [new MirLocal { Id = new LocalId { Value = 1 }, Name = "x", TypeId = new TypeId(BaseTypes.IntId) }],
+                    BasicBlocks =
+                    [
+                        new MirBasicBlock
+                        {
+                            Id = new BlockId { Value = 1 },
+                            IsEntry = true,
+                            Instructions = [],
+                            Terminator = new MirReturn
+                            {
+                                Value = new MirConstant
+                                {
+                                    TypeId = new TypeId(BaseTypes.IntId),
+                                    Value = new MirConstantValue.IntValue(0)
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        };
+        var optimizer = new MirOptimizer();
+        optimizer.RegisterPass(new CallerOwnedAggregateSpecializationPass());
+
+        var result = optimizer.OptimizeWithResult(module);
+
+        Assert.False(result.Changed);
+        var stats = Assert.Single(result.PassStats);
+        Assert.False(stats.Changed);
+        Assert.Equal(MirOptimizationChangeKind.None, stats.ChangeKind);
+    }
 }

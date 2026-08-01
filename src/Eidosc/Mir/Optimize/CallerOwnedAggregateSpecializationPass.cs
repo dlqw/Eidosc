@@ -38,6 +38,7 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
         var committedParamVariants = new Dictionary<string, MirFunc>(StringComparer.Ordinal);
         var committedOutVariants = new Dictionary<string, MirFunc>(StringComparer.Ordinal);
         var variantsCreated = 0;
+        var storageTypeIds = PlanningTransaction.CollectStorageTypeIds(module, outCandidates);
 
         foreach (var caller in snapshot)
         {
@@ -63,7 +64,8 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                     outCandidates,
                     committedParamVariants,
                     committedOutVariants,
-                    MaxVariants - variantsCreated);
+                    MaxVariants - variantsCreated,
+                    storageTypeIds);
                 if (!transaction.TryPlanTopLevel(caller, seed))
                 {
                     rejectedSeeds.Add(seed);
@@ -74,7 +76,10 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             }
         }
 
-        return module;
+        // The module is mutated in place; wrap it in a fresh object when
+        // variants were created so the optimizer's reference-identity change
+        // detection reports the specialization.
+        return variantsCreated > 0 ? module.WithFunctions(module.Functions) : module;
     }
 
     private static MirCall? FindOutCandidateCall(
@@ -166,10 +171,13 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
         private readonly IReadOnlyDictionary<string, MirFunc> _committedParamVariants;
         private readonly IReadOnlyDictionary<string, MirFunc> _committedOutVariants;
         private readonly int _variantBudget;
+        private readonly IReadOnlySet<int> _storageTypeIds;
         private readonly Dictionary<string, MirFunc> _newParamVariants = new(StringComparer.Ordinal);
         private readonly Dictionary<string, MirFunc> _newOutVariants = new(StringComparer.Ordinal);
         private readonly Dictionary<MirFunc, FunctionPlan> _plans = new(ReferenceEqualityComparer.Instance);
         private readonly HashSet<string> _planningVariants = new(StringComparer.Ordinal);
+        private readonly Dictionary<(string, int), ParamEscapeInfo> _paramEscapeCache = [];
+        private readonly HashSet<(string, int)> _paramEscapeVisiting = [];
 
         public PlanningTransaction(
             MirModule module,
@@ -177,7 +185,8 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             IReadOnlyDictionary<string, MirFunc> outCandidates,
             IReadOnlyDictionary<string, MirFunc> committedParamVariants,
             IReadOnlyDictionary<string, MirFunc> committedOutVariants,
-            int variantBudget)
+            int variantBudget,
+            IReadOnlySet<int> storageTypeIds)
         {
             _module = module;
             _functions = functions;
@@ -185,6 +194,34 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             _committedParamVariants = committedParamVariants;
             _committedOutVariants = committedOutVariants;
             _variantBudget = variantBudget;
+            _storageTypeIds = storageTypeIds;
+        }
+
+        /// <summary>
+        /// The concrete Seq types backed by caller-owned inline storages across the
+        /// module's out candidates. A value of one of these types stored in a
+        /// record field is a pointer into the owning frame's stack blob, so
+        /// projections of those fields must not escape the frame.
+        /// </summary>
+        public static HashSet<int> CollectStorageTypeIds(
+            MirModule module,
+            IReadOnlyDictionary<string, MirFunc> outCandidates)
+        {
+            var storageTypeIds = new HashSet<int>();
+            foreach (var candidate in outCandidates.Values)
+            {
+                if (!TryGetOutReturnLocals(module, candidate, out var returnLocals))
+                {
+                    continue;
+                }
+
+                foreach (var storage in FindCallerOwnedOutArrayStorages(candidate, returnLocals))
+                {
+                    storageTypeIds.Add(storage.ArrayTypeId.Value);
+                }
+            }
+
+            return storageTypeIds;
         }
 
         public bool TryPlanTopLevel(MirFunc caller, MirCall seed)
@@ -286,6 +323,7 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
 
             var plan = new FunctionPlan(function, group, typeId, parameterIndex);
             _plans[function] = plan;
+            BuildProjectedLocals(plan);
             foreach (var block in function.BasicBlocks)
             {
                 for (var index = 0; index < block.Instructions.Count; index++)
@@ -297,8 +335,15 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                     }
                 }
 
-                if (block.Terminator is MirReturn { Value: MirPlace { Kind: PlaceKind.Local, Local: var returned } } &&
-                    group.Contains(returned) && !allowOwnedReturn)
+                if (block.Terminator is not MirReturn { Value: MirPlace returnPlace } terminal)
+                {
+                    continue;
+                }
+
+                var returnedLocal = returnPlace.Kind == PlaceKind.Local ? returnPlace.Local : LocalId.None;
+                if ((!allowOwnedReturn && group.Contains(returnedLocal)) ||
+                    plan.ProjectedLocals.Contains(returnedLocal) ||
+                    IsStorageTypedGroupProjection(returnPlace, plan))
                 {
                     _plans.Remove(function);
                     return false;
@@ -315,12 +360,14 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             switch (instruction)
             {
                 case MirCopy copy when IsDirectGroupLocal(copy.Source, group):
-                case MirCaseInject injection when IsDirectGroupLocal(injection.Operand, group):
+                case MirCaseInject injection when IsDirectGroupLocal(injection.Operand, group) ||
+                                                   OperandContainsProjected(injection.Operand, plan):
                 case MirAlloc alloc when group.Contains(alloc.Target.Local):
                     return false;
 
-                case MirStore store when IsDirectGroupLocal(store.Value, group):
-                    return store.Target.Kind == PlaceKind.Local && group.Contains(store.Target.Local) ||
+                case MirStore store when IsDirectGroupLocal(store.Value, group) ||
+                                         IsProjectedOperandValue(store.Value, plan):
+                    return IsGroupOwnedStoreTarget(store, plan) ||
                            TryGetDestructiveLocalCarrierMoveTarget(
                                plan.Function,
                                block,
@@ -328,8 +375,10 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                                store,
                                out _);
 
-                case MirBinOp binary when OperandContainsGroup(binary.Left, group) || OperandContainsGroup(binary.Right, group):
-                case MirUnaryOp unary when OperandContainsGroup(unary.Operand, group):
+                case MirBinOp binary when OperandContainsGroup(binary.Left, group) || OperandContainsGroup(binary.Right, group) ||
+                                           OperandContainsProjected(binary.Left, plan) || OperandContainsProjected(binary.Right, plan):
+                case MirUnaryOp unary when OperandContainsGroup(unary.Operand, group) ||
+                                            OperandContainsProjected(unary.Operand, plan):
                     return false;
 
                 case MirCall call:
@@ -381,7 +430,7 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
 
             if (directGroupArguments.Length == 0)
             {
-                return !targetInGroup;
+                return ValidateNoGroupArgumentCall(plan, call, targetInGroup);
             }
 
             if (call.Function is not MirFunctionRef directRef)
@@ -439,6 +488,471 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             }
             return true;
         }
+
+        /// <summary>
+        /// Validates a call that passes no whole-group argument but may pass a
+        /// projection of a group local whose value is a pointer into the owning
+        /// frame's stack blob. Such a pointer must not reach an external
+        /// function, a retaining callee, or an escaping return; known-safe
+        /// array intrinsics and in-module callees proven not to retain the
+        /// value are accepted, and array-returning intrinsics/callees taint the
+        /// call target so later escapes of the result stay checked.
+        /// </summary>
+    private bool ValidateNoGroupArgumentCall(FunctionPlan plan, MirCall call, bool targetInGroup)
+        {
+            var projectedArgumentIndices = call.Arguments
+                .Select((argument, index) => (argument, index))
+                .Where(pair => IsProjectedArgument(pair.argument, plan))
+                .Select(static pair => pair.index)
+                .ToArray();
+            if (projectedArgumentIndices.Length == 0)
+            {
+                return !targetInGroup;
+            }
+
+            if (call.Function is not MirFunctionRef projectedRef)
+            {
+                return false;
+            }
+
+            if (TypeSemantics.IsAdtConstructorCall(projectedRef))
+            {
+                // A record update / fresh record whose field holds the array
+                // stays inside the frame when the target is group-owned.
+                return targetInGroup;
+            }
+
+            if (IsReadOnlyArrayIntrinsic(projectedRef))
+            {
+                return !targetInGroup;
+            }
+
+            if (IsArrayReturningIntrinsic(projectedRef))
+            {
+                TaintCallTarget(plan, call);
+                return !targetInGroup;
+            }
+
+            if (TryResolveFunction(projectedRef, out var template) &&
+                !template.IsExternal &&
+                !template.IsRuntimeWordAbi &&
+                (template.BasicBlocks.Count > 0 || IsKnownSafeIntrinsicTemplate(template)) &&
+                projectedArgumentIndices[0] < template.Locals.Count(static local => local.IsParameter))
+            {
+                var info = AnalyzeParamEscape(template, projectedArgumentIndices[0]);
+                if (info.EscapesToMemory)
+                {
+                    return false;
+                }
+
+                if (info.ReturnsParamDerived)
+                {
+                    TaintCallTarget(plan, call);
+                }
+
+                return !targetInGroup;
+            }
+
+            return false;
+        }
+
+        private static void TaintCallTarget(FunctionPlan plan, MirCall call)
+        {
+            if (call.Target is MirPlace { Kind: PlaceKind.Local, Local: var target })
+            {
+                plan.ProjectedLocals.Add(target);
+            }
+        }
+
+        /// <summary>
+        /// Builds the set of locals in the current function whose value is (or
+        /// is derived from) a projection of a group local that is backed by a
+        /// caller-owned inline array storage. Those values are pointers into
+        /// the owning frame's stack blob and must not escape it.
+        /// </summary>
+        private void BuildProjectedLocals(FunctionPlan plan)
+        {
+            var projected = plan.ProjectedLocals;
+            var changed = true;
+            while (changed)
+            {
+                changed = false;
+                foreach (var block in plan.Function.BasicBlocks)
+                {
+                    foreach (var instruction in block.Instructions)
+                    {
+                        changed |= instruction switch
+                        {
+                            MirLoad
+                            {
+                                Source: MirPlace source,
+                                Target: { Kind: PlaceKind.Local } target
+                            } when IsStorageTypedGroupProjection(source, plan) => projected.Add(target.Local),
+
+                            MirStore
+                            {
+                                Value: MirPlace { Kind: PlaceKind.Local, Local: var stored },
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when projected.Contains(stored) => projected.Add(target),
+
+                            MirCopy { Source: MirPlace { Kind: PlaceKind.Local, Local: var from }, Target.Kind: PlaceKind.Local } copy
+                                when projected.Contains(from) => projected.Add(copy.Target.Local),
+                            MirMove { Source: MirPlace { Kind: PlaceKind.Local, Local: var from }, Target.Kind: PlaceKind.Local } move
+                                when projected.Contains(from) => projected.Add(move.Target.Local),
+                            MirAssign { Source: MirPlace { Kind: PlaceKind.Local, Local: var from }, Target.Kind: PlaceKind.Local } assign
+                                when projected.Contains(from) => projected.Add(assign.Target.Local),
+
+                            MirCall
+                            {
+                                Target: { Kind: PlaceKind.Local } target,
+                                Function: MirFunctionRef functionRef
+                            } call when IsArrayReturningIntrinsic(functionRef) &&
+                                          call.Arguments.Any(argument => IsProjectedArgument(argument, plan)) =>
+                                projected.Add(target.Local),
+
+                            MirCall
+                            {
+                                Target: { Kind: PlaceKind.Local } target,
+                                Function: MirFunctionRef functionRef
+                            } call when TryResolveFunction(functionRef, out var callee) &&
+                                          !callee.IsExternal &&
+                                          call.Arguments.Any(argument => IsProjectedArgument(argument, plan)) =>
+                                TaintFromCalleeReturn(plan, callee, call.Arguments, target.Local),
+
+                            _ => false
+                        };
+                    }
+                }
+            }
+        }
+
+        private bool TaintFromCalleeReturn(
+            FunctionPlan plan,
+            MirFunc callee,
+            IReadOnlyList<MirOperand> arguments,
+            LocalId target)
+        {
+            for (var index = 0; index < arguments.Count; index++)
+            {
+                if (!IsProjectedArgument(arguments[index], plan))
+                {
+                    continue;
+                }
+
+                var parameters = callee.Locals.Count(static local => local.IsParameter);
+                if (index >= parameters)
+                {
+                    return false;
+                }
+
+                if (AnalyzeParamEscape(callee, index).ReturnsParamDerived)
+                {
+                    return plan.ProjectedLocals.Add(target);
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when the place is a Field/Index/Deref projection of a group (or
+        /// projected) local whose value type is one of the module's inline
+        /// storage types — i.e. the place names a blob-interior pointer.
+        /// </summary>
+        private bool IsStorageTypedGroupProjection(MirPlace place, FunctionPlan plan)
+        {
+            if (place.Kind == PlaceKind.Local)
+            {
+                return false;
+            }
+
+            if (!_storageTypeIds.Contains(place.TypeId.Value))
+            {
+                return false;
+            }
+
+            return ResolvePlaceRootLocal(place) is { } root &&
+                   (plan.Group.Contains(root) || plan.ProjectedLocals.Contains(root));
+        }
+
+        private static LocalId? ResolvePlaceRootLocal(MirPlace? place)
+        {
+            while (place != null)
+            {
+                switch (place.Kind)
+                {
+                    case PlaceKind.Local:
+                        return place.Local;
+                    case PlaceKind.Deref:
+                        place = place.Base;
+                        continue;
+                    case PlaceKind.Field:
+                        place = place.Base;
+                        continue;
+                    case PlaceKind.Index:
+                        place = place.Base;
+                        continue;
+                    default:
+                        return null;
+                }
+            }
+
+            return null;
+        }
+
+        private bool IsProjectedArgument(MirOperand operand, FunctionPlan plan) => operand switch
+        {
+            MirPlace { Kind: PlaceKind.Local, Local: var local } => plan.ProjectedLocals.Contains(local),
+            MirPlace place => IsStorageTypedGroupProjection(place, plan),
+            _ => false
+        };
+
+        private bool IsProjectedOperandValue(MirOperand operand, FunctionPlan plan) => operand switch
+        {
+            MirPlace { Kind: PlaceKind.Local, Local: var local } => plan.ProjectedLocals.Contains(local),
+            MirPlace place => IsStorageTypedGroupProjection(place, plan),
+            _ => false
+        };
+
+        private static bool OperandContainsProjected(MirOperand? operand, FunctionPlan plan) => operand switch
+        {
+            MirPlace { Kind: PlaceKind.Local, Local: var local } => plan.ProjectedLocals.Contains(local),
+            MirPlace place => OperandContainsProjected(place.Base, plan) || OperandContainsProjected(place.Index, plan),
+            _ => false
+        };
+
+        private bool IsGroupOwnedStoreTarget(MirStore store, FunctionPlan plan)
+        {
+            if (store.Target is MirPlace { Kind: PlaceKind.Local, Local: var target } &&
+                plan.Group.Contains(target))
+            {
+                return true;
+            }
+
+            return store.Target is MirPlace targetPlace &&
+                   IsStorageTypedGroupProjection(targetPlace, plan);
+        }
+
+        /// <summary>
+        /// Empty-bodied templates (array intrinsics lowered from prelude
+        /// wrappers) are safe to analyze: their parameter cannot escape.
+        /// Matched by the builtin name because the template carries a valid
+        /// symbol id, which the runtime identity check rejects.
+        /// </summary>
+        private static bool IsKnownSafeIntrinsicTemplate(MirFunc template) =>
+            template.FunctionId.Name is WellKnownStrings.InternalNames.ArrayLength or
+                WellKnownStrings.InternalNames.ArrayGet or
+                WellKnownStrings.InternalNames.ArrayRangeLength or
+                WellKnownStrings.InternalNames.ArrayRangeGet or
+                WellKnownStrings.InternalNames.ArrayTake or
+                WellKnownStrings.InternalNames.ArraySlice or
+                WellKnownStrings.InternalNames.ArrayPush or
+                WellKnownStrings.InternalNames.ArrayPrepend or
+                WellKnownStrings.InternalNames.ArrayShiftPrepend or
+                WellKnownStrings.InternalNames.ArrayTailShiftPrepend or
+                WellKnownStrings.InternalNames.ArrayTailShiftPrependUnique or
+                WellKnownStrings.InternalNames.ArrayExtend or
+                WellKnownStrings.InternalNames.TypeId;
+
+        private static bool IsReadOnlyArrayIntrinsic(MirFunctionRef functionRef) =>
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayLength) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayGet) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayRangeLength) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayRangeGet) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.TypeId);
+
+        private static bool IsArrayReturningIntrinsic(MirFunctionRef functionRef) =>
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayTake) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArraySlice) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayPush) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayPrepend) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayShiftPrepend) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayTailShiftPrepend) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayTailShiftPrependUnique) ||
+            MirRuntimeFunctions.HasIdentity(functionRef, WellKnownStrings.InternalNames.ArrayExtend);
+
+        /// <summary>
+        /// Analyzes whether a callee lets a value received at the given
+        /// parameter position escape its own frame. EscapesToMemory means the
+        /// value reaches an external function or a non-local store (the caller
+        /// must reject the call); ReturnsParamDerived means the value (or a
+        /// value derived from it) may be returned, so the caller must taint its
+        /// own call target.
+        /// </summary>
+        private ParamEscapeInfo AnalyzeParamEscape(MirFunc function, int parameterIndex)
+        {
+            var key = (MirFunctionIdentity.GetStableKey(function), parameterIndex);
+            if (_paramEscapeCache.TryGetValue(key, out var cached))
+            {
+                return cached;
+            }
+
+            if (!_paramEscapeVisiting.Add(key))
+            {
+                // A call cycle: be conservative and reject the call.
+                return new ParamEscapeInfo(EscapesToMemory: true, ReturnsParamDerived: false);
+            }
+
+            var parameters = function.Locals.Where(static local => local.IsParameter).ToArray();
+            var result = parameterIndex >= parameters.Length
+                ? new ParamEscapeInfo(EscapesToMemory: true, ReturnsParamDerived: false)
+                : AnalyzeParamFlows(function, BuildCalleeAliasClosure(function, parameters[parameterIndex].Id));
+            _paramEscapeVisiting.Remove(key);
+            _paramEscapeCache[key] = result;
+            return result;
+        }
+
+        private HashSet<LocalId> BuildCalleeAliasClosure(MirFunc function, LocalId seed)
+        {
+            var aliases = new HashSet<LocalId> { seed };
+            var changed = true;
+            while (changed)
+            {
+                changed = false;
+                foreach (var block in function.BasicBlocks)
+                {
+                    foreach (var instruction in block.Instructions)
+                    {
+                        changed |= instruction switch
+                        {
+                            MirAssign
+                            {
+                                Source: MirPlace { Kind: PlaceKind.Local, Local: var source },
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when aliases.Contains(source) => aliases.Add(target),
+                            MirMove
+                            {
+                                Source: MirPlace { Kind: PlaceKind.Local, Local: var source },
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when aliases.Contains(source) => aliases.Add(target),
+                            MirCopy
+                            {
+                                Source: MirPlace { Kind: PlaceKind.Local, Local: var source },
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when aliases.Contains(source) => aliases.Add(target),
+                            MirLoad
+                            {
+                                Source: MirPlace { Kind: PlaceKind.Local, Local: var source },
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when aliases.Contains(source) => aliases.Add(target),
+                            MirLoad
+                            {
+                                Source: MirPlace source,
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when ResolvePlaceRootLocal(source) is { } root &&
+                                      aliases.Contains(root) &&
+                                      _storageTypeIds.Contains(source.TypeId.Value) => aliases.Add(target),
+                            MirStore
+                            {
+                                Value: MirPlace { Kind: PlaceKind.Local, Local: var stored },
+                                Target: { Kind: PlaceKind.Local, Local: var target }
+                            } when aliases.Contains(stored) => aliases.Add(target),
+                            MirCall
+                            {
+                                Target: { Kind: PlaceKind.Local, Local: var target },
+                                Function: MirFunctionRef functionRef
+                            } call when IsArrayReturningIntrinsic(functionRef) &&
+                                          call.Arguments.OfType<MirPlace>().Any(argument =>
+                                              argument.Kind == PlaceKind.Local &&
+                                              aliases.Contains(argument.Local)) => aliases.Add(target),
+                            MirCall
+                            {
+                                Target: { Kind: PlaceKind.Local, Local: var target },
+                                Function: MirFunctionRef functionRef
+                            } call when !IsReadOnlyArrayIntrinsic(functionRef) &&
+                                          function.Locals.FirstOrDefault(local => local.Id == target) is { } targetLocal &&
+                                          call.Arguments.OfType<MirPlace>().Any(argument =>
+                                              argument.Kind == PlaceKind.Local &&
+                                              aliases.Contains(argument.Local) &&
+                                              argument.TypeId == targetLocal.TypeId) => aliases.Add(target),
+                            _ => false
+                        };
+                    }
+                }
+            }
+
+            return aliases;
+        }
+
+        private ParamEscapeInfo AnalyzeParamFlows(MirFunc function, IReadOnlySet<LocalId> aliases)
+        {
+            var escapesToMemory = false;
+            var returnsParamDerived = false;
+            foreach (var block in function.BasicBlocks)
+            {
+                if (block.Terminator is MirReturn { Value: MirPlace { Kind: PlaceKind.Local, Local: var returned } } &&
+                    aliases.Contains(returned))
+                {
+                    returnsParamDerived = true;
+                }
+
+                foreach (var instruction in block.Instructions)
+                {
+                    switch (instruction)
+                    {
+                        case MirStore
+                        {
+                            Value: MirPlace { Kind: PlaceKind.Local, Local: var stored },
+                            Target.Kind: not PlaceKind.Local
+                        } when aliases.Contains(stored):
+                            escapesToMemory = true;
+                            break;
+
+                        case MirCall call:
+                            foreach (var (argument, index) in call.Arguments
+                                         .Select((argument, index) => (argument, index))
+                                         .Where(pair => pair.argument is MirPlace { Kind: PlaceKind.Local, Local: var local } &&
+                                                        aliases.Contains(local)))
+                            {
+                                if (call.Function is not MirFunctionRef functionRef)
+                                {
+                                    escapesToMemory = true;
+                                    break;
+                                }
+
+                                if (IsReadOnlyArrayIntrinsic(functionRef) ||
+                                    IsArrayReturningIntrinsic(functionRef))
+                                {
+                                    if (IsArrayReturningIntrinsic(functionRef))
+                                    {
+                                        returnsParamDerived = true;
+                                    }
+
+                                    continue;
+                                }
+
+                                if (TypeSemantics.IsAdtConstructorCall(functionRef))
+                                {
+                                    continue;
+                                }
+
+                                if (TryResolveFunction(functionRef, out var callee) &&
+                                    !callee.IsExternal &&
+                                    callee.BasicBlocks.Count > 0 &&
+                                    !callee.IsRuntimeWordAbi &&
+                                    index < callee.Locals.Count(static local => local.IsParameter))
+                                {
+                                    var sub = AnalyzeParamEscape(callee, index);
+                                    escapesToMemory |= sub.EscapesToMemory;
+                                    returnsParamDerived |= sub.ReturnsParamDerived;
+                                    continue;
+                                }
+
+                                escapesToMemory = true;
+                                break;
+                            }
+
+                            break;
+                    }
+                }
+            }
+
+            return new ParamEscapeInfo(escapesToMemory, returnsParamDerived);
+        }
+
+        private sealed record ParamEscapeInfo(bool EscapesToMemory, bool ReturnsParamDerived);
 
         private MirFunc? GetOrCreateOutVariant(MirFunc template)
         {
@@ -527,7 +1041,36 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
 
         private bool TryResolveFunction(MirFunctionRef functionRef, out MirFunc function)
         {
-            return _functions.TryGetValue(MirFunctionIdentity.GetStableKey(functionRef), out function!);
+            if (_functions.TryGetValue(MirFunctionIdentity.GetStableKey(functionRef), out function!))
+            {
+                return true;
+            }
+
+            // Cloned call sites may carry a symbol-id key while the function
+            // entry is keyed by its stable identity (specialized clones lose
+            // the stable identity key on the reference side); fall back to a
+            // name-then-symbol scan over the module's functions, preferring
+            // the name match so a specialized clone is not shadowed by the
+            // original template that shares its symbol id.
+            foreach (var candidate in _module.Functions)
+            {
+                if (string.Equals(candidate.Name, functionRef.Name, StringComparison.Ordinal))
+                {
+                    function = candidate;
+                    return true;
+                }
+            }
+
+            foreach (var candidate in _module.Functions)
+            {
+                if (functionRef.SymbolId.IsValid && candidate.SymbolId == functionRef.SymbolId)
+                {
+                    function = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private bool HasExactSingleConstructor(TypeId typeId) =>
@@ -1306,6 +1849,14 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             int ParameterIndex)
         {
             public List<CallRewrite> Rewrites { get; } = [];
+
+            /// <summary>
+            /// Locals whose value is (or is derived from) a projection of a
+            /// group local backed by an inline array storage — pointers into
+            /// the owning frame's stack blob that must not escape the frame.
+            /// Grows during validation as array-returning calls are accepted.
+            /// </summary>
+            public HashSet<LocalId> ProjectedLocals { get; } = [];
 
             public Dictionary<string, MirCallerOwnedArrayStorage> ArrayStorages { get; } =
                 new(StringComparer.Ordinal);
