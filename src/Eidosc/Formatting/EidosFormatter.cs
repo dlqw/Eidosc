@@ -32,6 +32,8 @@ public static class EidosFormatter
         "then", "else", "with"
     };
 
+    private static readonly string[] AlignmentOperators = ["::", ":=", "=>", ":"];
+
     public static EidosFormatResult Format(
         string sourceText,
         string inputFile = "stdin.eidos",
@@ -171,10 +173,14 @@ public static class EidosFormatter
             }
 
             var formatted = CollapseEmptyBlocks(_builder.ToString());
+            formatted = CompactStructuralBlocks(formatted);
             formatted = CompactSimpleIfExpressions(formatted);
             formatted = CompactSimpleConditionalBranches(formatted);
+            formatted = CompactSimpleConditionalHeads(formatted);
             formatted = FormatSelectionExpressions(formatted);
-            return ExpandMultilineConditionalBlocks(formatted);
+            formatted = ExpandMultilineConditionalBlocks(formatted);
+            formatted = NormalizeDefinitionSpacing(formatted);
+            return AlignBindingOperators(formatted);
         }
 
         private void WriteToken(string text, string? nextText)
@@ -216,7 +222,7 @@ public static class EidosFormatter
                         _containers.Pop();
                     }
                     _previousText = text;
-                    if (nextText is "else" or "with" or "," or ";" or ")" or "]")
+                    if (nextText is "else" or "with" or "=>" or "," or ";" or ")" or "]")
                     {
                         return;
                     }
@@ -575,7 +581,226 @@ public static class EidosFormatter
         {
             return text.Length > 0 &&
                    !text.StartsWith("//", StringComparison.Ordinal) &&
-                   text.IndexOfAny(['{', '}', ';']) < 0;
+                   !text.Contains(';') &&
+                   HasOnlyStructuralBraces(text);
+        }
+
+        private string CompactStructuralBlocks(string text)
+        {
+            var lines = text.Split(_newLine).ToList();
+            var changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (var index = lines.Count - 1; index >= 0; index--)
+                {
+                    if (!TryCompactStructuralBlock(lines, index, out var compactedLine, out var closeIndex))
+                    {
+                        continue;
+                    }
+
+                    lines[index] = compactedLine;
+                    lines.RemoveRange(index + 1, closeIndex - index);
+                    changed = true;
+                }
+            }
+
+            return string.Join(_newLine, lines);
+        }
+
+        private bool TryCompactStructuralBlock(
+            IReadOnlyList<string> lines,
+            int openLineIndex,
+            out string compactedLine,
+            out int closeLineIndex)
+        {
+            compactedLine = string.Empty;
+            closeLineIndex = openLineIndex;
+
+            var openLine = lines[openLineIndex].TrimEnd();
+            if (!openLine.EndsWith('{'))
+            {
+                return false;
+            }
+
+            var openBraceIndex = openLine.Length - 1;
+            if (!IsStructuralBraceAt(openLine, openBraceIndex))
+            {
+                return false;
+            }
+
+            var body = new StringBuilder();
+            var depth = 1;
+            for (var lineIndex = openLineIndex + 1; lineIndex < lines.Count; lineIndex++)
+            {
+                var line = lines[lineIndex];
+                var closeCharacterIndex = FindClosingBrace(line, ref depth);
+                var bodyPart = closeCharacterIndex >= 0 ? line[..closeCharacterIndex] : line;
+                AppendCompactPart(body, bodyPart);
+
+                if (closeCharacterIndex < 0)
+                {
+                    continue;
+                }
+
+                var suffix = line[(closeCharacterIndex + 1)..].TrimStart();
+                if (body.Length == 0 || body.ToString().Contains(';') ||
+                    body.ToString().Contains("//", StringComparison.Ordinal) ||
+                    !ContainsTopLevelFieldSeparator(body.ToString()))
+                {
+                    return false;
+                }
+
+                var openPrefix = openLine[..openBraceIndex].TrimEnd();
+                var openSeparator = openPrefix.EndsWith('.') ? string.Empty : " ";
+                var candidate = $"{openPrefix}{openSeparator}{{ {body} }}";
+                if (suffix.Length > 0)
+                {
+                    candidate += suffix[0] is ',' or ';' or ')' or ']'
+                        ? suffix
+                        : $" {suffix}";
+                }
+
+                if (candidate.Length > _options.MaxLineLength)
+                {
+                    return false;
+                }
+
+                compactedLine = candidate;
+                closeLineIndex = lineIndex;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static int FindClosingBrace(string line, ref int depth)
+        {
+            var quote = '\0';
+            var escaped = false;
+            for (var index = 0; index < line.Length; index++)
+            {
+                var ch = line[index];
+                if (quote != '\0')
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (ch == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (ch == quote)
+                    {
+                        quote = '\0';
+                    }
+                    continue;
+                }
+
+                if (ch is '\'' or '"')
+                {
+                    quote = ch;
+                }
+                else if (ch == '{')
+                {
+                    depth++;
+                }
+                else if (ch == '}' && --depth == 0)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        private static void AppendCompactPart(StringBuilder builder, string part)
+        {
+            var trimmed = part.Trim();
+            if (trimmed.Length == 0)
+            {
+                return;
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.Append(' ');
+            }
+            builder.Append(trimmed);
+        }
+
+        private static bool ContainsTopLevelFieldSeparator(string text)
+        {
+            return FindOperator(text, ":", requireTopLevel: true) >= 0;
+        }
+
+        private static bool HasOnlyStructuralBraces(string text)
+        {
+            var depth = 0;
+            var quote = '\0';
+            var escaped = false;
+            for (var index = 0; index < text.Length; index++)
+            {
+                var ch = text[index];
+                if (quote != '\0')
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (ch == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (ch == quote)
+                    {
+                        quote = '\0';
+                    }
+                    continue;
+                }
+
+                if (ch is '\'' or '"')
+                {
+                    quote = ch;
+                }
+                else if (ch == '{')
+                {
+                    if (!IsStructuralBraceAt(text, index))
+                    {
+                        return false;
+                    }
+                    depth++;
+                }
+                else if (ch == '}' && --depth < 0)
+                {
+                    return false;
+                }
+            }
+
+            return depth == 0;
+        }
+
+        private static bool IsStructuralBraceAt(string text, int braceIndex)
+        {
+            var index = braceIndex - 1;
+            while (index >= 0 && char.IsWhiteSpace(text[index]))
+            {
+                index--;
+            }
+
+            if (index >= 0 && text[index] == '.')
+            {
+                return true;
+            }
+
+            var identifierEnd = index;
+            while (index >= 0 && (char.IsLetterOrDigit(text[index]) || text[index] == '_'))
+            {
+                index--;
+            }
+
+            return identifierEnd > index && char.IsUpper(text[index + 1]);
         }
 
         private static bool TryParseCompactIfClose(string text, out string suffix)
@@ -729,6 +954,64 @@ public static class EidosFormatter
                 : [elseLine];
             consumedLines = 3;
             return true;
+        }
+
+        private string CompactSimpleConditionalHeads(string text)
+        {
+            var lines = text.Split(_newLine);
+            var compacted = new List<string>(lines.Length);
+            for (var index = 0; index < lines.Length; index++)
+            {
+                var head = lines[index].TrimEnd();
+                if (index + 1 >= lines.Length || FindTopLevelWord(head, "if") < 0)
+                {
+                    compacted.Add(lines[index]);
+                    continue;
+                }
+
+                var headIndentLength = lines[index].Length - lines[index].TrimStart().Length;
+                var thenLine = lines[index + 1];
+                var thenTrimmed = thenLine.Trim();
+                var thenIndentLength = thenLine.Length - thenLine.TrimStart().Length;
+                if (!thenTrimmed.StartsWith("then ", StringComparison.Ordinal) ||
+                    thenIndentLength != headIndentLength)
+                {
+                    compacted.Add(lines[index]);
+                    continue;
+                }
+
+                var thenCandidate = $"{head} {thenTrimmed}";
+                var candidate = thenCandidate;
+                var consumed = 2;
+                if (index + 2 < lines.Length)
+                {
+                    var elseLine = lines[index + 2];
+                    var elseTrimmed = elseLine.Trim();
+                    var elseIndentLength = elseLine.Length - elseLine.TrimStart().Length;
+                    if (elseTrimmed.StartsWith("else ", StringComparison.Ordinal) &&
+                        elseIndentLength == headIndentLength)
+                    {
+                        candidate += $" {elseTrimmed}";
+                        consumed++;
+                    }
+                }
+
+                if (candidate.Length > _options.MaxLineLength)
+                {
+                    candidate = thenCandidate;
+                    consumed = 2;
+                    if (candidate.Length > _options.MaxLineLength)
+                    {
+                        compacted.Add(lines[index]);
+                        continue;
+                    }
+                }
+
+                compacted.Add(candidate);
+                index += consumed - 1;
+            }
+
+            return string.Join(_newLine, compacted);
         }
 
         private string CollapseEmptyBlocks(string text)
@@ -1202,6 +1485,286 @@ public static class EidosFormatter
             elseBrace = $"{indent}{{";
             return true;
         }
+
+        private string NormalizeDefinitionSpacing(string text)
+        {
+            var hadFinalNewLine = text.EndsWith(_newLine, StringComparison.Ordinal);
+            var rawLines = text.Split(_newLine);
+            var lines = rawLines
+                .Take(hadFinalNewLine ? rawLines.Length - 1 : rawLines.Length)
+                .Select(static line => line.TrimEnd())
+                .Where(static line => !string.IsNullOrWhiteSpace(line))
+                .ToList();
+
+            var depths = CalculateLineStartBraceDepths(lines);
+            var definitionStarts = new HashSet<int>();
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (depths[index] != 0 || FindOperator(lines[index], "::", requireTopLevel: true) < 0)
+                {
+                    continue;
+                }
+
+                var start = index;
+                while (start > 0 && depths[start - 1] == 0 && IsDeclarationAttachmentLine(lines[start - 1]))
+                {
+                    start--;
+                }
+                definitionStarts.Add(start);
+            }
+
+            var normalized = new List<string>(lines.Count + definitionStarts.Count);
+            for (var index = 0; index < lines.Count; index++)
+            {
+                if (definitionStarts.Contains(index) && normalized.Count > 0 && normalized[^1].Length > 0)
+                {
+                    normalized.Add(string.Empty);
+                }
+                normalized.Add(lines[index]);
+            }
+
+            var result = string.Join(_newLine, normalized);
+            return hadFinalNewLine ? result + _newLine : result;
+        }
+
+        private static IReadOnlyList<int> CalculateLineStartBraceDepths(IReadOnlyList<string> lines)
+        {
+            var result = new int[lines.Count];
+            var depth = 0;
+            for (var index = 0; index < lines.Count; index++)
+            {
+                result[index] = depth;
+                depth = Math.Max(0, depth + CountBraceDelta(lines[index]));
+            }
+            return result;
+        }
+
+        private static int CountBraceDelta(string line)
+        {
+            var delta = 0;
+            var quote = '\0';
+            var escaped = false;
+            for (var index = 0; index < line.Length; index++)
+            {
+                var ch = line[index];
+                if (quote != '\0')
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (ch == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (ch == quote)
+                    {
+                        quote = '\0';
+                    }
+                    continue;
+                }
+
+                if (ch is '\'' or '"')
+                {
+                    quote = ch;
+                }
+                else if (ch == '{')
+                {
+                    delta++;
+                }
+                else if (ch == '}')
+                {
+                    delta--;
+                }
+                else if (ch == '/' && index + 1 < line.Length && line[index + 1] == '/')
+                {
+                    break;
+                }
+            }
+            return delta;
+        }
+
+        private static bool IsDeclarationAttachmentLine(string line)
+        {
+            var trimmed = line.TrimStart();
+            return trimmed.StartsWith("@[", StringComparison.Ordinal) ||
+                   trimmed.StartsWith("//", StringComparison.Ordinal) ||
+                   trimmed.StartsWith("/*", StringComparison.Ordinal) ||
+                   trimmed.StartsWith('*');
+        }
+
+        private string AlignBindingOperators(string text)
+        {
+            var hadFinalNewLine = text.EndsWith(_newLine, StringComparison.Ordinal);
+            var rawLines = text.Split(_newLine);
+            var lines = rawLines
+                .Take(hadFinalNewLine ? rawLines.Length - 1 : rawLines.Length)
+                .ToArray();
+
+            var index = 0;
+            while (index < lines.Length)
+            {
+                if (!TryGetAlignmentCandidate(lines[index], out var first))
+                {
+                    index++;
+                    continue;
+                }
+
+                var end = index + 1;
+                while (end < lines.Length &&
+                       TryGetAlignmentCandidate(lines[end], out var candidate) &&
+                       candidate.Operator == first.Operator &&
+                       candidate.IndentLength == first.IndentLength)
+                {
+                    end++;
+                }
+
+                if (end - index >= 2)
+                {
+                    AlignOperatorGroup(lines, index, end, first.Operator);
+                }
+                index = end;
+            }
+
+            var result = string.Join(_newLine, lines);
+            return hadFinalNewLine ? result + _newLine : result;
+        }
+
+        private void AlignOperatorGroup(string[] lines, int start, int end, string operatorText)
+        {
+            var candidates = new AlignmentCandidate[end - start];
+            var targetLeftLength = 0;
+            for (var index = start; index < end; index++)
+            {
+                TryGetAlignmentCandidate(lines[index], out var candidate);
+                candidates[index - start] = candidate;
+                targetLeftLength = Math.Max(targetLeftLength, candidate.Left.Length);
+            }
+
+            var aligned = new string[end - start];
+            for (var index = start; index < end; index++)
+            {
+                var candidate = candidates[index - start];
+                var mandatorySpace = operatorText == ":" ? 0 : 1;
+                var padding = targetLeftLength - candidate.Left.Length + mandatorySpace;
+                var right = candidate.Right.Length == 0 ? string.Empty : $" {candidate.Right}";
+                aligned[index - start] = $"{candidate.Left}{new string(' ', padding)}{operatorText}{right}";
+                if (aligned[index - start].Length > _options.MaxLineLength)
+                {
+                    return;
+                }
+            }
+
+            Array.Copy(aligned, 0, lines, start, aligned.Length);
+        }
+
+        private static bool TryGetAlignmentCandidate(string line, out AlignmentCandidate candidate)
+        {
+            candidate = default;
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            var indentLength = line.Length - line.TrimStart().Length;
+            foreach (var operatorText in AlignmentOperators)
+            {
+                var operatorIndex = FindOperator(line, operatorText, requireTopLevel: true);
+                if (operatorIndex < 0)
+                {
+                    continue;
+                }
+
+                var left = line[..operatorIndex].TrimEnd();
+                if (left.Length <= indentLength)
+                {
+                    return false;
+                }
+
+                candidate = new AlignmentCandidate(
+                    operatorText,
+                    indentLength,
+                    left,
+                    line[(operatorIndex + operatorText.Length)..].TrimStart());
+                return true;
+            }
+
+            return false;
+        }
+
+        private static int FindOperator(string text, string operatorText, bool requireTopLevel)
+        {
+            var parenDepth = 0;
+            var bracketDepth = 0;
+            var braceDepth = 0;
+            var quote = '\0';
+            var escaped = false;
+            for (var index = 0; index <= text.Length - operatorText.Length; index++)
+            {
+                var ch = text[index];
+                if (quote != '\0')
+                {
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (ch == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (ch == quote)
+                    {
+                        quote = '\0';
+                    }
+                    continue;
+                }
+
+                if (ch is '\'' or '"')
+                {
+                    quote = ch;
+                    continue;
+                }
+
+                if ((!requireTopLevel || parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) &&
+                    text.AsSpan(index).StartsWith(operatorText, StringComparison.Ordinal) &&
+                    (operatorText != ":" ||
+                     (index + 1 >= text.Length || text[index + 1] is not (':' or '=')) &&
+                     (index == 0 || text[index - 1] != ':')))
+                {
+                    return index;
+                }
+
+                switch (ch)
+                {
+                    case '(':
+                        parenDepth++;
+                        break;
+                    case ')':
+                        parenDepth--;
+                        break;
+                    case '[':
+                        bracketDepth++;
+                        break;
+                    case ']':
+                        bracketDepth--;
+                        break;
+                    case '{':
+                        braceDepth++;
+                        break;
+                    case '}':
+                        braceDepth--;
+                        break;
+                }
+            }
+
+            return -1;
+        }
+
+        private readonly record struct AlignmentCandidate(
+            string Operator,
+            int IndentLength,
+            string Left,
+            string Right);
 
         private static bool IsSignedNumber(string text)
         {

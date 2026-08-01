@@ -258,6 +258,117 @@ else render_error(_0)
     }
 
     [Fact]
+    public void Format_TopLevelDefinitions_AreSeparatedByBlankLines()
+    {
+        const string source = "First :: type { value :: Int }\n@[derive(Eq)]\nSecond :: type { value :: Int }\nmake :: Unit -> Int { 1 }";
+
+        var first = EidosFormatter.Format(source, options: NoValidation());
+        var second = EidosFormatter.Format(first.FormattedText, options: NoValidation());
+
+        Assert.True(first.Success);
+        Assert.Equal(
+            """
+            First :: type {
+                value :: Int
+            }
+
+            @[derive(Eq)]
+            Second :: type {
+                value :: Int
+            }
+
+            make :: Unit -> Int {
+                1
+            }
+
+            """.ReplaceLineEndings("\n"),
+            first.FormattedText.ReplaceLineEndings("\n"));
+        Assert.Equal(first.FormattedText, second.FormattedText);
+    }
+
+    [Fact]
+    public void Format_Conditional_RemovesWhitespaceOnlyLineBeforeThen()
+    {
+        const string source =
+            "advance :: State -> State {\n" +
+            "    state => if state.tick >= 8\n" +
+            "       \n" +
+            "    then\n" +
+            "    {\n" +
+            "        step(state)\n" +
+            "    }\n" +
+            "    else state\n" +
+            "}\n";
+
+        var result = EidosFormatter.Format(source, options: NoValidation());
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain("8\n\n", result.FormattedText.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("if state.tick >= 8 then step(state) else state", result.FormattedText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_AdjacentBindingOperators_AlignsColumnsWhenTheyFit()
+    {
+        const string source = """
+            Pair :: type {
+                x :: Int,
+                longer_name :: Int
+            }
+            choose :: Pair -> Int {
+                Pair { x: 0, longer_name: 0 } => 0,
+                Pair { x: value, longer_name: _ } => value
+            }
+            build :: Unit -> Pair {
+                _ => {
+                    x := 1;
+                    longer_name := 2;
+                    Pair {
+                        x: x,
+                        longer_name: longer_name,
+                        description: "This field deliberately keeps the structural value on multiple lines"
+                    }
+                }
+            }
+            """;
+
+        var result = EidosFormatter.Format(source, options: DefaultValidation());
+        var formatted = result.FormattedText.ReplaceLineEndings("\n");
+
+        Assert.True(result.Success);
+        Assert.Contains("    x           :: Int,\n    longer_name :: Int", formatted, StringComparison.Ordinal);
+        Assert.Contains("    Pair { x: 0, longer_name: 0 }     => 0,\n    Pair { x: value, longer_name: _ } => value", formatted, StringComparison.Ordinal);
+        Assert.Contains("        x           := 1;\n        longer_name := 2;", formatted, StringComparison.Ordinal);
+        Assert.Contains("            x          : x,\n            longer_name: longer_name,\n            description: \"This field", formatted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_SingleLineStructuralConstructionAndPattern_StayCompact()
+    {
+        const string source = """
+            update :: Bool -> State -> State {
+                ok => state => if ok then { State { tick: 0, ready: true } } else { state.{ tick: 1, ready: false } }
+            }
+            read :: Command -> Int {
+                Turn { dir: direction } => direction,
+                _ => 0
+            }
+            """;
+
+        var first = EidosFormatter.Format(source, options: DefaultValidation());
+        var second = EidosFormatter.Format(first.FormattedText, options: DefaultValidation());
+        var formatted = first.FormattedText.ReplaceLineEndings("\n");
+
+        Assert.True(first.Success);
+        Assert.Contains(
+            "if ok then State { tick: 0, ready: true } else state.{ tick: 1, ready: false }",
+            formatted,
+            StringComparison.Ordinal);
+        Assert.Contains("Turn { dir: direction } => direction", formatted, StringComparison.Ordinal);
+        Assert.Equal(first.FormattedText, second.FormattedText);
+    }
+
+    [Fact]
     public void Format_EmptyIfBranch_KeepsEmptyBlockCompact()
     {
         const string source = "n=>c=>if n<=0 then{}else{write_char_code(c);write_chars(n-1)(c)}";
@@ -309,6 +420,7 @@ else render_error(_0)
             """
             import std.Option
             import std.Seq
+
             Direction :: type {
                 North :: type {},
                 South :: type {}
@@ -454,7 +566,7 @@ else render_error(_0)
         Assert.Contains("decide fallback", result.FormattedText, StringComparison.Ordinal);
         Assert.Contains("is_even(_):", result.FormattedText, StringComparison.Ordinal);
         Assert.Contains("2 | 4 => 20", result.FormattedText, StringComparison.Ordinal);
-        Assert.Contains("6 when enabled => 60", result.FormattedText, StringComparison.Ordinal);
+        Assert.Contains("6 when enabled    => 60", result.FormattedText, StringComparison.Ordinal);
     }
 
     private static EidosFormatterOptions NoValidation() => new()
