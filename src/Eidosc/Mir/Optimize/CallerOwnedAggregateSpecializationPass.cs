@@ -876,6 +876,20 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
             return aliases;
         }
 
+        /// <summary>
+        /// A store target escapes the callee frame only when the value lands in
+        /// heap memory: runtime-array element slots and non-frame fields.
+        /// Aggregate (tuple/struct) field stores stay in frame memory, so a
+        /// param-derived value stored into a tuple is still frame-confined.
+        /// </summary>
+        private static bool IsHeapEscapingStoreTarget(MirPlace target) => target switch
+        {
+            { Kind: PlaceKind.Index, IndexAccessKind: MirIndexAccessKind.RuntimeArray } => true,
+            { Kind: PlaceKind.Index, IndexAccessKind: MirIndexAccessKind.Aggregate } => false,
+            { Kind: PlaceKind.Field } => true,
+            _ => true
+        };
+
         private ParamEscapeInfo AnalyzeParamFlows(MirFunc function, IReadOnlySet<LocalId> aliases)
         {
             var escapesToMemory = false;
@@ -895,8 +909,8 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                         case MirStore
                         {
                             Value: MirPlace { Kind: PlaceKind.Local, Local: var stored },
-                            Target.Kind: not PlaceKind.Local
-                        } when aliases.Contains(stored):
+                            Target: MirPlace target
+                        } when aliases.Contains(stored) && IsHeapEscapingStoreTarget(target):
                             escapesToMemory = true;
                             break;
 
