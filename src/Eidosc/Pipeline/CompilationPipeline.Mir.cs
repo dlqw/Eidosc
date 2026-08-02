@@ -94,9 +94,11 @@ public sealed partial class CompilationPipeline
             if (_options.EnableMirOptimizations)
             {
                 mirBeforeOptimization = _mirModule;
+                // The abilities phase runs unconditionally before MIR and
+                // aborts compilation on failure, so the inferer is present.
                 optimizer = MirOptimizer.CreateDefault(
                     MeasureMirOptimizerSubphase,
-                    _abilityInferer?.FunctionSummariesBySymbol);
+                    _abilityInferer!.FunctionSummariesBySymbol);
                 optimizationPasses = optimizer.PassNames;
                 optimizationApplied = true;
             }
