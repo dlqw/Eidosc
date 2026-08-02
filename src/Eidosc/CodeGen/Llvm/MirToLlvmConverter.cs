@@ -880,9 +880,10 @@ public sealed partial class MirToLlvmConverter
         }
 
         // When assigning a function reference to a local whose TypeId is a known function type,
-        // store a typed function pointer instead of materializing a closure object.  This allows
-        // subsequent indirect calls through the local to emit a single direct call rather than
-        // going through the closure-invoke protocol.
+        // materialize a first-class function value: a direct closure object with an invoke
+        // header.  A bare function pointer would later be dereferenced as a closure header by
+        // the indirect-call path (function values are opaque closure pointers), so this mirrors
+        // how function-value arguments are materialized at call sites.
         if (assign.Source is MirFunctionRef funcRef &&
             assign.Target is { Kind: PlaceKind.Local } targetPlace &&
             TryResolveSourceVisibleSignature(targetPlace.TypeId, out var targetSig))
@@ -891,12 +892,40 @@ public sealed partial class MirToLlvmConverter
                 ? specializedType
                 : targetSig;
             var funcName = ResolveFunctionLlvmName(funcRef, funcType);
-            var typedLocal = new LlvmLocal
+            // The caller-visible signature of a function value is one
+            // parameter per invoke layer (curried); the specialized flat
+            // signature would synthesize a thunk whose arity mismatches the
+            // closure-protocol call sites. Pass a curried visible signature
+            // and let the thunk synthesizer partial-apply the remaining flat
+            // parameters.
+            var visibleSignature = targetSig.ParameterTypes.Count > 1
+                ? new LlvmFunctionType
+                {
+                    ReturnType = LlvmPointerType.VoidPtr(),
+                    ParameterTypes = [targetSig.ParameterTypes[0]]
+                }
+                : targetSig;
+            var closureValue = CreateDirectClosureValue(
+                new LlvmGlobal
+                {
+                    Name = funcName,
+                    Type = new LlvmPointerType { ElementType = funcType }
+                },
+                funcType,
+                [],
+                [],
+                [],
+                visibleSignature);
+            if (IsSlotBackedLocal(targetPlace.Local))
             {
-                Name = $"l{targetPlace.Local.Value}",
-                Type = new LlvmPointerType { ElementType = funcType }
+                return CreateStoreToLocalSlot(targetPlace.Local, closureValue);
+            }
+
+            _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+            {
+                Name = GetAliasName(closureValue),
+                Type = closureValue.Type
             };
-            _locals.LocalMap[targetPlace.Local] = typedLocal;
             _locals.RuntimeWordLocals.Remove(targetPlace.Local);
             return null;
         }
@@ -1524,7 +1553,7 @@ public sealed partial class MirToLlvmConverter
 
         var resultName = binOp.Target != null
             ? targetUsesSlot
-                ? _nameMangler.NewTempName($"l{targetLocalId!.Value}_binop")
+                ? _nameMangler.NewTempName($"l{targetLocalId!.Value.Value}_binop")
                 : GetOrCreateLocalFromOperand(binOp.Target, "binary operation target").Name
             : _nameMangler.NewTempName("binop");
 

@@ -105,6 +105,13 @@ public sealed partial class MirOptimizer
         optimizer.RegisterPass(new DeadCodeElimination());
         optimizer.RegisterPass(new RuntimeArrayFusionPass());
         optimizer.RegisterPass(new RuntimeArrayRangeSpecializationPass());
+        // Small single-block functions are inlined at the end of round 1 so
+        // later rounds (tail calls, drop insertion, borrow/codegen hints) see
+        // the expanded bodies and keep their instruction-site identities
+        // consistent. Inlining runs before ownership finalization so inserted
+        // drops cover the inlined code.
+        // TEMP-BASELINE: disabled while comparing failing test sets
+        // optimizer.RegisterPass(new Inlining());
 
         // Round 2: Tail call optimization followed by ownership finalization.
         // Drop insertion must run after tail-call formation so it cannot place
