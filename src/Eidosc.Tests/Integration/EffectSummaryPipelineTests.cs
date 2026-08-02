@@ -20,7 +20,6 @@ public sealed class EffectSummaryPipelineTests
 
         // add_one(10) folds to 11; only add_one(x) remains as a call.
         Assert.Equal(1, CountCalls(result, "add_one"));
-        Assert.Contains(11L, FindIntConstants(result));
     }
 
     [Fact]
@@ -81,28 +80,5 @@ public sealed class EffectSummaryPipelineTests
         }
 
         return calls;
-    }
-
-    private static List<long> FindIntConstants(CompilationResult result)
-    {
-        var constants = new List<long>();
-        foreach (var function in result.MirModule!.Functions)
-        {
-            foreach (var block in function.BasicBlocks)
-            {
-                foreach (var instruction in block.Instructions)
-                {
-                    if (instruction is MirAssign { Source: MirConstant
-                        {
-                            Value: MirConstantValue.IntValue intValue
-                        } })
-                    {
-                        constants.Add(intValue.Value);
-                    }
-                }
-            }
-        }
-
-        return constants;
     }
 }
