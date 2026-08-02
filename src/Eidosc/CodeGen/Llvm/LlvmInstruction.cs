@@ -177,7 +177,8 @@ public sealed class LlvmCall : LlvmInstruction
             LlvmTailCallKind.Tail => "tail call",
             _ => "call"
         };
-        var callExpr = $"{callKeyword} {tail}({args})";
+        var callingConvention = string.IsNullOrEmpty(CallingConvention) ? "" : $" {CallingConvention}";
+        var callExpr = $"{callKeyword}{callingConvention} {tail}({args})";
         var canAssign = !ReferenceEquals(ReturnType, LlvmVoidType.Instance) && !string.IsNullOrWhiteSpace(ResultName);
         return canAssign ? $"{FormatResultName(ResultName)} = {callExpr}" : callExpr;
     }

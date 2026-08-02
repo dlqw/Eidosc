@@ -1182,6 +1182,12 @@ public sealed partial class MirToLlvmConverter
         return coerced;
     }
 
+    private bool IsRuntimeDeclaredFunction(MirFunctionRef funcRef)
+    {
+        return TryGetRuntimeFunctionType(funcRef, out _, out _) ||
+               TryGetExternalFfiSymbolName(funcRef.Name, funcRef.SymbolId, out _);
+    }
+
     private LlvmCall EmitDirectCall(
         MirCall call,
         LlvmValue funcValue,
@@ -1202,6 +1208,9 @@ public sealed partial class MirToLlvmConverter
             Arguments = coercedArguments.ToList(),
             ReturnType = returnType,
             ResultName = resultName,
+            // Direct calls keep the default C calling convention; the fastcc
+            // experiment showed no measurable benefit, so it is not emitted.
+            CallingConvention = null,
             TailCallKind = SelectTailCallKind(call, returnType, coercedArguments, targetUsesSlot)
         };
 
@@ -1248,9 +1257,17 @@ public sealed partial class MirToLlvmConverter
             return LlvmTailCallKind.None;
         }
 
-        if (call.Function is not MirFunctionRef)
+        if (call.Function is not MirFunctionRef funcRef)
         {
             return LlvmTailCallKind.None;
+        }
+
+        // Runtime intrinsics and FFI declarations keep the C convention; a
+        // musttail call from a fastcc caller to a C callee cannot be
+        // guaranteed, so degrade to a regular tail call.
+        if (IsRuntimeDeclaredFunction(funcRef))
+        {
+            return LlvmTailCallKind.Tail;
         }
 
         return CanEmitMustTail(returnType, arguments, targetUsesSlot)
