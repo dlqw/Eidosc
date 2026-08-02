@@ -3,14 +3,23 @@ using Eidosc.Types;
 namespace Eidosc.Mir.Optimize;
 
 /// <summary>
-/// 常量折叠优化 - 在编译时计算常量表达式 + 常量传播
+/// 常量折叠优化 - 在编译时计算常量表达式 + 常量传播 + 纯调用折叠
 /// </summary>
-public sealed class ConstantFolding : IMirOptimizationPass
+public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
 {
+    private FunctionOptimizationSummaryIndex? _functionSummaries;
+    private CallFolding? _folding;
+
+    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    {
+        set => _functionSummaries = value;
+    }
+
     public string Name => "ConstantFolding";
 
     public MirModule Run(MirModule module)
     {
+        _folding = new CallFolding(module);
         List<MirFunc>? optimizedFunctions = null;
 
         for (var i = 0; i < module.Functions.Count; i++)
@@ -228,6 +237,29 @@ public sealed class ConstantFolding : IMirOptimizationPass
             return FoldUnaryOp(unaryOp, knownConstants);
         }
 
+        // Handle MirCall: fold pure calls with all-constant arguments
+        if (instr is MirCall call)
+        {
+            if (TryFoldConstantCall(call, knownConstants, out var folded) &&
+                call.Target is MirPlace { Kind: PlaceKind.Local } callTarget)
+            {
+                knownConstants[callTarget.Local] = folded;
+                return new MirAssign
+                {
+                    Target = callTarget,
+                    Source = folded,
+                    Span = call.Span
+                };
+            }
+
+            if (call.Target is MirPlace { Kind: PlaceKind.Local } invalidatedTarget)
+            {
+                knownConstants.Remove(invalidatedTarget.Local);
+            }
+
+            return call;
+        }
+
         // For any other instruction that writes to a local, invalidate it
         if (GetDefinedLocal(instr) is { } definedLocal)
         {
@@ -235,6 +267,43 @@ public sealed class ConstantFolding : IMirOptimizationPass
         }
 
         return instr;
+    }
+
+    private bool TryFoldConstantCall(
+        MirCall call,
+        Dictionary<LocalId, MirConstant> knownConstants,
+        out MirConstant folded)
+    {
+        folded = null!;
+        if (_functionSummaries == null ||
+            _folding == null ||
+            call.Function is not MirFunctionRef functionRef ||
+            !_functionSummaries.TryGet(functionRef, out var summary) ||
+            !summary.CanFoldConstantCall)
+        {
+            return false;
+        }
+
+        var arguments = new List<MirOperand>(call.Arguments.Count);
+        foreach (var argument in call.Arguments)
+        {
+            var resolved = PropagateOperand(argument, knownConstants);
+            if (resolved is not MirConstant constant)
+            {
+                return false;
+            }
+
+            arguments.Add(constant);
+        }
+
+        var result = _folding.TryFold(functionRef, arguments);
+        if (result == null)
+        {
+            return false;
+        }
+
+        folded = result;
+        return true;
     }
 
     private static LocalId? GetDefinedLocal(MirInstruction instr)
@@ -329,7 +398,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
 
     // ---- Folding helpers ----
 
-    private MirConstant? TryFoldConstants(BinaryOp op, MirConstant left, MirConstant right)
+    internal static MirConstant? TryFoldConstants(BinaryOp op, MirConstant left, MirConstant right)
     {
         return (left.Value, right.Value) switch
         {
@@ -341,7 +410,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
         };
     }
 
-    private MirConstant? FoldStringOp(BinaryOp op, string left, string right, TypeId typeId)
+    private static MirConstant? FoldStringOp(BinaryOp op, string left, string right, TypeId typeId)
     {
         return op == BinaryOp.Concat
             ? new MirConstant
@@ -352,7 +421,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
             : null;
     }
 
-    private MirConstant? FoldIntOp(BinaryOp op, long left, long right, TypeId typeId)
+    private static MirConstant? FoldIntOp(BinaryOp op, long left, long right, TypeId typeId)
     {
         // Arithmetic
         try
@@ -404,7 +473,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
         return null;
     }
 
-    private MirConstant? FoldFloatOp(BinaryOp op, double left, double right)
+    private static MirConstant? FoldFloatOp(BinaryOp op, double left, double right)
     {
         // Arithmetic
         double? arithResult = op switch
@@ -449,7 +518,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
         return null;
     }
 
-    private MirConstant? FoldBoolOp(BinaryOp op, bool left, bool right)
+    private static MirConstant? FoldBoolOp(BinaryOp op, bool left, bool right)
     {
         bool? result = op switch
         {
@@ -472,7 +541,7 @@ public sealed class ConstantFolding : IMirOptimizationPass
         return null;
     }
 
-    private MirConstant? TryFoldUnary(UnaryOp op, MirConstant operand)
+    internal static MirConstant? TryFoldUnary(UnaryOp op, MirConstant operand)
     {
         return operand.Value switch
         {

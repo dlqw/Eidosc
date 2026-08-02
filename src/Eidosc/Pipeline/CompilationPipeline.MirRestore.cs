@@ -433,7 +433,9 @@ public sealed partial class CompilationPipeline
             _symbolTable);
         var optimizer = _options.EnableMirOptimizations
             ? MirOptimizer.CreateDefault(
-                effectSummaries: _abilityInferer?.FunctionSummariesBySymbol)
+                // The abilities phase runs unconditionally before MIR and
+                // aborts compilation on failure, so the inferer is present.
+                effectSummaries: _abilityInferer!.FunctionSummariesBySymbol)
             : null;
         var specialization = RunSpecializationLoop(mirModule, specializer, optimizer);
         mirModule = specialization.Module;

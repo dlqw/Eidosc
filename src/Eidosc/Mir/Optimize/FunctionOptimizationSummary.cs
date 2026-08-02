@@ -68,6 +68,16 @@ public sealed record FunctionOptimizationSummary(
             FunctionDeterminism.Unknown,
             true);
 
+    /// <summary>
+    /// Builds the trusted summary from the full HIR contract: the declared
+    /// upper bound (the <c>need</c> clause) is unioned with the inferred
+    /// effects. A function that declares an effect must stay effectful even
+    /// when its body infers nothing (e.g. an empty body), otherwise DCE would
+    /// wrongly treat declared-effect calls as eliminable.
+    /// </summary>
+    public static FunctionOptimizationSummary FromTrustedEffects(FunctionEffectSummary summary) =>
+        FromTrustedEffects(summary.DeclaredUpperBound.Union(summary.InferredEffects));
+
     public bool CanEliminateUnusedCall =>
         IsTrusted &&
         Effects.IsPure &&
@@ -81,6 +91,40 @@ public sealed record FunctionOptimizationSummary(
 
     public bool CanReuseCallResult =>
         CanEliminateUnusedCall && Determinism == FunctionDeterminism.Deterministic;
+
+    /// <summary>
+    /// Whether a call with all-constant arguments can be folded at compile time.
+    /// Deliberately omits <see cref="MayDiverge"/>: recursive calls are bounded by
+    /// the folding evaluator's depth/step limits instead of a summary flag.
+    /// </summary>
+    public bool CanFoldConstantCall =>
+        IsTrusted &&
+        Effects.IsPure &&
+        Memory == FunctionMemoryBehavior.None &&
+        !MayPanic &&
+        !MaySuspend &&
+        !MayBlock &&
+        !MayAllocate &&
+        !MaySynchronize &&
+        Determinism == FunctionDeterminism.Deterministic;
+
+    /// <summary>
+    /// Joins callee knowledge while keeping this function's own trust status:
+    /// a function with an HIR-inferred effect summary stays trusted even when a
+    /// callee lacks a summary (missing summaries only widen the conservative
+    /// Memory/May* flags, which still gate elimination and reuse).
+    /// </summary>
+    public FunctionOptimizationSummary JoinEffects(FunctionOptimizationSummary other) => new(
+        Effects.Union(other.Effects),
+        JoinMemory(Memory, other.Memory),
+        MayPanic || other.MayPanic,
+        MayDiverge || other.MayDiverge,
+        MaySuspend || other.MaySuspend,
+        MayBlock || other.MayBlock,
+        MayAllocate || other.MayAllocate,
+        MaySynchronize || other.MaySynchronize,
+        JoinDeterminism(Determinism, other.Determinism),
+        IsTrusted);
 
     public FunctionOptimizationSummary Join(FunctionOptimizationSummary other) => new(
         Effects.Union(other.Effects),
@@ -143,6 +187,7 @@ public static class FunctionOptimizationSummaryAnalyzer
             .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
         var local = new Dictionary<string, FunctionOptimizationSummary>(StringComparer.Ordinal);
         var calls = new Dictionary<string, List<CallEdge>>(StringComparer.Ordinal);
+        var hasOwnSummary = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var (key, function) in functions)
         {
@@ -150,13 +195,20 @@ public static class FunctionOptimizationSummaryAnalyzer
             var hasEffectSummary = function.SymbolId.IsValid &&
                                    effectSummaries != null &&
                                    effectSummaries.TryGetValue(function.SymbolId, out effectSummary);
+            if (hasEffectSummary)
+            {
+                hasOwnSummary.Add(key);
+            }
+
             var summary = function.IsExternal
                 ? FunctionOptimizationSummary.Unknown with
                 {
-                    Effects = hasEffectSummary ? effectSummary!.InferredEffects : EffectRow.Pure
+                    Effects = hasEffectSummary
+                        ? effectSummary!.DeclaredUpperBound.Union(effectSummary.InferredEffects)
+                        : EffectRow.Pure
                 }
                 : hasEffectSummary
-                    ? FunctionOptimizationSummary.FromTrustedEffects(effectSummary!.InferredEffects)
+                    ? FunctionOptimizationSummary.FromTrustedEffects(effectSummary!)
                     : FunctionOptimizationSummary.Unknown;
             var functionCalls = new List<CallEdge>();
             foreach (var block in function.BasicBlocks)
@@ -202,7 +254,9 @@ public static class FunctionOptimizationSummaryAnalyzer
                             }
                             break;
                         case MirCall:
-                            summary = summary.Join(FunctionOptimizationSummary.Unknown);
+                            summary = hasEffectSummary
+                                ? summary.JoinEffects(FunctionOptimizationSummary.Unknown)
+                                : summary.Join(FunctionOptimizationSummary.Unknown);
                             break;
                     }
                 }
@@ -231,6 +285,7 @@ public static class FunctionOptimizationSummaryAnalyzer
             foreach (var key in functions.Keys.OrderBy(static value => value, StringComparer.Ordinal))
             {
                 var summary = local[key];
+                var trustOwnSummary = hasOwnSummary.Contains(key);
                 foreach (var call in calls[key])
                 {
                     if (call.IsPartial)
@@ -238,9 +293,12 @@ public static class FunctionOptimizationSummaryAnalyzer
                         continue;
                     }
 
-                    summary = summary.Join(result.GetValueOrDefault(
+                    var calleeSummary = result.GetValueOrDefault(
                         call.CalleeKey,
-                        FunctionOptimizationSummary.Unknown));
+                        FunctionOptimizationSummary.Unknown);
+                    summary = trustOwnSummary
+                        ? summary.JoinEffects(calleeSummary)
+                        : summary.Join(calleeSummary);
                 }
 
                 if (summary == result[key])
