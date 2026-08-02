@@ -207,22 +207,25 @@ public sealed class LlvmEmitter
         var name = $"@{func.Name}";
         var parameters = string.Join(", ", func.Parameters.Select(EmitParameter));
 
-        // 函数属性
+        // 函数属性（可引用多个属性组：`#0 #1`）
         var attrs = "";
         if (func.AttributeIds.Count > 0)
         {
-            attrs = $" #{func.AttributeIds[0]}";
+            attrs = string.Concat(func.AttributeIds.Select(id => $" #{id}"));
         }
 
         if (func.BasicBlocks.Count == 0)
         {
-            // 声明
+            // 声明（外部/FFI 函数保持 C 调用约定）
             EmitLine($"declare {returnType} {name}({parameters}){attrs}");
         }
         else
         {
-            // 定义
-            EmitLine($"define {linkage} {returnType} {name}({parameters}){attrs} {{");
+            // 定义；内部函数使用 fastcc（转换器在 CallingConvention 上设置）
+            var callingConvention = string.IsNullOrEmpty(func.CallingConvention)
+                ? ""
+                : $" {func.CallingConvention}";
+            EmitLine($"define {linkage}{callingConvention} {returnType} {name}({parameters}){attrs} {{");
             _indent++;
 
             // 基本块
@@ -243,7 +246,37 @@ public sealed class LlvmEmitter
     {
         var type = param.Type.ToIrString();
         var name = string.IsNullOrEmpty(param.Name) ? "" : $" %{param.Name}";
-        return $"{type}{name}";
+        if (param.Attributes.Count == 0)
+        {
+            return $"{type}{name}";
+        }
+
+        var attributes = string.Join(' ', param.Attributes.Select(EmitParameterAttribute));
+        return $"{type} {attributes}{name}";
+    }
+
+    private static string EmitParameterAttribute(LlvmParameterAttribute attribute)
+    {
+        return attribute switch
+        {
+            LlvmParameterAttribute.Noundef => "noundef",
+            LlvmParameterAttribute.NoAlias => "noalias",
+            LlvmParameterAttribute.NoCapture => "nocapture",
+            LlvmParameterAttribute.NoFree => "nofree",
+            LlvmParameterAttribute.NonNull => "nonnull",
+            LlvmParameterAttribute.ReadOnly => "readonly",
+            LlvmParameterAttribute.WriteOnly => "writeonly",
+            LlvmParameterAttribute.ImmArg => "immarg",
+            LlvmParameterAttribute.Returned => "returned",
+            LlvmParameterAttribute.SignExt => "signext",
+            LlvmParameterAttribute.ZeroExt => "zeroext",
+            LlvmParameterAttribute.InReg => "inreg",
+            LlvmParameterAttribute.ByVal => "byval",
+            LlvmParameterAttribute.InAlloca => "inalloca",
+            LlvmParameterAttribute.SRet => "sret",
+            LlvmParameterAttribute.Nest => "nest",
+            _ => attribute.ToString().ToLowerInvariant()
+        };
     }
 
     /// <summary>

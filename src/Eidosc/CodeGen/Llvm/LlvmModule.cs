@@ -292,7 +292,8 @@ public enum LlvmParameterAttribute
     SwiftError,
     ImmArg,
     ReadOnly,
-    WriteOnly
+    WriteOnly,
+    Noundef
 }
 
 /// <summary>

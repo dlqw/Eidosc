@@ -623,8 +623,9 @@ public partial class MirToLlvmConverterTests
         var llvmVariant = SingleFunctionBySourceName(llvmModule, "variant");
         Assert.Equal(LlvmLinkage.Private, llvmVariant.Linkage);
         Assert.Contains(0, llvmVariant.AttributeIds);
-        var attributes = Assert.Single(llvmModule.AttributeGroups);
-        Assert.Contains("alwaysinline", attributes.Attributes);
+        var attributeGroups = llvmModule.AttributeGroups;
+        Assert.Contains(attributeGroups, group => group.Attributes.Contains("alwaysinline"));
+        Assert.Contains(attributeGroups, group => group.Attributes.Contains("nounwind"));
     }
 
     [Fact]

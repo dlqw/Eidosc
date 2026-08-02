@@ -59,6 +59,10 @@ public sealed partial class MirToLlvmConverter
     private readonly Dictionary<int, TypeId> _valueBoxPayloadTypeByRuntimeTypeId = [];
     private readonly Dictionary<string, LlvmGlobal> _runtimeFunctionGlobalCache = new(StringComparer.Ordinal);
     private readonly Dictionary<TypeId, ArrayElementPolicy> _arrayElementPolicies = [];
+    // Names of runtime intrinsics and FFI declarations (C convention); direct
+    // calls to these keep the default calling convention, while internal
+    // Eidos functions use fastcc.
+    private readonly HashSet<string> _runtimeDeclaredFunctionNames = new(StringComparer.Ordinal);
     // Function-type locals whose value is stored/passed as a first-class
     // closure (as opposed to being called directly); the assign lowering uses
     // this to decide between closure materialization and a bare function
@@ -285,6 +289,15 @@ public sealed partial class MirToLlvmConverter
             });
         }
 
+        // Every Eidos function is compiled against eidos_panic (abort), so no
+        // internal function unwinds; nounwind lets LLVM drop the Win64 unwind
+        // metadata and assume calls cannot throw.
+        llvmModule.AttributeGroups.Add(new LlvmAttributeGroup
+        {
+            Id = 1,
+            Attributes = ["nounwind"]
+        });
+
         // Collect all named struct types from TypeLowering into the module
         using (MeasureConverterSubphase("collect_named_struct_types"))
         {
@@ -342,6 +355,10 @@ public sealed partial class MirToLlvmConverter
         {
             AddRuntimeDeclarations(llvmModule);
             AddRecordedExternalDeclarations(llvmModule);
+            foreach (var declaration in llvmModule.Declarations)
+            {
+                _runtimeDeclaredFunctionNames.Add(declaration.Name);
+            }
         }
 
         using (MeasureConverterSubphase("synthesize_constructor_stubs"))
@@ -385,9 +402,24 @@ public sealed partial class MirToLlvmConverter
         return function.IntrinsicName != null && function.BasicBlocks.Count == 0;
     }
 
-    private static bool IsCompilerOptimizationVariant(MirFunc function)
+    /// <summary>
+    /// Scalar parameters (i1/i8/i16/i32/i64/f32/f64) always carry a defined
+    /// value in Eidos; noundef lets LLVM assume the argument is never undef
+    /// or poison. Runtime-word ABI parameters are excluded: their i64 word may
+    /// hold an opaque pointer bit pattern.
+    /// </summary>
+    private static bool ShouldAnnotateNoundefParameter(LlvmType loweredType, bool isRuntimeWordAbi)
     {
-        var identity = function.FunctionId.StableIdentityKey;
+        if (isRuntimeWordAbi)
+        {
+            return false;
+        }
+
+        return loweredType is LlvmIntType or LlvmFloatType;
+    }
+
+    private static bool IsCompilerOptimizationVariant(MirFunc function)
+    {        var identity = function.FunctionId.StableIdentityKey;
         return identity.Contains("|unique:", StringComparison.Ordinal) ||
                identity.Contains("|range:", StringComparison.Ordinal) ||
                identity.Contains("|caller-owned:", StringComparison.Ordinal) ||
@@ -487,6 +519,7 @@ public sealed partial class MirToLlvmConverter
         _reportedGenericCallSites.Clear();
         _stringLiteralGlobals.Clear();
         _runtimeFunctionGlobalCache.Clear();
+        _runtimeDeclaredFunctionNames.Clear();
         _stringLiteralCounter = 0;
         _closureThunkCounter = 0;
         _synthesizedClosureHelpers.Clear();
@@ -664,7 +697,9 @@ public sealed partial class MirToLlvmConverter
                         ? 1 + func.CallerOwnedAggregateAbi.OutArrayStorages.Count
                         : 0)),
                 BasicBlocks = new List<LlvmBasicBlock>(Math.Max(1, func.BasicBlocks.Count)),
-                AttributeIds = shouldAlwaysInline && _currentModule != null ? [0] : []
+                AttributeIds = _currentModule != null
+                    ? shouldAlwaysInline ? [0, 1] : [1]
+                    : []
             };
 
             // 添加参数
@@ -686,7 +721,10 @@ public sealed partial class MirToLlvmConverter
                 var param = new LlvmParameter
                 {
                     Name = local.Name ?? $"arg{local.Id.Value}",
-                    Type = loweredParameterType
+                    Type = loweredParameterType,
+                    Attributes = ShouldAnnotateNoundefParameter(loweredParameterType, isRuntimeWordAbi)
+                        ? [LlvmParameterAttribute.Noundef]
+                        : []
                 };
                 _currentFunction.Parameters.Add(param);
 
