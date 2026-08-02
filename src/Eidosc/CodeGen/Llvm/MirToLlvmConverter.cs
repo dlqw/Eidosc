@@ -59,6 +59,11 @@ public sealed partial class MirToLlvmConverter
     private readonly Dictionary<int, TypeId> _valueBoxPayloadTypeByRuntimeTypeId = [];
     private readonly Dictionary<string, LlvmGlobal> _runtimeFunctionGlobalCache = new(StringComparer.Ordinal);
     private readonly Dictionary<TypeId, ArrayElementPolicy> _arrayElementPolicies = [];
+    // Function-type locals whose value is stored/passed as a first-class
+    // closure (as opposed to being called directly); the assign lowering uses
+    // this to decide between closure materialization and a bare function
+    // pointer.
+    private readonly HashSet<LocalId> _functionValueEscapeLocals = [];
 
     private LlvmFunction? _builtinShowBoolHelper;
     private LlvmFunction? _erasedShowHelper;
@@ -604,6 +609,11 @@ public sealed partial class MirToLlvmConverter
             BuildLocalDefinitionIndex(func);
         }
 
+        using (MeasureConverterSubphase("function.collect_function_value_escapes"))
+        {
+            CollectFunctionValueEscapes(func);
+        }
+
         using (MeasureConverterSubphase("function.analyze_generic_flow"))
         {
             AnalyzeGenericFunctionLocalFlow(func);
@@ -881,9 +891,10 @@ public sealed partial class MirToLlvmConverter
 
         // When assigning a function reference to a local whose TypeId is a known function type,
         // materialize a first-class function value: a direct closure object with an invoke
-        // header.  A bare function pointer would later be dereferenced as a closure header by
-        // the indirect-call path (function values are opaque closure pointers), so this mirrors
-        // how function-value arguments are materialized at call sites.
+        // header when the local escapes as a value (stored/passed/copied), or a bare typed
+        // function pointer when the local is only invoked directly.  A bare function pointer
+        // that later gets dereferenced as a closure header by the indirect-call path is the
+        // failure mode the closure branch avoids.
         if (assign.Source is MirFunctionRef funcRef &&
             assign.Target is { Kind: PlaceKind.Local } targetPlace &&
             TryResolveSourceVisibleSignature(targetPlace.TypeId, out var targetSig))
@@ -892,6 +903,33 @@ public sealed partial class MirToLlvmConverter
                 ? specializedType
                 : targetSig;
             var funcName = ResolveFunctionLlvmName(funcRef, funcType);
+            var functionPointerType = new LlvmPointerType { ElementType = funcType };
+
+            if (!_functionValueEscapeLocals.Contains(targetPlace.Local))
+            {
+                // Direct-invocation-only local: keep a typed function pointer.
+                // The bitcast defines the local so later uses reference a
+                // value that exists in the IR; LLVM folds it away at -O.
+                var typedLocal = new LlvmLocal
+                {
+                    Name = $"l{targetPlace.Local.Value}",
+                    Type = functionPointerType
+                };
+                _locals.LocalMap[targetPlace.Local] = typedLocal;
+                _locals.RuntimeWordLocals.Remove(targetPlace.Local);
+                return new LlvmCast
+                {
+                    Op = WellKnownStrings.InternalNames.Bitcast,
+                    Value = new LlvmGlobal
+                    {
+                        Name = funcName,
+                        Type = functionPointerType
+                    },
+                    TargetType = functionPointerType,
+                    ResultName = typedLocal.Name
+                };
+            }
+
             // The caller-visible signature of a function value is one
             // parameter per invoke layer (curried); the specialized flat
             // signature would synthesize a thunk whose arity mismatches the
@@ -909,7 +947,7 @@ public sealed partial class MirToLlvmConverter
                 new LlvmGlobal
                 {
                     Name = funcName,
-                    Type = new LlvmPointerType { ElementType = funcType }
+                    Type = functionPointerType
                 },
                 funcType,
                 [],

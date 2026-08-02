@@ -1135,6 +1135,90 @@ public sealed partial class MirToLlvmConverter
         }
     }
 
+    /// <summary>
+    /// Collects function-type locals that are used as values (stored, passed
+    /// as arguments, copied, returned) rather than only called directly. The
+    /// function-reference assignment lowering materializes closure objects for
+    /// these, while locals that are only invoked keep a bare function pointer.
+    /// </summary>
+    private void CollectFunctionValueEscapes(MirFunc func)
+    {
+        _functionValueEscapeLocals.Clear();
+        foreach (var block in func.BasicBlocks)
+        {
+            foreach (var instruction in block.Instructions)
+            {
+                switch (instruction)
+                {
+                    case MirCall call:
+                        // The callee operand position is a direct invocation,
+                        // not a value use; arguments are value uses.
+                        foreach (var argument in call.Arguments)
+                        {
+                            CollectFunctionLocalFromOperand(argument);
+                        }
+
+                        break;
+                    case MirStore store:
+                        CollectFunctionLocalFromOperand(store.Value);
+                        break;
+                    case MirCopy copy:
+                        // The target is the definition; only the source reads
+                        // the local as a value.
+                        CollectFunctionLocalFromOperand(copy.Source);
+                        break;
+                    case MirMove move:
+                        CollectFunctionLocalFromOperand(move.Source);
+                        break;
+                    case MirAssign assign:
+                        CollectFunctionLocalFromOperand(assign.Source);
+                        break;
+                    case MirLoad load:
+                        CollectFunctionLocalFromOperand(load.Source);
+                        break;
+                    case MirDrop drop:
+                        CollectFunctionLocalFromOperand(drop.Value);
+                        break;
+                    case MirBinOp binOp:
+                        CollectFunctionLocalFromOperand(binOp.Left);
+                        CollectFunctionLocalFromOperand(binOp.Right);
+                        break;
+                    case MirUnaryOp unaryOp:
+                        CollectFunctionLocalFromOperand(unaryOp.Operand);
+                        break;
+                    case MirCaseInject injection:
+                        CollectFunctionLocalFromOperand(injection.Operand);
+                        break;
+                }
+            }
+
+            if (block.Terminator is MirReturn ret)
+            {
+                CollectFunctionLocalFromOperand(ret.Value);
+            }
+        }
+    }
+
+    private void CollectFunctionLocalFromOperand(MirOperand? operand)
+    {
+        switch (operand)
+        {
+            case MirPlace { Kind: PlaceKind.Local } place:
+                _functionValueEscapeLocals.Add(place.Local);
+                break;
+            case MirPlace { Kind: PlaceKind.Deref } deref:
+                CollectFunctionLocalFromOperand(deref.Base);
+                break;
+            case MirPlace { Kind: PlaceKind.Field } field:
+                CollectFunctionLocalFromOperand(field.Base);
+                break;
+            case MirPlace { Kind: PlaceKind.Index } index:
+                CollectFunctionLocalFromOperand(index.Base);
+                CollectFunctionLocalFromOperand(index.Index);
+                break;
+        }
+    }
+
     private static HashSet<LocalId> ComputeSlotBackedLocals(
         MirFunc func,
         IReadOnlyDictionary<LocalId, LocalDefinitionStats> definitionStatsByLocal)
