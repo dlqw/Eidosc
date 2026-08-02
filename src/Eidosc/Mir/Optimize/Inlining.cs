@@ -1,3 +1,4 @@
+using Eidosc.Symbols;
 using Eidosc.Types;
 
 namespace Eidosc.Mir.Optimize;
@@ -111,6 +112,48 @@ public sealed class Inlining : IMirOptimizationPass
         if (string.IsNullOrEmpty(func.Name)) return false;
         if (func.IsExternal) return false;
         if (IsRecursive(func)) return false;
+        // ADT constructors are lowered at the call site with heap allocation
+        // and layout handling; inlining their body would turn the allocation
+        // into a stack alloca that later refcounting/type_id code treats as a
+        // heap object.
+        if (func.FunctionId.Kind == SymbolKind.Constructor) return false;
+        // Callees that dereference a parameter (reference-typed arguments)
+        // rely on the call-site borrow lowering passing the element pointer;
+        // inlining binds the value instead and the dereference reads garbage.
+        if (DereferencesParameter(func)) return false;
+        // Lambda closure bodies are invoked through the closure-invoke
+        // protocol with captured payloads; inlining them into call sites that
+        // still pass the closure object around breaks the capture contract.
+        if (func.Name.StartsWith(WellKnownStrings.InternalNames.LambdaPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        // Task/TaskGroup helpers move first-class closures between runtime
+        // worker threads; inlining the helper bodies duplicates the refcount
+        // bookkeeping across thread boundaries.
+        if (func.Name.StartsWith("std__Task", StringComparison.Ordinal))
+        {
+            return false;
+        }
+        // Ffi/Text/Console helpers are thin wrappers over runtime intrinsics;
+        // inlining them is harmless, but they interact with boxed values and
+        // string payloads whose refcount handling must stay at the call site.
+        if (func.Name.StartsWith("std__Ffi", StringComparison.Ordinal) ||
+            func.Name.StartsWith("std__Text", StringComparison.Ordinal) ||
+            func.Name.StartsWith("std__Console", StringComparison.Ordinal) ||
+            func.Name.StartsWith("__eidos_prelude_core__Display", StringComparison.Ordinal))
+        {
+            return false;
+        }
+        // Curried multi-parameter functions are first-class closure values at
+        // call sites (partial application, closure protocol); inlining their
+        // bodies duplicates the materialization/refcount paths and breaks the
+        // closure contract under concurrency. Single-parameter functions (the
+        // hot fib_value-style candidates) keep inlining.
+        if (func.Locals.Count(static local => local.IsParameter) > 1)
+        {
+            return false;
+        }
         // Only inline single-block functions (avoids complex block splitting)
         if (func.BasicBlocks.Count != 1) return false;
 
@@ -126,6 +169,27 @@ public sealed class Inlining : IMirOptimizationPass
             {
                 if (instr is MirCall call && CallsFunction(call, func))
                     return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool DereferencesParameter(MirFunc func)
+    {
+        var parameterIds = func.Locals
+            .Where(static local => local.IsParameter)
+            .Select(static local => local.Id)
+            .ToHashSet();
+        foreach (var block in func.BasicBlocks)
+        {
+            foreach (var instr in block.Instructions)
+            {
+                if (instr is MirLoad load &&
+                    load.Source is MirPlace { Kind: PlaceKind.Deref, Base: MirPlace { Kind: PlaceKind.Local, Local: var baseLocal } } &&
+                    parameterIds.Contains(baseLocal))
+                {
+                    return true;
+                }
             }
         }
         return false;
@@ -167,11 +231,17 @@ public sealed class Inlining : IMirOptimizationPass
     {
         var newLocals = new List<MirLocal>(func.Locals);
         int nextLocalId = func.Locals.Select(l => l.Id.Value).DefaultIfEmpty(0).Max() + 1;
+        int nextTempId = func.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .SelectMany(CollectTempIds)
+            .Select(static temp => temp.Value)
+            .DefaultIfEmpty(-1)
+            .Max() + 1;
 
         var newBlocks = new List<MirBasicBlock>();
         foreach (var block in func.BasicBlocks)
         {
-            newBlocks.Add(InlineCallsInBlock(block, candidatesBySymbol, candidatesByIdentity, candidatesByName, newLocals, ref nextLocalId));
+            newBlocks.Add(InlineCallsInBlock(block, candidatesBySymbol, candidatesByIdentity, candidatesByName, newLocals, ref nextLocalId, ref nextTempId));
         }
 
         return new MirFunc
@@ -200,13 +270,53 @@ public sealed class Inlining : IMirOptimizationPass
         };
     }
 
+    private static IEnumerable<TempId> CollectTempIds(MirInstruction instruction)
+    {
+        switch (instruction)
+        {
+            case MirAssign assign:
+                return CollectTempIds(assign.Target).Concat(CollectTempIds(assign.Source));
+            case MirCaseInject injection:
+                return CollectTempIds(injection.Target).Concat(CollectTempIds(injection.Operand));
+            case MirCall call:
+                return CollectTempIds(call.Function).Concat(call.Arguments.SelectMany(CollectTempIds));
+            case MirBinOp binOp:
+                return CollectTempIds(binOp.Target).Concat(CollectTempIds(binOp.Left)).Concat(CollectTempIds(binOp.Right));
+            case MirUnaryOp unaryOp:
+                return CollectTempIds(unaryOp.Target).Concat(CollectTempIds(unaryOp.Operand));
+            case MirLoad load:
+                return CollectTempIds(load.Target).Concat(CollectTempIds(load.Source));
+            case MirStore store:
+                return CollectTempIds(store.Target).Concat(CollectTempIds(store.Value));
+            case MirDrop drop:
+                return CollectTempIds(drop.Value);
+            case MirCopy copy:
+                return CollectTempIds(copy.Target).Concat(CollectTempIds(copy.Source));
+            case MirMove move:
+                return CollectTempIds(move.Target).Concat(CollectTempIds(move.Source));
+            default:
+                return [];
+        }
+    }
+
+    private static IEnumerable<TempId> CollectTempIds(MirOperand operand)
+    {
+        return operand switch
+        {
+            MirTemp temp => [temp.Id],
+            MirPlace place when place.Index != null => CollectTempIds(place.Index),
+            _ => []
+        };
+    }
+
     private MirBasicBlock InlineCallsInBlock(
         MirBasicBlock block,
         IReadOnlyDictionary<SymbolId, MirFunc> candidatesBySymbol,
         IReadOnlyDictionary<string, MirFunc> candidatesByIdentity,
         IReadOnlyDictionary<string, MirFunc> candidatesByName,
         List<MirLocal> newLocals,
-        ref int nextLocalId)
+        ref int nextLocalId,
+        ref int nextTempId)
     {
         var newInstructions = new List<MirInstruction>();
 
@@ -215,7 +325,7 @@ public sealed class Inlining : IMirOptimizationPass
             if (instr is MirCall call &&
                 TryResolveInlineCandidate(call, candidatesBySymbol, candidatesByIdentity, candidatesByName, out var callee))
             {
-                var inlined = InlineSingleBlockCall(call, callee, newLocals, ref nextLocalId);
+                var inlined = InlineSingleBlockCall(call, callee, newLocals, ref nextLocalId, ref nextTempId);
                 newInstructions.AddRange(inlined);
             }
             else
@@ -242,7 +352,8 @@ public sealed class Inlining : IMirOptimizationPass
         MirCall call,
         MirFunc callee,
         List<MirLocal> newLocals,
-        ref int nextLocalId)
+        ref int nextLocalId,
+        ref int nextTempId)
     {
         // 1. Build local ID remapping (callee local → fresh caller local)
         var localMap = new Dictionary<LocalId, LocalId>();
@@ -262,15 +373,38 @@ public sealed class Inlining : IMirOptimizationPass
             });
         }
 
+        // 1b. Build temp ID remapping (callee temp → fresh caller temp); temps
+        // are function-local and collide with the caller's after inlining.
+        var calleeBlock = callee.BasicBlocks[0];
+        IEnumerable<TempId> calleeTemps = calleeBlock.Instructions.SelectMany(CollectTempIds);
+        if (calleeBlock.Terminator is MirReturn ret && ret.Value != null)
+        {
+            calleeTemps = calleeTemps.Concat(CollectTempIds(ret.Value));
+        }
+
+        var tempMap = new Dictionary<TempId, TempId>();
+        foreach (var tempId in calleeTemps)
+        {
+            tempMap[tempId] = new TempId { Value = nextTempId++ };
+        }
+
         var result = new List<MirInstruction>();
 
-        // 2. Argument bindings: assign caller arguments to remapped parameter locals
+        // Partial application keeps the call: the flat callee signature expects
+        // every parameter, but a partial call passes fewer arguments, so
+        // inlining would read uninitialized locals. A mismatched argument
+        // count also cannot be expanded into the callee body.
         var parameters = callee.Locals
             .Where(l => l.IsParameter)
             .OrderBy(l => l.Id.Value)
             .ToList();
+        if (call.Arguments.Count != parameters.Count)
+        {
+            return [call];
+        }
 
-        for (int i = 0; i < parameters.Count && i < call.Arguments.Count; i++)
+        // 2. Argument bindings: assign caller arguments to remapped parameter locals
+        for (int i = 0; i < parameters.Count; i++)
         {
             var newParamId = localMap[parameters[i].Id];
             result.Add(new MirAssign
@@ -288,20 +422,19 @@ public sealed class Inlining : IMirOptimizationPass
         }
 
         // 3. Remapped callee body (instructions only, not terminator)
-        var calleeBlock = callee.BasicBlocks[0];
         foreach (var ci in calleeBlock.Instructions)
         {
-            result.Add(RemapInstruction(ci, localMap));
+            result.Add(RemapInstruction(ci, localMap, tempMap));
         }
 
         // 4. Return value: MirReturn → MirAssign to call target
-        if (calleeBlock.Terminator is MirReturn ret && call.Target != null && ret.Value != null)
+        if (calleeBlock.Terminator is MirReturn returnInstr && call.Target != null && returnInstr.Value != null)
         {
             result.Add(new MirAssign
             {
                 Target = call.Target,
-                Source = RemapOperand(ret.Value, localMap),
-                Span = ret.Span
+                Source = RemapOperand(returnInstr.Value, localMap, tempMap),
+                Span = returnInstr.Span
             });
         }
 
@@ -349,88 +482,89 @@ public sealed class Inlining : IMirOptimizationPass
                string.Equals(calleeName, function.Name, StringComparison.Ordinal);
     }
 
-    private static MirOperand RemapOperand(MirOperand operand, Dictionary<LocalId, LocalId> map)
+    private static MirOperand RemapOperand(MirOperand operand, Dictionary<LocalId, LocalId> map, Dictionary<TempId, TempId> tempMap)
     {
         return operand switch
         {
-            MirPlace place => RemapPlace(place, map),
-            _ => operand // MirConstant, MirFunctionRef, MirTemp don't need local remapping
+            MirPlace place => RemapPlace(place, map, tempMap),
+            MirTemp temp when tempMap.TryGetValue(temp.Id, out var newId) => temp with { Id = newId },
+            _ => operand // MirConstant, MirFunctionRef don't need remapping
         };
     }
 
-    private static MirPlace RemapPlace(MirPlace place, Dictionary<LocalId, LocalId> map)
+    private static MirPlace RemapPlace(MirPlace place, Dictionary<LocalId, LocalId> map, Dictionary<TempId, TempId> tempMap)
     {
         return place.Kind switch
         {
             PlaceKind.Local when map.TryGetValue(place.Local, out var newId) =>
                 place with { Local = newId },
             PlaceKind.Field when place.Base != null =>
-                place with { Base = RemapPlace(place.Base, map) },
+                place with { Base = RemapPlace(place.Base, map, tempMap) },
             PlaceKind.Index when place.Base != null =>
                 place with
                 {
-                    Base = RemapPlace(place.Base, map),
-                    Index = place.Index != null ? RemapOperand(place.Index, map) : null
+                    Base = RemapPlace(place.Base, map, tempMap),
+                    Index = place.Index != null ? RemapOperand(place.Index, map, tempMap) : null
                 },
             PlaceKind.Deref when place.Base != null =>
-                place with { Base = RemapPlace(place.Base, map) },
+                place with { Base = RemapPlace(place.Base, map, tempMap) },
             _ => place
         };
     }
 
-    private static MirInstruction RemapInstruction(MirInstruction instr, Dictionary<LocalId, LocalId> map)
+    private static MirInstruction RemapInstruction(MirInstruction instr, Dictionary<LocalId, LocalId> map, Dictionary<TempId, TempId> tempMap)
     {
         return instr switch
         {
             MirAssign assign => assign with
             {
-                Target = RemapPlace(assign.Target, map),
-                Source = RemapOperand(assign.Source, map)
+                Target = RemapPlace(assign.Target, map, tempMap),
+                Source = RemapOperand(assign.Source, map, tempMap)
             },
             MirCaseInject injection => injection with
             {
-                Target = RemapOperand(injection.Target, map),
-                Operand = RemapOperand(injection.Operand, map)
+                Target = RemapOperand(injection.Target, map, tempMap),
+                Operand = RemapOperand(injection.Operand, map, tempMap)
             },
             MirCall call => call with
             {
-                Target = call.Target != null ? RemapPlace(call.Target, map) : null,
-                Function = RemapOperand(call.Function, map),
-                Arguments = call.Arguments.Select(a => RemapOperand(a, map)).ToList()
+                Target = call.Target != null ? RemapPlace(call.Target, map, tempMap) : null,
+                Function = RemapOperand(call.Function, map, tempMap),
+                Arguments = call.Arguments.Select(a => RemapOperand(a, map, tempMap)).ToList()
             },
             MirBinOp binOp => binOp with
             {
-                Target = RemapOperand(binOp.Target, map),
-                Left = RemapOperand(binOp.Left, map),
-                Right = RemapOperand(binOp.Right, map)
+                Target = RemapOperand(binOp.Target, map, tempMap),
+                Left = RemapOperand(binOp.Left, map, tempMap),
+                Right = RemapOperand(binOp.Right, map, tempMap)
             },
             MirUnaryOp unaryOp => unaryOp with
             {
-                Target = RemapOperand(unaryOp.Target, map),
-                Operand = RemapOperand(unaryOp.Operand, map)
+                Target = RemapOperand(unaryOp.Target, map, tempMap),
+                Operand = RemapOperand(unaryOp.Operand, map, tempMap)
             },
             MirLoad load => load with
             {
-                Target = RemapPlace(load.Target, map),
-                Source = RemapOperand(load.Source, map)
+                Target = RemapPlace(load.Target, map, tempMap),
+                Source = RemapOperand(load.Source, map, tempMap)
             },
             MirStore store => store with
             {
-                Target = RemapPlace(store.Target, map),
-                Value = RemapOperand(store.Value, map)
+                Target = RemapPlace(store.Target, map, tempMap),
+                Value = RemapOperand(store.Value, map, tempMap)
             },
-            MirDrop drop => drop with { Value = RemapOperand(drop.Value, map) },
+            MirDrop drop => drop with { Value = RemapOperand(drop.Value, map, tempMap) },
             MirCopy copy => copy with
             {
-                Target = RemapPlace(copy.Target, map),
-                Source = RemapPlace(copy.Source, map)
+                Target = RemapPlace(copy.Target, map, tempMap),
+                Source = RemapPlace(copy.Source, map, tempMap)
             },
             MirMove move => move with
             {
-                Target = RemapPlace(move.Target, map),
-                Source = RemapPlace(move.Source, map)
+                Target = RemapPlace(move.Target, map, tempMap),
+                Source = RemapPlace(move.Source, map, tempMap)
             },
-            MirAlloc alloc => alloc with { Target = RemapPlace(alloc.Target, map) },
+            MirAlloc alloc => alloc with { Target = RemapPlace(alloc.Target, map, tempMap) },
             _ => instr
         };
     }

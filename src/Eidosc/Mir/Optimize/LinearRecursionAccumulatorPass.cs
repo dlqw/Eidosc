@@ -117,7 +117,7 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
         {
             if (instruction is not MirBinOp binOp ||
                 binOp.Operator != BinaryOp.Sub ||
-                !IsSamePlace(binOp.Left as MirPlace, paramPlace) ||
+                !IsSamePlace(ResolveThroughCopies(binOp.Left as MirPlace, recBlock), paramPlace) ||
                 !TryGetIntConstant(binOp.Right, out var subValue) ||
                 OperandTargetKey(binOp.Target) is not { } subKey)
             {
@@ -136,6 +136,18 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
                 OperandTargetKey(call.Arguments[0]) is not { } argKey ||
                 !subsByTarget.TryGetValue(argKey, out var offset))
             {
+                // Call arguments often go through a copy (e.g. %8 = copy %7);
+                // resolve through copies before looking up the subtraction.
+                if (instruction is MirCall copyCall &&
+                    IsSelfRecursiveCall(func, copyCall) &&
+                    copyCall.Arguments.Count == 1 &&
+                    ResolveThroughCopies(copyCall.Arguments[0] as MirPlace, recBlock) is { } resolvedArg &&
+                    OperandTargetKey(resolvedArg) is { } resolvedKey &&
+                    subsByTarget.TryGetValue(resolvedKey, out var resolvedOffset))
+                {
+                    calls.Add((copyCall, resolvedOffset));
+                }
+
                 continue;
             }
 
@@ -163,11 +175,37 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             return false;
         }
 
+        // Copies inserted by later passes (e.g. %14 = copy %9) alias their
+        // sources; resolve them so the sum operands match the call targets.
+        var copyAliases = new Dictionary<(bool IsTemp, int Value), (bool IsTemp, int Value)>();
+        foreach (var instruction in recBlock.Instructions)
+        {
+            if (instruction is MirCopy copy &&
+                OperandTargetKey(copy.Target) is { } aliasTarget &&
+                OperandTargetKey(copy.Source) is { } aliasSource)
+            {
+                copyAliases[aliasTarget] = aliasSource;
+            }
+        }
+
+        static (bool IsTemp, int Value)? ResolveAlias(
+            (bool IsTemp, int Value)? key,
+            Dictionary<(bool IsTemp, int Value), (bool IsTemp, int Value)> aliases)
+        {
+            var current = key;
+            for (var depth = 0; depth < 4 && current is { } value && aliases.TryGetValue(value, out var next); depth++)
+            {
+                current = next;
+            }
+
+            return current;
+        }
+
         var sum = recBlock.Instructions.OfType<MirBinOp>().LastOrDefault(static binOp => binOp.Operator == BinaryOp.Add);
         if (sum == null ||
             OperandTargetKey(sum.Target) is not { } sumKey ||
-            !callTargets.Contains(OperandTargetKey(sum.Left)) ||
-            !callTargets.Contains(OperandTargetKey(sum.Right)) ||
+            !callTargets.Contains(ResolveAlias(OperandTargetKey(sum.Left), copyAliases)) ||
+            !callTargets.Contains(ResolveAlias(OperandTargetKey(sum.Right), copyAliases)) ||
             recBlock.Terminator is not MirReturn ret ||
             OperandTargetKey(ret.Value) != sumKey)
         {
@@ -206,7 +244,7 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
         var arg = CreateSyntheticLocal(locals, ref nextLocalId, "__fib_arg", shape.Parameter.TypeId, func.Span, mutable: false);
         var callResult = CreateSyntheticLocal(locals, ref nextLocalId, "__fib_call", func.ReturnType, func.Span, mutable: false);
         var doneSum = CreateSyntheticLocal(locals, ref nextLocalId, "__fib_sum", func.ReturnType, func.Span, mutable: false);
-        var loopCond = CreateSyntheticLocal(locals, ref nextLocalId, "__fib_cond", shape.Parameter.TypeId, func.Span, mutable: false);
+        var loopCond = CreateSyntheticLocal(locals, ref nextLocalId, "__fib_cond", new TypeId(BaseTypes.BoolId), func.Span, mutable: false);
 
         // Parameter n becomes mutable (updated in the loop).
         for (var i = 0; i < locals.Count; i++)
@@ -235,7 +273,7 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
         var trueConst = new MirConstant
         {
             Value = new MirConstantValue.BoolValue(true),
-            TypeId = shape.Parameter.TypeId,
+            TypeId = new TypeId(BaseTypes.BoolId),
             Span = func.Span
         };
 
@@ -393,8 +431,19 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             return false;
         }
 
-        for (var depth = 0; depth < 2; depth++)
+        for (var depth = 0; depth < 3; depth++)
         {
+            // A plain copy between the guard binop and the switch
+            // (e.g. %4 = copy %3) does not change the value; unwind through it.
+            var copyDef = entry.Instructions
+                .OfType<MirCopy>()
+                .LastOrDefault(copy => copy.Target is MirPlace target && IsSamePlace(target, current));
+            if (copyDef != null && copyDef.Source is MirPlace copySource)
+            {
+                current = copySource;
+                continue;
+            }
+
             var defining = entry.Instructions
                 .OfType<MirBinOp>()
                 .LastOrDefault(binOp => binOp.Target is MirPlace target && IsSamePlace(target, current));
@@ -404,7 +453,8 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             }
 
             if (defining.Operator == BinaryOp.Lt &&
-                IsSamePlace(defining.Left as MirPlace, paramPlace) &&
+                ResolveThroughCopies(defining.Left as MirPlace, entry) is { } left &&
+                IsSamePlace(left, paramPlace) &&
                 IsIntConstant(defining.Right, 2))
             {
                 return true;
@@ -433,6 +483,25 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             MirTemp temp => (true, temp.Id.Value),
             _ => null
         };
+    }
+
+    private static MirPlace? ResolveThroughCopies(MirPlace? place, MirBasicBlock block)
+    {
+        var current = place;
+        for (var depth = 0; depth < 4 && current is { Kind: PlaceKind.Local } local; depth++)
+        {
+            var copyDef = block.Instructions
+                .OfType<MirCopy>()
+                .LastOrDefault(copy => copy.Target is MirPlace target && IsSamePlace(target, current));
+            if (copyDef == null || copyDef.Source is not MirPlace next)
+            {
+                break;
+            }
+
+            current = next;
+        }
+
+        return current;
     }
 
     private static bool IsBoolConstant(MirOperand operand, bool expected)

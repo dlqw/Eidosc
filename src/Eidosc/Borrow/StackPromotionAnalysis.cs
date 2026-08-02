@@ -148,6 +148,14 @@ public sealed class StackPromotionAnalyzer
                 AddAlias(injection.Operand, injection.Target, aliases);
                 break;
 
+            // MirAssign is a plain value assignment (inlined bodies use it
+            // heavily); without an alias edge the escape chain through an
+            // assigned local is lost and constructor results get promoted to
+            // the stack while still escaping into calls.
+            case MirAssign assign:
+                AddAliasFromOperand(assign.Source, assign.Target, aliases);
+                break;
+
             // Transitive escape: MirLoad establishes an alias between source and target.
             // If the load target later escapes (via MirCall, MirReturn, etc.),
             // the source is also marked as escaped through alias propagation.
