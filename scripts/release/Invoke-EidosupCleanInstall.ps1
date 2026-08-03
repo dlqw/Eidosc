@@ -24,7 +24,8 @@ Set-StrictMode -Version Latest
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $candidateRoot = (Resolve-Path -LiteralPath $CandidateDirectory).Path
 $bootstrap = (Resolve-Path -LiteralPath $EidosupPath).Path
-$example = (Resolve-Path -LiteralPath $TutorialExample).Path
+$tutorialExample = (Resolve-Path -LiteralPath $TutorialExample).Path
+$compatibilityPath = (Resolve-Path -LiteralPath (Join-Path $scriptRoot "../../eng/compatibility.json")).Path
 & (Join-Path $scriptRoot "Test-ReleaseAssets.ps1") `
     -Product eidosc `
     -Version $Version `
@@ -200,6 +201,10 @@ if (-not $serverReady)
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("eidosup-clean-install-" + [Guid]::NewGuid().ToString("N"))
 $installRoot = Join-Path $temporaryRoot "install"
 $downloadRoot = Join-Path $temporaryRoot "downloads"
+$example = & (Join-Path $scriptRoot "New-TutorialSmokeProject.ps1") `
+    -SourcePath $tutorialExample `
+    -DestinationDirectory (Join-Path $temporaryRoot "tutorial-smoke") `
+    -CompatibilityPath $compatibilityPath
 $previousTestServer = $env:EIDOSUP_TEST_RELEASE_SERVER
 
 try
