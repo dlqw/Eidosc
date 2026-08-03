@@ -571,7 +571,7 @@ public static class ProfileBatchCommand
                 group.Count(),
                 group.Average(row => row.ElapsedMs),
                 group.Max(row => row.ElapsedMs),
-                (long)group.Average(row => row.AllocatedBytes),
+                (long)AverageLong(group.Select(static row => row.AllocatedBytes)),
                 group.Max(row => row.AllocatedBytes)))
             .ToList();
 
@@ -619,7 +619,7 @@ public static class ProfileBatchCommand
                 group.Count(),
                 group.Average(row => row.ElapsedMs),
                 group.Max(row => row.ElapsedMs),
-                (long)group.Average(row => row.AllocatedBytes),
+                (long)AverageLong(group.Select(static row => row.AllocatedBytes)),
                 group.Max(row => row.AllocatedBytes)))
             .ToList();
 
@@ -667,7 +667,7 @@ public static class ProfileBatchCommand
                 group.Sum(row => row.Records),
                 group.Average(row => row.ElapsedMs),
                 group.Max(row => row.ElapsedMs),
-                (long)group.Average(row => row.AllocatedBytes),
+                (long)AverageLong(group.Select(static row => row.AllocatedBytes)),
                 group.Max(row => row.AllocatedBytes)))
             .Where(row => row.CaseCount > 1)
             .OrderByDescending(row => row.AverageElapsedMs)
@@ -704,7 +704,7 @@ public static class ProfileBatchCommand
             .Select(group => new BatchAggregateCounterRow(
                 group.Key,
                 group.Count(),
-                group.Average(row => row.Value),
+                AverageLong(group.Select(static row => row.Value)),
                 group.Max(row => row.Value)))
             .OrderBy(row => row.Name, StringComparer.Ordinal)
             .ToList();
@@ -910,7 +910,7 @@ public static class ProfileBatchCommand
                     Phase = group.Key,
                     ElapsedMs = group.Average(phase => phase.ElapsedMs),
                     TotalPercent = group.Average(phase => phase.TotalPercent),
-                    AllocatedBytes = (long)group.Average(phase => phase.AllocatedBytes),
+                    AllocatedBytes = (long)AverageLong(group.Select(static phase => phase.AllocatedBytes)),
                     AllocPercent = group.Average(phase => phase.AllocPercent)
                 })
                 .OrderByDescending(phase => phase.ElapsedMs)
@@ -926,11 +926,11 @@ public static class ProfileBatchCommand
                     ElapsedMs = group.Average(subphase => subphase.ElapsedMs),
                     PhasePercent = group.Average(subphase => subphase.PhasePercent),
                     TotalPercent = group.Average(subphase => subphase.TotalPercent),
-                    AllocatedBytes = (long)group.Average(subphase => subphase.AllocatedBytes),
+                    AllocatedBytes = (long)AverageLong(group.Select(static subphase => subphase.AllocatedBytes)),
                     AllocPercent = group.Average(subphase => subphase.AllocPercent),
-                    ManagedBytesBefore = (long)group.Average(subphase => subphase.ManagedBytesBefore),
-                    ManagedBytesAfter = (long)group.Average(subphase => subphase.ManagedBytesAfter),
-                    ManagedBytesDelta = (long)group.Average(subphase => subphase.ManagedBytesDelta),
+                    ManagedBytesBefore = (long)AverageLong(group.Select(static subphase => subphase.ManagedBytesBefore)),
+                    ManagedBytesAfter = (long)AverageLong(group.Select(static subphase => subphase.ManagedBytesAfter)),
+                    ManagedBytesDelta = (long)AverageLong(group.Select(static subphase => subphase.ManagedBytesDelta)),
                     Gen0Collections = (int)Math.Round(group.Average(subphase => subphase.Gen0Collections)),
                     Gen1Collections = (int)Math.Round(group.Average(subphase => subphase.Gen1Collections)),
                     Gen2Collections = (int)Math.Round(group.Average(subphase => subphase.Gen2Collections))
@@ -947,7 +947,7 @@ public static class ProfileBatchCommand
                     Name = group.First().Name,
                     Records = (int)Math.Round(group.Average(aggregate => aggregate.Records)),
                     ElapsedMs = group.Average(aggregate => aggregate.ElapsedMs),
-                    AllocatedBytes = (long)group.Average(aggregate => aggregate.AllocatedBytes),
+                    AllocatedBytes = (long)AverageLong(group.Select(static aggregate => aggregate.AllocatedBytes)),
                     Gen0Collections = (int)Math.Round(group.Average(aggregate => aggregate.Gen0Collections)),
                     Gen1Collections = (int)Math.Round(group.Average(aggregate => aggregate.Gen1Collections)),
                     Gen2Collections = (int)Math.Round(group.Average(aggregate => aggregate.Gen2Collections))
@@ -961,7 +961,7 @@ public static class ProfileBatchCommand
                 .Select(group => new CompilationProfilingCounterSnapshot
                 {
                     Name = group.Key,
-                    Value = (long)Math.Round(group.Average(counter => counter.Value))
+                    Value = (long)Math.Round(AverageLong(group.Select(static counter => counter.Value)))
                 })
                 .OrderBy(counter => counter.Name, StringComparer.Ordinal)
                 .ToList();
@@ -1026,6 +1026,24 @@ public static class ProfileBatchCommand
         return snapshot.CodeGenEvents.Count == 0
             ? 0
             : snapshot.CodeGenEvents.Sum(profileEvent => profileEvent.ElapsedMs);
+    }
+
+    internal static double AverageLong(IEnumerable<long> values)
+    {
+        decimal sum = 0;
+        long count = 0;
+        foreach (var value in values)
+        {
+            sum += value;
+            count++;
+        }
+
+        if (count == 0)
+        {
+            throw new InvalidOperationException("Sequence contains no elements");
+        }
+
+        return (double)(sum / count);
     }
 
     private readonly record struct BatchAggregatePhaseRow(

@@ -8,6 +8,7 @@ using Eidosc.Ast.Expressions;
 using Eidosc.Pipeline;
 using Eidosc.Semantic;
 using Eidosc.Types;
+using Eidosc.Mir.Optimize;
 
 namespace Eidosc.Mir;
 
@@ -54,7 +55,8 @@ public static class MirFormatter
         int specializerRunCount = 0,
         int specializerChangedIterationCount = 0,
         int optimizerChangedIterationCount = 0,
-        string? specializationLoopConvergenceReason = null)
+        string? specializationLoopConvergenceReason = null,
+        IReadOnlyList<MirOptimizationPassStats>? optimizerPassStats = null)
     {
         var sb = new StringBuilder();
         var beforeStats = before is null ? default : GetMirStats(before);
@@ -75,6 +77,17 @@ public static class MirFormatter
         if (!string.IsNullOrWhiteSpace(skipReason))
         {
             sb.AppendLine($"skip_reason: {skipReason}");
+        }
+
+        if (optimizerPassStats != null)
+        {
+            foreach (var metric in optimizerPassStats
+                         .SelectMany(static stat => stat.Metrics)
+                         .GroupBy(static pair => pair.Key, StringComparer.Ordinal)
+                         .OrderBy(static group => group.Key, StringComparer.Ordinal))
+            {
+                sb.AppendLine($"{metric.Key}: {metric.Sum(static pair => pair.Value)}");
+            }
         }
 
         if (before is not null)

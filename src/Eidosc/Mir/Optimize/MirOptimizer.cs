@@ -86,6 +86,10 @@ public sealed partial class MirOptimizer
                 }
             }
 
+            var metrics = pass is IMirOptimizationMetricsProvider metricsProvider
+                ? metricsProvider.GetMetricsSnapshot()
+                : MirOptimizationMetrics.Empty;
+
             if (ReferenceEquals(before, current))
             {
                 passStats.Add(new MirOptimizationPassStats(
@@ -94,7 +98,8 @@ public sealed partial class MirOptimizer
                     false,
                     MirOptimizationChangeKind.None,
                     before.Functions.Count,
-                    current.Functions.Count));
+                    current.Functions.Count,
+                    metrics));
                 continue;
             }
 
@@ -108,7 +113,8 @@ public sealed partial class MirOptimizer
                 true,
                 passChangeKind,
                 before.Functions.Count,
-                current.Functions.Count));
+                current.Functions.Count,
+                metrics));
         }
 
         return new MirOptimizationResult(current, changeKind, passStats);
@@ -128,6 +134,7 @@ public sealed partial class MirOptimizer
         optimizer.RegisterPass(new CommonSubexpressionElimination());
         optimizer.RegisterPass(new LoopInvariantCodeMotion());
         optimizer.RegisterPass(new DeadCodeElimination());
+        optimizer.RegisterPass(new SequencePipelineFusionPass(optimizer.MeasureOptimizerSubphase));
         optimizer.RegisterPass(new RuntimeArrayFusionPass());
         optimizer.RegisterPass(new RuntimeArrayRangeSpecializationPass());
         // Small single-block functions are inlined at the end of round 1 so
@@ -199,7 +206,8 @@ public readonly record struct MirOptimizationPassStats(
     bool Changed,
     MirOptimizationChangeKind ChangeKind,
     int InputFunctionCount,
-    int OutputFunctionCount);
+    int OutputFunctionCount,
+    IReadOnlyDictionary<string, long> Metrics);
 
 public enum MirOptimizationChangeKind
 {
@@ -238,6 +246,17 @@ public interface IMirOptimizationPass
     /// 执行优化
     /// </summary>
     MirModule Run(MirModule module);
+}
+
+public interface IMirOptimizationMetricsProvider
+{
+    IReadOnlyDictionary<string, long> GetMetricsSnapshot();
+}
+
+internal static class MirOptimizationMetrics
+{
+    public static IReadOnlyDictionary<string, long> Empty { get; } =
+        new Dictionary<string, long>(StringComparer.Ordinal);
 }
 
 public sealed partial class MirOptimizer

@@ -10,6 +10,13 @@ namespace Eidosc.Tests.Unit.Cli;
 public sealed class ProfileBatchCommandTests
 {
     [Fact]
+    public void AverageLong_ExtremeValues_DoesNotOverflow()
+    {
+        Assert.Equal((double)long.MaxValue, ProfileBatchCommand.AverageLong([long.MaxValue, long.MaxValue]));
+        Assert.Equal(-0.5, ProfileBatchCommand.AverageLong([long.MinValue, long.MaxValue]));
+    }
+
+    [Fact]
     public void GetEffectiveSnapshotTotalTimeMs_UsesCodeGenEventsWhenPipelineTimeIsZero()
     {
         var snapshot = new CompilationProfilingSnapshot

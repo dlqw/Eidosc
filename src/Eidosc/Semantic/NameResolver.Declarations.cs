@@ -1910,6 +1910,21 @@ public sealed partial class NameResolver
             "operator.append_last.singleton" => CompilerSemanticRole.AppendLastSingleton,
             "operator.append_last.append" => CompilerSemanticRole.AppendLastAppend,
             "sequence.take" => CompilerSemanticRole.SequenceTake,
+            "sequence.map" => CompilerSemanticRole.SequenceMap,
+            "sequence.filter" => CompilerSemanticRole.SequenceFilter,
+            "sequence.flat_map" => CompilerSemanticRole.SequenceFlatMap,
+            "sequence.fold_left" => CompilerSemanticRole.SequenceFoldLeft,
+            "sequence.fold_right" => CompilerSemanticRole.SequenceFoldRight,
+            "sequence.find" => CompilerSemanticRole.SequenceFind,
+            "sequence.any" => CompilerSemanticRole.SequenceAny,
+            "sequence.all" => CompilerSemanticRole.SequenceAll,
+            "sequence.count" => CompilerSemanticRole.SequenceCount,
+            "sequence.drop" => CompilerSemanticRole.SequenceDrop,
+            "sequence.zip" => CompilerSemanticRole.SequenceZip,
+            "sequence.zip_with" => CompilerSemanticRole.SequenceZipWith,
+            "sequence.partition" => CompilerSemanticRole.SequencePartition,
+            "sequence.reverse" => CompilerSemanticRole.SequenceReverse,
+            "sequence.for_each" => CompilerSemanticRole.SequenceForEach,
             _ => ReportUnknownCompilerSemanticRole(role, declaration.Span)
         };
     }

@@ -60,6 +60,7 @@ public sealed partial class CompilationPipeline
         var specializerRunCount = 0;
         var specializerChangedIterationCount = 0;
         var optimizerChangedIterationCount = 0;
+        IReadOnlyList<MirOptimizationPassStats> optimizerPassStats = [];
         string? specializationLoopConvergenceReason = null;
         string? optimizationSkipReason = null;
 
@@ -120,6 +121,7 @@ public sealed partial class CompilationPipeline
                 specializerRunCount = specializationResult.SpecializerRunCount;
                 specializerChangedIterationCount = specializationResult.SpecializerChangedIterationCount;
                 optimizerChangedIterationCount = specializationResult.OptimizerChangedIterationCount;
+                optimizerPassStats = specializationResult.OptimizerPassStats;
                 specializationLoopConvergenceReason = specializationResult.ConvergenceReason;
                 var filteredSpecializationDiagnostics =
                     FilterTrustedPrecompiledDiagnostics(specializationResult.Diagnostics).ToList();
@@ -307,7 +309,8 @@ public sealed partial class CompilationPipeline
                         specializerRunCount,
                         specializerChangedIterationCount,
                         optimizerChangedIterationCount,
-                        specializationLoopConvergenceReason));
+                        specializationLoopConvergenceReason,
+                        optimizerPassStats));
 
                 if (_options.EmitCfg)
                 {
@@ -523,6 +526,13 @@ public sealed partial class CompilationPipeline
             AddProfilingCounter($"{counterPrefix}.max_change_kind", group.Max(static stat => (int)stat.ChangeKind));
             AddProfilingCounter($"{counterPrefix}.last_input_functions", group.Last().InputFunctionCount);
             AddProfilingCounter($"{counterPrefix}.last_output_functions", group.Last().OutputFunctionCount);
+        }
+
+        foreach (var metric in passStats
+                     .SelectMany(static stat => stat.Metrics)
+                     .GroupBy(static pair => pair.Key, StringComparer.Ordinal))
+        {
+            AddProfilingCounter($"Mir.optimizer.{metric.Key}", metric.Sum(static pair => pair.Value));
         }
     }
 

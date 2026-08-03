@@ -7,5 +7,6 @@ This offline documentation set matches the Eidosc version that installed it.
 - [Project toolchain selection](eidosup/project-selection.md)
 - [Distribution sources](eidosup/distribution-sources.md)
 - [Compiler architecture](architecture/compiler-overview.md)
+- [Proof-driven sequence fusion](architecture/proof-driven-sequence-fusion.md)
 - [Ownership contract and loan summaries](architecture/ownership-contract.md)
 - [Typed reflection values](architecture/typed-reflection.md)

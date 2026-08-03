@@ -1,5 +1,7 @@
 using Eidosc.Diagnostic;
+using Eidosc.Mir;
 using Eidosc.Pipeline;
+using Eidosc.Symbols;
 using Eidosc.Tests.Fixtures;
 using Xunit;
 
@@ -240,9 +242,9 @@ public partial class LlvmPipelineIntegrationTests
         const string source = """
             import std.Seq
 
-            is_small :: Int -> Bool
+            is_small :: Ref[Int] -> Bool
             {
-                x => x <= 2
+                x => *x <= 2
             }
 
             main :: Unit -> Int
@@ -265,6 +267,308 @@ public partial class LlvmPipelineIntegrationTests
             $"Expected exit code 4, got {execution.ExitCode}.{Environment.NewLine}" +
             $"stdout:{Environment.NewLine}{execution.StandardOutput}{Environment.NewLine}" +
             $"stderr:{Environment.NewLine}{execution.StandardError}");
+    }
+
+    [Fact]
+    public void SeqFindAndPartition_BorrowedPredicates_ObserveExactVisitCounts()
+    {
+        const string source = """
+            import std.Seq
+
+            main :: Unit -> Int
+            {
+                _ => {
+                    mut find_calls := 0;
+                    found := Seq.find([1, 2, 3, 4])(value => {
+                        find_calls = find_calls + 1;
+                        *value == 3
+                    });
+                    mut partition_calls := 0;
+                    parts := Seq.partition([1, 2, 3, 4])(value => {
+                        partition_calls = partition_calls + 1;
+                        *value <= 2
+                    });
+                    (left, right) := parts;
+                    if find_calls == 3 && partition_calls == 4 &&
+                        Seq.len(ref left) == 2 && Seq.len(ref right) == 2
+                    then { 0 }
+                    else { find_calls * 10 + partition_calls }
+                }
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "seq_borrowed_predicate_visit_counts.eidos",
+            "seq_borrowed_predicate_visit_counts");
+
+        Assert.Equal(0, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SeqRetainingOperations_MoveOnlyElements_DoNotRequireClone()
+    {
+        const string source = """
+            import std.Seq
+
+            Item :: type {
+                tag :: Int,
+                text :: String
+            }
+
+            keep_even :: Ref[Item] -> Bool
+            {
+                item => (*item).tag % 2 == 0
+            }
+
+            found_tag :: Option[Item] -> Int
+            {
+                Some(item) => item.tag,
+                None() => 0
+            }
+
+            main :: Unit -> Int
+            {
+                _ => {
+                    filtered := Seq.filter([
+                        Item { tag: 1, text: "one" },
+                        Item { tag: 2, text: "two" },
+                        Item { tag: 4, text: "four" }
+                    ])(keep_even);
+                    found := Seq.find([
+                        Item { tag: 1, text: "one" },
+                        Item { tag: 2, text: "two" },
+                        Item { tag: 4, text: "four" }
+                    ])(keep_even);
+                    parts := Seq.partition([
+                        Item { tag: 1, text: "one" },
+                        Item { tag: 2, text: "two" },
+                        Item { tag: 4, text: "four" }
+                    ])(keep_even);
+                    (accepted, rejected) := parts;
+                    Seq.len(ref filtered) * 100 + found_tag(found) * 10 +
+                        Seq.len(ref accepted) + Seq.len(ref rejected)
+                }
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "seq_retaining_move_only_elements.eidos",
+            "seq_retaining_move_only_elements");
+
+        Assert.Equal(223, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_PureCallbacks_FusesToSingleSourceLoop()
+    {
+        var result = RunSourceAtMir(
+            SeqMapFilterFoldPureSource,
+            "seq_map_filter_fold_fusion.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        var main = Assert.Single(module.Functions, static function => function.Name == "main");
+        var calls = main.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .ToList();
+
+        Assert.DoesNotContain(calls, static call => call.Function is MirFunctionRef
+        {
+            CompilerSemanticRole: CompilerSemanticRole.SequenceMap or
+                CompilerSemanticRole.SequenceFilter or
+                CompilerSemanticRole.SequenceFoldLeft
+        });
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(2, result.ProfilingCounters["Mir.optimizer.sequence.intermediates_elided"]);
+        Assert.Contains(main.Locals, static local => local.Name == "__sequence_index");
+        Assert.Contains(result.SubphaseMetrics, static metric =>
+            string.Equals(metric.Name, "loop.optimizer.sequence.analyze", StringComparison.Ordinal));
+        Assert.Contains(result.SubphaseMetrics, static metric =>
+            string.Equals(metric.Name, "loop.optimizer.sequence.plan", StringComparison.Ordinal));
+        Assert.Contains(result.SubphaseMetrics, static metric =>
+            string.Equals(metric.Name, "loop.optimizer.sequence.rewrite", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_PureCallbacks_NativeSmoke_ReturnsChecksum()
+    {
+        var execution = CompileAndRunSourceAtNative(
+            SeqMapFilterFoldPureSource,
+            "seq_map_filter_fold_fusion_native.eidos",
+            "seq_map_filter_fold_fusion_native");
+
+        Assert.Equal(12, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_PanicCapablePredicate_DoesNotFuse()
+    {
+        const string source = """
+            import std.Seq
+
+            increment :: Int -> Int { value => value + 1 }
+            is_even :: Ref[Int] -> Bool { value => *value % 2 == 0 }
+            add :: Int -> Int -> Int { total, value => total + value }
+
+            main :: Unit -> Int
+            {
+                Seq.fold_left(Seq.filter(Seq.map([1, 2, 3, 4])(increment))(is_even))(0)(add)
+            }
+            """;
+
+        var result = RunSourceAtMir(
+            source,
+            "seq_map_filter_fold_panic_fallback.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.panic_or_divergence"]);
+        AssertSequencePipelineCallsRemain(result);
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_DeclaredEffectPredicate_DoesNotFuse()
+    {
+        const string source = """
+            import std.Seq
+
+            Observe :: effect;
+
+            increment :: Int -> Int { value => value + 1 }
+            is_large :: Ref[Int] -> Bool need Observe { value => *value > 2 }
+            add :: Int -> Int -> Int { total, value => total + value }
+
+            main :: Unit -> Int
+            {
+                Seq.fold_left(Seq.filter(Seq.map([1, 2, 3, 4])(increment))(is_large))(0)(add)
+            }
+            """;
+
+        var result = RunSourceAtMir(
+            source,
+            "seq_map_filter_fold_effect_fallback.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.True(
+            result.ProfilingCounters["Mir.optimizer.sequence.fallback.effect"] == 1,
+            string.Join(
+                Environment.NewLine,
+                result.ProfilingCounters
+                    .Where(static pair => pair.Key.Contains("sequence", StringComparison.Ordinal))
+                    .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+                    .Select(static pair => $"{pair.Key}={pair.Value}")));
+        AssertSequencePipelineCallsRemain(result);
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_RecursivePredicate_DoesNotFuse()
+    {
+        const string source = """
+            import std.Seq
+
+            increment :: Int -> Int { value => value + 1 }
+            recurse :: Ref[Int] -> Bool { value => recurse(value) }
+            add :: Int -> Int -> Int { total, value => total + value }
+
+            main :: Unit -> Int
+            {
+                Seq.fold_left(Seq.filter(Seq.map([1, 2, 3, 4])(increment))(recurse))(0)(add)
+            }
+            """;
+
+        var result = RunSourceAtMir(
+            source,
+            "seq_map_filter_fold_recursive_fallback.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.panic_or_divergence"]);
+        AssertSequencePipelineCallsRemain(result);
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_LocalClosure_DoesNotFuse()
+    {
+        const string source = """
+            import std.Seq
+
+            increment :: Int -> Int { value => value + 1 }
+            add :: Int -> Int -> Int { total, value => total + value }
+
+            main :: Unit -> Int
+            {
+                predicate := { value => *value > 2 };
+                Seq.fold_left(Seq.filter(Seq.map([1, 2, 3, 4])(increment))(predicate))(0)(add)
+            }
+            """;
+
+        var result = RunSourceAtMir(
+            source,
+            "seq_map_filter_fold_closure_fallback.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.shape_after_map"]);
+        AssertSequencePipelineCallsRemain(result);
+    }
+
+    [Fact]
+    public void SeqMapFilterFold_MoveOnlyMappedElements_DoesNotFuse()
+    {
+        const string source = """
+            import std.Seq
+
+            Item :: type { tag :: Int, text :: String }
+
+            make_item :: Int -> Item { value => Item { tag: value, text: "item" } }
+            is_large :: Ref[Item] -> Bool { item => (*item).tag > 2 }
+            add_tag :: Int -> Item -> Int { total, item => total + item.tag }
+
+            main :: Unit -> Int
+            {
+                Seq.fold_left(Seq.filter(Seq.map([1, 2, 3, 4])(make_item))(is_large))(0)(add_tag)
+            }
+            """;
+
+        var result = RunSourceAtMir(
+            source,
+            "seq_map_filter_fold_move_only_fallback.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.ownership"]);
+        AssertSequencePipelineCallsRemain(result);
+    }
+
+    private static void AssertSequencePipelineCallsRemain(CompilationResult result)
+    {
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        var main = Assert.Single(module.Functions, static function => function.Name == "main");
+        var roles = main.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .Select(static call => Assert.IsType<MirFunctionRef>(call.Function).CompilerSemanticRole)
+            .ToHashSet();
+
+        Assert.Contains(CompilerSemanticRole.SequenceMap, roles);
+        Assert.Contains(CompilerSemanticRole.SequenceFilter, roles);
+        Assert.Contains(CompilerSemanticRole.SequenceFoldLeft, roles);
     }
 
     [Fact]
@@ -362,6 +666,21 @@ public partial class LlvmPipelineIntegrationTests
                 shownErr := if Result.show(err) == "Err(oops)" then { 1 } else { 0 };
                 shownOk + shownErr
             }
+        }
+        """;
+
+    private const string SeqMapFilterFoldPureSource = """
+        import std.Seq
+
+        increment :: Int -> Int { value => value + 1 }
+        greater_than_two :: Ref[Int] -> Bool { value => *value > 2 }
+        add :: Int -> Int -> Int { total, value => total + value }
+
+        main :: Unit -> Int
+        {
+            Seq.fold_left(
+                Seq.filter(Seq.map([1, 2, 3, 4])(increment))(greater_than_two)
+            )(0)(add)
         }
         """;
 }

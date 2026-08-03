@@ -40,7 +40,10 @@ internal enum FunctionOptimizationCapability
     ReuseCallResult,
     ReassociatePureCalls,
     InlineBody,
-    FoldConstantCall
+    FoldConstantCall,
+    ReorderSequenceCallback,
+    InlineSequenceCallback,
+    ElideSequenceIntermediate
 }
 
 public sealed record FunctionOptimizationSummary(
@@ -194,6 +197,13 @@ public sealed record FunctionOptimizationSummary(
             FunctionOptimizationCapability.InlineBody => trustedPure,
             FunctionOptimizationCapability.FoldConstantCall =>
                 observableFree | FunctionOptimizationRequirement.Deterministic,
+            FunctionOptimizationCapability.ReorderSequenceCallback =>
+                observableFree |
+                FunctionOptimizationRequirement.NoDivergence |
+                FunctionOptimizationRequirement.Deterministic,
+            FunctionOptimizationCapability.InlineSequenceCallback => trustedPure,
+            FunctionOptimizationCapability.ElideSequenceIntermediate =>
+                FunctionOptimizationRequirement.Trusted,
             _ => throw new ArgumentOutOfRangeException(nameof(capability), capability, null)
         };
     }
@@ -296,6 +306,9 @@ internal sealed class FunctionOptimizationProofIndex
 
     public bool Allows(MirFunc function, FunctionOptimizationCapability capability) =>
         _functionSummaries.TryGet(function, out var summary) && summary.Allows(capability);
+
+    public bool TryGetSummary(MirFunctionRef function, out FunctionOptimizationSummary summary) =>
+        _functionSummaries.TryGet(function, out summary!);
 
     public bool IsRecursive(MirFunc function) =>
         _recursiveFunctionKeys.Contains(MirFunctionIdentity.GetStableKey(function));

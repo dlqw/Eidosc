@@ -908,14 +908,32 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             TraitSelfPosition = SelfPosition.Unknown,
             TraitSelfParameterIndices = [],
             TraitSelfInResult = false,
-            CompilerSemanticRole = functionRef.CompilerSemanticRole is
-                CompilerSemanticRole.AppendLastAppend or
-                CompilerSemanticRole.AppendLastSingleton or
-                CompilerSemanticRole.SequenceTake
-                    ? functionRef.CompilerSemanticRole
-                    : CompilerSemanticRole.None
+            CompilerSemanticRole = PreserveConcreteSequenceRole(functionRef.CompilerSemanticRole)
         };
     }
+
+    private static CompilerSemanticRole PreserveConcreteSequenceRole(CompilerSemanticRole role) => role switch
+    {
+        CompilerSemanticRole.AppendLastAppend or
+        CompilerSemanticRole.AppendLastSingleton or
+        CompilerSemanticRole.SequenceTake or
+        CompilerSemanticRole.SequenceMap or
+        CompilerSemanticRole.SequenceFilter or
+        CompilerSemanticRole.SequenceFlatMap or
+        CompilerSemanticRole.SequenceFoldLeft or
+        CompilerSemanticRole.SequenceFoldRight or
+        CompilerSemanticRole.SequenceFind or
+        CompilerSemanticRole.SequenceAny or
+        CompilerSemanticRole.SequenceAll or
+        CompilerSemanticRole.SequenceCount or
+        CompilerSemanticRole.SequenceDrop or
+        CompilerSemanticRole.SequenceZip or
+        CompilerSemanticRole.SequenceZipWith or
+        CompilerSemanticRole.SequencePartition or
+        CompilerSemanticRole.SequenceReverse or
+        CompilerSemanticRole.SequenceForEach => role,
+        _ => CompilerSemanticRole.None
+    };
 
     private MirFunctionRef RewriteFunctionReference(
         MirFunctionRef functionRef,
