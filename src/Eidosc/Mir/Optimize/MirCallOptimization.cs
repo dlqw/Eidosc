@@ -14,7 +14,7 @@ internal static class MirCallOptimization
 
     public static bool TryGetReusableCall(
         MirCall call,
-        FunctionOptimizationSummaryIndex? summaries,
+        FunctionOptimizationProofIndex proofs,
         IReadOnlyDictionary<string, int> parameterCounts,
         out MirFunctionRef function,
         out MirPlace target)
@@ -23,9 +23,9 @@ internal static class MirCallOptimization
         target = null!;
         if (call.Function is not MirFunctionRef functionRef ||
             call.Target is not { Kind: PlaceKind.Local } targetPlace ||
-            summaries == null ||
-            !summaries.TryGet(functionRef, out var summary) ||
-            !summary.CanReuseCallResult ||
+            !proofs.Allows(
+                functionRef,
+                FunctionOptimizationCapability.ReuseCallResult) ||
             !parameterCounts.TryGetValue(MirFunctionIdentity.GetStableKey(functionRef), out var parameterCount) ||
             call.Arguments.Count != parameterCount)
         {

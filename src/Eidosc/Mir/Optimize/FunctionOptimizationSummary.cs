@@ -18,6 +18,31 @@ public enum FunctionDeterminism
     Unknown
 }
 
+[Flags]
+internal enum FunctionOptimizationRequirement
+{
+    None = 0,
+    Trusted = 1 << 0,
+    PureEffects = 1 << 1,
+    NoMemoryAccess = 1 << 2,
+    NoPanic = 1 << 3,
+    NoDivergence = 1 << 4,
+    NoSuspend = 1 << 5,
+    NoBlock = 1 << 6,
+    NoAllocation = 1 << 7,
+    NoSynchronization = 1 << 8,
+    Deterministic = 1 << 9
+}
+
+internal enum FunctionOptimizationCapability
+{
+    EliminateUnusedCall,
+    ReuseCallResult,
+    ReassociatePureCalls,
+    InlineBody,
+    FoldConstantCall
+}
+
 public sealed record FunctionOptimizationSummary(
     EffectRow Effects,
     FunctionMemoryBehavior Memory,
@@ -79,18 +104,10 @@ public sealed record FunctionOptimizationSummary(
         FromTrustedEffects(summary.DeclaredUpperBound.Union(summary.InferredEffects));
 
     public bool CanEliminateUnusedCall =>
-        IsTrusted &&
-        Effects.IsPure &&
-        Memory == FunctionMemoryBehavior.None &&
-        !MayPanic &&
-        !MayDiverge &&
-        !MaySuspend &&
-        !MayBlock &&
-        !MayAllocate &&
-        !MaySynchronize;
+        Allows(FunctionOptimizationCapability.EliminateUnusedCall);
 
     public bool CanReuseCallResult =>
-        CanEliminateUnusedCall && Determinism == FunctionDeterminism.Deterministic;
+        Allows(FunctionOptimizationCapability.ReuseCallResult);
 
     /// <summary>
     /// Whether a structurally proven recurrence may regroup repeated calls and
@@ -100,15 +117,7 @@ public sealed record FunctionOptimizationSummary(
     /// recursive component as potentially divergent.
     /// </summary>
     public bool CanReassociatePureCalls =>
-        IsTrusted &&
-        Effects.IsPure &&
-        Memory == FunctionMemoryBehavior.None &&
-        !MayPanic &&
-        !MaySuspend &&
-        !MayBlock &&
-        !MayAllocate &&
-        !MaySynchronize &&
-        Determinism == FunctionDeterminism.Deterministic;
+        Allows(FunctionOptimizationCapability.ReassociatePureCalls);
 
     /// <summary>
     /// Whether the call boundary may be replaced by the exact MIR body. The
@@ -116,7 +125,7 @@ public sealed record FunctionOptimizationSummary(
     /// declared effect cannot be represented after the call instruction is
     /// removed and therefore requires a trusted pure effect row.
     /// </summary>
-    public bool CanInlineBody => IsTrusted && Effects.IsPure;
+    public bool CanInlineBody => Allows(FunctionOptimizationCapability.InlineBody);
 
     /// <summary>
     /// Whether a call with all-constant arguments can be folded at compile time.
@@ -124,15 +133,70 @@ public sealed record FunctionOptimizationSummary(
     /// the folding evaluator's depth/step limits instead of a summary flag.
     /// </summary>
     public bool CanFoldConstantCall =>
-        IsTrusted &&
-        Effects.IsPure &&
-        Memory == FunctionMemoryBehavior.None &&
-        !MayPanic &&
-        !MaySuspend &&
-        !MayBlock &&
-        !MayAllocate &&
-        !MaySynchronize &&
-        Determinism == FunctionDeterminism.Deterministic;
+        Allows(FunctionOptimizationCapability.FoldConstantCall);
+
+    internal bool Allows(FunctionOptimizationCapability capability) =>
+        Satisfies(GetRequirements(capability));
+
+    internal bool Satisfies(FunctionOptimizationRequirement requirements)
+    {
+        if ((requirements & FunctionOptimizationRequirement.Trusted) != 0 && !IsTrusted)
+        {
+            return false;
+        }
+
+        if ((requirements & FunctionOptimizationRequirement.PureEffects) != 0 && !Effects.IsPure)
+        {
+            return false;
+        }
+
+        if ((requirements & FunctionOptimizationRequirement.NoMemoryAccess) != 0 &&
+            Memory != FunctionMemoryBehavior.None)
+        {
+            return false;
+        }
+
+        return ((requirements & FunctionOptimizationRequirement.NoPanic) == 0 || !MayPanic) &&
+               ((requirements & FunctionOptimizationRequirement.NoDivergence) == 0 || !MayDiverge) &&
+               ((requirements & FunctionOptimizationRequirement.NoSuspend) == 0 || !MaySuspend) &&
+               ((requirements & FunctionOptimizationRequirement.NoBlock) == 0 || !MayBlock) &&
+               ((requirements & FunctionOptimizationRequirement.NoAllocation) == 0 || !MayAllocate) &&
+               ((requirements & FunctionOptimizationRequirement.NoSynchronization) == 0 || !MaySynchronize) &&
+               ((requirements & FunctionOptimizationRequirement.Deterministic) == 0 ||
+                Determinism == FunctionDeterminism.Deterministic);
+    }
+
+    private static FunctionOptimizationRequirement GetRequirements(
+        FunctionOptimizationCapability capability)
+    {
+        const FunctionOptimizationRequirement trustedPure =
+            FunctionOptimizationRequirement.Trusted |
+            FunctionOptimizationRequirement.PureEffects;
+        const FunctionOptimizationRequirement observableFree =
+            trustedPure |
+            FunctionOptimizationRequirement.NoMemoryAccess |
+            FunctionOptimizationRequirement.NoPanic |
+            FunctionOptimizationRequirement.NoSuspend |
+            FunctionOptimizationRequirement.NoBlock |
+            FunctionOptimizationRequirement.NoAllocation |
+            FunctionOptimizationRequirement.NoSynchronization;
+
+        return capability switch
+        {
+            FunctionOptimizationCapability.EliminateUnusedCall =>
+                observableFree | FunctionOptimizationRequirement.NoDivergence,
+            FunctionOptimizationCapability.ReuseCallResult =>
+                observableFree |
+                FunctionOptimizationRequirement.NoDivergence |
+                FunctionOptimizationRequirement.Deterministic,
+            FunctionOptimizationCapability.ReassociatePureCalls =>
+                observableFree | FunctionOptimizationRequirement.Deterministic,
+            FunctionOptimizationCapability.InlineBody => trustedPure,
+            FunctionOptimizationCapability.FoldConstantCall =>
+                observableFree | FunctionOptimizationRequirement.Deterministic,
+            _ => throw new ArgumentOutOfRangeException(nameof(capability), capability, null)
+        };
+    }
 
     /// <summary>
     /// Joins callee knowledge while keeping this function's own trust status:
@@ -208,15 +272,80 @@ public sealed class FunctionOptimizationSummaryIndex
         _byFunctionKey.TryGetValue(MirFunctionIdentity.GetStableKey(function), out summary!);
 }
 
+internal sealed class FunctionOptimizationProofIndex
+{
+    private readonly FunctionOptimizationSummaryIndex _functionSummaries;
+    private readonly HashSet<string> _recursiveFunctionKeys;
+
+    public static FunctionOptimizationProofIndex Empty { get; } = new(
+        FunctionOptimizationSummaryIndex.Empty,
+        new RecursiveCallAnalysisResult { Components = [] });
+
+    internal FunctionOptimizationProofIndex(
+        FunctionOptimizationSummaryIndex functionSummaries,
+        RecursiveCallAnalysisResult recursiveCalls)
+    {
+        _functionSummaries = functionSummaries;
+        _recursiveFunctionKeys = recursiveCalls.Components
+            .SelectMany(static component => component.FunctionKeys)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    public bool Allows(MirFunctionRef function, FunctionOptimizationCapability capability) =>
+        _functionSummaries.TryGet(function, out var summary) && summary.Allows(capability);
+
+    public bool Allows(MirFunc function, FunctionOptimizationCapability capability) =>
+        _functionSummaries.TryGet(function, out var summary) && summary.Allows(capability);
+
+    public bool IsRecursive(MirFunc function) =>
+        _recursiveFunctionKeys.Contains(MirFunctionIdentity.GetStableKey(function));
+}
+
+internal static class FunctionOptimizationProofAnalyzer
+{
+    public static FunctionOptimizationProofIndex Analyze(
+        MirModule module,
+        IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries = null)
+    {
+        var functions = MirFunctionOptimizationIndex.Build(module);
+        var recursiveCalls = RecursiveCallAnalysis.Analyze(functions);
+        var functionSummaries = FunctionOptimizationSummaryAnalyzer.Analyze(
+            functions,
+            effectSummaries,
+            recursiveCalls);
+        return new FunctionOptimizationProofIndex(functionSummaries, recursiveCalls);
+    }
+}
+
+internal static class MirFunctionOptimizationIndex
+{
+    public static Dictionary<string, MirFunc> Build(MirModule module) =>
+        module.Functions
+            .GroupBy(MirFunctionIdentity.GetStableKey, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.First(),
+                StringComparer.Ordinal);
+}
+
 public static class FunctionOptimizationSummaryAnalyzer
 {
     public static FunctionOptimizationSummaryIndex Analyze(
         MirModule module,
         IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries = null)
     {
-        var functions = module.Functions
-            .GroupBy(MirFunctionIdentity.GetStableKey, StringComparer.Ordinal)
-            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+        var functions = MirFunctionOptimizationIndex.Build(module);
+        return Analyze(
+            functions,
+            effectSummaries,
+            RecursiveCallAnalysis.Analyze(functions));
+    }
+
+    internal static FunctionOptimizationSummaryIndex Analyze(
+        IReadOnlyDictionary<string, MirFunc> functions,
+        IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries,
+        RecursiveCallAnalysisResult recursiveCalls)
+    {
         var local = new Dictionary<string, FunctionOptimizationSummary>(StringComparer.Ordinal);
         var calls = new Dictionary<string, List<CallEdge>>(StringComparer.Ordinal);
         var hasOwnSummary = new HashSet<string>(StringComparer.Ordinal);
@@ -298,7 +427,7 @@ public static class FunctionOptimizationSummaryAnalyzer
             calls[key] = functionCalls;
         }
 
-        foreach (var component in RecursiveCallAnalysis.Analyze(module).Components)
+        foreach (var component in recursiveCalls.Components)
         {
             foreach (var key in component.FunctionKeys)
             {
@@ -356,7 +485,7 @@ public static class FunctionOptimizationSummaryAnalyzer
     private readonly record struct CallEdge(string CalleeKey, bool IsPartial);
 }
 
-internal interface IFunctionOptimizationSummaryConsumer
+internal interface IFunctionOptimizationProofConsumer
 {
-    FunctionOptimizationSummaryIndex FunctionSummaries { set; }
+    FunctionOptimizationProofIndex FunctionProofs { set; }
 }

@@ -1349,8 +1349,10 @@ public partial class MirOptimizerTests
                 static _ => FunctionOptimizationSummary.Pure,
                 StringComparer.Ordinal);
         var pass = new Inlining(maxInlineSize);
-        ((IFunctionOptimizationSummaryConsumer)pass).FunctionSummaries =
-            new FunctionOptimizationSummaryIndex(summaries);
+        ((IFunctionOptimizationProofConsumer)pass).FunctionProofs =
+            new FunctionOptimizationProofIndex(
+                new FunctionOptimizationSummaryIndex(summaries),
+                RecursiveCallAnalysis.Analyze(module));
         return pass.Run(module);
     }
 }

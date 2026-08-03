@@ -1,14 +1,14 @@
 namespace Eidosc.Mir.Optimize;
 
-public sealed class CommonSubexpressionElimination : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
+public sealed class CommonSubexpressionElimination : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
-    private FunctionOptimizationSummaryIndex? _functionSummaries;
+    private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
     private IReadOnlyDictionary<string, int> _parameterCounts =
         new Dictionary<string, int>(StringComparer.Ordinal);
 
-    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    FunctionOptimizationProofIndex IFunctionOptimizationProofConsumer.FunctionProofs
     {
-        set => _functionSummaries = value;
+        set => _functionProofs = value;
     }
 
     public string Name => "CommonSubexpressionElimination";
@@ -81,7 +81,7 @@ public sealed class CommonSubexpressionElimination : IMirOptimizationPass, IFunc
             if (instruction is MirCall call &&
                 MirCallOptimization.TryGetReusableCall(
                     call,
-                    _functionSummaries,
+                    _functionProofs,
                     _parameterCounts,
                     out var function,
                     out var target) &&

@@ -46,19 +46,44 @@ public sealed partial class MirOptimizer
         var current = module;
         var changeKind = MirOptimizationChangeKind.None;
         var passStats = new List<MirOptimizationPassStats>(_passes.Count);
+        MirModule? proofModule = null;
+        var functionProofs = FunctionOptimizationProofIndex.Empty;
 
         for (var passIndex = 0; passIndex < _passes.Count; passIndex++)
         {
             var pass = _passes[passIndex];
             var before = current;
-            if (pass is IFunctionOptimizationSummaryConsumer summaryConsumer)
+            var proofConsumer = pass as IFunctionOptimizationProofConsumer;
+            if (proofConsumer != null)
             {
-                summaryConsumer.FunctionSummaries =
-                    FunctionOptimizationSummaryAnalyzer.Analyze(current, _effectSummaries);
+                if (!ReferenceEquals(proofModule, current))
+                {
+                    using (MeasureOptimizerSubphase("proofs.analyze"))
+                    {
+                        functionProofs = FunctionOptimizationProofAnalyzer.Analyze(
+                            current,
+                            _effectSummaries);
+                    }
+
+                    proofModule = current;
+                }
+
+                proofConsumer.FunctionProofs = functionProofs;
             }
-            using (MeasureOptimizerSubphase($"pass.{passIndex}.{pass.Name}"))
+
+            try
             {
-                current = pass.Run(current);
+                using (MeasureOptimizerSubphase($"pass.{passIndex}.{pass.Name}"))
+                {
+                    current = pass.Run(current);
+                }
+            }
+            finally
+            {
+                if (proofConsumer != null)
+                {
+                    proofConsumer.FunctionProofs = FunctionOptimizationProofIndex.Empty;
+                }
             }
 
             if (ReferenceEquals(before, current))
