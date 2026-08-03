@@ -39,6 +39,7 @@ foreach ($workflowPath in @(".github/workflows/release-eidosc.yml", ".github/wor
 foreach ($scriptPath in @(
     "scripts/release/Invoke-EidosupCleanInstall.ps1",
     "scripts/release/Invoke-EidosupPublishedInstall.ps1",
+    "scripts/release/New-TutorialSmokeProject.ps1",
     "scripts/release/Test-TutorialSmokeManifest.ps1"))
 {
     $tokens = $null
@@ -97,6 +98,30 @@ try
     if (-not $rejectedStaleTutorial)
     {
         throw "Release verification did not reject a stale tutorial language manifest."
+    }
+
+    $tutorialSource = Join-Path $temporaryRoot "29_precompiled_stdlib.eidos"
+    [IO.File]::WriteAllText(
+        $tutorialSource,
+        "main :: Unit -> Int { _ => 0 }`n",
+        [Text.UTF8Encoding]::new($false))
+    $isolatedExample = & (Join-Path $scriptRoot "New-TutorialSmokeProject.ps1") `
+        -SourcePath $tutorialSource `
+        -DestinationDirectory (Join-Path $temporaryRoot "tutorial-smoke") `
+        -CompatibilityPath (Join-Path $repositoryRoot "eng/compatibility.json")
+    if (-not (Test-Path -LiteralPath $isolatedExample -PathType Leaf) -or
+        [IO.Path]::GetFileName($isolatedExample) -cne "main.eidos")
+    {
+        throw "Release verification did not create an isolated tutorial smoke source."
+    }
+
+    $isolatedManifest = Join-Path (Split-Path -Parent (Split-Path -Parent $isolatedExample)) "eidos.toml"
+    & (Join-Path $scriptRoot "Test-TutorialSmokeManifest.ps1") `
+        -ManifestPath $isolatedManifest `
+        -CompatibilityPath (Join-Path $repositoryRoot "eng/compatibility.json")
+    if ((Get-Content -Raw -LiteralPath $isolatedManifest).Contains("[ffi]", [StringComparison]::Ordinal))
+    {
+        throw "The isolated tutorial smoke manifest inherited unrelated FFI dependencies."
     }
 
     $eidoscRoot = Join-Path $temporaryRoot "eidosc"

@@ -18,8 +18,10 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$scriptRoot = Split-Path -Parent $PSCommandPath
 $bootstrap = (Resolve-Path -LiteralPath $EidosupPath).Path
-$example = (Resolve-Path -LiteralPath $TutorialExample).Path
+$tutorialExample = (Resolve-Path -LiteralPath $TutorialExample).Path
+$compatibilityPath = (Resolve-Path -LiteralPath (Join-Path $scriptRoot "../../eng/compatibility.json")).Path
 $platform = if ([Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::Windows))
 {
     "win"
@@ -47,6 +49,10 @@ if ($rid -cne $ExpectedRid)
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("eidosup-published-install-" + [Guid]::NewGuid().ToString("N"))
 $installRoot = Join-Path $temporaryRoot "install"
 $downloadRoot = Join-Path $temporaryRoot "downloads"
+$example = & (Join-Path $scriptRoot "New-TutorialSmokeProject.ps1") `
+    -SourcePath $tutorialExample `
+    -DestinationDirectory (Join-Path $temporaryRoot "tutorial-smoke") `
+    -CompatibilityPath $compatibilityPath
 $previousGitHubToken = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN")
 $previousGhToken = [Environment]::GetEnvironmentVariable("GH_TOKEN")
 $previousTestServer = [Environment]::GetEnvironmentVariable("EIDOSUP_TEST_RELEASE_SERVER")
