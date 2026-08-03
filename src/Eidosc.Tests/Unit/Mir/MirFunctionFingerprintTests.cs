@@ -1,5 +1,7 @@
 using Eidosc.Mir;
 using Eidosc.Pipeline;
+using Eidosc.Symbols;
+using Eidosc.Types;
 using Eidosc.Utils;
 using Xunit;
 
@@ -119,6 +121,15 @@ public sealed class MirFunctionFingerprintTests
             };
             return MirFunctionFingerprintBuilder.Compute(function).BodyHash;
         }
+    }
+
+    [Fact]
+    public void Compute_SequenceSemanticRoleChangesFingerprint()
+    {
+        var map = MirFunctionFingerprintBuilder.Compute(CreateRoleCallFunction(CompilerSemanticRole.SequenceMap));
+        var filter = MirFunctionFingerprintBuilder.Compute(CreateRoleCallFunction(CompilerSemanticRole.SequenceFilter));
+
+        Assert.NotEqual(map.BodyHash, filter.BodyHash);
     }
 
     [Fact]
@@ -304,6 +315,46 @@ public sealed class MirFunctionFingerprintTests
             ],
             EntryBlockId = block.Id,
             BasicBlocks = [block]
+        };
+    }
+
+    private static MirFunc CreateRoleCallFunction(CompilerSemanticRole role)
+    {
+        var intType = new TypeId(BaseTypes.IntId);
+        var result = new MirPlace
+        {
+            Kind = PlaceKind.Local,
+            Local = new LocalId { Value = 1 },
+            TypeId = intType
+        };
+        return new MirFunc
+        {
+            Name = "role_call",
+            ReturnType = intType,
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals = [new MirLocal { Id = result.Local, Name = "result", TypeId = intType }],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCall
+                        {
+                            Target = result,
+                            Function = new MirFunctionRef
+                            {
+                                Name = "sequence_stage",
+                                TypeId = intType,
+                                CompilerSemanticRole = role
+                            }
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = result }
+                }
+            ]
         };
     }
 

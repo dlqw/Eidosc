@@ -149,7 +149,7 @@ AsyncExtra :: module {
     }
 
     /// Partition a Seq into two groups based on a predicate.
-    export partition[A, E: effects] :: Seq[A] -> (A -> Bool need E) -> (Seq[A], Seq[A]) need E
+    export partition[A, E: effects] :: Seq[A] -> (Ref[A] -> Bool need E) -> (Seq[A], Seq[A]) need E
     {
         xs => pred => Seq.partition(xs)(pred)
     }

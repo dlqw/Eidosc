@@ -209,12 +209,16 @@ main :: Int -> Int
         return new CompilationPipeline(source, options).Run();
     }
 
-    private static CompilationResult RunSourceAtMir(string source, string inputFile)
+    private static CompilationResult RunSourceAtMir(
+        string source,
+        string inputFile,
+        bool enableDetailedProfiling = false)
     {
         var options = new CompilationOptions
         {
             InputFile = Path.GetFullPath(inputFile),
             StopAtPhase = CompilationPhase.Mir,
+            EnableDetailedProfiling = enableDetailedProfiling,
             UseColors = false,
             AllowVirtualInputFile = true,
             PackageImportRoots = ExplicitStdPackageRoots

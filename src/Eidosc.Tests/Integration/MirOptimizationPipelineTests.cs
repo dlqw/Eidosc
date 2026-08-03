@@ -77,6 +77,7 @@ public class MirOptimizationPipelineTests
             Assert.Contains("enabled: True", summary, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("applied: True", summary, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("DeadCodeElimination", summary, StringComparison.Ordinal);
+            Assert.Contains("sequence.functions_scanned:", summary, StringComparison.Ordinal);
         }
         finally
         {

@@ -769,7 +769,7 @@ Main :: module {
             TraitSelfPosition = SelfPosition.Both,
             TraitSelfParameterIndices = [0, 2],
             TraitSelfInResult = true,
-            CompilerSemanticRole = CompilerSemanticRole.Equality,
+            CompilerSemanticRole = CompilerSemanticRole.SequenceMap,
             Span = Span(6)
         };
 

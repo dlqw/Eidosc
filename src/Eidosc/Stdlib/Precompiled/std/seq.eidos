@@ -106,22 +106,22 @@ Seq :: module {
         xs => fallback => Option.unwrap_or(Seq.last(xs))(fallback)
     }
 
-    export map[T, U, E: effects] :: Seq[T] -> (T -> U need E) -> Seq[U] need E
+    export map[T, U, E: effects] :: Seq[T] -> (T -> U need E) -> Seq[U] need E compiler(role: "sequence.map")
     {
         xs => f => [f(x) | x <- xs]
     }
 
-    export filter[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Seq[T] need E
+    export filter[T, E: effects] :: Seq[T] -> (Ref[T] -> Bool need E) -> Seq[T] need E compiler(role: "sequence.filter")
     {
-        xs => pred => [x | x <- xs, pred(x)]
+        xs => pred => [x | x <- xs, pred(ref x)]
     }
 
-    export flat_map[T, U, E: effects] :: Seq[T] -> (T -> Seq[U] need E) -> Seq[U] need E
+    export flat_map[T, U, E: effects] :: Seq[T] -> (T -> Seq[U] need E) -> Seq[U] need E compiler(role: "sequence.flat_map")
     {
         xs => f => [y | x <- xs, y <- f(x)]
     }
 
-    export fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
+    export fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E compiler(role: "sequence.fold_left")
     {
         xs => initial => f => {
             len := Seq.len_ref(ref xs);
@@ -139,7 +139,7 @@ Seq :: module {
         }
     }
 
-    export fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E
+    export fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E compiler(role: "sequence.fold_right")
     {
         xs => initial => f => {
             mut index := Seq.len_ref(ref xs) - 1;
@@ -180,9 +180,26 @@ Seq :: module {
         xs => Traversable.traverse(xs)(Traversable.identity_applicative)
     }
 
-    export find[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> Option[T] need E
+    export find[T, E: effects] :: Seq[T] -> (Ref[T] -> Bool need E) -> Option[T] need E compiler(role: "sequence.find")
     {
-        xs => pred => Seq.head(Seq.filter(xs)(pred))
+        xs => pred => {
+            len := Seq.len_ref(ref xs)
+            mut index := 0
+            mut result: Option[T] := None()
+            mut found := false
+            loop {
+                if index >= len || found then { break }
+                else {
+                    value := xs[index]
+                    if pred(ref value) then {
+                        result = Some(value)
+                        found = true
+                    } else { () }
+                    index = index + 1
+                }
+            }
+            result
+        }
     }
 
 
@@ -208,7 +225,7 @@ Seq :: module {
         xs => pred => Seq.find_index_from(xs)(0)(pred)
     }
 
-    export any[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
+    export any[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E compiler(role: "sequence.any")
     {
         xs => pred => {
             len := Seq.len_ref(ref xs);
@@ -226,7 +243,7 @@ Seq :: module {
         }
     }
 
-    export all[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
+    export all[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E compiler(role: "sequence.all")
     {
         xs => pred => {
             len := Seq.len_ref(ref xs);
@@ -254,19 +271,30 @@ Seq :: module {
         xs => n => RuntimeArray.take(xs)(n)
     }
 
-    export drop[T] :: Seq[T] -> Int -> Seq[T]
+    export drop[T] :: Seq[T] -> Int -> Seq[T] compiler(role: "sequence.drop")
     {
-        xs => n =>
+        xs => n => {
             if n <= 0 then { xs }
             else {
-                match xs {
-                    [] => [],
-                    [_, ..tail] => Seq.drop(tail)(n - 1)
+                len := Seq.len_ref(ref xs)
+                if n >= len then { [] }
+                else {
+                    mut result := RuntimeArray.with_capacity[T](len - n)
+                    mut index := n
+                    loop {
+                        if index >= len then { break }
+                        else {
+                            result = RuntimeArray.push(result)(xs[index])
+                            index = index + 1
+                        }
+                    }
+                    result
                 }
             }
+        }
     }
 
-    export count[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Int need E
+    export count[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Int need E compiler(role: "sequence.count")
     {
         xs => pred => {
             len := Seq.len_ref(ref xs);
@@ -289,7 +317,7 @@ Seq :: module {
         xs => pred => !Seq.any(xs)(pred)
     }
 
-    export zip[A, B] :: Seq[A] -> Seq[B] -> Seq[(A, B)]
+    export zip[A, B] :: Seq[A] -> Seq[B] -> Seq[(A, B)] compiler(role: "sequence.zip")
     {
         left => right => {
             left_len := Seq.len_ref(ref left)
@@ -307,7 +335,7 @@ Seq :: module {
         }
     }
 
-    export zip_with[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E
+    export zip_with[A, B, C, E: effects] :: Seq[A] -> Seq[B] -> (A -> B -> C need E) -> Seq[C] need E compiler(role: "sequence.zip_with")
     {
         left => right => f => {
             left_len := Seq.len_ref(ref left)
@@ -330,19 +358,43 @@ Seq :: module {
         xss => [x | xs <- xss, x <- xs]
     }
 
-    export partition[T: Clone, E: effects] :: Seq[T] -> (T -> Bool need E) -> (Seq[T], Seq[T]) need E
+    export partition[T, E: effects] :: Seq[T] -> (Ref[T] -> Bool need E) -> (Seq[T], Seq[T]) need E compiler(role: "sequence.partition")
     {
-        xs => pred => (
-            [x | x <- xs, pred(x)],
-            [x | x <- xs, !pred(x)]
-        )
+        xs => pred => {
+            len := Seq.len_ref(ref xs)
+            mut accepted := RuntimeArray.with_capacity[T](0)
+            mut rejected := RuntimeArray.with_capacity[T](0)
+            mut index := 0
+            loop {
+                if index >= len then { break }
+                else {
+                    value := xs[index]
+                    if pred(ref value) then {
+                        accepted = RuntimeArray.push(accepted)(value)
+                    } else {
+                        rejected = RuntimeArray.push(rejected)(value)
+                    }
+                    index = index + 1
+                }
+            };
+            (accepted, rejected)
+        }
     }
 
-    export reverse[T] :: Seq[T] -> Seq[T]
+    export reverse[T] :: Seq[T] -> Seq[T] compiler(role: "sequence.reverse")
     {
-        xs => match xs {
-            [] => [],
-            [head, ..tail] => Seq.append(Seq.reverse(tail))([head])
+        xs => {
+            len := Seq.len_ref(ref xs)
+            mut result := RuntimeArray.with_capacity[T](len)
+            mut index := len - 1
+            loop {
+                if index < 0 then { break }
+                else {
+                    result = RuntimeArray.push(result)(xs[index])
+                    index = index - 1
+                }
+            }
+            result
         }
     }
 
@@ -605,7 +657,7 @@ Seq :: module {
 
     // ── Side-effect iteration ────────────────────────────────────
 
-    export for_each[T, E: effects] :: Seq[T] -> (T -> Unit need E) -> Unit need E
+    export for_each[T, E: effects] :: Seq[T] -> (T -> Unit need E) -> Unit need E compiler(role: "sequence.for_each")
     {
         xs => f => {
             len := Seq.len_ref(ref xs);

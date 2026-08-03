@@ -37,6 +37,36 @@ public sealed class FunctionOptimizationProofTests
         Assert.True(proofs.Allows(
             function,
             FunctionOptimizationCapability.InlineBody));
+        Assert.False(proofs.Allows(
+            function,
+            FunctionOptimizationCapability.ReorderSequenceCallback));
+    }
+
+    [Fact]
+    public void ReorderSequenceCallback_RequiresStrictObservableFreedom()
+    {
+        Assert.True(FunctionOptimizationSummary.Pure.Allows(
+            FunctionOptimizationCapability.ReorderSequenceCallback));
+
+        var rejected = new[]
+        {
+            FunctionOptimizationSummary.Pure with { IsTrusted = false },
+            FunctionOptimizationSummary.Pure with
+            {
+                Effects = new EffectRow([new EffectTag(new SymbolId(901), "io")])
+            },
+            FunctionOptimizationSummary.Pure with { Memory = FunctionMemoryBehavior.Read },
+            FunctionOptimizationSummary.Pure with { MayPanic = true },
+            FunctionOptimizationSummary.Pure with { MayDiverge = true },
+            FunctionOptimizationSummary.Pure with { MaySuspend = true },
+            FunctionOptimizationSummary.Pure with { MayBlock = true },
+            FunctionOptimizationSummary.Pure with { MayAllocate = true },
+            FunctionOptimizationSummary.Pure with { MaySynchronize = true },
+            FunctionOptimizationSummary.Pure with { Determinism = FunctionDeterminism.Nondeterministic }
+        };
+
+        Assert.All(rejected, summary => Assert.False(summary.Allows(
+            FunctionOptimizationCapability.ReorderSequenceCallback)));
     }
 
     [Fact]
