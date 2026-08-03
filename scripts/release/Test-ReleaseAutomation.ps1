@@ -38,7 +38,8 @@ foreach ($workflowPath in @(".github/workflows/release-eidosc.yml", ".github/wor
 
 foreach ($scriptPath in @(
     "scripts/release/Invoke-EidosupCleanInstall.ps1",
-    "scripts/release/Invoke-EidosupPublishedInstall.ps1"))
+    "scripts/release/Invoke-EidosupPublishedInstall.ps1",
+    "scripts/release/Test-TutorialSmokeManifest.ps1"))
 {
     $tokens = $null
     $parseErrors = $null
@@ -65,6 +66,39 @@ function Add-ZipText(
 Push-Location -LiteralPath $repositoryRoot
 try
 {
+    $tutorialManifest = Join-Path $temporaryRoot "eidos.toml"
+    New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
+    [IO.File]::WriteAllText(
+        $tutorialManifest,
+        "manifestSchema = 3`n`n[language]`nversion = `"0.8.0-alpha.1`"`n",
+        [Text.UTF8Encoding]::new($false))
+    & (Join-Path $scriptRoot "Test-TutorialSmokeManifest.ps1") `
+        -ManifestPath $tutorialManifest `
+        -CompatibilityPath (Join-Path $repositoryRoot "eng/compatibility.json")
+
+    [IO.File]::WriteAllText(
+        $tutorialManifest,
+        "manifestSchema = 3`n`n[language]`nversion = `"0.4.0-alpha.1`"`n",
+        [Text.UTF8Encoding]::new($false))
+    $rejectedStaleTutorial = $false
+    try
+    {
+        & (Join-Path $scriptRoot "Test-TutorialSmokeManifest.ps1") `
+            -ManifestPath $tutorialManifest `
+            -CompatibilityPath (Join-Path $repositoryRoot "eng/compatibility.json")
+    }
+    catch
+    {
+        $rejectedStaleTutorial = $_.Exception.Message.Contains(
+            "does not match compiler default",
+            [StringComparison]::Ordinal)
+    }
+
+    if (-not $rejectedStaleTutorial)
+    {
+        throw "Release verification did not reject a stale tutorial language manifest."
+    }
+
     $eidoscRoot = Join-Path $temporaryRoot "eidosc"
     $eidosupRoot = Join-Path $temporaryRoot "eidosup"
     New-Item -ItemType Directory -Path $eidoscRoot, $eidosupRoot | Out-Null
