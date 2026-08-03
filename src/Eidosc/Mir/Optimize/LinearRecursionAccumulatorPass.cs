@@ -13,11 +13,20 @@ namespace Eidosc.Mir.Optimize;
 /// v1 matches the exact shape only; any deviation returns the function
 /// unchanged. Equivalence: with F(n) = F(n-1) + F(n-2) and F(0) = 0, F(1) = 1,
 /// F(n) = Σ F(n-1-2k) + F(n mod 2), which is exactly the generated loop
-/// (acc += F(n-1); n -= 2; return acc + n).
+/// (acc += F(n-1); n -= 2; return acc + n). The transform is restricted to the
+/// canonical Int type, whose current LLVM lowering uses plain wrapping add/sub;
+/// the regrouping therefore remains associative even after 64-bit overflow.
 /// </summary>
-public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
+public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
 {
+    private FunctionOptimizationSummaryIndex _functionSummaries = FunctionOptimizationSummaryIndex.Empty;
+
     public string Name => "LinearRecursionAccumulator";
+
+    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    {
+        set => _functionSummaries = value;
+    }
 
     public MirModule Run(MirModule module)
     {
@@ -58,7 +67,10 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
         if (func.IsExternal ||
             func.BasicBlocks.Count == 0 ||
             func.GenericParameterCount > 0 ||
-            func.Locals.Count(static local => local.IsParameter) != 1)
+            func.Locals.Count(static local => local.IsParameter) != 1 ||
+            func.ReturnType.Value != BaseTypes.IntId ||
+            !_functionSummaries.TryGet(func, out var summary) ||
+            !summary.CanReassociatePureCalls)
         {
             return func;
         }
@@ -74,8 +86,12 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
     private sealed record FibShape(
         MirLocal Parameter,
         BlockId BaseBlockId,
-        MirCall FirstCall,
-        MirCall SecondCall);
+        BlockId RecursionBlockId,
+        MirCall FirstCall);
+
+    private readonly record struct ValueKey(bool IsTemp, int Value);
+
+    private readonly record struct Definition(int Index, MirInstruction Instruction);
 
     private static bool TryMatchFibShape(MirFunc func, out FibShape? shape)
     {
@@ -88,9 +104,21 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
         }
 
         var parameter = func.Locals.Single(static local => local.IsParameter);
-        var paramPlace = CreateLocalPlace(parameter.Id, parameter.TypeId, func.Span);
+        if (parameter.TypeId != func.ReturnType)
+        {
+            return false;
+        }
 
-        var entry = blocks.FirstOrDefault(static block => block.IsEntry);
+        var paramPlace = CreateLocalPlace(parameter.Id, parameter.TypeId, func.Span);
+        var paramKey = OperandTargetKey(paramPlace)!.Value;
+
+        var entries = blocks.Where(static block => block.IsEntry).ToArray();
+        if (entries.Length != 1 || entries[0].Id != func.EntryBlockId)
+        {
+            return false;
+        }
+
+        var entry = entries[0];
         var baseBlock = blocks.FirstOrDefault(block => !block.IsEntry && IsBaseReturn(block, paramPlace));
         var recBlock = blocks.FirstOrDefault(block => !block.IsEntry && block != baseBlock);
         if (entry == null || baseBlock == null || recBlock == null)
@@ -106,118 +134,139 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             !entrySwitch.Branches[0].Target.Equals(baseBlock.Id) ||
             !entrySwitch.DefaultTarget.HasValue ||
             !entrySwitch.DefaultTarget.Value.Equals(recBlock.Id) ||
-            !IsEntryGuard(entry, entrySwitch, paramPlace))
+            !TryMatchEntryGuard(entry, entrySwitch, paramKey))
         {
             return false;
         }
 
-        // Recursion block: two self calls with args n-1 / n-2, summed and returned.
-        var subsByTarget = new Dictionary<(bool IsTemp, int Value), long>();
-        foreach (var instruction in recBlock.Instructions)
-        {
-            if (instruction is not MirBinOp binOp ||
-                binOp.Operator != BinaryOp.Sub ||
-                !IsSamePlace(ResolveThroughCopies(binOp.Left as MirPlace, recBlock), paramPlace) ||
-                !TryGetIntConstant(binOp.Right, out var subValue) ||
-                OperandTargetKey(binOp.Target) is not { } subKey)
-            {
-                continue;
-            }
-
-            subsByTarget[subKey] = subValue;
-        }
-
-        var calls = new List<(MirCall Call, long Offset)>();
-        foreach (var instruction in recBlock.Instructions)
-        {
-            if (instruction is not MirCall call ||
-                !IsSelfRecursiveCall(func, call) ||
-                call.Arguments.Count != 1 ||
-                OperandTargetKey(call.Arguments[0]) is not { } argKey ||
-                !subsByTarget.TryGetValue(argKey, out var offset))
-            {
-                // Call arguments often go through a copy (e.g. %8 = copy %7);
-                // resolve through copies before looking up the subtraction.
-                if (instruction is MirCall copyCall &&
-                    IsSelfRecursiveCall(func, copyCall) &&
-                    copyCall.Arguments.Count == 1 &&
-                    ResolveThroughCopies(copyCall.Arguments[0] as MirPlace, recBlock) is { } resolvedArg &&
-                    OperandTargetKey(resolvedArg) is { } resolvedKey &&
-                    subsByTarget.TryGetValue(resolvedKey, out var resolvedOffset))
-                {
-                    calls.Add((copyCall, resolvedOffset));
-                }
-
-                continue;
-            }
-
-            calls.Add((call, offset));
-        }
-
-        if (calls.Count != 2 ||
-            calls.Select(static pair => pair.Offset).ToHashSet().Count != 2)
+        if (!TryBuildDefinitions(recBlock, out var definitions))
         {
             return false;
         }
 
-        var offsets = calls.Select(static pair => pair.Offset).OrderBy(static value => value).ToArray();
+        var subtractions = recBlock.Instructions
+            .Select((instruction, index) => (instruction, index))
+            .Where(static pair => pair.instruction is MirBinOp { Operator: BinaryOp.Sub })
+            .Select(static pair => ((MirBinOp)pair.instruction, pair.index))
+            .ToArray();
+        var calls = recBlock.Instructions
+            .Select((instruction, index) => (instruction, index))
+            .Where(static pair => pair.instruction is MirCall)
+            .Select(static pair => ((MirCall)pair.instruction, pair.index))
+            .ToArray();
+        var additions = recBlock.Instructions
+            .Select((instruction, index) => (instruction, index))
+            .Where(static pair => pair.instruction is MirBinOp { Operator: BinaryOp.Add })
+            .Select(static pair => ((MirBinOp)pair.instruction, pair.index))
+            .ToArray();
+        if (subtractions.Length != 2 || calls.Length != 2 || additions.Length != 1 ||
+            recBlock.Instructions.Any(static instruction => instruction is not MirCopy and
+                                                               not MirCall and
+                                                               not MirBinOp { Operator: BinaryOp.Sub or BinaryOp.Add }))
+        {
+            return false;
+        }
+
+        var consumed = new HashSet<int>();
+        var offsetsByTarget = new Dictionary<ValueKey, long>();
+        foreach (var (subtraction, index) in subtractions)
+        {
+            if (OperandTargetKey(subtraction.Target) is not { } target ||
+                subtraction.Target.TypeId != parameter.TypeId ||
+                subtraction.Left.TypeId != parameter.TypeId ||
+                subtraction.Right.TypeId != parameter.TypeId ||
+                !TryGetIntConstant(subtraction.Right, out var offset) ||
+                !TryResolveCopyRoot(
+                    subtraction.Left,
+                    definitions,
+                    index,
+                    consumed,
+                    out var leftRoot) ||
+                leftRoot != paramKey ||
+                !offsetsByTarget.TryAdd(target, offset))
+            {
+                return false;
+            }
+
+            consumed.Add(index);
+        }
+
+        var offsets = offsetsByTarget.Values.OrderBy(static value => value).ToArray();
         if (offsets[0] != 1 || offsets[1] != 2)
         {
             return false;
         }
 
-        var callTargets = calls
-            .Select(static pair => pair.Call.Target)
-            .Select(OperandTargetKey)
-            .ToHashSet();
-        if (callTargets.Count != 2 || callTargets.Any(static key => key == null))
+        var callsByTarget = new Dictionary<ValueKey, (MirCall Call, long Offset)>();
+        foreach (var (call, index) in calls)
+        {
+            if (!IsSelfRecursiveCall(func, call) ||
+                call.Target == null ||
+                call.Target.TypeId != func.ReturnType ||
+                call.Arguments.Count != 1 ||
+                call.Arguments[0].TypeId != parameter.TypeId ||
+                call.BorrowedArgumentIndices.Count != 0 ||
+                call.RecordUpdate != null ||
+                call.IsTailCall ||
+                OperandTargetKey(call.Target) is not { } callTarget ||
+                !TryResolveCopyRoot(call.Arguments[0], definitions, index, consumed, out var argumentRoot) ||
+                !definitions.TryGetValue(argumentRoot, out var argumentDefinition) ||
+                argumentDefinition.Index >= index ||
+                !offsetsByTarget.TryGetValue(argumentRoot, out var offset) ||
+                !callsByTarget.TryAdd(callTarget, (call, offset)))
+            {
+                return false;
+            }
+
+            consumed.Add(index);
+        }
+
+        if (callsByTarget.Values.Select(static value => value.Offset).ToHashSet().Count != 2)
         {
             return false;
         }
 
-        // Copies inserted by later passes (e.g. %14 = copy %9) alias their
-        // sources; resolve them so the sum operands match the call targets.
-        var copyAliases = new Dictionary<(bool IsTemp, int Value), (bool IsTemp, int Value)>();
-        foreach (var instruction in recBlock.Instructions)
-        {
-            if (instruction is MirCopy copy &&
-                OperandTargetKey(copy.Target) is { } aliasTarget &&
-                OperandTargetKey(copy.Source) is { } aliasSource)
-            {
-                copyAliases[aliasTarget] = aliasSource;
-            }
-        }
-
-        static (bool IsTemp, int Value)? ResolveAlias(
-            (bool IsTemp, int Value)? key,
-            Dictionary<(bool IsTemp, int Value), (bool IsTemp, int Value)> aliases)
-        {
-            var current = key;
-            for (var depth = 0; depth < 4 && current is { } value && aliases.TryGetValue(value, out var next); depth++)
-            {
-                current = next;
-            }
-
-            return current;
-        }
-
-        var sum = recBlock.Instructions.OfType<MirBinOp>().LastOrDefault(static binOp => binOp.Operator == BinaryOp.Add);
-        if (sum == null ||
-            OperandTargetKey(sum.Target) is not { } sumKey ||
-            !callTargets.Contains(ResolveAlias(OperandTargetKey(sum.Left), copyAliases)) ||
-            !callTargets.Contains(ResolveAlias(OperandTargetKey(sum.Right), copyAliases)) ||
-            recBlock.Terminator is not MirReturn ret ||
-            OperandTargetKey(ret.Value) != sumKey)
+        var (sum, sumIndex) = additions[0];
+        if (OperandTargetKey(sum.Target) is not { } sumTarget ||
+            sum.Target.TypeId != func.ReturnType ||
+            sum.Left.TypeId != func.ReturnType ||
+            sum.Right.TypeId != func.ReturnType ||
+            !TryResolveCopyRoot(sum.Left, definitions, sumIndex, consumed, out var leftCallRoot) ||
+            !TryResolveCopyRoot(sum.Right, definitions, sumIndex, consumed, out var rightCallRoot) ||
+            leftCallRoot == rightCallRoot ||
+            !callsByTarget.ContainsKey(leftCallRoot) ||
+            !callsByTarget.ContainsKey(rightCallRoot) ||
+            !definitions.TryGetValue(leftCallRoot, out var leftCallDefinition) ||
+            !definitions.TryGetValue(rightCallRoot, out var rightCallDefinition) ||
+            leftCallDefinition.Index >= sumIndex ||
+            rightCallDefinition.Index >= sumIndex)
         {
             return false;
         }
 
-        var ordered = calls.OrderBy(static pair => pair.Offset).Select(static pair => pair.Call).ToArray();
+        consumed.Add(sumIndex);
+        if (recBlock.Terminator is not MirReturn { Value: { } returnValue } ||
+            returnValue.TypeId != func.ReturnType ||
+            !TryResolveCopyRoot(
+                returnValue,
+                definitions,
+                recBlock.Instructions.Count,
+                consumed,
+                out var returnRoot) ||
+            returnRoot != sumTarget ||
+            !definitions.TryGetValue(returnRoot, out var returnDefinition) ||
+            returnDefinition.Index >= recBlock.Instructions.Count ||
+            consumed.Count != recBlock.Instructions.Count)
+        {
+            return false;
+        }
+
+        var firstCall = callsByTarget.Values.Single(static pair => pair.Offset == 1).Call;
         shape = new FibShape(
             parameter,
             baseBlock.Id,
-            ordered[0],
-            ordered[1]);
+            recBlock.Id,
+            firstCall);
         return true;
     }
 
@@ -225,6 +274,7 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
     {
         return block.Instructions.Count == 0 &&
                block.Terminator is MirReturn ret &&
+               ret.Value?.TypeId == paramPlace.TypeId &&
                IsSamePlace(ret.Value as MirPlace, paramPlace);
     }
 
@@ -388,120 +438,155 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             IsEntry = false
         });
 
-        // Drop the old recursion block.
-        blocks.RemoveAll(block => !block.IsEntry &&
-                                 !block.Id.Equals(shape.BaseBlockId) &&
-                                 block.Id.Value != initId.Value &&
-                                 block.Id.Value != loopId.Value &&
-                                 block.Id.Value != doneId.Value);
+        blocks.RemoveAll(block => block.Id == shape.RecursionBlockId);
 
-        return new MirFunc
-        {
-            Name = func.Name,
-            SourceName = func.SourceName,
-            Locals = locals,
-            BasicBlocks = blocks,
-            EntryBlockId = func.EntryBlockId,
-            ReturnType = func.ReturnType,
-            GenericParameterCount = func.GenericParameterCount,
-            GenericParameters = func.GenericParameters.ToList(),
-            GenericTypeParameterIds = func.GenericTypeParameterIds.ToList(),
-            IsRuntimeWordAbi = func.IsRuntimeWordAbi,
-            IsEntry = func.IsEntry,
-            Span = func.Span,
-            SymbolId = func.SymbolId,
-            FunctionId = func.FunctionId,
-            TraitInvokeHelper = func.TraitInvokeHelper,
-            TraitInvokeHelperTraitId = func.TraitInvokeHelperTraitId,
-            IsExternal = func.IsExternal,
-            ExternalSymbolName = func.ExternalSymbolName,
-            ExternalLibrary = func.ExternalLibrary,
-            IntrinsicName = func.IntrinsicName,
-            BuiltinIntrinsicRole = func.BuiltinIntrinsicRole
-        };
+        return MirFunctionTransform.CloneWithBody(func, locals, blocks);
     }
 
-    private static bool IsEntryGuard(MirBasicBlock entry, MirSwitch entrySwitch, MirPlace paramPlace)
+    private static bool TryMatchEntryGuard(
+        MirBasicBlock entry,
+        MirSwitch entrySwitch,
+        ValueKey parameterKey)
     {
-        // The switch discriminant is usually Eq(Lt(n, 2), true); unwind at most
-        // one Eq(.., true) wrapper and require the Lt(n, 2) guard so the
-        // transform never changes the recursion boundary semantics.
-        if (entrySwitch.Discriminant is not MirPlace current)
+        if (entrySwitch.Discriminant.TypeId.Value != BaseTypes.BoolId ||
+            entry.Instructions.Any(static instruction => instruction is not MirCopy and
+                                                              not MirBinOp { Operator: BinaryOp.Lt or BinaryOp.Eq }) ||
+            !TryBuildDefinitions(entry, out var definitions))
         {
             return false;
         }
 
-        for (var depth = 0; depth < 3; depth++)
+        var consumed = new HashSet<int>();
+        if (!TryResolveCopyRoot(
+                entrySwitch.Discriminant,
+                definitions,
+                entry.Instructions.Count,
+                consumed,
+                out var guardRoot) ||
+            !definitions.TryGetValue(guardRoot, out var guardDefinition) ||
+            guardDefinition.Index >= entry.Instructions.Count)
         {
-            // A plain copy between the guard binop and the switch
-            // (e.g. %4 = copy %3) does not change the value; unwind through it.
-            var copyDef = entry.Instructions
-                .OfType<MirCopy>()
-                .LastOrDefault(copy => copy.Target is MirPlace target && IsSamePlace(target, current));
-            if (copyDef != null && copyDef.Source is MirPlace copySource)
-            {
-                current = copySource;
-                continue;
-            }
+            return false;
+        }
 
-            var defining = entry.Instructions
-                .OfType<MirBinOp>()
-                .LastOrDefault(binOp => binOp.Target is MirPlace target && IsSamePlace(target, current));
-            if (defining == null)
+        Definition lessThanDefinition;
+        if (guardDefinition.Instruction is MirBinOp { Operator: BinaryOp.Eq } equality)
+        {
+            if (equality.Target.TypeId.Value != BaseTypes.BoolId ||
+                equality.Left.TypeId.Value != BaseTypes.BoolId ||
+                equality.Right.TypeId.Value != BaseTypes.BoolId ||
+                !IsBoolConstant(equality.Right, true) ||
+                !TryResolveCopyRoot(
+                    equality.Left,
+                    definitions,
+                    guardDefinition.Index,
+                    consumed,
+                    out var lessThanRoot) ||
+                !definitions.TryGetValue(lessThanRoot, out lessThanDefinition) ||
+                lessThanDefinition.Index >= guardDefinition.Index)
             {
                 return false;
             }
 
-            if (defining.Operator == BinaryOp.Lt &&
-                ResolveThroughCopies(defining.Left as MirPlace, entry) is { } left &&
-                IsSamePlace(left, paramPlace) &&
-                IsIntConstant(defining.Right, 2))
-            {
-                return true;
-            }
+            consumed.Add(guardDefinition.Index);
+        }
+        else
+        {
+            lessThanDefinition = guardDefinition;
+        }
 
-            if (defining.Operator == BinaryOp.Eq &&
-                IsBoolConstant(defining.Right, true) &&
-                defining.Left is MirPlace next)
-            {
-                current = next;
-                continue;
-            }
-
+        if (lessThanDefinition.Instruction is not MirBinOp { Operator: BinaryOp.Lt } lessThan ||
+            lessThan.Target.TypeId.Value != BaseTypes.BoolId ||
+            lessThan.Left.TypeId.Value != BaseTypes.IntId ||
+            lessThan.Right.TypeId.Value != BaseTypes.IntId ||
+            !IsIntConstant(lessThan.Right, 2) ||
+            !TryResolveCopyRoot(
+                lessThan.Left,
+                definitions,
+                lessThanDefinition.Index,
+                consumed,
+                out var leftRoot) ||
+            leftRoot != parameterKey)
+        {
             return false;
         }
 
-        return false;
+        consumed.Add(lessThanDefinition.Index);
+        return consumed.Count == entry.Instructions.Count;
     }
 
+    private static bool TryBuildDefinitions(
+        MirBasicBlock block,
+        out Dictionary<ValueKey, Definition> definitions)
+    {
+        definitions = [];
+        for (var index = 0; index < block.Instructions.Count; index++)
+        {
+            var target = block.Instructions[index] switch
+            {
+                MirCopy copy => copy.Target,
+                MirCall call => call.Target,
+                MirBinOp binOp => binOp.Target,
+                _ => null
+            };
+            if (target == null)
+            {
+                continue;
+            }
 
-    private static (bool IsTemp, int Value)? OperandTargetKey(MirOperand? operand)
+            if (OperandTargetKey(target) is not { } key ||
+                !definitions.TryAdd(key, new Definition(index, block.Instructions[index])))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveCopyRoot(
+        MirOperand operand,
+        IReadOnlyDictionary<ValueKey, Definition> definitions,
+        int useIndex,
+        HashSet<int> consumed,
+        out ValueKey root)
+    {
+        if (OperandTargetKey(operand) is not { } current)
+        {
+            root = default;
+            return false;
+        }
+
+        var visited = new HashSet<ValueKey>();
+        while (definitions.TryGetValue(current, out var definition) &&
+               definition.Instruction is MirCopy copy)
+        {
+            if (!visited.Add(current) ||
+                definition.Index >= useIndex ||
+                copy.Target.TypeId != copy.Source.TypeId ||
+                OperandTargetKey(copy.Source) is not { } source)
+            {
+                root = default;
+                return false;
+            }
+
+            consumed.Add(definition.Index);
+            current = source;
+            useIndex = definition.Index;
+        }
+
+        root = current;
+        return true;
+    }
+
+    private static ValueKey? OperandTargetKey(MirOperand? operand)
     {
         return operand switch
         {
-            MirPlace { Kind: PlaceKind.Local } place => (false, place.Local.Value),
-            MirTemp temp => (true, temp.Id.Value),
+            MirPlace { Kind: PlaceKind.Local } place => new ValueKey(false, place.Local.Value),
+            MirTemp temp => new ValueKey(true, temp.Id.Value),
             _ => null
         };
-    }
-
-    private static MirPlace? ResolveThroughCopies(MirPlace? place, MirBasicBlock block)
-    {
-        var current = place;
-        for (var depth = 0; depth < 4 && current is { Kind: PlaceKind.Local } local; depth++)
-        {
-            var copyDef = block.Instructions
-                .OfType<MirCopy>()
-                .LastOrDefault(copy => copy.Target is MirPlace target && IsSamePlace(target, current));
-            if (copyDef == null || copyDef.Source is not MirPlace next)
-            {
-                break;
-            }
-
-            current = next;
-        }
-
-        return current;
     }
 
     private static bool IsBoolConstant(MirOperand operand, bool expected)
@@ -579,9 +664,17 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass
             return false;
         }
 
-        if (func.SymbolId.IsValid && funcRef.SymbolId.IsValid)
+        if (MirFunctionIdentity.TryGetStableKey(func.FunctionId, out var functionKey) &&
+            MirFunctionIdentity.TryGetStableKey(funcRef.FunctionId, out var referenceKey))
         {
-            return func.SymbolId.Equals(funcRef.SymbolId);
+            return string.Equals(functionKey, referenceKey, StringComparison.Ordinal);
+        }
+
+        if (func.SymbolId.IsValid || funcRef.SymbolId.IsValid)
+        {
+            return func.SymbolId.IsValid &&
+                   funcRef.SymbolId.IsValid &&
+                   func.SymbolId.Equals(funcRef.SymbolId);
         }
 
         return !string.IsNullOrWhiteSpace(func.Name) &&

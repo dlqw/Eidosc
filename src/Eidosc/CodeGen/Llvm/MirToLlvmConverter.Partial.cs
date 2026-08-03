@@ -18,6 +18,7 @@ public sealed partial class MirToLlvmConverter
                 RegisterFunctionType(func);
             }
         }
+        var nounwindEligibleFunctions = AnalyzeMirNounwindEligibleFunctions(module);
 
         LlvmModule llvmModule;
         using (MeasureConverterSubphase("create_module"))
@@ -31,6 +32,14 @@ public sealed partial class MirToLlvmConverter
         }
 
         _currentModule = llvmModule;
+        if (module.Functions.Any(ShouldAlwaysInline))
+        {
+            llvmModule.AttributeGroups.Add(new LlvmAttributeGroup
+            {
+                Id = 0,
+                Attributes = ["alwaysinline"]
+            });
+        }
 
         using (MeasureConverterSubphase("collect_named_struct_types"))
         {
@@ -76,6 +85,13 @@ public sealed partial class MirToLlvmConverter
         {
             AddRuntimeDeclarations(llvmModule);
             AddRecordedExternalDeclarations(llvmModule);
+        }
+
+        using (MeasureConverterSubphase("infer_function_attributes"))
+        {
+            LlvmFunctionAttributeInference.Apply(
+                llvmModule,
+                nounwindEligibleFunctions);
         }
 
         using (MeasureConverterSubphase("validate_output"))

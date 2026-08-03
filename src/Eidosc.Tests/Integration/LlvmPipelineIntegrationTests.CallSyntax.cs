@@ -1,3 +1,4 @@
+using Eidosc.CodeGen.Llvm;
 using Xunit;
 
 namespace Eidosc.Tests.Integration;
@@ -154,12 +155,15 @@ public partial class LlvmPipelineIntegrationTests
     public void CallSyntax_OrdinaryUnitParameterEmptyCall_LowersWithUnitArgument()
     {
         const string source = """
-            ping :: Unit -> Int
+            @[extern(c, name: "eidos_test_unit_probe")]
+            unit_probe :: Unit -> Int need ffi
+
+            ping :: Unit -> Int need ffi
             {
-                _ => 1
+                _ => unit_probe()
             }
 
-            main :: Unit -> Int
+            main :: Unit -> Int need ffi
             {
                 _ => ping()
             }
@@ -169,8 +173,66 @@ public partial class LlvmPipelineIntegrationTests
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
 
         var llvmIr = Assert.IsType<string>(result.LlvmIrText);
-        Assert.Matches(@"define\s+external\s+i64\s+@.*ping.*\(i1", llvmIr);
+        Assert.Matches(@"define\s+external\s+i64\s+@.*ping.*\(i1\s+noundef", llvmIr);
         Assert.Matches(@"call\s+i64\s+@.*ping.*\(i1\s+0\)", llvmIr);
+
+        var llvmModule = Assert.IsType<LlvmModule>(result.LlvmModule);
+        var pingName = new NameMangler().MangleFunctionName("", "ping");
+        var pingFunction = Assert.Single(
+            llvmModule.Functions,
+            function => function.Name.StartsWith(pingName, StringComparison.Ordinal));
+        Assert.False(HasNounwindAttribute(llvmModule, pingFunction));
+
+        var mainName = new NameMangler().MangleFunctionName("", "main");
+        Assert.All(
+            llvmModule.Functions.Where(function =>
+                function.Name.StartsWith(mainName, StringComparison.Ordinal)),
+            function => Assert.False(HasNounwindAttribute(llvmModule, function)));
+    }
+
+    private static bool HasNounwindAttribute(LlvmModule module, LlvmFunction function) =>
+        function.AttributeIds.Any(attributeId =>
+            module.AttributeGroups.Any(group =>
+                group.Id == attributeId && group.Attributes.Contains("nounwind", StringComparer.Ordinal)));
+
+    [Fact]
+    public void CallAttributes_PureDirectCallChainAndEntryWrapper_AreNounwind()
+    {
+        const string source = """
+            leaf :: Int -> Int
+            {
+                value => value + 1
+            }
+
+            wrapper :: Int -> Int
+            {
+                value => leaf(value)
+            }
+
+            main :: Unit -> Int
+            {
+                _ => wrapper(41)
+            }
+            """;
+
+        var result = RunSourceAtLlvm(source, "call_attributes_pure_chain.eidos");
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+
+        var llvmModule = Assert.IsType<LlvmModule>(result.LlvmModule);
+        var nounwindAttributeId = Assert.Single(
+            llvmModule.AttributeGroups,
+            static group => group.Attributes.SequenceEqual(["nounwind"])).Id;
+        foreach (var sourceName in new[] { "leaf", "wrapper", "main" })
+        {
+            var llvmName = new NameMangler().MangleFunctionName("", sourceName);
+            var functions = llvmModule.Functions
+                .Where(function => function.Name.StartsWith(llvmName, StringComparison.Ordinal))
+                .ToList();
+            Assert.NotEmpty(functions);
+            Assert.All(
+                functions,
+                function => Assert.Contains(nounwindAttributeId, function.AttributeIds));
+        }
     }
 
     [Fact]
@@ -200,12 +262,15 @@ public partial class LlvmPipelineIntegrationTests
     public void CallSyntax_MultipleLeadingUnitEmptyCall_ConsumesOneUnitLayer()
     {
         const string source = """
-            ping2 :: Unit -> Unit -> Int
+            @[extern(c, name: "eidos_test_unit_probe2")]
+            unit_probe2 :: Unit -> Int need ffi
+
+            ping2 :: Unit -> Unit -> Int need ffi
             {
-                _ => _ => 2
+                _ => _ => unit_probe2()
             }
 
-            main :: Unit -> Int
+            main :: Unit -> Int need ffi
             {
                 _ => ping2()(())
             }
@@ -215,7 +280,7 @@ public partial class LlvmPipelineIntegrationTests
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
 
         var llvmIr = Assert.IsType<string>(result.LlvmIrText);
-        Assert.Matches(@"define\s+external\s+i64\s+@.*ping2.*\(i1\s+%[^,]+,\s+i1", llvmIr);
+        Assert.Matches(@"define\s+external\s+i64\s+@.*ping2.*\(i1\s+noundef\s+%[^,]+,\s+i1\s+noundef", llvmIr);
         Assert.Matches(@"call\s+i64\s+@.*ping2.*\(i1\s+0,\s+i1\s+0\)", llvmIr);
     }
 

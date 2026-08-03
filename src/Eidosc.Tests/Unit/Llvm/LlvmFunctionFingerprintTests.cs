@@ -54,7 +54,7 @@ public sealed class LlvmFunctionFingerprintTests
             Functions = [CreateFunction("add")]
         });
 
-        Assert.Equal("llvm-function-fingerprint-snapshot-v1", first.SchemaVersion);
+        Assert.Equal("llvm-function-fingerprint-snapshot-v2", first.SchemaVersion);
         Assert.Equal(first.ModuleFingerprint, second.ModuleFingerprint);
         Assert.NotEmpty(first.ModuleFingerprint);
     }
@@ -83,7 +83,7 @@ public sealed class LlvmFunctionFingerprintTests
         });
 
         var fragment = Assert.Single(snapshot.Functions);
-        Assert.Equal("llvm-function-fragment-snapshot-v1", snapshot.SchemaVersion);
+        Assert.Equal("llvm-function-fragment-snapshot-v2", snapshot.SchemaVersion);
         Assert.Equal("name:main", fragment.FunctionKey);
         Assert.Contains("define", fragment.IrFragment, StringComparison.Ordinal);
         Assert.Equal("declare i64 @main(i64)", fragment.DeclarationIr);

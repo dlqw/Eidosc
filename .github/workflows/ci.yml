@@ -74,6 +74,97 @@ jobs:
           /p:UseSharedCompilation=false
           /nr:false
 
+      - name: Gate call folding termination tests
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName call-folding-termination
+          -Filter "FullyQualifiedName~ConstantFoldingCallTests"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate recurrence proof and semantic equivalence tests
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName recurrence-soundness
+          -Filter "FullyQualifiedName~LinearRecursionAccumulatorPassTests"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate MIR inlining correctness tests
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName mir-inlining-soundness
+          -Filter "FullyQualifiedName~InliningTests|FullyQualifiedName~MirInliningShapeTests|FullyQualifiedName~MirOptimizerTests.Inlining_"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate caller-owned escape proof tests
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName caller-owned-escape-proof
+          -Filter "FullyQualifiedName~MirOptimizerTests.CallerOwnedAggregate"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate LLVM call attribute tests
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName llvm-call-attributes
+          -Filter "FullyQualifiedName~LlvmFunctionAttributeInferenceTests|FullyQualifiedName~CallAttributes_"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate call-layer checksum equivalence
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName call-layer-checksum
+          -Filter "FullyQualifiedName~CallLayerChecksum_WithAndWithoutMirOptimization_IsEquivalent"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate recurrence LLVM IR shape
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName recurrence-ir-shape
+          -Filter "FullyQualifiedName~LinearRecursionAccumulatorShapeTests"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate native allocation counts and inlining ownership
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName native-allocation-counts
+          -Filter "FullyQualifiedName~NativeStackPromotion_SmallCopyRecordInBranchAndLoop_PerformsNoHeapAllocations|FullyQualifiedName~NativeCallerOwnedAggregate_NestedSeqUsesNoHeapAllocation|FullyQualifiedName~Inlining_ManagedRecordIdentity_NativeSmoke_PreservesOwnership|FullyQualifiedName~NativeRuntimeArray_ManagedPushSetPopAndExtend_BalanceAllocations"
+          -NoBuild
+          -NoRestore
+
+      - name: Gate caller-owned stack lifetime with ASan
+        if: runner.os == 'Linux'
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName caller-owned-asan
+          -Filter "FullyQualifiedName~NativeCallerOwnedAggregate_SeqContainedByReturnedRecord_HasNoStackUseAfterReturn"
+          -NoBuild
+          -NoRestore
+
       - name: Run LSP performance gate
         run: >
           dotnet test Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj

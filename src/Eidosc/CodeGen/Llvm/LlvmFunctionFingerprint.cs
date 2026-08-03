@@ -25,7 +25,7 @@ public sealed record LlvmFunctionFingerprintSnapshot(
     string SchemaVersion,
     IReadOnlyList<LlvmFunctionFingerprint> Functions)
 {
-    public const string CurrentSchemaVersion = "llvm-function-fingerprint-snapshot-v1";
+    public const string CurrentSchemaVersion = "llvm-function-fingerprint-snapshot-v2";
 
     public static LlvmFunctionFingerprintSnapshot FromModule(LlvmModule module) =>
         new(
@@ -39,7 +39,7 @@ public sealed record LlvmFunctionFragmentSnapshot(
     string SchemaVersion,
     IReadOnlyList<LlvmFunctionFragment> Functions)
 {
-    public const string CurrentSchemaVersion = "llvm-function-fragment-snapshot-v1";
+    public const string CurrentSchemaVersion = "llvm-function-fragment-snapshot-v2";
 
     public static LlvmFunctionFragmentSnapshot FromModule(LlvmModule module) =>
         new(
@@ -76,7 +76,7 @@ public sealed record LlvmRecomposedObjectGroupSnapshot(
 
 public static class LlvmFunctionFingerprintBuilder
 {
-    private const string Schema = "llvm-function-fingerprint-v1";
+    private const string Schema = "llvm-function-fingerprint-v2";
 
     public static LlvmFunctionFingerprint Compute(LlvmFunction function)
     {
@@ -239,9 +239,13 @@ public static class LlvmFunctionFingerprintBuilder
         }
 
         var returnType = function.ReturnType.ToIrString();
-        var parameters = string.Join(", ", function.Parameters.Select(static parameter => parameter.Type.ToIrString()));
-        var attrs = function.AttributeIds.Count > 0 ? $" #{function.AttributeIds[0]}" : "";
-        return $"declare {returnType} @{function.Name}({parameters}){attrs}";
+        var parameters = string.Join(", ", function.Parameters.Select(static parameter =>
+            LlvmAttributeFormatter.FormatParameter(parameter, includeName: false)));
+        var attrs = LlvmAttributeFormatter.FormatFunctionReferences(function.AttributeIds);
+        var callingConvention = string.IsNullOrEmpty(function.CallingConvention)
+            ? ""
+            : $"{function.CallingConvention} ";
+        return $"declare {callingConvention}{returnType} @{function.Name}({parameters}){attrs}";
     }
 
     private static void AppendFunction(StringBuilder sb, LlvmFunction function)
@@ -249,11 +253,18 @@ public static class LlvmFunctionFingerprintBuilder
         var linkage = function.Linkage.ToIrString();
         var returnType = function.ReturnType.ToIrString();
         var parameters = string.Join(", ", function.Parameters.Select(FormatParameter));
-        var attrs = function.AttributeIds.Count > 0 ? $" #{function.AttributeIds[0]}" : "";
+        var attrs = LlvmAttributeFormatter.FormatFunctionReferences(function.AttributeIds);
+        var callingConvention = string.IsNullOrEmpty(function.CallingConvention)
+            ? ""
+            : $" {function.CallingConvention}";
 
         if (function.BasicBlocks.Count == 0)
         {
+            var declarationCallingConvention = string.IsNullOrEmpty(function.CallingConvention)
+                ? ""
+                : $"{function.CallingConvention} ";
             sb.Append("declare ")
+                .Append(declarationCallingConvention)
                 .Append(returnType)
                 .Append(" @")
                 .Append(function.Name)
@@ -267,6 +278,7 @@ public static class LlvmFunctionFingerprintBuilder
 
         sb.Append("define ")
             .Append(linkage)
+            .Append(callingConvention)
             .Append(' ')
             .Append(returnType)
             .Append(" @")
@@ -306,8 +318,7 @@ public static class LlvmFunctionFingerprintBuilder
 
     private static string FormatParameter(LlvmParameter parameter)
     {
-        var name = string.IsNullOrEmpty(parameter.Name) ? "" : $" %{parameter.Name}";
-        return $"{parameter.Type.ToIrString()}{name}";
+        return LlvmAttributeFormatter.FormatParameter(parameter, includeName: true);
     }
 
     private static string GetFunctionKey(LlvmFunction function) => string.IsNullOrWhiteSpace(function.Name)

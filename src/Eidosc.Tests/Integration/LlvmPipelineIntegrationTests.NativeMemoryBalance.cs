@@ -769,6 +769,70 @@ main :: Unit -> Int need ffi {
 
     [Fact]
     [Trait(TestCategories.Category, TestCategories.Native)]
+    public void NativeCallerOwnedAggregate_SeqContainedByReturnedRecord_HasNoStackUseAfterReturn()
+    {
+        if (!OperatingSystem.IsLinux() || !ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string source = """
+import std.Seq
+
+State :: type {
+    items :: Seq[Int]
+}
+
+Box :: type {
+    items :: Seq[Int]
+}
+
+make_state :: Int -> State {
+    seed => {
+        values := [seed, seed + 1]
+        State { items: values }
+    }
+}
+
+wrap_state :: State -> Box {
+    State { items: items } => Box { items: items }
+}
+
+make_box :: Int -> Box {
+    seed => wrap_state(make_state(seed))
+}
+
+main :: Unit -> Int {
+    _ => {
+        box := make_box(7)
+        if box.items[0] == 7 && box.items[1] == 8 then { 0 } else { 99 }
+    }
+}
+""";
+        const string sanitizerFlags =
+            "-fsanitize=address -fsanitize-address-use-after-return=always -fno-omit-frame-pointer";
+        var environment = new Dictionary<string, string?>
+        {
+            ["ASAN_OPTIONS"] = "detect_stack_use_after_return=1:halt_on_error=1:abort_on_error=1"
+        };
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_caller_owned_contained_seq_escape.eidos",
+            "native_caller_owned_contained_seq_escape",
+            environmentVariables: environment,
+            runtimeExtraCFlags: sanitizerFlags,
+            nativeExtraCFlags: sanitizerFlags,
+            nativeExtraLinkFlags: "-fsanitize=address",
+            optimizationLevel: 0);
+
+        Assert.True(
+            execution.ExitCode == 0,
+            $"Native ASan execution failed with exit code {execution.ExitCode}:{Environment.NewLine}{execution.StandardError}");
+    }
+
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
     public void NativeDropInsertion_OverwriteLoopBranchAndBodylessFfi_BalanceAllocations()
     {
         if (!ToolExists("clang"))

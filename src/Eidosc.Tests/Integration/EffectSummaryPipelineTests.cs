@@ -18,8 +18,8 @@ public sealed class EffectSummaryPipelineTests
             main :: Int -> Int { x => add_one(x) + add_one(10) }
             """).ToPhase(CompilationPhase.Mir).ShouldSucceed();
 
-        // add_one(10) folds to 11; only add_one(x) remains as a call.
-        Assert.Equal(1, CountCalls(result, "add_one"));
+        // add_one(10) folds to 11; the remaining pure scalar call is inlined.
+        Assert.Equal(0, CountCalls(result, "add_one"));
         Assert.Contains(11L, FindIntConstants(result));
     }
 
@@ -92,10 +92,13 @@ public sealed class EffectSummaryPipelineTests
             {
                 foreach (var instruction in block.Instructions)
                 {
-                    if (instruction is MirAssign { Source: MirConstant
+                    if (instruction is MirAssign
                         {
-                            Value: MirConstantValue.IntValue intValue
-                        } })
+                            Source: MirConstant
+                            {
+                                Value: MirConstantValue.IntValue intValue
+                            }
+                        })
                     {
                         constants.Add(intValue.Value);
                     }
