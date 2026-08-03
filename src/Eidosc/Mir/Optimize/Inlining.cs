@@ -7,16 +7,16 @@ namespace Eidosc.Mir.Optimize;
 /// 函数内联优化 - 内联小型单块函数以减少调用开销。
 /// 支持局部变量重映射、参数绑定和返回值处理。
 /// </summary>
-public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
+public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
     private readonly int _maxInlineSize;
-    private FunctionOptimizationSummaryIndex _functionSummaries = FunctionOptimizationSummaryIndex.Empty;
+    private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
 
     public string Name => "Inlining";
 
-    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    FunctionOptimizationProofIndex IFunctionOptimizationProofConsumer.FunctionProofs
     {
-        set => _functionSummaries = value;
+        set => _functionProofs = value;
     }
 
     public Inlining() : this(30) { }
@@ -119,13 +119,13 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationSummar
         if (string.IsNullOrEmpty(func.Name)) return false;
         if (func.IsExternal) return false;
         if (func.IsEntry) return false;
-        if (IsRecursive(func)) return false;
+        if (_functionProofs.IsRecursive(func)) return false;
         if (func.GenericParameterCount > 0 || func.GenericParameters.Count > 0) return false;
         if (func.IsRuntimeWordAbi) return false;
         if (!func.CallerOwnedAggregateAbi.IsEmpty) return false;
         if (func.IntrinsicName != null || func.BuiltinIntrinsicRole != BuiltinIntrinsicRole.None) return false;
         if (func.TraitInvokeHelper != TraitInvokeHelperKind.None) return false;
-        if (!_functionSummaries.TryGet(func, out var summary) || !summary.CanInlineBody) return false;
+        if (!_functionProofs.Allows(func, FunctionOptimizationCapability.InlineBody)) return false;
         // Moving a managed value across the call boundary and moving the same
         // value between remapped callee locals are distinct ownership events.
         // The current single-block inliner does not yet carry the proof needed
@@ -224,19 +224,6 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationSummar
                    BaseTypes.RawPtrId or
                    BaseTypes.CfnId ||
                copyLikeTypeIds.Contains(typeId.Value);
-    }
-
-    private bool IsRecursive(MirFunc func)
-    {
-        foreach (var block in func.BasicBlocks)
-        {
-            foreach (var instr in block.Instructions)
-            {
-                if (instr is MirCall call && CallsFunction(call, func))
-                    return true;
-            }
-        }
-        return false;
     }
 
     private static bool DereferencesParameter(MirFunc func)

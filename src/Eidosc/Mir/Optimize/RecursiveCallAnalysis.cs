@@ -39,15 +39,18 @@ public static class RecursiveCallAnalysis
 {
     public static RecursiveCallAnalysisResult Analyze(MirModule module)
     {
-        var functionByKey = module.Functions
-            .Where(static function => !function.IsExternal)
-            .GroupBy(MirFunctionIdentity.GetStableKey, StringComparer.Ordinal)
-            .ToDictionary(
-                static group => group.Key,
-                static group => group.First(),
-                StringComparer.Ordinal);
+        return Analyze(MirFunctionOptimizationIndex.Build(module));
+    }
+
+    internal static RecursiveCallAnalysisResult Analyze(
+        IReadOnlyDictionary<string, MirFunc> functionByKey)
+    {
         var callEdges = CollectDirectCallEdges(functionByKey);
-        var adjacency = BuildAdjacency(functionByKey.Keys, callEdges);
+        var adjacency = BuildAdjacency(
+            functionByKey
+                .Where(static pair => !pair.Value.IsExternal)
+                .Select(static pair => pair.Key),
+            callEdges);
         var components = FindStronglyConnectedComponents(adjacency)
             .Where(component => IsRecursiveComponent(component, adjacency))
             .Select(component => CreateComponent(component, functionByKey, callEdges))
@@ -87,11 +90,17 @@ public static class RecursiveCallAnalysis
         return sb.ToString();
     }
 
-    private static List<RecursiveCallEdge> CollectDirectCallEdges(Dictionary<string, MirFunc> functionByKey)
+    private static List<RecursiveCallEdge> CollectDirectCallEdges(
+        IReadOnlyDictionary<string, MirFunc> functionByKey)
     {
         var edges = new List<RecursiveCallEdge>();
         foreach (var caller in functionByKey.Values)
         {
+            if (caller.IsExternal)
+            {
+                continue;
+            }
+
             var callerKey = MirFunctionIdentity.GetStableKey(caller);
             var callerName = GetDisplayName(caller);
             foreach (var block in caller.BasicBlocks)
@@ -104,7 +113,7 @@ public static class RecursiveCallAnalysis
                     }
 
                     var calleeKey = MirFunctionIdentity.GetStableKey(calleeRef);
-                    if (!functionByKey.TryGetValue(calleeKey, out var callee))
+                    if (!functionByKey.TryGetValue(calleeKey, out var callee) || callee.IsExternal)
                     {
                         continue;
                     }
@@ -220,7 +229,7 @@ public static class RecursiveCallAnalysis
 
     private static RecursiveCallComponent CreateComponent(
         List<string> componentKeys,
-        Dictionary<string, MirFunc> functionByKey,
+        IReadOnlyDictionary<string, MirFunc> functionByKey,
         IReadOnlyList<RecursiveCallEdge> callEdges)
     {
         var keySet = componentKeys.ToHashSet(StringComparer.Ordinal);

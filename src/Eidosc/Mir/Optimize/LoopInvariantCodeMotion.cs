@@ -1,14 +1,14 @@
 namespace Eidosc.Mir.Optimize;
 
-public sealed class LoopInvariantCodeMotion : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
+public sealed class LoopInvariantCodeMotion : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
-    private FunctionOptimizationSummaryIndex? _functionSummaries;
+    private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
     private IReadOnlyDictionary<string, int> _parameterCounts =
         new Dictionary<string, int>(StringComparer.Ordinal);
 
-    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    FunctionOptimizationProofIndex IFunctionOptimizationProofConsumer.FunctionProofs
     {
-        set => _functionSummaries = value;
+        set => _functionProofs = value;
     }
 
     public string Name => "LoopInvariantCodeMotion";
@@ -84,7 +84,7 @@ public sealed class LoopInvariantCodeMotion : IMirOptimizationPass, IFunctionOpt
                 if (header.Instructions[i] is not MirCall call ||
                     !MirCallOptimization.TryGetReusableCall(
                         call,
-                        _functionSummaries,
+                        _functionProofs,
                         _parameterCounts,
                         out _,
                         out var targetPlace) ||

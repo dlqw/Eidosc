@@ -17,15 +17,15 @@ namespace Eidosc.Mir.Optimize;
 /// canonical Int type, whose current LLVM lowering uses plain wrapping add/sub;
 /// the regrouping therefore remains associative even after 64-bit overflow.
 /// </summary>
-public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
+public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
-    private FunctionOptimizationSummaryIndex _functionSummaries = FunctionOptimizationSummaryIndex.Empty;
+    private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
 
     public string Name => "LinearRecursionAccumulator";
 
-    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    FunctionOptimizationProofIndex IFunctionOptimizationProofConsumer.FunctionProofs
     {
-        set => _functionSummaries = value;
+        set => _functionProofs = value;
     }
 
     public MirModule Run(MirModule module)
@@ -69,8 +69,9 @@ public sealed class LinearRecursionAccumulatorPass : IMirOptimizationPass, IFunc
             func.GenericParameterCount > 0 ||
             func.Locals.Count(static local => local.IsParameter) != 1 ||
             func.ReturnType.Value != BaseTypes.IntId ||
-            !_functionSummaries.TryGet(func, out var summary) ||
-            !summary.CanReassociatePureCalls)
+            !_functionProofs.Allows(
+                func,
+                FunctionOptimizationCapability.ReassociatePureCalls))
         {
             return func;
         }

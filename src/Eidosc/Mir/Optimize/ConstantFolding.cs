@@ -5,14 +5,14 @@ namespace Eidosc.Mir.Optimize;
 /// <summary>
 /// 常量折叠优化 - 在编译时计算常量表达式 + 常量传播 + 纯调用折叠
 /// </summary>
-public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
+public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
-    private FunctionOptimizationSummaryIndex? _functionSummaries;
+    private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
     private CallFolding? _folding;
 
-    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    FunctionOptimizationProofIndex IFunctionOptimizationProofConsumer.FunctionProofs
     {
-        set => _functionSummaries = value;
+        set => _functionProofs = value;
     }
 
     public string Name => "ConstantFolding";
@@ -275,11 +275,11 @@ public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizatio
         out MirConstant folded)
     {
         folded = null!;
-        if (_functionSummaries == null ||
-            _folding == null ||
+        if (_folding == null ||
             call.Function is not MirFunctionRef functionRef ||
-            !_functionSummaries.TryGet(functionRef, out var summary) ||
-            !summary.CanFoldConstantCall)
+            !_functionProofs.Allows(
+                functionRef,
+                FunctionOptimizationCapability.FoldConstantCall))
         {
             return false;
         }

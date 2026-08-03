@@ -5,14 +5,14 @@ namespace Eidosc.Mir.Optimize;
 /// <summary>
 /// 死代码消除优化 - 移除不可达基本块 + 未使用的局部变量赋值
 /// </summary>
-public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
+public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
-    private FunctionOptimizationSummaryIndex? _functionSummaries;
+    private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
     private IReadOnlyDictionary<string, int> _parameterCounts = new Dictionary<string, int>(StringComparer.Ordinal);
 
-    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    FunctionOptimizationProofIndex IFunctionOptimizationProofConsumer.FunctionProofs
     {
-        set => _functionSummaries = value;
+        set => _functionProofs = value;
     }
 
     public string Name => "DeadCodeElimination";
@@ -429,9 +429,9 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             MirCall { Function: MirFunctionRef functionRef } call =>
                 !_parameterCounts.TryGetValue(MirFunctionIdentity.GetStableKey(functionRef), out var parameterCount) ||
                 call.Arguments.Count < parameterCount ||
-                _functionSummaries == null ||
-                !_functionSummaries.TryGet(functionRef, out var summary) ||
-                !summary.CanEliminateUnusedCall,
+                !_functionProofs.Allows(
+                    functionRef,
+                    FunctionOptimizationCapability.EliminateUnusedCall),
             MirCall => true,
             MirStore => true,             // Memory write
             MirDrop => true,              // RC decrement
