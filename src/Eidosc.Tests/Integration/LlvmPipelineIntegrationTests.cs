@@ -178,12 +178,16 @@ main :: Int -> Int
         return new CompilationPipeline(source, options).Run();
     }
 
-    private static CompilationResult RunSourceAtLlvm(string source, string inputFile)
+    private static CompilationResult RunSourceAtLlvm(
+        string source,
+        string inputFile,
+        bool enableMirOptimizations = true)
     {
         var options = new CompilationOptions
         {
             InputFile = inputFile,
             StopAtPhase = CompilationPhase.Llvm,
+            EnableMirOptimizations = enableMirOptimizations,
             UseColors = false,
             PackageImportRoots = ExplicitStdPackageRoots
         };
@@ -232,7 +236,11 @@ main :: Int -> Int
         IReadOnlyDictionary<string, string?>? environmentVariables = null,
         IReadOnlyDictionary<string, string>? additionalFiles = null,
         NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable,
-        string? runtimeExtraCFlags = null)
+        string? runtimeExtraCFlags = null,
+        string? nativeExtraCFlags = null,
+        string? nativeExtraLinkFlags = null,
+        int optimizationLevel = 2,
+        bool enableMirOptimizations = true)
     {
         using var executable = CompileSourceToNativeExecutable(
             source,
@@ -240,7 +248,11 @@ main :: Int -> Int
             executableBaseName,
             additionalFiles,
             linkMode,
-            runtimeExtraCFlags);
+            runtimeExtraCFlags,
+            nativeExtraCFlags,
+            nativeExtraLinkFlags,
+            optimizationLevel,
+            enableMirOptimizations);
 
         return ExecuteProcess(
             executable.ExecutablePath,
@@ -269,7 +281,11 @@ main :: Int -> Int
         string executableBaseName,
         IReadOnlyDictionary<string, string>? additionalFiles,
         NativeLinkMode linkMode,
-        string? runtimeExtraCFlags = null)
+        string? runtimeExtraCFlags = null,
+        string? nativeExtraCFlags = null,
+        string? nativeExtraLinkFlags = null,
+        int optimizationLevel = 2,
+        bool enableMirOptimizations = true)
     {
         var sourceDir = Path.Combine(Path.GetTempPath(), $"eidosc_network_native_sources_{Guid.NewGuid():N}");
         Directory.CreateDirectory(sourceDir);
@@ -285,7 +301,7 @@ main :: Int -> Int
             }
         }
 
-        var result = RunSourceAtLlvm(source, sourcePath);
+        var result = RunSourceAtLlvm(source, sourcePath, enableMirOptimizations);
         Assert.True(
             result.Success,
             string.Join(
@@ -305,7 +321,14 @@ main :: Int -> Int
             var executablePath = Path.Combine(
                 tempDir,
                 OperatingSystem.IsWindows() ? $"{executableBaseName}.exe" : executableBaseName);
-            var compiler = CreateLlvmCompiler(targetInfo, runtimeObjectPath, tempDir, linkMode);
+            var compiler = CreateLlvmCompiler(
+                targetInfo,
+                runtimeObjectPath,
+                tempDir,
+                linkMode,
+                optimizationLevel,
+                nativeExtraCFlags,
+                nativeExtraLinkFlags);
             var nativeResult = compiler.CompileToExecutable(result.LlvmModule!, executablePath);
 
             Assert.True(nativeResult.Success, nativeResult.ErrorMessage);
@@ -640,8 +663,18 @@ main :: Int -> Int
         TargetInfo targetInfo,
         string runtimePath,
         string temporaryDirectory,
-        NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable) =>
-        new(targetInfo, runtimePath: runtimePath, temporaryDirectory: temporaryDirectory, linkMode: linkMode);
+        NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable,
+        int optimizationLevel = 2,
+        string? extraCFlags = null,
+        string? extraLinkFlags = null) =>
+        new(
+            targetInfo,
+            optimizationLevel: optimizationLevel,
+            runtimePath: runtimePath,
+            extraCFlags: extraCFlags,
+            extraLinkFlags: extraLinkFlags,
+            temporaryDirectory: temporaryDirectory,
+            linkMode: linkMode);
 
     private static IReadOnlyDictionary<string, string?> CreateHttpEnvironment(string? httpBackend) =>
         new Dictionary<string, string?>
@@ -1081,7 +1114,7 @@ main :: Int -> Int
         // This is a soft check - not all fixtures may produce struct GEP for field access,
         // but constructor stubs should if they have layout info.
         // At minimum, verify IR doesn't have errors and contains expected patterns.
-        Assert.DoesNotContain("undef", ir);
+        Assert.DoesNotMatch(@"\bundef\b", ir);
     }
 
     [Fact]

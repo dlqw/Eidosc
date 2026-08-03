@@ -7,11 +7,17 @@ namespace Eidosc.Mir.Optimize;
 /// 函数内联优化 - 内联小型单块函数以减少调用开销。
 /// 支持局部变量重映射、参数绑定和返回值处理。
 /// </summary>
-public sealed class Inlining : IMirOptimizationPass
+public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationSummaryConsumer
 {
     private readonly int _maxInlineSize;
+    private FunctionOptimizationSummaryIndex _functionSummaries = FunctionOptimizationSummaryIndex.Empty;
 
     public string Name => "Inlining";
+
+    FunctionOptimizationSummaryIndex IFunctionOptimizationSummaryConsumer.FunctionSummaries
+    {
+        set => _functionSummaries = value;
+    }
 
     public Inlining() : this(30) { }
 
@@ -29,7 +35,9 @@ public sealed class Inlining : IMirOptimizationPass
         var inlineCandidatesByName = new Dictionary<string, MirFunc>(StringComparer.Ordinal);
         var ambiguousInlineCandidateNames = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var function in module.Functions.Where(ShouldInline))
+        var traitFunctionSymbols = CollectTraitFunctionSymbols(module);
+        foreach (var function in module.Functions.Where(function =>
+                     ShouldInline(function, traitFunctionSymbols, module.CopyLikeTypeIds)))
         {
             if (function.SymbolId.IsValid)
             {
@@ -70,15 +78,11 @@ public sealed class Inlining : IMirOptimizationPass
         var optimizedFunctions = new List<MirFunc>();
         foreach (var func in module.Functions)
         {
-            // Don't inline into the candidate itself (prevents duplication issues)
-            if (!IsInlineCandidate(func, inlineCandidatesBySymbol, inlineCandidatesByIdentity, inlineCandidatesByName))
-            {
-                optimizedFunctions.Add(InlineCalls(func, inlineCandidatesBySymbol, inlineCandidatesByIdentity, inlineCandidatesByName));
-            }
-            else
-            {
-                optimizedFunctions.Add(func);
-            }
+            optimizedFunctions.Add(InlineCalls(
+                func,
+                inlineCandidatesBySymbol,
+                inlineCandidatesByIdentity,
+                inlineCandidatesByName));
         }
 
         return new MirModule
@@ -107,11 +111,29 @@ public sealed class Inlining : IMirOptimizationPass
 
     // ---- Candidate selection ----
 
-    private bool ShouldInline(MirFunc func)
+    private bool ShouldInline(
+        MirFunc func,
+        IReadOnlySet<SymbolId> traitFunctionSymbols,
+        IReadOnlySet<int> copyLikeTypeIds)
     {
         if (string.IsNullOrEmpty(func.Name)) return false;
         if (func.IsExternal) return false;
+        if (func.IsEntry) return false;
         if (IsRecursive(func)) return false;
+        if (func.GenericParameterCount > 0 || func.GenericParameters.Count > 0) return false;
+        if (func.IsRuntimeWordAbi) return false;
+        if (!func.CallerOwnedAggregateAbi.IsEmpty) return false;
+        if (func.IntrinsicName != null || func.BuiltinIntrinsicRole != BuiltinIntrinsicRole.None) return false;
+        if (func.TraitInvokeHelper != TraitInvokeHelperKind.None) return false;
+        if (!_functionSummaries.TryGet(func, out var summary) || !summary.CanInlineBody) return false;
+        // Moving a managed value across the call boundary and moving the same
+        // value between remapped callee locals are distinct ownership events.
+        // The current single-block inliner does not yet carry the proof needed
+        // to coalesce those events without changing drop insertion. Limit the
+        // transform to types whose ownership is structurally copy-like.
+        if (!HasOnlyCopyLikeLocalsAndResult(func, copyLikeTypeIds)) return false;
+        if (func.SymbolId.IsValid && traitFunctionSymbols.Contains(func.SymbolId)) return false;
+        if (CallsTraitFunction(func, traitFunctionSymbols)) return false;
         // ADT constructors are lowered at the call site with heap allocation
         // and layout handling; inlining their body would turn the allocation
         // into a stack alloca that later refcounting/type_id code treats as a
@@ -154,11 +176,54 @@ public sealed class Inlining : IMirOptimizationPass
         {
             return false;
         }
-        // Only inline single-block functions (avoids complex block splitting)
-        if (func.BasicBlocks.Count != 1) return false;
+        // Unit-call sugar and leading-Unit currying have a distinct ABI shape
+        // (empty source calls still materialize one runtime Unit argument).
+        // Keep that boundary until the inliner models the call-sugar layer.
+        if (func.Locals.Any(static local => local.IsParameter &&
+                                                 local.TypeId.Value == BaseTypes.UnitId))
+        {
+            return false;
+        }
+        // Only inline an exact single-entry/single-return body. Any other
+        // terminator needs block splitting and control-flow remapping.
+        if (func.BasicBlocks.Count != 1 ||
+            func.BasicBlocks[0].Id != func.EntryBlockId ||
+            !func.BasicBlocks[0].IsEntry ||
+            func.BasicBlocks[0].Terminator is not MirReturn)
+        {
+            return false;
+        }
 
         var instructionCount = func.BasicBlocks[0].Instructions.Count;
         return instructionCount <= _maxInlineSize;
+    }
+
+    private static bool HasOnlyCopyLikeLocalsAndResult(
+        MirFunc function,
+        IReadOnlySet<int> copyLikeTypeIds)
+    {
+        return IsCopyLikeInliningType(function.ReturnType, copyLikeTypeIds) &&
+               function.Locals.All(local => IsCopyLikeInliningType(local.TypeId, copyLikeTypeIds));
+    }
+
+    private static bool IsCopyLikeInliningType(TypeId typeId, IReadOnlySet<int> copyLikeTypeIds)
+    {
+        if (!typeId.IsValid)
+        {
+            return false;
+        }
+
+        return typeId.Value is
+                   BaseTypes.IntId or
+                   BaseTypes.FloatId or
+                   BaseTypes.BoolId or
+                   BaseTypes.CharId or
+                   BaseTypes.UnitId or
+                   BaseTypes.TypeEqId or
+                   BaseTypes.NeverId or
+                   BaseTypes.RawPtrId or
+                   BaseTypes.CfnId ||
+               copyLikeTypeIds.Contains(typeId.Value);
     }
 
     private bool IsRecursive(MirFunc func)
@@ -195,33 +260,34 @@ public sealed class Inlining : IMirOptimizationPass
         return false;
     }
 
-    // ---- Call-site processing ----
-
-    private static bool IsInlineCandidate(
-        MirFunc function,
-        IReadOnlyDictionary<SymbolId, MirFunc> candidatesBySymbol,
-        IReadOnlyDictionary<string, MirFunc> candidatesByIdentity,
-        IReadOnlyDictionary<string, MirFunc> candidatesByName)
+    private static HashSet<SymbolId> CollectTraitFunctionSymbols(MirModule module)
     {
-        if (function.SymbolId.IsValid && candidatesBySymbol.ContainsKey(function.SymbolId))
+        var symbols = module.TraitInfos
+            .SelectMany(static trait => trait.Methods)
+            .Select(static method => method.MethodId)
+            .Where(static symbol => symbol.IsValid)
+            .ToHashSet();
+        foreach (var impl in module.TraitImpls)
         {
-            return true;
+            symbols.UnionWith(impl.Methods.Where(static symbol => symbol.IsValid));
+            symbols.UnionWith(impl.TraitMethodImplementations.Keys.Where(static symbol => symbol.IsValid));
+            symbols.UnionWith(impl.TraitMethodImplementations.Values.Where(static symbol => symbol.IsValid));
         }
 
-        if (TryGetInlineFunctionIdentityKey(function.FunctionId, out var identityKey) &&
-            candidatesByIdentity.ContainsKey(identityKey))
-        {
-            return true;
-        }
-
-        if (function.SymbolId.IsValid)
-        {
-            return false;
-        }
-
-        return !string.IsNullOrWhiteSpace(function.Name) &&
-               candidatesByName.ContainsKey(function.Name);
+        return symbols;
     }
+
+    private static bool CallsTraitFunction(MirFunc function, IReadOnlySet<SymbolId> traitFunctionSymbols)
+    {
+        return function.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .Any(call => call.Function is MirFunctionRef { SymbolId: var symbolId } &&
+                         symbolId.IsValid &&
+                         traitFunctionSymbols.Contains(symbolId));
+    }
+
+    // ---- Call-site processing ----
 
     private MirFunc InlineCalls(
         MirFunc func,
@@ -234,6 +300,7 @@ public sealed class Inlining : IMirOptimizationPass
         int nextTempId = func.BasicBlocks
             .SelectMany(static block => block.Instructions)
             .SelectMany(CollectTempIds)
+            .Concat(func.BasicBlocks.SelectMany(static block => CollectTempIds(block.Terminator)))
             .Select(static temp => temp.Value)
             .DefaultIfEmpty(-1)
             .Max() + 1;
@@ -241,33 +308,18 @@ public sealed class Inlining : IMirOptimizationPass
         var newBlocks = new List<MirBasicBlock>();
         foreach (var block in func.BasicBlocks)
         {
-            newBlocks.Add(InlineCallsInBlock(block, candidatesBySymbol, candidatesByIdentity, candidatesByName, newLocals, ref nextLocalId, ref nextTempId));
+            newBlocks.Add(InlineCallsInBlock(
+                func,
+                block,
+                candidatesBySymbol,
+                candidatesByIdentity,
+                candidatesByName,
+                newLocals,
+                ref nextLocalId,
+                ref nextTempId));
         }
 
-        return new MirFunc
-        {
-            Name = func.Name,
-            SourceName = func.SourceName,
-            Locals = newLocals,
-            BasicBlocks = newBlocks,
-            EntryBlockId = func.EntryBlockId,
-            ReturnType = func.ReturnType,
-            GenericParameterCount = func.GenericParameterCount,
-            GenericParameters = func.GenericParameters.ToList(),
-            GenericTypeParameterIds = func.GenericTypeParameterIds.ToList(),
-            IsRuntimeWordAbi = func.IsRuntimeWordAbi,
-            IsEntry = func.IsEntry,
-            Span = func.Span,
-            SymbolId = func.SymbolId,
-            FunctionId = func.FunctionId,
-            TraitInvokeHelper = func.TraitInvokeHelper,
-            TraitInvokeHelperTraitId = func.TraitInvokeHelperTraitId,
-            IsExternal = func.IsExternal,
-            ExternalSymbolName = func.ExternalSymbolName,
-            ExternalLibrary = func.ExternalLibrary,
-            IntrinsicName = func.IntrinsicName,
-            BuiltinIntrinsicRole = func.BuiltinIntrinsicRole
-        };
+        return MirFunctionTransform.CloneWithBody(func, newLocals, newBlocks);
     }
 
     private static IEnumerable<TempId> CollectTempIds(MirInstruction instruction)
@@ -294,9 +346,22 @@ public sealed class Inlining : IMirOptimizationPass
                 return CollectTempIds(copy.Target).Concat(CollectTempIds(copy.Source));
             case MirMove move:
                 return CollectTempIds(move.Target).Concat(CollectTempIds(move.Source));
+            case MirAlloc alloc:
+                return CollectTempIds(alloc.Target);
             default:
                 return [];
         }
+    }
+
+    private static IEnumerable<TempId> CollectTempIds(MirTerminator? terminator)
+    {
+        return terminator switch
+        {
+            MirReturn { Value: { } value } => CollectTempIds(value),
+            MirSwitch branch => CollectTempIds(branch.Discriminant)
+                .Concat(branch.Branches.SelectMany(static item => CollectTempIds(item.Value))),
+            _ => []
+        };
     }
 
     private static IEnumerable<TempId> CollectTempIds(MirOperand operand)
@@ -310,6 +375,7 @@ public sealed class Inlining : IMirOptimizationPass
     }
 
     private MirBasicBlock InlineCallsInBlock(
+        MirFunc containingFunction,
         MirBasicBlock block,
         IReadOnlyDictionary<SymbolId, MirFunc> candidatesBySymbol,
         IReadOnlyDictionary<string, MirFunc> candidatesByIdentity,
@@ -323,9 +389,10 @@ public sealed class Inlining : IMirOptimizationPass
         foreach (var instr in block.Instructions)
         {
             if (instr is MirCall call &&
-                TryResolveInlineCandidate(call, candidatesBySymbol, candidatesByIdentity, candidatesByName, out var callee))
+                TryResolveInlineCandidate(call, candidatesBySymbol, candidatesByIdentity, candidatesByName, out var callee) &&
+                CanInlineBetweenFunctions(containingFunction, callee) &&
+                TryInlineSingleBlockCall(call, callee, newLocals, ref nextLocalId, ref nextTempId, out var inlined))
             {
-                var inlined = InlineSingleBlockCall(call, callee, newLocals, ref nextLocalId, ref nextTempId);
                 newInstructions.AddRange(inlined);
             }
             else
@@ -348,13 +415,48 @@ public sealed class Inlining : IMirOptimizationPass
     /// Inline a single-block callee at a call site.
     /// Returns the list of instructions to replace the call.
     /// </summary>
-    private List<MirInstruction> InlineSingleBlockCall(
+    private bool TryInlineSingleBlockCall(
         MirCall call,
         MirFunc callee,
         List<MirLocal> newLocals,
         ref int nextLocalId,
-        ref int nextTempId)
+        ref int nextTempId,
+        out List<MirInstruction> result)
     {
+        var calleeBlock = callee.BasicBlocks[0];
+        var returnInstruction = (MirReturn)calleeBlock.Terminator!;
+        var parameters = callee.Locals.Where(static local => local.IsParameter).ToList();
+        if (call.Arguments.Count != parameters.Count ||
+            (call.Target == null) != (returnInstruction.Value == null) ||
+            call.BorrowedArgumentIndices.Count != 0 ||
+            call.Arguments.Any(static argument =>
+                argument is MirConstant { Value: MirConstantValue.UnitValue }))
+        {
+            result = [];
+            return false;
+        }
+
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            if (parameters[i].TypeId.IsValid &&
+                call.Arguments[i].TypeId.IsValid &&
+                parameters[i].TypeId != call.Arguments[i].TypeId)
+            {
+                result = [];
+                return false;
+            }
+        }
+
+        if (call.Target != null &&
+            returnInstruction.Value != null &&
+            call.Target.TypeId.IsValid &&
+            returnInstruction.Value.TypeId.IsValid &&
+            call.Target.TypeId != returnInstruction.Value.TypeId)
+        {
+            result = [];
+            return false;
+        }
+
         // 1. Build local ID remapping (callee local → fresh caller local)
         var localMap = new Dictionary<LocalId, LocalId>();
         foreach (var local in callee.Locals)
@@ -375,50 +477,35 @@ public sealed class Inlining : IMirOptimizationPass
 
         // 1b. Build temp ID remapping (callee temp → fresh caller temp); temps
         // are function-local and collide with the caller's after inlining.
-        var calleeBlock = callee.BasicBlocks[0];
         IEnumerable<TempId> calleeTemps = calleeBlock.Instructions.SelectMany(CollectTempIds);
-        if (calleeBlock.Terminator is MirReturn ret && ret.Value != null)
+        if (returnInstruction.Value != null)
         {
-            calleeTemps = calleeTemps.Concat(CollectTempIds(ret.Value));
+            calleeTemps = calleeTemps.Concat(CollectTempIds(returnInstruction.Value));
         }
 
         var tempMap = new Dictionary<TempId, TempId>();
-        foreach (var tempId in calleeTemps)
+        foreach (var tempId in calleeTemps.Distinct())
         {
             tempMap[tempId] = new TempId { Value = nextTempId++ };
         }
 
-        var result = new List<MirInstruction>();
-
-        // Partial application keeps the call: the flat callee signature expects
-        // every parameter, but a partial call passes fewer arguments, so
-        // inlining would read uninitialized locals. A mismatched argument
-        // count also cannot be expanded into the callee body.
-        var parameters = callee.Locals
-            .Where(l => l.IsParameter)
-            .OrderBy(l => l.Id.Value)
-            .ToList();
-        if (call.Arguments.Count != parameters.Count)
-        {
-            return [call];
-        }
+        result = [];
 
         // 2. Argument bindings: assign caller arguments to remapped parameter locals
         for (int i = 0; i < parameters.Count; i++)
         {
             var newParamId = localMap[parameters[i].Id];
-            result.Add(new MirAssign
+            var target = new MirPlace
             {
-                Target = new MirPlace
-                {
-                    Kind = PlaceKind.Local,
-                    Local = newParamId,
-                    TypeId = parameters[i].TypeId,
-                    Span = call.Span
-                },
-                Source = call.Arguments[i],
+                Kind = PlaceKind.Local,
+                Local = newParamId,
+                TypeId = parameters[i].TypeId,
                 Span = call.Span
-            });
+            };
+            result.Add(CreateOwnershipBinding(
+                target,
+                call.Arguments[i],
+                call.Span));
         }
 
         // 3. Remapped callee body (instructions only, not terminator)
@@ -428,17 +515,61 @@ public sealed class Inlining : IMirOptimizationPass
         }
 
         // 4. Return value: MirReturn → MirAssign to call target
-        if (calleeBlock.Terminator is MirReturn returnInstr && call.Target != null && returnInstr.Value != null)
+        if (call.Target != null && returnInstruction.Value != null)
         {
-            result.Add(new MirAssign
-            {
-                Target = call.Target,
-                Source = RemapOperand(returnInstr.Value, localMap, tempMap),
-                Span = returnInstr.Span
-            });
+            result.Add(CreateOwnershipBinding(
+                call.Target,
+                RemapOperand(returnInstruction.Value, localMap, tempMap),
+                returnInstruction.Span));
         }
 
-        return result;
+        return true;
+    }
+
+    private static MirInstruction CreateOwnershipBinding(
+        MirPlace target,
+        MirOperand source,
+        Eidosc.Utils.SourceSpan span)
+    {
+        return source switch
+        {
+            MirPlace { Kind: PlaceKind.Local } sourcePlace =>
+                new MirMove { Target = target, Source = sourcePlace, Span = span },
+            MirPlace sourcePlace => new MirLoad
+            {
+                Target = target,
+                Source = sourcePlace,
+                CreatesBorrowAlias = false,
+                MovesOutOfSource = true,
+                Span = span
+            },
+            _ => new MirAssign { Target = target, Source = source, Span = span }
+        };
+    }
+
+    private static bool CanInlineBetweenFunctions(MirFunc caller, MirFunc callee)
+    {
+        var callerModuleIdentity = caller.FunctionId.ModuleIdentityKey;
+        var calleeModuleIdentity = callee.FunctionId.ModuleIdentityKey;
+        if (!string.IsNullOrWhiteSpace(callerModuleIdentity) ||
+            !string.IsNullOrWhiteSpace(calleeModuleIdentity))
+        {
+            return !string.IsNullOrWhiteSpace(callerModuleIdentity) &&
+                   !string.IsNullOrWhiteSpace(calleeModuleIdentity) &&
+                   string.Equals(callerModuleIdentity, calleeModuleIdentity, StringComparison.Ordinal);
+        }
+
+        var callerModule = caller.FunctionId.Module;
+        var calleeModule = callee.FunctionId.Module;
+        if (!string.IsNullOrWhiteSpace(callerModule) ||
+            !string.IsNullOrWhiteSpace(calleeModule))
+        {
+            return !string.IsNullOrWhiteSpace(callerModule) &&
+                   !string.IsNullOrWhiteSpace(calleeModule) &&
+                   string.Equals(callerModule, calleeModule, StringComparison.Ordinal);
+        }
+
+        return true;
     }
 
     // ---- Remapping helpers ----

@@ -135,6 +135,11 @@ public sealed class LlvmFunction
     /// 属性 ID
     /// </summary>
     public List<int> AttributeIds { get; init; } = [];
+
+    /// <summary>
+    /// 运行时 word ABI 的标量参数可能承载不透明位模式，不能附加 noundef。
+    /// </summary>
+    public bool SuppressScalarNoundefParameters { get; init; }
 }
 
 /// <summary>

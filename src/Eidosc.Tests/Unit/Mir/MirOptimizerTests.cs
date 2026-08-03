@@ -677,7 +677,7 @@ public partial class MirOptimizerTests
             Functions = [callee, caller]
         };
 
-        var optimized = new Inlining(maxInlineSize: 0).Run(module);
+        var optimized = RunInliningWithPureSummaries(module, maxInlineSize: 0);
 
         var optimizedCaller = Assert.Single(optimized.Functions, function => function.Name == caller.Name);
         var instruction = Assert.Single(optimizedCaller.BasicBlocks.Single().Instructions);
@@ -717,7 +717,7 @@ public partial class MirOptimizerTests
             Functions = [callee, caller]
         };
 
-        var optimized = new Inlining(maxInlineSize: 0).Run(module);
+        var optimized = RunInliningWithPureSummaries(module, maxInlineSize: 0);
 
         var optimizedCaller = Assert.Single(optimized.Functions, function => function.Name == caller.Name);
         Assert.DoesNotContain(
@@ -725,7 +725,7 @@ public partial class MirOptimizerTests
             static instruction => instruction is MirCall);
         Assert.Contains(
             optimizedCaller.BasicBlocks.Single().Instructions,
-            static instruction => instruction is MirAssign);
+            static instruction => instruction is MirMove);
     }
 
     [Fact]
@@ -1269,10 +1269,12 @@ public partial class MirOptimizerTests
         SymbolId symbolId,
         FunctionId? functionId = null)
     {
+        var intType = new TypeId(BaseTypes.IntId);
         var parameter = new MirLocal
         {
             Id = new LocalId { Value = 1 },
             Name = "value",
+            TypeId = intType,
             IsParameter = true
         };
         return new MirFunc
@@ -1280,6 +1282,7 @@ public partial class MirOptimizerTests
             Name = name,
             SymbolId = symbolId,
             FunctionId = functionId ?? new FunctionId { SymbolId = symbolId, Name = name },
+            ReturnType = intType,
             EntryBlockId = new BlockId { Value = 1 },
             Locals = [parameter],
             BasicBlocks =
@@ -1288,7 +1291,7 @@ public partial class MirOptimizerTests
                 {
                     Id = new BlockId { Value = 1 },
                     IsEntry = true,
-                    Terminator = new MirReturn { Value = LocalPlace(parameter.Id) }
+                    Terminator = new MirReturn { Value = LocalPlace(parameter.Id, intType) }
                 }
             ]
         };
@@ -1296,20 +1299,24 @@ public partial class MirOptimizerTests
 
     private static MirFunc BuildInlineCaller(string name, MirFunctionRef functionRef)
     {
+        var intType = new TypeId(BaseTypes.IntId);
         var argument = new MirLocal
         {
             Id = new LocalId { Value = 1 },
             Name = "argument",
+            TypeId = intType,
             IsParameter = true
         };
         var result = new MirLocal
         {
             Id = new LocalId { Value = 2 },
-            Name = "result"
+            Name = "result",
+            TypeId = intType
         };
         return new MirFunc
         {
             Name = name,
+            ReturnType = intType,
             EntryBlockId = new BlockId { Value = 1 },
             Locals = [argument, result],
             BasicBlocks =
@@ -1322,14 +1329,28 @@ public partial class MirOptimizerTests
                     [
                         new MirCall
                         {
-                            Target = LocalPlace(result.Id),
+                            Target = LocalPlace(result.Id, intType),
                             Function = functionRef,
-                            Arguments = [LocalPlace(argument.Id)]
+                            Arguments = [LocalPlace(argument.Id, intType)]
                         }
                     ],
-                    Terminator = new MirReturn { Value = LocalPlace(result.Id) }
+                    Terminator = new MirReturn { Value = LocalPlace(result.Id, intType) }
                 }
             ]
         };
+    }
+
+    private static MirModule RunInliningWithPureSummaries(MirModule module, int maxInlineSize)
+    {
+        var summaries = module.Functions
+            .GroupBy(MirFunctionIdentity.GetStableKey, StringComparer.Ordinal)
+            .ToDictionary(
+                static group => group.Key,
+                static _ => FunctionOptimizationSummary.Pure,
+                StringComparer.Ordinal);
+        var pass = new Inlining(maxInlineSize);
+        ((IFunctionOptimizationSummaryConsumer)pass).FunctionSummaries =
+            new FunctionOptimizationSummaryIndex(summaries);
+        return pass.Run(module);
     }
 }

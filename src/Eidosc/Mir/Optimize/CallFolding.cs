@@ -8,7 +8,7 @@ namespace Eidosc.Mir.Optimize;
 /// propagation, arithmetic folding, constant switches and nested pure calls.
 /// Any other instruction (loads, stores, allocations, pattern injection, ...)
 /// aborts the fold and leaves the call untouched. Recursion is bounded by a
-/// depth limit and a per-call instruction budget, so terminating recurrences
+/// depth limit and a shared evaluation budget, so terminating recurrences
 /// such as fib(10) fold while unbounded ones safely give up.
 /// </summary>
 public sealed class CallFolding
@@ -17,7 +17,7 @@ public sealed class CallFolding
     private const long MaxStepsPerFold = 1_000_000;
 
     private readonly Dictionary<string, MirFunc> _functionsByKey;
-    private long _steps;
+    private readonly Dictionary<EvaluationKey, MemoizedEvaluation> _memoizedResults = [];
 
     public CallFolding(MirModule module)
     {
@@ -33,10 +33,10 @@ public sealed class CallFolding
     /// </summary>
     public MirConstant? TryFold(MirFunctionRef function, IReadOnlyList<MirOperand> arguments)
     {
-        _steps = 0;
+        var context = new EvaluationContext(MaxStepsPerFold);
         try
         {
-            return TryFoldCore(function, arguments, depth: 0);
+            return TryFoldCore(function, arguments, depth: 0, context);
         }
         catch (BudgetExceededException)
         {
@@ -47,14 +47,17 @@ public sealed class CallFolding
     private MirConstant? TryFoldCore(
         MirFunctionRef function,
         IReadOnlyList<MirOperand> arguments,
-        int depth)
+        int depth,
+        EvaluationContext context)
     {
+        context.CountStep();
         if (depth > MaxCallDepth)
         {
             throw new BudgetExceededException();
         }
 
-        if (!_functionsByKey.TryGetValue(MirFunctionIdentity.GetStableKey(function), out var callee))
+        var functionKey = MirFunctionIdentity.GetStableKey(function);
+        if (!_functionsByKey.TryGetValue(functionKey, out var callee))
         {
             return null;
         }
@@ -65,11 +68,13 @@ public sealed class CallFolding
             return null;
         }
 
+        var constantArguments = new MirConstant[arguments.Count];
         var environment = new Dictionary<LocalId, MirConstant>();
         for (var i = 0; i < parameters.Count; i++)
         {
             if (arguments[i] is MirConstant constant)
             {
+                constantArguments[i] = constant;
                 environment[parameters[i].Id] = constant;
             }
             else
@@ -78,13 +83,40 @@ public sealed class CallFolding
             }
         }
 
-        return EvaluateFunction(callee, environment, depth);
+        var evaluationKey = new EvaluationKey(functionKey, constantArguments);
+        if (_memoizedResults.TryGetValue(evaluationKey, out var memoized))
+        {
+            context.CountSteps(memoized.StepCost);
+            return memoized.Result;
+        }
+
+        if (!context.TryEnter(evaluationKey))
+        {
+            return null;
+        }
+
+        var stepsBeforeEvaluation = context.StepsConsumed;
+        MirConstant? result;
+        try
+        {
+            result = EvaluateFunction(callee, environment, depth, context);
+        }
+        finally
+        {
+            context.Leave(evaluationKey);
+        }
+
+        _memoizedResults[evaluationKey] = new MemoizedEvaluation(
+            result,
+            context.StepsConsumed - stepsBeforeEvaluation);
+        return result;
     }
 
     private MirConstant? EvaluateFunction(
         MirFunc function,
         Dictionary<LocalId, MirConstant> initialEnvironment,
-        int depth)
+        int depth,
+        EvaluationContext context)
     {
         if (depth > MaxCallDepth)
         {
@@ -97,15 +129,17 @@ public sealed class CallFolding
 
         while (current.IsValid && blocks.TryGetValue(current, out var block))
         {
+            context.CountStep();
             foreach (var instruction in block.Instructions)
             {
-                CountStep();
-                if (!TryExecuteInstruction(instruction, environment, depth))
+                context.CountStep();
+                if (!TryExecuteInstruction(instruction, environment, depth, context))
                 {
                     return null;
                 }
             }
 
+            context.CountStep();
             switch (block.Terminator)
             {
                 case MirReturn { Value: null }:
@@ -117,6 +151,7 @@ public sealed class CallFolding
                 case MirReturn { Value: { } value }:
                     return ResolveOperand(value, environment);
                 case MirGoto gotoTerminator:
+                    context.CountStep();
                     current = gotoTerminator.Target;
                     continue;
                 case MirSwitch switchTerminator:
@@ -125,6 +160,7 @@ public sealed class CallFolding
                         return null;
                     }
 
+                    context.CountStep();
                     current = next;
                     continue;
                 default:
@@ -138,7 +174,8 @@ public sealed class CallFolding
     private bool TryExecuteInstruction(
         MirInstruction instruction,
         Dictionary<LocalId, MirConstant> environment,
-        int depth)
+        int depth,
+        EvaluationContext context)
     {
         switch (instruction)
         {
@@ -209,7 +246,7 @@ public sealed class CallFolding
                     resolvedArguments.Add(resolved);
                 }
 
-                var callResult = TryFoldCore(functionRef, resolvedArguments, depth + 1);
+                var callResult = TryFoldCore(functionRef, resolvedArguments, depth + 1, context);
                 if (callResult == null)
                 {
                     return false;
@@ -266,22 +303,73 @@ public sealed class CallFolding
         return false;
     }
 
-    private static bool ConstantValuesEqual(MirConstantValue left, MirConstantValue right) =>
-        (left, right) switch
-        {
-            (MirConstantValue.IntValue l, MirConstantValue.IntValue r) => l.Value == r.Value,
-            (MirConstantValue.FloatValue l, MirConstantValue.FloatValue r) => l.Value.Equals(r.Value),
-            (MirConstantValue.BoolValue l, MirConstantValue.BoolValue r) => l.Value == r.Value,
-            (MirConstantValue.CharValue l, MirConstantValue.CharValue r) => l.Value == r.Value,
-            (MirConstantValue.StringValue l, MirConstantValue.StringValue r) => string.Equals(l.Value, r.Value, StringComparison.Ordinal),
-            _ => false
-        };
+    private static bool ConstantValuesEqual(MirConstantValue left, MirConstantValue right) => left.Equals(right);
 
-    private void CountStep()
+    private readonly record struct ConstantKey(TypeId TypeId, MirConstantValue Value);
+
+    private readonly record struct MemoizedEvaluation(MirConstant? Result, long StepCost);
+
+    private sealed class EvaluationKey : IEquatable<EvaluationKey>
     {
-        if (++_steps > MaxStepsPerFold)
+        private readonly ConstantKey[] _arguments;
+
+        public EvaluationKey(string functionKey, IReadOnlyList<MirConstant> arguments)
         {
-            throw new BudgetExceededException();
+            FunctionKey = functionKey;
+            _arguments = arguments
+                .Select(static argument => new ConstantKey(argument.TypeId, argument.Value))
+                .ToArray();
+        }
+
+        private string FunctionKey { get; }
+
+        public bool Equals(EvaluationKey? other) =>
+            other != null &&
+            string.Equals(FunctionKey, other.FunctionKey, StringComparison.Ordinal) &&
+            _arguments.AsSpan().SequenceEqual(other._arguments);
+
+        public override bool Equals(object? obj) => obj is EvaluationKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(FunctionKey, StringComparer.Ordinal);
+            foreach (var argument in _arguments)
+            {
+                hash.Add(argument);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+
+    private sealed class EvaluationContext(long remainingSteps)
+    {
+        private readonly HashSet<EvaluationKey> _inProgress = [];
+        private readonly long _initialSteps = remainingSteps;
+        private long _remainingSteps = remainingSteps;
+
+        public long StepsConsumed => _initialSteps - _remainingSteps;
+
+        public bool TryEnter(EvaluationKey key) => _inProgress.Add(key);
+
+        public void Leave(EvaluationKey key) => _inProgress.Remove(key);
+
+        public void CountStep() => CountSteps(1);
+
+        public void CountSteps(long steps)
+        {
+            if (steps < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(steps));
+            }
+
+            if (steps > _remainingSteps)
+            {
+                throw new BudgetExceededException();
+            }
+
+            _remainingSteps -= steps;
         }
     }
 

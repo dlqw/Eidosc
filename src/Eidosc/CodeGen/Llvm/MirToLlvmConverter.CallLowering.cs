@@ -1208,8 +1208,7 @@ public sealed partial class MirToLlvmConverter
             Arguments = coercedArguments.ToList(),
             ReturnType = returnType,
             ResultName = resultName,
-            // Direct calls keep the default C calling convention; the fastcc
-            // experiment showed no measurable benefit, so it is not emitted.
+            // Direct calls keep the default C calling convention.
             CallingConvention = null,
             TailCallKind = SelectTailCallKind(call, returnType, coercedArguments, targetUsesSlot)
         };

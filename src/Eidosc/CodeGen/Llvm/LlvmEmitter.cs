@@ -205,23 +205,22 @@ public sealed class LlvmEmitter
         var linkage = func.Linkage.ToIrString();
         var returnType = func.ReturnType.ToIrString();
         var name = $"@{func.Name}";
-        var parameters = string.Join(", ", func.Parameters.Select(EmitParameter));
+        var parameters = string.Join(", ", func.Parameters.Select(static parameter =>
+            LlvmAttributeFormatter.FormatParameter(parameter, includeName: true)));
 
         // 函数属性（可引用多个属性组：`#0 #1`）
-        var attrs = "";
-        if (func.AttributeIds.Count > 0)
-        {
-            attrs = string.Concat(func.AttributeIds.Select(id => $" #{id}"));
-        }
+        var attrs = LlvmAttributeFormatter.FormatFunctionReferences(func.AttributeIds);
 
         if (func.BasicBlocks.Count == 0)
         {
-            // 声明（外部/FFI 函数保持 C 调用约定）
-            EmitLine($"declare {returnType} {name}({parameters}){attrs}");
+            var callingConvention = string.IsNullOrEmpty(func.CallingConvention)
+                ? ""
+                : $"{func.CallingConvention} ";
+            EmitLine($"declare {callingConvention}{returnType} {name}({parameters}){attrs}");
         }
         else
         {
-            // 定义；内部函数使用 fastcc（转换器在 CallingConvention 上设置）
+            // 定义；调用约定由转换器在 CallingConvention 上显式设置。
             var callingConvention = string.IsNullOrEmpty(func.CallingConvention)
                 ? ""
                 : $" {func.CallingConvention}";
@@ -237,46 +236,6 @@ public sealed class LlvmEmitter
             _indent--;
             EmitLine("}");
         }
-    }
-
-    /// <summary>
-    /// 发射参数
-    /// </summary>
-    private static string EmitParameter(LlvmParameter param)
-    {
-        var type = param.Type.ToIrString();
-        var name = string.IsNullOrEmpty(param.Name) ? "" : $" %{param.Name}";
-        if (param.Attributes.Count == 0)
-        {
-            return $"{type}{name}";
-        }
-
-        var attributes = string.Join(' ', param.Attributes.Select(EmitParameterAttribute));
-        return $"{type} {attributes}{name}";
-    }
-
-    private static string EmitParameterAttribute(LlvmParameterAttribute attribute)
-    {
-        return attribute switch
-        {
-            LlvmParameterAttribute.Noundef => "noundef",
-            LlvmParameterAttribute.NoAlias => "noalias",
-            LlvmParameterAttribute.NoCapture => "nocapture",
-            LlvmParameterAttribute.NoFree => "nofree",
-            LlvmParameterAttribute.NonNull => "nonnull",
-            LlvmParameterAttribute.ReadOnly => "readonly",
-            LlvmParameterAttribute.WriteOnly => "writeonly",
-            LlvmParameterAttribute.ImmArg => "immarg",
-            LlvmParameterAttribute.Returned => "returned",
-            LlvmParameterAttribute.SignExt => "signext",
-            LlvmParameterAttribute.ZeroExt => "zeroext",
-            LlvmParameterAttribute.InReg => "inreg",
-            LlvmParameterAttribute.ByVal => "byval",
-            LlvmParameterAttribute.InAlloca => "inalloca",
-            LlvmParameterAttribute.SRet => "sret",
-            LlvmParameterAttribute.Nest => "nest",
-            _ => attribute.ToString().ToLowerInvariant()
-        };
     }
 
     /// <summary>

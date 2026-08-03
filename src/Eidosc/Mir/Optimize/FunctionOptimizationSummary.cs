@@ -93,6 +93,32 @@ public sealed record FunctionOptimizationSummary(
         CanEliminateUnusedCall && Determinism == FunctionDeterminism.Deterministic;
 
     /// <summary>
+    /// Whether a structurally proven recurrence may regroup repeated calls and
+    /// additions. <see cref="MayDiverge"/> is intentionally omitted because the
+    /// recurrence matcher is responsible for proving its own decreasing base
+    /// case; the generic recursive-call analysis conservatively marks every
+    /// recursive component as potentially divergent.
+    /// </summary>
+    public bool CanReassociatePureCalls =>
+        IsTrusted &&
+        Effects.IsPure &&
+        Memory == FunctionMemoryBehavior.None &&
+        !MayPanic &&
+        !MaySuspend &&
+        !MayBlock &&
+        !MayAllocate &&
+        !MaySynchronize &&
+        Determinism == FunctionDeterminism.Deterministic;
+
+    /// <summary>
+    /// Whether the call boundary may be replaced by the exact MIR body. The
+    /// body preserves memory, allocation, panic and determinism behavior, but a
+    /// declared effect cannot be represented after the call instruction is
+    /// removed and therefore requires a trusted pure effect row.
+    /// </summary>
+    public bool CanInlineBody => IsTrusted && Effects.IsPure;
+
+    /// <summary>
     /// Whether a call with all-constant arguments can be folded at compile time.
     /// Deliberately omits <see cref="MayDiverge"/>: recursive calls are bounded by
     /// the folding evaluator's depth/step limits instead of a summary flag.
@@ -164,6 +190,9 @@ public sealed class FunctionOptimizationSummaryIndex
 {
     private readonly IReadOnlyDictionary<string, FunctionOptimizationSummary> _byFunctionKey;
 
+    public static FunctionOptimizationSummaryIndex Empty { get; } = new(
+        new Dictionary<string, FunctionOptimizationSummary>(StringComparer.Ordinal));
+
     internal FunctionOptimizationSummaryIndex(
         IReadOnlyDictionary<string, FunctionOptimizationSummary> byFunctionKey)
     {
@@ -173,6 +202,9 @@ public sealed class FunctionOptimizationSummaryIndex
     public IReadOnlyDictionary<string, FunctionOptimizationSummary> Summaries => _byFunctionKey;
 
     public bool TryGet(MirFunctionRef function, out FunctionOptimizationSummary summary) =>
+        _byFunctionKey.TryGetValue(MirFunctionIdentity.GetStableKey(function), out summary!);
+
+    public bool TryGet(MirFunc function, out FunctionOptimizationSummary summary) =>
         _byFunctionKey.TryGetValue(MirFunctionIdentity.GetStableKey(function), out summary!);
 }
 

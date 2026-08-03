@@ -31,7 +31,7 @@ public sealed class LinearRecursionAccumulatorShapeTests
         var fibBody = ExtractFunctionBody(result.LlvmIrText!, "eidos_fib");
 
         // The double recursion must be reduced to a single self call.
-        Assert.Equal(1, Regex.Matches(fibBody, @"call i64 @eidos_fib").Count);
+        Assert.Single(Regex.Matches(fibBody, @"call i64 @eidos_fib").Cast<Match>());
         Assert.True(HasLoopBackEdge(fibBody), "expected a loop back edge in fib IR");
     }
 
