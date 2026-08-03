@@ -20,6 +20,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout pinned tutorial smoke fixture
+        uses: actions/checkout@v4
+        with:
+          repository: dlqw/eidos-tutorial
+          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
+          path: artifacts/tutorial
+          persist-credentials: false
+
       - name: Verify release input and main ancestry
         id: version
         shell: pwsh
@@ -41,6 +49,9 @@ jobs:
           $existingTag = git ls-remote --tags origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { throw "Failed to query existing tags." }
           if ($existingTag) { throw "Tag $tag already exists." }
+          ./scripts/release/Test-TutorialSmokeManifest.ps1 `
+            -ManifestPath artifacts/tutorial/eidos.toml `
+            -CompatibilityPath eng/compatibility.json
           "version=$version" >> $env:GITHUB_OUTPUT
 
   publish-eidosc:
@@ -261,7 +272,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 6d1374f2123ee90f7d04341728d666fe925f6669
+          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
           path: artifacts/tutorial
           persist-credentials: false
       - uses: actions/download-artifact@v4
@@ -343,7 +354,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 6d1374f2123ee90f7d04341728d666fe925f6669
+          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
           path: artifacts/tutorial
           persist-credentials: false
       - uses: actions/download-artifact@v4
