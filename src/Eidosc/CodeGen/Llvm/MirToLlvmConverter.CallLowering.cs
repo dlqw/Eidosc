@@ -1658,7 +1658,7 @@ public sealed partial class MirToLlvmConverter
             : new ArrayElementPolicy(LlvmNullPointer.Instance, LlvmNullPointer.Instance);
 
         if (call.Target is MirPlace { Kind: PlaceKind.Local, Local: var targetLocal } &&
-            _callerOwnedOutArrayStorageByLocal.TryGetValue(targetLocal, out var callerStorage))
+            TryGetArrayConstructionStorage(targetLocal, out var callerStorage))
         {
             return EmitDirectCall(
                 call,

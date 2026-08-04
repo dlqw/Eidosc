@@ -140,6 +140,125 @@ public partial class MirToLlvmConverterTests
     }
 
     [Fact]
+    public void Convert_LocalSequenceStorage_UsesEntryAllocaAndLivePointerAfterGrowth()
+    {
+        var arrayType = new TypeId(9915);
+        var intType = new TypeId(BaseTypes.IntId);
+        var array = new LocalId { Value = 1 };
+        var length = new LocalId { Value = 2 };
+        var function = new MirFunc
+        {
+            Name = "local_sequence_storage",
+            SourceName = "local_sequence_storage",
+            FunctionId = CallerOwnedIdentity("local_sequence_storage"),
+            ReturnType = intType,
+            EntryBlockId = new BlockId { Value = 1 },
+            Locals =
+            [
+                new MirLocal { Id = array, Name = "items", TypeId = arrayType },
+                new MirLocal { Id = length, Name = "len", TypeId = intType }
+            ],
+            CallerOwnedAggregateAbi = new MirCallerOwnedAggregateAbi
+            {
+                LocalArrayStorages =
+                [
+                    new MirCallerOwnedArrayStorage
+                    {
+                        Key = "test:local_sequence_storage|local-array:1",
+                        ArrayLocal = array,
+                        ArrayTypeId = arrayType,
+                        Capacity = 2,
+                        ElementSize = 8,
+                        StorageBytes = 80,
+                        PromoteInline = true
+                    }
+                ]
+            },
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        ArrayCall(WellKnownStrings.InternalNames.ArrayNew, array, arrayType, Constant(2), Constant(8)),
+                        ArrayCall(
+                            WellKnownStrings.InternalNames.ArrayPush,
+                            array,
+                            arrayType,
+                            CallerOwnedPlace(array, arrayType),
+                            Constant(1),
+                            Constant(8)),
+                        ArrayCall(
+                            WellKnownStrings.InternalNames.ArrayPush,
+                            array,
+                            arrayType,
+                            CallerOwnedPlace(array, arrayType),
+                            Constant(2),
+                            Constant(8)),
+                        ArrayCall(
+                            WellKnownStrings.InternalNames.ArrayPush,
+                            array,
+                            arrayType,
+                            CallerOwnedPlace(array, arrayType),
+                            Constant(3),
+                            Constant(8)),
+                        ArrayCall(
+                            WellKnownStrings.InternalNames.ArrayLength,
+                            length,
+                            intType,
+                            CallerOwnedPlace(array, arrayType))
+                    ],
+                    Terminator = new MirReturn { Value = CallerOwnedPlace(length, intType) }
+                }
+            ]
+        };
+        var module = new MirModule
+        {
+            Name = "local_sequence_storage",
+            Functions = [function],
+            TypeDescriptors = new Dictionary<int, TypeDescriptor>
+            {
+                [arrayType.Value] = new TypeDescriptor.TyCon(
+                    TypeConstructorKey.FromTypeId(arrayType),
+                    [intType])
+            }
+        };
+
+        var ir = new LlvmEmitter().Emit(new MirToLlvmConverter().Convert(module));
+        var definition = Regex.Match(
+            ir,
+            @"define .* @.*local_sequence_storage[\s\S]*?^}",
+            RegexOptions.Multiline).Value;
+
+        Assert.Matches(@"%sequence_l1_storage_\d+ = alloca \[80 x i8\], align 8", definition);
+        Assert.Matches(
+            @"call ptr @eidos_array_new_in_storage\(ptr %sequence_l1_storage_\d+, i64 80, i64 2, i64 8, ptr null, ptr null\)",
+            definition);
+        Assert.Equal(3, Regex.Matches(definition, @"call ptr @eidos_array_push").Count);
+        Assert.Matches(@"%promoted_length_\d+ = load i64, ptr %promoted_length_ptr_\d+", definition);
+        Assert.DoesNotContain("call i64 @eidos_array_length", definition, StringComparison.Ordinal);
+
+        static MirCall ArrayCall(
+            string name,
+            LocalId target,
+            TypeId targetType,
+            params MirOperand[] arguments) => new()
+        {
+            Target = CallerOwnedPlace(target, targetType),
+            Function = MirRuntimeFunctions.CreateFunctionRef(name, targetType, default),
+            Arguments = arguments.ToList()
+        };
+
+        static MirConstant Constant(long value) => new()
+        {
+            TypeId = new TypeId(BaseTypes.IntId),
+            Value = new MirConstantValue.IntValue(value)
+        };
+    }
+
+    [Fact]
     public void Convert_PromotedArrayLength_FieldProjection_ReadsLiveAggregateFieldPointer()
     {
         var recordType = new TypeId(9913);

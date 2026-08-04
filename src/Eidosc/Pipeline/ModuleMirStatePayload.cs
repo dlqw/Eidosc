@@ -13,7 +13,7 @@ public sealed record ModuleMirStateArtifactPayload(
     ModuleMirStatePayload MirState,
     string PayloadHash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v13";
+    public const string CurrentSchemaVersion = "module-mir-state-artifact-payload-v14";
 
     public static ModuleMirStateArtifactPayload Create(
         string moduleKey,
@@ -198,7 +198,7 @@ public sealed record ModuleMirStatePayload(
     IReadOnlyList<MirFunctionFingerprint> FunctionFingerprints,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-payload-v13";
+    public const string CurrentSchemaVersion = "module-mir-state-payload-v14";
 
     public bool IsRestorable => Module != null &&
                                 UnsupportedNodeCount == 0 &&
@@ -463,16 +463,18 @@ public sealed record MirStateCallerOwnedAggregateAbiPayload(
     int OutReturnType,
     IReadOnlyList<int> OutReturnLocals,
     IReadOnlyList<MirStateCallerOwnedArrayStoragePayload> OutArrayStorages,
+    IReadOnlyList<MirStateCallerOwnedArrayStoragePayload> LocalArrayStorages,
     IReadOnlyList<MirStateCallerOwnedAggregateGroupPayload> LocalGroups)
 {
     public static MirStateCallerOwnedAggregateAbiPayload Empty { get; } =
-        new(0, [], [], []);
+        new(0, [], [], [], []);
 
     public static MirStateCallerOwnedAggregateAbiPayload Create(MirCallerOwnedAggregateAbi abi) =>
         new(
             abi.OutReturnType.Value,
             abi.OutReturnLocals.Select(static local => local.Value).Order().ToArray(),
             abi.OutArrayStorages.Select(MirStateCallerOwnedArrayStoragePayload.Create).ToArray(),
+            abi.LocalArrayStorages.Select(MirStateCallerOwnedArrayStoragePayload.Create).ToArray(),
             abi.LocalGroups.Select(MirStateCallerOwnedAggregateGroupPayload.Create).ToArray());
 
     public MirCallerOwnedAggregateAbi Restore() => new()
@@ -480,6 +482,7 @@ public sealed record MirStateCallerOwnedAggregateAbiPayload(
         OutReturnType = new TypeId(OutReturnType),
         OutReturnLocals = OutReturnLocals.Select(static local => new LocalId { Value = local }).ToHashSet(),
         OutArrayStorages = (OutArrayStorages ?? []).Select(static storage => storage.Restore()).ToArray(),
+        LocalArrayStorages = (LocalArrayStorages ?? []).Select(static storage => storage.Restore()).ToArray(),
         LocalGroups = LocalGroups.Select(static group => group.Restore()).ToArray()
     };
 }
@@ -515,10 +518,18 @@ public sealed record MirStateCallerOwnedArrayStoragePayload(
     int ArrayTypeId,
     long Capacity,
     long ElementSize,
-    long StorageBytes)
+    long StorageBytes,
+    bool PromoteInline)
 {
     public static MirStateCallerOwnedArrayStoragePayload Create(MirCallerOwnedArrayStorage storage) =>
-        new(storage.Key, storage.ArrayLocal.Value, storage.ArrayTypeId.Value, storage.Capacity, storage.ElementSize, storage.StorageBytes);
+        new(
+            storage.Key,
+            storage.ArrayLocal.Value,
+            storage.ArrayTypeId.Value,
+            storage.Capacity,
+            storage.ElementSize,
+            storage.StorageBytes,
+            storage.PromoteInline);
 
     public MirCallerOwnedArrayStorage Restore() => new()
     {
@@ -527,7 +538,8 @@ public sealed record MirStateCallerOwnedArrayStoragePayload(
         ArrayTypeId = new TypeId(ArrayTypeId),
         Capacity = Capacity,
         ElementSize = ElementSize,
-        StorageBytes = StorageBytes
+        StorageBytes = StorageBytes,
+        PromoteInline = PromoteInline
     };
 }
 

@@ -769,6 +769,49 @@ main :: Unit -> Int need ffi {
 
     [Fact]
     [Trait(TestCategories.Category, TestCategories.Native)]
+    public void NativeSeqMapFilterCollect_LocalUniqueConstructionUsesNoHeapAllocation()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string source = """
+import std.Seq
+
+@[extern(c, name: "eidos_memory_counters_reset")]
+reset_memory_counters :: Unit -> Unit need ffi
+
+@[extern(c, name: "eidos_memory_alloc_count")]
+memory_alloc_count :: Unit -> Int need ffi
+
+increment :: Int -> Int { value => value + 1 }
+greater_than_two :: Ref[Int] -> Bool { value => *value > 2 }
+
+main :: Unit -> Int need ffi {
+    _ => {
+        reset_memory_counters()
+        result := Seq.filter(
+            Seq.map([1, 2, 3, 4])(increment)
+        )(greater_than_two)
+        checksum := Seq.len(ref result)
+        allocations := memory_alloc_count()
+        if checksum == 3 then { allocations } else { 100 + checksum }
+    }
+}
+""";
+
+        var execution = CompileAndRunSourceAtNative(
+            source,
+            "native_seq_map_filter_collect_local_storage.eidos",
+            "native_seq_map_filter_collect_local_storage",
+            runtimeExtraCFlags: "-DEIDOS_ENABLE_MEMORY_COUNTERS");
+
+        Assert.Equal(0, execution.ExitCode);
+    }
+
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
     public void NativeCallerOwnedAggregate_SeqContainedByReturnedRecord_HasNoStackUseAfterReturn()
     {
         if (!OperatingSystem.IsLinux() || !ToolExists("clang"))

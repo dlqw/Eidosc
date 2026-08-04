@@ -32,8 +32,7 @@ public sealed partial class MirBuilder
     private MirOperand ConvertListComprehension(HirListComprehension comprehension)
     {
         var generators = new Dictionary<int, ComprehensionGeneratorInfo>();
-        var maxResultLength = 1L;
-        var allSourceLengthsKnown = true;
+        var sourceLengths = new List<int?>();
 
         for (var i = 0; i < comprehension.Qualifiers.Count; i++)
         {
@@ -60,14 +59,7 @@ public sealed partial class MirBuilder
             }
 
             var sourceLength = TryGetStaticComprehensionSourceLength(qualifier.GeneratorSource);
-            if (sourceLength.HasValue)
-            {
-                maxResultLength = Math.Min(int.MaxValue, maxResultLength * Math.Max(sourceLength.Value, 0));
-            }
-            else
-            {
-                allSourceLengthsKnown = false;
-            }
+            sourceLengths.Add(sourceLength);
 
             var elementType = InferComprehensionElementType(varPattern, qualifier.GeneratorSource);
 
@@ -88,19 +80,20 @@ public sealed partial class MirBuilder
         }
 
         var hasGuardQualifier = comprehension.Qualifiers.Any(q => q.Kind == HirQualifierKind.Guard);
-        var boundedCapacity = maxResultLength < 0 ? 0L : Math.Min(maxResultLength, int.MaxValue);
-        var initialCapacity = allSourceLengthsKnown ? (int)boundedCapacity : 8;
+        var capacity = RuntimeSequenceBuildLowering.EstimateComprehensionCapacity(
+            sourceLengths,
+            hasGuardQualifier);
         var resultElementType = comprehension.Output?.TypeId ?? TypeId.None;
         var resultElementSize = GetRuntimeElementSize(resultElementType);
         var resultPlace = EmitRuntimeArrayNew(
             comprehension.TypeId,
-            initialCapacity,
+            capacity.InitialCapacity,
             resultElementSize,
             comprehension.Span);
 
-        if (allSourceLengthsKnown && !hasGuardQualifier)
+        if (capacity.IsExact)
         {
-            RegisterKnownListLength(resultPlace, initialCapacity);
+            RegisterKnownListLength(resultPlace, capacity.InitialCapacity);
         }
         else
         {
@@ -430,21 +423,12 @@ public sealed partial class MirBuilder
         var elementType = outputNode.TypeId.IsValid ? outputNode.TypeId : outputValue.TypeId;
         var elementSize = GetRuntimeElementSize(elementType);
 
-        _currentBlock!.Instructions.Add(new MirCall
-        {
-            Target = context.ResultPlace,
-            Function = MirRuntimeFunctions.CreateFunctionRef(
-                WellKnownStrings.InternalNames.ArrayPush,
-                context.ResultPlace.TypeId,
-                outputNode.Span),
-            Arguments =
-            [
-                context.ResultPlace,
-                pushValue,
-                CreateIntConstant(elementSize, outputNode.Span)
-            ],
-            Span = outputNode.Span
-        });
+        _currentBlock!.Instructions.Add(RuntimeSequenceBuildLowering.CreateArrayPushCall(
+            context.ResultPlace,
+            context.ResultPlace,
+            pushValue,
+            CreateIntConstant(elementSize, outputNode.Span),
+            outputNode.Span));
         RegisterRuntimeArrayLocal(context.ResultPlace);
     }
 

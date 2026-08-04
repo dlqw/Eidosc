@@ -3,6 +3,7 @@ using Eidosc.Mir;
 using Eidosc.Pipeline;
 using Eidosc.Symbols;
 using Eidosc.Tests.Fixtures;
+using Eidosc.Utils;
 using Xunit;
 
 namespace Eidosc.Tests.Integration;
@@ -407,6 +408,52 @@ public partial class LlvmPipelineIntegrationTests
     }
 
     [Fact]
+    public void SeqMapFilterCollect_PureCallbacks_UsesSingleCompilerManagedCollector()
+    {
+        var result = RunSourceAtMir(
+            SeqMapFilterCollectPureSource,
+            "seq_map_filter_collect_fusion.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        var main = Assert.Single(module.Functions, static function => function.Name == "main");
+        var calls = main.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .ToList();
+
+        Assert.DoesNotContain(calls, static call => call.Function is MirFunctionRef
+        {
+            CompilerSemanticRole: CompilerSemanticRole.SequenceMap or CompilerSemanticRole.SequenceFilter
+        });
+        Assert.Contains(calls, static call =>
+            call.Function is MirFunctionRef function &&
+            MirRuntimeFunctions.HasIdentity(function, WellKnownStrings.InternalNames.ArrayNew));
+        Assert.Contains(calls, static call =>
+            call.Function is MirFunctionRef function &&
+            MirRuntimeFunctions.HasIdentity(function, WellKnownStrings.InternalNames.ArrayPush));
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.intermediates_elided"]);
+        Assert.Equal(2, result.ProfilingCounters["Mir.optimizer.sequence.collectors_stack_promoted"]);
+        Assert.Equal(2, main.CallerOwnedAggregateAbi.LocalArrayStorages.Count);
+        Assert.Contains(main.Locals, static local => local.Name == "__sequence_index");
+    }
+
+    [Fact]
+    public void SeqMapFilterCollect_PureCallbacks_NativeSmoke_ReturnsLength()
+    {
+        var execution = CompileAndRunSourceAtNative(
+            SeqMapFilterCollectPureSource,
+            "seq_map_filter_collect_fusion_native.eidos",
+            "seq_map_filter_collect_fusion_native");
+
+        Assert.Equal(3, execution.ExitCode);
+    }
+
+    [Fact]
     public void SeqMapFilterFold_PanicCapablePredicate_DoesNotFuse()
     {
         const string source = """
@@ -681,6 +728,21 @@ public partial class LlvmPipelineIntegrationTests
             Seq.fold_left(
                 Seq.filter(Seq.map([1, 2, 3, 4])(increment))(greater_than_two)
             )(0)(add)
+        }
+        """;
+
+    private const string SeqMapFilterCollectPureSource = """
+        import std.Seq
+
+        increment :: Int -> Int { value => value + 1 }
+        greater_than_two :: Ref[Int] -> Bool { value => *value > 2 }
+
+        main :: Unit -> Int
+        {
+            result := Seq.filter(
+                Seq.map([1, 2, 3, 4])(increment)
+            )(greater_than_two);
+            Seq.len(ref result)
         }
         """;
 }

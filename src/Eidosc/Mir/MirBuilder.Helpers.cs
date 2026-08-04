@@ -225,14 +225,10 @@ public sealed partial class MirBuilder
     {
         var intType = new TypeId(BaseTypes.IntId);
         var lengthTemp = NewTemp(intType);
-        _currentBlock!.Instructions.Add(new MirCall
-        {
-            Target = lengthTemp,
-            Function = MirRuntimeFunctions.CreateFunctionRef(WellKnownStrings.InternalNames.ArrayLength, intType, span),
-            Arguments = [sourcePlace],
-            BorrowedArgumentIndices = new HashSet<int> { 0 },
-            Span = span
-        });
+        _currentBlock!.Instructions.Add(RuntimeSequenceBuildLowering.CreateArrayLengthCall(
+            lengthTemp,
+            sourcePlace,
+            span));
         ClearKnownListLength(lengthTemp);
         ClearRuntimeArrayLocal(lengthTemp);
         return lengthTemp;
@@ -241,17 +237,11 @@ public sealed partial class MirBuilder
     private MirPlace EmitRuntimeArrayNew(TypeId arrayTypeId, int capacity, int elementSize, SourceSpan span)
     {
         var target = NewTemp(arrayTypeId);
-        _currentBlock!.Instructions.Add(new MirCall
-        {
-            Target = target,
-            Function = MirRuntimeFunctions.CreateFunctionRef(WellKnownStrings.InternalNames.ArrayNew, arrayTypeId, span),
-            Arguments =
-            [
-                CreateIntConstant(Math.Max(capacity, 0), span),
-                CreateIntConstant(Math.Max(elementSize, 0), span)
-            ],
-            Span = span
-        });
+        _currentBlock!.Instructions.Add(RuntimeSequenceBuildLowering.CreateArrayNewCall(
+            target,
+            CreateIntConstant(Math.Max(capacity, 0), span),
+            CreateIntConstant(Math.Max(elementSize, 0), span),
+            span));
         RegisterRuntimeArrayLocal(target);
 
         return target;

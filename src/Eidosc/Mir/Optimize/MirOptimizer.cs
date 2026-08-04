@@ -165,6 +165,7 @@ public sealed partial class MirOptimizer
         optimizer.RegisterPass(new RecordUpdateFusionPass());
         optimizer.RegisterPass(new UniqueRecordUpdateSpecializationPass());
         optimizer.RegisterPass(new CallerOwnedAggregateSpecializationPass());
+        optimizer.RegisterPass(new RuntimeSequenceStoragePromotionPass());
         // Runs last so the if-lowering merge dead blocks are already removed by
         // DeadCodeElimination and the strict three-block shape holds. The
         // rewrite only introduces scalar accumulator locals and a tail call.
