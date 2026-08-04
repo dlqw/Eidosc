@@ -1,5 +1,5 @@
 <Project>
   <PropertyGroup>
-    <EidosStdVersion>0.2.0-alpha.1</EidosStdVersion>
+    <EidosStdVersion>0.8.0-alpha.1</EidosStdVersion>
   </PropertyGroup>
 </Project>

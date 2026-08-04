@@ -7,6 +7,6 @@ version = "0.8.0-alpha.1"
 
 [package]
 name = "std"
-version = "0.2.0-alpha.1"
+version = "0.8.0-alpha.1"
 description = "Eidos standard library"
 license = "MIT"

@@ -32,6 +32,10 @@ if ($compatibility.version -cne $Version)
 
 [xml]$stdProps = Get-Content -Raw -LiteralPath "eng/Std.Version.props"
 $stdVersion = [string]$stdProps.Project.PropertyGroup.EidosStdVersion
+if ($stdVersion -cne $Version)
+{
+    throw "Eidos core version mismatch: Std '$stdVersion' does not match Eidosc '$Version'."
+}
 [xml]$bindgenProps = Get-Content -Raw -LiteralPath "eng/EidosBindgen.Version.props"
 $bindgenPrefix = [string]$bindgenProps.Project.PropertyGroup.EidosBindgenVersionPrefix
 $bindgenSuffix = [string]$bindgenProps.Project.PropertyGroup.EidosBindgenVersionSuffix
