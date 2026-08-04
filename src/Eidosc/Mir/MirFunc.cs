@@ -527,13 +527,18 @@ public sealed record MirCallerOwnedAggregateAbi
     public IReadOnlyList<MirCallerOwnedArrayStorage> OutArrayStorages { get; init; } = [];
 
     /// <summary>
+    /// Non-escaping RuntimeArray values backed by storage owned by this function frame.
+    /// </summary>
+    public IReadOnlyList<MirCallerOwnedArrayStorage> LocalArrayStorages { get; init; } = [];
+
+    /// <summary>
     /// Local alias groups backed by caller-owned aggregate storage.
     /// </summary>
     public IReadOnlyList<MirCallerOwnedAggregateGroup> LocalGroups { get; init; } = [];
 
     public bool HasOutReturn => OutReturnType.IsValid;
 
-    public bool IsEmpty => !HasOutReturn && LocalGroups.Count == 0;
+    public bool IsEmpty => !HasOutReturn && LocalArrayStorages.Count == 0 && LocalGroups.Count == 0;
 }
 
 public sealed record MirCallerOwnedAggregateGroup

@@ -87,6 +87,8 @@ public sealed partial class MirToLlvmConverter
     private readonly Dictionary<LocalId, LlvmStructType> _callerOwnedWrapperTypeByCanonicalLocal = [];
     private readonly Dictionary<(LocalId CanonicalLocal, string Key), LlvmValue> _callerOwnedArrayStorageByGroup = [];
     private readonly Dictionary<LocalId, (LlvmValue Pointer, MirCallerOwnedArrayStorage Storage)> _callerOwnedOutArrayStorageByLocal = [];
+    private readonly Dictionary<LocalId, MirCallerOwnedArrayStorage> _localArrayStorageMetadataByLocal = [];
+    private readonly Dictionary<LocalId, (LlvmValue Pointer, MirCallerOwnedArrayStorage Storage)> _localArrayStorageByLocal = [];
     private readonly Dictionary<string, int> _callerOwnedStorageFieldIndexByKey = [];
     private LlvmValue? _callerOwnedOutDestination;
     public List<Diagnostic.Diagnostic> Diagnostics { get; } = [];
@@ -556,6 +558,8 @@ public sealed partial class MirToLlvmConverter
             _callerOwnedWrapperTypeByCanonicalLocal.Clear();
             _callerOwnedArrayStorageByGroup.Clear();
             _callerOwnedOutArrayStorageByLocal.Clear();
+            _localArrayStorageMetadataByLocal.Clear();
+            _localArrayStorageByLocal.Clear();
             _callerOwnedOutDestination = null;
             _postInstructionBuffer.Clear();
             _blockMap.Clear();
@@ -569,6 +573,11 @@ public sealed partial class MirToLlvmConverter
                 {
                     _callerOwnedGroupByLocal[local] = group;
                 }
+            }
+
+            foreach (var storage in func.CallerOwnedAggregateAbi.LocalArrayStorages)
+            {
+                _localArrayStorageMetadataByLocal[storage.ArrayLocal] = storage;
             }
 
             // 加载当前函数的 Perceus 优化提示

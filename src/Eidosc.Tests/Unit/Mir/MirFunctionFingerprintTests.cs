@@ -95,7 +95,8 @@ public sealed class MirFunctionFingerprintTests
             ArrayTypeId = new TypeId(9100),
             Capacity = 3,
             ElementSize = 8,
-            StorageBytes = 88
+            StorageBytes = 88,
+            PromoteInline = true
         };
         var baselineHash = ComputeStorageHash(baseline);
         var variants = new[]
@@ -105,7 +106,8 @@ public sealed class MirFunctionFingerprintTests
             baseline with { ArrayTypeId = new TypeId(9101) },
             baseline with { Capacity = 4 },
             baseline with { ElementSize = 16 },
-            baseline with { StorageBytes = 96 }
+            baseline with { StorageBytes = 96 },
+            baseline with { PromoteInline = false }
         };
 
         Assert.All(variants, storage => Assert.NotEqual(baselineHash, ComputeStorageHash(storage)));
@@ -121,6 +123,33 @@ public sealed class MirFunctionFingerprintTests
             };
             return MirFunctionFingerprintBuilder.Compute(function).BodyHash;
         }
+    }
+
+    [Fact]
+    public void Compute_LocalArrayStorageChangesFingerprint()
+    {
+        var ordinary = CreateFunction(BinaryOp.Add);
+        var promoted = CreateFunction(BinaryOp.Add);
+        promoted.CallerOwnedAggregateAbi = new MirCallerOwnedAggregateAbi
+        {
+            LocalArrayStorages =
+            [
+                new MirCallerOwnedArrayStorage
+                {
+                    Key = "local-array",
+                    ArrayLocal = new LocalId { Value = 1 },
+                    ArrayTypeId = promoted.ReturnType,
+                    Capacity = 4,
+                    ElementSize = 8,
+                    StorageBytes = 96,
+                    PromoteInline = true
+                }
+            ]
+        };
+
+        Assert.NotEqual(
+            MirFunctionFingerprintBuilder.Compute(ordinary).BodyHash,
+            MirFunctionFingerprintBuilder.Compute(promoted).BodyHash);
     }
 
     [Fact]

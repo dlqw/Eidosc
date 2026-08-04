@@ -51,6 +51,7 @@ public static class MirFunctionFingerprintBuilder
             writer.Add(local.Value);
         }
         AddCallerOwnedArrayStorages(writer, function.CallerOwnedAggregateAbi.OutArrayStorages);
+        AddCallerOwnedArrayStorages(writer, function.CallerOwnedAggregateAbi.LocalArrayStorages);
         writer.Add(function.CallerOwnedAggregateAbi.LocalGroups.Count);
         foreach (var group in function.CallerOwnedAggregateAbi.LocalGroups
                      .OrderBy(static group => group.CanonicalLocal.Value))

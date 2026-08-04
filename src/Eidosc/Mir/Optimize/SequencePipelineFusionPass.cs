@@ -49,7 +49,7 @@ public sealed class SequencePipelineFusionPass :
             .ToArray();
         Stats.FunctionsScanned = candidates.Length;
 
-        var plans = new List<(MirFunc Function, MapFilterFoldPlan Plan)>();
+        var plans = new List<(MirFunc Function, SequencePipelinePlan Plan)>();
         using (MeasureSubphase("sequence.plan"))
         {
             foreach (var function in candidates)
@@ -72,7 +72,7 @@ public sealed class SequencePipelineFusionPass :
             {
                 ApplyPlan(function, plan);
                 Stats.PipelinesFormed++;
-                Stats.IntermediatesElided += 2;
+                Stats.IntermediatesElided += plan.IntermediatesElided;
             }
         }
 
@@ -86,7 +86,7 @@ public sealed class SequencePipelineFusionPass :
         MirModule module,
         MirFunc function,
         IReadOnlyDictionary<string, MirFunc> functionsByKey,
-        out MapFilterFoldPlan plan)
+        out SequencePipelinePlan plan)
     {
         plan = null!;
         foreach (var block in function.BasicBlocks.ToArray())
@@ -128,45 +128,25 @@ public sealed class SequencePipelineFusionPass :
                 }
 
                 Stats.RoleCalls++;
+                var filterInstructionIndex = cursor;
                 cursor++;
                 var filterOutput = FollowSingleMove(instructions, ref cursor, filterTarget);
-                if (cursor >= instructions.Count ||
-                    instructions[cursor] is not MirCall
-                    {
-                        Target: MirPlace { Kind: PlaceKind.Local } foldTarget,
-                        Function: MirFunctionRef
-                        {
-                            CompilerSemanticRole: CompilerSemanticRole.SequenceFoldLeft
-                        } foldFunction,
-                        Arguments.Count: 3
-                    } foldCall ||
-                    !IsLocal(foldCall.Arguments[0], filterOutput.Local))
-                {
-                    Stats.FallbackShapeAfterFilter++;
-                    continue;
-                }
-
-                Stats.RoleCalls++;
                 if (!HasSingleRead(function, mapTarget.Local) ||
-                    !HasSingleRead(function, mapOutput.Local) ||
-                    !HasSingleRead(function, filterTarget.Local) ||
-                    !HasSingleRead(function, filterOutput.Local))
+                    !HasSingleRead(function, mapOutput.Local))
                 {
                     Stats.FallbackMultiUse++;
                     continue;
                 }
 
                 if (mapCall.Arguments[1] is not MirFunctionRef mapper ||
-                    filterCall.Arguments[1] is not MirFunctionRef predicate ||
-                    foldCall.Arguments[2] is not MirFunctionRef reducer)
+                    filterCall.Arguments[1] is not MirFunctionRef predicate)
                 {
                     Stats.FallbackUnknownCallback++;
                     continue;
                 }
 
                 if (!TryResolveCallback(functionsByKey, mapper, out var mapperFunction) ||
-                    !TryResolveCallback(functionsByKey, predicate, out var predicateFunction) ||
-                    !TryResolveCallback(functionsByKey, reducer, out var reducerFunction))
+                    !TryResolveCallback(functionsByKey, predicate, out var predicateFunction))
                 {
                     Stats.FallbackUnknownCallback++;
                     continue;
@@ -174,9 +154,8 @@ public sealed class SequencePipelineFusionPass :
 
                 var mapperParameters = mapperFunction.Locals.Where(static local => local.IsParameter).ToArray();
                 var predicateParameters = predicateFunction.Locals.Where(static local => local.IsParameter).ToArray();
-                var reducerParameters = reducerFunction.Locals.Where(static local => local.IsParameter).ToArray();
-                if (mapperParameters.Length != 1 || predicateParameters.Length != 1 || reducerParameters.Length != 2 ||
-                    !mapperFunction.ReturnType.IsValid || !reducerFunction.ReturnType.IsValid)
+                if (mapperParameters.Length != 1 || predicateParameters.Length != 1 ||
+                    !mapperFunction.ReturnType.IsValid)
                 {
                     Stats.FallbackUnknownCallback++;
                     continue;
@@ -184,10 +163,8 @@ public sealed class SequencePipelineFusionPass :
 
                 var sourceElementType = mapperParameters[0].TypeId;
                 var mappedElementType = mapperFunction.ReturnType;
-                var accumulatorType = reducerFunction.ReturnType;
                 if (!IsCopyType(module, sourceElementType) ||
                     !IsCopyType(module, mappedElementType) ||
-                    !IsCopyType(module, accumulatorType) ||
                     !IsSharedReferenceTo(module, predicateParameters[0].TypeId, mappedElementType))
                 {
                     Stats.FallbackOwnership++;
@@ -195,30 +172,101 @@ public sealed class SequencePipelineFusionPass :
                 }
 
                 if (!AllowsCallbackReordering(mapper, mapperFunction) ||
-                    !AllowsCallbackReordering(predicate, predicateFunction) ||
-                    !AllowsCallbackReordering(reducer, reducerFunction))
+                    !AllowsCallbackReordering(predicate, predicateFunction))
                 {
-                    RecordCallbackProofFallback(mapper, predicate, reducer);
+                    RecordCallbackProofFallback(mapper, predicate);
                     continue;
                 }
 
-                plan = new MapFilterFoldPlan(
+                if (cursor < instructions.Count &&
+                    instructions[cursor] is MirCall
+                    {
+                        Target: MirPlace { Kind: PlaceKind.Local } foldTarget,
+                        Function: MirFunctionRef
+                        {
+                            CompilerSemanticRole: CompilerSemanticRole.SequenceFoldLeft
+                        } foldFunction,
+                        Arguments.Count: 3
+                    } foldCall &&
+                    IsLocal(foldCall.Arguments[0], filterOutput.Local))
+                {
+                    Stats.RoleCalls++;
+                    if (HasSingleRead(function, filterTarget.Local) &&
+                        HasSingleRead(function, filterOutput.Local) &&
+                        foldCall.Arguments[2] is MirFunctionRef reducer &&
+                        TryResolveCallback(functionsByKey, reducer, out var reducerFunction))
+                    {
+                        var reducerParameters = reducerFunction.Locals
+                            .Where(static local => local.IsParameter)
+                            .ToArray();
+                        var accumulatorType = reducerFunction.ReturnType;
+                        if (reducerParameters.Length == 2 &&
+                            accumulatorType.IsValid &&
+                            IsCopyType(module, accumulatorType) &&
+                            AllowsCallbackReordering(reducer, reducerFunction))
+                        {
+                            plan = new MapFilterFoldPlan(
+                                block,
+                                mapIndex,
+                                cursor,
+                                source,
+                                mapper,
+                                predicate,
+                                reducer,
+                                foldCall.Arguments[1],
+                                foldTarget,
+                                sourceElementType,
+                                mappedElementType,
+                                predicateParameters[0].TypeId,
+                                accumulatorType,
+                                mapFunction.Span,
+                                filterFunction.Span,
+                                foldFunction.Span);
+                            return true;
+                        }
+
+                        if (reducerParameters.Length == 2 && accumulatorType.IsValid &&
+                            !AllowsCallbackReordering(reducer, reducerFunction))
+                        {
+                            RecordCallbackProofFallback(reducer);
+                        }
+                        else if (!IsCopyType(module, accumulatorType))
+                        {
+                            Stats.FallbackOwnership++;
+                        }
+                        else
+                        {
+                            Stats.FallbackUnknownCallback++;
+                        }
+                    }
+                    else if (!HasSingleRead(function, filterTarget.Local) ||
+                             !HasSingleRead(function, filterOutput.Local))
+                    {
+                        Stats.FallbackMultiUse++;
+                    }
+                    else
+                    {
+                        Stats.FallbackUnknownCallback++;
+                    }
+                }
+
+                plan = new MapFilterCollectPlan(
                     block,
                     mapIndex,
-                    cursor,
+                    filterInstructionIndex,
                     source,
+                    filterTarget,
                     mapper,
                     predicate,
-                    reducer,
-                    foldCall.Arguments[1],
-                    foldTarget,
                     sourceElementType,
                     mappedElementType,
                     predicateParameters[0].TypeId,
-                    accumulatorType,
+                    GetRuntimeElementSize(module, mappedElementType),
+                    TryResolveStaticArrayCapacity(function, source, out var staticCapacity)
+                        ? staticCapacity
+                        : null,
                     mapFunction.Span,
-                    filterFunction.Span,
-                    foldFunction.Span);
+                    filterFunction.Span);
                 return true;
             }
         }
@@ -442,6 +490,25 @@ public sealed class SequencePipelineFusionPass :
             module.DynamicTypeKeys,
             module.ConstructorLayouts);
 
+    private static int GetRuntimeElementSize(MirModule module, TypeId typeId)
+    {
+        if (module.TypeDescriptors.TryGetValue(typeId.Value, out var descriptor) &&
+            descriptor is TypeDescriptor.Tuple tuple)
+        {
+            return tuple.FieldTypes.Length * IntPtr.Size;
+        }
+
+        return typeId.Value switch
+        {
+            BaseTypes.BoolId => 1,
+            BaseTypes.CharId => 4,
+            BaseTypes.UnitId or BaseTypes.NeverId => 0,
+            BaseTypes.IntId => sizeof(long),
+            BaseTypes.FloatId => sizeof(double),
+            _ => IntPtr.Size
+        };
+    }
+
     private static bool IsSharedReferenceTo(MirModule module, TypeId referenceType, TypeId innerType)
     {
         if (module.TypeDescriptors.TryGetValue(referenceType.Value, out var descriptor))
@@ -551,7 +618,82 @@ public sealed class SequencePipelineFusionPass :
     private static bool IsLocal(MirOperand operand, LocalId local) =>
         operand is MirPlace { Kind: PlaceKind.Local, Local: var candidate } && candidate == local;
 
-    private static void ApplyPlan(MirFunc function, MapFilterFoldPlan plan)
+    private static bool TryResolveStaticArrayCapacity(
+        MirFunc function,
+        MirPlace source,
+        out long capacity)
+    {
+        capacity = 0;
+        var current = source.Local;
+        var visited = new HashSet<LocalId>();
+        while (visited.Add(current))
+        {
+            var definitions = function.BasicBlocks
+                .SelectMany(static block => block.Instructions)
+                .Where(instruction => instruction switch
+                {
+                    MirCall { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == current,
+                    MirAssign { Target: { Kind: PlaceKind.Local, Local: var target } } => target == current,
+                    MirMove { Target: { Kind: PlaceKind.Local, Local: var target } } => target == current,
+                    MirLoad { Target: { Kind: PlaceKind.Local, Local: var target } } => target == current,
+                    _ => false
+                })
+                .ToArray();
+            if (definitions.Length != 1)
+            {
+                return false;
+            }
+
+            if (definitions[0] is MirCall
+                {
+                    Function: MirFunctionRef functionRef,
+                    Arguments: [MirConstant { Value: MirConstantValue.IntValue(var value) }, ..]
+                } && MirRuntimeFunctions.HasIdentity(
+                    functionRef,
+                    WellKnownStrings.InternalNames.ArrayNew) && value >= 0)
+            {
+                capacity = value;
+                return true;
+            }
+
+            var next = definitions[0] switch
+            {
+                MirAssign { Source: MirPlace { Kind: PlaceKind.Local, Local: var assignSource } } => assignSource,
+                MirMove { Source: { Kind: PlaceKind.Local, Local: var moveSource } } => moveSource,
+                MirLoad
+                {
+                    Source: MirPlace { Kind: PlaceKind.Local, Local: var loadSource },
+                    CreatesBorrowAlias: false
+                } => loadSource,
+                _ => LocalId.None
+            };
+            if (!next.IsValid)
+            {
+                return false;
+            }
+
+            current = next;
+        }
+
+        return false;
+    }
+
+    private static void ApplyPlan(MirFunc function, SequencePipelinePlan plan)
+    {
+        switch (plan)
+        {
+            case MapFilterFoldPlan fold:
+                ApplyFoldPlan(function, fold);
+                break;
+            case MapFilterCollectPlan collect:
+                ApplyCollectPlan(function, collect);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported sequence pipeline plan '{plan.GetType().Name}'.");
+        }
+    }
+
+    private static void ApplyFoldPlan(MirFunc function, MapFilterFoldPlan plan)
     {
         var span = plan.FoldSpan;
         var intType = new TypeId(BaseTypes.IntId);
@@ -721,6 +863,146 @@ public sealed class SequencePipelineFusionPass :
         exit.Terminator = new MirGoto { Target = continuation.Id, Span = span };
     }
 
+    private static void ApplyCollectPlan(MirFunc function, MapFilterCollectPlan plan)
+    {
+        var span = plan.FilterSpan;
+        var intType = new TypeId(BaseTypes.IntId);
+        var boolType = new TypeId(BaseTypes.BoolId);
+        var nextLocalValue = function.Locals.Count == 0
+            ? 1
+            : function.Locals.Max(static local => local.Id.Value) + 1;
+        var nextBlockValue = function.BasicBlocks.Max(static block => block.Id.Value) + 1;
+
+        MirPlace NewLocal(string name, TypeId type)
+        {
+            var id = new LocalId { Value = nextLocalValue++ };
+            function.Locals.Add(new MirLocal { Id = id, Name = name, TypeId = type });
+            return new MirPlace { Kind = PlaceKind.Local, Local = id, TypeId = type, Span = span };
+        }
+
+        MirBasicBlock NewBlock()
+        {
+            var block = new MirBasicBlock
+            {
+                Id = new BlockId { Value = nextBlockValue++ },
+                Span = span
+            };
+            function.BasicBlocks.Add(block);
+            return block;
+        }
+
+        var length = NewLocal("__sequence_length", intType);
+        var index = NewLocal("__sequence_index", intType);
+        var exhausted = NewLocal("__sequence_exhausted", boolType);
+        var element = NewLocal("__sequence_element", plan.SourceElementType);
+        var mapped = NewLocal("__sequence_mapped", plan.MappedElementType);
+        var accepted = NewLocal("__sequence_accepted", boolType);
+        var nextIndex = NewLocal("__sequence_next_index", intType);
+
+        var continuation = NewBlock();
+        continuation.Instructions.AddRange(
+            plan.Block.Instructions.Skip(plan.EndInstructionIndex + 1));
+        continuation.Terminator = plan.Block.Terminator;
+
+        var header = NewBlock();
+        var map = NewBlock();
+        var append = NewBlock();
+        var reject = NewBlock();
+        var increment = NewBlock();
+        var exit = NewBlock();
+
+        plan.Block.Instructions.RemoveRange(
+            plan.StartInstructionIndex,
+            plan.Block.Instructions.Count - plan.StartInstructionIndex);
+        plan.Block.Instructions.Add(RuntimeSequenceBuildLowering.CreateArrayLengthCall(
+            length,
+            plan.Source,
+            plan.MapSpan));
+        plan.Block.Instructions.Add(RuntimeSequenceBuildLowering.CreateArrayNewCall(
+            plan.ResultTarget,
+            plan.StaticCapacityUpperBound is { } staticCapacity
+                ? IntConstant(staticCapacity, plan.FilterSpan)
+                : length,
+            IntConstant(plan.MappedElementSize, plan.FilterSpan),
+            plan.FilterSpan));
+        plan.Block.Instructions.Add(new MirAssign
+        {
+            Target = index,
+            Source = IntConstant(0, plan.MapSpan),
+            Span = plan.MapSpan
+        });
+        plan.Block.Terminator = new MirGoto { Target = header.Id, Span = span };
+
+        header.Instructions.Add(new MirBinOp
+        {
+            Target = exhausted,
+            Operator = BinaryOp.Ge,
+            Left = index,
+            Right = length,
+            Span = span
+        });
+        header.Terminator = BoolSwitch(exhausted, exit.Id, map.Id, span);
+
+        map.Instructions.Add(new MirLoad
+        {
+            Target = element,
+            Source = new MirPlace
+            {
+                Kind = PlaceKind.Index,
+                Base = plan.Source,
+                Index = index,
+                IndexAccessKind = MirIndexAccessKind.RuntimeArray,
+                TypeId = plan.SourceElementType,
+                Span = plan.MapSpan
+            },
+            CreatesBorrowAlias = false,
+            Span = plan.MapSpan
+        });
+        map.Instructions.Add(new MirCall
+        {
+            Target = mapped,
+            Function = plan.Mapper,
+            Arguments = [element],
+            Span = plan.MapSpan
+        });
+        map.Instructions.Add(new MirCall
+        {
+            Target = accepted,
+            Function = plan.Predicate,
+            Arguments = [mapped with { TypeId = plan.PredicateParameterType }],
+            Span = plan.FilterSpan
+        });
+        map.Terminator = BoolSwitch(accepted, append.Id, reject.Id, plan.FilterSpan);
+
+        append.Instructions.Add(RuntimeSequenceBuildLowering.CreateArrayPushCall(
+            plan.ResultTarget,
+            plan.ResultTarget,
+            mapped,
+            IntConstant(plan.MappedElementSize, plan.FilterSpan),
+            plan.FilterSpan));
+        append.Terminator = new MirGoto { Target = increment.Id, Span = span };
+
+        reject.Terminator = new MirGoto { Target = increment.Id, Span = span };
+
+        increment.Instructions.Add(new MirBinOp
+        {
+            Target = nextIndex,
+            Operator = BinaryOp.Add,
+            Left = index,
+            Right = IntConstant(1, span),
+            Span = span
+        });
+        increment.Instructions.Add(new MirStore
+        {
+            Target = index,
+            Value = nextIndex,
+            Span = span
+        });
+        increment.Terminator = new MirGoto { Target = header.Id, Span = span };
+
+        exit.Terminator = new MirGoto { Target = continuation.Id, Span = span };
+    }
+
     private static MirInstruction CreateTransfer(MirPlace target, MirOperand source, SourceSpan span) =>
         source is MirPlace { Kind: PlaceKind.Local } sourcePlace
             ? new MirMove { Target = target, Source = sourcePlace, Span = span }
@@ -757,6 +1039,8 @@ public sealed class SequencePipelineFusionPass :
         Span = span
     };
 
+    private abstract record SequencePipelinePlan(int IntermediatesElided);
+
     private sealed record MapFilterFoldPlan(
         MirBasicBlock Block,
         int StartInstructionIndex,
@@ -773,7 +1057,23 @@ public sealed class SequencePipelineFusionPass :
         TypeId AccumulatorType,
         SourceSpan MapSpan,
         SourceSpan FilterSpan,
-        SourceSpan FoldSpan);
+        SourceSpan FoldSpan) : SequencePipelinePlan(2);
+
+    private sealed record MapFilterCollectPlan(
+        MirBasicBlock Block,
+        int StartInstructionIndex,
+        int EndInstructionIndex,
+        MirPlace Source,
+        MirPlace ResultTarget,
+        MirFunctionRef Mapper,
+        MirFunctionRef Predicate,
+        TypeId SourceElementType,
+        TypeId MappedElementType,
+        TypeId PredicateParameterType,
+        int MappedElementSize,
+        long? StaticCapacityUpperBound,
+        SourceSpan MapSpan,
+        SourceSpan FilterSpan) : SequencePipelinePlan(1);
 
     private sealed class NoopDisposable : IDisposable
     {

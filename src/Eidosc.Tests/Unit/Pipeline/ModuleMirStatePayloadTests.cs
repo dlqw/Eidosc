@@ -188,7 +188,8 @@ public sealed class ModuleMirStatePayloadTests
             ArrayTypeId = arrayType,
             Capacity = 3,
             ElementSize = 16,
-            StorageBytes = 112
+            StorageBytes = 112,
+            PromoteInline = true
         };
         var function = new MirFunc
         {
@@ -201,6 +202,7 @@ public sealed class ModuleMirStatePayloadTests
                 OutReturnType = resultType,
                 OutReturnLocals = new HashSet<LocalId> { local },
                 OutArrayStorages = [arrayStorage],
+                LocalArrayStorages = [arrayStorage with { Key = "test:local|array:2" }],
                 LocalGroups =
                 [
                     new MirCallerOwnedAggregateGroup
@@ -231,6 +233,8 @@ public sealed class ModuleMirStatePayloadTests
         Assert.Contains(local, abi.OutReturnLocals);
         var restoredOutStorage = Assert.Single(abi.OutArrayStorages);
         Assert.Equal(arrayStorage, restoredOutStorage);
+        var restoredLocalStorage = Assert.Single(abi.LocalArrayStorages);
+        Assert.Equal(arrayStorage with { Key = "test:local|array:2" }, restoredLocalStorage);
         var group = Assert.Single(abi.LocalGroups);
         Assert.Equal(local, group.CanonicalLocal);
         Assert.Contains(local, group.Locals);

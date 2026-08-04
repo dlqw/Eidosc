@@ -212,6 +212,12 @@ public sealed partial class MirToLlvmConverter
     private LlvmValue ResolvePromotedFallbackBase(MirPlace arrayPlace)
     {
         if (arrayPlace.Kind == PlaceKind.Local &&
+            TryResolveLocalArrayStorage(arrayPlace.Local, out var localStorage))
+        {
+            return localStorage.Pointer;
+        }
+
+        if (arrayPlace.Kind == PlaceKind.Local &&
             _callerOwnedOutArrayStorageByLocal.TryGetValue(arrayPlace.Local, out var outStorage))
         {
             return outStorage.Pointer;
@@ -248,6 +254,19 @@ public sealed partial class MirToLlvmConverter
     {
         storage = null!;
         blobBase = null!;
+
+        if (arrayPlace.Kind == PlaceKind.Local &&
+            TryResolveLocalArrayStorage(arrayPlace.Local, out var localStorage))
+        {
+            if (!localStorage.Storage.PromoteInline)
+            {
+                return false;
+            }
+
+            storage = localStorage.Storage;
+            blobBase = localStorage.Pointer;
+            return true;
+        }
 
         if (arrayPlace.Kind == PlaceKind.Local &&
             _callerOwnedOutArrayStorageByLocal.TryGetValue(arrayPlace.Local, out var outStorage))
@@ -305,6 +324,122 @@ public sealed partial class MirToLlvmConverter
         }
 
         return false;
+    }
+
+    private bool TryGetArrayConstructionStorage(
+        LocalId local,
+        out (LlvmValue Pointer, MirCallerOwnedArrayStorage Storage) storage)
+    {
+        if (TryResolveLocalArrayStorage(local, out storage))
+        {
+            return true;
+        }
+
+        return _callerOwnedOutArrayStorageByLocal.TryGetValue(local, out storage);
+    }
+
+    private bool TryResolveLocalArrayStorage(
+        LocalId local,
+        out (LlvmValue Pointer, MirCallerOwnedArrayStorage Storage) storage)
+    {
+        var root = ResolveLocalArrayStorageRoot(local);
+        if (!root.IsValid || !_localArrayStorageMetadataByLocal.TryGetValue(root, out var metadata))
+        {
+            storage = default;
+            return false;
+        }
+
+        if (_localArrayStorageByLocal.TryGetValue(root, out storage))
+        {
+            return true;
+        }
+
+        var storageBytes = ResolveCallerOwnedArrayStorageBytes(metadata);
+        if (storageBytes <= 0 || storageBytes > int.MaxValue)
+        {
+            storage = default;
+            return false;
+        }
+
+        var alloca = new LlvmAlloca
+        {
+            AllocatedType = new LlvmArrayType
+            {
+                Element = LlvmIntType.I8,
+                Size = (int)storageBytes
+            },
+            Alignment = 8,
+            ResultName = _nameMangler.NewTempName($"sequence_l{root.Value}_storage")
+        };
+        EmitAllocaInEntryBlock(alloca);
+        storage =
+        (
+            new LlvmLocal { Name = alloca.ResultName!, Type = LlvmPointerType.VoidPtr() },
+            metadata
+        );
+        _localArrayStorageByLocal[root] = storage;
+        return true;
+    }
+
+    private LocalId ResolveLocalArrayStorageRoot(LocalId local)
+    {
+        if (_localArrayStorageMetadataByLocal.ContainsKey(local))
+        {
+            return local;
+        }
+
+        if (_currentMirFunction == null)
+        {
+            return LocalId.None;
+        }
+
+        var current = local;
+        var visited = new HashSet<LocalId>();
+        while (visited.Add(current))
+        {
+            LocalId source = LocalId.None;
+            foreach (var instruction in _currentMirFunction.BasicBlocks
+                         .SelectMany(static block => block.Instructions))
+            {
+                source = instruction switch
+                {
+                    MirAssign
+                    {
+                        Target: { Kind: PlaceKind.Local, Local: var target },
+                        Source: MirPlace { Kind: PlaceKind.Local, Local: var candidate }
+                    } when target == current => candidate,
+                    MirMove
+                    {
+                        Target: { Kind: PlaceKind.Local, Local: var target },
+                        Source: { Kind: PlaceKind.Local, Local: var candidate }
+                    } when target == current => candidate,
+                    MirLoad
+                    {
+                        Target: { Kind: PlaceKind.Local, Local: var target },
+                        Source: MirPlace { Kind: PlaceKind.Local, Local: var candidate },
+                        CreatesBorrowAlias: false
+                    } when target == current => candidate,
+                    _ => LocalId.None
+                };
+                if (source.IsValid)
+                {
+                    break;
+                }
+            }
+
+            if (!source.IsValid)
+            {
+                return LocalId.None;
+            }
+
+            current = source;
+            if (_localArrayStorageMetadataByLocal.ContainsKey(current))
+            {
+                return current;
+            }
+        }
+
+        return LocalId.None;
     }
 
     /// <summary>

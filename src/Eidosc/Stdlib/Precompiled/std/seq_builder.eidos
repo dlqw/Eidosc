@@ -1,20 +1,23 @@
 SeqBuilder :: module {
     // SeqBuilder[T] — a mutable, contiguous growable buffer builder.
     //
-    // SeqBuilder is the write side of the Builder→Freeze container architecture. It
-    // wraps a reference-counted contiguous array (the same storage that backs
-    // Seq[T]) and mutates it in place via the push/set intrinsics exported by
-    // the RuntimeArray module. When Perceus sees the unique-owner pattern
-    // (`builder := SeqBuilder.push(builder)(x)`), the allocation is reused rather than copied,
-    // giving amortized O(1) append.
+    // SeqBuilder is the explicit write side for genuinely staged mutable
+    // construction, in-place slot updates, and a deliberate freeze boundary.
+    // Ordinary Seq transformations do not need to be rewritten with SeqBuilder
+    // for performance: compiler-generated unique collectors, capacity planning,
+    // stack promotion, and heap fallback are derived from normal Seq source.
+    //
+    // The builder wraps a reference-counted contiguous array (the same storage
+    // that backs Seq[T]) and mutates it through RuntimeArray intrinsics. Under
+    // unique ownership, the allocation is reused rather than copied, giving
+    // amortized O(1) append.
     //
     // When construction is done, call SeqBuilder.freeze to obtain a read-only Seq[T]
     // view. The freeze is a structural no-op (Seq shares the same buffer); the
     // type distinction is what carries the "do not mutate" intent.
     //
-    // SeqBuilder is intentionally small: heavy algorithmic operations belong on Seq
-    // (the read side), which has the O(1) indexing fast path. SeqBuilder's job is
-    // efficient construction and in-place slot writes.
+    // SeqBuilder is intentionally small: algorithms belong on Seq. SeqBuilder's
+    // distinct responsibility is an explicit multi-step mutation lifecycle.
     import RuntimeArray
     import Seq
     import Option
