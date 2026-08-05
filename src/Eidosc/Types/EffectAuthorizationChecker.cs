@@ -539,9 +539,14 @@ public sealed class EffectAuthorizationChecker
         var effectiveRequired = requiredByCallee;
         var missing = ComputeMissingAbilities(effectiveRequired, CurrentCapabilities);
 
-        if (missing.Count == 0)
+        if (missing.Count == 0 && IsEffectSubsetProven(effectiveRequired, CurrentCapabilities))
         {
             return;
+        }
+
+        if (missing.Count == 0)
+        {
+            missing = effectiveRequired.Effects.ToList();
         }
 
         AddMissingEffectDiagnostic(call.Span, call.Function, requiredByCallee, missing);
@@ -565,9 +570,14 @@ public sealed class EffectAuthorizationChecker
         }
 
         var missing = ComputeMissingAbilities(requiredByCallee, CurrentCapabilities);
-        if (missing.Count == 0)
+        if (missing.Count == 0 && IsEffectSubsetProven(requiredByCallee, CurrentCapabilities))
         {
             return;
+        }
+
+        if (missing.Count == 0)
+        {
+            missing = requiredByCallee.Effects.ToList();
         }
 
         AddMissingEffectDiagnostic(infixCall.Span, infixCall, requiredByCallee, missing);
@@ -893,6 +903,22 @@ public sealed class EffectAuthorizationChecker
         }
 
         return missing;
+    }
+
+    private bool IsEffectSubsetProven(EffectRow required, EffectRow available)
+    {
+        var constraints = new ConstraintSet();
+        var expandedRequired = ExpandEffectRow(required);
+        var expandedAvailable = ExpandEffectRow(available);
+        constraints.AddGoal(new EffectSubsetGoal
+        {
+            Required = new EffectRow(expandedRequired.Effects),
+            Allowed = new EffectRow(expandedAvailable.Effects),
+            Span = SourceSpan.Empty
+        });
+        var solver = new ConstraintSolver(_symbolTable, new Substitution());
+        return solver.Solve(constraints) &&
+               solver.ObligationResults.All(static result => result.State == ObligationState.Proven);
     }
 
     private static bool ContainsEffect(EffectRow set, EffectTag ability)

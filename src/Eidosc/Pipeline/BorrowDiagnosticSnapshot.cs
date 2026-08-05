@@ -45,6 +45,7 @@ public sealed record BorrowDiagnosticSnapshot(
             var summary = function.LoanSummary?.Restore();
             result.AddResult(new BorrowCheckResult
             {
+                FunctionStableKey = function.FunctionKey,
                 FunctionName = summary?.FunctionName ?? function.FunctionKey,
                 FunctionSymbolId = summary?.FunctionSymbol ?? SymbolId.None,
                 LoanSignature = summary

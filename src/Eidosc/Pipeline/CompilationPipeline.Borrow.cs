@@ -276,6 +276,7 @@ public sealed partial class CompilationPipeline
             {
                 funcResult = new BorrowCheckResult
                 {
+                    FunctionStableKey = borrowAnalysisContext.GetStableKey(func),
                     FunctionName = func.Name,
                     FunctionSymbolId = func.SymbolId,
                     LivenessAnalyzer = livenessAnalyzer,
@@ -575,6 +576,7 @@ public sealed partial class CompilationPipeline
             result = previousHints == null
                 ? new BorrowCheckResult
                 {
+                    FunctionStableKey = functionKey,
                     FunctionName = func.Name,
                     FunctionSymbolId = func.SymbolId,
                     LoanSignature = previous.LoanSummary?.Restore()
@@ -582,7 +584,8 @@ public sealed partial class CompilationPipeline
                 : previousHints.ToBorrowCheckResult(
                     func.Name,
                     func.SymbolId,
-                    previous.LoanSummary?.Restore());
+                    previous.LoanSummary?.Restore(),
+                    functionKey);
         }
 
         if (previousHints != null)
@@ -1122,6 +1125,8 @@ public sealed partial class CompilationPipeline
         AddProfilingCounter("Borrow.unified_stack_promotion.closure_lookups", stats.ClosureLookups);
         AddProfilingCounter("Borrow.unified_stack_promotion.closure_lookup_misses", stats.ClosureLookupMisses);
         AddProfilingCounter("Borrow.unified_stack_promotion.closure_candidates", stats.ClosureCandidates);
+        AddProfilingCounter("Borrow.unified_stack_promotion.function_argument_closure_candidates", stats.FunctionArgumentClosureCandidates);
+        AddProfilingCounter("Borrow.unified_stack_promotion.promoted_function_argument_closures", stats.PromotedFunctionArgumentClosures);
         AddProfilingCounter("Borrow.unified_stack_promotion.alias_edges", stats.AliasEdges);
         AddProfilingCounter("Borrow.unified_stack_promotion.escaped_locals", stats.EscapedLocals);
         AddProfilingCounter("Borrow.unified_stack_promotion.promoted_allocations", stats.PromotedAllocations);

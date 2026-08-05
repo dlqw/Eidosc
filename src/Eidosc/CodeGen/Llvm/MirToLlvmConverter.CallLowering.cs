@@ -405,9 +405,8 @@ public sealed partial class MirToLlvmConverter
             ReportUnresolvedGenericCall(call, localFunction.Local);
         }
 
-        var argumentsWithExpectedFunctionTypes = RewriteFunctionValueArgumentsForDirectCall(call, arguments);
-        var funcValue = ResolveCallTargetValue(call, argumentsWithExpectedFunctionTypes, out var returnType);
-        var coercedArguments = CoerceCallArguments(funcValue, argumentsWithExpectedFunctionTypes);
+        var funcValue = ResolveCallTargetValue(call, arguments, out var returnType);
+        var coercedArguments = CoerceCallArguments(funcValue, arguments);
         return EmitDirectCall(call, funcValue, coercedArguments, returnType);
     }
 
@@ -575,39 +574,6 @@ public sealed partial class MirToLlvmConverter
         return runtimeCall;
     }
 
-    private List<LlvmValue> RewriteFunctionValueArgumentsForDirectCall(MirCall call, IReadOnlyList<LlvmValue> convertedArguments)
-    {
-        if (call.Function is not MirFunctionRef funcRef ||
-            !TryResolveMirFunction(funcRef, out var callee))
-        {
-            return convertedArguments.ToList();
-        }
-
-        var parameterLocals = callee.Locals
-            .Where(local => local.IsParameter)
-            .ToList();
-        if (parameterLocals.Count == 0)
-        {
-            return convertedArguments.ToList();
-        }
-
-        var rewrittenArguments = new List<LlvmValue>(convertedArguments.Count);
-        for (var index = 0; index < convertedArguments.Count; index++)
-        {
-            if (index < parameterLocals.Count &&
-                call.Arguments[index] is MirFunctionRef argumentFunctionRef &&
-                parameterLocals[index].TypeId.IsValid)
-            {
-                rewrittenArguments.Add(MaterializeFunctionReference(argumentFunctionRef, parameterLocals[index].TypeId));
-                continue;
-            }
-
-            rewrittenArguments.Add(convertedArguments[index]);
-        }
-
-        return rewrittenArguments;
-    }
-
     private List<LlvmValue> ConvertArgumentsForKnownDirectCall(MirCall call)
     {
         if (call.Function is not MirFunctionRef functionRef ||
@@ -623,6 +589,17 @@ public sealed partial class MirToLlvmConverter
         for (var index = 0; index < call.Arguments.Count; index++)
         {
             var argument = call.Arguments[index];
+            if (index < parameterLocals.Count &&
+                argument is MirFunctionRef argumentFunctionRef &&
+                parameterLocals[index].TypeId.IsValid)
+            {
+                converted.Add(MaterializeFunctionReferenceArgument(
+                    argumentFunctionRef,
+                    parameterLocals[index].TypeId,
+                    index));
+                continue;
+            }
+
             if (index < parameterLocals.Count &&
                 argument is MirPlace place &&
                 IsReferenceTypeId(parameterLocals[index].TypeId))
@@ -1257,6 +1234,11 @@ public sealed partial class MirToLlvmConverter
         }
 
         if (call.Function is not MirFunctionRef funcRef)
+        {
+            return LlvmTailCallKind.None;
+        }
+
+        if (HasStackPromotedFunctionReferenceArgument(call))
         {
             return LlvmTailCallKind.None;
         }

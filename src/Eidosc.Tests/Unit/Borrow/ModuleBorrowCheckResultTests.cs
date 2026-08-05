@@ -60,10 +60,29 @@ public sealed class ModuleBorrowCheckResultTests
         Assert.Equal("sym:303", key.StableText);
     }
 
-    private static BorrowCheckResult CreateResult(string name, SymbolId symbolId)
+    [Fact]
+    public void AddResult_SpecializationsSharingSymbol_UseExactStableKeyAndRejectAmbiguousFallback()
+    {
+        var sharedSymbol = new SymbolId(404);
+        var first = CreateResult("specialized", sharedSymbol, "stable:specialized<int>");
+        var second = CreateResult("specialized", sharedSymbol, "stable:specialized<string>");
+        var moduleResult = new ModuleBorrowCheckResult();
+
+        moduleResult.AddResult(first);
+        moduleResult.AddResult(second);
+
+        Assert.True(moduleResult.TryGetFunctionResultByStableKey(first.FunctionStableKey, out var firstLookup));
+        Assert.Same(first, firstLookup);
+        Assert.True(moduleResult.TryGetFunctionResultByStableKey(second.FunctionStableKey, out var secondLookup));
+        Assert.Same(second, secondLookup);
+        Assert.False(moduleResult.TryGetFunctionResult(sharedSymbol, "specialized", out _));
+    }
+
+    private static BorrowCheckResult CreateResult(string name, SymbolId symbolId, string functionStableKey = "")
     {
         return new BorrowCheckResult
         {
+            FunctionStableKey = functionStableKey,
             FunctionName = name,
             FunctionSymbolId = symbolId
         };

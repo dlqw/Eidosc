@@ -1,6 +1,7 @@
 using Eidosc.Symbols;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
+using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Ast.Types;
 using Eidosc.Diagnostic;
@@ -81,6 +82,7 @@ public sealed partial class TypeInferer
     private readonly Dictionary<AssociatedConstProjectionCacheKey, AssociatedConstProjectionSnapshotEntry> _previousAssociatedConstProjectionCache = [];
     private readonly Dictionary<AssociatedConstProjectionCacheKey, AssociatedConstProjectionSnapshotEntry> _associatedConstProjectionSnapshotEntries = [];
     private readonly Dictionary<string, long> _profilingCounters = new(StringComparer.Ordinal);
+    private readonly List<DoExpr> _doExpressions = [];
     internal ComptimeExecutionOptions ComptimeExecution { get; init; } = ComptimeExecutionOptions.Disabled;
     internal BuildComptimeContext? BuildComptimeContext { get; init; }
     private readonly Dictionary<string, TypesStepAccumulator> _typesStepAccumulators = new(StringComparer.Ordinal);
@@ -403,6 +405,7 @@ public sealed partial class TypeInferer
         _typesStepAccumulators.Clear();
         _typeDirectedCallableResolutionSnapshotEntries.Clear();
         _associatedTypeProjectionSnapshotEntries.Clear();
+        _doExpressions.Clear();
         _associatedConstProjectionSnapshotEntries.Clear();
     }
 
@@ -527,6 +530,8 @@ public sealed partial class TypeInferer
                 _diagnostics.Add(diag);
                 _recoveryContext.RecordError();
             }
+
+            FinalizeDoElaborationPlans();
         }
 
         if (!constraintsSatisfied && _constraintSolver.AnalysisIncomplete)

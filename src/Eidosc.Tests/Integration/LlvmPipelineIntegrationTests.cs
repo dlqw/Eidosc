@@ -181,13 +181,15 @@ main :: Int -> Int
     private static CompilationResult RunSourceAtLlvm(
         string source,
         string inputFile,
-        bool enableMirOptimizations = true)
+        bool enableMirOptimizations = true,
+        bool enableDetailedProfiling = false)
     {
         var options = new CompilationOptions
         {
             InputFile = inputFile,
             StopAtPhase = CompilationPhase.Llvm,
             EnableMirOptimizations = enableMirOptimizations,
+            EnableDetailedProfiling = enableDetailedProfiling,
             UseColors = false,
             PackageImportRoots = ExplicitStdPackageRoots
         };

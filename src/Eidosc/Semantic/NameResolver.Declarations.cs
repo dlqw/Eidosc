@@ -1901,6 +1901,7 @@ public sealed partial class NameResolver
             "trait.show" => CompilerSemanticRole.Show,
             "trait.display" => CompilerSemanticRole.Display,
             "elaborator.do.bind" => CompilerSemanticRole.MonadBind,
+            "elaborator.do.empty" => CompilerSemanticRole.AlternativeEmpty,
             "operator.fmap" => CompilerSemanticRole.FunctorMap,
             "operator.apply" => CompilerSemanticRole.ApplicativeApply,
             "operator.append" => CompilerSemanticRole.SemigroupAppend,

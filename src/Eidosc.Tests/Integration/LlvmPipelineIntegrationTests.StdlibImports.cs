@@ -106,7 +106,7 @@ public partial class LlvmPipelineIntegrationTests
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.NotNull(result.LlvmModule);
         Assert.False(string.IsNullOrWhiteSpace(result.LlvmIrText));
-        Assert.DoesNotContain("closure_stack", result.LlvmIrText, StringComparison.Ordinal);
+        Assert.Contains("call ptr @eidos_closure_init_stack(", result.LlvmIrText, StringComparison.Ordinal);
         Assert.DoesNotContain("unresolved_ref__", result.LlvmIrText, StringComparison.Ordinal);
 
         var qualifiedComparePaths = AstStableNodeTraversal

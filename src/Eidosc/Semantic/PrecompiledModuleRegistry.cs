@@ -5,6 +5,7 @@ using Eidosc.Pipeline;
 using Eidosc.Parsing.Lexer;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Patterns;
+using Eidosc.Ast.Types;
 using Eidosc.Parsing.Handwritten;
 using Eidosc.Utils;
 
@@ -26,11 +27,10 @@ public static class PrecompiledModuleRegistry
     private static readonly Lazy<IReadOnlyDictionary<string, string>> ModuleSources =
         new(LoadModuleSources, isThreadSafe: true);
 
-    private static readonly Lazy<IReadOnlyDictionary<string, ModuleExportAnalysisResult>> ModuleExportAnalyses =
-        new(LoadModuleExportAnalyses, isThreadSafe: true);
+    private static readonly object ModuleExportAnalysisGate = new();
 
-    private static readonly Lazy<IReadOnlyDictionary<string, PrecompiledModuleExports>> ModuleExports =
-        new(LoadModuleExports, isThreadSafe: true);
+    private static readonly Dictionary<string, ModuleExportAnalysisResult> ModuleExportAnalysisCache =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly Lazy<IReadOnlyDictionary<string, string>> ModuleSourceFiles =
         new(LoadModuleSourceFiles, isThreadSafe: true);
@@ -287,8 +287,8 @@ public static class PrecompiledModuleRegistry
             return PrecompiledModuleExports.Empty;
         }
 
-        return ModuleExports.Value.TryGetValue(key, out var exports)
-            ? exports
+        return TryGetModuleExportAnalysis(key, out var analysis)
+            ? analysis.Exports
             : PrecompiledModuleExports.Empty;
     }
 
@@ -334,7 +334,7 @@ public static class PrecompiledModuleRegistry
     {
         var key = NormalizeModulePath(modulePath);
         if (string.IsNullOrEmpty(key) ||
-            !ModuleExportAnalyses.Value.TryGetValue(key, out var analysis))
+            !TryGetModuleExportAnalysis(key, out var analysis))
         {
             return false;
         }
@@ -433,24 +433,32 @@ public static class PrecompiledModuleRegistry
         return ContentHash.ComputeHash(builder.ToString());
     }
 
-    private static IReadOnlyDictionary<string, ModuleExportAnalysisResult> LoadModuleExportAnalyses()
+    private static bool TryGetModuleExportAnalysis(
+        string modulePath,
+        out ModuleExportAnalysisResult analysis)
     {
-        var cache = new Dictionary<string, ModuleExportAnalysisResult>(StringComparer.OrdinalIgnoreCase);
-        var resolutionStack = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (modulePath, source) in ModuleSources.Value)
+        var normalized = NormalizeModulePath(modulePath);
+        if (string.IsNullOrEmpty(normalized) ||
+            !ModuleSources.Value.TryGetValue(normalized, out var source))
         {
-            _ = AnalyzeSource(source, modulePath, ModuleSources.Value, cache, resolutionStack);
+            analysis = ModuleExportAnalysisResult.Empty;
+            return false;
         }
 
-        return cache;
-    }
+        lock (ModuleExportAnalysisGate)
+        {
+            if (!ModuleExportAnalysisCache.TryGetValue(normalized, out analysis!))
+            {
+                analysis = AnalyzeSource(
+                    source,
+                    normalized,
+                    ModuleSources.Value,
+                    ModuleExportAnalysisCache,
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            }
+        }
 
-    private static IReadOnlyDictionary<string, PrecompiledModuleExports> LoadModuleExports()
-    {
-        return ModuleExportAnalyses.Value.ToDictionary(
-            pair => pair.Key,
-            pair => pair.Value.Exports,
-            StringComparer.OrdinalIgnoreCase);
+        return true;
     }
 
     private static IReadOnlyDictionary<string, string> LoadModuleSourceFiles()
@@ -702,6 +710,10 @@ public static class PrecompiledModuleRegistry
         HashSet<string>? resolutionStack)
     {
         var accumulator = new ExportSurfaceAccumulator();
+        var typeDefinitions = moduleDecl.Declarations
+            .OfType<AdtDef>()
+            .Where(static definition => !string.IsNullOrWhiteSpace(definition.Name))
+            .ToDictionary(static definition => definition.Name, StringComparer.Ordinal);
         foreach (var declaration in moduleDecl.Declarations)
         {
             switch (declaration)
@@ -728,7 +740,7 @@ public static class PrecompiledModuleRegistry
                 continue;
             }
 
-            AddDirectDeclaration(accumulator, declaration);
+            AddDirectDeclaration(accumulator, declaration, typeDefinitions);
         }
 
         return accumulator.Build();
@@ -744,7 +756,10 @@ public static class PrecompiledModuleRegistry
         return CompilerDirectiveIR.FromDeclaration(declaration) is { IsInternal: true };
     }
 
-    private static void AddDirectDeclaration(ExportSurfaceAccumulator accumulator, Declaration declaration)
+    private static void AddDirectDeclaration(
+        ExportSurfaceAccumulator accumulator,
+        Declaration declaration,
+        IReadOnlyDictionary<string, AdtDef> typeDefinitions)
     {
         switch (declaration)
         {
@@ -802,6 +817,11 @@ public static class PrecompiledModuleRegistry
                 break;
 
             case InstanceDecl instance:
+                if (TryCreatePrecompiledInstanceHead(instance, typeDefinitions, out var instanceHead))
+                {
+                    accumulator.AddInstance(instanceHead);
+                }
+
                 foreach (var method in instance.Methods)
                 {
                     if (!string.IsNullOrWhiteSpace(method.Name))
@@ -811,6 +831,235 @@ public static class PrecompiledModuleRegistry
                 }
 
                 break;
+        }
+    }
+
+    private static bool TryCreatePrecompiledInstanceHead(
+        InstanceDecl instance,
+        IReadOnlyDictionary<string, AdtDef> typeDefinitions,
+        out PrecompiledInstanceHead instanceHead)
+    {
+        instanceHead = null!;
+        if (instance.Trait == null || string.IsNullOrWhiteSpace(instance.Trait.TraitName))
+        {
+            return false;
+        }
+
+        var target = instance.TargetType ?? instance.Trait.TypeArgs.FirstOrDefault();
+        var parameterIndices = instance.TypeParams
+            .Select((parameter, index) => (parameter.Name, index))
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Name))
+            .ToDictionary(static item => item.Name, static item => item.index, StringComparer.Ordinal);
+        if (target == null ||
+            !TryCreatePrecompiledTypePattern(target, parameterIndices, out var targetPattern) ||
+            !TryCreateAppliedInstanceTargetPattern(
+                target,
+                targetPattern,
+                parameterIndices,
+                typeDefinitions,
+                out var appliedTargetPattern))
+        {
+            return false;
+        }
+
+        var requirements = new List<PrecompiledInstanceRequirement>();
+        for (var index = 0; index < instance.TypeParams.Count; index++)
+        {
+            var parameter = instance.TypeParams[index];
+            foreach (var constraint in parameter.TraitConstraints)
+            {
+                var arguments = new List<PrecompiledTypePattern>(constraint.TypeArgs.Count);
+                foreach (var argument in constraint.TypeArgs)
+                {
+                    if (!TryCreatePrecompiledTypePattern(argument, parameterIndices, out var argumentPattern))
+                    {
+                        return false;
+                    }
+
+                    arguments.Add(argumentPattern);
+                }
+
+                requirements.Add(new PrecompiledInstanceRequirement(
+                    index,
+                    constraint.TraitName,
+                    constraint.ModulePath.ToArray(),
+                    arguments));
+            }
+        }
+
+        instanceHead = new PrecompiledInstanceHead(
+            instance.Name,
+            instance.Trait.TraitName,
+            targetPattern,
+            appliedTargetPattern,
+            requirements);
+        return true;
+    }
+
+    private static bool TryCreateAppliedInstanceTargetPattern(
+        TypeNode target,
+        PrecompiledTypePattern targetPattern,
+        IReadOnlyDictionary<string, int> parameterIndices,
+        IReadOnlyDictionary<string, AdtDef> typeDefinitions,
+        out PrecompiledTypePattern appliedPattern)
+    {
+        if (target is not TypePath path ||
+            !typeDefinitions.TryGetValue(path.TypeName, out var definition) ||
+            definition.TypeParams.Count != path.TypeArgs.Count + 1)
+        {
+            appliedPattern = AppendElementPattern(targetPattern);
+            return appliedPattern.Kind == PrecompiledTypePatternKind.Constructor;
+        }
+
+        var replacements = new Dictionary<string, PrecompiledTypePattern>(StringComparer.Ordinal);
+        for (var index = 0; index < path.TypeArgs.Count; index++)
+        {
+            if (!TryCreatePrecompiledTypePattern(path.TypeArgs[index], parameterIndices, out var argument))
+            {
+                appliedPattern = null!;
+                return false;
+            }
+
+            replacements[definition.TypeParams[index].Name] = argument;
+        }
+
+        replacements[definition.TypeParams[^1].Name] = ElementPattern();
+        if (definition.IsTypeAlias && definition.AliasTarget != null)
+        {
+            return TryCreatePrecompiledTypePattern(
+                definition.AliasTarget,
+                parameterIndices,
+                out appliedPattern,
+                replacements);
+        }
+
+        appliedPattern = targetPattern with
+        {
+            Arguments = targetPattern.Arguments.Concat([ElementPattern()]).ToArray()
+        };
+        return true;
+    }
+
+    private static PrecompiledTypePattern AppendElementPattern(PrecompiledTypePattern target) =>
+        target.Kind == PrecompiledTypePatternKind.Constructor
+            ? target with { Arguments = target.Arguments.Concat([ElementPattern()]).ToArray() }
+            : target;
+
+    private static PrecompiledTypePattern ElementPattern() => new(
+        PrecompiledTypePatternKind.Element,
+        "$element",
+        -1,
+        [],
+        [],
+        null);
+
+    private static bool TryCreatePrecompiledTypePattern(
+        TypeNode type,
+        IReadOnlyDictionary<string, int> parameterIndices,
+        out PrecompiledTypePattern pattern,
+        IReadOnlyDictionary<string, PrecompiledTypePattern>? replacements = null)
+    {
+        switch (type)
+        {
+            case TypePath path when replacements != null &&
+                                    replacements.TryGetValue(path.TypeName, out var replacement) &&
+                                    path.ModulePath.Count == 0 &&
+                                    string.IsNullOrWhiteSpace(path.PackageAlias) &&
+                                    path.TypeArgs.Count == 0:
+                pattern = replacement;
+                return true;
+
+            case TypePath path when parameterIndices.TryGetValue(path.TypeName, out var parameterIndex) &&
+                                    path.ModulePath.Count == 0 &&
+                                    string.IsNullOrWhiteSpace(path.PackageAlias) &&
+                                    path.TypeArgs.Count == 0:
+                pattern = new PrecompiledTypePattern(
+                    PrecompiledTypePatternKind.Parameter,
+                    path.TypeName,
+                    parameterIndex,
+                    [],
+                    [],
+                    null);
+                return true;
+
+            case TypePath path when !string.IsNullOrWhiteSpace(path.TypeName):
+            {
+                var arguments = new List<PrecompiledTypePattern>(path.TypeArgs.Count);
+                foreach (var argument in path.TypeArgs)
+                {
+                    if (!TryCreatePrecompiledTypePattern(argument, parameterIndices, out var argumentPattern, replacements))
+                    {
+                        pattern = null!;
+                        return false;
+                    }
+
+                    arguments.Add(argumentPattern);
+                }
+
+                pattern = new PrecompiledTypePattern(
+                    PrecompiledTypePatternKind.Constructor,
+                    path.TypeName,
+                    -1,
+                    arguments,
+                    path.ModulePath.ToArray(),
+                    path.PackageAlias);
+                return true;
+            }
+
+            case TupleType tuple:
+            {
+                var elements = new List<PrecompiledTypePattern>(tuple.Elements.Count);
+                foreach (var element in tuple.Elements)
+                {
+                    if (!TryCreatePrecompiledTypePattern(element, parameterIndices, out var elementPattern, replacements))
+                    {
+                        pattern = null!;
+                        return false;
+                    }
+
+                    elements.Add(elementPattern);
+                }
+
+                pattern = new PrecompiledTypePattern(
+                    PrecompiledTypePatternKind.Tuple,
+                    string.Empty,
+                    -1,
+                    elements,
+                    [],
+                    null);
+                return true;
+            }
+
+            case ArrowType arrow:
+                if (!TryCreatePrecompiledTypePattern(arrow.ParamType, parameterIndices, out var parameter, replacements) ||
+                    !TryCreatePrecompiledTypePattern(arrow.ReturnType, parameterIndices, out var result, replacements))
+                {
+                    pattern = null!;
+                    return false;
+                }
+
+                pattern = new PrecompiledTypePattern(
+                    PrecompiledTypePatternKind.Function,
+                    string.Empty,
+                    -1,
+                    [parameter, result],
+                    [],
+                    null);
+                return true;
+
+            case WildcardType:
+                pattern = new PrecompiledTypePattern(
+                    PrecompiledTypePatternKind.Wildcard,
+                    string.Empty,
+                    -1,
+                    [],
+                    [],
+                    null);
+                return true;
+
+            default:
+                pattern = null!;
+                return false;
         }
     }
 
@@ -1182,14 +1431,7 @@ public static class PrecompiledModuleRegistry
     private static ModuleExportAnalysisResult? TryGetAnalysisByModulePath(string modulePath)
     {
         var normalized = NormalizeModulePath(modulePath);
-        if (string.IsNullOrEmpty(normalized))
-        {
-            return null;
-        }
-
-        return ModuleExportAnalyses.Value.TryGetValue(normalized, out var analysis)
-            ? analysis
-            : null;
+        return TryGetModuleExportAnalysis(normalized, out var analysis) ? analysis : null;
     }
 
     private sealed record ParserArtifacts(
@@ -1205,6 +1447,7 @@ public static class PrecompiledModuleRegistry
         private readonly HashSet<string> _abilities = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _modules = new(StringComparer.Ordinal);
         private readonly Dictionary<string, OwnerExportInfo> _owners = new(StringComparer.Ordinal);
+        private readonly HashSet<PrecompiledInstanceHead> _instances = [];
 
         public void AddValue(string name)
         {
@@ -1277,6 +1520,11 @@ public static class PrecompiledModuleRegistry
             _owners[name] = owner;
         }
 
+        public void AddInstance(PrecompiledInstanceHead instance)
+        {
+            _instances.Add(instance);
+        }
+
         public void Merge(ModuleExportAnalysisResult analysis)
         {
             foreach (var name in analysis.Exports.Values)
@@ -1313,6 +1561,11 @@ public static class PrecompiledModuleRegistry
             {
                 AddOwner(name, owner);
             }
+
+            foreach (var instance in analysis.Exports.Instances)
+            {
+                AddInstance(instance);
+            }
         }
 
         public ModuleExportAnalysisResult Build()
@@ -1336,7 +1589,13 @@ public static class PrecompiledModuleRegistry
                 constructors)
             {
                 Values = _values.OrderBy(name => name, StringComparer.Ordinal).ToArray(),
-                Modules = orderedModules
+                Modules = orderedModules,
+                Instances = _instances
+                    .OrderBy(static instance => instance.TraitName, StringComparer.Ordinal)
+                    .ThenBy(static instance => instance.Target.Name, StringComparer.Ordinal)
+                    .ThenBy(static instance => instance.Target.Arguments.Count)
+                    .ThenBy(static instance => instance.Name, StringComparer.Ordinal)
+                    .ToArray()
             };
 
             return new ModuleExportAnalysisResult(exports, new Dictionary<string, OwnerExportInfo>(_owners, StringComparer.Ordinal));

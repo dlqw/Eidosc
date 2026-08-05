@@ -1,11 +1,16 @@
 using System.Xml;
 using Eidosc.Ast.Patterns;
+using Eidosc.Types;
 
 namespace Eidosc.Ast.Expressions;
 
 public record DoExpr : Expression
 {
     public List<DoBinding> Bindings { get; } = [];
+
+    public DoElaborationPlan? ElaborationPlan { get; internal set; }
+
+    internal DoElaborationDraft? ElaborationDraft { get; set; }
 
     public override void BuildFromCst(AstContext context, ConcreteSyntaxNode node)
     {

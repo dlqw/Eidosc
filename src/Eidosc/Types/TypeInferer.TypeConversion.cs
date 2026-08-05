@@ -237,6 +237,19 @@ public sealed partial class TypeInferer
         {
             IncrementProfilingCounter("Types.associatedTypeProjectionCache.hits");
             reducedType = cached.ReducedType;
+            if (_symbolTable.LookupImplForTraitByKeys(
+                    lookupRequest.ImplementingTypeId,
+                    traitSymbol.Id,
+                    lookupRequest.ImplementingTypeKey,
+                    lookupRequest.TraitArgKeys) is { } cachedImpl)
+            {
+                AddProjectionNormalizationGoal(
+                    projection,
+                    traitSymbol,
+                    cachedImpl.Id,
+                    reducedType,
+                    lookupRequest.ImplementingTypeKey.ToString());
+            }
             return true;
         }
 
@@ -326,6 +339,12 @@ public sealed partial class TypeInferer
             reducedType,
             previous.ReducedType);
         projection.InferredType = reducedType;
+        AddProjectionNormalizationGoal(
+            projection,
+            traitSymbol,
+            impl.Id,
+            reducedType,
+            implementingTypeKey.ToString());
         IncrementProfilingCounter("Types.associatedTypeProjectionPreviousCache.restoreHits");
         IncrementProfilingCounter("Types.associatedTypeProjectionPreviousCache.validatedHits");
         return true;
@@ -356,6 +375,12 @@ public sealed partial class TypeInferer
         }
 
         reducedType = ConvertType(valueTypeNode, typeVarEnv, allowTypeConstructorReference);
+        AddProjectionNormalizationGoal(
+            projection,
+            traitSymbol,
+            impl.Id,
+            reducedType,
+            lookupRequestIdentity: implementingTypeKey.ToString());
         if (cacheKey.HasValue && !ContainsTypeVariable(reducedType))
         {
             var reducedTypeKey = _substitution.Apply(reducedType).ToString();
@@ -379,6 +404,28 @@ public sealed partial class TypeInferer
         }
 
         return true;
+    }
+
+    private void AddProjectionNormalizationGoal(
+        AssociatedTypeProjection projection,
+        TraitSymbol traitSymbol,
+        SymbolId instanceId,
+        Type normalizedType,
+        string lookupRequestIdentity)
+    {
+        var memberId = traitSymbol.AssociatedTypes
+            .FirstOrDefault(candidate =>
+                _symbolTable.GetSymbol<AssociatedTypeSymbol>(candidate)?.Name == projection.MemberName);
+        var identity = $"{traitSymbol.Name}.{projection.MemberName}<{lookupRequestIdentity}>";
+        _constraintGenerator.Constraints.AddGoal(new NormalizeProjectionGoal
+        {
+            ProjectionIdentity = identity,
+            ExpectedType = normalizedType,
+            NormalizedType = normalizedType,
+            Instance = instanceId,
+            Member = memberId,
+            Span = projection.Span
+        });
     }
 
     private AssociatedTypeProjectionSnapshotEntry CreateAssociatedTypeProjectionSnapshotEntry(
