@@ -1,4 +1,5 @@
 using Eidosc.Mir;
+using Eidosc.Mir.Optimize;
 using Eidosc.Types;
 
 namespace Eidosc.Borrow;
@@ -17,6 +18,9 @@ public sealed class UnifiedStackPromotionAnalyzer
     private readonly MirFunc _function;
     private readonly IReadOnlyDictionary<string, FieldEscapeSummary> _fieldEscapeSummaries;
     private readonly BorrowModuleAnalysisContext? _context;
+    private readonly Dictionary<(string FunctionKey, int ParameterIndex), CallerOwnedParamEscapeInfo>
+        _parameterEscapeProofCache = [];
+    private readonly HashSet<(string FunctionKey, int ParameterIndex)> _activeParameterEscapeProofs = [];
 
     public UnifiedStackPromotionHints Hints { get; } = new();
 
@@ -60,6 +64,9 @@ public sealed class UnifiedStackPromotionAnalyzer
         Stats.Reset();
         Hints.AllocInfoByLocal.Clear();
         Hints.PromotedLocals.Clear();
+        Hints.FunctionArgumentClosureSites.Clear();
+        _parameterEscapeProofCache.Clear();
+        _activeParameterEscapeProofs.Clear();
 
         var aliases = new LocalUnionFind();
         var escapedLocals = new HashSet<int>();
@@ -135,6 +142,12 @@ public sealed class UnifiedStackPromotionAnalyzer
                     return true;
                 }
 
+                if (instruction is MirCall functionArgumentCall &&
+                    functionArgumentCall.Arguments.Any(static argument => argument is MirFunctionRef))
+                {
+                    return true;
+                }
+
                 if (instruction is not MirCall
                     {
                         Function: MirFunctionRef functionRef,
@@ -175,6 +188,7 @@ public sealed class UnifiedStackPromotionAnalyzer
             case MirCall call:
                 CollectEscapedFromCall(call, escapedLocals);
                 CollectLocalValue(call.Function, escapedLocals);
+                CollectFunctionArgumentClosureSites(blockId, instructionIndex, call);
                 CollectAllocationCandidate(blockId, instructionIndex, call, ref candidates);
                 break;
 
@@ -277,6 +291,92 @@ public sealed class UnifiedStackPromotionAnalyzer
             call,
             closureTarget));
         Stats.ClosureCandidates++;
+    }
+
+    private void CollectFunctionArgumentClosureSites(
+        BlockId blockId,
+        int instructionIndex,
+        MirCall call)
+    {
+        if (_context == null ||
+            call.Function is not MirFunctionRef calleeRef ||
+            !_context.TryGetFunction(calleeRef, out var callee) ||
+            callee.IsExternal ||
+            callee.IsRuntimeWordAbi)
+        {
+            return;
+        }
+
+        var parameterCount = callee.Locals.Count(static local => local.IsParameter);
+        var argumentCount = Math.Min(call.Arguments.Count, parameterCount);
+        for (int argumentIndex = 0; argumentIndex < argumentCount; argumentIndex++)
+        {
+            if (call.Arguments[argumentIndex] is not MirFunctionRef)
+            {
+                continue;
+            }
+
+            Stats.FunctionArgumentClosureCandidates++;
+            var proof = AnalyzeParameterEscape(callee, argumentIndex);
+            if (proof.RequiresHeapFallback ||
+                proof.ReturnProvenance != CallerOwnedParamProvenance.Untracked)
+            {
+                continue;
+            }
+
+            Hints.FunctionArgumentClosureSites.Add(new UnifiedFunctionArgumentClosureSite(
+                blockId,
+                instructionIndex,
+                argumentIndex));
+            Stats.PromotedFunctionArgumentClosures++;
+        }
+    }
+
+    private CallerOwnedParamEscapeInfo AnalyzeParameterEscape(MirFunc function, int parameterIndex)
+    {
+        if (_context == null ||
+            function.IsExternal ||
+            function.IsRuntimeWordAbi ||
+            function.BasicBlocks.Count == 0)
+        {
+            return CallerOwnedParamEscapeInfo.Unknown;
+        }
+
+        var functionKey = _context.GetStableKey(function);
+        var cacheKey = (functionKey, parameterIndex);
+        if (_parameterEscapeProofCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        if (!_activeParameterEscapeProofs.Add(cacheKey))
+        {
+            return CallerOwnedParamEscapeInfo.Unknown;
+        }
+
+        try
+        {
+            var analyzer = new CallerOwnedParamProvenanceAnalyzer(
+                ResolveFunction,
+                AnalyzeParameterEscape,
+                static _ => false,
+                static _ => false,
+                static _ => false);
+            var result = analyzer.Analyze(function, parameterIndex);
+            _parameterEscapeProofCache[cacheKey] = result;
+            return result;
+        }
+        finally
+        {
+            _activeParameterEscapeProofs.Remove(cacheKey);
+        }
+    }
+
+    private MirFunc? ResolveFunction(MirFunctionRef functionRef)
+    {
+        return _context != null && _context.TryGetFunction(functionRef, out var function)
+            ? function
+            : null;
     }
 
     private void AddConstructorHint(AllocationCandidate candidate)

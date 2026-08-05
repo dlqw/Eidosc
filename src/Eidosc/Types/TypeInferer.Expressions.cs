@@ -175,9 +175,12 @@ public sealed partial class TypeInferer
         }
 
         Type resultType = BaseTypes.Unit;
+        DoContainerShape? containerShape = null;
         var hasRecovery = false;
-        foreach (var binding in doExpr.Bindings)
+        var hasRefutablePattern = false;
+        for (var bindingIndex = 0; bindingIndex < doExpr.Bindings.Count; bindingIndex++)
         {
+            var binding = doExpr.Bindings[bindingIndex];
             var valueType = binding.Value != null
                 ? SafeInferExpression(binding.Value)
                 : CreateMissingDoBindingValueRecoveryType(binding);
@@ -193,8 +196,21 @@ public sealed partial class TypeInferer
                         break;
                     }
 
-                    var patternType = ExtractDoBindPatternType(valueType, binding.Span);
+                    var mergedBindShape = TryMergeDoContainerShape(valueType, ref containerShape, binding.Span);
+                    bindingHasRecovery |= !mergedBindShape;
+                    if (mergedBindShape &&
+                        binding.Value != null &&
+                        TryGetDoContainerShape(_substitution.Apply(valueType), out var normalizedBindValue))
+                    {
+                        binding.Value.InferredType = normalizedBindValue.AppliedType;
+                        valueType = normalizedBindValue.AppliedType;
+                    }
+                    var patternType = mergedBindShape &&
+                                      TryGetDoContainerShape(_substitution.Apply(valueType), out var bindShape)
+                        ? bindShape.ElementType
+                        : CreateErrorRecoveryType();
                     var patternResult = InferPattern(binding.Pattern, patternType);
+                    hasRefutablePattern |= !IsIrrefutableDoPattern(binding.Pattern);
                     bindingHasRecovery |= ContainsErrorRecoveryType(patternType) ||
                                           ContainsErrorRecoveryType(patternResult);
                     break;
@@ -219,6 +235,15 @@ public sealed partial class TypeInferer
                     binding.InferredType = resolvedValueType;
                     break;
                 case DoBindingKind.Expr:
+                    var mergedExpressionShape = TryMergeDoContainerShape(valueType, ref containerShape, binding.Span);
+                    bindingHasRecovery |= !mergedExpressionShape;
+                    if (mergedExpressionShape &&
+                        binding.Value != null &&
+                        TryGetDoContainerShape(_substitution.Apply(valueType), out var normalizedExpressionValue))
+                    {
+                        binding.Value.InferredType = normalizedExpressionValue.AppliedType;
+                        valueType = normalizedExpressionValue.AppliedType;
+                    }
                     break;
                 default:
                     AddError(binding.Span, DiagnosticMessages.UnsupportedDoBindingKind(binding.Kind));
@@ -230,9 +255,56 @@ public sealed partial class TypeInferer
             resultType = bindingHasRecovery ? CreateErrorRecoveryType() : valueType;
         }
 
+        if (doExpr.Bindings[^1].Kind != DoBindingKind.Expr)
+        {
+            AddError(doExpr.Bindings[^1].Span, "The final item in a do expression must be an effectful expression.");
+            hasRecovery = true;
+        }
+
+        if (!hasRecovery && containerShape != null)
+        {
+            var typeConstructor = containerShape.TypeConstructor;
+            var monadTrait = ResolveDoTrait(CompilerSemanticRole.MonadBind, "Monad");
+            if (!monadTrait.IsValid)
+            {
+                AddError(doExpr.Span, "Prelude Core Image does not expose a unique Monad trait for do elaboration.");
+                hasRecovery = true;
+            }
+            else
+            {
+                AddDoTraitConstraint(typeConstructor, monadTrait, "Monad", doExpr.Span);
+            }
+
+            var alternativeTrait = SymbolId.None;
+            if (hasRefutablePattern)
+            {
+                alternativeTrait = _symbolTable.LookupTrait("Alternative") ?? SymbolId.None;
+                if (!alternativeTrait.IsValid)
+                {
+                    AddError(doExpr.Span, "A refutable do binding requires the Prelude Alternative trait.");
+                    hasRecovery = true;
+                }
+                else
+                {
+                    AddDoTraitConstraint(typeConstructor, alternativeTrait, "Alternative", doExpr.Span);
+                }
+            }
+
+            if (!hasRecovery)
+            {
+                doExpr.ElaborationDraft = new DoElaborationDraft(
+                    typeConstructor,
+                    monadTrait,
+                    alternativeTrait,
+                    hasRefutablePattern,
+                    containerShape.ElementTypeArgumentIndex);
+                _doExpressions.Add(doExpr);
+            }
+        }
+
         return hasRecovery
             ? CreateErrorRecoveryType()
-            : _substitution.Apply(resultType);
+            : _substitution.Apply(containerShape?.AppliedType ?? resultType);
     }
 
     private Type CreateMissingDoBindingValueRecoveryType(DoBinding binding)
@@ -248,7 +320,7 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
-        if (resolvedType is TyCon { Args.Count: > 0 } tyCon)
+        if (TryGetUnaryContainerShape(resolvedType, out var tyCon))
         {
             return _substitution.Apply(tyCon.Args[^1]);
         }

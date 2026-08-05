@@ -37,6 +37,11 @@ internal sealed class BorrowSnapshotFunctionIdentity
 
     public string ResolveFunctionKey(BorrowCheckResult result, BorrowFunctionKey fallbackKey)
     {
+        if (!string.IsNullOrWhiteSpace(result.FunctionStableKey))
+        {
+            return result.FunctionStableKey;
+        }
+
         return ResolveFunctionKey(result.FunctionName, result.FunctionSymbolId, fallbackKey.StableText);
     }
 
@@ -86,6 +91,11 @@ internal sealed class BorrowSnapshotFunctionIdentity
         if (_bodyHashByFunctionKey.TryGetValue(stableKey, out var bodyHash))
         {
             return bodyHash;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.FunctionStableKey))
+        {
+            return null;
         }
 
         if (!string.IsNullOrWhiteSpace(result.FunctionName) &&

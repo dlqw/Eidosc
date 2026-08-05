@@ -9,6 +9,7 @@ namespace Eidosc.Types;
 public sealed class ConstraintSet
 {
     private readonly List<TypeConstraint> _constraints = [];
+    private readonly List<ObligationGoal> _goals = [];
 
     /// <summary>
     /// 按类型变量索引分组的 Trait 约束
@@ -20,15 +21,23 @@ public sealed class ConstraintSet
     /// </summary>
     public List<TypeConstraint> Constraints => _constraints;
 
+    public IReadOnlyList<ObligationGoal> Goals => _goals;
+
     /// <summary>
     /// 是否为空
     /// </summary>
-    public bool IsEmpty => _constraints.Count == 0;
+    public bool IsEmpty => _constraints.Count == 0 && _goals.Count == 0;
 
     /// <summary>
     /// 约束数量
     /// </summary>
-    public int Count => _constraints.Count;
+    public int Count => _constraints.Count + _goals.Count;
+
+    public void AddGoal(ObligationGoal goal)
+    {
+        ArgumentNullException.ThrowIfNull(goal);
+        _goals.Add(goal);
+    }
 
     /// <summary>
     /// 添加约束
@@ -136,6 +145,7 @@ public sealed class ConstraintSet
     public void Clear()
     {
         _constraints.Clear();
+        _goals.Clear();
         _traitConstraintsByVar.Clear();
     }
 
@@ -146,6 +156,10 @@ public sealed class ConstraintSet
     {
         var clone = new ConstraintSet();
         clone.AddRange(_constraints);
+        foreach (var goal in _goals)
+        {
+            clone.AddGoal(goal);
+        }
         return clone;
     }
 
@@ -161,8 +175,8 @@ public sealed class ConstraintSet
 
     public override string ToString()
     {
-        if (_constraints.Count == 0)
+        if (_constraints.Count == 0 && _goals.Count == 0)
             return "[]";
-        return $"[{string.Join(", ", _constraints)}]";
+        return $"[{string.Join(", ", _constraints.Cast<object>().Concat(_goals))}]";
     }
 }

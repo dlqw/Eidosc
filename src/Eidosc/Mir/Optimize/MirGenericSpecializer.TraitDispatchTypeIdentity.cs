@@ -98,10 +98,9 @@ public sealed partial class MirGenericSpecializer
         if (TryGetTypeDescriptor(receiverTypeId, out var descriptor) &&
             descriptor is TypeDescriptor.TyCon tyCon)
         {
-            // Closed-case fallback first: values built through an exact case
-            // type (e.g. `Point:: type(Int)`) carry the case identity, while
-            // trait instances are declared on the root ADT type.
-            if (TryResolveCaseRootTypeId(tyCon, out var rootTypeId))
+            // A same-named product case is the constructor-level identity of
+            // its root product type. Other closed cases remain exact nominals.
+            if (TryResolveProductCaseRootTypeId(tyCon, out var rootTypeId))
             {
                 return rootTypeId;
             }
@@ -115,24 +114,11 @@ public sealed partial class MirGenericSpecializer
         return receiverTypeId;
     }
 
-    private bool TryResolveCaseRootTypeId(TypeDescriptor.TyCon tyCon, out TypeId rootTypeId)
+    private bool TryResolveProductCaseRootTypeId(TypeDescriptor.TyCon tyCon, out TypeId rootTypeId)
     {
         rootTypeId = TypeId.None;
-        AdtSymbol? caseSymbol = null;
-        switch (tyCon.Constructor.Kind)
-        {
-            case TypeConstructorKeyKind.Symbol:
-                caseSymbol = _symbolTable?.GetSymbol<AdtSymbol>(tyCon.Constructor.SymbolId);
-                break;
-            case TypeConstructorKeyKind.TypeId:
-                caseSymbol = _symbolTable?.GetSymbolByTypeId(tyCon.Constructor.TypeId) as AdtSymbol;
-                break;
-        }
-
-        if (caseSymbol is not { } resolvedCase ||
-            !resolvedCase.ParentAdt.IsValid ||
-            _symbolTable?.GetSymbol<AdtSymbol>(resolvedCase.ParentAdt) is not { } rootSymbol ||
-            !rootSymbol.TypeId.IsValid)
+        if (!TryResolveClosedCaseAndRoot(tyCon, out var caseSymbol, out var rootSymbol) ||
+            !string.Equals(caseSymbol.Name, rootSymbol.Name, StringComparison.Ordinal))
         {
             return false;
         }
@@ -280,6 +266,11 @@ public sealed partial class MirGenericSpecializer
             AddCandidate(aliasCandidate, candidates);
         }
 
+        if (TryBuildProductCaseRootTypeShape(receiverTypeId, out var productRootShape))
+        {
+            AddCandidate(productRootShape, candidates);
+        }
+
         foreach (var candidate in candidates)
         {
             yield return candidate;
@@ -305,24 +296,49 @@ public sealed partial class MirGenericSpecializer
         out ImplTypeShapeNode rootConstructorShape)
     {
         rootConstructorShape = ImplWildcardShapeNode.Instance;
-        if (_symbolTable == null ||
-            !TryGetTypeDescriptor(receiverTypeId, out var descriptor) ||
+        if (!TryBuildClosedCaseRootTypeShape(
+                receiverTypeId,
+                out _,
+                out _,
+                out var rootShape))
+        {
+            return false;
+        }
+
+        return TryProjectHigherKindedImplementingType(rootShape, out rootConstructorShape);
+    }
+
+    private bool TryBuildProductCaseRootTypeShape(
+        TypeId receiverTypeId,
+        out ImplTypeShapeNode rootShape)
+    {
+        rootShape = ImplWildcardShapeNode.Instance;
+        return TryBuildClosedCaseRootTypeShape(
+                   receiverTypeId,
+                   out var caseSymbol,
+                   out var rootSymbol,
+                   out rootShape) &&
+               string.Equals(caseSymbol.Name, rootSymbol.Name, StringComparison.Ordinal);
+    }
+
+    private bool TryBuildClosedCaseRootTypeShape(
+        TypeId receiverTypeId,
+        out AdtSymbol caseSymbol,
+        out AdtSymbol rootSymbol,
+        out ImplTypeShapeNode rootShape)
+    {
+        caseSymbol = null!;
+        rootSymbol = null!;
+        rootShape = ImplWildcardShapeNode.Instance;
+        if (!TryGetTypeDescriptor(receiverTypeId, out var descriptor) ||
             descriptor is not TypeDescriptor.TyCon tyCon ||
-            !TryResolveConstructorSymbolId(tyCon.Constructor, out var caseId) ||
-            _symbolTable.GetSymbol<AdtSymbol>(caseId) is not { IsCaseType: true })
+            !TryResolveClosedCaseAndRoot(tyCon, out caseSymbol, out rootSymbol))
         {
             return false;
         }
 
-        var rootId = _symbolTable.GetClosedCaseRoot(caseId);
-        if (rootId == caseId ||
-            _symbolTable.GetSymbol<AdtSymbol>(rootId) is not { } rootSymbol)
-        {
-            return false;
-        }
-
-        var rootTypeParameterCount = _symbolTable
-            .GetClosedCaseEffectiveGenericParameterIds(rootId)
+        var rootTypeParameterCount = _symbolTable!
+            .GetClosedCaseEffectiveGenericParameterIds(rootSymbol.Id)
             .Count(parameterId =>
                 _symbolTable.GetSymbol<TypeParamSymbol>(parameterId)?.ParameterKind == GenericParameterKind.Type);
         if (tyCon.TypeArgs.Length < rootTypeParameterCount)
@@ -330,18 +346,44 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        var rootShape = new ImplConstructorShapeNode(
-            TypeConstructorKey.FromSymbol(rootId).ToDescriptorString(),
+        var builtRootShape = new ImplConstructorShapeNode(
+            TypeConstructorKey.FromSymbol(rootSymbol.Id).ToDescriptorString(),
             tyCon.TypeArgs
                 .Take(rootTypeParameterCount)
                 .Select(BuildImplementingTypeShape)
                 .ToList())
         {
-            SymbolId = rootId,
+            SymbolId = rootSymbol.Id,
             TypeId = rootSymbol.TypeId
         };
 
-        return TryProjectHigherKindedImplementingType(rootShape, out rootConstructorShape);
+        rootShape = builtRootShape;
+        return true;
+    }
+
+    private bool TryResolveClosedCaseAndRoot(
+        TypeDescriptor.TyCon tyCon,
+        out AdtSymbol caseSymbol,
+        out AdtSymbol rootSymbol)
+    {
+        caseSymbol = null!;
+        rootSymbol = null!;
+        AdtSymbol? candidate = tyCon.Constructor.Kind switch
+        {
+            TypeConstructorKeyKind.Symbol => _symbolTable?.GetSymbol<AdtSymbol>(tyCon.Constructor.SymbolId),
+            TypeConstructorKeyKind.TypeId => _symbolTable?.GetSymbolByTypeId(tyCon.Constructor.TypeId) as AdtSymbol,
+            _ => null
+        };
+        if (candidate is not { IsCaseType: true } resolvedCase ||
+            _symbolTable?.GetSymbol<AdtSymbol>(resolvedCase.ParentAdt) is not { } resolvedRoot ||
+            !resolvedRoot.TypeId.IsValid)
+        {
+            return false;
+        }
+
+        caseSymbol = resolvedCase;
+        rootSymbol = resolvedRoot;
+        return true;
     }
 
 }

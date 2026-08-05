@@ -543,6 +543,13 @@ typedef struct EidosClosure {
  */
 EidosClosure* eidos_closure_new(void* invoke_fn, void* release_fn, size_t payload_words);
 
+EidosClosure* eidos_closure_init_stack(
+    void* storage,
+    size_t storage_size,
+    void* invoke_fn,
+    void* release_fn,
+    size_t payload_words);
+
 /**
  * Create a new array with given capacity
  * @param capacity Initial capacity

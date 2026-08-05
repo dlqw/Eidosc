@@ -206,6 +206,71 @@ public class UnifiedStackPromotionTests
         Assert.False(analyzer.Hints.AllocInfoByLocal.ContainsKey(callerClosure));
     }
 
+    [Fact]
+    public void AnalysisContext_DuplicateStableKey_RemovesStaleLookup()
+    {
+        var first = new MirFunc { Name = "duplicate", SymbolId = new SymbolId(40) };
+        var second = new MirFunc { Name = "duplicate", SymbolId = new SymbolId(40) };
+        var module = new MirModule { Name = "Test", Functions = [first, second] };
+        var context = new BorrowModuleAnalysisContext(module);
+        var stableKey = MirFunctionIdentity.GetStableKey(first);
+
+        Assert.DoesNotContain(stableKey, context.FunctionByStableKey.Keys);
+        Assert.False(context.TryGetFunctionIndex(stableKey, out _));
+    }
+
+    [Fact]
+    public void Analyzer_FunctionArgumentClosureReturnedByCallee_UsesHeapFallback()
+    {
+        var (module, caller, site) = CreateFunctionArgumentScenario(FunctionArgumentUse.Returned);
+        var analyzer = new UnifiedStackPromotionAnalyzer(caller, new Dictionary<string, FieldEscapeSummary>(), module);
+
+        analyzer.Analyze();
+
+        Assert.Equal(1, analyzer.Stats.FunctionArgumentClosureCandidates);
+        Assert.Equal(0, analyzer.Stats.PromotedFunctionArgumentClosures);
+        Assert.DoesNotContain(site, analyzer.Hints.FunctionArgumentClosureSites);
+    }
+
+    [Fact]
+    public void Analyzer_FunctionArgumentClosureStoredThroughUnknownMemory_UsesHeapFallback()
+    {
+        var (module, caller, site) = CreateFunctionArgumentScenario(FunctionArgumentUse.StoredThroughDeref);
+        var analyzer = new UnifiedStackPromotionAnalyzer(caller, new Dictionary<string, FieldEscapeSummary>(), module);
+
+        analyzer.Analyze();
+
+        Assert.Equal(1, analyzer.Stats.FunctionArgumentClosureCandidates);
+        Assert.Equal(0, analyzer.Stats.PromotedFunctionArgumentClosures);
+        Assert.DoesNotContain(site, analyzer.Hints.FunctionArgumentClosureSites);
+    }
+
+    [Fact]
+    public void Analyzer_FunctionArgumentClosurePassedToExternal_UsesHeapFallback()
+    {
+        var (module, caller, site) = CreateFunctionArgumentScenario(FunctionArgumentUse.External);
+        var analyzer = new UnifiedStackPromotionAnalyzer(caller, new Dictionary<string, FieldEscapeSummary>(), module);
+
+        analyzer.Analyze();
+
+        Assert.Equal(0, analyzer.Stats.FunctionArgumentClosureCandidates);
+        Assert.Equal(0, analyzer.Stats.PromotedFunctionArgumentClosures);
+        Assert.DoesNotContain(site, analyzer.Hints.FunctionArgumentClosureSites);
+    }
+
+    [Fact]
+    public void Analyzer_FunctionArgumentClosureCapturedByReturnedPartialApplication_UsesHeapFallback()
+    {
+        var (module, caller, site) = CreatePartialApplicationCaptureScenario();
+        var analyzer = new UnifiedStackPromotionAnalyzer(caller, new Dictionary<string, FieldEscapeSummary>(), module);
+
+        analyzer.Analyze();
+
+        Assert.Equal(1, analyzer.Stats.FunctionArgumentClosureCandidates);
+        Assert.Equal(0, analyzer.Stats.PromotedFunctionArgumentClosures);
+        Assert.DoesNotContain(site, analyzer.Hints.FunctionArgumentClosureSites);
+    }
+
     private static MirFunc CreateConstructorThenCallFunction(
         LocalId target,
         LocalId result,
@@ -278,5 +343,249 @@ public class UnifiedStackPromotionTests
             SymbolKind = symbolKind,
             TypeId = IntType
         };
+    }
+
+    private static (MirModule Module, MirFunc Caller, UnifiedFunctionArgumentClosureSite Site)
+        CreateFunctionArgumentScenario(FunctionArgumentUse use)
+    {
+        var entryBlock = new BlockId { Value = 1 };
+        var callback = new MirFunc
+        {
+            Name = "callback",
+            SymbolId = new SymbolId(50),
+            EntryBlockId = entryBlock,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = entryBlock,
+                    IsEntry = true,
+                    Instructions = [],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        var callbackParam = new LocalId { Value = 1 };
+        var storagePointer = new LocalId { Value = 2 };
+        var consumer = new MirFunc
+        {
+            Name = "consume_callback",
+            SymbolId = new SymbolId(51),
+            EntryBlockId = entryBlock,
+            IsExternal = use == FunctionArgumentUse.External,
+            ExternalSymbolName = use == FunctionArgumentUse.External ? "consume_callback" : null,
+            Locals =
+            [
+                new MirLocal { Id = callbackParam, Name = "callback", TypeId = PairType, IsParameter = true },
+                new MirLocal { Id = storagePointer, Name = "storage", TypeId = PairType }
+            ],
+            BasicBlocks = use == FunctionArgumentUse.External
+                ? []
+                :
+                [
+                    new MirBasicBlock
+                    {
+                        Id = entryBlock,
+                        IsEntry = true,
+                        Instructions = use == FunctionArgumentUse.StoredThroughDeref
+                            ?
+                            [
+                                new MirStore
+                                {
+                                    Target = new MirPlace
+                                    {
+                                        Kind = PlaceKind.Deref,
+                                        Base = new MirPlace
+                                        {
+                                            Kind = PlaceKind.Local,
+                                            Local = storagePointer,
+                                            TypeId = PairType
+                                        },
+                                        TypeId = PairType
+                                    },
+                                    Value = new MirPlace
+                                    {
+                                        Kind = PlaceKind.Local,
+                                        Local = callbackParam,
+                                        TypeId = PairType
+                                    }
+                                }
+                            ]
+                            : [],
+                        Terminator = new MirReturn
+                        {
+                            Value = use == FunctionArgumentUse.Returned
+                                ? new MirPlace
+                                {
+                                    Kind = PlaceKind.Local,
+                                    Local = callbackParam,
+                                    TypeId = PairType
+                                }
+                                : null
+                        }
+                    }
+                ]
+        };
+
+        var callerResult = new LocalId { Value = 1 };
+        var caller = new MirFunc
+        {
+            Name = "caller",
+            SymbolId = new SymbolId(52),
+            EntryBlockId = entryBlock,
+            Locals =
+            [
+                new MirLocal { Id = callerResult, Name = "result", TypeId = IntType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = entryBlock,
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCall
+                        {
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = callerResult, TypeId = IntType },
+                            Function = FunctionRef(consumer.Name, consumer.SymbolId),
+                            Arguments = [FunctionRef(callback.Name, callback.SymbolId)]
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        return (
+            new MirModule { Name = "Test", Functions = [callback, consumer, caller] },
+            caller,
+            new UnifiedFunctionArgumentClosureSite(entryBlock, 0, 0));
+    }
+
+    private enum FunctionArgumentUse
+    {
+        Returned,
+        StoredThroughDeref,
+        External
+    }
+
+    private static (MirModule Module, MirFunc Caller, UnifiedFunctionArgumentClosureSite Site)
+        CreatePartialApplicationCaptureScenario()
+    {
+        var entryBlock = new BlockId { Value = 1 };
+        var callback = new MirFunc
+        {
+            Name = "callback",
+            SymbolId = new SymbolId(60),
+            EntryBlockId = entryBlock,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = entryBlock,
+                    IsEntry = true,
+                    Instructions = [],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+        var helperFirst = new LocalId { Value = 1 };
+        var helperSecond = new LocalId { Value = 2 };
+        var helper = new MirFunc
+        {
+            Name = "helper",
+            SymbolId = new SymbolId(61),
+            EntryBlockId = entryBlock,
+            Locals =
+            [
+                new MirLocal { Id = helperFirst, Name = "first", TypeId = PairType, IsParameter = true },
+                new MirLocal { Id = helperSecond, Name = "second", TypeId = PairType, IsParameter = true }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = entryBlock,
+                    IsEntry = true,
+                    Instructions = [],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+        var consumerCallback = new LocalId { Value = 1 };
+        var partialClosure = new LocalId { Value = 2 };
+        var consumer = new MirFunc
+        {
+            Name = "capture_partial",
+            SymbolId = new SymbolId(62),
+            EntryBlockId = entryBlock,
+            Locals =
+            [
+                new MirLocal { Id = consumerCallback, Name = "callback", TypeId = PairType, IsParameter = true },
+                new MirLocal { Id = partialClosure, Name = "partial", TypeId = PairType }
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = entryBlock,
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCall
+                        {
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = partialClosure, TypeId = PairType },
+                            Function = FunctionRef(helper.Name, helper.SymbolId),
+                            Arguments =
+                            [
+                                new MirPlace
+                                {
+                                    Kind = PlaceKind.Local,
+                                    Local = consumerCallback,
+                                    TypeId = PairType
+                                }
+                            ]
+                        }
+                    ],
+                    Terminator = new MirReturn
+                    {
+                        Value = new MirPlace { Kind = PlaceKind.Local, Local = partialClosure, TypeId = PairType }
+                    }
+                }
+            ]
+        };
+        var callerResult = new LocalId { Value = 1 };
+        var caller = new MirFunc
+        {
+            Name = "caller",
+            SymbolId = new SymbolId(63),
+            EntryBlockId = entryBlock,
+            Locals = [new MirLocal { Id = callerResult, Name = "result", TypeId = PairType }],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = entryBlock,
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirCall
+                        {
+                            Target = new MirPlace { Kind = PlaceKind.Local, Local = callerResult, TypeId = PairType },
+                            Function = FunctionRef(consumer.Name, consumer.SymbolId),
+                            Arguments = [FunctionRef(callback.Name, callback.SymbolId)]
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = null }
+                }
+            ]
+        };
+
+        return (
+            new MirModule { Name = "Test", Functions = [callback, helper, consumer, caller] },
+            caller,
+            new UnifiedFunctionArgumentClosureSite(entryBlock, 0, 0));
     }
 }

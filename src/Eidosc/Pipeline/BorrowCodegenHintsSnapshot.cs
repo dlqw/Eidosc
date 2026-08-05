@@ -9,7 +9,7 @@ public sealed record BorrowCodegenHintsSnapshot(
     string BorrowCodegenDependencyHash,
     IReadOnlyList<BorrowCodegenHintsFunctionSnapshot> Functions)
 {
-    public const string CurrentSchemaVersion = "borrow-codegen-hints-snapshot-v2";
+    public const string CurrentSchemaVersion = "borrow-codegen-hints-snapshot-v3";
 
     public static BorrowCodegenHintsSnapshot Create(
         MirFunctionFingerprintSnapshot mirFingerprints,
@@ -89,10 +89,12 @@ public sealed record BorrowCodegenHintsFunctionSnapshot(
     public BorrowCheckResult ToBorrowCheckResult(
         string? functionName = null,
         SymbolId? functionSymbolId = null,
-        LoanSignature? loanSignature = null)
+        LoanSignature? loanSignature = null,
+        string? functionStableKey = null)
     {
         return new BorrowCheckResult
         {
+            FunctionStableKey = functionStableKey ?? FunctionKey,
             FunctionName = functionName ?? FunctionName,
             FunctionSymbolId = functionSymbolId ?? new SymbolId(FunctionSymbolId),
             LoanSignature = loanSignature,
@@ -216,7 +218,8 @@ public sealed record StackPromotionHintsSnapshot(
 
 public sealed record UnifiedStackPromotionHintsSnapshot(
     IReadOnlyList<UnifiedStackAllocInfoSnapshot> AllocInfoByLocal,
-    IReadOnlyList<int> PromotedLocals)
+    IReadOnlyList<int> PromotedLocals,
+    IReadOnlyList<UnifiedFunctionArgumentClosureSiteSnapshot> FunctionArgumentClosureSites)
 {
     public static UnifiedStackPromotionHintsSnapshot FromHints(UnifiedStackPromotionHints hints) =>
         new(
@@ -227,6 +230,12 @@ public sealed record UnifiedStackPromotionHintsSnapshot(
             hints.PromotedLocals
                 .Select(static local => local.Value)
                 .Order()
+                .ToArray(),
+            hints.FunctionArgumentClosureSites
+                .Select(static site => UnifiedFunctionArgumentClosureSiteSnapshot.FromSite(site))
+                .OrderBy(static site => site.Block)
+                .ThenBy(static site => site.InstructionIndex)
+                .ThenBy(static site => site.ArgumentIndex)
                 .ToArray());
 
     public UnifiedStackPromotionHints ToHints()
@@ -242,8 +251,26 @@ public sealed record UnifiedStackPromotionHintsSnapshot(
             hints.PromotedLocals.Add(new LocalId { Value = local });
         }
 
+        foreach (var site in FunctionArgumentClosureSites)
+        {
+            hints.FunctionArgumentClosureSites.Add(site.ToSite());
+        }
+
         return hints;
     }
+}
+
+public sealed record UnifiedFunctionArgumentClosureSiteSnapshot(
+    int Block,
+    int InstructionIndex,
+    int ArgumentIndex)
+{
+    public static UnifiedFunctionArgumentClosureSiteSnapshot FromSite(
+        UnifiedFunctionArgumentClosureSite site) =>
+        new(site.Block.Value, site.InstructionIndex, site.ArgumentIndex);
+
+    public UnifiedFunctionArgumentClosureSite ToSite() =>
+        new(new BlockId { Value = Block }, InstructionIndex, ArgumentIndex);
 }
 
 public sealed record BorrowInstructionSiteSnapshot(int Block, int Index)

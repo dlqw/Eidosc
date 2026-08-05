@@ -2,6 +2,7 @@ using Eidosc.Symbols;
 using Eidosc.Ast.Expressions;
 using Eidosc.Ast.Patterns;
 using Eidosc.Semantic;
+using Eidosc.Types;
 using Eidosc.Utils;
 
 namespace Eidosc.Hir;
@@ -15,10 +16,17 @@ public sealed partial class HirBuilder
             return ReportUnsupportedExpr(doExpr);
         }
 
-        return DesugarDoBindings(doExpr.Bindings, 0, doExpr.Span);
+        var plan = doExpr.ElaborationPlan is { } candidate && candidate.IsCurrent(doExpr)
+            ? candidate
+            : null;
+        return DesugarDoBindings(doExpr.Bindings, 0, doExpr.Span, plan);
     }
 
-    private HirNode DesugarDoBindings(List<DoBinding> bindings, int index, SourceSpan span)
+    private HirNode DesugarDoBindings(
+        List<DoBinding> bindings,
+        int index,
+        SourceSpan span,
+        DoElaborationPlan? plan)
     {
         if (index >= bindings.Count)
         {
@@ -35,34 +43,66 @@ public sealed partial class HirBuilder
                 : new HirLiteral { LiteralKind = LiteralKind.Unit, Value = "()", Span = span };
         }
 
+        var segment = plan?.Segments.FirstOrDefault(candidate =>
+            candidate.StartIndex == index &&
+            candidate.Strategy == DoElaborationStrategy.ApplicativeThenJoin);
+        if (segment != null)
+        {
+            var rest = DesugarDoBindings(bindings, index + segment.Count, span, plan);
+            if (TryBuildDoApplicativeSegment(
+                    bindings,
+                    segment,
+                    plan!.ElementTypeArgumentIndex,
+                    rest,
+                    out var lowered))
+            {
+                return lowered;
+            }
+        }
+
         switch (current.Kind)
         {
             case DoBindingKind.Bind:
             {
-                var rest = DesugarDoBindings(bindings, index + 1, span);
-                return BuildDoMonadBind(current, rest);
+                var rest = DesugarDoBindings(bindings, index + 1, span, plan);
+                var isRefutable = plan?.RefutableBindingIndices.Contains(index) == true;
+                return BuildDoMonadBind(current, rest, isRefutable);
             }
             case DoBindingKind.Let:
             {
-                var rest = DesugarDoBindings(bindings, index + 1, span);
+                var rest = DesugarDoBindings(bindings, index + 1, span, plan);
                 return BuildDoLetBind(current, rest);
             }
             default:
             {
-                var rest = DesugarDoBindings(bindings, index + 1, span);
+                var rest = DesugarDoBindings(bindings, index + 1, span, plan);
                 return BuildDoExprBind(current, rest);
             }
         }
     }
 
-    private HirNode BuildDoMonadBind(DoBinding binding, HirNode rest)
+    private HirNode BuildDoMonadBind(DoBinding binding, HirNode rest, bool isRefutable)
     {
         var value = binding.Value != null
             ? ConvertExprOrFallback(binding.Value, "do bind value", binding.Span)
             : new HirLiteral { LiteralKind = LiteralKind.Unit, Value = "()", Span = binding.Span };
 
-        // For simple variable patterns, use directly as lambda param
-        // For complex patterns, generate a match in the lambda body
+        var lambda = BuildDoPatternContinuationLambda(binding, rest, isRefutable);
+
+        return new HirCall
+        {
+            Function = BuildCompilerRoleFunctionVar(CompilerSemanticRole.MonadBind, "bind", binding.Span),
+            Arguments = [value, lambda],
+            Span = binding.Span,
+            TypeId = rest.TypeId
+        };
+    }
+
+    private HirLambda BuildDoPatternContinuationLambda(
+        DoBinding binding,
+        HirNode rest,
+        bool isRefutable)
+    {
         var paramName = GetDoBindParamName(binding);
         var paramSymbolId = binding.Pattern is Ast.Patterns.VarPattern varPattern
             ? varPattern.SymbolId
@@ -82,16 +122,41 @@ public sealed partial class HirBuilder
         }
         else if (binding.Pattern != null)
         {
-            lambdaBody = new HirMatch
+            var branches = new List<HirMatchBranch>
             {
-                Scrutinee = new HirVar { Name = paramName, Span = binding.Span, TypeId = paramTypeId },
-                Branches = [new HirMatchBranch
+                new()
                 {
                     Pattern = ConvertPattern(binding.Pattern),
                     Body = rest
-                }],
+                }
+            };
+            if (isRefutable)
+            {
+                branches.Add(new HirMatchBranch
+                {
+                    Pattern = new HirVarPattern
+                    {
+                        IsWildcard = true,
+                        Span = binding.Span,
+                        TypeId = paramTypeId
+                    },
+                    Body = BuildDoAlternativeEmpty(rest.TypeId, binding.Span)
+                });
+            }
+
+            lambdaBody = new HirMatch
+            {
+                Scrutinee = new HirVar
+                {
+                    Name = paramName,
+                    SymbolId = paramSymbolId,
+                    Span = binding.Span,
+                    TypeId = paramTypeId
+                },
+                Branches = branches,
                 Span = binding.Span,
-                TypeId = rest.TypeId
+                TypeId = rest.TypeId,
+                IsExhaustive = true
             };
         }
         else
@@ -99,15 +164,153 @@ public sealed partial class HirBuilder
             lambdaBody = rest;
         }
 
-        var lambda = BuildSyntheticDoLambda(lambdaParams, lambdaBody, binding.Span);
+        return BuildSyntheticDoLambda(lambdaParams, lambdaBody, binding.Span);
+    }
 
+    private HirCall BuildDoAlternativeEmpty(TypeId resultType, SourceSpan span)
+    {
         return new HirCall
         {
-            Function = BuildCompilerRoleFunctionVar(CompilerSemanticRole.MonadBind, "bind", binding.Span),
-            Arguments = [value, lambda],
-            Span = binding.Span,
+            Function = BuildCompilerRoleFunctionVar(CompilerSemanticRole.AlternativeEmpty, "empty", span),
+            Arguments =
+            [
+                new HirLiteral
+                {
+                    LiteralKind = LiteralKind.Unit,
+                    Value = "()",
+                    Span = span,
+                    TypeId = new TypeId(BaseTypes.UnitId)
+                }
+            ],
+            Span = span,
+            TypeId = resultType
+        };
+    }
+
+    private bool TryBuildDoApplicativeSegment(
+        IReadOnlyList<DoBinding> bindings,
+        DoElaborationSegment segment,
+        int elementTypeArgumentIndex,
+        HirNode rest,
+        out HirNode lowered)
+    {
+        lowered = rest;
+        var segmentBindings = bindings
+            .Skip(segment.StartIndex)
+            .Take(segment.Count)
+            .ToArray();
+        if (segmentBindings.Length != segment.Count ||
+            segmentBindings.Any(static binding =>
+                binding.Kind != DoBindingKind.Bind || binding.Pattern == null || binding.Value == null))
+        {
+            return false;
+        }
+
+        var values = segmentBindings
+            .Select(binding => ConvertExprOrFallback(binding.Value, "do applicative bind value", binding.Span))
+            .ToArray();
+        var continuations = new HirLambda[segment.Count];
+        HirNode continuationBody = rest;
+        for (var offset = segment.Count - 1; offset >= 0; offset--)
+        {
+            var continuation = BuildDoPatternContinuationLambda(
+                segmentBindings[offset],
+                continuationBody,
+                isRefutable: false);
+            continuations[offset] = continuation;
+            continuationBody = continuation;
+        }
+
+        if (!TryReplaceDoContainerElementType(
+                values[0].TypeId,
+                continuations[0].ReturnType,
+                elementTypeArgumentIndex,
+                out var mappedType))
+        {
+            return false;
+        }
+
+        HirNode applicative = new HirCall
+        {
+            Function = BuildCompilerRoleFunctionVar(CompilerSemanticRole.FunctorMap, "fmap", segmentBindings[0].Span),
+            Arguments = [values[0], continuations[0]],
+            Span = segmentBindings[0].Span,
+            TypeId = mappedType
+        };
+
+        for (var offset = 1; offset < segment.Count; offset++)
+        {
+            if (!TryReplaceDoContainerElementType(
+                    values[0].TypeId,
+                    continuations[offset].ReturnType,
+                    elementTypeArgumentIndex,
+                    out var appliedType))
+            {
+                return false;
+            }
+
+            applicative = new HirCall
+            {
+                Function = BuildCompilerRoleFunctionVar(
+                    CompilerSemanticRole.ApplicativeApply,
+                    "apply",
+                    segmentBindings[offset].Span),
+                Arguments = [applicative, values[offset]],
+                Span = segmentBindings[offset].Span,
+                TypeId = appliedType
+            };
+        }
+
+        var joinParameterName = "$do_join";
+        var joinContinuation = BuildSyntheticDoLambda(
+            [new HirParam { Name = joinParameterName, TypeId = rest.TypeId }],
+            new HirVar
+            {
+                Name = joinParameterName,
+                Span = segmentBindings[0].Span,
+                TypeId = rest.TypeId
+            },
+            segmentBindings[0].Span);
+        lowered = new HirCall
+        {
+            Function = BuildCompilerRoleFunctionVar(
+                CompilerSemanticRole.MonadBind,
+                "bind",
+                segmentBindings[0].Span),
+            Arguments = [applicative, joinContinuation],
+            Span = segmentBindings[0].Span,
             TypeId = rest.TypeId
         };
+        return true;
+    }
+
+    private bool TryReplaceDoContainerElementType(
+        TypeId containerType,
+        TypeId elementType,
+        int elementTypeArgumentIndex,
+        out TypeId resultType)
+    {
+        resultType = TypeId.None;
+        if (!containerType.IsValid ||
+            !elementType.IsValid ||
+            !_typeRegistry.TypeDescriptors.TryGetValue(containerType.Value, out var descriptor) ||
+            descriptor is not TypeDescriptor.TyCon { TypeArgs.Length: > 0 } constructor ||
+            elementTypeArgumentIndex < 0 ||
+            elementTypeArgumentIndex >= constructor.TypeArgs.Length)
+        {
+            return false;
+        }
+
+        var typeArguments = (TypeId[])constructor.TypeArgs.Clone();
+        typeArguments[elementTypeArgumentIndex] = elementType;
+        resultType = _typeRegistry.GetOrCreateDynamicTypeId(new TypeDescriptor.TyCon(
+            constructor.Constructor,
+            typeArguments)
+        {
+            ValueArgs = [.. constructor.ValueArgs],
+            EffectArgs = [.. constructor.EffectArgs]
+        });
+        return resultType.IsValid;
     }
 
     private HirNode BuildDoLetBind(DoBinding binding, HirNode rest)

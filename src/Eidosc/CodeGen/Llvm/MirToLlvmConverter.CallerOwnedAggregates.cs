@@ -24,8 +24,7 @@ public sealed partial class MirToLlvmConverter
         }
 
         var arguments = ConvertArgumentsForKnownDirectCall(call);
-        var argumentsWithExpectedFunctionTypes = RewriteFunctionValueArgumentsForDirectCall(call, arguments);
-        argumentsWithExpectedFunctionTypes.Add(destination);
+        arguments.Add(destination);
         foreach (var storage in callee.CallerOwnedAggregateAbi.OutArrayStorages)
         {
             var arrayStorage = GetCallerOwnedArrayStorage(target, storage.Key);
@@ -34,10 +33,10 @@ public sealed partial class MirToLlvmConverter
                 return false;
             }
 
-            argumentsWithExpectedFunctionTypes.Add(arrayStorage);
+            arguments.Add(arrayStorage);
         }
-        var functionValue = ResolveCallTargetValue(call, argumentsWithExpectedFunctionTypes, out _);
-        var coercedArguments = CoerceCallArguments(functionValue, argumentsWithExpectedFunctionTypes);
+        var functionValue = ResolveCallTargetValue(call, arguments, out _);
+        var coercedArguments = CoerceCallArguments(functionValue, arguments);
         lowered = EmitDirectCall(
             call with { Target = null, IsTailCall = false },
             functionValue,

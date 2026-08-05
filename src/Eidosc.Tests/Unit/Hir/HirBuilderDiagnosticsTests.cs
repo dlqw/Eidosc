@@ -1024,7 +1024,7 @@ main :: Unit -> Int
     }
 
     [Fact]
-    public void Build_DoExpression_SyntheticContinuationLambdasCarryCallableTypes()
+    public void Build_DoExpression_IndependentBindings_LowersToTypedApplicativeThenJoin()
     {
         const string source = """
 import std.Option
@@ -1051,18 +1051,125 @@ main :: Unit -> Int
         var body = Assert.IsType<HirBlock>(main.Body);
         var resultDecl = Assert.IsType<HirDeclStatement>(Assert.Single(body.Statements));
         var resultValue = Assert.IsType<HirVal>(resultDecl.Declaration);
-        var firstBind = Assert.IsType<HirCall>(resultValue.Initializer);
-        var firstContinuation = Assert.IsType<HirLambda>(firstBind.Arguments[1]);
-        var secondBind = Assert.IsType<HirCall>(firstContinuation.Body);
-        var secondContinuation = Assert.IsType<HirLambda>(secondBind.Arguments[1]);
+        var join = Assert.IsType<HirCall>(resultValue.Initializer);
+        var joinFunction = Assert.IsType<HirVar>(join.Function);
+        var apply = Assert.IsType<HirCall>(join.Arguments[0]);
+        var joinContinuation = Assert.IsType<HirLambda>(join.Arguments[1]);
+        var applyFunction = Assert.IsType<HirVar>(apply.Function);
+        var fmap = Assert.IsType<HirCall>(apply.Arguments[0]);
+        var fmapFunction = Assert.IsType<HirVar>(fmap.Function);
+        var firstContinuation = Assert.IsType<HirLambda>(fmap.Arguments[1]);
+        var secondContinuation = Assert.IsType<HirLambda>(firstContinuation.Body);
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
 
-        Assert.True(firstBind.TypeId.IsValid);
+        Assert.Equal(
+            CompilerSemanticRole.MonadBind,
+            Assert.IsType<FuncSymbol>(symbolTable.GetSymbol(joinFunction.SymbolId)).CompilerSemanticRole);
+        Assert.Equal(
+            CompilerSemanticRole.ApplicativeApply,
+            Assert.IsType<FuncSymbol>(symbolTable.GetSymbol(applyFunction.SymbolId)).CompilerSemanticRole);
+        Assert.Equal(
+            CompilerSemanticRole.FunctorMap,
+            Assert.IsType<FuncSymbol>(symbolTable.GetSymbol(fmapFunction.SymbolId)).CompilerSemanticRole);
+        Assert.True(join.TypeId.IsValid);
+        Assert.True(joinContinuation.TypeId.IsValid);
+        Assert.Equal(join.TypeId, joinContinuation.ReturnType);
+        Assert.True(apply.TypeId.IsValid);
+        Assert.True(fmap.TypeId.IsValid);
         Assert.True(firstContinuation.TypeId.IsValid);
         Assert.True(firstContinuation.ReturnType.IsValid);
-        Assert.True(secondBind.TypeId.IsValid);
         Assert.True(secondContinuation.TypeId.IsValid);
         Assert.True(secondContinuation.ReturnType.IsValid);
         Assert.Contains(secondContinuation.Captures, capture => capture.Name == "x" && capture.TypeId.IsValid);
+    }
+
+    [Fact]
+    public void Build_DoExpression_DependentBindings_PreserveSequentialMonadBinds()
+    {
+        const string source = """
+import std.Option
+import std.Monad
+
+main :: Unit -> Int
+{
+    _ => {
+        result := do {
+            x <- Some(2)
+            y <- Some(x + 1)
+            Some(x + y)
+        };
+        Option.unwrap_or(result)(0)
+    }
+}
+""";
+
+        var result = RunSourceWithFixtureInputPath(source, CompilationPhase.Hir);
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == Eidosc.Diagnostic.DiagnosticLevel.Error);
+        var hirModule = Assert.IsType<HirModule>(result.HirModule);
+        var main = Assert.Single(hirModule.Declarations.OfType<HirFunc>(), item => item.Name == "main");
+        var body = Assert.IsType<HirBlock>(main.Body);
+        var resultDecl = Assert.IsType<HirDeclStatement>(Assert.Single(body.Statements));
+        var resultValue = Assert.IsType<HirVal>(resultDecl.Declaration);
+        var firstBind = Assert.IsType<HirCall>(resultValue.Initializer);
+        var firstContinuation = Assert.IsType<HirLambda>(firstBind.Arguments[1]);
+        var secondBind = Assert.IsType<HirCall>(firstContinuation.Body);
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+
+        Assert.Equal(
+            CompilerSemanticRole.MonadBind,
+            Assert.IsType<FuncSymbol>(symbolTable.GetSymbol(Assert.IsType<HirVar>(firstBind.Function).SymbolId)).CompilerSemanticRole);
+        Assert.Equal(
+            CompilerSemanticRole.MonadBind,
+            Assert.IsType<FuncSymbol>(symbolTable.GetSymbol(Assert.IsType<HirVar>(secondBind.Function).SymbolId)).CompilerSemanticRole);
+        Assert.DoesNotContain(
+            new[] { firstBind, secondBind },
+            call => Assert.IsType<FuncSymbol>(
+                symbolTable.GetSymbol(Assert.IsType<HirVar>(call.Function).SymbolId)).CompilerSemanticRole is
+                CompilerSemanticRole.FunctorMap or CompilerSemanticRole.ApplicativeApply);
+    }
+
+    [Fact]
+    public void Build_DoExpression_RefutablePattern_LowersFailureToAlternativeEmpty()
+    {
+        const string source = """
+import std.Option
+import std.Monad
+
+main :: Unit -> Int
+{
+    _ => {
+        result := do {
+            Some(value) <- Some(None())
+            Some(value)
+        };
+        Option.unwrap_or(result)(0)
+    }
+}
+""";
+
+        var result = RunSourceWithFixtureInputPath(source, CompilationPhase.Hir);
+
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == Eidosc.Diagnostic.DiagnosticLevel.Error);
+        var hirModule = Assert.IsType<HirModule>(result.HirModule);
+        var main = Assert.Single(hirModule.Declarations.OfType<HirFunc>(), item => item.Name == "main");
+        var body = Assert.IsType<HirBlock>(main.Body);
+        var resultDecl = Assert.IsType<HirDeclStatement>(Assert.Single(body.Statements));
+        var resultValue = Assert.IsType<HirVal>(resultDecl.Declaration);
+        var bind = Assert.IsType<HirCall>(resultValue.Initializer);
+        var continuation = Assert.IsType<HirLambda>(bind.Arguments[1]);
+        var match = Assert.IsType<HirMatch>(continuation.Body);
+        var failure = Assert.IsType<HirCall>(match.Branches[1].Body);
+        var empty = Assert.IsType<HirVar>(failure.Function);
+        var symbolTable = Assert.IsType<SymbolTable>(result.SymbolTable);
+
+        Assert.True(match.IsExhaustive);
+        Assert.Equal(2, match.Branches.Count);
+        Assert.True(Assert.IsType<HirVarPattern>(match.Branches[1].Pattern).IsWildcard);
+        Assert.Equal(
+            CompilerSemanticRole.AlternativeEmpty,
+            Assert.IsType<FuncSymbol>(symbolTable.GetSymbol(empty.SymbolId)).CompilerSemanticRole);
+        Assert.Equal(bind.TypeId, failure.TypeId);
     }
 
     private static CompilationResult RunPipeline(string relativePath, CompilationPhase stopAt)

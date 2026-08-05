@@ -256,6 +256,16 @@ public sealed partial class NameResolver
         }
 
         var typeSymbol = _symbolTable.GetSymbol(symbolId);
+        if (typeSymbol is AdtSymbol { IsCaseType: true } caseSymbol &&
+            typePath.ModulePath.Count == 0 &&
+            _symbolTable.GetSymbol<AdtSymbol>(caseSymbol.ParentAdt) is { } rootSymbol &&
+            string.Equals(caseSymbol.Name, rootSymbol.Name, StringComparison.Ordinal) &&
+            rootSymbol.TypeId.IsValid)
+        {
+            typeSymbol = rootSymbol;
+            symbolId = rootSymbol.Id;
+        }
+
         if (typeSymbol is TypeParamSymbol)
         {
             return false;

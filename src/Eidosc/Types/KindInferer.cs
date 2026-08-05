@@ -78,9 +78,9 @@ public sealed class KindInferer
                 ? kindFromEnv
                 : new Kind.KVar { Id = _nextVarId++ };
         }
-        else if (IsBuiltinType(con.Name))
+        else if (TryGetBuiltinConstructorKind(con.Name, out var builtinConstructorKind))
         {
-            constructorKind = Kind.KStar.Instance;
+            constructorKind = builtinConstructorKind;
         }
         else
         {
@@ -104,13 +104,18 @@ public sealed class KindInferer
     /// <summary>
     /// 检查是否是内置类型
     /// </summary>
-    private static bool IsBuiltinType(string name)
+    private static bool TryGetBuiltinConstructorKind(string name, out Kind kind)
     {
-        return name switch
+        kind = name switch
         {
-            WellKnownStrings.BuiltinTypes.Int or WellKnownStrings.BuiltinTypes.Float or WellKnownStrings.BuiltinTypes.String or WellKnownStrings.BuiltinTypes.Bool or WellKnownStrings.BuiltinTypes.Char or WellKnownStrings.BuiltinTypes.Never or WellKnownStrings.BuiltinTypes.Type or "()" => true,
-            _ => false
+            WellKnownStrings.BuiltinTypes.Seq => Kind.BuildArrowKind(1),
+            WellKnownStrings.BuiltinTypes.Int or WellKnownStrings.BuiltinTypes.Float or
+                WellKnownStrings.BuiltinTypes.String or WellKnownStrings.BuiltinTypes.Bool or
+                WellKnownStrings.BuiltinTypes.Char or WellKnownStrings.BuiltinTypes.Never or
+                WellKnownStrings.BuiltinTypes.Type or "()" => Kind.KStar.Instance,
+            _ => null!
         };
+        return kind != null;
     }
 
     /// <summary>
@@ -207,9 +212,9 @@ public sealed class KindInferer
             return KindParser.GetTopLevelArity(constructorKind);
         }
 
-        if (IsBuiltinType(con.Name))
+        if (TryGetBuiltinConstructorKind(con.Name, out var builtinConstructorKind))
         {
-            return 0;
+            return KindParser.GetTopLevelArity(builtinConstructorKind);
         }
 
         return _typeConstructorKinds.GetExpectedParamCount(con.Symbol);

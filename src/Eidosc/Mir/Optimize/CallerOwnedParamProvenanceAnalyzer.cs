@@ -244,16 +244,17 @@ internal sealed class CallerOwnedParamProvenanceAnalyzer
         var argumentProvenances = call.Arguments
             .Select(argument => ReadOperand(argument, state))
             .ToArray();
-        var functionProvenance = ReadOperand(call.Function, state);
         var recordUpdateProvenance = call.RecordUpdate == null
             ? CallerOwnedParamProvenance.Untracked
             : ReadOperand(call.RecordUpdate.Source, state);
-        var hasDerivedInput = functionProvenance.IsParamDerived() ||
-                              recordUpdateProvenance.IsParamDerived() ||
+        var hasDerivedInput = recordUpdateProvenance.IsParamDerived() ||
                               argumentProvenances.Any(static provenance => provenance.IsParamDerived());
 
         if (call.Function is not MirFunctionRef functionRef)
         {
+            // Invoking a closure borrows its hidden environment for the duration of
+            // the call. The callable value is not itself passed to or retained by
+            // the invoked body, so callable provenance does not escape here.
             if (hasDerivedInput)
             {
                 MarkEscaped();
@@ -306,6 +307,25 @@ internal sealed class CallerOwnedParamProvenanceAnalyzer
         }
 
         var parameters = callee.Locals.Where(static local => local.IsParameter).ToArray();
+        if (call.Arguments.Count < parameters.Length)
+        {
+            if (recordUpdateProvenance.IsParamDerived())
+            {
+                MarkFallback();
+                WriteCallTarget(call, CallerOwnedParamProvenance.Unknown, state);
+                return;
+            }
+
+            var capturedProvenance = JoinAll(argumentProvenances);
+            WriteCallTarget(
+                call,
+                capturedProvenance.IsParamDerived()
+                    ? CallerOwnedParamProvenance.ContainsParamDerived
+                    : CallerOwnedParamProvenance.Untracked,
+                state);
+            return;
+        }
+
         var returnedProvenance = CallerOwnedParamProvenance.Untracked;
         for (var index = 0; index < argumentProvenances.Length; index++)
         {

@@ -2,6 +2,53 @@ using Eidosc.Symbols;
 
 namespace Eidosc.Semantic;
 
+public sealed record PrecompiledInstanceHead(
+    string Name,
+    string TraitName,
+    PrecompiledTypePattern Target,
+    PrecompiledTypePattern AppliedTarget,
+    IReadOnlyList<PrecompiledInstanceRequirement> Requirements);
+
+public enum PrecompiledTypePatternKind
+{
+    Parameter,
+    Constructor,
+    Tuple,
+    Function,
+    Element,
+    Wildcard
+}
+
+public sealed record PrecompiledTypePattern(
+    PrecompiledTypePatternKind Kind,
+    string Name,
+    int ParameterIndex,
+    IReadOnlyList<PrecompiledTypePattern> Arguments,
+    IReadOnlyList<string> ModulePath,
+    string? PackageAlias);
+
+public sealed record PrecompiledInstanceRequirement(
+    int ParameterIndex,
+    string TraitName,
+    IReadOnlyList<string> TraitModulePath,
+    IReadOnlyList<PrecompiledTypePattern> TraitArguments);
+
+public sealed record PrecompiledResolvedRequirement(
+    Eidosc.Types.Type Type,
+    string TraitName,
+    IReadOnlyList<Eidosc.Types.Type> TraitArguments);
+
+public sealed record PrecompiledInstanceCandidate(
+    string Identity,
+    IReadOnlyList<PrecompiledResolvedRequirement> Requirements);
+
+public sealed record PrecompiledContainerDecomposition(
+    Eidosc.Types.TyCon TypeConstructor,
+    Eidosc.Types.TyCon AppliedType,
+    Eidosc.Types.Type ElementType,
+    int ElementTypeArgumentIndex,
+    PrecompiledInstanceCandidate Candidate);
+
 public sealed record PrecompiledModuleExports(
     IReadOnlyList<string> Functions,
     IReadOnlyList<string> Types,
@@ -13,6 +60,8 @@ public sealed record PrecompiledModuleExports(
 
     public IReadOnlyDictionary<string, string> Modules { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    public IReadOnlyList<PrecompiledInstanceHead> Instances { get; init; } = [];
 
     public static PrecompiledModuleExports Empty { get; } =
         new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());

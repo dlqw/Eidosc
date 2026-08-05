@@ -2,7 +2,7 @@ Alternative :: module {
     import Option
 
     export Alternative[F: kind2] :: trait {
-        empty[A] :: Unit -> F[A]
+        empty[A] :: Unit -> F[A] compiler(role: "elaborator.do.empty")
         or_else[A] :: F[A] -> F[A] -> F[A]
     }
 

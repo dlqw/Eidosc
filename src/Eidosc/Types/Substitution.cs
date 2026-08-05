@@ -1505,6 +1505,15 @@ public sealed class Substitution
         }
     }
 
+    internal EffectRow ApplyEffectSubstitution(EffectRow row) =>
+        (EffectRow)Apply(row);
+
+    internal bool TryBindEffectVariable(EffectVariable variable, EffectRow row) =>
+        _effectUnifier.Bind(variable, row);
+
+    internal IReadOnlyDictionary<int, EffectRow> GetEffectBindings() =>
+        _effectUnifier.GetEffectBindings();
+
     private static bool IsSameEffect(EffectTag left, EffectTag right)
     {
         if (left.Symbol.IsValid && right.Symbol.IsValid)

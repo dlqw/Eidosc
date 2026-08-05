@@ -6,6 +6,11 @@ namespace Eidosc.Borrow;
 public sealed class BorrowCheckResult
 {
     /// <summary>
+    /// Stable MIR function identity, including specialization identity when present.
+    /// </summary>
+    public string FunctionStableKey { get; init; } = "";
+
+    /// <summary>
     /// 函数名
     /// </summary>
     public string FunctionName { get; init; } = "";
@@ -186,12 +191,20 @@ public sealed class ModuleBorrowCheckResult
 {
     private readonly Dictionary<SymbolId, BorrowFunctionKey> _resultKeyBySymbol = [];
     private readonly Dictionary<string, BorrowFunctionKey> _resultKeyByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, BorrowCheckResult> _resultByStableFunctionKey = new(StringComparer.Ordinal);
+    private readonly HashSet<SymbolId> _ambiguousSymbols = [];
     private readonly HashSet<string> _ambiguousNames = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _ambiguousStableFunctionKeys = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Gets the borrow-check results keyed by structured function identity.
     /// </summary>
     public Dictionary<BorrowFunctionKey, BorrowCheckResult> ResultsByFunctionKey { get; init; } = [];
+
+    /// <summary>
+    /// Gets results whose exact MIR stable identity is unique within the module.
+    /// </summary>
+    public IReadOnlyDictionary<string, BorrowCheckResult> ResultsByStableFunctionKey => _resultByStableFunctionKey;
 
     /// <summary>
     /// 每个函数的借用检查结果。
@@ -215,9 +228,33 @@ public sealed class ModuleBorrowCheckResult
         ResultsByFunctionKey[key] = result;
         FunctionResults[key.StableText] = result;
 
-        if (result.FunctionSymbolId.IsValid)
+        if (!string.IsNullOrWhiteSpace(result.FunctionStableKey) &&
+            !_ambiguousStableFunctionKeys.Contains(result.FunctionStableKey))
         {
-            _resultKeyBySymbol[result.FunctionSymbolId] = key;
+            if (_resultByStableFunctionKey.TryGetValue(result.FunctionStableKey, out var existingResult) &&
+                !ReferenceEquals(existingResult, result))
+            {
+                _resultByStableFunctionKey.Remove(result.FunctionStableKey);
+                _ambiguousStableFunctionKeys.Add(result.FunctionStableKey);
+            }
+            else
+            {
+                _resultByStableFunctionKey[result.FunctionStableKey] = result;
+            }
+        }
+
+        if (result.FunctionSymbolId.IsValid && !_ambiguousSymbols.Contains(result.FunctionSymbolId))
+        {
+            if (_resultKeyBySymbol.TryGetValue(result.FunctionSymbolId, out var existingSymbolKey) &&
+                !existingSymbolKey.Equals(key))
+            {
+                _resultKeyBySymbol.Remove(result.FunctionSymbolId);
+                _ambiguousSymbols.Add(result.FunctionSymbolId);
+            }
+            else
+            {
+                _resultKeyBySymbol[result.FunctionSymbolId] = key;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(result.FunctionName))
@@ -244,6 +281,7 @@ public sealed class ModuleBorrowCheckResult
     public bool TryGetFunctionResult(SymbolId symbolId, string? functionName, out BorrowCheckResult? result)
     {
         if (symbolId.IsValid &&
+            !_ambiguousSymbols.Contains(symbolId) &&
             _resultKeyBySymbol.TryGetValue(symbolId, out var symbolKey) &&
             ResultsByFunctionKey.TryGetValue(symbolKey, out result))
         {
@@ -254,6 +292,22 @@ public sealed class ModuleBorrowCheckResult
             !_ambiguousNames.Contains(functionName) &&
             _resultKeyByName.TryGetValue(functionName, out var nameKey) &&
             ResultsByFunctionKey.TryGetValue(nameKey, out result))
+        {
+            return true;
+        }
+
+        result = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Gets a borrow-check result by exact MIR stable identity.
+    /// </summary>
+    public bool TryGetFunctionResultByStableKey(string functionStableKey, out BorrowCheckResult? result)
+    {
+        if (!string.IsNullOrWhiteSpace(functionStableKey) &&
+            !_ambiguousStableFunctionKeys.Contains(functionStableKey) &&
+            _resultByStableFunctionKey.TryGetValue(functionStableKey, out result))
         {
             return true;
         }
