@@ -223,8 +223,8 @@ TreeMap :: module {
 
     export from_seq[K: Traits.Ord + Traits.Clone, V] :: Seq[(K, V)] -> TreeMap[K, V]
     {
-        entries => Seq.fold_left(entries)(TreeMap.empty(()))(map => entry =>
-            match entry { (key, value) => TreeMap.insert(map)(key)(value) })
+        entries => entries.fold_left(TreeMap.empty(()), map => entry =>
+            match entry { (key, value) => map.insert(key, value) })
     }
 
     export get[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: TreeMap[K, V] -> K -> Option[V]
@@ -338,18 +338,19 @@ TreeMap :: module {
 
     export values[K, V] :: TreeMap[K, V] -> Seq[V]
     {
-        map => Seq.map(TreeMap.to_seq(map))(entry => match entry { (_, value) => value })
+        map => map.to_seq().map(entry => match entry { (_, value) => value })
     }
 
     export fold[K, V, A, E: effects] :: TreeMap[K, V] -> A -> (A -> K -> V -> A need E) -> A need E
     {
-        map => initial => f => Seq.fold_left(TreeMap.to_seq(map))(initial)(acc => entry =>
-            match entry { (key, value) => f(acc)(key)(value) })
+        map, initial, f => map.to_seq().fold_left(initial, acc => entry =>
+            match entry { (key, value) => f(acc, key, value) })
     }
 
     export map_values[K: Traits.Ord + Traits.Clone, V, U, E: effects] :: TreeMap[K, V] -> (V -> U need E) -> TreeMap[K, U] need E
     {
-        map => f => TreeMap.from_seq(Seq.map(TreeMap.to_seq(map))(entry =>
-            match entry { (key, value) => (key, f(value)) }))
+        map, f => map.to_seq()
+            .map(entry => match entry { (key, value) => (key, value |> f) })
+            |> TreeMap.from_seq
     }
 }

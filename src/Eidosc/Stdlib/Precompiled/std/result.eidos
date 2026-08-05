@@ -35,21 +35,21 @@ Result :: module {
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
      compiler(internal)
 {
-        g, f, value => g(f(value))
+        g, f, value => value |> f |> g
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
      compiler(internal)
 {
-        value, f => f(value)
+        value, f => value |> f
     }
 
 
     bind_then[A, B, C, E, E1: effects, E2: effects] :: (A -> With[E, B] need E1) -> (B -> With[E, C] need E2) -> A -> With[E, C] need E1, E2
      compiler(internal)
 {
-        f, g, value => f(value).bind(g)
+        f, g, value => (value |> f).bind(g)
     }
 
 
@@ -85,7 +85,7 @@ Result :: module {
 
     export map[T, U, E, F: effects] :: Result[T, E] -> (T -> U need F) -> Result[U, E] need F
     {
-        Ok(value) => f => Ok(f(value)),
+        Ok(value) => f => Ok(value |> f),
         Err(error) => _ => Err(error)
     }
 
@@ -97,19 +97,19 @@ Result :: module {
 
     export and_then[T, U, E, F: effects] :: Result[T, E] -> (T -> Result[U, E] need F) -> Result[U, E] need F
     {
-        Ok(value) => f => f(value),
+        Ok(value) => f => value |> f,
         Err(error) => _ => Err(error)
     }
 
     export map_or[T, U, E, F: effects] :: Result[T, E] -> U -> (T -> U need F) -> U need F
     {
-        Ok(value) => _ => f => f(value),
+        Ok(value) => _ => f => value |> f,
         Err(_) => fallback => _ => fallback
     }
 
     export map_or_else[T, U, E, F1: effects, F2: effects] :: Result[T, E] -> (E -> U need F1) -> (T -> U need F2) -> U need F1, F2
     {
-        Ok(value) => _ => f => f(value),
+        Ok(value) => _ => f => value |> f,
         Err(error) => fallback => _ => fallback(error)
     }
 
@@ -183,14 +183,14 @@ Result :: module {
     export TraversableResultWithE[E] :: instance Traversable.Traversable[With[E]] {
         traverse[A, B, G: kind2 : Applicative.Applicative[G], E, F: effects] :: With[E, A] -> (A -> G[B] need F) -> G[With[E, B]] need F
             {
-                Ok(value) => f => Traversable.map_applicative(Result.ok_wrap)(f(value)),
+                Ok(value) => f => (value |> f) |> Traversable.map_applicative(Result.ok_wrap),
                 Err(error) => _ => Traversable.lift_pure(Err(error))
             }
     }
 
     export sequence[A, G: kind2 : Applicative.Applicative[G], E] :: With[E, G[A]] -> G[With[E, A]]
     {
-        result => Traversable.traverse(result)(Traversable.identity_applicative)
+        result => result.traverse(Traversable.identity_applicative)
     }
 
     export EqResultTe :: instance Traits.Eq {
@@ -224,7 +224,7 @@ Result :: module {
     export FunctorResultWithE[E] :: instance Functor.Functor[With[E]] {
         fmap[A, B, E, F: effects] :: With[E, A] -> (A -> B need F) -> With[E, B] need F
             {
-                result => f => Result.map(result)(f)
+                result => f => result.map(f)
             }
     }
 
@@ -248,7 +248,7 @@ Result :: module {
             }
         bind[A, B, E, F: effects] :: With[E, A] -> (A -> With[E, B] need F) -> With[E, B] need F
             {
-                result => f => Result.and_then(result)(f)
+                result => f => result.and_then(f)
             }
     }
 
@@ -267,7 +267,7 @@ Result :: module {
     {
         left => right => f => match (left, right)
         {
-            (Ok(a), Ok(b)) => Ok(f(a)(b)),
+            (Ok(a), Ok(b)) => Ok(f(a, b)),
             (Err(e), _) => Err(e),
             (_, Err(e)) => Err(e)
         }
@@ -275,8 +275,8 @@ Result :: module {
 
     export map_both[T, U, E, F, G1: effects, G2: effects] :: Result[T, E] -> (T -> U need G1) -> (E -> F need G2) -> Result[U, F] need G1, G2
     {
-        Ok(value) => f => _ => Ok(f(value)),
-        Err(error) => _ => g => Err(g(error))
+        Ok(value) => f => _ => Ok(value |> f),
+        Err(error) => _ => g => Err(error |> g)
     }
 
     export transpose[T, E] :: Result[Option[T], E] -> Option[Result[T, E]]

@@ -159,11 +159,11 @@ Seq :: module {
     export FoldableSeq :: instance Foldable.Foldable[Seq] {
         fold_left[A, B, E: effects] :: Seq[A] -> B -> (B -> A -> B need E) -> B need E
             {
-                xs => initial => f => Seq.fold_left(xs)(initial)(f)
+                xs, initial, f => xs.fold_left(initial, f)
             }
         fold_right[A, B, E: effects] :: Seq[A] -> B -> (A -> B -> B need E) -> B need E
             {
-                xs => initial => f => Seq.fold_right(xs)(initial)(f)
+                xs, initial, f => xs.fold_right(initial, f)
             }
     }
 
@@ -314,7 +314,7 @@ Seq :: module {
 
     export none[T, E: effects] :: Seq[T] -> (T -> Bool need E) -> Bool need E
     {
-        xs => pred => !Seq.any(xs)(pred)
+        xs, pred => !xs.any(pred)
     }
 
     export zip[A, B] :: Seq[A] -> Seq[B] -> Seq[(A, B)] compiler(role: "sequence.zip")
@@ -407,7 +407,7 @@ Seq :: module {
         // as a comprehension, which the borrow analysis accepts in this module
         // context (the hand-rolled index loop form is rejected here).
         xs => {
-            pair := Seq.fold_left(xs)(("", true))(acc => x =>
+            pair := xs.fold_left(("", true), acc => x =>
                 match acc {
                     (s, first) =>
                         if first then (TraitInvoke.show_value(x), false)
@@ -491,7 +491,7 @@ Seq :: module {
     export FunctorSeq :: instance Functor.Functor[Seq] {
         fmap[A, B, E: effects] :: Seq[A] -> (A -> B need E) -> Seq[B] need E
             {
-                values => f => Seq.map(values)(f)
+                values => f => values.map(f)
             }
     }
 
@@ -499,14 +499,14 @@ Seq :: module {
     compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2
      compiler(internal)
 {
-        g => f => value => g(f(value))
+        g, f, value => value |> f |> g
     }
 
 
     apply_to[A, B, E: effects] :: A -> (A -> B need E) -> B need E
      compiler(internal)
 {
-        value => f => f(value)
+        value, f => value |> f
     }
 
 
@@ -546,14 +546,14 @@ Seq :: module {
     bind_then[A, B, C, E1: effects, E2: effects] :: (A -> Seq[B] need E1) -> (B -> Seq[C] need E2) -> A -> Seq[C] need E1, E2
      compiler(internal)
 {
-        f => g => value => law_bind(f(value))(g)
+        f, g, value => law_bind(value |> f)(g)
     }
 
 
     export ApplicativeSeq :: instance Applicative.Applicative[Seq] {
         pure[A] :: A -> Seq[A]
             {
-                value => Seq.singleton(value)
+                value => value |> Seq.singleton
             }
         apply[A, B, E: effects] :: Seq[A -> B need E] -> Seq[A] -> Seq[B] need E
             {
@@ -568,7 +568,7 @@ Seq :: module {
             }
         bind[A, B, E: effects] :: Seq[A] -> (A -> Seq[B] need E) -> Seq[B] need E
             {
-                xs => f => Seq.flat_map(xs)(f)
+                xs => f => xs.flat_map(f)
             }
     }
 
@@ -647,12 +647,12 @@ Seq :: module {
 
     export elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
     {
-        target => xs => eq_fn => Seq.any(xs)(x => eq_fn(x)(target))
+        target, xs, eq_fn => xs.any(x => eq_fn(x, target))
     }
 
     export not_elem[T, E: effects] :: T -> Seq[T] -> (T -> T -> Bool need E) -> Bool need E
     {
-        target => xs => eq_fn => !Seq.elem(target)(xs)(eq_fn)
+        target, xs, eq_fn => !target.elem(xs, eq_fn)
     }
 
     // ── Side-effect iteration ────────────────────────────────────

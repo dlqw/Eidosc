@@ -18,7 +18,7 @@ TreeSet :: module {
 
     export from_seq[K: Traits.Ord + Traits.Clone] :: Seq[K] -> TreeSet[K]
     {
-        values => Seq.fold_left(values)(TreeSet.empty(()))(set => key => TreeSet.insert(set)(key))
+        values => values.fold_left(TreeSet.empty(()), set => key => set.insert(key))
     }
 
     export len[K] :: Ref[TreeSet[K]] -> Int
@@ -56,18 +56,18 @@ TreeSet :: module {
 
     export union[K: Traits.Ord + Traits.Clone] :: TreeSet[K] -> TreeSet[K] -> TreeSet[K]
     {
-        left => right => Seq.fold_left(TreeSet.to_seq(right))(left)(set => key => TreeSet.insert(set)(key))
+        left, right => right.to_seq().fold_left(left, set => key => set.insert(key))
     }
 
     export intersection[K: Traits.Ord + Traits.Clone] :: TreeSet[K] -> TreeSet[K] -> TreeSet[K]
     {
-        left => right => Seq.fold_left(TreeSet.to_seq(left))(TreeSet.empty(()))(acc => key =>
-            if TreeSet.contains(right)(key) then { TreeSet.insert(acc)(key) } else { acc })
+        left, right => left.to_seq().fold_left(TreeSet.empty(()), acc => key =>
+            if right.contains(key) then { acc.insert(key) } else { acc })
     }
 
     export difference[K: Traits.Ord + Traits.Clone] :: TreeSet[K] -> TreeSet[K] -> TreeSet[K]
     {
-        left => right => Seq.fold_left(TreeSet.to_seq(left))(TreeSet.empty(()))(acc => key =>
-            if TreeSet.contains(right)(key) then { acc } else { TreeSet.insert(acc)(key) })
+        left, right => left.to_seq().fold_left(TreeSet.empty(()), acc => key =>
+            if right.contains(key) then { acc } else { acc.insert(key) })
     }
 }

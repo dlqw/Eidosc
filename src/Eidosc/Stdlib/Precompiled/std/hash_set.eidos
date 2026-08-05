@@ -191,14 +191,14 @@ HashSet :: module {
     fold_insert[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
      compiler(internal)
 {
-        keys => acc => Seq.fold_left(keys)(acc)(s => k => HashSet.insert(s)(k))
+        keys, acc => keys.fold_left(acc, s => k => s.insert(k))
     }
 
 
     fold_remove[K: Traits.Hash + Traits.Eq + Traits.Clone] :: Seq[K] -> HashSet[K] -> HashSet[K]
      compiler(internal)
 {
-        keys => acc => Seq.fold_left(keys)(acc)(s => k => HashSet.remove(s)(k))
+        keys, acc => keys.fold_left(acc, s => k => s.remove(k))
     }
 
 

@@ -216,7 +216,7 @@ PersistentMap :: module {
 
     export from_seq[K: Traits.Ord + Traits.Clone, V: Traits.Clone] :: Seq[(K, V)] -> PersistentMap[K, V]
     {
-        entries => Seq.fold_left(entries)(PersistentMap.empty(()))(map => entry =>
+        entries => entries.fold_left(PersistentMap.empty(()), map => entry =>
             match entry { (key, value) => PersistentMap.insert(ref map)(key)(value) })
     }
 
@@ -360,11 +360,11 @@ PersistentMap :: module {
 
     export keys[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[K]
     {
-        map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (key, _) => key })
+        map => PersistentMap.to_seq(map).map(entry => match entry { (key, _) => key })
     }
 
     export values[K: Traits.Clone, V: Traits.Clone] :: Ref[PersistentMap[K, V]] -> Seq[V]
     {
-        map => Seq.map(PersistentMap.to_seq(map))(entry => match entry { (_, value) => value })
+        map => PersistentMap.to_seq(map).map(entry => match entry { (_, value) => value })
     }
 }
