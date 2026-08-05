@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "components": {
+    "eidosup": {
+      "tagPrefix": "eidosup-v",
+      "sourcePaths": [
+        "src/Eidosup",
+        "src/Eidosc.Tests/Unit/Eidosup",
+        "eng/Eidosup.Version.props",
+        "eng/compatibility.json",
+        "Directory.Build.props",
+        "scripts/release",
+        ".github/workflows/release-eidosup.yml"
+      ]
+    },
+    "eidos-bindgen": {
+      "tagPrefix": "eidos-bindgen-v",
+      "sourcePaths": [
+        "src/Eidosc.Bindgen",
+        "src/Eidosc.Tests/Unit/Bindgen",
+        "eng/EidosBindgen.Version.props",
+        "Directory.Build.props",
+        ".github/workflows/release-bindgen.yml"
+      ]
+    }
+  }
+}

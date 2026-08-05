@@ -24,7 +24,7 @@ public sealed class DependencyAliasRenamePlannerTests
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.app"
@@ -38,7 +38,7 @@ public sealed class DependencyAliasRenamePlannerTests
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.library"
@@ -210,7 +210,7 @@ public sealed class DependencyAliasRenamePlannerTests
             manifestSchema = 3
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.table"
@@ -256,7 +256,7 @@ public sealed class DependencyAliasRenamePlannerTests
             manifestSchema = 3
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.literal"
@@ -302,7 +302,7 @@ public sealed class DependencyAliasRenamePlannerTests
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.test"

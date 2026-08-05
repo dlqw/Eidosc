@@ -1,13 +1,11 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)Eidos.Version.props" />
   <PropertyGroup>
-    <EidoscVersionPrefix>0.5.0</EidoscVersionPrefix>
-    <EidoscVersionSuffix>alpha.1</EidoscVersionSuffix>
-    <EidoscVersion>$(EidoscVersionPrefix)</EidoscVersion>
-    <EidoscVersion Condition="'$(EidoscVersionSuffix)' != ''">$(EidoscVersionPrefix)-$(EidoscVersionSuffix)</EidoscVersion>
-    <Version>$(EidoscVersion)</Version>
-    <PackageVersion>$(EidoscVersion)</PackageVersion>
-    <AssemblyVersion>0.5.0.0</AssemblyVersion>
-    <FileVersion>0.5.0.0</FileVersion>
-    <InformationalVersion>$(EidoscVersion)</InformationalVersion>
+    <EidoscVersion>$(EidosVersion)</EidoscVersion>
+    <Version>$(EidosVersion)</Version>
+    <PackageVersion>$(EidosVersion)</PackageVersion>
+    <AssemblyVersion>$(EidosAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(EidosAssemblyVersion)</FileVersion>
+    <InformationalVersion>$(EidosVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>

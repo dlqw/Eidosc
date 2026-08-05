@@ -200,7 +200,7 @@ public sealed class LspServerRunLoopTests
         Directory.CreateDirectory(projectRoot);
         File.WriteAllText(
             Path.Combine(projectRoot, "eidos.toml"),
-            "manifestSchema = 3\n[language]\nversion = \"0.8.0-alpha.1\"\n");
+            "manifestSchema = 3\n[language]\nversion = \"0.9.0-alpha.1\"\n");
 
         try
         {
@@ -467,7 +467,7 @@ public sealed class LspServerRunLoopTests
             manifestSchema = 3
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.test.lsp-generated-module"
@@ -600,7 +600,7 @@ public sealed class LspServerRunLoopTests
         const string text = """
 [package]
 name = "Acme.Core"
-version = "0.8.0-alpha.1"
+version = "0.9.0-alpha.1"
 """;
         using var didOpen = JsonDocument.Parse($$"""
         {

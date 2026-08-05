@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <EidosVersionPrefix>0.9.0</EidosVersionPrefix>
+    <EidosVersionSuffix>alpha.1</EidosVersionSuffix>
+    <EidosVersion>$(EidosVersionPrefix)</EidosVersion>
+    <EidosVersion Condition="'$(EidosVersionSuffix)' != ''">$(EidosVersionPrefix)-$(EidosVersionSuffix)</EidosVersion>
+    <EidosAssemblyVersion>0.9.0.0</EidosAssemblyVersion>
+  </PropertyGroup>
+</Project>

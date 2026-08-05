@@ -29,26 +29,42 @@ function Assert-SemVer([string]$Name, [string]$Version)
     }
 }
 
-$eidoscVersion = Read-ProductVersion "eng/Eidosc.Version.props" "EidoscVersionPrefix" "EidoscVersionSuffix"
-$eidosupVersion = Read-ProductVersion "eng/Eidosup.Version.props" "EidosupVersionPrefix" "EidosupVersionSuffix"
-$bindgenVersion = Read-ProductVersion "eng/EidosBindgen.Version.props" "EidosBindgenVersionPrefix" "EidosBindgenVersionSuffix"
-[xml]$stdProps = Get-Content -Raw (Join-Path $RepositoryRoot "eng/Std.Version.props")
-$stdVersion = [string]$stdProps.Project.PropertyGroup.EidosStdVersion
+# All Eidos products in this repository derive from one hand-maintained version source.
+# Cross-repository equality is enforced by the workspace release contract.
+$eidosVersion = Read-ProductVersion "eng/Eidos.Version.props" "EidosVersionPrefix" "EidosVersionSuffix"
+Assert-SemVer "Eidos" $eidosVersion
 
-Assert-SemVer "Eidosc" $eidoscVersion
-Assert-SemVer "Eidosup" $eidosupVersion
-Assert-SemVer "Eidos Bindgen" $bindgenVersion
-Assert-SemVer "Std" $stdVersion
+$derivedProps = @(
+    "eng/Eidosc.Version.props",
+    "eng/Std.Version.props",
+    "eng/Eidosup.Version.props",
+    "eng/EidosBindgen.Version.props"
+)
+foreach ($relativePath in $derivedProps)
+{
+    [string]$text = Get-Content -LiteralPath (Join-Path $RepositoryRoot $relativePath) -Raw
+    if ($text.IndexOf('Eidos.Version.props', [StringComparison]::Ordinal) -lt 0)
+    {
+        throw "$relativePath must import eng/Eidos.Version.props instead of declaring an independent version."
+    }
+}
 
-$compatibility = Get-Content -Raw (Join-Path $RepositoryRoot "eng/compatibility.json") | ConvertFrom-Json
-if ($compatibility.version -ne $eidoscVersion) { throw "compatibility.json Eidosc version mismatch." }
-if ($compatibility.stdlib -ne $stdVersion) { throw "compatibility.json Std version mismatch." }
+$eidoscVersion = $eidosVersion
+$stdVersion = $eidosVersion
+$eidosupVersion = $eidosVersion
+$bindgenVersion = $eidosVersion
 
 $languageSource = Get-Content -Raw (Join-Path $RepositoryRoot "src/Eidosc/ProjectSystem/EidosLanguageVersions.cs")
 $languageMatch = [regex]::Match($languageSource, 'Current\s*=\s*"([^"]+)"')
 if (-not $languageMatch.Success) { throw "Unable to read Eidos language version constant." }
 $languageVersion = $languageMatch.Groups[1].Value
-Assert-SemVer "Eidos language" $languageVersion
+
+if ($stdVersion -ne $eidoscVersion) { throw "Std version '$stdVersion' does not match Eidos core version '$eidoscVersion'." }
+if ($languageVersion -ne $eidoscVersion) { throw "Eidos language version '$languageVersion' does not match Eidos core version '$eidoscVersion'." }
+
+$compatibility = Get-Content -Raw (Join-Path $RepositoryRoot "eng/compatibility.json") | ConvertFrom-Json
+if ($compatibility.version -ne $eidoscVersion) { throw "compatibility.json Eidosc version mismatch." }
+if ($compatibility.stdlib -ne $stdVersion) { throw "compatibility.json Std version mismatch." }
 if ($compatibility.language.default -ne $languageVersion) { throw "compatibility.json language version mismatch." }
 
 $stdManifest = Get-Content -Raw (Join-Path $RepositoryRoot "src/Eidosc/Stdlib/Precompiled/eidos.toml")
@@ -58,24 +74,10 @@ if (-not $stdManifestMatch.Success -or $stdManifestMatch.Groups[1].Value -ne $st
     throw "Std manifest version does not match eng/Std.Version.props."
 }
 
-$releaseNotes = Join-Path $RepositoryRoot "changelogs/$eidoscVersion.md"
-if (-not (Test-Path -LiteralPath $releaseNotes)) { throw "Missing Eidosc release notes: $releaseNotes" }
-$componentReleaseNotes = @(
-    "changelogs/eidosup/$eidosupVersion.md",
-    "changelogs/eidos-bindgen/$bindgenVersion.md",
-    "changelogs/stdlib/$stdVersion.md"
-)
-foreach ($relativePath in $componentReleaseNotes)
-{
-    if (-not (Test-Path -LiteralPath (Join-Path $RepositoryRoot $relativePath)))
-    {
-        throw "Missing component release notes: $relativePath"
-    }
-}
+$releaseNotes = Join-Path $RepositoryRoot "changelogs/$eidosVersion.md"
+if (-not (Test-Path -LiteralPath $releaseNotes)) { throw "Missing Eidos release notes: $releaseNotes" }
 
 Write-Host "Version consistency verified:"
-Write-Host "  Eidos language $languageVersion"
-Write-Host "  Eidosc         $eidoscVersion"
-Write-Host "  Std            $stdVersion"
-Write-Host "  Eidosup        $eidosupVersion"
-Write-Host "  Eidos Bindgen  $bindgenVersion"
+Write-Host "  Eidos language/compiler/Std $eidosVersion"
+Write-Host "  Eidosup                    $eidosupVersion"
+Write-Host "  Eidos Bindgen              $bindgenVersion"

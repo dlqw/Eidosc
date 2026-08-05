@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact Eidosc SemVer from eng/Eidosc.Version.props
+        description: Exact Eidos SemVer from eng/Eidos.Version.props
+        required: true
+        type: string
+      tutorial_commit:
+        description: Exact eidos-tutorial main commit for the same Eidos version
         required: true
         type: string
 
@@ -24,7 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
+          ref: ${{ inputs.tutorial_commit }}
           path: artifacts/tutorial
           persist-credentials: false
 
@@ -37,9 +41,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Release commit must be reachable from origin/main." }
           $version = "${{ inputs.version }}"
           ./scripts/versioning/verify-versions.ps1
-          [xml]$props = Get-Content -Raw eng/Eidosc.Version.props
-          $prefix = [string]$props.Project.PropertyGroup.EidoscVersionPrefix
-          $suffix = [string]$props.Project.PropertyGroup.EidoscVersionSuffix
+          [xml]$props = Get-Content -Raw eng/Eidos.Version.props
+          $prefix = [string]$props.Project.PropertyGroup.EidosVersionPrefix
+          $suffix = [string]$props.Project.PropertyGroup.EidosVersionSuffix
           $declared = if ($suffix) { "$prefix-$suffix" } else { $prefix }
           if ($declared -ne $version) { throw "Input version $version does not match $declared." }
           if (-not (Test-Path -LiteralPath "changelogs/$version.md" -PathType Leaf)) {
@@ -272,7 +276,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
+          ref: ${{ inputs.tutorial_commit }}
           path: artifacts/tutorial
           persist-credentials: false
       - uses: actions/download-artifact@v4
@@ -354,7 +358,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
+          ref: ${{ inputs.tutorial_commit }}
           path: artifacts/tutorial
           persist-credentials: false
       - uses: actions/download-artifact@v4

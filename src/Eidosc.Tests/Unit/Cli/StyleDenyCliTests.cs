@@ -89,7 +89,7 @@ public sealed class StyleDenyCliTests
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "Dev.eidos.HttpClient"

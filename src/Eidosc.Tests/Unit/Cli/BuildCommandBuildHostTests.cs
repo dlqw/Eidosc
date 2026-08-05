@@ -19,7 +19,7 @@ public sealed class BuildCommandBuildHostTests
             manifestSchema = 3
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.test.build-host-cli"
@@ -92,7 +92,7 @@ public sealed class BuildCommandBuildHostTests
             manifestSchema = 3
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.test.generated-module-cli"

@@ -1,12 +1,10 @@
 <Project>
+  <Import Project="$(MSBuildThisFileDirectory)Eidos.Version.props" />
   <PropertyGroup>
-    <EidosBindgenVersionPrefix>0.1.0</EidosBindgenVersionPrefix>
-    <EidosBindgenVersionSuffix>alpha.1</EidosBindgenVersionSuffix>
-    <EidosBindgenVersion>$(EidosBindgenVersionPrefix)</EidosBindgenVersion>
-    <EidosBindgenVersion Condition="'$(EidosBindgenVersionSuffix)' != ''">$(EidosBindgenVersionPrefix)-$(EidosBindgenVersionSuffix)</EidosBindgenVersion>
-    <Version>$(EidosBindgenVersion)</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
-    <FileVersion>0.1.0.0</FileVersion>
-    <InformationalVersion>$(EidosBindgenVersion)</InformationalVersion>
+    <EidosBindgenVersion>$(EidosVersion)</EidosBindgenVersion>
+    <Version>$(EidosVersion)</Version>
+    <AssemblyVersion>$(EidosAssemblyVersion)</AssemblyVersion>
+    <FileVersion>$(EidosAssemblyVersion)</FileVersion>
+    <InformationalVersion>$(EidosVersion)</InformationalVersion>
   </PropertyGroup>
 </Project>

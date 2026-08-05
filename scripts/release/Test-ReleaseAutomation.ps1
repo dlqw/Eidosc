@@ -7,16 +7,13 @@ Set-StrictMode -Version Latest
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "../.."))
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("eidos-release-test-" + [Guid]::NewGuid().ToString("N"))
-[xml]$eidoscVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Eidosc.Version.props")
-$eidoscVersionPrefix = [string]$eidoscVersionProps.Project.PropertyGroup.EidoscVersionPrefix
-$eidoscVersionSuffix = [string]$eidoscVersionProps.Project.PropertyGroup.EidoscVersionSuffix
-$eidoscVersion = if ($eidoscVersionSuffix) { "$eidoscVersionPrefix-$eidoscVersionSuffix" } else { $eidoscVersionPrefix }
-[xml]$eidosupVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Eidosup.Version.props")
-$eidosupVersionPrefix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionPrefix
-$eidosupVersionSuffix = [string]$eidosupVersionProps.Project.PropertyGroup.EidosupVersionSuffix
-$eidosupVersion = if ($eidosupVersionSuffix) { "$eidosupVersionPrefix-$eidosupVersionSuffix" } else { $eidosupVersionPrefix }
-[xml]$stdVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Std.Version.props")
-$stdVersion = [string]$stdVersionProps.Project.PropertyGroup.EidosStdVersion
+[xml]$eidosVersionProps = Get-Content -Raw -LiteralPath (Join-Path $repositoryRoot "eng/Eidos.Version.props")
+$eidosVersionPrefix = [string]$eidosVersionProps.Project.PropertyGroup.EidosVersionPrefix
+$eidosVersionSuffix = [string]$eidosVersionProps.Project.PropertyGroup.EidosVersionSuffix
+$eidosVersion = if ($eidosVersionSuffix) { "$eidosVersionPrefix-$eidosVersionSuffix" } else { $eidosVersionPrefix }
+$eidoscVersion = $eidosVersion
+$eidosupVersion = $eidosVersion
+$stdVersion = $eidosVersion
 $commit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$')
 {
@@ -40,7 +37,9 @@ foreach ($scriptPath in @(
     "scripts/release/Invoke-EidosupCleanInstall.ps1",
     "scripts/release/Invoke-EidosupPublishedInstall.ps1",
     "scripts/release/New-TutorialSmokeProject.ps1",
-    "scripts/release/Test-TutorialSmokeManifest.ps1"))
+    "scripts/release/Test-TutorialSmokeManifest.ps1",
+    "scripts/release/Get-ReleaseTestMode.ps1",
+    "scripts/release/Test-ReleaseFastLane.ps1"))
 {
     $tokens = $null
     $parseErrors = $null
@@ -53,6 +52,8 @@ foreach ($scriptPath in @(
         throw "Release verification script '$scriptPath' has PowerShell parse errors: $($parseErrors -join '; ')"
     }
 }
+
+& (Join-Path $scriptRoot "Test-ReleaseFastLane.ps1")
 
 function Add-ZipText(
     [IO.Compression.ZipArchive]$Archive,
@@ -71,7 +72,7 @@ try
     New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
     [IO.File]::WriteAllText(
         $tutorialManifest,
-        "manifestSchema = 3`n`n[language]`nversion = `"0.8.0-alpha.1`"`n",
+        "manifestSchema = 3`n`n[language]`nversion = `"$eidosVersion`"`n",
         [Text.UTF8Encoding]::new($false))
     & (Join-Path $scriptRoot "Test-TutorialSmokeManifest.ps1") `
         -ManifestPath $tutorialManifest `
