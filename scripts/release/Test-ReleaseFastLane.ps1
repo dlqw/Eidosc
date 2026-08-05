@@ -11,7 +11,7 @@ if ($same.mode -cne "fast" -or $same.baselineRoot -cne $same.candidateRoot)
     throw "An identical Eidosup source set must select the fast lane."
 }
 
-$changed = & $script -Component eidosup -BaselineRef origin/main -CandidateRef HEAD
+$changed = & $script -Component eidosup -BaselineRef HEAD^ -CandidateRef HEAD
 if ($changed.mode -cne "full" -or $changed.reason -cne "artifact-source-set-changed")
 {
     throw "A changed Eidosup source set must select the full lane."
