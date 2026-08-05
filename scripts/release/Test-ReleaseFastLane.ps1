@@ -12,7 +12,7 @@ if ($same.mode -cne "fast" -or $same.baselineRoot -cne $same.candidateRoot)
     throw "An identical Eidosup source set must select the fast lane."
 }
 
-& git -C $repositoryRoot rev-parse --verify "HEAD^`{commit`}" 2>$null | Out-Null
+& git -C $repositoryRoot rev-parse --verify "HEAD^" 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0)
 {
     $changed = & $script -Component eidosup -BaselineRef HEAD^ -CandidateRef HEAD
