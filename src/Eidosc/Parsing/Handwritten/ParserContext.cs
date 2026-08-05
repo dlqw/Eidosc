@@ -48,9 +48,11 @@ public sealed class ParserContext
     public bool UsesDotNamespaces =>
         string.Equals(LanguageVersion, EidosLanguageVersions.Version06, StringComparison.Ordinal) ||
         string.Equals(LanguageVersion, EidosLanguageVersions.Previous, StringComparison.Ordinal) ||
+        string.Equals(LanguageVersion, EidosLanguageVersions.Version08, StringComparison.Ordinal) ||
         string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
     public bool SupportsTypedClauses =>
         string.Equals(LanguageVersion, EidosLanguageVersions.Previous, StringComparison.Ordinal) ||
+        string.Equals(LanguageVersion, EidosLanguageVersions.Version08, StringComparison.Ordinal) ||
         string.Equals(LanguageVersion, EidosLanguageVersions.Current, StringComparison.Ordinal);
     public IReadOnlyList<Diagnostic.Diagnostic> Diagnostics => _diagnostics;
     public int Position => _position;

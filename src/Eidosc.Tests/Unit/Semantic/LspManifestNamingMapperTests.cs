@@ -10,7 +10,7 @@ public sealed class LspManifestNamingMapperTests
         const string text = """
 [package]
 name = "Acme.Core"
-version = "0.8.0-alpha.1"
+version = "0.9.0-alpha.1"
 
 [dependencies]
 Raylib = "0.1.0"
@@ -66,7 +66,7 @@ Raylib = "0.1.0"
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.app"
@@ -123,7 +123,7 @@ Raylib = "0.1.0"
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.app"
@@ -183,7 +183,7 @@ Raylib = "0.1.0"
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.app"
@@ -233,7 +233,7 @@ Raylib = "0.1.0"
             sourceRoots = ["src"]
 
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "dev.eidos.app"

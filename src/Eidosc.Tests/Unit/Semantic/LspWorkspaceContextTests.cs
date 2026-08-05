@@ -138,7 +138,7 @@ public sealed class LspWorkspaceContextTests
         Directory.CreateDirectory(Path.Combine(root, "src"));
         File.WriteAllText(
             Path.Combine(root, "eidos.toml"),
-            "manifestSchema = 3\n[language]\nversion = \"0.8.0-alpha.1\"\n");
+            "manifestSchema = 3\n[language]\nversion = \"0.9.0-alpha.1\"\n");
         return root;
     }
 }

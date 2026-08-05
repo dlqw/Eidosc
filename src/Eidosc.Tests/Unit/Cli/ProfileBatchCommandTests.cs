@@ -77,7 +77,7 @@ public sealed class ProfileBatchCommandTests
             projectPath,
             """
             [language]
-            version = "0.8.0-alpha.1"
+            version = "0.9.0-alpha.1"
 
             [package]
             name = "hello-profile-object-groups"

@@ -6,6 +6,7 @@ public static class EidosLanguageVersions
     public const string Version05 = "0.5.0-alpha.1";
     public const string Version06 = "0.6.0-alpha.1";
     public const string Previous = "0.7.0-alpha.1";
+    public const string Version08 = "0.8.0-alpha.1";
     public const string Current = "0.9.0-alpha.1";
 
     public static string DefaultForNewProjects => Current;
@@ -14,7 +15,8 @@ public static class EidosLanguageVersions
 
     public static bool IsSupported(string value)
     {
-        return string.Equals(value, Current, StringComparison.Ordinal);
+        return string.Equals(value, Current, StringComparison.Ordinal) ||
+               string.Equals(value, Version08, StringComparison.Ordinal);
     }
 
     public static bool IsMigrationVersion(string value)
@@ -23,6 +25,7 @@ public static class EidosLanguageVersions
                string.Equals(value, Version05, StringComparison.Ordinal) ||
                string.Equals(value, Version06, StringComparison.Ordinal) ||
                string.Equals(value, Previous, StringComparison.Ordinal) ||
+               string.Equals(value, Version08, StringComparison.Ordinal) ||
                IsSupported(value);
     }
 
