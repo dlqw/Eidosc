@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact Eidosup SemVer from eng/Eidosup.Version.props
+        description: Exact Eidos SemVer from eng/Eidos.Version.props
         required: true
         type: string
-      eidosc_version:
-        description: Published Eidosc version used by the clean-install gate
+      tutorial_commit:
+        description: Exact eidos-tutorial main commit for the same Eidos version
         required: true
         type: string
 
@@ -29,13 +29,13 @@ jobs:
           git merge-base --is-ancestor $env:GITHUB_SHA origin/main
           if ($LASTEXITCODE -ne 0) { throw "Release commit must be reachable from origin/main." }
           $version = "${{ inputs.version }}"
-          [xml]$props = Get-Content -Raw eng/Eidosup.Version.props
-          $prefix = [string]$props.Project.PropertyGroup.EidosupVersionPrefix
-          $suffix = [string]$props.Project.PropertyGroup.EidosupVersionSuffix
+          [xml]$props = Get-Content -Raw eng/Eidos.Version.props
+          $prefix = [string]$props.Project.PropertyGroup.EidosVersionPrefix
+          $suffix = [string]$props.Project.PropertyGroup.EidosVersionSuffix
           $declared = if ($suffix) { "$prefix-$suffix" } else { $prefix }
           if ($declared -ne $version) { throw "Input version $version does not match $declared." }
-          if (-not (Test-Path -LiteralPath "changelogs/eidosup/$version.md" -PathType Leaf)) {
-            throw "Exact release notes are missing: changelogs/eidosup/$version.md"
+          if (-not (Test-Path -LiteralPath "changelogs/$version.md" -PathType Leaf)) {
+            throw "Exact release notes are missing: changelogs/$version.md"
           }
           $existingTag = git ls-remote --tags origin "refs/tags/eidosup-v$version"
           if ($LASTEXITCODE -ne 0) { throw "Failed to query existing tags." }
@@ -146,7 +146,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
+          ref: ${{ inputs.tutorial_commit }}
           path: artifacts/tutorial
           persist-credentials: false
       - uses: actions/download-artifact@v4
@@ -159,7 +159,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Path artifacts/eidosc -Force | Out-Null
-          gh release download "eidosc-v${{ inputs.eidosc_version }}" `
+          gh release download "eidosc-v${{ inputs.version }}" `
             --repo "$env:GITHUB_REPOSITORY" `
             --dir artifacts/eidosc
           if ($LASTEXITCODE -ne 0) { throw "Failed to download the published Eidosc release." }
@@ -170,7 +170,7 @@ jobs:
           $candidate = "artifacts/eidosup/eidosup-v${{ needs.verify-release.outputs.version }}-${{ matrix.rid }}${{ matrix.extension }}"
           if ($env:RUNNER_OS -ne 'Windows') { chmod +x $candidate }
           ./scripts/release/Invoke-EidosupCleanInstall.ps1 `
-            -Version "${{ inputs.eidosc_version }}" `
+            -Version "${{ inputs.version }}" `
             -CommitSha ([string]$metadata.commit) `
             -CandidateDirectory artifacts/eidosc `
             -EidosupPath $candidate `
@@ -200,7 +200,7 @@ jobs:
             -Version "${{ needs.verify-release.outputs.version }}" `
             -CommitSha "$env:GITHUB_SHA" `
             -AssetDirectory artifacts/final `
-            -NotesFile "changelogs/eidosup/${{ needs.verify-release.outputs.version }}.md" `
+            -NotesFile "changelogs/${{ needs.verify-release.outputs.version }}.md" `
             -Repository "$env:GITHUB_REPOSITORY"
 
   published-install:
@@ -225,7 +225,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: dlqw/eidos-tutorial
-          ref: 2482aa447da87580d8d4e8fec413026d621cfbee
+          ref: ${{ inputs.tutorial_commit }}
           path: artifacts/tutorial
           persist-credentials: false
       - name: Download Eidosup anonymously and install published Eidosc
@@ -251,7 +251,7 @@ jobs:
           if ($env:RUNNER_OS -ne 'Windows') { chmod +x $candidate }
           Remove-Item Env:GITHUB_TOKEN, Env:GH_TOKEN -ErrorAction SilentlyContinue
           ./scripts/release/Invoke-EidosupPublishedInstall.ps1 `
-            -Version "${{ inputs.eidosc_version }}" `
+            -Version "${{ inputs.version }}" `
             -EidosupPath $candidate `
             -TutorialExample artifacts/tutorial/examples/29_precompiled_stdlib.eidos `
             -ExpectedRid "${{ matrix.rid }}"
