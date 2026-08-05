@@ -127,70 +127,59 @@ public sealed partial class MirToLlvmConverter
         // 合成 release thunk（对 RC payload 执行 decref）
         var releaseThunk = SynthesizeReleaseThunk(payload);
 
-        // ── 栈分配闭包 buffer ──
-        // Layout: [header(8)] [invoke_fn(8)] [release_fn(8)] [payload_word_count(8)] [payload...]
-        // Total: 32 + payload_count * 8
-        var totalBytes = checked((int)(ClosurePayloadOffset + ComputeClosurePayloadByteSize(payload)));
+        var basePtr = EmitStackClosureValue(
+            invokeThunk,
+            releaseThunk,
+            payload,
+            $"l{allocInfo.TargetLocal.Value}");
+        AssignPlaceFromValue(targetPlace, basePtr);
 
+        return null;
+    }
+
+    private LlvmValue EmitStackClosureValue(
+        LlvmFunction invokeThunk,
+        LlvmFunction? releaseThunk,
+        IReadOnlyList<ClosurePayloadEntry> payload,
+        string namePrefix)
+    {
+        const int allocationHeaderSize = 8;
+        var totalBytes = checked((int)(allocationHeaderSize + ClosurePayloadOffset + ComputeClosurePayloadByteSize(payload)));
         var allocaType = new LlvmArrayType { Element = LlvmIntType.I8, Size = totalBytes };
         var alloca = new LlvmAlloca
         {
             AllocatedType = allocaType,
-            ResultName = _nameMangler.NewTempName($"l{allocInfo.TargetLocal.Value}_closure_stack")
+            ResultName = _nameMangler.NewTempName($"{namePrefix}_closure_stack")
         };
         EmitAllocaInEntryBlock(alloca);
 
-        var allocaRef = new LlvmInstructionRef
-        {
-            Instruction = alloca,
-            Type = new LlvmPointerType { ElementType = allocaType }
-        };
-
-        // Bitcast to ptr (i8*) 以便统一字段访问
-        var rawPtrCast = new LlvmCast
+        var storageCast = new LlvmCast
         {
             Op = WellKnownStrings.InternalNames.Bitcast,
-            Value = allocaRef,
+            Value = new LlvmInstructionRef
+            {
+                Instruction = alloca,
+                Type = new LlvmPointerType { ElementType = allocaType }
+            },
             TargetType = LlvmPointerType.VoidPtr(),
-            ResultName = _nameMangler.NewTempName($"l{allocInfo.TargetLocal.Value}_closure_ptr")
+            ResultName = _nameMangler.NewTempName($"{namePrefix}_closure_storage")
         };
-        _currentBlock!.Instructions.Add(rawPtrCast);
-        var basePtr = new LlvmInstructionRef
-        {
-            Instruction = rawPtrCast,
-            Type = LlvmPointerType.VoidPtr()
-        };
+        _currentBlock!.Instructions.Add(storageCast);
 
-        // 存储 invoke_fn at offset 8（跳过 header）
         var invokeBitcast = new LlvmCast
         {
             Op = WellKnownStrings.InternalNames.Bitcast,
             Value = new LlvmGlobal
             {
                 Name = invokeThunk.Name,
-                Type = new LlvmPointerType
-                {
-                    ElementType = BuildFunctionTypeFromLlvmFunction(invokeThunk)
-                }
+                Type = new LlvmPointerType { ElementType = BuildFunctionTypeFromLlvmFunction(invokeThunk) }
             },
             TargetType = LlvmPointerType.VoidPtr(),
             ResultName = _nameMangler.NewTempName("stack_closure_invoke_ptr")
         };
-        _currentBlock!.Instructions.Add(invokeBitcast);
-        var invokePtrValue = new LlvmInstructionRef
-        {
-            Instruction = invokeBitcast,
-            Type = LlvmPointerType.VoidPtr()
-        };
-        var invokeFieldPtr = EmitClosureFieldPointer(basePtr, ClosureInvokeOffset, "stack_invoke_field");
-        _currentBlock!.Instructions.Add(new LlvmStore
-        {
-            Value = invokePtrValue,
-            Pointer = invokeFieldPtr
-        });
+        _currentBlock.Instructions.Add(invokeBitcast);
 
-        // 存储 release_fn at offset 16（null 或 thunk bitcast）
-        var releaseFieldPtr = EmitClosureFieldPointer(basePtr, ClosureReleaseOffset, "stack_release_field");
+        LlvmValue releaseValue = LlvmNullPointer.Instance;
         if (releaseThunk != null)
         {
             var releaseBitcast = new LlvmCast
@@ -211,56 +200,52 @@ public sealed partial class MirToLlvmConverter
                 TargetType = LlvmPointerType.VoidPtr(),
                 ResultName = _nameMangler.NewTempName("stack_closure_release_ptr")
             };
-            _currentBlock!.Instructions.Add(releaseBitcast);
-            var releasePtrValue = new LlvmInstructionRef
+            _currentBlock.Instructions.Add(releaseBitcast);
+            releaseValue = new LlvmInstructionRef
             {
                 Instruction = releaseBitcast,
                 Type = LlvmPointerType.VoidPtr()
             };
-            _currentBlock!.Instructions.Add(new LlvmStore
-            {
-                Value = releasePtrValue,
-                Pointer = releaseFieldPtr
-            });
-        }
-        else
-        {
-            _currentBlock!.Instructions.Add(new LlvmStore
-            {
-                Value = LlvmNullPointer.Instance,
-                Pointer = releaseFieldPtr
-            });
         }
 
-        // 存储 payload_word_count at offset 24
-        var countFieldPtr = EmitClosureFieldPointer(basePtr, ClosurePayloadWordCountOffset, "stack_count_field");
-        _currentBlock!.Instructions.Add(new LlvmStore
+        var initialize = new LlvmCall
         {
-            Value = new LlvmConstant { Value = ComputeClosurePayloadWordCount(payload), Type = LlvmIntType.I64 },
-            Pointer = countFieldPtr
-        });
+            Function = CreateRuntimeFunctionGlobal(
+                WellKnownStrings.Runtime.ClosureInitStack,
+                LlvmPointerType.VoidPtr(),
+                [LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64]),
+            Arguments =
+            [
+                new LlvmInstructionRef { Instruction = storageCast, Type = LlvmPointerType.VoidPtr() },
+                new LlvmConstant { Value = totalBytes, Type = LlvmIntType.I64 },
+                new LlvmInstructionRef { Instruction = invokeBitcast, Type = LlvmPointerType.VoidPtr() },
+                releaseValue,
+                new LlvmConstant { Value = ComputeClosurePayloadWordCount(payload), Type = LlvmIntType.I64 }
+            ],
+            ReturnType = LlvmPointerType.VoidPtr(),
+            ResultName = _nameMangler.NewTempName($"{namePrefix}_closure_ptr")
+        };
+        _currentBlock.Instructions.Add(initialize);
+        var closureValue = new LlvmInstructionRef
+        {
+            Instruction = initialize,
+            Type = LlvmPointerType.VoidPtr()
+        };
 
-        // 存储捕获值到 payload 区域（offset 32 + i*8）
-        // 栈提升闭包跳过 incref：闭包不逃逸，其捕获值的生命周期由包含函数管理。
-        // ConvertDrop 也跳过栈提升值的 decref，保持 incref/decref 对称。
         for (var index = 0; index < payload.Count; index++)
         {
             var entry = payload[index];
-
             var slotPtr = EmitClosureFieldPointer(
-                basePtr,
+                closureValue,
                 ClosurePayloadOffset + entry.Offset,
                 $"stack_closure_slot_{index}");
-            _currentBlock!.Instructions.Add(new LlvmStore
+            _currentBlock.Instructions.Add(new LlvmStore
             {
                 Value = CoerceValueToType(entry.Value, entry.Type, $"stack_closure_payload_{index}"),
                 Pointer = slotPtr
             });
         }
 
-        // 将 alloca 指针赋值给目标 local（作为 void ptr，与标准闭包路径一致）
-        AssignPlaceFromValue(targetPlace, basePtr);
-
-        return null;
+        return closureValue;
     }
 }

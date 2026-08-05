@@ -354,6 +354,7 @@ public static class WellKnownStrings
 
         // Closure
         public const string ClosureNew = "eidos_closure_new";
+        public const string ClosureInitStack = "eidos_closure_init_stack";
 
         // Destructor
         public const string RegisterDestructor = "eidos_register_destructor";

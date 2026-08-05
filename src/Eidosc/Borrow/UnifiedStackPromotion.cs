@@ -31,6 +31,11 @@ public sealed record UnifiedStackAllocInfo(
     public List<TypeId>? CapturedTypeIds { get; init; }
 }
 
+public readonly record struct UnifiedFunctionArgumentClosureSite(
+    BlockId Block,
+    int InstructionIndex,
+    int ArgumentIndex);
+
 /// <summary>
 /// 统一栈提升提示。
 /// </summary>
@@ -38,4 +43,5 @@ public sealed class UnifiedStackPromotionHints
 {
     public Dictionary<LocalId, UnifiedStackAllocInfo> AllocInfoByLocal { get; } = [];
     public HashSet<LocalId> PromotedLocals { get; } = [];
+    public HashSet<UnifiedFunctionArgumentClosureSite> FunctionArgumentClosureSites { get; } = [];
 }

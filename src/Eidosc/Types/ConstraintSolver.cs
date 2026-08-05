@@ -22,6 +22,8 @@ public sealed class ConstraintSolver
     private readonly List<EidoscDiagnostic> _diagnostics = [];
     private readonly Dictionary<TraitCheckCacheKey, TraitCheckCacheEntry> _traitCheckCache = [];
     private readonly Dictionary<TraitCheckCacheKey, TraitCheckCacheEntry> _previousTraitCheckCache = [];
+    private readonly Dictionary<PreludeInstanceResolutionKey, PreludeInstanceResolution> _preludeInstanceResolutions = [];
+    private static readonly PreludeInstanceResolution NoPreludeInstance = new([], [], null);
     private long _traitCheckCacheHits;
     private long _traitCheckCacheMisses;
     private long _traitCheckCacheSkipped;
@@ -30,6 +32,16 @@ public sealed class ConstraintSolver
     private long _traitCheckPreviousCacheRestoreHits;
     private long _traitCheckPreviousCacheValidatedHits;
     private long _traitCheckPreviousCacheStaleHits;
+    private long _preludeInstanceResolutionCacheHits;
+    private long _preludeInstanceResolutionCacheMisses;
+    private long _preludeInstanceResolutionSkips;
+    private long _preludeInstanceCandidateChecks;
+    private readonly Dictionary<string, ObligationResult> _obligationTable = new(StringComparer.Ordinal);
+    private long _obligationRootGoals;
+    private long _obligationTableHits;
+    private long _obligationTableMisses;
+    private long _obligationDeferredGoals;
+    private int _obligationDepth;
 
     private readonly record struct TraitCheckCacheKey(
         string TypeKey,
@@ -42,6 +54,19 @@ public sealed class ConstraintSolver
         bool Success,
         string? ErrorMessage,
         string CandidateSetFingerprint);
+
+    private readonly record struct PreludeInstanceResolutionKey(
+        string TraitName,
+        ImplTypeRefKey TypeKey);
+
+    private sealed record PreludeInstanceResolution(
+        IReadOnlyList<PrecompiledInstanceCandidate> Candidates,
+        IReadOnlyList<PrecompiledInstanceCandidate> ApplicableCandidates,
+        string? ErrorMessage)
+    {
+        public PrecompiledInstanceCandidate? Selected =>
+            ApplicableCandidates.Count == 1 ? ApplicableCandidates[0] : null;
+    }
 
     private readonly record struct TraitConstraintLookupRequest(
         TypeId TypeId,
@@ -69,6 +94,8 @@ public sealed class ConstraintSolver
 
     public int SuppressedConstraintCount { get; private set; }
 
+    public IReadOnlyCollection<ObligationResult> ObligationResults => _obligationTable.Values;
+
     public IReadOnlyDictionary<string, long> GetProfilingCounters()
     {
         return new Dictionary<string, long>(StringComparer.Ordinal)
@@ -82,7 +109,17 @@ public sealed class ConstraintSolver
             ["Types.traitCheckPreviousCache.misses"] = _traitCheckPreviousCacheMisses,
             ["Types.traitCheckPreviousCache.restoreHits"] = _traitCheckPreviousCacheRestoreHits,
             ["Types.traitCheckPreviousCache.validatedHits"] = _traitCheckPreviousCacheValidatedHits,
-            ["Types.traitCheckPreviousCache.staleHits"] = _traitCheckPreviousCacheStaleHits
+            ["Types.traitCheckPreviousCache.staleHits"] = _traitCheckPreviousCacheStaleHits,
+            ["Types.preludeInstanceResolution.entries"] = _preludeInstanceResolutions.Count,
+            ["Types.preludeInstanceResolution.cacheHits"] = _preludeInstanceResolutionCacheHits,
+            ["Types.preludeInstanceResolution.cacheMisses"] = _preludeInstanceResolutionCacheMisses,
+            ["Types.preludeInstanceResolution.skips"] = _preludeInstanceResolutionSkips,
+            ["Types.preludeInstanceResolution.candidateChecks"] = _preludeInstanceCandidateChecks,
+            ["Types.obligations.rootGoals"] = _obligationRootGoals,
+            ["Types.obligations.tableEntries"] = _obligationTable.Count,
+            ["Types.obligations.tableHits"] = _obligationTableHits,
+            ["Types.obligations.tableMisses"] = _obligationTableMisses,
+            ["Types.obligations.deferredGoals"] = _obligationDeferredGoals
         };
     }
 
@@ -134,6 +171,17 @@ public sealed class ConstraintSolver
         _traitCheckPreviousCacheRestoreHits = 0;
         _traitCheckPreviousCacheValidatedHits = 0;
         _traitCheckPreviousCacheStaleHits = 0;
+        _preludeInstanceResolutions.Clear();
+        _preludeInstanceResolutionCacheHits = 0;
+        _preludeInstanceResolutionCacheMisses = 0;
+        _preludeInstanceResolutionSkips = 0;
+        _preludeInstanceCandidateChecks = 0;
+        _obligationTable.Clear();
+        _obligationRootGoals = 0;
+        _obligationTableHits = 0;
+        _obligationTableMisses = 0;
+        _obligationDeferredGoals = 0;
+        _obligationDepth = 0;
         _recoveryContext.Reset();
         AnalysisIncomplete = false;
         IncompleteReason = null;
@@ -191,9 +239,17 @@ public sealed class ConstraintSolver
     /// <returns>是否所有约束都满足</returns>
     public bool Solve(ConstraintSet constraints)
     {
+        _obligationTable.Clear();
+        _obligationRootGoals = constraints.Constraints.Count + constraints.Goals.Count;
+        _obligationTableHits = 0;
+        _obligationTableMisses = 0;
+        _obligationDeferredGoals = 0;
         var success = true;
+        var worklist = new Queue<ObligationGoal>(
+            constraints.Constraints.Select(ObligationGoalAdapter.FromConstraint).Concat(constraints.Goals));
+        const int maximumRootGoals = 100_000;
+        var processedGoals = 0;
 
-        // Phase 1: 线性处理所有约束
         for (var i = 0; i < constraints.Constraints.Count; i++)
         {
             var constraint = constraints.Constraints[i];
@@ -207,53 +263,458 @@ public sealed class ConstraintSolver
                 AddError(constraint.Span, IncompleteReason);
                 break;
             }
+        }
 
-            if (!SolveConstraint(constraint))
+        while (worklist.Count > 0)
+        {
+            var goal = worklist.Dequeue();
+            processedGoals++;
+            if (processedGoals > maximumRootGoals)
+            {
+                AnalysisIncomplete = true;
+                IncompleteReason = $"Obligation solver exceeded its {maximumRootGoals} root-goal budget.";
+                AddError(goal.Span, IncompleteReason);
+                success = false;
+                break;
+            }
+
+            var key = ObligationCanonicalizer.Build(goal, _substitution);
+            if (_obligationTable.TryGetValue(key, out var cached))
+            {
+                _obligationTableHits++;
+                if (cached.State is ObligationState.Failed or ObligationState.Overflow)
+                {
+                    success = false;
+                }
+
+                continue;
+            }
+
+            _obligationTableMisses++;
+            _obligationTable[key] = new ObligationResult(
+                key,
+                goal,
+                ObligationState.Evaluating,
+                null,
+                null);
+            var result = SolveGoal(goal, key);
+            _obligationTable[key] = result;
+            if (result.State is ObligationState.Failed or ObligationState.Overflow)
             {
                 success = false;
             }
         }
 
-        // Phase 2: 不动点迭代 — 解析因后续 unification 而可检查的延迟约束
-        if (!ResolveDeferredConstraintsFixpoint())
+        if (!ResolveDeferredConstraintsWorklist())
         {
             success = false;
+        }
+
+        foreach (var (key, pending) in _obligationTable
+                     .Where(static entry => entry.Value.State == ObligationState.Ambiguous)
+                     .ToArray())
+        {
+            if (pending.Goal is not ImplementsGoal trait ||
+                _substitution.Apply(trait.Type) is TyVar)
+            {
+                continue;
+            }
+
+            var resolvedKey = ObligationCanonicalizer.Build(pending.Goal, _substitution);
+            var resolved = SolveGoal(pending.Goal, resolvedKey);
+            _obligationTable[key] = resolved with { CanonicalKey = key };
+            if (resolved.State is ObligationState.Failed or ObligationState.Overflow)
+            {
+                success = false;
+            }
         }
 
         return success;
     }
 
-    /// <summary>
-    /// 反复尝试解析延迟的 Trait 约束，直到没有新的约束可以被解析。
-    /// 这处理了主循环中 EqualityConstraint 绑定类型变量后、
-    /// 先前延迟的 TraitConstraint 现在可以检查的情况。
-    /// </summary>
-    private bool ResolveDeferredConstraintsFixpoint()
+    private ObligationResult SolveGoal(ObligationGoal goal, string canonicalKey)
+    {
+        var diagnosticCount = _diagnostics.Count;
+        return goal switch
+        {
+            EqualGoal equality => SolveEqualityGoal(equality, canonicalKey, diagnosticCount),
+            ImplementsGoal trait => SolveImplementsGoal(trait, canonicalKey, diagnosticCount),
+            HasKindGoal kind => SolveKindGoal(kind, canonicalKey, diagnosticCount),
+            EffectSubsetGoal effect => SolveEffectSubsetGoal(effect, canonicalKey),
+            NormalizeProjectionGoal projection => SolveNormalizeProjectionGoal(projection, canonicalKey),
+            AllGoal all => SolveAllGoal(all, canonicalKey),
+            _ => throw new ArgumentOutOfRangeException(nameof(goal), goal, "Unsupported obligation goal.")
+        };
+    }
+
+    private ObligationResult SolveAllGoal(AllGoal goal, string canonicalKey)
+    {
+        var evidence = new List<ObligationEvidence>(goal.Goals.Count);
+        var blockers = new List<string>();
+        foreach (var child in goal.Goals)
+        {
+            var result = SolveNestedGoal(child);
+            if (result.State is ObligationState.Failed or ObligationState.Overflow)
+            {
+                return new ObligationResult(
+                    canonicalKey,
+                    goal,
+                    result.State,
+                    null,
+                    result.Explanation ?? $"Child obligation '{result.CanonicalKey}' failed.");
+            }
+
+            if (result.State != ObligationState.Proven || result.Evidence == null)
+            {
+                blockers.Add(result.Explanation ?? result.CanonicalKey);
+                continue;
+            }
+
+            evidence.Add(result.Evidence);
+        }
+
+        if (blockers.Count > 0)
+        {
+            _obligationDeferredGoals++;
+            return new ObligationResult(
+                canonicalKey,
+                goal,
+                ObligationState.Ambiguous,
+                new DeferredObligationEvidence(string.Join("; ", blockers)),
+                string.Join("; ", blockers));
+        }
+
+        return new ObligationResult(
+            canonicalKey,
+            goal,
+            ObligationState.Proven,
+            new AllObligationEvidence(evidence),
+            null);
+    }
+
+    private ObligationResult SolveNestedGoal(ObligationGoal goal)
+    {
+        const int maximumDepth = 256;
+        var key = ObligationCanonicalizer.Build(goal, _substitution);
+        if (_obligationTable.TryGetValue(key, out var cached))
+        {
+            _obligationTableHits++;
+            return cached.State == ObligationState.Evaluating
+                ? cached with
+                {
+                    State = ObligationState.Ambiguous,
+                    Evidence = new DeferredObligationEvidence($"obligation cycle at '{key}'"),
+                    Explanation = $"Obligation cycle detected at '{key}'."
+                }
+                : cached;
+        }
+
+        _obligationTableMisses++;
+        if (++_obligationDepth > maximumDepth)
+        {
+            _obligationDepth--;
+            return new ObligationResult(
+                key,
+                goal,
+                ObligationState.Overflow,
+                null,
+                $"Obligation solver exceeded its depth budget of {maximumDepth}.");
+        }
+
+        _obligationTable[key] = new ObligationResult(key, goal, ObligationState.Evaluating, null, null);
+        try
+        {
+            var result = SolveGoal(goal, key);
+            _obligationTable[key] = result;
+            return result;
+        }
+        finally
+        {
+            _obligationDepth--;
+        }
+    }
+
+    private ObligationResult SolveEffectSubsetGoal(EffectSubsetGoal goal, string canonicalKey)
+    {
+        var required = _substitution.ApplyEffectSubstitution(goal.Required);
+        var allowed = _substitution.ApplyEffectSubstitution(goal.Allowed);
+        var missingEffects = required.Effects
+            .Where(effect => !allowed.Effects.Any(candidate => EffectsEquivalent(candidate, effect)))
+            .ToArray();
+        var uncoveredVariables = required.Variables.Except(allowed.Variables).ToArray();
+
+        if ((missingEffects.Length > 0 || uncoveredVariables.Length > 0) &&
+            allowed.Variables.Count == 1)
+        {
+            var openAllowed = allowed.Variables.Single();
+            _substitution.TryBindEffectVariable(
+                openAllowed,
+                new EffectRow(missingEffects, uncoveredVariables));
+            required = _substitution.ApplyEffectSubstitution(required);
+            allowed = _substitution.ApplyEffectSubstitution(allowed);
+            missingEffects = required.Effects
+                .Where(effect => !allowed.Effects.Any(candidate => EffectsEquivalent(candidate, effect)))
+                .ToArray();
+            uncoveredVariables = required.Variables.Except(allowed.Variables).ToArray();
+        }
+
+        if (missingEffects.Length == 0 && uncoveredVariables.Length == 0)
+        {
+            return new ObligationResult(
+                canonicalKey,
+                goal,
+                ObligationState.Proven,
+                new EffectInclusionObligationEvidence(
+                    required,
+                    allowed,
+                    new Dictionary<int, EffectRow>(_substitution.GetEffectBindings())),
+                null);
+        }
+
+        if (uncoveredVariables.Length > 0 || allowed.Variables.Count > 0)
+        {
+            _obligationDeferredGoals++;
+            var blocker = $"effect inclusion depends on open rows: required {required}, allowed {allowed}";
+            return new ObligationResult(
+                canonicalKey,
+                goal,
+                ObligationState.Ambiguous,
+                new DeferredObligationEvidence(blocker),
+                blocker);
+        }
+
+        var explanation = $"Required effects {required} are not a subset of allowed effects {allowed}.";
+        AddError(goal.Span, explanation);
+        return new ObligationResult(
+            canonicalKey,
+            goal,
+            ObligationState.Failed,
+            null,
+            explanation);
+    }
+
+    private static bool EffectsEquivalent(EffectTag left, EffectTag right)
+    {
+        if (string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+            (string.Equals(left.Name, WellKnownStrings.BuiltinAbilities.IO, StringComparison.Ordinal) ||
+             string.Equals(left.Name, WellKnownStrings.BuiltinAbilities.FFI, StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        if (left.Symbol.IsValid || right.Symbol.IsValid)
+        {
+            return left.Symbol.IsValid && right.Symbol.IsValid &&
+                   left.Symbol == right.Symbol;
+        }
+
+        return string.Equals(left.Name, right.Name, StringComparison.Ordinal);
+    }
+
+    private ObligationResult SolveNormalizeProjectionGoal(
+        NormalizeProjectionGoal goal,
+        string canonicalKey)
+    {
+        if (goal.NormalizedType == null)
+        {
+            _obligationDeferredGoals++;
+            var blocker = $"associated projection '{goal.ProjectionIdentity}' has no unique normalization evidence";
+            return new ObligationResult(
+                canonicalKey,
+                goal,
+                ObligationState.Ambiguous,
+                new DeferredObligationEvidence(blocker),
+                blocker);
+        }
+
+        var equality = SolveNestedGoal(new EqualGoal
+        {
+            Left = goal.NormalizedType,
+            Right = goal.ExpectedType,
+            Span = goal.Span,
+            Reason = $"normalized associated projection '{goal.ProjectionIdentity}'"
+        });
+        if (equality.State != ObligationState.Proven || equality.Evidence == null)
+        {
+            return new ObligationResult(
+                canonicalKey,
+                goal,
+                equality.State,
+                null,
+                equality.Explanation);
+        }
+
+        return new ObligationResult(
+            canonicalKey,
+            goal,
+            ObligationState.Proven,
+            new ProjectionObligationEvidence(
+                goal.ProjectionIdentity,
+                goal.Instance,
+                goal.Member,
+                _substitution.Apply(goal.NormalizedType),
+                equality.Evidence),
+            null);
+    }
+
+    private ObligationResult SolveEqualityGoal(EqualGoal goal, string canonicalKey, int diagnosticCount)
+    {
+        var constraint = new EqualityConstraint
+        {
+            Left = goal.Left,
+            Right = goal.Right,
+            Span = goal.Span
+        };
+        var solved = SolveEqualityConstraint(constraint);
+        var left = _substitution.Apply(goal.Left);
+        var right = _substitution.Apply(goal.Right);
+        return new ObligationResult(
+            canonicalKey,
+            goal,
+            solved ? ObligationState.Proven : ObligationState.Failed,
+            solved ? new EqualityObligationEvidence(left, right) : null,
+            GetNewDiagnosticMessage(diagnosticCount));
+    }
+
+    private ObligationResult SolveImplementsGoal(ImplementsGoal goal, string canonicalKey, int diagnosticCount)
+    {
+        var constraint = new TraitConstraint
+        {
+            Type = goal.Type,
+            Trait = goal.Trait,
+            TraitName = goal.TraitName,
+            TraitArgs = goal.TraitArgs,
+            TraitArgKeys = goal.TraitArgKeys,
+            Span = goal.Span
+        };
+        var solved = SolveTraitConstraint(constraint);
+        var appliedType = _substitution.Apply(goal.Type);
+        if (solved && appliedType is TyVar variable)
+        {
+            _obligationDeferredGoals++;
+            return new ObligationResult(
+                canonicalKey,
+                goal,
+                ObligationState.Ambiguous,
+                new DeferredObligationEvidence($"type variable 't{variable.Index} is unresolved"),
+                null);
+        }
+
+        return new ObligationResult(
+            canonicalKey,
+            goal,
+            solved ? ObligationState.Proven : ObligationState.Failed,
+            solved ? CreateTraitEvidence(goal, appliedType) : null,
+            GetNewDiagnosticMessage(diagnosticCount));
+    }
+
+    private ObligationResult SolveKindGoal(HasKindGoal goal, string canonicalKey, int diagnosticCount)
+    {
+        var constraint = new KindConstraint
+        {
+            Type = goal.Type,
+            ExpectedKind = goal.ExpectedKind,
+            Span = goal.Span
+        };
+        var solved = SolveKindConstraint(constraint);
+        return new ObligationResult(
+            canonicalKey,
+            goal,
+            solved ? ObligationState.Proven : ObligationState.Failed,
+            solved ? new KindObligationEvidence(_substitution.Apply(goal.Type), goal.ExpectedKind) : null,
+            GetNewDiagnosticMessage(diagnosticCount));
+    }
+
+    private string? GetNewDiagnosticMessage(int diagnosticCount) =>
+        _diagnostics.Count > diagnosticCount ? _diagnostics[^1].Message : null;
+
+    private TraitObligationEvidence CreateTraitEvidence(ImplementsGoal goal, Type appliedType)
+    {
+        var traitName = string.IsNullOrWhiteSpace(goal.TraitName)
+            ? GetTraitName(goal.Trait)
+            : goal.TraitName;
+        var traitId = ResolveTraitId(goal.Trait, traitName);
+        var instanceId = SymbolId.None;
+        var instanceIdentity = string.Empty;
+        var isBuiltin = appliedType is TyCon builtin &&
+                        BuiltinTraits.IsBuiltinType(builtin) &&
+                        BuiltinTraits.HasTrait(builtin, traitName);
+        var isSupertrait = false;
+
+        if (!isBuiltin && appliedType is TyCon constructor)
+        {
+            instanceIdentity = ResolvePreludeInstance(traitName, constructor).Selected?.Identity ?? string.Empty;
+            var lookup = CreateTraitConstraintLookupRequest(constructor, GetTraitConstraintArgKeys(new TraitConstraint
+            {
+                Type = goal.Type,
+                Trait = goal.Trait,
+                TraitName = goal.TraitName,
+                TraitArgs = goal.TraitArgs,
+                TraitArgKeys = goal.TraitArgKeys,
+                Span = goal.Span
+            }));
+            if (lookup.TypeId.IsValid && traitId.IsValid)
+            {
+                var direct = _symbolTable.LookupImplForTraitByKeys(
+                    lookup.TypeId,
+                    traitId,
+                    lookup.ImplementingTypeKey,
+                    lookup.TraitArgKeys);
+                if (direct != null)
+                {
+                    instanceId = direct.Id;
+                    instanceIdentity = direct.Name;
+                }
+                else if (TryGetProductCaseRootType(constructor, out var productRoot) &&
+                         TryLookupDirectTraitImpl(productRoot, traitId, lookup.TraitArgKeys, out var productDirect) &&
+                         productDirect != null)
+                {
+                    instanceId = productDirect.Id;
+                    instanceIdentity = productDirect.Name;
+                }
+                else if (TryFindImplViaSupertraitChain(
+                             lookup.TypeId,
+                             lookup.ImplementingTypeKey,
+                             traitId,
+                             out var inherited) &&
+                         inherited != null)
+                {
+                    instanceId = inherited.Id;
+                    instanceIdentity = inherited.Name;
+                    isSupertrait = true;
+                }
+            }
+        }
+
+        return new TraitObligationEvidence(
+            appliedType,
+            traitId,
+            traitName,
+            instanceId,
+            instanceIdentity,
+            isBuiltin,
+            isSupertrait);
+    }
+
+    private bool ResolveDeferredConstraintsWorklist()
     {
         var diagnosticCountBefore = _diagnostics.Count;
 
         if (_substitution.DeferredTraitConstraints.Count == 0)
             return true;
 
-        const int maxIterations = 32;
-        var prevCount = -1;
-
-        for (var iteration = 0; iteration < maxIterations; iteration++)
+        var queued = new HashSet<int>(_substitution.DeferredTraitConstraints.Keys);
+        var worklist = new Queue<int>(queued);
+        while (worklist.Count > 0)
         {
-            var currentCount = _substitution.DeferredTraitConstraints.Count;
-            if (currentCount == 0 || currentCount == prevCount)
-                break; // 不动点到达或全部解析完毕
-
-            prevCount = currentCount;
-
-            // 快照当前延迟变量索引（ApplyVar 可能修改字典）
-            var deferredVars = _substitution.DeferredTraitConstraints.Keys.ToArray();
-
-            foreach (var varIndex in deferredVars)
+            var variable = worklist.Dequeue();
+            _substitution.Apply(new TyVar { Index = variable });
+            foreach (var discovered in _substitution.DeferredTraitConstraints.Keys)
             {
-                // Apply 会触发 ApplyVar 中的延迟约束检查：
-                // 若变量解析为具体类型，延迟约束将被移除并检查
-                _substitution.Apply(new TyVar { Index = varIndex });
+                if (queued.Add(discovered))
+                {
+                    worklist.Enqueue(discovered);
+                }
             }
         }
 
@@ -391,6 +852,18 @@ public sealed class ConstraintSolver
             return true;
         }
 
+        var preludeResolution = ResolvePreludeInstance(traitName, con);
+        if (preludeResolution.Selected != null)
+        {
+            return true;
+        }
+
+        if (preludeResolution.ApplicableCandidates.Count > 1)
+        {
+            errorMessage = preludeResolution.ErrorMessage;
+            return false;
+        }
+
         // 检查用户定义类型（按 concrete head + TraitId）
         var lookupRequest = CreateTraitConstraintLookupRequest(con, traitArgKeys);
         if (lookupRequest.TypeId.IsValid &&
@@ -407,6 +880,14 @@ public sealed class ConstraintSolver
             }
         }
 
+        if (TryGetProductCaseRootType(con, out var productRoot) &&
+            TryLookupDirectTraitImpl(productRoot, traitId, traitArgKeys, out var productImpl) &&
+            productImpl != null &&
+            CheckImplTypeRequirements(con, productImpl, out errorMessage))
+        {
+            return true;
+        }
+
         // Supertrait chain fallback: if no direct impl found for the requested trait,
         // check if there is an impl for a child trait that extends this trait.
         // E.g., if checking Eq and no Eq instance exists, but an Ord instance does and Ord: Eq, accept it.
@@ -420,29 +901,135 @@ public sealed class ConstraintSolver
             return true;
         }
 
-        // Closed-case fallback: values of a single-constructor ADT built through
-        // its case type (e.g. `Point:: type(Int)`) carry the case identity, while
-        // trait instances are declared on the root ADT type. Resolve the parent
-        // ADT and retry the lookup against the root type.
-        if (con.Symbol.IsValid &&
-            _symbolTable.GetSymbol<AdtSymbol>(con.Symbol) is { } caseSymbol &&
-            caseSymbol.ParentAdt.IsValid &&
-            _symbolTable.GetSymbol<AdtSymbol>(caseSymbol.ParentAdt) is { } rootSymbol &&
-            rootSymbol.TypeId.IsValid &&
-            rootSymbol.TypeId != lookupRequest.TypeId &&
-            _symbolTable.LookupImplForTraitByKeys(
-                rootSymbol.TypeId,
-                traitId,
-                lookupRequest.TraitArgKeys) is { } rootImpl)
+        errorMessage ??= DiagnosticMessages.TypeDoesNotImplementTrait(con.Name, traitName);
+        return false;
+    }
+
+    private bool TryLookupDirectTraitImpl(
+        TyCon implementingType,
+        SymbolId traitId,
+        IReadOnlyList<ImplTypeRefKey> traitArgKeys,
+        out ImplSymbol? implementation)
+    {
+        implementation = null;
+        var lookup = CreateTraitConstraintLookupRequest(implementingType, traitArgKeys);
+        if (!lookup.TypeId.IsValid || !traitId.IsValid)
         {
-            if (CheckImplTypeRequirements(con, rootImpl, out errorMessage))
+            return false;
+        }
+
+        implementation = _symbolTable.LookupImplForTraitByKeys(
+            lookup.TypeId,
+            traitId,
+            lookup.ImplementingTypeKey,
+            lookup.TraitArgKeys);
+        return implementation != null;
+    }
+
+    private bool TryGetProductCaseRootType(TyCon source, out TyCon rootType)
+    {
+        rootType = source;
+        if (!source.Symbol.IsValid ||
+            _symbolTable.GetSymbol<AdtSymbol>(source.Symbol) is not { IsCaseType: true } caseSymbol ||
+            _symbolTable.GetSymbol<AdtSymbol>(caseSymbol.ParentAdt) is not { } rootSymbol ||
+            !string.Equals(caseSymbol.Name, rootSymbol.Name, StringComparison.Ordinal) ||
+            !rootSymbol.TypeId.IsValid)
+        {
+            return false;
+        }
+
+        var parameterIds = _symbolTable.GetClosedCaseEffectiveGenericParameterIds(rootSymbol.Id);
+        var typeParameterCount = parameterIds.Count(parameterId =>
+            _symbolTable.GetSymbol<TypeParamSymbol>(parameterId)?.ParameterKind == GenericParameterKind.Type);
+        if (source.Args.Count < typeParameterCount)
+        {
+            return false;
+        }
+
+        rootType = source with
+        {
+            Name = rootSymbol.Name,
+            Symbol = rootSymbol.Id,
+            Id = rootSymbol.TypeId,
+            Args = source.Args.Take(typeParameterCount).ToList(),
+            ValueArgs = source.ValueArgs
+                .Where(argument => argument.ParameterIndex >= 0 && argument.ParameterIndex < parameterIds.Count)
+                .ToList(),
+            EffectArgs = source.EffectArgs
+                .Where(argument => argument.ParameterIndex >= 0 && argument.ParameterIndex < parameterIds.Count)
+                .ToList()
+        };
+        return true;
+    }
+
+    private PreludeInstanceResolution ResolvePreludeInstance(string traitName, TyCon type)
+    {
+        if (!PreludeCoreImageRegistry.HasPotentialInstanceCandidate(traitName, type))
+        {
+            _preludeInstanceResolutionSkips++;
+            return NoPreludeInstance;
+        }
+
+        var isCacheable = !ContainsTypeVariable(type);
+        var key = new PreludeInstanceResolutionKey(
+            traitName,
+            ImplLookupCanonicalizer.BuildTypeRefKey(_symbolTable, type));
+        if (isCacheable && _preludeInstanceResolutions.TryGetValue(key, out var cached))
+        {
+            _preludeInstanceResolutionCacheHits++;
+            return cached;
+        }
+
+        _preludeInstanceResolutionCacheMisses++;
+        var candidates = PreludeCoreImageRegistry.GetResolvedInstanceCandidates(traitName, type);
+        List<PrecompiledInstanceCandidate>? applicable = null;
+        foreach (var candidate in candidates)
+        {
+            _preludeInstanceCandidateChecks++;
+            if (ArePreludeInstanceRequirementsSatisfied(candidate, out _))
             {
-                return true;
+                applicable ??= new List<PrecompiledInstanceCandidate>();
+                applicable.Add(candidate);
             }
         }
 
-        errorMessage ??= DiagnosticMessages.TypeDoesNotImplementTrait(con.Name, traitName);
-        return false;
+        var applicableCandidates = applicable?.ToArray() ?? [];
+        var errorMessage = applicableCandidates.Length > 1
+            ? $"Type '{type}' has ambiguous Prelude instances for trait '{traitName}': {string.Join(", ", applicableCandidates.Select(static candidate => candidate.Identity))}"
+            : null;
+        var resolved = new PreludeInstanceResolution(candidates, applicableCandidates, errorMessage);
+        if (isCacheable)
+        {
+            _preludeInstanceResolutions[key] = resolved;
+        }
+
+        return resolved;
+    }
+
+    private bool ArePreludeInstanceRequirementsSatisfied(
+        PrecompiledInstanceCandidate candidate,
+        out string? errorMessage)
+    {
+        foreach (var requirement in candidate.Requirements)
+        {
+            var traitId = ResolveTraitId(SymbolId.None, requirement.TraitName);
+            var traitArguments = requirement.TraitArguments
+                .Select(argument => _substitution.Apply(argument).ToString() ?? argument.GetType().Name)
+                .ToArray();
+            if (!CheckTraitCached(
+                    _substitution.Apply(requirement.Type),
+                    traitId,
+                    requirement.TraitName,
+                    traitArguments,
+                    [],
+                    out errorMessage))
+            {
+                return false;
+            }
+        }
+
+        errorMessage = null;
+        return true;
     }
 
     /// <summary>
@@ -661,7 +1248,7 @@ public sealed class ConstraintSolver
         if (_previousTraitCheckCache.TryGetValue(key, out var previousCached))
         {
             _traitCheckPreviousCacheHits++;
-            var currentFingerprint = CreateTraitCheckCandidateSetFingerprint(type, traitId, traitArgKeys);
+            var currentFingerprint = CreateTraitCheckCandidateSetFingerprint(type, traitId, traitName, traitArgKeys);
             if (string.Equals(previousCached.CandidateSetFingerprint, currentFingerprint, StringComparison.Ordinal))
             {
                 _traitCheckPreviousCacheRestoreHits++;
@@ -683,13 +1270,14 @@ public sealed class ConstraintSolver
         _traitCheckCache[key] = new TraitCheckCacheEntry(
             success,
             errorMessage,
-            CreateTraitCheckCandidateSetFingerprint(type, traitId, traitArgKeys));
+            CreateTraitCheckCandidateSetFingerprint(type, traitId, traitName, traitArgKeys));
         return success;
     }
 
     private string CreateTraitCheckCandidateSetFingerprint(
         Type type,
         SymbolId traitId,
+        string traitName,
         IReadOnlyList<ImplTypeRefKey> traitArgKeys)
     {
         var applied = _substitution.Apply(type);
@@ -698,17 +1286,21 @@ public sealed class ConstraintSolver
             return "";
         }
 
+        var resolvedTraitName = traitId.IsValid
+            ? _symbolTable.GetSymbol(traitId)?.Name ?? traitName
+            : traitName;
+        var precompiledCandidates = ResolvePreludeInstance(resolvedTraitName, con).Candidates;
         var lookupRequest = CreateTraitConstraintLookupRequest(con, traitArgKeys);
         if (!lookupRequest.TypeId.IsValid || !traitId.IsValid)
         {
-            return "";
+            return string.Join(";", precompiledCandidates.Select(static candidate => candidate.Identity));
         }
 
         var candidates = _symbolTable.LookupImplCandidatesForTraitByKeys(
             lookupRequest.TypeId,
             traitId,
             lookupRequest.TraitArgKeys);
-        return string.Join(
+        var symbolCandidates = string.Join(
             ";",
             candidates
                 .Select(static candidate => string.Join(
@@ -718,6 +1310,12 @@ public sealed class ConstraintSolver
                     candidate.CanonicalImplementingType,
                     string.Join(",", candidate.CanonicalTraitTypeArgs)))
                 .OrderBy(static key => key, StringComparer.Ordinal));
+        return string.Join(
+            ";",
+            new[] { symbolCandidates }
+                .Concat(precompiledCandidates.Select(static candidate => candidate.Identity))
+                .Where(static candidate => !string.IsNullOrWhiteSpace(candidate))
+                .Order(StringComparer.Ordinal));
     }
 
     private bool TryCreateTraitCheckCacheKey(

@@ -290,9 +290,12 @@ changed :: Int -> Int
             PayloadSize = 16
         };
         unified.PromotedLocals.Add(local);
+        var functionArgumentClosureSite = new UnifiedFunctionArgumentClosureSite(block, 3, 1);
+        unified.FunctionArgumentClosureSites.Add(functionArgumentClosureSite);
         var result = new ModuleBorrowCheckResult();
         result.AddResult(new BorrowCheckResult
         {
+            FunctionStableKey = "name:main",
             FunctionName = "main",
             FunctionSymbolId = functionSymbol,
             PerceusHints = perceus,
@@ -315,6 +318,10 @@ changed :: Int -> Int
         Assert.Equal(0, restoredResult.ReuseHints.AllocReuseSites[(block, 2)]);
         Assert.Contains(local, restoredResult.StackPromotionHints!.PromotedLocals);
         Assert.Contains(local, restoredResult.UnifiedStackPromotionHints!.PromotedLocals);
+        Assert.Contains(functionArgumentClosureSite, restoredResult.UnifiedStackPromotionHints.FunctionArgumentClosureSites);
+        Assert.Equal("name:main", restoredResult.FunctionStableKey);
+        Assert.True(restored.TryGetFunctionResultByStableKey("name:main", out var stableLookup));
+        Assert.Same(restoredResult, stableLookup);
     }
 
     [Fact]

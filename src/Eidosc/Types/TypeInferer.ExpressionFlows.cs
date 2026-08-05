@@ -868,6 +868,13 @@ public sealed partial class TypeInferer
     {
         var resolvedExpected = substitution.Apply(expected);
         var resolvedActual = substitution.Apply(actual);
+        if (resolvedExpected is TyCon &&
+            resolvedActual is TyCon actualConstructorForProduct &&
+            TryPromoteProductCaseToRoot(actualConstructorForProduct, out var promotedProduct))
+        {
+            return promotedProduct;
+        }
+
         if (resolvedExpected is TyVar &&
             resolvedActual is TyCon inferredConstructor &&
             TryPromoteClosedCaseToRoot(inferredConstructor, out var inferredRoot))

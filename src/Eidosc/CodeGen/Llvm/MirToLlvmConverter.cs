@@ -207,33 +207,14 @@ public sealed partial class MirToLlvmConverter
         }
     }
 
-    private readonly Dictionary<SymbolId, UnifiedStackPromotionHints> _unifiedStackPromotionHintsByFunctionSymbol = [];
-    private readonly Dictionary<string, UnifiedStackPromotionHints> _unifiedStackPromotionHintsByFunction = new(StringComparer.Ordinal);
+    private ModuleBorrowCheckResult? _unifiedStackPromotionResults;
 
     /// <summary>
     /// 设置统一栈提升提示（来自 UnifiedStackPromotionAnalyzer）。
     /// </summary>
     public void SetUnifiedStackPromotionHints(ModuleBorrowCheckResult result)
     {
-        _unifiedStackPromotionHintsByFunctionSymbol.Clear();
-        _unifiedStackPromotionHintsByFunction.Clear();
-        if (result == null) return;
-
-        foreach (var funcResult in result.FunctionResults.Values)
-        {
-            var hints = funcResult.UnifiedStackPromotionHints ?? funcResult.UnifiedStackPromotionAnalyzer?.Hints;
-            if (hints != null)
-            {
-                if (funcResult.FunctionSymbolId.IsValid)
-                {
-                    _unifiedStackPromotionHintsByFunctionSymbol[funcResult.FunctionSymbolId] = hints;
-                }
-                else if (!string.IsNullOrEmpty(funcResult.FunctionName))
-                {
-                    _unifiedStackPromotionHintsByFunction[funcResult.FunctionName] = hints;
-                }
-            }
-        }
+        _unifiedStackPromotionResults = result;
     }
 
     /// <summary>
@@ -619,13 +600,13 @@ public sealed partial class MirToLlvmConverter
 
             // 加载统一栈提升提示（ADT + 闭包，字段级）
             _currentUnifiedHints = null;
-            if (func.SymbolId.IsValid && _unifiedStackPromotionHintsByFunctionSymbol.TryGetValue(func.SymbolId, out var symbolUnifiedHints))
+            var unifiedFunctionKey = MirFunctionIdentity.GetStableKey(func);
+            BorrowCheckResult? unifiedResult = null;
+            if (_unifiedStackPromotionResults?.TryGetFunctionResultByStableKey(unifiedFunctionKey, out unifiedResult) == true ||
+                _unifiedStackPromotionResults?.TryGetFunctionResult(func.SymbolId, func.Name, out unifiedResult) == true)
             {
-                _currentUnifiedHints = symbolUnifiedHints;
-            }
-            else if (func.Name != null && _unifiedStackPromotionHintsByFunction.TryGetValue(func.Name, out var unifiedHints))
-            {
-                _currentUnifiedHints = unifiedHints;
+                _currentUnifiedHints = unifiedResult?.UnifiedStackPromotionHints ??
+                                       unifiedResult?.UnifiedStackPromotionAnalyzer?.Hints;
             }
         }
 

@@ -413,6 +413,27 @@ public sealed partial class TypeInferer
             out promoted);
     }
 
+    private bool TryPromoteProductCaseToRoot(TyCon type, out TyCon promoted)
+    {
+        promoted = type;
+        if (!TryResolveClosedCaseTypeSymbol(type, out var caseId) ||
+            _symbolTable.GetSymbol<AdtSymbol>(caseId) is not { IsCaseType: true } caseSymbol ||
+            _symbolTable.GetSymbol<AdtSymbol>(caseSymbol.ParentAdt) is not { } rootSymbol ||
+            !string.Equals(caseSymbol.Name, rootSymbol.Name, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return TryProjectClosedCaseToAncestor(
+            type with
+            {
+                Symbol = caseId,
+                Id = type.Id.IsValid ? type.Id : caseSymbol.TypeId
+            },
+            rootSymbol.Id,
+            out promoted);
+    }
+
     private bool TryProjectClosedCaseToAncestor(
         TyCon source,
         SymbolId ancestorId,

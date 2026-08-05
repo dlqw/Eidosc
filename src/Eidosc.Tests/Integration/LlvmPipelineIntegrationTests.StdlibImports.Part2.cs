@@ -629,7 +629,8 @@ main :: Unit -> Int
         Assert.True(collectValuesMethod.SymbolId.IsValid);
         Assert.IsType<FuncSymbol>(Assert.IsType<SymbolTable>(result.SymbolTable).GetSymbol(collectValuesMethod.SymbolId));
         Assert.DoesNotContain("<mir-poison", MirFormatter.FormatMir(Assert.IsType<MirModule>(result.MirModule)), StringComparison.Ordinal);
-        Assert.DoesNotContain("closure_stack", result.LlvmIrText, StringComparison.Ordinal);
+        Assert.Contains("call ptr @eidos_closure_init_stack(", result.LlvmIrText, StringComparison.Ordinal);
+        Assert.DoesNotContain("unresolved_ref__", result.LlvmIrText, StringComparison.Ordinal);
 
         var llvmModule = result.LlvmModule!;
         Assert.Contains(

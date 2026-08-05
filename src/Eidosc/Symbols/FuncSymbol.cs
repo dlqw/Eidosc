@@ -161,6 +161,7 @@ public enum CompilerSemanticRole
     MonadBind,
     FunctorMap,
     ApplicativeApply,
+    AlternativeEmpty,
     SemigroupAppend,
     Coalesce,
     Compose,

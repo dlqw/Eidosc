@@ -1,5 +1,6 @@
 using Eidosc.Symbols;
 using Eidosc.Mir;
+using Eidosc.Borrow;
 using Eidosc.Semantic;
 using Eidosc.Types;
 
@@ -59,6 +60,85 @@ public sealed partial class MirToLlvmConverter
             [],
             [],
             visibleSignature);
+    }
+
+    private LlvmValue MaterializeFunctionReferenceArgument(
+        MirFunctionRef funcRef,
+        TypeId visibleTypeId,
+        int argumentIndex)
+    {
+        if (_currentUnifiedHints == null ||
+            !_currentBlockId.HasValue ||
+            !_currentUnifiedHints.FunctionArgumentClosureSites.Contains(
+                new UnifiedFunctionArgumentClosureSite(
+                    _currentBlockId.Value,
+                    _currentInstructionIndex,
+                    argumentIndex)))
+        {
+            return MaterializeFunctionReference(funcRef, visibleTypeId);
+        }
+
+        if (TryMaterializeStackFunctionReference(funcRef, visibleTypeId, out var stackReference))
+        {
+            return stackReference;
+        }
+
+        return MaterializeFunctionReference(funcRef, visibleTypeId);
+    }
+
+    private bool HasStackPromotedFunctionReferenceArgument(MirCall call)
+    {
+        if (_currentUnifiedHints == null || !_currentBlockId.HasValue)
+        {
+            return false;
+        }
+
+        for (var argumentIndex = 0; argumentIndex < call.Arguments.Count; argumentIndex++)
+        {
+            if (call.Arguments[argumentIndex] is MirFunctionRef &&
+                _currentUnifiedHints.FunctionArgumentClosureSites.Contains(
+                    new UnifiedFunctionArgumentClosureSite(
+                        _currentBlockId.Value,
+                        _currentInstructionIndex,
+                        argumentIndex)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryMaterializeStackFunctionReference(
+        MirFunctionRef funcRef,
+        TypeId visibleTypeId,
+        out LlvmValue value)
+    {
+        value = default!;
+        if (!TryResolveClosureValueSignature(visibleTypeId, out var visibleSignature) &&
+            !TryResolveClosureValueSignature(funcRef.TypeId, out visibleSignature))
+        {
+            return false;
+        }
+
+        var functionName = ResolveFunctionLlvmName(funcRef, visibleSignature);
+        var functionType = _funcCache.FunctionTypeByName.TryGetValue(functionName, out var resolvedFunctionType)
+            ? resolvedFunctionType
+            : TryResolveFunctionTypeByTypeId(funcRef.Name, funcRef.TypeId, out var specializedType)
+            ? specializedType
+            : visibleSignature;
+        var directFunction = new LlvmGlobal
+        {
+            Name = functionName,
+            Type = functionType
+        };
+        var invokeThunk = SynthesizeDirectInvokeThunk(
+            directFunction,
+            functionType,
+            visibleSignature,
+            []);
+        value = EmitStackClosureValue(invokeThunk, null, [], "argument");
+        return true;
     }
 
     private bool ShouldMaterializeFunctionReferenceWithResolvedSignature(

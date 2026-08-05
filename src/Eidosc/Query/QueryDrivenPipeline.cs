@@ -616,6 +616,7 @@ public sealed partial class QueryDrivenPipeline
 
             var funcResult = new BorrowCheckResult
             {
+                FunctionStableKey = borrowAnalysisContext.GetStableKey(func),
                 FunctionName = func.Name,
                 FunctionSymbolId = func.SymbolId,
                 LivenessAnalyzer = livenessAnalyzer,
@@ -705,6 +706,7 @@ public sealed partial class QueryDrivenPipeline
         converter.SetPerceusHints(borrowOut.BorrowCheckResult);
         converter.SetReuseHints(borrowOut.BorrowCheckResult);
         converter.SetStackPromotionHints(borrowOut.BorrowCheckResult);
+        converter.SetUnifiedStackPromotionHints(borrowOut.BorrowCheckResult);
 
         if (!nameRes.IsIncomplete && nameRes.SymbolTable != null)
         {

@@ -1857,6 +1857,7 @@ public sealed partial class MirToLlvmConverter
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.WriteCharCodeRaw, LlvmVoidType.Instance, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.TypeId, LlvmIntType.I64, LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ClosureNew, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ClosureInitStack, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr(), LlvmIntType.I64);
 
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayNew, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64);
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.ArrayNewWithPolicy, LlvmPointerType.VoidPtr(), LlvmIntType.I64, LlvmIntType.I64, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());

@@ -8,6 +8,13 @@ public sealed class BorrowModuleAnalysisContext
     private readonly MirModule _module;
     private readonly Dictionary<string, MirFunc> _functionByStableKey;
     private readonly Dictionary<string, int> _functionIndexByStableKey;
+    private readonly Dictionary<string, int> _functionIndexByAlternateKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _functionIndexByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<SymbolId, int> _functionIndexBySymbol = [];
+    private readonly HashSet<string> _ambiguousStableKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _ambiguousAlternateKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _ambiguousNames = new(StringComparer.Ordinal);
+    private readonly HashSet<SymbolId> _ambiguousSymbols = [];
     private readonly Dictionary<MirFunc, string> _stableKeyByFunction;
     private readonly string[] _stableKeysByIndex;
     private readonly int[] _parameterCountsByIndex;
@@ -28,8 +35,24 @@ public sealed class BorrowModuleAnalysisContext
             var stableKey = MirFunctionIdentity.GetStableKey(function);
             _stableKeysByIndex[i] = stableKey;
             _stableKeyByFunction[function] = stableKey;
-            _functionByStableKey[stableKey] = function;
-            _functionIndexByStableKey[stableKey] = i;
+            AddUnique(stableKey, i, _functionIndexByStableKey, _ambiguousStableKeys);
+            if (_ambiguousStableKeys.Contains(stableKey))
+            {
+                _functionByStableKey.Remove(stableKey);
+            }
+            else
+            {
+                _functionByStableKey[stableKey] = function;
+            }
+
+            if (MirFunctionIdentity.TryGetStableKeyIgnoringSymbolId(function.FunctionId, out var alternateKey))
+            {
+                AddUnique(alternateKey, i, _functionIndexByAlternateKey, _ambiguousAlternateKeys);
+            }
+
+            AddUnique(function.Name, i, _functionIndexByName, _ambiguousNames);
+            AddUnique(function.SymbolId, i, _functionIndexBySymbol, _ambiguousSymbols);
+            AddUnique(function.FunctionId.SymbolId, i, _functionIndexBySymbol, _ambiguousSymbols);
             _parameterCountsByIndex[i] = function.Locals.Count(static local => local.IsParameter);
         }
     }
@@ -52,19 +75,26 @@ public sealed class BorrowModuleAnalysisContext
 
     public string GetStableKey(MirFunctionRef functionRef)
     {
-        return MirFunctionIdentity.GetStableKey(functionRef);
+        return TryResolveFunctionIndex(functionRef, out var functionIndex)
+            ? _stableKeysByIndex[functionIndex]
+            : MirFunctionIdentity.GetStableKey(functionRef);
     }
 
     public bool TryGetFunction(MirFunctionRef functionRef, out MirFunc function)
     {
-        var stableKey = GetStableKey(functionRef);
-        return _functionByStableKey.TryGetValue(stableKey, out function!);
+        if (TryResolveFunctionIndex(functionRef, out var functionIndex))
+        {
+            function = _module.Functions[functionIndex];
+            return true;
+        }
+
+        function = null!;
+        return false;
     }
 
     public bool TryGetFunctionIndex(MirFunctionRef functionRef, out int functionIndex)
     {
-        var stableKey = GetStableKey(functionRef);
-        return _functionIndexByStableKey.TryGetValue(stableKey, out functionIndex);
+        return TryResolveFunctionIndex(functionRef, out functionIndex);
     }
 
     public bool TryGetFunctionIndex(string stableKey, out int functionIndex)
@@ -111,6 +141,64 @@ public sealed class BorrowModuleAnalysisContext
         _managedTypeCache[typeValue] = isManaged;
         return isManaged;
     }
+
+    private bool TryResolveFunctionIndex(MirFunctionRef functionRef, out int functionIndex)
+    {
+        var stableKey = MirFunctionIdentity.GetStableKey(functionRef);
+        if (!_ambiguousStableKeys.Contains(stableKey) &&
+            _functionIndexByStableKey.TryGetValue(stableKey, out functionIndex))
+        {
+            return true;
+        }
+
+        if (MirFunctionIdentity.TryGetStableKeyIgnoringSymbolId(functionRef.FunctionId, out var alternateKey) &&
+            !_ambiguousAlternateKeys.Contains(alternateKey) &&
+            _functionIndexByAlternateKey.TryGetValue(alternateKey, out functionIndex))
+        {
+            return true;
+        }
+
+        if (functionRef.SymbolId.IsValid &&
+            !_ambiguousSymbols.Contains(functionRef.SymbolId) &&
+            _functionIndexBySymbol.TryGetValue(functionRef.SymbolId, out functionIndex))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(functionRef.Name) &&
+            !_ambiguousNames.Contains(functionRef.Name) &&
+            _functionIndexByName.TryGetValue(functionRef.Name, out functionIndex))
+        {
+            return true;
+        }
+
+        functionIndex = -1;
+        return false;
+    }
+
+    private static void AddUnique<TKey>(
+        TKey key,
+        int functionIndex,
+        Dictionary<TKey, int> index,
+        HashSet<TKey> ambiguous)
+        where TKey : notnull
+    {
+        if (key is string text && string.IsNullOrWhiteSpace(text) ||
+            key is SymbolId symbolId && !symbolId.IsValid ||
+            ambiguous.Contains(key))
+        {
+            return;
+        }
+
+        if (index.TryGetValue(key, out var existingIndex) && existingIndex != functionIndex)
+        {
+            index.Remove(key);
+            ambiguous.Add(key);
+            return;
+        }
+
+        index[key] = functionIndex;
+    }
 }
 
 public sealed class ModuleFieldEscapeAnalysisStats
@@ -150,6 +238,8 @@ public sealed class UnifiedStackPromotionAnalysisStats
     public long ClosureLookups { get; set; }
     public long ClosureLookupMisses { get; set; }
     public long ClosureCandidates { get; set; }
+    public long FunctionArgumentClosureCandidates { get; set; }
+    public long PromotedFunctionArgumentClosures { get; set; }
     public long AliasEdges { get; set; }
     public long EscapedLocals { get; set; }
     public long PromotedAllocations { get; set; }
@@ -162,6 +252,8 @@ public sealed class UnifiedStackPromotionAnalysisStats
         ClosureLookups = 0;
         ClosureLookupMisses = 0;
         ClosureCandidates = 0;
+        FunctionArgumentClosureCandidates = 0;
+        PromotedFunctionArgumentClosures = 0;
         AliasEdges = 0;
         EscapedLocals = 0;
         PromotedAllocations = 0;

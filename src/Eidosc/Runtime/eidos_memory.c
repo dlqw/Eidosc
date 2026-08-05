@@ -3510,6 +3510,34 @@ EidosClosure* eidos_closure_new(void* invoke_fn, void* release_fn, size_t payloa
     return closure;
 }
 
+EidosClosure* eidos_closure_init_stack(
+    void* storage,
+    size_t storage_size,
+    void* invoke_fn,
+    void* release_fn,
+    size_t payload_words) {
+    size_t payload_size = payload_words * sizeof(uintptr_t);
+    size_t required_size = sizeof(EidosHeader) + sizeof(EidosClosure) + payload_size;
+    if (storage == NULL || storage_size < required_size ||
+        ((uintptr_t)storage % _Alignof(EidosClosure)) != 0) {
+        return eidos_closure_new(invoke_fn, release_fn, payload_words);
+    }
+
+    eidos_memory_register_reporter();
+    eidos_ensure_closure_destructor_registered();
+
+    EidosHeader* header = (EidosHeader*)storage;
+    header->ref_count = (int32_t)(EIDOS_STACK_BIT | 1u);
+    header->type_id = EIDOS_TYPE_CLOSURE;
+
+    EidosClosure* closure = (EidosClosure*)((unsigned char*)storage + sizeof(EidosHeader));
+    memset(closure, 0, sizeof(EidosClosure) + payload_size);
+    closure->invoke_fn = invoke_fn;
+    closure->release_fn = release_fn;
+    closure->payload_words = payload_words;
+    return closure;
+}
+
 size_t eidos_array_length(EidosArray* arr) {
     if (arr == NULL) {
         return 0;
