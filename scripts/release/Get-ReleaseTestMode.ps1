@@ -11,6 +11,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$scriptRoot = Split-Path -Parent $PSCommandPath
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "../.."))
 
 function Invoke-Git([string[]]$Arguments)
 {
@@ -49,7 +51,12 @@ function Get-SourceRoot([string]$Commit, [string[]]$Paths)
     return [BitConverter]::ToString($hash).Replace('-', '').ToLowerInvariant()
 }
 
-$configuration = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
+$resolvedConfigurationPath = if ([IO.Path]::IsPathRooted($ConfigurationPath)) {
+    $ConfigurationPath
+} else {
+    Join-Path $repositoryRoot $ConfigurationPath
+}
+$configuration = Get-Content -LiteralPath $resolvedConfigurationPath -Raw | ConvertFrom-Json
 if ($configuration.schema -ne 1) { throw "Unsupported release source-set schema '$($configuration.schema)'." }
 $componentProperty = $configuration.components.PSObject.Properties[$Component]
 $componentConfiguration = if ($null -eq $componentProperty) { $null } else { $componentProperty.Value }
