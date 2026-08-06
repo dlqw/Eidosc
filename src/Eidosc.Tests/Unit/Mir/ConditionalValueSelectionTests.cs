@@ -26,6 +26,7 @@ public sealed class ConditionalValueSelectionTests
         Assert.Equal(IntConstant(2).Value, Assert.IsType<MirConstant>(select.FalseValue).Value);
         Assert.Equal(BlockIdOf(4), Assert.IsType<MirGoto>(entry.Terminator).Target);
         Assert.Equal(1, pass.GetMetricsSnapshot()["decisions.representation.select"]);
+        Assert.Equal(1, pass.GetMetricsSnapshot()["decisions.representation.conditional_branch_candidate"]);
     }
 
     [Fact]
