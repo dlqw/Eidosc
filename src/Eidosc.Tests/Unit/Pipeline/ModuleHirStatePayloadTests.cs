@@ -15,6 +15,53 @@ namespace Eidosc.Tests.Unit.Pipeline;
 public sealed class ModuleHirStatePayloadTests
 {
     [Fact]
+    public void Create_RoundTripsDecisionPlansForIfAndMatch()
+    {
+        var ifExpression = new HirIf
+        {
+            Condition = Bool(true),
+            ThenBranch = Int(1),
+            ElseBranch = Int(0)
+        };
+        ifExpression.DecisionPlan = HirDecisionPlan.ForIf(ifExpression);
+
+        var matchExpression = new HirMatch
+        {
+            Scrutinee = Bool(true),
+            IsExhaustive = true,
+            Branches =
+            [
+                new HirMatchBranch
+                {
+                    Pattern = new HirLiteralPattern { Value = true, TypeId = Tid(204) },
+                    Body = Int(1)
+                }
+            ]
+        };
+        matchExpression.DecisionPlan = HirDecisionPlan.ForMatch(matchExpression, HirDecisionSourceKind.Match);
+
+        var module = new HirModule
+        {
+            Name = "decision-plans",
+            Declarations =
+            [
+                new HirFunc { Name = "if_case", Body = ifExpression },
+                new HirFunc { Name = "match_case", Body = matchExpression }
+            ]
+        };
+
+        var payload = ModuleHirStatePayload.Create(module);
+        Assert.True(payload.TryRestore(out var restored));
+
+        var restoredIf = Assert.IsType<HirIf>(Assert.IsType<HirFunc>(restored.Declarations[0]).Body);
+        Assert.Equal(HirDecisionSourceKind.If, restoredIf.DecisionPlan?.SourceKind);
+        var restoredMatch = Assert.IsType<HirMatch>(Assert.IsType<HirFunc>(restored.Declarations[1]).Body);
+        Assert.Equal(HirDecisionSourceKind.Match, restoredMatch.DecisionPlan?.SourceKind);
+        Assert.Equal(1, restoredMatch.DecisionPlan?.BranchCount);
+        Assert.True(restoredMatch.DecisionPlan?.IsExhaustive);
+    }
+
+    [Fact]
     public void Create_CoversAndRestoresEveryConcreteHirShape()
     {
         var module = CreateAllShapesModule();

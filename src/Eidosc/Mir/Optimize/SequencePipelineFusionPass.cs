@@ -423,7 +423,7 @@ public sealed class SequencePipelineFusionPass :
 
             switch (instruction)
             {
-                case MirAssign or MirCopy or MirMove or MirUnaryOp:
+                case MirAssign or MirCopy or MirMove or MirUnaryOp or MirSelect:
                     break;
                 case MirBinOp { Operator: BinaryOp.Div or BinaryOp.Mod or BinaryOp.Concat }:
                     return false;
@@ -644,6 +644,9 @@ public sealed class SequencePipelineFusionPass :
                         call.Arguments.Sum(argument => CountOperandReads(argument, local)),
         MirBinOp binary => CountOperandReads(binary.Left, local) + CountOperandReads(binary.Right, local),
         MirUnaryOp unary => CountOperandReads(unary.Operand, local),
+        MirSelect select => CountOperandReads(select.Condition, local) +
+                            CountOperandReads(select.TrueValue, local) +
+                            CountOperandReads(select.FalseValue, local),
         MirLoad load => CountOperandReads(load.Source, local),
         MirStore store => CountOperandReads(store.Value, local) + CountProjectionAddressReads(store.Target, local),
         MirDrop drop => CountOperandReads(drop.Value, local),

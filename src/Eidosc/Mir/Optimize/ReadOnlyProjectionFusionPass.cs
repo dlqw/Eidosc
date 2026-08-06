@@ -108,6 +108,9 @@ public sealed class ReadOnlyProjectionFusionPass : IMirOptimizationPass
                         CountUses(call.RecordUpdate?.Source, local),
         MirBinOp binary => CountUses(binary.Left, local) + CountUses(binary.Right, local),
         MirUnaryOp unary => CountUses(unary.Operand, local),
+        MirSelect select => CountUses(select.Condition, local) +
+                            CountUses(select.TrueValue, local) +
+                            CountUses(select.FalseValue, local),
         MirLoad load => CountUses(load.Source, local),
         MirStore store => CountUses(store.Target, local) + CountUses(store.Value, local),
         MirDrop drop => CountUses(drop.Value, local),

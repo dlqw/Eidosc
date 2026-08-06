@@ -480,6 +480,10 @@ public sealed partial class HirBuilder
             });
         }
 
+        hirMatch.DecisionPlan = HirDecisionPlan.ForMatch(
+            hirMatch,
+            HirDecisionSourceKind.FunctionPattern);
+
         return hirMatch;
     }
 
@@ -1262,14 +1266,7 @@ public sealed partial class HirBuilder
             MethodCallExpr methodCall => TryConvertFieldAccess(methodCall, out var fieldAccess)
                 ? fieldAccess
                 : ConvertMethodCall(methodCall),
-            IfExpr ifExpr => new HirIf
-            {
-                Condition = ConvertExprOrFallback(ifExpr.Condition, "if condition", ifExpr.Span),
-                ThenBranch = ConvertExprOrFallback(ifExpr.ThenBranch, "if then branch", ifExpr.Span),
-                ElseBranch = ifExpr.ElseBranch != null ? ConvertExpr(ifExpr.ElseBranch) : null,
-                Span = ifExpr.Span,
-                TypeId = GetTypeId(ifExpr)
-            },
+            IfExpr ifExpr => ConvertIfExpression(ifExpr),
             IfLetExpr ifLetExpr => ConvertIfLet(ifLetExpr),
             WhileLetExpr whileLetExpr => ConvertWhileLet(whileLetExpr),
             LoopExpr loop => ConvertLoop(loop),
@@ -2148,7 +2145,23 @@ public sealed partial class HirBuilder
             });
         }
 
+        hirMatch.DecisionPlan = HirDecisionPlan.ForMatch(hirMatch, HirDecisionSourceKind.Match);
+
         return hirMatch;
+    }
+
+    private HirIf ConvertIfExpression(IfExpr ifExpr)
+    {
+        var hirIf = new HirIf
+        {
+            Condition = ConvertExprOrFallback(ifExpr.Condition, "if condition", ifExpr.Span),
+            ThenBranch = ConvertExprOrFallback(ifExpr.ThenBranch, "if then branch", ifExpr.Span),
+            ElseBranch = ifExpr.ElseBranch != null ? ConvertExpr(ifExpr.ElseBranch) : null,
+            Span = ifExpr.Span,
+            TypeId = GetTypeId(ifExpr)
+        };
+        hirIf.DecisionPlan = HirDecisionPlan.ForIf(hirIf);
+        return hirIf;
     }
 
     private HirMatch ConvertSelection(SelectionExpr selection)
@@ -2204,6 +2217,10 @@ public sealed partial class HirBuilder
                 Body = unit
             });
         }
+
+        hirMatch.DecisionPlan = HirDecisionPlan.ForMatch(
+            hirMatch,
+            HirDecisionSourceKind.Selection);
 
         return hirMatch;
     }
@@ -2368,6 +2385,8 @@ public sealed partial class HirBuilder
             Body = elseBody
         });
 
+        hirMatch.DecisionPlan = HirDecisionPlan.ForMatch(hirMatch, HirDecisionSourceKind.IfLet);
+
         return hirMatch;
     }
 
@@ -2413,6 +2432,8 @@ public sealed partial class HirBuilder
                 TypeId = unitType
             }
         });
+
+        hirMatch.DecisionPlan = HirDecisionPlan.ForMatch(hirMatch, HirDecisionSourceKind.WhileLet);
 
         return new HirLoop
         {

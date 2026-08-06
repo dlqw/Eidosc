@@ -654,6 +654,10 @@ public sealed class LoanSignatureInferer
                 state.Clear(unaryTarget);
                 break;
 
+            case MirSelect select:
+                state.Clear(select.Target.Local);
+                break;
+
             case MirAlloc alloc when alloc.Target.Kind == PlaceKind.Local:
                 state.Clear(alloc.Target.Local);
                 break;

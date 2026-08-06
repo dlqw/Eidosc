@@ -463,6 +463,9 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
                             call.RecordUpdate != null && OperandUsesAnyLocal(call.RecordUpdate.Source, locals),
             MirBinOp binary => OperandUsesAnyLocal(binary.Left, locals) || OperandUsesAnyLocal(binary.Right, locals),
             MirUnaryOp unary => OperandUsesAnyLocal(unary.Operand, locals),
+            MirSelect select => OperandUsesAnyLocal(select.Condition, locals) ||
+                                OperandUsesAnyLocal(select.TrueValue, locals) ||
+                                OperandUsesAnyLocal(select.FalseValue, locals),
             MirLoad load => OperandUsesAnyLocal(load.Source, locals),
             MirStore store => OperandUsesAnyLocal(store.Target, locals) || OperandUsesAnyLocal(store.Value, locals),
             MirDrop drop => OperandUsesAnyLocal(drop.Value, locals),
@@ -837,6 +840,9 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
             case MirUnaryOp unary when unary.Target is MirPlace unaryTarget:
                 Remove(unaryTarget, state);
                 break;
+            case MirSelect select:
+                Remove(select.Target, state);
+                break;
         }
     }
 
@@ -931,6 +937,7 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
             MirCall call => [call.Target, call.Function, .. call.Arguments, call.RecordUpdate?.Source],
             MirBinOp binary => [binary.Target, binary.Left, binary.Right],
             MirUnaryOp unary => [unary.Target, unary.Operand],
+            MirSelect select => [select.Target, select.Condition, select.TrueValue, select.FalseValue],
             MirLoad load => [load.Target, load.Source],
             MirStore store => [store.Target, store.Value],
             MirDrop drop => [drop.Value],

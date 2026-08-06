@@ -534,6 +534,10 @@ public sealed class BorrowChecker
                 OverwriteBorrower(local, blockId, index, currentState, ResolveSpan(unaryOp.Target.Span, unaryOp.Span));
                 break;
 
+            case MirSelect select:
+                OverwriteBorrower(select.Target.Local, blockId, index, currentState, ResolveSpan(select.Target.Span, select.Span));
+                break;
+
             case MirAlloc alloc when alloc.Target.Kind == PlaceKind.Local:
                 OverwriteBorrower(
                     alloc.Target.Local,

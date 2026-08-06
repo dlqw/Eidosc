@@ -133,12 +133,23 @@ public static class MirFormatter
             }
             if (block.Terminator != null)
             {
-                sb.AppendLine($"    {block.Terminator}");
+                sb.AppendLine($"    {FormatMirTerminator(block.Terminator)}");
             }
         }
 
         sb.AppendLine("}");
         sb.AppendLine();
+    }
+
+    private static string FormatMirTerminator(MirTerminator terminator)
+    {
+        if (terminator is not MirSwitch { DecisionPlan: { } plan } switchTerminator)
+        {
+            return terminator.ToString() ?? terminator.GetType().Name;
+        }
+
+        return $"{switchTerminator} [decision source={plan.SourceKind} branches={plan.BranchCount} " +
+               $"guards={plan.HasGuards} bindings={plan.HasBindings} representation={plan.Representation}]";
     }
 
 

@@ -396,6 +396,10 @@ public sealed class AffineTypeChecker
                 CheckUnaryOp(unaryOp, blockId, index);
                 break;
 
+            case MirSelect select:
+                CheckSelect(select, blockId, index);
+                break;
+
             case MirLoad load:
                 CheckLoad(load, blockId, index);
                 break;
@@ -602,6 +606,10 @@ public sealed class AffineTypeChecker
                 MarkInitialized(unaryOp.Target);
                 break;
 
+            case MirSelect select:
+                MarkInitialized(select.Target);
+                break;
+
             case MirLoad load:
                 if (MirLocalTransferAnalysis.TryGetBinding(load, out var loadBinding))
                 {
@@ -705,6 +713,14 @@ public sealed class AffineTypeChecker
         CheckOperandUse(unaryOp.Operand, blockId, index);
 
         MarkInitialized(unaryOp.Target);
+    }
+
+    private void CheckSelect(MirSelect select, BlockId blockId, int index)
+    {
+        CheckOperandUse(select.Condition, blockId, index);
+        CheckOperandUse(select.TrueValue, blockId, index);
+        CheckOperandUse(select.FalseValue, blockId, index);
+        MarkInitialized(select.Target);
     }
 
     private void CheckLoad(MirLoad load, BlockId blockId, int index)

@@ -76,6 +76,25 @@ public sealed partial class MirGenericSpecializer
                     ? instruction
                     : unaryOp with { Target = target, Operand = operand };
             }
+            case MirSelect select:
+            {
+                var target = RefreshPlaceType(select.Target, localTypes);
+                var condition = RefreshOperandType(select.Condition, localTypes);
+                var trueValue = RefreshOperandType(select.TrueValue, localTypes);
+                var falseValue = RefreshOperandType(select.FalseValue, localTypes);
+                return ReferenceEquals(target, select.Target) &&
+                       ReferenceEquals(condition, select.Condition) &&
+                       ReferenceEquals(trueValue, select.TrueValue) &&
+                       ReferenceEquals(falseValue, select.FalseValue)
+                    ? instruction
+                    : select with
+                    {
+                        Target = target,
+                        Condition = condition,
+                        TrueValue = trueValue,
+                        FalseValue = falseValue
+                    };
+            }
             case MirLoad load:
             {
                 var target = RefreshPlaceType(load.Target, localTypes);

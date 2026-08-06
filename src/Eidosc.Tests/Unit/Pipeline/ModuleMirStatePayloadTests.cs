@@ -31,6 +31,20 @@ public sealed class ModuleMirStatePayloadTests
         Assert.True(payload.TryRestore(out var restored));
         AssertEquivalentFingerprints(module, restored);
 
+        var originalPlan = module.Functions
+            .SelectMany(static function => function.BasicBlocks)
+            .Select(static block => block.Terminator)
+            .OfType<MirSwitch>()
+            .Select(static terminator => terminator.DecisionPlan)
+            .First(static plan => plan != null);
+        var restoredPlan = restored.Functions
+            .SelectMany(static function => function.BasicBlocks)
+            .Select(static block => block.Terminator)
+            .OfType<MirSwitch>()
+            .Select(static terminator => terminator.DecisionPlan)
+            .First(static plan => plan != null);
+        Assert.Equal(originalPlan, restoredPlan);
+
         var restoredTypes = CollectMirObjectTypes(restored);
         Assert.Empty(originalTypes.Except(restoredTypes).Select(static type => type.Name));
     }
@@ -1041,6 +1055,7 @@ Main :: module {
                                 new MirCall { Target = field, Function = functionRef, Arguments = [ConstString("arg"), temp, deref], IsTailCall = true, BorrowedArgumentIndices = new HashSet<int> { 0, 2 }, Span = Span(32) },
                                 new MirBinOp { Target = temp, Operator = BinaryOp.Add, Left = ConstInt(1, intType), Right = ConstInt(2, intType), Span = Span(38) },
                                 new MirUnaryOp { Target = temp, Operator = UnaryOp.Neg, Operand = ConstInt(3, intType), Span = Span(39) },
+                                new MirSelect { Target = local, Condition = ConstBool(true, boolType), TrueValue = ConstInt(4, intType), FalseValue = ConstInt(5, intType), Span = Span(39) },
                                 new MirLoad { Target = local, Source = index, IsMutableBorrow = true, CreatesBorrowAlias = false, MovesOutOfSource = true, Span = Span(40) },
                                 new MirStore { Target = local, Value = ConstFloat(3.5), Span = Span(41) },
                                 new MirDrop { Value = new MirPoison { Reason = "synthetic", TypeId = unitType, Span = Span(42) }, Span = Span(43) },
@@ -1061,6 +1076,12 @@ Main :: module {
                                     }
                                 ],
                                 DefaultTarget = new BlockId { Value = 3 },
+                                DecisionPlan = new MirDecisionPlan(
+                                    "Match",
+                                    2,
+                                    HasGuards: true,
+                                    HasBindings: true,
+                                    IsExhaustive: false),
                                 Span = Span(47)
                             }
                         },
@@ -1282,6 +1303,12 @@ Main :: module {
             case MirUnaryOp unaryOp:
                 CollectOperandTypes(unaryOp.Target, types);
                 CollectOperandTypes(unaryOp.Operand, types);
+                break;
+            case MirSelect select:
+                CollectOperandTypes(select.Target, types);
+                CollectOperandTypes(select.Condition, types);
+                CollectOperandTypes(select.TrueValue, types);
+                CollectOperandTypes(select.FalseValue, types);
                 break;
             case MirLoad load:
                 CollectOperandTypes(load.Target, types);

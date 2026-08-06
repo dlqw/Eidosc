@@ -248,6 +248,13 @@ public sealed partial class CompilationPipeline
                 Append(builder, unaryOp.Operator);
                 AppendOperand(builder, unaryOp.Operand);
                 break;
+            case MirSelect select:
+                Append(builder, nameof(MirSelect));
+                AppendPlace(builder, select.Target);
+                AppendOperand(builder, select.Condition);
+                AppendOperand(builder, select.TrueValue);
+                AppendOperand(builder, select.FalseValue);
+                break;
             case MirLoad load:
                 Append(builder, nameof(MirLoad));
                 AppendPlace(builder, load.Target);
@@ -321,6 +328,7 @@ public sealed partial class CompilationPipeline
                 break;
         }
     }
+
 
     private static void AppendOperands(StringBuilder builder, IReadOnlyList<MirOperand> operands)
     {

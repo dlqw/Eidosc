@@ -317,6 +317,11 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
                 return CollectTempIds(binOp.Target).Concat(CollectTempIds(binOp.Left)).Concat(CollectTempIds(binOp.Right));
             case MirUnaryOp unaryOp:
                 return CollectTempIds(unaryOp.Target).Concat(CollectTempIds(unaryOp.Operand));
+            case MirSelect select:
+                return CollectTempIds(select.Target)
+                    .Concat(CollectTempIds(select.Condition))
+                    .Concat(CollectTempIds(select.TrueValue))
+                    .Concat(CollectTempIds(select.FalseValue));
             case MirLoad load:
                 return CollectTempIds(load.Target).Concat(CollectTempIds(load.Source));
             case MirStore store:
@@ -683,6 +688,7 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
         MirMove { Target: { Kind: PlaceKind.Local } place } => place.Local,
         MirBinOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
         MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
+        MirSelect { Target: { Kind: PlaceKind.Local } place } => place.Local,
         _ => null
     };
 
@@ -862,6 +868,13 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
             {
                 Target = RemapOperand(unaryOp.Target, map, tempMap),
                 Operand = RemapOperand(unaryOp.Operand, map, tempMap)
+            },
+            MirSelect select => select with
+            {
+                Target = (MirPlace)RemapOperand(select.Target, map, tempMap),
+                Condition = RemapOperand(select.Condition, map, tempMap),
+                TrueValue = RemapOperand(select.TrueValue, map, tempMap),
+                FalseValue = RemapOperand(select.FalseValue, map, tempMap)
             },
             MirLoad load => load with
             {

@@ -132,6 +132,7 @@ public sealed partial class MirOptimizer
         // Round 1: local simplification and conservative effect-aware motion
         optimizer.RegisterPass(new ConstantFolding());
         optimizer.RegisterPass(new DecisionSimplification());
+        optimizer.RegisterPass(new ConditionalValueSelection());
         optimizer.RegisterPass(new CommonSubexpressionElimination());
         optimizer.RegisterPass(new LoopInvariantCodeMotion());
         optimizer.RegisterPass(new DeadCodeElimination());
@@ -431,6 +432,11 @@ public sealed partial class MirOptimizer
             case MirUnaryOp unaryOp:
                 CollectOperandFunctionRefs(unaryOp.Operand, fingerprints);
                 break;
+            case MirSelect select:
+                CollectOperandFunctionRefs(select.Condition, fingerprints);
+                CollectOperandFunctionRefs(select.TrueValue, fingerprints);
+                CollectOperandFunctionRefs(select.FalseValue, fingerprints);
+                break;
             case MirLoad load:
                 CollectOperandFunctionRefs(load.Source, fingerprints);
                 break;
@@ -463,6 +469,9 @@ public sealed partial class MirOptimizer
             MirBinOp binOp => ContainsNewOperandFunctionRef(binOp.Left, existingFingerprints) ||
                               ContainsNewOperandFunctionRef(binOp.Right, existingFingerprints),
             MirUnaryOp unaryOp => ContainsNewOperandFunctionRef(unaryOp.Operand, existingFingerprints),
+            MirSelect select => ContainsNewOperandFunctionRef(select.Condition, existingFingerprints) ||
+                                ContainsNewOperandFunctionRef(select.TrueValue, existingFingerprints) ||
+                                ContainsNewOperandFunctionRef(select.FalseValue, existingFingerprints),
             MirLoad load => ContainsNewOperandFunctionRef(load.Source, existingFingerprints),
             MirStore store => ContainsNewPlaceFunctionRef(store.Target, existingFingerprints) ||
                               ContainsNewOperandFunctionRef(store.Value, existingFingerprints),

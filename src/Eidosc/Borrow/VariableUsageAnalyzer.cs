@@ -159,6 +159,13 @@ public sealed class VariableUsageAnalyzer
                 if (unaryOp.Target != null) RecordDefinitionFromOperand(unaryOp.Target, blockId, index);
                 break;
 
+            case MirSelect select:
+                AnalyzeOperand(select.Condition, UseKind.Read, blockId, index);
+                AnalyzeOperand(select.TrueValue, UseKind.Read, blockId, index);
+                AnalyzeOperand(select.FalseValue, UseKind.Read, blockId, index);
+                RecordDefinitionFromOperand(select.Target, blockId, index);
+                break;
+
             case MirLoad load:
                 AnalyzeOperand(load.Source, UseKind.Read, blockId, index);
                 RecordDefinition(load.Target, blockId, index);

@@ -308,6 +308,13 @@ public sealed partial class CompilationPipeline
                 h.Add(unaryOp.Operator);
                 HashOperand(ref h, unaryOp.Operand);
                 break;
+            case MirSelect select:
+                h.Add(17);
+                HashPlace(ref h, select.Target);
+                HashOperand(ref h, select.Condition);
+                HashOperand(ref h, select.TrueValue);
+                HashOperand(ref h, select.FalseValue);
+                break;
             case MirLoad load:
                 h.Add(10);
                 HashPlace(ref h, load.Target);
@@ -387,6 +394,7 @@ public sealed partial class CompilationPipeline
                 break;
         }
     }
+
 
     // ──────────────────────────────────────────────
     //  Operand / Place hashing

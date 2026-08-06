@@ -260,6 +260,9 @@ public sealed class MirValidator
             case MirUnaryOp { Target: MirPlace { Kind: not PlaceKind.Local } target } unaryOp:
                 ReportUnsupportedPlaceRole(target, unaryOp.Span, function, block, instructionIndex, "unary operation target place");
                 break;
+            case MirSelect { Target.Kind: not PlaceKind.Local } select:
+                ReportUnsupportedPlaceRole(select.Target, select.Span, function, block, instructionIndex, "select target place");
+                break;
             case MirAssign { Target.Kind: not PlaceKind.Local } assign:
                 ReportUnsupportedPlaceRole(assign.Target, assign.Span, function, block, instructionIndex, "assign target place");
                 break;
@@ -512,6 +515,7 @@ public sealed class MirValidator
             MirCall or
             MirBinOp or
             MirUnaryOp or
+            MirSelect or
             MirLoad or
             MirStore or
             MirDrop or
@@ -634,6 +638,7 @@ public sealed class MirValidator
             MirCall call => call.Target,
             MirBinOp { Target: MirPlace target } => target,
             MirUnaryOp { Target: MirPlace target } => target,
+            MirSelect select => select.Target,
             MirLoad load => load.Target,
             MirCopy copy => copy.Target,
             MirMove move => move.Target,
@@ -702,6 +707,11 @@ public sealed class MirValidator
                 break;
             case MirUnaryOp unaryOp:
                 yield return unaryOp.Operand;
+                break;
+            case MirSelect select:
+                yield return select.Condition;
+                yield return select.TrueValue;
+                yield return select.FalseValue;
                 break;
             case MirLoad load:
                 yield return load.Source;
@@ -1323,6 +1333,12 @@ public sealed class MirValidator
             case MirUnaryOp unaryOp:
                 yield return unaryOp.Target;
                 yield return unaryOp.Operand;
+                break;
+            case MirSelect select:
+                yield return select.Target;
+                yield return select.Condition;
+                yield return select.TrueValue;
+                yield return select.FalseValue;
                 break;
             case MirLoad load:
                 yield return load.Target;

@@ -440,6 +440,7 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             MirCaseInject => false,
             MirBinOp => false,
             MirUnaryOp => false,
+            MirSelect => false,
             // A load that creates a borrow has observable borrow-checker
             // semantics (conflict detection, move/drop restrictions) and must
             // survive even when its target local is unused.
@@ -466,6 +467,7 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             MirMove { Target: { Kind: PlaceKind.Local } place } => place.Local,
             MirBinOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
             MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
+            MirSelect { Target: { Kind: PlaceKind.Local } place } => place.Local,
             _ => null
         };
     }
@@ -493,6 +495,11 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
                 break;
             case MirUnaryOp unaryOp:
                 AddUsedLocalsFromOperand(unaryOp.Operand, useSet, defined);
+                break;
+            case MirSelect select:
+                AddUsedLocalsFromOperand(select.Condition, useSet, defined);
+                AddUsedLocalsFromOperand(select.TrueValue, useSet, defined);
+                AddUsedLocalsFromOperand(select.FalseValue, useSet, defined);
                 break;
             case MirLoad load:
                 AddUsedLocalsFromOperand(load.Source, useSet, defined);

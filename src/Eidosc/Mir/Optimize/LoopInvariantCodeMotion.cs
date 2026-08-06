@@ -232,6 +232,9 @@ public sealed class LoopInvariantCodeMotion : IMirOptimizationPass, IFunctionOpt
                         call.Arguments.Any(argument => OperandUsesLocal(argument, local)),
         MirBinOp binOp => OperandUsesLocal(binOp.Left, local) || OperandUsesLocal(binOp.Right, local),
         MirUnaryOp unaryOp => OperandUsesLocal(unaryOp.Operand, local),
+        MirSelect select => OperandUsesLocal(select.Condition, local) ||
+                            OperandUsesLocal(select.TrueValue, local) ||
+                            OperandUsesLocal(select.FalseValue, local),
         MirLoad load => OperandUsesLocal(load.Source, local),
         MirStore store => PlaceUsesLocal(store.Target, local) || OperandUsesLocal(store.Value, local),
         MirDrop drop => OperandUsesLocal(drop.Value, local),

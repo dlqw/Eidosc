@@ -785,6 +785,9 @@ public sealed partial class MirGenericSpecializer
             MirBinOp binOp => CountOperandLocalReads(binOp.Left, localId) +
                               CountOperandLocalReads(binOp.Right, localId),
             MirUnaryOp unaryOp => CountOperandLocalReads(unaryOp.Operand, localId),
+            MirSelect select => CountOperandLocalReads(select.Condition, localId) +
+                                CountOperandLocalReads(select.TrueValue, localId) +
+                                CountOperandLocalReads(select.FalseValue, localId),
             MirLoad load => CountOperandLocalReads(load.Source, localId),
             MirStore store => CountOperandLocalReads(store.Value, localId),
             MirDrop drop => CountOperandLocalReads(drop.Value, localId),
@@ -817,6 +820,11 @@ public sealed partial class MirGenericSpecializer
                 break;
             case MirUnaryOp unaryOp:
                 AddOperandLocalReads(counts, unaryOp.Operand, delta);
+                break;
+            case MirSelect select:
+                AddOperandLocalReads(counts, select.Condition, delta);
+                AddOperandLocalReads(counts, select.TrueValue, delta);
+                AddOperandLocalReads(counts, select.FalseValue, delta);
                 break;
             case MirLoad load:
                 AddOperandLocalReads(counts, load.Source, delta);
@@ -969,6 +977,9 @@ public sealed partial class MirGenericSpecializer
             MirBinOp binOp => OperandUsesLocal(binOp.Left, localId) ||
                               OperandUsesLocal(binOp.Right, localId),
             MirUnaryOp unaryOp => OperandUsesLocal(unaryOp.Operand, localId),
+            MirSelect select => OperandUsesLocal(select.Condition, localId) ||
+                                OperandUsesLocal(select.TrueValue, localId) ||
+                                OperandUsesLocal(select.FalseValue, localId),
             MirLoad load => OperandUsesLocal(load.Source, localId),
             MirStore store => OperandUsesLocal(store.Value, localId),
             MirDrop drop => OperandUsesLocal(drop.Value, localId),

@@ -173,6 +173,7 @@ public sealed class PerceusAnalyzer
             MirCall call => call.Target is MirPlace { Kind: PlaceKind.Local, Local: var callLocal } ? callLocal : null,
             MirBinOp binOp => binOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var binOpLocal } ? binOpLocal : null,
             MirUnaryOp unaryOp => unaryOp.Target is MirPlace { Kind: PlaceKind.Local, Local: var unaryOpLocal } ? unaryOpLocal : null,
+            MirSelect select => select.Target.Local,
             MirLoad load when MirLocalTransferAnalysis.TryGetBinding(load, out var loadBinding) => loadBinding.Target,
             MirLoad load => load.Target is MirPlace { Kind: PlaceKind.Local, Local: var loadLocal } ? loadLocal : null,
             MirCopy copy when MirLocalTransferAnalysis.TryGetBinding(copy, out var copyBinding) => copyBinding.Target,
@@ -211,6 +212,12 @@ public sealed class PerceusAnalyzer
 
             case MirUnaryOp unaryOp:
                 CollectUsedVariables(unaryOp.Operand, result);
+                break;
+
+            case MirSelect select:
+                CollectUsedVariables(select.Condition, result);
+                CollectUsedVariables(select.TrueValue, result);
+                CollectUsedVariables(select.FalseValue, result);
                 break;
 
             case MirLoad load:

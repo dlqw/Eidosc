@@ -197,6 +197,12 @@ public static class MirFunctionFingerprintBuilder
                 writer.Add((int)unaryOp.Operator);
                 AddOperand(writer, unaryOp.Operand);
                 break;
+            case MirSelect select:
+                AddPlace(writer, select.Target);
+                AddOperand(writer, select.Condition);
+                AddOperand(writer, select.TrueValue);
+                AddOperand(writer, select.FalseValue);
+                break;
             case MirLoad load:
                 AddPlace(writer, load.Target);
                 AddOperand(writer, load.Source);

@@ -242,6 +242,7 @@ public sealed class RecordUpdateFusionPass : IMirOptimizationPass
                         CountUses(call.RecordUpdate?.Source, local),
         MirBinOp binary => CountUses(binary.Left, local) + CountUses(binary.Right, local),
         MirUnaryOp unary => CountUses(unary.Operand, local),
+        MirSelect select => CountUses(select.Condition, local) + CountUses(select.TrueValue, local) + CountUses(select.FalseValue, local),
         MirLoad load => CountUses(load.Source, local),
         MirStore store => CountUses(store.Target, local) + CountUses(store.Value, local),
         MirDrop drop => CountUses(drop.Value, local),
@@ -282,6 +283,7 @@ public sealed class RecordUpdateFusionPass : IMirOptimizationPass
         MirAlloc { Target.Kind: PlaceKind.Local, Target.Local: var target } => target == local,
         MirBinOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
         MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
+        MirSelect { Target: { Kind: PlaceKind.Local, Local: var target } } => target == local,
         _ => false
     };
 }

@@ -59,6 +59,13 @@ public sealed record MirSwitch : MirTerminator
     /// </summary>
     public BlockId? DefaultTarget { get; init; }
 
+    /// <summary>
+    /// Structured origin retained from HIR so optimization and tooling can
+    /// explain the selected control-flow representation without inspecting
+    /// lowered block shapes.
+    /// </summary>
+    public MirDecisionPlan? DecisionPlan { get; init; }
+
     public override string ToString()
     {
         var branches = string.Join(", ", Branches.Select(b => $"{b.Value} => bb{b.Target.Value}"));
@@ -66,6 +73,14 @@ public sealed record MirSwitch : MirTerminator
         return $"switch {Discriminant} [{branches}{defaultStr}]";
     }
 }
+
+public sealed record MirDecisionPlan(
+    string SourceKind,
+    int BranchCount,
+    bool HasGuards,
+    bool HasBindings,
+    bool IsExhaustive,
+    string Representation = "switch");
 
 /// <summary>
 /// Switch 分支

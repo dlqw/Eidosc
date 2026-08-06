@@ -39,6 +39,7 @@ public sealed partial class MirBuilder
                 }
             ],
             DefaultTarget = elseBlock.Id,
+            DecisionPlan = ToMirDecisionPlan(ifExpr.DecisionPlan),
             Span = ifExpr.Span
         };
 
@@ -70,6 +71,15 @@ public sealed partial class MirBuilder
 
         return resultPlace;
     }
+
+    private static MirDecisionPlan? ToMirDecisionPlan(HirDecisionPlan? plan) => plan == null
+        ? null
+        : new MirDecisionPlan(
+            plan.SourceKind.ToString(),
+            plan.BranchCount,
+            plan.HasGuards,
+            plan.HasBindings,
+            plan.IsExhaustive);
 
     private MirOperand ConvertLoop(HirLoop loop)
     {

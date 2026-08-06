@@ -135,6 +135,11 @@ public sealed partial class MirGenericSpecializer
             MirUnaryOp unaryOp =>
                 OperandHasReferenceRequiringSpecialization(unaryOp.Target, includeKnownTemplateReferences) ||
                 OperandHasReferenceRequiringSpecialization(unaryOp.Operand, includeKnownTemplateReferences),
+            MirSelect select =>
+                OperandHasReferenceRequiringSpecialization(select.Target, includeKnownTemplateReferences) ||
+                OperandHasReferenceRequiringSpecialization(select.Condition, includeKnownTemplateReferences) ||
+                OperandHasReferenceRequiringSpecialization(select.TrueValue, includeKnownTemplateReferences) ||
+                OperandHasReferenceRequiringSpecialization(select.FalseValue, includeKnownTemplateReferences),
             MirLoad load =>
                 OperandHasReferenceRequiringSpecialization(load.Target, includeKnownTemplateReferences) ||
                 OperandHasReferenceRequiringSpecialization(load.Source, includeKnownTemplateReferences),
@@ -317,6 +322,12 @@ public sealed partial class MirGenericSpecializer
                 VisitFunctionRefs(unaryOp.Target, visitor);
                 VisitFunctionRefs(unaryOp.Operand, visitor);
                 break;
+            case MirSelect select:
+                VisitFunctionRefs(select.Target, visitor);
+                VisitFunctionRefs(select.Condition, visitor);
+                VisitFunctionRefs(select.TrueValue, visitor);
+                VisitFunctionRefs(select.FalseValue, visitor);
+                break;
             case MirLoad load:
                 VisitFunctionRefs(load.Target, visitor);
                 VisitFunctionRefs(load.Source, visitor);
@@ -430,6 +441,10 @@ public sealed partial class MirGenericSpecializer
                 AnyFunctionRef(binOp.Left, predicate) ||
                 AnyFunctionRef(binOp.Right, predicate),
             MirUnaryOp unaryOp => AnyFunctionRef(unaryOp.Target, predicate) || AnyFunctionRef(unaryOp.Operand, predicate),
+            MirSelect select => AnyFunctionRef(select.Target, predicate) ||
+                                AnyFunctionRef(select.Condition, predicate) ||
+                                AnyFunctionRef(select.TrueValue, predicate) ||
+                                AnyFunctionRef(select.FalseValue, predicate),
             MirLoad load => AnyFunctionRef(load.Target, predicate) || AnyFunctionRef(load.Source, predicate),
             MirStore store => AnyFunctionRef(store.Target, predicate) || AnyFunctionRef(store.Value, predicate),
             MirDrop drop => AnyFunctionRef(drop.Value, predicate),
@@ -533,6 +548,11 @@ public sealed partial class MirGenericSpecializer
             MirUnaryOp unaryOp =>
                 AnyFunctionRefReferencesKnownTemplate(unaryOp.Target) ||
                 AnyFunctionRefReferencesKnownTemplate(unaryOp.Operand),
+            MirSelect select =>
+                AnyFunctionRefReferencesKnownTemplate(select.Target) ||
+                AnyFunctionRefReferencesKnownTemplate(select.Condition) ||
+                AnyFunctionRefReferencesKnownTemplate(select.TrueValue) ||
+                AnyFunctionRefReferencesKnownTemplate(select.FalseValue),
             MirLoad load => AnyFunctionRefReferencesKnownTemplate(load.Target) || AnyFunctionRefReferencesKnownTemplate(load.Source),
             MirStore store => AnyFunctionRefReferencesKnownTemplate(store.Target) || AnyFunctionRefReferencesKnownTemplate(store.Value),
             MirDrop drop => AnyFunctionRefReferencesKnownTemplate(drop.Value),

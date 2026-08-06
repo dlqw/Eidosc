@@ -260,6 +260,7 @@ public sealed class RuntimeSequenceStoragePromotionPass :
         MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => aliases.Contains(target),
         MirBinOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => aliases.Contains(target),
         MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => aliases.Contains(target),
+        MirSelect { Target: { Kind: PlaceKind.Local, Local: var target } } => aliases.Contains(target),
         MirLoad
         {
             Target: { Kind: PlaceKind.Local, Local: var target },

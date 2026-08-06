@@ -651,6 +651,10 @@ public sealed class RuntimeArrayRangeSpecializationPass : IMirOptimizationPass
                 return !OperandOverlapsRange(binary.Left, state) && !OperandOverlapsRange(binary.Right, state);
             case MirUnaryOp unary:
                 return !OperandOverlapsRange(unary.Operand, state);
+            case MirSelect select:
+                return !OperandOverlapsRange(select.Condition, state) &&
+                       !OperandOverlapsRange(select.TrueValue, state) &&
+                       !OperandOverlapsRange(select.FalseValue, state);
             case MirCaseInject injection:
                 return !OperandOverlapsRange(injection.Operand, state);
             default:
@@ -710,6 +714,9 @@ public sealed class RuntimeArrayRangeSpecializationPass : IMirOptimizationPass
                 break;
             case MirUnaryOp unary when unary.Target is MirPlace target:
                 ClearPlace(target, state);
+                break;
+            case MirSelect select:
+                ClearPlace(select.Target, state);
                 break;
         }
     }
@@ -888,6 +895,9 @@ public sealed class RuntimeArrayRangeSpecializationPass : IMirOptimizationPass
                         (call.RecordUpdate == null ? 0 : CountOperandUses(call.RecordUpdate.Source, local)),
         MirBinOp binary => CountOperandUses(binary.Left, local) + CountOperandUses(binary.Right, local),
         MirUnaryOp unary => CountOperandUses(unary.Operand, local),
+        MirSelect select => CountOperandUses(select.Condition, local) +
+                            CountOperandUses(select.TrueValue, local) +
+                            CountOperandUses(select.FalseValue, local),
         MirLoad load => CountOperandUses(load.Source, local),
         MirStore store => CountOperandUses(store.Target, local) + CountOperandUses(store.Value, local),
         MirDrop drop => CountOperandUses(drop.Value, local),

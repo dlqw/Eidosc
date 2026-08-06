@@ -309,6 +309,8 @@ public sealed record HirIf : HirNode
     /// </summary>
     public HirNode? ElseBranch { get; init; }
 
+    public HirDecisionPlan? DecisionPlan { get; set; }
+
     public override string ToString() => ElseBranch != null ? "If(..., ..., ...)" : "If(..., ...)";
 }
 
@@ -457,6 +459,8 @@ public sealed record HirMatch : HirNode
     public List<HirMatchBranch> Branches { get; init; } = [];
 
     public bool IsExhaustive { get; init; }
+
+    public HirDecisionPlan? DecisionPlan { get; set; }
 
     public override string ToString() => $"Match({Branches.Count} branches)";
 }

@@ -140,6 +140,11 @@ public sealed partial class MirGenericSpecializer
             MirUnaryOp unaryOp =>
                 OperandUsesLocal(unaryOp.Target, localId) ||
                 OperandUsesLocal(unaryOp.Operand, localId),
+            MirSelect select =>
+                PlaceUsesLocal(select.Target, localId) ||
+                OperandUsesLocal(select.Condition, localId) ||
+                OperandUsesLocal(select.TrueValue, localId) ||
+                OperandUsesLocal(select.FalseValue, localId),
             MirLoad load => PlaceUsesLocal(load.Target, localId) || OperandUsesLocal(load.Source, localId),
             MirStore store => PlaceUsesLocal(store.Target, localId) || OperandUsesLocal(store.Value, localId),
             MirDrop drop => OperandUsesLocal(drop.Value, localId),

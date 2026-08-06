@@ -160,6 +160,22 @@ public sealed record MirUnaryOp : MirInstruction
 }
 
 /// <summary>
+/// Pure scalar value selection without control-flow side effects.
+/// </summary>
+public sealed record MirSelect : MirInstruction
+{
+    public MirPlace Target { get; init; } = null!;
+
+    public MirOperand Condition { get; init; } = null!;
+
+    public MirOperand TrueValue { get; init; } = null!;
+
+    public MirOperand FalseValue { get; init; } = null!;
+
+    public override string ToString() => $"{Target} = select {Condition} ? {TrueValue} : {FalseValue}";
+}
+
+/// <summary>
 /// 加载值（目标 + 常量/变量）
 /// </summary>
 public sealed record MirLoad : MirInstruction

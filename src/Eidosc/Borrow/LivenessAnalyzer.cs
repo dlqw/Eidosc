@@ -184,6 +184,16 @@ public sealed class LivenessAnalyzer
                 }
                 break;
 
+            case MirSelect select:
+                CollectOperandUse(select.Condition, use, def);
+                CollectOperandUse(select.TrueValue, use, def);
+                CollectOperandUse(select.FalseValue, use, def);
+                if (TryGetLocalIndex(select.Target.Local, out var selectTargetIndex))
+                {
+                    def.Add(selectTargetIndex);
+                }
+                break;
+
             case MirLoad load:
                 CollectOperandUse(load.Source, use, def);
                 if (MirLocalTransferAnalysis.TryGetBinding(load, out var loadBinding) &&

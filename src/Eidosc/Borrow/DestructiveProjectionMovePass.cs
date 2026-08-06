@@ -223,6 +223,7 @@ public sealed class DestructiveProjectionMovePass : IMirOptimizationPass
         MirCall { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
         MirBinOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
         MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
+        MirSelect { Target: { Kind: PlaceKind.Local, Local: var target } } => target == local,
         MirLoad { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
         MirStore { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
         MirCopy { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } => target == local,
@@ -254,6 +255,11 @@ public sealed class DestructiveProjectionMovePass : IMirOptimizationPass
                 break;
             case MirUnaryOp unary:
                 yield return unary.Operand;
+                break;
+            case MirSelect select:
+                yield return select.Condition;
+                yield return select.TrueValue;
+                yield return select.FalseValue;
                 break;
             case MirLoad load:
                 yield return load.Source;

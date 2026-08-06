@@ -1186,6 +1186,11 @@ public sealed partial class MirToLlvmConverter
                     case MirUnaryOp unaryOp:
                         CollectFunctionLocalFromOperand(unaryOp.Operand);
                         break;
+                    case MirSelect select:
+                        CollectFunctionLocalFromOperand(select.Condition);
+                        CollectFunctionLocalFromOperand(select.TrueValue);
+                        CollectFunctionLocalFromOperand(select.FalseValue);
+                        break;
                     case MirCaseInject injection:
                         CollectFunctionLocalFromOperand(injection.Operand);
                         break;
@@ -1319,6 +1324,10 @@ public sealed partial class MirToLlvmConverter
 
             case MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } unaryTarget }:
                 local = unaryTarget.Local;
+                return true;
+
+            case MirSelect { Target: { Kind: PlaceKind.Local } selectTarget }:
+                local = selectTarget.Local;
                 return true;
 
             default:
@@ -1610,6 +1619,15 @@ public sealed partial class MirToLlvmConverter
 
             case MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } target } unaryOp when target.Local.Equals(localId):
                 return TryInferUnaryOpType(unaryOp, visiting, out inferredType);
+
+            case MirSelect { Target: { Kind: PlaceKind.Local } target } select when target.Local.Equals(localId):
+                if (target.TypeId.IsValid)
+                {
+                    inferredType = LowerStorageTypeIdOrReport(target.TypeId, "infer select result");
+                    return inferredType is not LlvmVoidType;
+                }
+
+                return TryInferOperandType(select.TrueValue, visiting, out inferredType);
 
             case MirAlloc { Target: { Kind: PlaceKind.Local } target } when target.Local.Equals(localId):
                 inferredType = LlvmPointerType.VoidPtr();
