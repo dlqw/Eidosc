@@ -131,6 +131,7 @@ public sealed partial class MirOptimizer
 
         // Round 1: local simplification and conservative effect-aware motion
         optimizer.RegisterPass(new ConstantFolding());
+        optimizer.RegisterPass(new DecisionSimplification());
         optimizer.RegisterPass(new CommonSubexpressionElimination());
         optimizer.RegisterPass(new LoopInvariantCodeMotion());
         optimizer.RegisterPass(new DeadCodeElimination());
