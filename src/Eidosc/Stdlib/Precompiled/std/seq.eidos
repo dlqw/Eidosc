@@ -607,40 +607,24 @@ Seq :: module {
 
     // ── Aggregation ──────────────────────────────────────────────
 
+    sum_step :: Int -> Int -> Int compiler(internal)
+    {
+        total, value => total + value
+    }
+
+    product_step :: Int -> Int -> Int compiler(internal)
+    {
+        total, value => total * value
+    }
+
     export sum :: Seq[Int] -> Int
     {
-        xs => {
-            len := Seq.len_ref(ref xs);
-            mut index := 0;
-            mut total := 0;
-            loop {
-                if index >= len then { break }
-                else {
-                    total = total + xs[index];
-                    index = index + 1;
-                    ()
-                }
-            }
-            total
-        }
+        xs => xs.fold_left(0, Seq.sum_step)
     }
 
     export product :: Seq[Int] -> Int
     {
-        xs => {
-            len := Seq.len_ref(ref xs);
-            mut index := 0;
-            mut total := 1;
-            loop {
-                if index >= len then { break }
-                else {
-                    total = total * xs[index];
-                    index = index + 1;
-                    ()
-                }
-            }
-            total
-        }
+        xs => xs.fold_left(1, Seq.product_step)
     }
 
     // ── Membership ───────────────────────────────────────────────

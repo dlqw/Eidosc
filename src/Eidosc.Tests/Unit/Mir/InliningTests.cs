@@ -188,6 +188,103 @@ public sealed class InliningTests
     }
 
     [Fact]
+    public void Run_ExactArityDirectCallToNamedTwoParameterFunction_Inlines()
+    {
+        var callee = BuildTwoParameterFunction("select_left", new SymbolId(21));
+        var caller = BuildTwoArgumentCaller("caller", callee);
+
+        var optimized = RunInlining(new MirModule { Functions = [callee, caller] });
+        var optimizedCaller = optimized.Functions.Single(function => function.Name == caller.Name);
+        var instructions = Assert.Single(optimizedCaller.BasicBlocks).Instructions;
+
+        Assert.DoesNotContain(instructions, static instruction => instruction is MirCall);
+        Assert.Equal(3, instructions.Count);
+        Assert.Equal(caller.Locals.Count + callee.Locals.Count, optimizedCaller.Locals.Count);
+    }
+
+    [Fact]
+    public void Run_PartialApplicationOfNamedTwoParameterFunction_KeepsCallBoundary()
+    {
+        var callee = BuildTwoParameterFunction("select_left", new SymbolId(22));
+        var caller = BuildTwoArgumentCaller("caller", callee, argumentCount: 1);
+
+        AssertCallRemains(callee, caller);
+    }
+
+    [Fact]
+    public void Run_IndirectTwoParameterCall_KeepsClosureBoundary()
+    {
+        var callee = BuildTwoParameterFunction("select_left", new SymbolId(23));
+        var caller = BuildTwoArgumentCaller("caller", callee, useDirectReference: false);
+
+        AssertCallRemains(callee, caller);
+    }
+
+    [Fact]
+    public void Run_ExactArityDirectCall_ScalarizesCurriedAggregateProtocol()
+    {
+        var tupleType = new TypeId(9000);
+        var symbolId = new SymbolId(24);
+        var left = Local(1, "left", IntType, isParameter: true);
+        var right = Local(2, "right", IntType, isParameter: true);
+        var aggregate = Local(3, "aggregate", tupleType);
+        var leftCopy = Local(4, "left_copy", IntType);
+        var rightCopy = Local(5, "right_copy", IntType);
+        var aggregateAlias = Local(6, "aggregate_alias", tupleType);
+        var loadedLeft = Local(7, "loaded_left", IntType);
+        var loadedRight = Local(8, "loaded_right", IntType);
+        var result = Local(9, "result", IntType);
+        var block = new MirBasicBlock
+        {
+            Id = Block(1),
+            IsEntry = true,
+            Instructions =
+            [
+                new MirAlloc { Target = Place(aggregate.Id, tupleType), TypeId = tupleType },
+                new MirCopy { Target = Place(leftCopy.Id, IntType), Source = Place(left.Id, IntType) },
+                new MirStore { Target = Index(aggregate.Id, 0, tupleType), Value = Place(leftCopy.Id, IntType) },
+                new MirCopy { Target = Place(rightCopy.Id, IntType), Source = Place(right.Id, IntType) },
+                new MirStore { Target = Index(aggregate.Id, 1, tupleType), Value = Place(rightCopy.Id, IntType) },
+                new MirCopy { Target = Place(aggregateAlias.Id, tupleType), Source = Place(aggregate.Id, tupleType) },
+                new MirLoad { Target = Place(loadedLeft.Id, IntType), Source = Index(aggregateAlias.Id, 0, tupleType) },
+                new MirLoad { Target = Place(loadedRight.Id, IntType), Source = Index(aggregateAlias.Id, 1, tupleType) },
+                new MirDrop { Value = Place(aggregateAlias.Id, tupleType) },
+                new MirBinOp
+                {
+                    Target = Place(result.Id, IntType),
+                    Operator = BinaryOp.Add,
+                    Left = Place(loadedLeft.Id, IntType),
+                    Right = Place(loadedRight.Id, IntType)
+                }
+            ],
+            Terminator = new MirReturn { Value = Place(result.Id, IntType) }
+        };
+        var callee = new MirFunc
+        {
+            Name = "aggregate_step",
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = "aggregate_step" },
+            ReturnType = IntType,
+            EntryBlockId = block.Id,
+            Locals = [left, right, aggregate, leftCopy, rightCopy, aggregateAlias, loadedLeft, loadedRight, result],
+            BasicBlocks = [block]
+        };
+        var caller = BuildTwoArgumentCaller("caller", callee);
+
+        var optimized = RunInlining(
+            new MirModule
+            {
+                Functions = [callee, caller],
+                CopyLikeTypeIds = [tupleType.Value]
+            });
+        var optimizedCaller = optimized.Functions.Single(function => function.Name == caller.Name);
+
+        Assert.DoesNotContain(
+            optimizedCaller.BasicBlocks.SelectMany(static block => block.Instructions),
+            static instruction => instruction is MirAlloc);
+    }
+
+    [Fact]
     public void Run_RewritePreservesCallerMetadata()
     {
         var callee = BuildIdentityFunction("identity", new SymbolId(16), IntType);
@@ -240,7 +337,7 @@ public sealed class InliningTests
                 static group => group.Key,
                 static _ => FunctionOptimizationSummary.Pure,
                 StringComparer.Ordinal);
-        var pass = new Inlining(maxInlineSize: 0);
+        var pass = new Inlining(maxInlineSize: 30);
         ((IFunctionOptimizationProofConsumer)pass).FunctionProofs =
             new FunctionOptimizationProofIndex(
                 new FunctionOptimizationSummaryIndex(summaries),
@@ -320,6 +417,75 @@ public sealed class InliningTests
         };
     }
 
+    private static MirFunc BuildTwoParameterFunction(string name, SymbolId symbolId)
+    {
+        var left = Local(1, "left", IntType, isParameter: true);
+        var right = Local(2, "right", IntType, isParameter: true);
+        var block = new MirBasicBlock
+        {
+            Id = Block(1),
+            IsEntry = true,
+            Terminator = new MirReturn { Value = Place(left.Id, IntType) }
+        };
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = name },
+            ReturnType = IntType,
+            EntryBlockId = block.Id,
+            Locals = [left, right],
+            BasicBlocks = [block]
+        };
+    }
+
+    private static MirFunc BuildTwoArgumentCaller(
+        string name,
+        MirFunc callee,
+        int argumentCount = 2,
+        bool useDirectReference = true)
+    {
+        var left = Local(1, "left", IntType, isParameter: true);
+        var right = Local(2, "right", IntType, isParameter: true);
+        var result = Local(3, "result", IntType);
+        MirOperand function = useDirectReference
+            ? new MirFunctionRef
+            {
+                Name = callee.Name,
+                SymbolId = callee.SymbolId,
+                FunctionId = callee.FunctionId,
+                TypeId = IntType
+            }
+            : new MirConstant
+            {
+                TypeId = IntType,
+                Value = new MirConstantValue.StringValue(callee.Name)
+            };
+        var arguments = new List<MirOperand> { Place(left.Id, IntType), Place(right.Id, IntType) };
+        var call = new MirCall
+        {
+            Target = Place(result.Id, IntType),
+            Function = function,
+            Arguments = arguments.Take(argumentCount).ToList()
+        };
+        var block = new MirBasicBlock
+        {
+            Id = Block(1),
+            IsEntry = true,
+            Instructions = [call],
+            Terminator = new MirReturn { Value = Place(result.Id, IntType) }
+        };
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = new SymbolId(100 + callee.SymbolId.Value),
+            ReturnType = IntType,
+            EntryBlockId = block.Id,
+            Locals = [left, right, result],
+            BasicBlocks = [block]
+        };
+    }
+
     private static MirLocal Local(int id, string name, TypeId type, bool isParameter = false) => new()
     {
         Id = new LocalId { Value = id },
@@ -333,6 +499,18 @@ public sealed class InliningTests
         Kind = PlaceKind.Local,
         Local = localId,
         TypeId = type
+    };
+
+    private static MirPlace Index(LocalId localId, long index, TypeId aggregateType) => new()
+    {
+        Kind = PlaceKind.Index,
+        Base = Place(localId, aggregateType),
+        Index = new MirConstant
+        {
+            TypeId = IntType,
+            Value = new MirConstantValue.IntValue(index)
+        },
+        TypeId = IntType
     };
 
     private static BlockId Block(int value) => new() { Value = value };

@@ -397,6 +397,50 @@ public partial class LlvmPipelineIntegrationTests
     }
 
     [Fact]
+    public void SeqFoldLeft_CopyReducer_LowersToSingleSourceLoop()
+    {
+        const string source = """
+            import std.Seq
+
+            sum_left :: Int -> Int -> Int
+            {
+                acc, item => acc + item
+            }
+
+            main :: Unit -> Int
+            {
+                _ => [10, 20, 12].fold_left(0, sum_left)
+            }
+            """;
+
+        var result = RunSourceAtMir(
+            source,
+            "seq_fold_left_direct_lowering.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        var main = Assert.Single(module.Functions, static function => function.Name == "main");
+        var calls = main.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .ToList();
+
+        Assert.DoesNotContain(calls, static call => call.Function is MirFunctionRef
+        {
+            CompilerSemanticRole: CompilerSemanticRole.SequenceFoldLeft
+        });
+        Assert.DoesNotContain(calls, static call => call.Function is MirFunctionRef
+        {
+            Name: "sum_left"
+        });
+        Assert.True(result.ProfilingCounters["Mir.optimizer.sequence.direct_folds_lowered"] >= 1);
+        Assert.Contains(main.Locals, static local => local.Name == "__sequence_fold_index");
+    }
+
+    [Fact]
     public void SeqMapFilterFold_PureCallbacks_NativeSmoke_ReturnsChecksum()
     {
         var execution = CompileAndRunSourceAtNative(
