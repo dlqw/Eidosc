@@ -71,7 +71,14 @@ public sealed class SequencePipelineFusionPass :
             foreach (var (function, plan) in plans)
             {
                 ApplyPlan(function, plan);
-                Stats.PipelinesFormed++;
+                if (plan is DirectFoldPlan)
+                {
+                    Stats.DirectFoldsLowered++;
+                }
+                else
+                {
+                    Stats.PipelinesFormed++;
+                }
                 Stats.IntermediatesElided += plan.IntermediatesElided;
             }
         }
@@ -267,6 +274,77 @@ public sealed class SequencePipelineFusionPass :
                         : null,
                     mapFunction.Span,
                     filterFunction.Span);
+                return true;
+            }
+        }
+
+        return TryFindDirectFoldPlan(module, function, functionsByKey, out plan);
+    }
+
+    private bool TryFindDirectFoldPlan(
+        MirModule module,
+        MirFunc function,
+        IReadOnlyDictionary<string, MirFunc> functionsByKey,
+        out SequencePipelinePlan plan)
+    {
+        plan = null!;
+        foreach (var block in function.BasicBlocks.ToArray())
+        {
+            for (var instructionIndex = 0; instructionIndex < block.Instructions.Count; instructionIndex++)
+            {
+                if (block.Instructions[instructionIndex] is not MirCall
+                    {
+                        Target: MirPlace { Kind: PlaceKind.Local } foldTarget,
+                        Function: MirFunctionRef
+                        {
+                            CompilerSemanticRole: CompilerSemanticRole.SequenceFoldLeft
+                        } foldFunction,
+                        Arguments.Count: 3
+                    } foldCall ||
+                    foldCall.Arguments[0] is not MirPlace { Kind: PlaceKind.Local } source)
+                {
+                    continue;
+                }
+
+                Stats.RoleCalls++;
+                if (foldCall.Arguments[2] is not MirFunctionRef reducer ||
+                    !TryResolveCallback(functionsByKey, reducer, out var reducerFunction))
+                {
+                    Stats.FallbackUnknownCallback++;
+                    continue;
+                }
+
+                var reducerParameters = reducerFunction.Locals
+                    .Where(static local => local.IsParameter)
+                    .ToArray();
+                var accumulatorType = reducerFunction.ReturnType;
+                if (reducerParameters.Length != 2 ||
+                    !accumulatorType.IsValid ||
+                    reducerParameters[0].TypeId != accumulatorType)
+                {
+                    Stats.FallbackUnknownCallback++;
+                    continue;
+                }
+
+                var sourceElementType = reducerParameters[1].TypeId;
+                if (!sourceElementType.IsValid ||
+                    !IsCopyType(module, sourceElementType) ||
+                    !IsCopyType(module, accumulatorType))
+                {
+                    Stats.FallbackOwnership++;
+                    continue;
+                }
+
+                plan = new DirectFoldPlan(
+                    block,
+                    instructionIndex,
+                    source,
+                    reducer,
+                    foldCall.Arguments[1],
+                    foldTarget,
+                    sourceElementType,
+                    accumulatorType,
+                    foldFunction.Span);
                 return true;
             }
         }
@@ -688,9 +766,160 @@ public sealed class SequencePipelineFusionPass :
             case MapFilterCollectPlan collect:
                 ApplyCollectPlan(function, collect);
                 break;
+            case DirectFoldPlan directFold:
+                ApplyDirectFoldPlan(function, directFold);
+                break;
             default:
                 throw new InvalidOperationException($"Unsupported sequence pipeline plan '{plan.GetType().Name}'.");
         }
+    }
+
+    private static void ApplyDirectFoldPlan(MirFunc function, DirectFoldPlan plan)
+    {
+        var span = plan.FoldSpan;
+        var intType = new TypeId(BaseTypes.IntId);
+        var boolType = new TypeId(BaseTypes.BoolId);
+        var nextLocalValue = function.Locals.Count == 0
+            ? 1
+            : function.Locals.Max(static local => local.Id.Value) + 1;
+        var nextBlockValue = function.BasicBlocks.Max(static block => block.Id.Value) + 1;
+
+        MirPlace NewLocal(string name, TypeId type)
+        {
+            var id = new LocalId { Value = nextLocalValue++ };
+            function.Locals.Add(new MirLocal { Id = id, Name = name, TypeId = type });
+            return new MirPlace { Kind = PlaceKind.Local, Local = id, TypeId = type, Span = span };
+        }
+
+        MirBasicBlock NewBlock()
+        {
+            var block = new MirBasicBlock
+            {
+                Id = new BlockId { Value = nextBlockValue++ },
+                Span = span
+            };
+            function.BasicBlocks.Add(block);
+            return block;
+        }
+
+        var length = NewLocal("__sequence_fold_length", intType);
+        var index = NewLocal("__sequence_fold_index", intType);
+        var accumulator = NewLocal("__sequence_fold_accumulator", plan.AccumulatorType);
+        var exhausted = NewLocal("__sequence_fold_exhausted", boolType);
+        var element = NewLocal("__sequence_fold_element", plan.SourceElementType);
+        var accumulatorArgument = NewLocal("__sequence_fold_accumulator_argument", plan.AccumulatorType);
+        var nextAccumulator = NewLocal("__sequence_fold_next_accumulator", plan.AccumulatorType);
+        var nextAccumulatorValue = NewLocal("__sequence_fold_next_accumulator_value", plan.AccumulatorType);
+        var nextIndex = NewLocal("__sequence_fold_next_index", intType);
+
+        var continuation = NewBlock();
+        continuation.Instructions.AddRange(
+            plan.Block.Instructions.Skip(plan.InstructionIndex + 1));
+        continuation.Terminator = plan.Block.Terminator;
+
+        var header = NewBlock();
+        var reduce = NewBlock();
+        var increment = NewBlock();
+        var exit = NewBlock();
+
+        plan.Block.Instructions.RemoveRange(
+            plan.InstructionIndex,
+            plan.Block.Instructions.Count - plan.InstructionIndex);
+        plan.Block.Instructions.Add(new MirCall
+        {
+            Target = length,
+            Function = MirRuntimeFunctions.CreateFunctionRef(
+                WellKnownStrings.InternalNames.ArrayLength,
+                intType,
+                span),
+            Arguments = [plan.Source],
+            BorrowedArgumentIndices = new HashSet<int> { 0 },
+            Span = span
+        });
+        plan.Block.Instructions.Add(new MirAssign
+        {
+            Target = index,
+            Source = IntConstant(0, span),
+            Span = span
+        });
+        plan.Block.Instructions.Add(CreateTransfer(accumulator, plan.Initial, span));
+        plan.Block.Terminator = new MirGoto { Target = header.Id, Span = span };
+
+        header.Instructions.Add(new MirBinOp
+        {
+            Target = exhausted,
+            Operator = BinaryOp.Ge,
+            Left = index,
+            Right = length,
+            Span = span
+        });
+        header.Terminator = BoolSwitch(exhausted, exit.Id, reduce.Id, span);
+
+        reduce.Instructions.Add(new MirLoad
+        {
+            Target = element,
+            Source = new MirPlace
+            {
+                Kind = PlaceKind.Index,
+                Base = plan.Source,
+                Index = index,
+                IndexAccessKind = MirIndexAccessKind.RuntimeArray,
+                TypeId = plan.SourceElementType,
+                Span = span
+            },
+            CreatesBorrowAlias = false,
+            Span = span
+        });
+        reduce.Instructions.Add(new MirMove
+        {
+            Target = accumulatorArgument,
+            Source = accumulator,
+            Span = span
+        });
+        reduce.Instructions.Add(new MirCall
+        {
+            Target = nextAccumulator,
+            Function = plan.Reducer,
+            Arguments = [accumulatorArgument, element],
+            Span = span
+        });
+        reduce.Instructions.Add(new MirMove
+        {
+            Target = nextAccumulatorValue,
+            Source = nextAccumulator,
+            Span = span
+        });
+        reduce.Instructions.Add(new MirStore
+        {
+            Target = accumulator,
+            Value = nextAccumulatorValue,
+            Span = span
+        });
+        reduce.Terminator = new MirGoto { Target = increment.Id, Span = span };
+
+        increment.Instructions.Add(new MirBinOp
+        {
+            Target = nextIndex,
+            Operator = BinaryOp.Add,
+            Left = index,
+            Right = IntConstant(1, span),
+            Span = span
+        });
+        increment.Instructions.Add(new MirStore
+        {
+            Target = index,
+            Value = nextIndex,
+            Span = span
+        });
+        increment.Terminator = new MirGoto { Target = header.Id, Span = span };
+
+        exit.Instructions.Add(new MirMove
+        {
+            Target = plan.FoldTarget,
+            Source = accumulator,
+            Span = span
+        });
+        exit.Terminator = new MirGoto { Target = continuation.Id, Span = span };
     }
 
     private static void ApplyFoldPlan(MirFunc function, MapFilterFoldPlan plan)
@@ -1075,6 +1304,17 @@ public sealed class SequencePipelineFusionPass :
         SourceSpan MapSpan,
         SourceSpan FilterSpan) : SequencePipelinePlan(1);
 
+    private sealed record DirectFoldPlan(
+        MirBasicBlock Block,
+        int InstructionIndex,
+        MirPlace Source,
+        MirFunctionRef Reducer,
+        MirOperand Initial,
+        MirPlace FoldTarget,
+        TypeId SourceElementType,
+        TypeId AccumulatorType,
+        SourceSpan FoldSpan) : SequencePipelinePlan(0);
+
     private sealed class NoopDisposable : IDisposable
     {
         public static readonly NoopDisposable Instance = new();
@@ -1094,6 +1334,7 @@ public sealed class SequencePipelineFusionStats
     public long FunctionsScanned { get; internal set; }
     public long RoleCalls { get; internal set; }
     public long PipelinesFormed { get; internal set; }
+    public long DirectFoldsLowered { get; internal set; }
     public long IntermediatesElided { get; internal set; }
     public long FallbackEffect { get; internal set; }
     public long FallbackPanicOrDivergence { get; internal set; }
@@ -1113,6 +1354,7 @@ public sealed class SequencePipelineFusionStats
             ["sequence.functions_scanned"] = FunctionsScanned,
             ["sequence.role_calls"] = RoleCalls,
             ["sequence.pipelines_formed"] = PipelinesFormed,
+            ["sequence.direct_folds_lowered"] = DirectFoldsLowered,
             ["sequence.intermediates_elided"] = IntermediatesElided,
             ["sequence.fallback.effect"] = FallbackEffect,
             ["sequence.fallback.panic_or_divergence"] = FallbackPanicOrDivergence,
@@ -1132,6 +1374,7 @@ public sealed class SequencePipelineFusionStats
         FunctionsScanned = 0;
         RoleCalls = 0;
         PipelinesFormed = 0;
+        DirectFoldsLowered = 0;
         IntermediatesElided = 0;
         FallbackEffect = 0;
         FallbackPanicOrDivergence = 0;

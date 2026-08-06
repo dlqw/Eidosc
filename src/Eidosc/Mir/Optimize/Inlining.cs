@@ -82,7 +82,8 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
                 func,
                 inlineCandidatesBySymbol,
                 inlineCandidatesByIdentity,
-                inlineCandidatesByName));
+                inlineCandidatesByName,
+                module.CopyLikeTypeIds));
         }
 
         return new MirModule
@@ -164,15 +165,6 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
             func.Name.StartsWith("std__Text", StringComparison.Ordinal) ||
             func.Name.StartsWith("std__Console", StringComparison.Ordinal) ||
             func.Name.StartsWith("__eidos_prelude_core__Display", StringComparison.Ordinal))
-        {
-            return false;
-        }
-        // Curried multi-parameter functions are first-class closure values at
-        // call sites (partial application, closure protocol); inlining their
-        // bodies duplicates the materialization/refcount paths and breaks the
-        // closure contract under concurrency. Single-parameter functions (the
-        // hot fib_value-style candidates) keep inlining.
-        if (func.Locals.Count(static local => local.IsParameter) > 1)
         {
             return false;
         }
@@ -280,7 +272,8 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
         MirFunc func,
         IReadOnlyDictionary<SymbolId, MirFunc> candidatesBySymbol,
         IReadOnlyDictionary<string, MirFunc> candidatesByIdentity,
-        IReadOnlyDictionary<string, MirFunc> candidatesByName)
+        IReadOnlyDictionary<string, MirFunc> candidatesByName,
+        IReadOnlySet<int> copyLikeTypeIds)
     {
         var newLocals = new List<MirLocal>(func.Locals);
         int nextLocalId = func.Locals.Select(l => l.Id.Value).DefaultIfEmpty(0).Max() + 1;
@@ -301,6 +294,7 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
                 candidatesBySymbol,
                 candidatesByIdentity,
                 candidatesByName,
+                copyLikeTypeIds,
                 newLocals,
                 ref nextLocalId,
                 ref nextTempId));
@@ -367,6 +361,7 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
         IReadOnlyDictionary<SymbolId, MirFunc> candidatesBySymbol,
         IReadOnlyDictionary<string, MirFunc> candidatesByIdentity,
         IReadOnlyDictionary<string, MirFunc> candidatesByName,
+        IReadOnlySet<int> copyLikeTypeIds,
         List<MirLocal> newLocals,
         ref int nextLocalId,
         ref int nextTempId)
@@ -377,8 +372,16 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
         {
             if (instr is MirCall call &&
                 TryResolveInlineCandidate(call, candidatesBySymbol, candidatesByIdentity, candidatesByName, out var callee) &&
+                HasSupportedCallShape(call, callee) &&
                 CanInlineBetweenFunctions(containingFunction, callee) &&
-                TryInlineSingleBlockCall(call, callee, newLocals, ref nextLocalId, ref nextTempId, out var inlined))
+                TryInlineSingleBlockCall(
+                    call,
+                    callee,
+                    copyLikeTypeIds,
+                    newLocals,
+                    ref nextLocalId,
+                    ref nextTempId,
+                    out var inlined))
             {
                 newInstructions.AddRange(inlined);
             }
@@ -398,6 +401,21 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
         };
     }
 
+    private static bool HasSupportedCallShape(MirCall call, MirFunc callee)
+    {
+        var parameterCount = callee.Locals.Count(static local => local.IsParameter);
+        if (parameterCount <= 1)
+        {
+            return true;
+        }
+
+        // A saturated direct reference has already crossed the currying and
+        // closure-materialization boundary. Indirect references and partial
+        // applications must retain that boundary.
+        return call.Function is MirFunctionRef &&
+               call.Arguments.Count == parameterCount;
+    }
+
     /// <summary>
     /// Inline a single-block callee at a call site.
     /// Returns the list of instructions to replace the call.
@@ -405,6 +423,7 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
     private bool TryInlineSingleBlockCall(
         MirCall call,
         MirFunc callee,
+        IReadOnlySet<int> copyLikeTypeIds,
         List<MirLocal> newLocals,
         ref int nextLocalId,
         ref int nextTempId,
@@ -510,7 +529,190 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
                 returnInstruction.Span));
         }
 
+        SimplifyInlinedAggregateRoundTrips(result, copyLikeTypeIds);
+
         return true;
+    }
+
+    private static void SimplifyInlinedAggregateRoundTrips(
+        List<MirInstruction> instructions,
+        IReadOnlySet<int> copyLikeTypeIds)
+    {
+        for (var start = 0; start < instructions.Count; start++)
+        {
+            if (instructions[start] is not MirAlloc
+                {
+                    Target: { Kind: PlaceKind.Local, Local: var allocationLocal }
+                })
+            {
+                continue;
+            }
+
+            var fields = new Dictionary<long, (MirOperand Value, int StoreIndex)>();
+            LocalId? aliasLocal = null;
+            var remove = new HashSet<int> { start };
+            var replacementLoads = new Dictionary<int, MirInstruction>();
+
+            for (var index = start + 1; index < instructions.Count; index++)
+            {
+                switch (instructions[index])
+                {
+                    case MirStore
+                    {
+                        Target: {
+                            Kind: PlaceKind.Index,
+                            Base: { Kind: PlaceKind.Local, Local: var baseLocal },
+                            Index: MirConstant { Value: MirConstantValue.IntValue(var fieldIndex) }
+                        }
+                    } store
+                        when baseLocal == allocationLocal &&
+                             IsCopyLikeInliningType(store.Value.TypeId, copyLikeTypeIds):
+                        fields[fieldIndex] = (store.Value, index);
+                        remove.Add(index);
+                        continue;
+
+                    case MirCopy
+                    {
+                        Target: { Kind: PlaceKind.Local, Local: var targetLocal },
+                        Source: { Kind: PlaceKind.Local, Local: var sourceLocal }
+                    }
+                        when sourceLocal == allocationLocal && aliasLocal == null:
+                        aliasLocal = targetLocal;
+                        remove.Add(index);
+                        continue;
+
+                    case MirMove
+                    {
+                        Target: { Kind: PlaceKind.Local, Local: var targetLocal },
+                        Source: { Kind: PlaceKind.Local, Local: var sourceLocal }
+                    }
+                        when sourceLocal == allocationLocal && aliasLocal == null:
+                        aliasLocal = targetLocal;
+                        remove.Add(index);
+                        continue;
+
+                    case MirLoad
+                    {
+                        Target: var loadTarget,
+                        Source: MirPlace {
+                            Kind: PlaceKind.Index,
+                            Base: { Kind: PlaceKind.Local, Local: var baseLocal },
+                            Index: MirConstant { Value: MirConstantValue.IntValue(var fieldIndex) }
+                        }
+                    } load
+                        when aliasLocal is { } currentAlias && baseLocal == currentAlias &&
+                             fields.TryGetValue(fieldIndex, out var field) &&
+                             IsStableStoredValue(field.Value, field.StoreIndex, index, instructions) &&
+                             IsCopyLikeInliningType(loadTarget.TypeId, copyLikeTypeIds):
+                        replacementLoads[index] = CreateCopyLikeBinding(loadTarget, field.Value, load.Span);
+                        continue;
+
+                    case MirDrop { Value: MirPlace { Kind: PlaceKind.Local, Local: var droppedLocal } }
+                        when aliasLocal is { } currentAlias && droppedLocal == currentAlias:
+                        remove.Add(index);
+                        continue;
+                }
+            }
+
+            if (aliasLocal == null || fields.Count == 0 || replacementLoads.Count == 0)
+            {
+                continue;
+            }
+
+            var touchedLocals = new HashSet<LocalId> { allocationLocal, aliasLocal.Value };
+            var outsideRangeUses = instructions
+                .Where((_, index) => !remove.Contains(index) && !replacementLoads.ContainsKey(index))
+                .Any(instruction => UsesAnyLocal(instruction, touchedLocals));
+            if (outsideRangeUses)
+            {
+                continue;
+            }
+
+            var rewritten = instructions
+                .Select((instruction, index) => replacementLoads.TryGetValue(index, out var replacement)
+                    ? replacement
+                    : instruction)
+                .Where((_, index) => !remove.Contains(index))
+                .ToList();
+            instructions.Clear();
+            instructions.AddRange(rewritten);
+            start = -1;
+        }
+    }
+
+    private static MirInstruction CreateCopyLikeBinding(
+        MirPlace target,
+        MirOperand source,
+        Eidosc.Utils.SourceSpan span)
+    {
+        return source is MirPlace { Kind: PlaceKind.Local } sourcePlace
+            ? new MirCopy { Target = target, Source = sourcePlace, Span = span }
+            : new MirAssign { Target = target, Source = source, Span = span };
+    }
+
+    private static bool IsStableStoredValue(
+        MirOperand operand,
+        int storeIndex,
+        int loadIndex,
+        IReadOnlyList<MirInstruction> instructions)
+    {
+        if (operand is not MirPlace { Kind: PlaceKind.Local, Local: var local })
+        {
+            return operand is MirConstant;
+        }
+
+        for (var index = storeIndex + 1; index < loadIndex; index++)
+        {
+            if (GetDefinedLocal(instructions[index]) == local)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static LocalId? GetDefinedLocal(MirInstruction instruction) => instruction switch
+    {
+        MirAssign { Target: { Kind: PlaceKind.Local } place } => place.Local,
+        MirCaseInject { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
+        MirCall { Target: { Kind: PlaceKind.Local } place } => place.Local,
+        MirLoad { Target: { Kind: PlaceKind.Local } place } => place.Local,
+        MirAlloc { Target: { Kind: PlaceKind.Local } place } => place.Local,
+        MirCopy { Target: { Kind: PlaceKind.Local } place } => place.Local,
+        MirMove { Target: { Kind: PlaceKind.Local } place } => place.Local,
+        MirBinOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
+        MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
+        _ => null
+    };
+
+    private static bool UsesAnyLocal(MirInstruction instruction, IReadOnlySet<LocalId> locals) =>
+        CollectLocals(instruction).Any(locals.Contains);
+
+    private static IEnumerable<LocalId> CollectLocals(MirInstruction instruction)
+    {
+        return instruction switch
+        {
+            MirAlloc alloc => CollectLocals(alloc.Target),
+            MirAssign assign => CollectLocals(assign.Target).Concat(CollectLocals(assign.Source)),
+            MirCopy copy => CollectLocals(copy.Target).Concat(CollectLocals(copy.Source)),
+            MirMove move => CollectLocals(move.Target).Concat(CollectLocals(move.Source)),
+            MirLoad load => CollectLocals(load.Target).Concat(CollectLocals(load.Source)),
+            MirStore store => CollectLocals(store.Target).Concat(CollectLocals(store.Value)),
+            MirDrop drop => CollectLocals(drop.Value),
+            _ => []
+        };
+    }
+
+    private static IEnumerable<LocalId> CollectLocals(MirOperand operand)
+    {
+        return operand switch
+        {
+            MirPlace { Local: { } local, Kind: PlaceKind.Local } => [local],
+            MirPlace place when place.Base != null => CollectLocals(place.Base)
+                .Concat(place.Index is { } index ? CollectLocals(index) : []),
+            _ => []
+        };
     }
 
     private static MirInstruction CreateOwnershipBinding(

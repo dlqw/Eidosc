@@ -9,6 +9,167 @@ namespace Eidosc.Tests.Unit.Mir;
 public sealed class SequencePipelineFusionPassTests
 {
     [Fact]
+    public void Run_DirectFoldOverCopyValues_LowersToSingleLoop()
+    {
+        var sequenceType = new TypeId(7001);
+        var intType = new TypeId(BaseTypes.IntId);
+        var source = Local(1, sequenceType);
+        var folded = Local(2, intType);
+        var reducer = Function("reducer");
+        var reducerLeft = Local(10, intType);
+        var reducerRight = Local(11, intType);
+        var reducerResult = Local(12, intType);
+
+        var function = new MirFunc
+        {
+            Name = "main",
+            ReturnType = intType,
+            Locals = [Decl(source, "source"), Decl(folded, "folded")],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        RoleCall(
+                            folded,
+                            CompilerSemanticRole.SequenceFoldLeft,
+                            source,
+                            Constant(0),
+                            reducer)
+                    ],
+                    Terminator = new MirReturn { Value = folded }
+                }
+            ]
+        };
+        var reducerFunction = new MirFunc
+        {
+            Name = "reducer",
+            FunctionId = reducer.FunctionId,
+            ReturnType = intType,
+            Locals =
+            [
+                Decl(reducerLeft, "left", isParameter: true),
+                Decl(reducerRight, "right", isParameter: true),
+                Decl(reducerResult, "result")
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        new MirBinOp
+                        {
+                            Target = reducerResult,
+                            Operator = BinaryOp.Add,
+                            Left = reducerLeft,
+                            Right = reducerRight
+                        }
+                    ],
+                    Terminator = new MirReturn { Value = reducerResult }
+                }
+            ]
+        };
+        var module = new MirModule { Name = "direct_fold", Functions = [function, reducerFunction] };
+        var pass = new SequencePipelineFusionPass();
+
+        var result = pass.Run(module);
+
+        Assert.NotSame(module, result);
+        Assert.Equal(1, pass.Stats.DirectFoldsLowered);
+        Assert.Equal(0, pass.Stats.PipelinesFormed);
+        Assert.DoesNotContain(
+            function.BasicBlocks.SelectMany(static block => block.Instructions).OfType<MirCall>(),
+            static call => call.Function is MirFunctionRef
+            {
+                CompilerSemanticRole: CompilerSemanticRole.SequenceFoldLeft
+            });
+        Assert.Contains(function.Locals, static local => local.Name == "__sequence_fold_index");
+    }
+
+    [Fact]
+    public void Run_DirectFoldWithNonCopyAccumulator_FallsBackWithoutMutation()
+    {
+        var sequenceType = new TypeId(7001);
+        var aggregateType = new TypeId(7002);
+        var intType = new TypeId(BaseTypes.IntId);
+        var source = Local(1, sequenceType);
+        var initial = Local(2, aggregateType);
+        var folded = Local(3, aggregateType);
+        var reducer = Function("aggregate_reducer");
+        var reducerAccumulator = Local(10, aggregateType);
+        var reducerElement = Local(11, intType);
+
+        var function = new MirFunc
+        {
+            Name = "main",
+            ReturnType = aggregateType,
+            Locals =
+            [
+                Decl(source, "source"),
+                Decl(initial, "initial"),
+                Decl(folded, "folded")
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        RoleCall(
+                            folded,
+                            CompilerSemanticRole.SequenceFoldLeft,
+                            source,
+                            initial,
+                            reducer)
+                    ],
+                    Terminator = new MirReturn { Value = folded }
+                }
+            ]
+        };
+        var reducerFunction = new MirFunc
+        {
+            Name = "aggregate_reducer",
+            FunctionId = reducer.FunctionId,
+            ReturnType = aggregateType,
+            Locals =
+            [
+                Decl(reducerAccumulator, "accumulator", isParameter: true),
+                Decl(reducerElement, "element", isParameter: true)
+            ],
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = new BlockId { Value = 1 },
+                    IsEntry = true,
+                    Terminator = new MirReturn { Value = reducerAccumulator }
+                }
+            ]
+        };
+        var module = new MirModule
+        {
+            Name = "direct_fold_non_copy",
+            Functions = [function, reducerFunction]
+        };
+        var pass = new SequencePipelineFusionPass();
+
+        var result = pass.Run(module);
+
+        Assert.Same(module, result);
+        Assert.Equal(0, pass.Stats.DirectFoldsLowered);
+        Assert.Equal(1, pass.Stats.FallbackOwnership);
+        Assert.Single(function.BasicBlocks[0].Instructions);
+    }
+
+    [Fact]
     public void Run_MapIntermediateWithSecondReader_FallsBackWithoutMutation()
     {
         var sequenceType = new TypeId(7001);
@@ -97,11 +258,12 @@ public sealed class SequencePipelineFusionPassTests
         TypeId = type
     };
 
-    private static MirLocal Decl(MirPlace place, string name) => new()
+    private static MirLocal Decl(MirPlace place, string name, bool isParameter = false) => new()
     {
         Id = place.Local,
         Name = name,
-        TypeId = place.TypeId
+        TypeId = place.TypeId,
+        IsParameter = isParameter
     };
 
     private static MirConstant Constant(long value) => new()
