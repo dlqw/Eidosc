@@ -189,6 +189,17 @@ public sealed class DecisionSimplification : IMirOptimizationPass, IMirOptimizat
                 case MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } unaryOp:
                     SetFact(target, TryFoldUnary(unaryOp, facts), facts);
                     break;
+                case MirMove { Target: MirPlace { Kind: PlaceKind.Local, Local: var target } } move:
+                    facts.Remove(target);
+                    if (move.Source is { Kind: PlaceKind.Local, Local: var source })
+                    {
+                        facts.Remove(source);
+                    }
+
+                    break;
+                case MirDrop { Value: MirPlace { Kind: PlaceKind.Local, Local: var dropped } }:
+                    facts.Remove(dropped);
+                    break;
                 default:
                     if (GetDefinedLocal(instruction) is { } definedLocal)
                     {
