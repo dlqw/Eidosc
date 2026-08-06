@@ -70,7 +70,7 @@ jobs:
           dotnet test Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
           --no-build
           --filter
-          "FullyQualifiedName~Eidosup|FullyQualifiedName~InfoCommandTests|FullyQualifiedName~MirValidatorTests|FullyQualifiedName~MirToLlvmConverterTests|FullyQualifiedName~MirOptimizerTests.CallerOwnedAggregate|FullyQualifiedName~MirOptimizerTests.UniqueRecordUpdate|FullyQualifiedName~MirOptimizerTests.RuntimeArrayRange|FullyQualifiedName~NativeCallerOwnedAggregate_NestedSeqUsesNoHeapAllocation|FullyQualifiedName~RuntimeEffectDispatch_MultiplePayloads_NativeSmoke|FullyQualifiedName~RuntimeEffectDispatch_NinePayloads_NativeSmoke|FullyQualifiedName~RuntimeEffectDispatch_WithThreePayloads_NativeSmoke|FullyQualifiedName~RuntimeContinuationFrameTake_NativeSmoke|FullyQualifiedName~StringLiteralInterning_NativeSmoke"
+          "FullyQualifiedName~Eidosup|FullyQualifiedName~InfoCommandTests|FullyQualifiedName~MirValidatorTests|FullyQualifiedName~MirToLlvmConverterTests|FullyQualifiedName~MirOptimizerTests.CallerOwnedAggregate|FullyQualifiedName~MirOptimizerTests.UniqueRecordUpdate|FullyQualifiedName~MirOptimizerTests.RuntimeArrayRange|FullyQualifiedName~ConstantFoldingCallTests|FullyQualifiedName~EffectSummaryTrustChainTests|FullyQualifiedName~EffectSummaryPipelineTests|FullyQualifiedName~NativeCallerOwnedAggregate_NestedSeqUsesNoHeapAllocation|FullyQualifiedName~RuntimeEffectDispatch_MultiplePayloads_NativeSmoke|FullyQualifiedName~RuntimeEffectDispatch_NinePayloads_NativeSmoke|FullyQualifiedName~RuntimeEffectDispatch_WithThreePayloads_NativeSmoke|FullyQualifiedName~RuntimeContinuationFrameTake_NativeSmoke|FullyQualifiedName~StringLiteralInterning_NativeSmoke"
           /p:UseSharedCompilation=false
           /nr:false
 

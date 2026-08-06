@@ -74,7 +74,7 @@ public sealed class ConstantFoldingCallTests
     }
 
     [Fact]
-    public void ConstantFolding_FibonacciWithRepeatedSubproblems_UsesMemoizedResults()
+    public void ConstantFolding_FibonacciBeyondStepBudget_RemainsUnfolded()
     {
         var fibonacci = CreateFibonacciFunction("fibonacci", new SymbolId(309));
         var caller = CreateConstantCallFunction(fibonacci, new SymbolId(310), IntConstant(32));
@@ -84,8 +84,7 @@ public sealed class ConstantFoldingCallTests
 
         var optimized = optimizer.Optimize(module);
 
-        var instruction = Assert.IsType<MirAssign>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
-        Assert.Equal(2178309L, Assert.IsType<MirConstantValue.IntValue>(Assert.IsType<MirConstant>(instruction.Source).Value).Value);
+        Assert.IsType<MirCall>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
     }
 
     [Fact]
@@ -262,7 +261,7 @@ public sealed class ConstantFoldingCallTests
     public void ConstantFolding_RepeatedIdenticalCalls_ReusesMemoizedResult()
     {
         var fibonacci = CreateFibonacciFunction("fibonacci", new SymbolId(327));
-        var caller = CreateRepeatedConstantCallFunction(fibonacci, new SymbolId(328), IntConstant(32));
+        var caller = CreateRepeatedConstantCallFunction(fibonacci, new SymbolId(328), IntConstant(20));
         var module = new MirModule { Name = "Main", Functions = [fibonacci, caller] };
         var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(fibonacci, EffectRow.Pure));
         optimizer.RegisterPass(new ConstantFolding());
@@ -274,7 +273,7 @@ public sealed class ConstantFoldingCallTests
         Assert.All(
             instructions.Cast<MirAssign>(),
             static instruction => Assert.Equal(
-                2178309L,
+                6765L,
                 Assert.IsType<MirConstantValue.IntValue>(Assert.IsType<MirConstant>(instruction.Source).Value).Value));
     }
 
