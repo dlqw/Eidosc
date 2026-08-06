@@ -77,7 +77,7 @@ HashMap :: module {
         // fold_left over a (acc, index) pair; fold_left is borrow-safe in this
         // module context (the conditional-push index loop is rejected by CPS).
         buckets => index => new_bucket => {
-            pair := Seq.fold_left(buckets)(([], 0))(acc => bucket =>
+            pair := buckets.fold_left(([], 0), acc => bucket =>
                 match acc {
                     (built, i) =>
                         (RuntimeArray.push(built)(if i == index then new_bucket else bucket), i + 1)
@@ -427,7 +427,7 @@ HashMap :: module {
 {
         // Flatten buckets via flat_map (comprehension); each bucket is already a
         // Seq[(K, V)], so the identity function concatenates them.
-        buckets => Seq.flat_map(buckets)(bucket => bucket)
+        buckets => buckets.flat_map(bucket => bucket)
     }
 
 

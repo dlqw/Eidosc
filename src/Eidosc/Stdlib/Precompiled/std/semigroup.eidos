@@ -5,7 +5,7 @@ Semigroup :: module {
 
     export append3[T: Semigroup.Semigroup] :: T -> T -> T -> T
     {
-        left => middle => right => Semigroup.append(Semigroup.append(left)(middle))(right)
+        left, middle, right => left.append(middle).append(right)
     }
 
     export SemigroupInt :: instance Semigroup.Semigroup {

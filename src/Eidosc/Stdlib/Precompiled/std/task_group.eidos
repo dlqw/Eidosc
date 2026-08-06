@@ -169,7 +169,7 @@ export join[E: effects] :: TaskGroup -> (Unit -> Unit need E) -> Unit need ffi, 
 /// Collect completed task values after a group join, using fallback for any still-unavailable Task.
 export collect_values[A] :: Seq[Task.Task[A]] -> A -> Seq[A] need ffi
 {
-    tasks => fallback => Seq.map(tasks)(completed_task => completed_task.try_await_value_or(fallback))
+    tasks, fallback => tasks.map(completed_task => completed_task.try_await_value_or(fallback))
 }
 
 /// Register a continuation that receives values from an explicit task Seq after the group finishes.

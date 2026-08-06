@@ -4,12 +4,12 @@ Predicate :: module {
 
     export accept[A, E: effects] :: (A -> Bool need E) -> A -> Bool need E
     {
-        predicate => value => predicate(value)
+        predicate, value => value |> predicate
     }
 
     export reject[A, E: effects] :: (A -> Bool need E) -> A -> Bool need E
     {
-        predicate => value => !predicate(value)
+        predicate, value => !(value |> predicate)
     }
 
     export is[A: Traits.Eq] :: A -> A -> Bool
@@ -26,7 +26,7 @@ Predicate :: module {
     {
         left => right => value => {
             copied := TraitInvoke.clone_value(ref value);
-            if left(value) then { right(copied) } else { false }
+            if value |> left then { copied |> right } else { false }
         }
     }
 
@@ -34,7 +34,7 @@ Predicate :: module {
     {
         left => right => value => {
             copied := TraitInvoke.clone_value(ref value);
-            if left(value) then { true } else { right(copied) }
+            if value |> left then { true } else { copied |> right }
         }
     }
 }

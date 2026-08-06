@@ -8,7 +8,7 @@ AsyncExtra :: module {
     /// Map a spawning function over each element of a Seq.
     export distribute[A, B, E: effects] :: Seq[A] -> (A -> Task[B] need E) -> Seq[Task[B]] need E
     {
-        xs => spawn_fn => Seq.map(xs)(spawn_fn)
+        xs, spawn_fn => xs.map(spawn_fn)
     }
 
     /// Apply a pure transformation to the result of a spawn.
@@ -33,7 +33,7 @@ AsyncExtra :: module {
     /// Apply a side-effecting action to each element, returning thunks.
     export for_each_thunk[A, E: effects] :: Seq[A] -> (A -> Unit need E) -> Seq[Unit -> Unit need E]
     {
-        xs => action => Seq.map(xs)(AsyncExtra.make_action_thunk(action))
+        xs, action => xs.map(AsyncExtra.make_action_thunk(action))
     }
 
     /// Chunk a Seq into groups of `n` elements each.

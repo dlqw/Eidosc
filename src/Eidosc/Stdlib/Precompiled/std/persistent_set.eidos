@@ -17,7 +17,7 @@ PersistentSet :: module {
 
     export from_seq[K: Traits.Ord + Traits.Clone] :: Seq[K] -> PersistentSet[K]
     {
-        values => Seq.fold_left(values)(PersistentSet.empty(()))(set => key => PersistentSet.insert(ref set)(key))
+        values => values.fold_left(PersistentSet.empty(()), set => key => PersistentSet.insert(ref set)(key))
     }
 
     export len[K] :: Ref[PersistentSet[K]] -> Int
@@ -52,18 +52,18 @@ PersistentSet :: module {
 
     export union[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> PersistentSet[K] -> PersistentSet[K]
     {
-        left => right => Seq.fold_left(PersistentSet.to_seq(ref right))(left)(set => key => PersistentSet.insert(ref set)(key))
+        left, right => PersistentSet.to_seq(ref right).fold_left(left, set => key => PersistentSet.insert(ref set)(key))
     }
 
     export intersection[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> PersistentSet[K] -> PersistentSet[K]
     {
-        left => right => Seq.fold_left(PersistentSet.to_seq(ref left))(PersistentSet.empty(()))(acc => key =>
+        left, right => PersistentSet.to_seq(ref left).fold_left(PersistentSet.empty(()), acc => key =>
             if PersistentSet.contains(ref right)(key) then { PersistentSet.insert(ref acc)(key) } else { acc })
     }
 
     export difference[K: Traits.Ord + Traits.Clone] :: PersistentSet[K] -> PersistentSet[K] -> PersistentSet[K]
     {
-        left => right => Seq.fold_left(PersistentSet.to_seq(ref left))(PersistentSet.empty(()))(acc => key =>
+        left, right => PersistentSet.to_seq(ref left).fold_left(PersistentSet.empty(()), acc => key =>
             if PersistentSet.contains(ref right)(key) then { acc } else { PersistentSet.insert(ref acc)(key) })
     }
 }

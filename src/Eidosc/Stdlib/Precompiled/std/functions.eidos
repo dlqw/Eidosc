@@ -5,12 +5,12 @@ Functions :: module {
     export id[T] :: T -> T { x => x }
     export const[A, B] :: A -> B -> A { a, b => a }
     export second[A, B] :: A -> B -> B { _ => value => value }
-    export compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2 compiler(role: "operator.compose") { f, g, x => f(g(x)) }
-    export compose_left[A, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (B -> C need E2) -> A -> C need E1, E2 { f, g, x => g(f(x)) }
+    export compose[A, B, C, E1: effects, E2: effects] :: (B -> C need E1) -> (A -> B need E2) -> A -> C need E1, E2 compiler(role: "operator.compose") { f, g, x => x |> g |> f }
+    export compose_left[A, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (B -> C need E2) -> A -> C need E1, E2 { f, g, x => x |> f |> g }
     export pipe[A, B, E: effects] :: A -> (A -> B need E) -> B need E { x, f => f(x) }
     export apply[A, B, E: effects] :: (A -> B need E) -> A -> B need E { f, x => f(x) }
     export flip[A, B, C, E: effects] :: (A -> B -> C need E) -> B -> A -> C need E { f, b, a => f(a)(b) }
-    export chain[A, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (B -> C need E2) -> A -> C need E1, E2 { f, g, x => g(f(x)) }
+    export chain[A, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (B -> C need E2) -> A -> C need E1, E2 { f, g, x => x |> f |> g }
     export repeat[A, E: effects] :: Int -> (A -> A need E) -> A -> A need E
     {
         count => f => value => {
@@ -29,18 +29,18 @@ Functions :: module {
     }
     export on[A, B, C, E1: effects, E2: effects] :: (B -> B -> C need E1) -> (A -> B need E2) -> A -> A -> C need E1, E2
     {
-        combine => project => left => right => combine(project(left))(project(right))
+        combine, project, left, right => combine(left |> project, right |> project)
     }
     export not_pred[A, E: effects] :: (A -> Bool need E) -> A -> Bool need E
     {
-        predicate => value => !predicate(value)
+        predicate, value => !(value |> predicate)
     }
     export and_pred[A: Traits.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
     {
         left => right => value => {
             left_value := TraitInvoke.clone_value(ref value);
             right_value := TraitInvoke.clone_value(ref value);
-            if left(left_value) then { right(right_value) } else { false }
+            if left_value |> left then { right_value |> right } else { false }
         }
     }
     export or_pred[A: Traits.Clone, E1: effects, E2: effects] :: (A -> Bool need E1) -> (A -> Bool need E2) -> A -> Bool need E1, E2
@@ -48,7 +48,7 @@ Functions :: module {
         left => right => value => {
             left_value := TraitInvoke.clone_value(ref value);
             right_value := TraitInvoke.clone_value(ref value);
-            if left(left_value) then { true } else { right(right_value) }
+            if left_value |> left then { true } else { right_value |> right }
         }
     }
     export juxt[A: Traits.Clone, B, C, E1: effects, E2: effects] :: (A -> B need E1) -> (A -> C need E2) -> A -> (B, C) need E1, E2
@@ -56,7 +56,7 @@ Functions :: module {
         left => right => value => {
             left_value := TraitInvoke.clone_value(ref value);
             right_value := TraitInvoke.clone_value(ref value);
-            (left(left_value), right(right_value))
+            (left_value |> left, right_value |> right)
         }
     }
     export converge[A: Traits.Clone, B, C, D, E1: effects, E2: effects, E3: effects] :: (B -> C -> D need E1) -> (A -> B need E2) -> (A -> C need E3) -> A -> D need E1, E2, E3
@@ -64,7 +64,7 @@ Functions :: module {
         combine => left => right => value => {
             left_value := TraitInvoke.clone_value(ref value);
             right_value := TraitInvoke.clone_value(ref value);
-            combine(left(left_value))(right(right_value))
+            combine(left_value |> left, right_value |> right)
         }
     }
 }
