@@ -178,8 +178,6 @@ public sealed partial class MirGenericSpecializer
                 resolvedCall = templateRewrittenResolvedCall;
             }
 
-            IReadOnlyList<TypeId> partialParameterTypeIds = [];
-
             var signatureResolved =
                 TryResolveSignature(resolvedCall, template.TemplateSource, localTypes, out var signature) ||
                 TryResolveConcreteCallShapeSignature(resolvedCall, template.TemplateSource, localTypes, out signature);
@@ -201,10 +199,6 @@ public sealed partial class MirGenericSpecializer
                 {
                     if (TryGetOrCreateSpecialization(template, partialSignature, workingFunctions, queue, out var partialSpecialization))
                     {
-                        partialParameterTypeIds = partialSpecialization.Locals
-                            .Where(local => local.IsParameter)
-                            .Select(local => local.TypeId)
-                            .ToList();
                         partialFunctionRef = RewriteFunctionReference(
                             sourceFunctionRef,
                             partialSpecialization,
@@ -252,12 +246,10 @@ public sealed partial class MirGenericSpecializer
                     TryRecordGenericPartialBinding(
                         call.Target,
                         partialFunctionRef,
+                        sourceFunctionRef,
                         template.TemplateSource,
-                        RewriteFunctionValueOperands(
-                            preparedArguments,
-                            partialParameterTypeIds,
-                            workingFunctions,
-                            queue),
+                        template.Key,
+                        preparedArguments,
                         supportsDirectApplication: true,
                         out var recordedBinding))
                 {
@@ -304,7 +296,9 @@ public sealed partial class MirGenericSpecializer
                     TryRecordGenericPartialBinding(
                         call.Target,
                         partialFunctionRef,
+                        sourceFunctionRef,
                         template.TemplateSource,
+                        template.Key,
                         combinedArguments,
                         supportsDirectApplication: false,
                         out var deferredRecordedBinding))

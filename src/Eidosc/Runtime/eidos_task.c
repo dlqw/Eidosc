@@ -344,6 +344,34 @@ struct EidosTask* eidos_task_new_completed_value(void* result)
     return task;
 }
 
+struct EidosTask* eidos_task_new_pending_value(void)
+{
+    ensure_destructors();
+
+    EidosTask* task = eidos_task_alloc();
+    if (!task) {
+        return NULL;
+    }
+
+    task->raw_payloads = 0;
+    task->release_result_after_complete = 0;
+    return task;
+}
+
+void eidos_task_retain_pending(struct EidosTask* task)
+{
+    if (task) {
+        eidos_incref_shared(task);
+    }
+}
+
+void eidos_task_release_pending(struct EidosTask* task)
+{
+    if (task) {
+        eidos_decref_shared(task);
+    }
+}
+
 bool eidos_task_is_completed(struct EidosTask* task)
 {
     if (!task) {

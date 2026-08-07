@@ -623,7 +623,9 @@ public sealed partial class MirGenericSpecializer
     private bool TryRecordGenericPartialBinding(
         MirPlace? callTarget,
         MirFunctionRef sourceFunctionRef,
+        MirFunctionRef templateFunctionRef,
         MirFunc template,
+        string templateKey,
         IReadOnlyList<MirOperand> combinedArguments,
         bool supportsDirectApplication,
         out RecordedPartialBinding recordedBinding)
@@ -641,7 +643,12 @@ public sealed partial class MirGenericSpecializer
             return false;
         }
 
-        var binding = CreateLocalCallBinding(sourceFunctionRef, combinedArguments, supportsDirectApplication);
+        var binding = CreateLocalCallBinding(
+            sourceFunctionRef,
+            combinedArguments,
+            supportsDirectApplication,
+            templateFunctionRef,
+            templateKey);
         recordedBinding = new RecordedPartialBinding(targetLocal.Local, binding);
         return true;
     }
@@ -649,14 +656,18 @@ public sealed partial class MirGenericSpecializer
     private static LocalCallBinding CreateLocalCallBinding(
         MirFunctionRef functionRef,
         IReadOnlyList<MirOperand> boundArguments,
-        bool supportsDirectApplication = true)
+        bool supportsDirectApplication = true,
+        MirFunctionRef? templateFunctionRef = null,
+        string? templateKey = null)
     {
         var normalizedArguments = CloneOperandsUntracked(boundArguments);
         return new LocalCallBinding(
             functionRef with { },
             normalizedArguments,
             BuildBoundArgumentKey(normalizedArguments),
-            supportsDirectApplication);
+            supportsDirectApplication,
+            templateFunctionRef ?? functionRef,
+            templateKey);
     }
 
     private void PruneDeadPartialTemplateCalls(MirFunc function, MirBasicBlock block)

@@ -37,11 +37,11 @@ public static class PreludeCoreImageRegistry
         new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
             ["Alternative"] = ["Alternative"],
-            ["Applicative"] = ["Option", "Result", "Seq"],
-            ["Foldable"] = ["Option", "Result", "Seq"],
-            ["Functor"] = ["Option", "Result", "Seq"],
-            ["Monad"] = ["Option", "Result", "Seq"],
-            ["Traversable"] = ["Option", "Result", "Seq"]
+            ["Applicative"] = ["Either", "Option", "Result", "Seq"],
+            ["Foldable"] = ["Either", "Option", "Result", "Seq"],
+            ["Functor"] = ["Either", "Option", "Result", "Seq"],
+            ["Monad"] = ["Either", "Option", "Result", "Seq"],
+            ["Traversable"] = ["Either", "Option", "Result", "Seq"]
         };
 
     private static readonly object InstanceHeadCacheGate = new();

@@ -8,7 +8,7 @@ namespace Eidosc.Tests.Integration;
 [Trait(TestCategories.Category, TestCategories.Slow)]
 public sealed class RuntimeConcurrencyNativeSmokeTests
 {
-    private static readonly string RuntimeRoot = TestSourceLoader.GetFullPath("Eidosc/src/Eidosc/Runtime");
+    private static readonly string RuntimeRoot = ResolveRuntimeRoot();
 
     [Fact]
     public void RuntimeConcurrencyIntegration_CoversTaskGroupChannelMutex()
@@ -79,11 +79,51 @@ public sealed class RuntimeConcurrencyNativeSmokeTests
         Assert.Contains("3/3 passed", execution.StandardOutput, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RuntimeTaskLifecycle_CoversPendingContinuationOwnership()
+    {
+        if (ResolveToolPath("clang") is null)
+        {
+            return;
+        }
+
+        var execution = CompileAndRunRuntimeTest(
+            "tests/test_task.c",
+            "runtime_task_lifecycle",
+            [
+                "eidos_sync.c",
+                "eidos_task.c",
+                "eidos_scheduler.c",
+                "eidos_memory.c"
+            ]);
+
+        AssertSuccessfulExecution(execution);
+        Assert.Contains("6 run, 6 passed, 0 failed", execution.StandardOutput, StringComparison.Ordinal);
+    }
+
     private static void AssertSuccessfulExecution(ProcessExecutionResult execution)
     {
         Assert.True(
             execution.ExitCode == 0,
             $"Native test exited with code {execution.ExitCode}.{Environment.NewLine}stdout:{Environment.NewLine}{execution.StandardOutput}{Environment.NewLine}stderr:{Environment.NewLine}{execution.StandardError}");
+    }
+
+    private static string ResolveRuntimeRoot()
+    {
+        var checkoutRuntime = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "Eidosc",
+            "Runtime"));
+        if (Directory.Exists(checkoutRuntime))
+        {
+            return checkoutRuntime;
+        }
+
+        return TestSourceLoader.GetFullPath("Eidosc/src/Eidosc/Runtime");
     }
 
     private static ProcessExecutionResult CompileAndRunRuntimeTest(

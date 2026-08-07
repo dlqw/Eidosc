@@ -132,7 +132,9 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
         MirFunctionRef FunctionRef,
         List<MirOperand> BoundArguments,
         string BoundArgumentKey,
-        bool SupportsDirectApplication);
+        bool SupportsDirectApplication,
+        MirFunctionRef? TemplateFunctionRef = null,
+        string? TemplateKey = null);
 
     private readonly record struct RecordedPartialBinding(LocalId TargetLocal, LocalCallBinding Binding);
 

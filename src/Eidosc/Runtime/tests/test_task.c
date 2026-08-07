@@ -360,6 +360,56 @@ static int test_complete_then_await(void) {
 }
 
 /* ============================================================
+ * Test 6: Pending Task Completion Ownership
+ *
+ * A pending value task is retained for the continuation callback. The
+ * callback releases that continuation-owned reference after observing
+ * completion, while the caller releases its original reference after
+ * the callback has run.
+ * ============================================================ */
+
+static TEST_ATOMIC_LONG g_pending_cont_called = 0;
+static TEST_ATOMIC_LONG g_pending_cont_failed = 0;
+
+static void* pending_cont_fn(void* closure, void* arg) {
+    (void)arg;
+    struct EidosTask* task = (struct EidosTask*)closure;
+    TEST_ATOMIC_INC(&g_pending_cont_called);
+    if (!eidos_task_is_completed(task)) {
+        TEST_ATOMIC_INC(&g_pending_cont_failed);
+    }
+    eidos_task_release_pending(task);
+    return NULL;
+}
+
+static int test_pending_task_completion(void) {
+    TEST_ATOMIC_SET(&g_pending_cont_called, 0);
+    TEST_ATOMIC_SET(&g_pending_cont_failed, 0);
+    eidos_scheduler_init(0);
+
+    struct EidosTask* task = eidos_task_new_pending_value();
+    ASSERT(task != NULL, "eidos_task_new_pending_value returned non-NULL");
+    ASSERT(!eidos_task_is_completed(task), "new pending task starts incomplete");
+
+    eidos_task_retain_pending(task);
+    EidosWorkItem continuation;
+    continuation.invoke_fn = pending_cont_fn;
+    continuation.closure_ptr = task;
+    continuation.arg = NULL;
+    eidos_task_await(task, continuation);
+
+    eidos_task_complete(task, NULL);
+    int callback_ok = wait_for_counter(&g_pending_cont_called, 1, 2000);
+    ASSERT(callback_ok, "pending continuation fired after completion");
+    ASSERT(TEST_ATOMIC_READ(&g_pending_cont_failed) == 0,
+           "pending continuation observed completed task");
+
+    eidos_task_release_pending(task);
+    eidos_task_runtime_shutdown();
+    return 0;
+}
+
+/* ============================================================
  * Main
  * ============================================================ */
 
@@ -371,6 +421,7 @@ int main(void) {
     RUN_TEST(test_taskgroup_4_tasks);
     RUN_TEST(test_taskgroup_join_before_spawn);
     RUN_TEST(test_complete_then_await);
+    RUN_TEST(test_pending_task_completion);
 
     printf("\n--- Results: %d run, %d passed, %d failed ---\n",
            g_tests_run, g_tests_passed, g_tests_failed);
