@@ -482,8 +482,8 @@ public sealed partial class MirGenericSpecializer
             existingType == candidateType ||
             ContainsOpenTypeVariable(existingType) ||
             !ContainsFunctionType(candidateType) ||
-            (!ContainsFunctionType(existingType) &&
-             !CanRefineErasedFunctionCarrierType(existingType, candidateType)))
+            ContainsFunctionType(existingType) ||
+            !CanRefineErasedFunctionCarrierType(existingType, candidateType))
         {
             return false;
         }

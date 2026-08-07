@@ -252,12 +252,26 @@ public sealed partial class MirGenericSpecializer
         out SpecializationSignature signature)
     {
         signature = default!;
-
         var templateParameters = GetCachedTemplateParameters(template);
         if (!expectedFunctionTypeId.IsValid ||
             !TryResolveFlattenedFunctionType(expectedFunctionTypeId, out var remainingParameterTypes, out var returnType) ||
-            boundArguments.Count + remainingParameterTypes.Count != templateParameters.Count ||
-            !returnType.IsValid)
+            !returnType.IsValid ||
+            boundArguments.Count > templateParameters.Count)
+        {
+            return false;
+        }
+
+        var templateReturnParameterTypes = new List<TypeId>();
+        var templateReturnResultType = template.ReturnType;
+        if (template.ReturnType.IsValid &&
+            TryResolveFlattenedFunctionType(template.ReturnType, out var flattenedReturnParameters, out var flattenedReturnResult))
+        {
+            templateReturnParameterTypes.AddRange(flattenedReturnParameters);
+            templateReturnResultType = flattenedReturnResult;
+        }
+
+        var remainingExplicitParameterCount = templateParameters.Count - boundArguments.Count;
+        if (remainingParameterTypes.Count != remainingExplicitParameterCount + templateReturnParameterTypes.Count)
         {
             return false;
         }
@@ -295,20 +309,31 @@ public sealed partial class MirGenericSpecializer
             }
         }
 
+        var remainingTypeIndex = 0;
         for (var parameterIndex = boundArguments.Count; parameterIndex < templateParameters.Count; parameterIndex++)
         {
-            var remainingIndex = parameterIndex - boundArguments.Count;
             if (!TryCollectTypeBindingsForInference(
                     templateParameters[parameterIndex].TypeId,
-                    remainingParameterTypes[remainingIndex],
+                    remainingParameterTypes[remainingTypeIndex++],
                     inferenceBindings))
             {
                 return false;
             }
         }
 
-        if (template.ReturnType.IsValid &&
-            !TryCollectTypeBindingsForInference(template.ReturnType, returnType, inferenceBindings))
+        foreach (var templateReturnParameterType in templateReturnParameterTypes)
+        {
+            if (!TryCollectTypeBindingsForInference(
+                    templateReturnParameterType,
+                    remainingParameterTypes[remainingTypeIndex++],
+                    inferenceBindings))
+            {
+                return false;
+            }
+        }
+
+        if (templateReturnResultType.IsValid &&
+            !TryCollectTypeBindingsForInference(templateReturnResultType, returnType, inferenceBindings))
         {
             return false;
         }

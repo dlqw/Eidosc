@@ -118,15 +118,21 @@ public sealed partial class MirGenericSpecializer
             !expectedFunctionTypeId.IsValid ||
             !TryResolveFlattenedFunctionType(expectedFunctionTypeId, out _, out _) ||
             !localCallBindings.TryGetValue(localFunctionValue.Local, out var binding) ||
-            !TryResolveTemplateKey(binding.FunctionRef, out var templateKey) ||
-            !_templateRegistry.ByKeyDict.TryGetValue(templateKey, out var template) ||
-            !TryResolvePartialBindingFunctionValueSignature(
-                binding.FunctionRef,
-                template.TemplateSource,
-                binding.BoundArguments,
-                expectedFunctionTypeId,
-                localTypes,
-                out var signature) ||
+            !TryResolveBindingTemplateKey(binding, out var templateKey) ||
+            !_templateRegistry.ByKeyDict.TryGetValue(templateKey, out var template))
+        {
+            return false;
+        }
+
+        var templateFunctionRef = binding.TemplateFunctionRef ?? binding.FunctionRef;
+        var signatureResolved = TryResolvePartialBindingFunctionValueSignature(
+            templateFunctionRef,
+            template.TemplateSource,
+            binding.BoundArguments,
+            expectedFunctionTypeId,
+            localTypes,
+            out var signature);
+        if (!signatureResolved ||
             !HasMeaningfulSpecializationSignature(template, signature) ||
             !IsMonomorphicSignature(signature) ||
             !TryGetOrCreateSpecialization(template, signature, workingFunctions, queue, out var specializedFunction))
@@ -135,7 +141,7 @@ public sealed partial class MirGenericSpecializer
         }
 
         var rewrittenFunctionRef = RewriteFunctionReference(
-            binding.FunctionRef,
+            templateFunctionRef,
             specializedFunction,
             expectedFunctionTypeId);
         if (AreSameFunctionRef(binding.FunctionRef, rewrittenFunctionRef))
@@ -239,8 +245,22 @@ public sealed partial class MirGenericSpecializer
             localCallBindings[localId] = CreateLocalCallBinding(
                 rewrittenFunctionRef,
                 currentBinding.BoundArguments,
-                currentBinding.SupportsDirectApplication);
+                currentBinding.SupportsDirectApplication,
+                currentBinding.TemplateFunctionRef,
+                currentBinding.TemplateKey);
         }
+    }
+
+    private bool TryResolveBindingTemplateKey(LocalCallBinding binding, out string templateKey)
+    {
+        if (!string.IsNullOrWhiteSpace(binding.TemplateKey) &&
+            _templateRegistry.ByKeyDict.ContainsKey(binding.TemplateKey))
+        {
+            templateKey = binding.TemplateKey;
+            return true;
+        }
+
+        return TryResolveTemplateKey(binding.FunctionRef, out templateKey);
     }
 
     private MirCall RewriteCallArgumentFunctionValuesFromTemplate(
@@ -740,6 +760,11 @@ public sealed partial class MirGenericSpecializer
 
         var resolvedFunctionTypeId = expectedFunctionTypeId.IsValid ? expectedFunctionTypeId : functionRef.TypeId;
         if (!resolvedFunctionTypeId.IsValid)
+        {
+            return false;
+        }
+
+        if (ContainsOpenTypeVariable(resolvedFunctionTypeId))
         {
             return false;
         }

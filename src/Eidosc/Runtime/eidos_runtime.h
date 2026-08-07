@@ -926,6 +926,13 @@ struct EidosTask* eidos_task_new_completed_raw(void* result);
  */
 struct EidosTask* eidos_task_new_completed_value(void* result);
 
+/** Create a pending boxed-value task for a standard-library continuation. */
+struct EidosTask* eidos_task_new_pending_value(void);
+
+/** Retain/release the continuation-owned reference of a pending task. */
+void eidos_task_retain_pending(struct EidosTask* task);
+void eidos_task_release_pending(struct EidosTask* task);
+
 /**
  * Return whether a task has reached the completed state.
  */

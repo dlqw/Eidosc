@@ -1,4 +1,7 @@
 Foldable :: module {
+    import Monoid
+    import Semigroup
+
     export Foldable[F: kind2] :: trait {
         fold_left[A, B, E: effects] :: F[A] -> B -> (B -> A -> B need E) -> B need E
         fold_right[A, B, E: effects] :: F[A] -> B -> (A -> B -> B need E) -> B need E
@@ -32,5 +35,13 @@ Foldable :: module {
     export count[A, F: kind2 : Foldable[F], E: effects] :: F[A] -> (A -> Bool need E) -> Int need E
     {
         values, predicate => Foldable.fold_left(values, 0, acc => item => if predicate(item) then { acc + 1 } else { acc })
+    }
+
+    export fold_map[A, B: Semigroup.Semigroup + Monoid.Monoid, F: kind2 : Foldable[F], E: effects] :: F[A] -> (A -> B need E) -> B need E
+    {
+        values, project => Foldable.fold_left(
+            values,
+            Monoid.empty(()),
+            acc => item => Semigroup.append(acc)(project(item)))
     }
 }

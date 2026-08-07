@@ -1,7 +1,19 @@
 Either :: module {
     import Display
+    import Functor
+    import Applicative
+    import Foldable
+    import Monad
+    import Traversable
 
     export Either[L, R] :: type { Left:: type(L), Right:: type(R) }
+    export WithLeft[L, R] :: type = Either[L, R]
+
+    right_wrap[L, R] :: R -> WithLeft[L, R]
+     compiler(internal)
+    {
+        value => Right(value)
+    }
 
     export is_left[L, R] :: Either[L, R] -> Bool
     {
@@ -44,6 +56,65 @@ Either :: module {
         Left(_) => fallback => fallback,
         Right(value) => _ => value
     }
+
+    export FunctorEitherWithLeft[L] :: instance Functor.Functor[WithLeft[L]] {
+        fmap[A, B, L, E: effects] :: WithLeft[L, A] -> (A -> B need E) -> WithLeft[L, B] need E
+            {
+                value, f => value.map(f)
+            }
+    }
+
+    export ApplicativeEitherWithLeft[L] :: instance Applicative.Applicative[WithLeft[L]] {
+        pure[A, L] :: A -> WithLeft[L, A]
+            {
+                value => Right(value)
+            }
+        apply[A, B, L, E: effects] :: WithLeft[L, A -> B need E] -> WithLeft[L, A] -> WithLeft[L, B] need E
+            {
+                Left(error), _ => Left(error),
+                Right(_), Left(error) => Left(error),
+                Right(f), Right(value) => Right(f(value))
+            }
+    }
+
+    export MonadEitherWithLeft[L] :: instance Monad.Monad[WithLeft[L]] {
+        pure[A, L] :: A -> WithLeft[L, A]
+            {
+                value => Right(value)
+            }
+        bind[A, B, L, E: effects] :: WithLeft[L, A] -> (A -> WithLeft[L, B] need E) -> WithLeft[L, B] need E
+            {
+                Left(error), _ => Left(error),
+                Right(value), f => f(value)
+            }
+    }
+
+    export FoldableEitherWithLeft[L] :: instance Foldable.Foldable[WithLeft[L]] {
+        fold_left[A, B, L, E: effects] :: WithLeft[L, A] -> B -> (B -> A -> B need E) -> B need E
+            {
+                Left(_), initial, _ => initial,
+                Right(value), initial, f => f(initial)(value)
+            }
+        fold_right[A, B, L, E: effects] :: WithLeft[L, A] -> B -> (A -> B -> B need E) -> B need E
+            {
+                Left(_), initial, _ => initial,
+                Right(value), initial, f => f(value)(initial)
+            }
+    }
+
+    export TraversableEitherWithLeft[L] :: instance Traversable.Traversable[WithLeft[L]] {
+        traverse[A, B, G: kind2 : Applicative.Applicative[G], L, E: effects] :: WithLeft[L, A] -> (A -> G[B] need E) -> G[WithLeft[L, B]] need E
+            {
+                Left(error), _ => Traversable.lift_pure(Left(error)),
+                Right(value), f => Traversable.map_applicative(Either.right_wrap)(f(value))
+            }
+    }
+
+    export sequence[A, G: kind2 : Applicative.Applicative[G], L] :: WithLeft[L, G[A]] -> G[WithLeft[L, A]]
+    {
+        value => value.traverse(Traversable.identity_applicative)
+    }
+
     export DisplayEither :: instance Display {
         display[L: Display, R: Display] :: Ref[Either[L, R]] -> String
             {
