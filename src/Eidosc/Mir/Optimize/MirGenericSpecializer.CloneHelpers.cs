@@ -72,6 +72,7 @@ public sealed partial class MirGenericSpecializer
             },
             MirBinOp binOp => binOp with { },
             MirUnaryOp unaryOp => unaryOp with { },
+            MirSelect select => select with { },
             MirLoad load => load with { },
             MirStore store => store with { },
             MirDrop drop => drop with { },

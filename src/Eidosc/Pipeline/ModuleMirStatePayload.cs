@@ -198,7 +198,7 @@ public sealed record ModuleMirStatePayload(
     IReadOnlyList<MirFunctionFingerprint> FunctionFingerprints,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-mir-state-payload-v14";
+    public const string CurrentSchemaVersion = "module-mir-state-payload-v15";
 
     public bool IsRestorable => Module != null &&
                                 UnsupportedNodeCount == 0 &&
@@ -700,6 +700,9 @@ public sealed record MirStateInstructionPayload(
     MirStateOperandPayload? Left = null,
     MirStateOperandPayload? Right = null,
     MirStateOperandPayload? Operand = null,
+    MirStateOperandPayload? Condition = null,
+    MirStateOperandPayload? TrueValue = null,
+    MirStateOperandPayload? FalseValue = null,
     bool IsMutableBorrow = false,
     bool CreatesBorrowAlias = true,
     bool MovesOutOfSource = false,
@@ -755,6 +758,13 @@ public sealed record MirStateInstructionPayload(
                 Target: MirStateOperandPayload.Create(unaryOp.Target, context),
                 Operator: unaryOp.Operator.ToString(),
                 Operand: MirStateOperandPayload.Create(unaryOp.Operand, context)),
+            MirSelect select => new MirStateInstructionPayload(
+                nameof(MirSelect),
+                span,
+                Target: MirStateOperandPayload.Create(select.Target, context),
+                Condition: MirStateOperandPayload.Create(select.Condition, context),
+                TrueValue: MirStateOperandPayload.Create(select.TrueValue, context),
+                FalseValue: MirStateOperandPayload.Create(select.FalseValue, context)),
             MirLoad load => new MirStateInstructionPayload(
                 nameof(MirLoad),
                 span,
@@ -824,6 +834,7 @@ public sealed record MirStateInstructionPayload(
             },
             nameof(MirBinOp) => new MirBinOp { Span = Span.ToSourceSpan(), Target = RestoreOperand(Target), Operator = Enum.Parse<BinaryOp>(Operator ?? ""), Left = RestoreOperand(Left), Right = RestoreOperand(Right) },
             nameof(MirUnaryOp) => new MirUnaryOp { Span = Span.ToSourceSpan(), Target = RestoreOperand(Target), Operator = Enum.Parse<UnaryOp>(Operator ?? ""), Operand = RestoreOperand(Operand) },
+            nameof(MirSelect) => new MirSelect { Span = Span.ToSourceSpan(), Target = RestorePlace(Target), Condition = RestoreOperand(Condition), TrueValue = RestoreOperand(TrueValue), FalseValue = RestoreOperand(FalseValue) },
             nameof(MirLoad) => new MirLoad { Span = Span.ToSourceSpan(), Target = RestorePlace(Target), Source = RestoreOperand(Source), IsMutableBorrow = IsMutableBorrow, CreatesBorrowAlias = CreatesBorrowAlias, MovesOutOfSource = MovesOutOfSource },
             nameof(MirStore) => new MirStore { Span = Span.ToSourceSpan(), Target = RestorePlace(Target), Value = RestoreOperand(Value) },
             nameof(MirDrop) => new MirDrop { Span = Span.ToSourceSpan(), Value = RestoreOperand(Value) },
@@ -856,7 +867,8 @@ public sealed record MirStateTerminatorPayload(
     int Target = 0,
     MirStateOperandPayload? Discriminant = null,
     IReadOnlyList<MirStateSwitchBranchPayload>? Branches = null,
-    int? DefaultTarget = null)
+    int? DefaultTarget = null,
+    MirStateDecisionPlanPayload? DecisionPlan = null)
 {
     public static MirStateTerminatorPayload Create(MirTerminator terminator, MirStatePayloadCreateContext context)
     {
@@ -874,7 +886,8 @@ public sealed record MirStateTerminatorPayload(
                 span,
                 Discriminant: MirStateOperandPayload.Create(@switch.Discriminant, context),
                 Branches: @switch.Branches.Select(branch => MirStateSwitchBranchPayload.Create(branch, context)).ToArray(),
-                DefaultTarget: @switch.DefaultTarget?.Value),
+                DefaultTarget: @switch.DefaultTarget?.Value,
+                DecisionPlan: @switch.DecisionPlan == null ? null : MirStateDecisionPlanPayload.Create(@switch.DecisionPlan)),
             MirUnreachable => new MirStateTerminatorPayload(nameof(MirUnreachable), span),
             _ => UnsupportedTerminator(terminator, context)
         };
@@ -885,7 +898,7 @@ public sealed record MirStateTerminatorPayload(
         {
             nameof(MirReturn) => new MirReturn { Span = Span.ToSourceSpan(), Value = Value?.Restore() },
             nameof(MirGoto) => new MirGoto { Span = Span.ToSourceSpan(), Target = new BlockId { Value = Target } },
-            nameof(MirSwitch) => new MirSwitch { Span = Span.ToSourceSpan(), Discriminant = RestoreOperand(Discriminant), Branches = (Branches ?? []).Select(static branch => branch.Restore()).ToList(), DefaultTarget = DefaultTarget.HasValue ? new BlockId { Value = DefaultTarget.Value } : null },
+            nameof(MirSwitch) => new MirSwitch { Span = Span.ToSourceSpan(), Discriminant = RestoreOperand(Discriminant), Branches = (Branches ?? []).Select(static branch => branch.Restore()).ToList(), DefaultTarget = DefaultTarget.HasValue ? new BlockId { Value = DefaultTarget.Value } : null, DecisionPlan = DecisionPlan?.Restore() },
             nameof(MirUnreachable) => new MirUnreachable { Span = Span.ToSourceSpan() },
             _ => throw new InvalidOperationException($"Unsupported MIR terminator payload '{Kind}'.")
         };
@@ -898,6 +911,31 @@ public sealed record MirStateTerminatorPayload(
 
     private static MirOperand RestoreOperand(MirStateOperandPayload? operand) =>
         operand?.Restore() ?? throw new InvalidOperationException("Missing MIR operand payload.");
+}
+
+public sealed record MirStateDecisionPlanPayload(
+    string SourceKind,
+    int BranchCount,
+    bool HasGuards,
+    bool HasBindings,
+    bool IsExhaustive,
+    string Representation)
+{
+    public static MirStateDecisionPlanPayload Create(MirDecisionPlan plan) => new(
+        plan.SourceKind,
+        plan.BranchCount,
+        plan.HasGuards,
+        plan.HasBindings,
+        plan.IsExhaustive,
+        plan.Representation);
+
+    public MirDecisionPlan Restore() => new(
+        SourceKind,
+        BranchCount,
+        HasGuards,
+        HasBindings,
+        IsExhaustive,
+        Representation);
 }
 
 public sealed record MirStateSwitchBranchPayload(
@@ -1518,7 +1556,7 @@ public sealed class MirStatePayloadCreateContext
 
     public void ObserveInstruction(MirInstruction instruction)
     {
-        if (instruction is not (MirAssign or MirCaseInject or MirCall or MirBinOp or MirUnaryOp or MirLoad or MirStore or MirDrop or
+        if (instruction is not (MirAssign or MirCaseInject or MirCall or MirBinOp or MirUnaryOp or MirSelect or MirLoad or MirStore or MirDrop or
             MirCopy or MirMove or MirAlloc))
         {
             AddUnsupported(instruction);

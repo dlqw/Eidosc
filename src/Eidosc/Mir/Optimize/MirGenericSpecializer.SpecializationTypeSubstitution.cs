@@ -230,6 +230,13 @@ public sealed partial class MirGenericSpecializer
                 Target = CloneOperandWithTypeSubstitution(unaryOp.Target, bindings, substitutionService, resolvingTypeIds),
                 Operand = CloneOperandWithTypeSubstitution(unaryOp.Operand, bindings, substitutionService, resolvingTypeIds)
             },
+            MirSelect select => select with
+            {
+                Target = (MirPlace)CloneOperandWithTypeSubstitution(select.Target, bindings, substitutionService, resolvingTypeIds),
+                Condition = CloneOperandWithTypeSubstitution(select.Condition, bindings, substitutionService, resolvingTypeIds),
+                TrueValue = CloneOperandWithTypeSubstitution(select.TrueValue, bindings, substitutionService, resolvingTypeIds),
+                FalseValue = CloneOperandWithTypeSubstitution(select.FalseValue, bindings, substitutionService, resolvingTypeIds)
+            },
             MirLoad load => load with
             {
                 Target = ClonePlaceWithTypeSubstitution(load.Target, bindings, substitutionService, resolvingTypeIds),

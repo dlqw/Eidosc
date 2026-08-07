@@ -266,6 +266,9 @@ public sealed partial class MirToLlvmConverter
             case MirAlloc { Target.Kind: PlaceKind.Local } alloc:
                 state.Remove(alloc.Target.Local);
                 return;
+            case MirSelect select:
+                state.Remove(select.Target.Local);
+                return;
             default:
                 return;
         }

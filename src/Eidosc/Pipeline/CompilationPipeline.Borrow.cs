@@ -1027,6 +1027,12 @@ public sealed partial class CompilationPipeline
                 VisitBorrowFunctionRefs(unaryOp.Target, visitor);
                 VisitBorrowFunctionRefs(unaryOp.Operand, visitor);
                 break;
+            case MirSelect select:
+                VisitBorrowFunctionRefs(select.Target, visitor);
+                VisitBorrowFunctionRefs(select.Condition, visitor);
+                VisitBorrowFunctionRefs(select.TrueValue, visitor);
+                VisitBorrowFunctionRefs(select.FalseValue, visitor);
+                break;
             case MirLoad load:
                 VisitBorrowFunctionRefs(load.Target, visitor);
                 VisitBorrowFunctionRefs(load.Source, visitor);

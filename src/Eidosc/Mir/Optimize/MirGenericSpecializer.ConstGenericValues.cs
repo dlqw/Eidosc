@@ -69,6 +69,13 @@ public sealed partial class MirGenericSpecializer
                 Target = RewriteConstGenericOperand(unaryOp.Target, bindings),
                 Operand = RewriteConstGenericOperand(unaryOp.Operand, bindings)
             },
+            MirSelect select => select with
+            {
+                Target = (MirPlace)RewriteConstGenericOperand(select.Target, bindings),
+                Condition = RewriteConstGenericOperand(select.Condition, bindings),
+                TrueValue = RewriteConstGenericOperand(select.TrueValue, bindings),
+                FalseValue = RewriteConstGenericOperand(select.FalseValue, bindings)
+            },
             MirLoad load => load with
             {
                 Target = RewriteConstGenericPlace(load.Target, bindings),
@@ -292,6 +299,10 @@ public sealed partial class MirGenericSpecializer
                               OperandContainsUnresolvedConstGenericValue(binOp.Right),
             MirUnaryOp unaryOp => OperandContainsUnresolvedConstGenericValue(unaryOp.Target) ||
                                   OperandContainsUnresolvedConstGenericValue(unaryOp.Operand),
+            MirSelect select => OperandContainsUnresolvedConstGenericValue(select.Target) ||
+                                OperandContainsUnresolvedConstGenericValue(select.Condition) ||
+                                OperandContainsUnresolvedConstGenericValue(select.TrueValue) ||
+                                OperandContainsUnresolvedConstGenericValue(select.FalseValue),
             MirLoad load => OperandContainsUnresolvedConstGenericValue(load.Target) ||
                             OperandContainsUnresolvedConstGenericValue(load.Source),
             MirStore store => OperandContainsUnresolvedConstGenericValue(store.Target) ||

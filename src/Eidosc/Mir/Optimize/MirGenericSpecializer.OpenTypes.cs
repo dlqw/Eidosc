@@ -155,6 +155,11 @@ public sealed partial class MirGenericSpecializer
             MirUnaryOp unaryOp =>
                 ContainsOpenTypeVariable(unaryOp.Target) ||
                 ContainsOpenTypeVariable(unaryOp.Operand),
+            MirSelect select =>
+                ContainsOpenTypeVariable(select.Target) ||
+                ContainsOpenTypeVariable(select.Condition) ||
+                ContainsOpenTypeVariable(select.TrueValue) ||
+                ContainsOpenTypeVariable(select.FalseValue),
             MirLoad load =>
                 ContainsOpenTypeVariable(load.Target) ||
                 ContainsOpenTypeVariable(load.Source),

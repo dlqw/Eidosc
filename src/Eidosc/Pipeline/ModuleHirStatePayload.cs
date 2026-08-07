@@ -17,7 +17,7 @@ public sealed record ModuleHirStatePayload(
     IReadOnlyList<string> UnsupportedNodeKinds,
     string Hash)
 {
-    public const string CurrentSchemaVersion = "module-hir-state-payload-v10";
+    public const string CurrentSchemaVersion = "module-hir-state-payload-v12";
 
     public bool IsRestorable => Module != null &&
                                 AttachedState.HasValidHash() &&
@@ -521,7 +521,12 @@ public sealed record HirStateNodePayload(
     string TargetKind,
     int SourceCaseSymbolId,
     int TargetAncestorSymbolId,
-    int SourceTypeId)
+    int SourceTypeId,
+    string? DecisionSourceKind,
+    int? DecisionBranchCount = null,
+    bool? DecisionHasGuards = null,
+    bool? DecisionHasBindings = null,
+    bool? DecisionIsExhaustive = null)
 {
     public const string ErrorKind = nameof(HirError);
     public const string CaseInjectKind = nameof(HirCaseInject);
@@ -610,7 +615,12 @@ public sealed record HirStateNodePayload(
             {
                 Condition = Create(ifExpr.Condition, context),
                 ThenBranch = Create(ifExpr.ThenBranch, context),
-                ElseBranch = ifExpr.ElseBranch == null ? null : Create(ifExpr.ElseBranch, context)
+                ElseBranch = ifExpr.ElseBranch == null ? null : Create(ifExpr.ElseBranch, context),
+                DecisionSourceKind = ifExpr.DecisionPlan?.SourceKind.ToString(),
+                DecisionBranchCount = ifExpr.DecisionPlan?.BranchCount,
+                DecisionHasGuards = ifExpr.DecisionPlan?.HasGuards,
+                DecisionHasBindings = ifExpr.DecisionPlan?.HasBindings,
+                DecisionIsExhaustive = ifExpr.DecisionPlan?.IsExhaustive
             },
             HirLoop loop => Empty(LoopKind, loop) with
             {
@@ -639,7 +649,12 @@ public sealed record HirStateNodePayload(
             {
                 Scrutinee = Create(match.Scrutinee, context),
                 Branches = match.Branches.Select(branch => HirStateMatchBranchPayload.Create(branch, context)).ToArray(),
-                IsExhaustive = match.IsExhaustive
+                IsExhaustive = match.IsExhaustive,
+                DecisionSourceKind = match.DecisionPlan?.SourceKind.ToString(),
+                DecisionBranchCount = match.DecisionPlan?.BranchCount,
+                DecisionHasGuards = match.DecisionPlan?.HasGuards,
+                DecisionHasBindings = match.DecisionPlan?.HasBindings,
+                DecisionIsExhaustive = match.DecisionPlan?.IsExhaustive
             },
             HirLambda lambda => Empty(LambdaKind, lambda) with
             {
@@ -935,7 +950,18 @@ public sealed record HirStateNodePayload(
             return false;
         }
 
-        node = ApplyHeader(new HirIf { Condition = condition, ThenBranch = thenBranch, ElseBranch = elseBranch });
+        var hirIf = new HirIf { Condition = condition, ThenBranch = thenBranch, ElseBranch = elseBranch };
+        node = ApplyHeader(hirIf);
+        hirIf = (HirIf)node;
+        hirIf.DecisionPlan = HirDecisionPlan.ForIf(hirIf) with
+        {
+            SourceKind = ParseDecisionSource(HirDecisionSourceKind.If),
+            BranchCount = DecisionBranchCount ?? (hirIf.ElseBranch == null ? 1 : 2),
+            HasGuards = DecisionHasGuards ?? false,
+            HasBindings = DecisionHasBindings ?? false,
+            IsExhaustive = DecisionIsExhaustive ?? hirIf.ElseBranch != null
+        };
+        node = hirIf;
         return true;
     }
 
@@ -958,9 +984,40 @@ public sealed record HirStateNodePayload(
             branches.Add(branch);
         }
 
-        node = ApplyHeader(new HirMatch { Scrutinee = scrutinee, Branches = branches, IsExhaustive = IsExhaustive });
+        var hirMatch = new HirMatch { Scrutinee = scrutinee, Branches = branches, IsExhaustive = IsExhaustive };
+        node = ApplyHeader(hirMatch);
+        hirMatch = (HirMatch)node;
+        hirMatch.DecisionPlan = HirDecisionPlan.ForMatch(
+            hirMatch,
+            ParseDecisionSource(HirDecisionSourceKind.Match)) with
+        {
+            BranchCount = DecisionBranchCount ?? branches.Count,
+            HasGuards = DecisionHasGuards ?? branches.Any(static branch => branch.Guard != null),
+            HasBindings = DecisionHasBindings ?? branches.Any(static branch => PatternBindsValue(branch.Pattern)),
+            IsExhaustive = DecisionIsExhaustive ?? hirMatch.IsExhaustive
+        };
+        node = hirMatch;
         return true;
     }
+
+    private HirDecisionSourceKind ParseDecisionSource(HirDecisionSourceKind fallback) =>
+        Enum.TryParse<HirDecisionSourceKind>(DecisionSourceKind, out var sourceKind)
+            ? sourceKind
+            : fallback;
+
+    private static bool PatternBindsValue(HirPattern pattern) => pattern switch
+    {
+        HirVarPattern variable => !variable.IsWildcard,
+        HirCtorPattern constructor => constructor.Fields.Any(static field => PatternBindsValue(field.Pattern)),
+        HirTuplePattern tuple => tuple.Elements.Any(PatternBindsValue),
+        HirListPattern list => list.Elements.Any(PatternBindsValue) || list.SuffixElements.Any(PatternBindsValue) || list.RestPattern != null && PatternBindsValue(list.RestPattern),
+        HirOrPattern orPattern => PatternBindsValue(orPattern.Left) || PatternBindsValue(orPattern.Right),
+        HirAndPattern andPattern => PatternBindsValue(andPattern.Left) || PatternBindsValue(andPattern.Right),
+        HirNotPattern notPattern => PatternBindsValue(notPattern.InnerPattern),
+        HirViewPattern viewPattern => PatternBindsValue(viewPattern.InnerPattern),
+        HirAsPattern => true,
+        _ => false
+    };
 
     private HirNode ApplyHeader(HirNode node) =>
         node with
@@ -1022,7 +1079,8 @@ public sealed record HirStateNodePayload(
             HirIndexAccessKind.Unknown.ToString(),
             SymbolId.None.Value,
             SymbolId.None.Value,
-            TypeId.None.Value);
+            TypeId.None.Value,
+            null);
 
     private static HirStateNodePayload CreateUnsupported(HirNode node, HirStatePayloadCreateContext context)
     {

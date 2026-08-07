@@ -30,7 +30,8 @@ public sealed partial class MirBuilder
         MirOperand condition,
         BlockId trueTarget,
         BlockId falseTarget,
-        SourceSpan span)
+        SourceSpan span,
+        MirDecisionPlan? decisionPlan = null)
     {
         _currentBlock!.Terminator = new MirSwitch
         {
@@ -44,6 +45,7 @@ public sealed partial class MirBuilder
                 }
             ],
             DefaultTarget = falseTarget,
+            DecisionPlan = decisionPlan,
             Span = span
         };
     }
@@ -64,6 +66,7 @@ public sealed partial class MirBuilder
         var checkBlock = _currentBlock;
         var fallbackNeeded = false;
         var matchHasPoisonedPattern = false;
+        var decisionPlan = MirBuilder.ToMirDecisionPlan(match.DecisionPlan);
 
         if (match.Branches.Count == 0)
         {
@@ -119,7 +122,8 @@ public sealed partial class MirBuilder
                 {
                     var defaultTarget = ResolvePatternMissTarget(nextCheckBlock, fallbackBlock, ref fallbackNeeded);
                     _currentBlock = conditionBlock;
-                    EmitBooleanBranch(condition, branchBlock.Id, defaultTarget, match.Span);
+                    EmitBooleanBranch(condition, branchBlock.Id, defaultTarget, match.Span, decisionPlan);
+                    decisionPlan = null;
                 }
 
                 _currentBlock = branchBlock;

@@ -245,6 +245,13 @@ public sealed partial class LoanConstraintVerifier
                 ValidateReadOperand(unaryOp.Operand, unaryOp.Span, blockId, instructionIndex, state, results);
                 break;
 
+            case MirSelect select:
+                PrepareWrite(select.Target.Local, select.Span, blockId, instructionIndex, state, results);
+                ValidateReadOperand(select.Condition, select.Span, blockId, instructionIndex, state, results);
+                ValidateReadOperand(select.TrueValue, select.Span, blockId, instructionIndex, state, results);
+                ValidateReadOperand(select.FalseValue, select.Span, blockId, instructionIndex, state, results);
+                break;
+
             case MirAlloc alloc when alloc.Target.Kind == PlaceKind.Local:
                 PrepareWrite(alloc.Target.Local, alloc.Span, blockId, instructionIndex, state, results);
                 break;

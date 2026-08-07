@@ -812,6 +812,9 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             case MirUnaryOp unaryOp:
                 Define(unaryOp.Target, owned, rcLocals);
                 break;
+            case MirSelect select:
+                Define(select.Target, owned, rcLocals);
+                break;
         }
     }
 
@@ -1013,6 +1016,12 @@ public sealed class DropInsertionPass : IMirOptimizationPass
                 CollectOperand(unaryOp.Operand, result);
                 break;
 
+            case MirSelect select:
+                CollectOperand(select.Condition, result);
+                CollectOperand(select.TrueValue, result);
+                CollectOperand(select.FalseValue, result);
+                break;
+
             case MirLoad load:
                 if (MirLocalTransferAnalysis.TryGetBinding(load, out var loadBinding))
                 {
@@ -1149,6 +1158,11 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             case MirUnaryOp unaryOp:
                 CollectOperand(unaryOp.Operand, live);
                 break;
+            case MirSelect select:
+                CollectOperand(select.Condition, live);
+                CollectOperand(select.TrueValue, live);
+                CollectOperand(select.FalseValue, live);
+                break;
             case MirLoad load:
                 if (MirLocalTransferAnalysis.TryGetBinding(load, out var lb))
                     live.Add(lb.Source);
@@ -1184,6 +1198,7 @@ public sealed class DropInsertionPass : IMirOptimizationPass
             MirCall call => call.Target is MirPlace { Kind: PlaceKind.Local, Local: var c } ? c : null,
             MirBinOp bin => bin.Target is MirPlace { Kind: PlaceKind.Local, Local: var b } ? b : null,
             MirUnaryOp unary => unary.Target is MirPlace { Kind: PlaceKind.Local, Local: var u } ? u : null,
+            MirSelect select => select.Target.Local,
             MirLoad load when MirLocalTransferAnalysis.TryGetBinding(load, out var lb) => lb.Target,
             MirLoad load => load.Target is MirPlace { Kind: PlaceKind.Local, Local: var l } ? l : null,
             MirCopy copy when MirLocalTransferAnalysis.TryGetBinding(copy, out var cb) => cb.Target,

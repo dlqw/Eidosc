@@ -237,6 +237,47 @@ public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizatio
             return FoldUnaryOp(unaryOp, knownConstants);
         }
 
+        if (instr is MirSelect select)
+        {
+            var condition = PropagateOperand(select.Condition, knownConstants);
+            var trueValue = PropagateOperand(select.TrueValue, knownConstants);
+            var falseValue = PropagateOperand(select.FalseValue, knownConstants);
+            if (condition is MirConstant
+                {
+                    Value: MirConstantValue.BoolValue { Value: var selectedTrue }
+                })
+            {
+                var selected = selectedTrue ? trueValue : falseValue;
+                if (selected is MirConstant constant)
+                {
+                    knownConstants[select.Target.Local] = constant;
+                }
+                else
+                {
+                    knownConstants.Remove(select.Target.Local);
+                }
+
+                return new MirAssign
+                {
+                    Target = select.Target,
+                    Source = selected,
+                    Span = select.Span
+                };
+            }
+
+            knownConstants.Remove(select.Target.Local);
+            return ReferenceEquals(condition, select.Condition) &&
+                   ReferenceEquals(trueValue, select.TrueValue) &&
+                   ReferenceEquals(falseValue, select.FalseValue)
+                ? select
+                : select with
+                {
+                    Condition = condition,
+                    TrueValue = trueValue,
+                    FalseValue = falseValue
+                };
+        }
+
         // Handle MirCall: fold pure calls with all-constant arguments
         if (instr is MirCall call)
         {
@@ -320,6 +361,7 @@ public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizatio
             MirStore { Target: { Kind: PlaceKind.Local } place } => place.Local,
             MirBinOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
             MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } place } => place.Local,
+            MirSelect { Target: { Kind: PlaceKind.Local } place } => place.Local,
             _ => null
         };
     }

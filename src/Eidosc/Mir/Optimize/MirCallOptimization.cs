@@ -67,6 +67,7 @@ internal static class MirCallOptimization
             MirCall call => call.Target,
             MirBinOp binOp => binOp.Target,
             MirUnaryOp unaryOp => unaryOp.Target,
+            MirSelect select => select.Target,
             MirLoad load => load.Target,
             MirStore store => store.Target,
             MirCopy copy => copy.Target,

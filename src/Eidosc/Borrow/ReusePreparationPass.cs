@@ -243,6 +243,9 @@ public sealed class ReusePreparationPass : IMirOptimizationPass
             case MirUnaryOp unary:
                 Define(unary.Target, owned);
                 break;
+            case MirSelect select:
+                Define(select.Target, owned);
+                break;
         }
     }
 
@@ -537,6 +540,9 @@ public sealed class ReusePreparationPass : IMirOptimizationPass
                             call.Arguments.Any(argument => ContainsLocal(argument, local)),
             MirBinOp binary => ContainsLocal(binary.Left, local) || ContainsLocal(binary.Right, local),
             MirUnaryOp unary => ContainsLocal(unary.Operand, local),
+            MirSelect select => ContainsLocal(select.Condition, local) ||
+                                ContainsLocal(select.TrueValue, local) ||
+                                ContainsLocal(select.FalseValue, local),
             MirLoad load => ContainsLocal(load.Source, local),
             MirStore store => ContainsLocal(store.Target, local) || ContainsLocal(store.Value, local),
             MirDrop drop => ContainsLocal(drop.Value, local),

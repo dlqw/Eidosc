@@ -228,6 +228,23 @@ public sealed class CallFolding
 
                 environment[target.Local] = unary;
                 return true;
+            case MirSelect { Target: { Kind: PlaceKind.Local } target } select:
+                var condition = ResolveOperand(select.Condition, environment);
+                if (condition?.Value is not MirConstantValue.BoolValue { Value: var chooseTrue })
+                {
+                    return false;
+                }
+
+                var selected = ResolveOperand(
+                    chooseTrue ? select.TrueValue : select.FalseValue,
+                    environment);
+                if (selected == null)
+                {
+                    return false;
+                }
+
+                environment[target.Local] = selected;
+                return true;
             case MirCall { Function: MirFunctionRef functionRef } call:
                 if (call.Target is not MirPlace { Kind: PlaceKind.Local } callTarget)
                 {

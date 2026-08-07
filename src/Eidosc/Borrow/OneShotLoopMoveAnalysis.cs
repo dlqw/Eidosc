@@ -344,6 +344,7 @@ internal static class OneShotLoopMoveAnalysis
             MirAlloc alloc => alloc.Target,
             MirBinOp { Target: MirPlace place } => place,
             MirUnaryOp { Target: MirPlace place } => place,
+            MirSelect select => select.Target,
             _ => null
         };
 

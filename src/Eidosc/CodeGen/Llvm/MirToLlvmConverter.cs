@@ -873,6 +873,7 @@ public sealed partial class MirToLlvmConverter
             MirLoad load => ConvertLoad(load),
             MirBinOp binOp => ConvertBinOp(binOp),
             MirUnaryOp unaryOp => ConvertUnaryOp(unaryOp),
+            MirSelect select => ConvertSelect(select),
             MirAlloc alloc => ConvertAlloc(alloc),
             MirCopy copy => ConvertCopy(copy),
             MirMove move => ConvertMove(move),
@@ -1024,6 +1025,24 @@ public sealed partial class MirToLlvmConverter
         }
 
         return null;
+    }
+
+    private LlvmInstruction ConvertSelect(MirSelect select)
+    {
+        var condition = CoerceValueToType(ConvertOperand(select.Condition), LlvmIntType.I1, "select_cond");
+        var trueValue = ConvertOperand(select.TrueValue);
+        var falseValue = CoerceValueToType(ConvertOperand(select.FalseValue), trueValue.Type, "select_false");
+        var instruction = new LlvmSelect
+        {
+            Condition = condition,
+            TrueValue = trueValue,
+            FalseValue = falseValue,
+            ResultName = _nameMangler.NewTempName("select")
+        };
+        AssignPlaceFromValue(
+            select.Target,
+            new LlvmInstructionRef { Instruction = instruction, Type = trueValue.Type });
+        return instruction;
     }
 
     private LlvmInstruction? ConvertCaseInject(MirCaseInject injection)

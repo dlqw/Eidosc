@@ -155,6 +155,7 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
         MirCall { Target: { Kind: PlaceKind.Local } target } => target.Local,
         MirBinOp { Target: MirPlace { Kind: PlaceKind.Local } target } => target.Local,
         MirUnaryOp { Target: MirPlace { Kind: PlaceKind.Local } target } => target.Local,
+        MirSelect { Target: { Kind: PlaceKind.Local } target } => target.Local,
         MirLoad { Target.Kind: PlaceKind.Local } load => load.Target.Local,
         MirStore { Target.Kind: PlaceKind.Local } store => store.Target.Local,
         MirCopy copy => copy.Target.Local,
@@ -379,6 +380,12 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                                            OperandContainsProjected(binary.Left, plan) || OperandContainsProjected(binary.Right, plan):
                 case MirUnaryOp unary when OperandContainsGroup(unary.Operand, group) ||
                                             OperandContainsProjected(unary.Operand, plan):
+                case MirSelect select when OperandContainsGroup(select.Condition, group) ||
+                                           OperandContainsGroup(select.TrueValue, group) ||
+                                           OperandContainsGroup(select.FalseValue, group) ||
+                                           OperandContainsProjected(select.Condition, plan) ||
+                                           OperandContainsProjected(select.TrueValue, plan) ||
+                                           OperandContainsProjected(select.FalseValue, plan):
                     return false;
 
                 case MirCall call:
@@ -1650,6 +1657,12 @@ public sealed class CallerOwnedAggregateSpecializationPass : IMirOptimizationPas
                 case MirUnaryOp unary:
                     Consume(unary.Operand);
                     Define(unary.Target);
+                    break;
+                case MirSelect select:
+                    Consume(select.Condition);
+                    Consume(select.TrueValue);
+                    Consume(select.FalseValue);
+                    Define(select.Target);
                     break;
                 case MirLoad load:
                     if (load.MovesOutOfSource)

@@ -188,6 +188,10 @@ internal sealed class CallerOwnedParamProvenanceAnalyzer
                 TransferOpaqueOperation(unary.Target, [unary.Operand], state);
                 break;
 
+            case MirSelect select:
+                TransferOpaqueOperation(select.Target, [select.Condition, select.TrueValue, select.FalseValue], state);
+                break;
+
             case MirAlloc alloc:
                 state.SetLocal(alloc.Target.Local, CallerOwnedParamProvenance.Untracked);
                 break;
