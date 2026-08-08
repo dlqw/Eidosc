@@ -30,16 +30,20 @@ also proves that intermediate sequences have a single reader and that the
 source, mapped element, and accumulator types satisfy the current ownership
 requirements.
 
-The implemented shapes are direct `map -> filter -> fold_left` and
-`map -> filter -> collect` pipelines over `Copy` source and mapped elements.
-The fold path additionally requires a `Copy` accumulator. The filter callback
-must have the canonical `Ref[T] -> Bool` contract.
+The implemented shapes are direct `map -> fold_left`,
+`map -> filter -> fold_left`, and `map -> filter -> collect` pipelines over
+`Copy` source and mapped elements. Fold paths additionally require a `Copy`
+accumulator. The filter callback must have the canonical
+`Ref[T] -> Bool` contract.
 
 The fold path becomes one ordered source loop with a scalar accumulator and no
-eager `map` or `filter` result. The collect path becomes one ordered source
-loop and one compiler-managed result collector, eliminating the eager `map`
-result. If a following fold cannot be fused but the producer proof succeeds,
-Eidosc can still apply the collect plan and leave the fold call unchanged.
+eager `map` or `filter` result. This also applies when the source was written
+through `Functor.fmap` and the sink through `Foldable.fold_left`: specialization
+preserves the concrete sequence roles, so source spelling does not select the
+optimization. The collect path becomes one ordered source loop and one
+compiler-managed result collector, eliminating the eager `map` result. If a
+following fold cannot be fused but the producer proof succeeds, Eidosc can
+still apply the collect plan and leave the fold call unchanged.
 
 ## Capacity and construction planning
 
@@ -110,9 +114,11 @@ hints to bypass a failed proof.
 Detailed profiling records `sequence.analyze`, `sequence.plan`, and
 `sequence.rewrite` optimizer subphases. MIR optimization counters use the
 `Mir.optimizer.sequence.*` prefix and report formed pipelines, eliminated
-intermediates, categorized fallback reasons, and
-`sequence.collectors_stack_promoted`. Diagnostic MIR output includes the same
-aggregated counters.
+intermediates, emitted source loops, categorized fallback reasons, and
+`sequence.collectors_stack_promoted`. Shape counters distinguish
+`sequence.pipeline.map_fold`, `sequence.pipeline.map_filter_fold`, and
+`sequence.pipeline.map_filter_collect`. Diagnostic MIR output includes the
+same aggregated counters.
 
 These metrics explain optimizer coverage; they are not a stable source-level
 API and cannot change program semantics.

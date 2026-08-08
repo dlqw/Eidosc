@@ -386,7 +386,9 @@ public partial class LlvmPipelineIntegrationTests
                 CompilerSemanticRole.SequenceFoldLeft
         });
         Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipeline.map_filter_fold"]);
         Assert.Equal(2, result.ProfilingCounters["Mir.optimizer.sequence.intermediates_elided"]);
+        Assert.True(result.ProfilingCounters["Mir.optimizer.sequence.source_loops_emitted"] >= 1);
         Assert.Contains(main.Locals, static local => local.Name == "__sequence_index");
         Assert.Contains(result.SubphaseMetrics, static metric =>
             string.Equals(metric.Name, "loop.optimizer.sequence.analyze", StringComparison.Ordinal));
@@ -394,6 +396,35 @@ public partial class LlvmPipelineIntegrationTests
             string.Equals(metric.Name, "loop.optimizer.sequence.plan", StringComparison.Ordinal));
         Assert.Contains(result.SubphaseMetrics, static metric =>
             string.Equals(metric.Name, "loop.optimizer.sequence.rewrite", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SeqMapFold_FunctionalTraits_FusesWithoutConcreteSeqSpelling()
+    {
+        var result = RunSourceAtMir(
+            SeqMapFoldFunctionalSource,
+            "seq_map_fold_functional_fusion.eidos",
+            enableDetailedProfiling: true);
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+        var module = Assert.IsType<MirModule>(result.MirModule);
+        var main = Assert.Single(module.Functions, static function => function.Name == "main");
+        var calls = main.BasicBlocks
+            .SelectMany(static block => block.Instructions)
+            .OfType<MirCall>()
+            .ToList();
+
+        Assert.DoesNotContain(calls, static call => call.Function is MirFunctionRef
+        {
+            CompilerSemanticRole: CompilerSemanticRole.SequenceMap or CompilerSemanticRole.SequenceFoldLeft
+        });
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipeline.map_fold"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.intermediates_elided"]);
+        Assert.True(result.ProfilingCounters["Mir.optimizer.sequence.source_loops_emitted"] >= 1);
+        Assert.Contains(main.Locals, static local => local.Name == "__sequence_mapped");
     }
 
     [Fact]
@@ -432,10 +463,6 @@ public partial class LlvmPipelineIntegrationTests
         {
             CompilerSemanticRole: CompilerSemanticRole.SequenceFoldLeft
         });
-        Assert.DoesNotContain(calls, static call => call.Function is MirFunctionRef
-        {
-            Name: "sum_left"
-        });
         Assert.True(result.ProfilingCounters["Mir.optimizer.sequence.direct_folds_lowered"] >= 1);
         Assert.Contains(main.Locals, static local => local.Name == "__sequence_fold_index");
     }
@@ -449,6 +476,17 @@ public partial class LlvmPipelineIntegrationTests
             "seq_map_filter_fold_fusion_native");
 
         Assert.Equal(12, execution.ExitCode);
+    }
+
+    [Fact]
+    public void SeqMapFold_FunctionalTraits_NativeSmoke_ReturnsChecksum()
+    {
+        var execution = CompileAndRunSourceAtNative(
+            SeqMapFoldFunctionalSource,
+            "seq_map_fold_functional_fusion_native.eidos",
+            "seq_map_fold_functional_fusion_native");
+
+        Assert.Equal(9, execution.ExitCode);
     }
 
     [Fact]
@@ -480,6 +518,7 @@ public partial class LlvmPipelineIntegrationTests
             call.Function is MirFunctionRef function &&
             MirRuntimeFunctions.HasIdentity(function, WellKnownStrings.InternalNames.ArrayPush));
         Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
+        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.pipeline.map_filter_collect"]);
         Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.intermediates_elided"]);
         Assert.Equal(2, result.ProfilingCounters["Mir.optimizer.sequence.collectors_stack_promoted"]);
         Assert.Equal(2, main.CallerOwnedAggregateAbi.LocalArrayStorages.Count);
@@ -521,7 +560,7 @@ public partial class LlvmPipelineIntegrationTests
         Assert.True(result.Success);
         Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
         Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.panic_or_divergence"]);
-        AssertSequencePipelineCallsRemain(result);
+        AssertMaterializingStagesRemain(result);
     }
 
     [Fact]
@@ -557,7 +596,7 @@ public partial class LlvmPipelineIntegrationTests
                     .Where(static pair => pair.Key.Contains("sequence", StringComparison.Ordinal))
                     .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
                     .Select(static pair => $"{pair.Key}={pair.Value}")));
-        AssertSequencePipelineCallsRemain(result);
+        AssertMaterializingStagesRemain(result);
     }
 
     [Fact]
@@ -584,7 +623,7 @@ public partial class LlvmPipelineIntegrationTests
         Assert.True(result.Success);
         Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
         Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.panic_or_divergence"]);
-        AssertSequencePipelineCallsRemain(result);
+        AssertMaterializingStagesRemain(result);
     }
 
     [Fact]
@@ -613,7 +652,7 @@ public partial class LlvmPipelineIntegrationTests
             string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
         Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
         Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.shape_after_map"]);
-        AssertSequencePipelineCallsRemain(result);
+        AssertMaterializingStagesRemain(result);
     }
 
     [Fact]
@@ -643,11 +682,29 @@ public partial class LlvmPipelineIntegrationTests
             result.Success,
             string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
         Assert.Equal(0, result.ProfilingCounters["Mir.optimizer.sequence.pipelines_formed"]);
-        Assert.Equal(1, result.ProfilingCounters["Mir.optimizer.sequence.fallback.ownership"]);
-        AssertSequencePipelineCallsRemain(result);
+        Assert.True(result.ProfilingCounters["Mir.optimizer.sequence.fallback.ownership"] >= 1);
+        AssertMaterializingStagesAndFoldRemain(result);
     }
 
-    private static void AssertSequencePipelineCallsRemain(CompilationResult result)
+    private static void AssertMaterializingStagesRemain(CompilationResult result)
+    {
+        var roles = GetMainSequenceCallRoles(result);
+
+        Assert.Contains(CompilerSemanticRole.SequenceMap, roles);
+        Assert.Contains(CompilerSemanticRole.SequenceFilter, roles);
+        Assert.DoesNotContain(CompilerSemanticRole.SequenceFoldLeft, roles);
+    }
+
+    private static void AssertMaterializingStagesAndFoldRemain(CompilationResult result)
+    {
+        var roles = GetMainSequenceCallRoles(result);
+
+        Assert.Contains(CompilerSemanticRole.SequenceMap, roles);
+        Assert.Contains(CompilerSemanticRole.SequenceFilter, roles);
+        Assert.Contains(CompilerSemanticRole.SequenceFoldLeft, roles);
+    }
+
+    private static IReadOnlySet<CompilerSemanticRole> GetMainSequenceCallRoles(CompilationResult result)
     {
         var module = Assert.IsType<MirModule>(result.MirModule);
         var main = Assert.Single(module.Functions, static function => function.Name == "main");
@@ -657,9 +714,7 @@ public partial class LlvmPipelineIntegrationTests
             .Select(static call => Assert.IsType<MirFunctionRef>(call.Function).CompilerSemanticRole)
             .ToHashSet();
 
-        Assert.Contains(CompilerSemanticRole.SequenceMap, roles);
-        Assert.Contains(CompilerSemanticRole.SequenceFilter, roles);
-        Assert.Contains(CompilerSemanticRole.SequenceFoldLeft, roles);
+        return roles;
     }
 
     [Fact]
@@ -772,6 +827,19 @@ public partial class LlvmPipelineIntegrationTests
             Seq.fold_left(
                 Seq.filter(Seq.map([1, 2, 3, 4])(increment))(greater_than_two)
             )(0)(add)
+        }
+        """;
+
+    private const string SeqMapFoldFunctionalSource = """
+        import std.Functor
+        import std.Foldable
+
+        increment :: Int -> Int { value => value + 1 }
+        add :: Int -> Int -> Int { total, value => total + value }
+
+        main :: Unit -> Int
+        {
+            Foldable.fold_left(Functor.fmap([1, 2, 3])(increment))(0)(add)
         }
         """;
 

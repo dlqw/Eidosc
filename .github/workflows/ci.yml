@@ -114,6 +114,16 @@ jobs:
           -NoBuild
           -NoRestore
 
+      - name: Gate sequence fusion proofs and native equivalence
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName sequence-fusion-soundness
+          -Filter "FullyQualifiedName~SequencePipelineFusionPassTests|FullyQualifiedName~SeqMapFilter|FullyQualifiedName~SeqMapFold|FullyQualifiedName~SeqFoldLeft"
+          -NoBuild
+          -NoRestore
+
       - name: Gate caller-owned escape proof tests
         shell: pwsh
         run: >

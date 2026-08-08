@@ -83,6 +83,8 @@ public sealed class SequencePipelineFusionPassTests
         Assert.NotSame(module, result);
         Assert.Equal(1, pass.Stats.DirectFoldsLowered);
         Assert.Equal(0, pass.Stats.PipelinesFormed);
+        Assert.Equal(1, pass.Stats.SourceLoopsEmitted);
+        Assert.Equal(0, pass.Stats.MapFoldPipelines);
         Assert.DoesNotContain(
             function.BasicBlocks.SelectMany(static block => block.Instructions).OfType<MirCall>(),
             static call => call.Function is MirFunctionRef
