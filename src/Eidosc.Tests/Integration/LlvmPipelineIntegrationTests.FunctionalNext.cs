@@ -154,4 +154,33 @@ public partial class LlvmPipelineIntegrationTests
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
     }
 
+    [Fact]
+    public void TaskOutcome_CancelFailureAndMultiObserverSurfaceCompileTogether()
+    {
+        const string source = """
+            import std.Task
+
+            consume :: Task.Outcome[Int] -> Unit
+            {
+                TaskSucceeded(_) => (),
+                TaskCancelledOutcome() => (),
+                TaskFailedOutcome(_) => ()
+            }
+
+            main :: Unit -> Bool
+            {
+                failed: Task[Int] := Task.failed("boom");
+                Task.observe(failed)(consume);
+                polled := Task.try_outcome(failed);
+                Task.is_failed(failed) && !Task.cancel(failed) && match polled {
+                    Some(TaskFailedOutcome(_)) => true,
+                    _ => false
+                }
+            }
+            """;
+
+        var result = RunSourceAtMir(source, "task_outcome_contract.eidos");
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(static diagnostic => diagnostic.Message)));
+    }
+
 }

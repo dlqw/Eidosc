@@ -15,7 +15,7 @@
  * Include dependency chain: eidos_runtime.h -> eidos_sync.h -> this file
  */
 
-#include "eidos_sync.h"
+#include "eidos_waitqueue.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -67,6 +67,13 @@
  * The task is allocated as a shared object (SHARED bit set) so
  * eidos_incref_shared / eidos_decref_shared must be used.
  */
+typedef struct EidosTaskAwaiter {
+    EidosWorkItem work;
+    struct EidosTask* task;
+    uint32_t owns_closure;
+    struct EidosTaskAwaiter* next;
+} EidosTaskAwaiter;
+
 typedef struct EidosTask {
     EidosHeader       header;
     volatile uint32_t state;         /* EidosTaskState enum (atomic) */
@@ -74,8 +81,11 @@ typedef struct EidosTask {
     uint32_t          release_result_after_complete;
     EidosNativeLock   completion_lock;
     EidosWorkItem     start;         /* task body scheduled by spawn */
-    EidosWorkItem     completion;    /* continuation scheduled on completion (awaiter) */
+    EidosTaskAwaiter* awaiters_head;
+    EidosTaskAwaiter* awaiters_tail;
     void*             result;        /* shared ptr to computation result */
+    void*             error;         /* shared boxed failure payload */
+    uint32_t          externally_driven;
     struct EidosTaskGroup* group;    /* owning TaskGroup (nullable) */
 } EidosTask;
 
@@ -113,6 +123,10 @@ static int32_t g_task_runtime_atexit_registered = 0;
 
 /** Flag to track whether destructors have been registered. */
 static int32_t g_task_destructors_registered = 0;
+
+/** Optional task waiter allocation-balance instrumentation. */
+static volatile int32_t g_task_waiter_alloc_count = 0;
+static volatile int32_t g_task_waiter_free_count = 0;
 
 static void task_runtime_yield(void)
 {
@@ -188,6 +202,84 @@ static void ensure_destructors(void) {
 /* ============================================================
  * Task Lifecycle - Internal Helpers
  * ============================================================ */
+
+static EidosTaskAwaiter* eidos_task_awaiter_alloc(EidosWorkItem work, uint32_t owns_closure)
+{
+    EidosTaskAwaiter* awaiter = (EidosTaskAwaiter*)malloc(sizeof(EidosTaskAwaiter));
+    if (!awaiter) {
+        eidos_panic("eidos_task_await: out of memory");
+        return NULL;
+    }
+
+    awaiter->work = work;
+    awaiter->task = NULL;
+    awaiter->owns_closure = owns_closure ? 1u : 0u;
+    awaiter->next = NULL;
+    ETASK_ATOMIC_INC32(&g_task_waiter_alloc_count);
+    return awaiter;
+}
+
+static void eidos_task_awaiter_free(EidosTaskAwaiter* awaiter, bool release_owned_closure)
+{
+    if (!awaiter) {
+        return;
+    }
+
+    if (release_owned_closure && awaiter->owns_closure && awaiter->work.closure_ptr) {
+        eidos_decref_shared(awaiter->work.closure_ptr);
+    }
+
+    free(awaiter);
+    ETASK_ATOMIC_INC32(&g_task_waiter_free_count);
+}
+
+static EidosTaskAwaiter* eidos_task_detach_awaiters(EidosTask* task)
+{
+    EidosTaskAwaiter* awaiters = task->awaiters_head;
+    task->awaiters_head = NULL;
+    task->awaiters_tail = NULL;
+    return awaiters;
+}
+
+static void* eidos_task_awaiter_dispatch(void* closure, void* arg)
+{
+    EidosTaskAwaiter* awaiter = (EidosTaskAwaiter*)closure;
+    EidosWorkItem continuation = awaiter->work;
+    EidosTask* task = awaiter->task;
+    continuation.arg = arg;
+    void* dispatch_result = continuation.invoke_fn(continuation.closure_ptr, continuation.arg);
+    eidos_task_awaiter_free(awaiter, false);
+    eidos_decref_shared(task);
+    return dispatch_result;
+}
+
+static void eidos_task_schedule_awaiters(EidosTask* task,
+                                         EidosTaskAwaiter* awaiters,
+                                         void* result)
+{
+    while (awaiters) {
+        EidosTaskAwaiter* next = awaiters->next;
+        awaiters->next = NULL;
+        awaiters->task = task;
+        eidos_incref_shared(task);
+
+        EidosWorkItem dispatch;
+        dispatch.invoke_fn = eidos_task_awaiter_dispatch;
+        dispatch.closure_ptr = awaiters;
+        dispatch.arg = result;
+        eidos_schedule(dispatch);
+        awaiters = next;
+    }
+}
+
+static void eidos_task_discard_awaiters(EidosTaskAwaiter* awaiters)
+{
+    while (awaiters) {
+        EidosTaskAwaiter* next = awaiters->next;
+        eidos_task_awaiter_free(awaiters, true);
+        awaiters = next;
+    }
+}
 
 /**
  * Trampoline executed by the scheduler to run a task's user function.
@@ -302,10 +394,13 @@ static EidosTask* eidos_task_alloc(void) {
     task->raw_payloads = 0;
     task->release_result_after_complete = 0;
     task->result    = NULL;
+    task->error     = NULL;
+    task->externally_driven = 0;
     task->group     = NULL;
     eidos_lock_init(&task->completion_lock);
     memset(&task->start, 0, sizeof(EidosWorkItem));
-    memset(&task->completion, 0, sizeof(EidosWorkItem));
+    task->awaiters_head = NULL;
+    task->awaiters_tail = NULL;
 
     /* Mark as shared so atomic incref/decref is used. */
     eidos_share(task);
@@ -355,6 +450,7 @@ struct EidosTask* eidos_task_new_pending_value(void)
 
     task->raw_payloads = 0;
     task->release_result_after_complete = 0;
+    task->externally_driven = 1;
     return task;
 }
 
@@ -381,6 +477,24 @@ bool eidos_task_is_completed(struct EidosTask* task)
     return ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state) == EIDOS_TASK_COMPLETED;
 }
 
+bool eidos_task_is_cancelled(struct EidosTask* task)
+{
+    if (!task) {
+        return false;
+    }
+
+    return ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state) == EIDOS_TASK_CANCELLED;
+}
+
+bool eidos_task_is_failed(struct EidosTask* task)
+{
+    if (!task) {
+        return false;
+    }
+
+    return ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state) == EIDOS_TASK_FAILED;
+}
+
 void* eidos_task_try_get_raw(struct EidosTask* task)
 {
     if (!task || !task->raw_payloads || !eidos_task_is_completed(task)) {
@@ -397,6 +511,31 @@ void* eidos_task_try_get_value(struct EidosTask* task)
     }
 
     return task->result;
+}
+
+void* eidos_task_try_get_error(struct EidosTask* task)
+{
+    if (!task || !eidos_task_is_failed(task)) {
+        return NULL;
+    }
+
+    return task->error;
+}
+
+void eidos_task_waiter_counters_reset(void)
+{
+    ETASK_ATOMIC_STORE32(&g_task_waiter_alloc_count, 0);
+    ETASK_ATOMIC_STORE32(&g_task_waiter_free_count, 0);
+}
+
+int64_t eidos_task_waiter_alloc_count(void)
+{
+    return (int64_t)ETASK_ATOMIC_LOAD32(&g_task_waiter_alloc_count);
+}
+
+int64_t eidos_task_waiter_free_count(void)
+{
+    return (int64_t)ETASK_ATOMIC_LOAD32(&g_task_waiter_free_count);
 }
 
 static void eidos_task_retain_result(EidosTask* task, void* result)
@@ -538,6 +677,10 @@ EidosTask* eidos_task_spawn_closure_value(EidosClosure* thunk) {
     return task;
 }
 
+static void eidos_task_await_internal(EidosTask* task,
+                                      EidosWorkItem continuation,
+                                      uint32_t owns_closure);
+
 void eidos_task_await_closure_raw(EidosTask* task, EidosClosure* continuation) {
     if (!task || !continuation) {
         return;
@@ -549,7 +692,7 @@ void eidos_task_await_closure_raw(EidosTask* task, EidosClosure* continuation) {
     work.invoke_fn = closure_raw_continuation_invoke;
     work.closure_ptr = continuation;
     work.arg = NULL;
-    eidos_task_await(task, work);
+    eidos_task_await_internal(task, work, 1);
 }
 
 void eidos_task_await_closure_value(EidosTask* task, EidosClosure* continuation) {
@@ -562,9 +705,8 @@ void eidos_task_await_closure_value(EidosTask* task, EidosClosure* continuation)
  * If the task is already COMPLETED, the continuation is scheduled
  * immediately with the task's result as its argument.
  *
- * If the task is still running, the continuation is stored in the
- * task's completion slot. When the task completes, the continuation
- * will be scheduled with the result.
+ * If the task is still running, the continuation is appended to the
+ * task's FIFO awaiter queue. Completion schedules every registered awaiter.
  *
  * Race handling: completion_lock serializes continuation installation
  * with completion, so the completer cannot observe a half-installed
@@ -573,37 +715,68 @@ void eidos_task_await_closure_value(EidosTask* task, EidosClosure* continuation)
  * @param task         The task to await (must not be NULL)
  * @param continuation Work item to schedule when the task completes
  */
-void eidos_task_await(EidosTask* task, EidosWorkItem continuation) {
-    if (!task) return;
+static bool eidos_task_state_is_terminal(int32_t state)
+{
+    return state == EIDOS_TASK_COMPLETED ||
+           state == EIDOS_TASK_CANCELLED ||
+           state == EIDOS_TASK_FAILED;
+}
 
-    EidosWorkItem done;
-    memset(&done, 0, sizeof(EidosWorkItem));
+static void eidos_task_schedule_terminal_awaiter(EidosTask* task,
+                                                  EidosTaskAwaiter* awaiter,
+                                                  int32_t state)
+{
+    void* result = state == EIDOS_TASK_COMPLETED ? task->result : NULL;
+    eidos_task_schedule_awaiters(task, awaiter, result);
+}
 
-    eidos_lock_acquire(&task->completion_lock);
-
-    int32_t cur_state = ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state);
-    if (cur_state == EIDOS_TASK_COMPLETED) {
-        done.invoke_fn   = continuation.invoke_fn;
-        done.closure_ptr = continuation.closure_ptr;
-        done.arg         = task->result;
-    } else if (cur_state == EIDOS_TASK_CANCELLED) {
-        done.invoke_fn   = continuation.invoke_fn;
-        done.closure_ptr = continuation.closure_ptr;
-        done.arg         = NULL;
-    } else if (!task->completion.invoke_fn) {
-        task->completion = continuation;
-        ETASK_ATOMIC_STORE32((volatile int32_t*)&task->state, EIDOS_TASK_SUSPENDED);
-    } else {
-        eidos_lock_release(&task->completion_lock);
-        eidos_panic("eidos_task_await: task already has a pending continuation");
+static void eidos_task_await_internal(EidosTask* task,
+                                      EidosWorkItem continuation,
+                                      uint32_t owns_closure)
+{
+    if (!task || !continuation.invoke_fn) {
+        if (owns_closure && continuation.closure_ptr) {
+            eidos_decref_shared(continuation.closure_ptr);
+        }
         return;
     }
 
-    eidos_lock_release(&task->completion_lock);
+    ensure_scheduler();
 
-    if (done.invoke_fn) {
-        eidos_schedule(done);
+    EidosTaskAwaiter* awaiter = eidos_task_awaiter_alloc(continuation, owns_closure);
+    if (!awaiter) {
+        if (owns_closure && continuation.closure_ptr) {
+            eidos_decref_shared(continuation.closure_ptr);
+        }
+        return;
     }
+
+    int32_t state = ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state);
+    if (eidos_task_state_is_terminal(state)) {
+        eidos_task_schedule_terminal_awaiter(task, awaiter, state);
+        return;
+    }
+
+    eidos_lock_acquire(&task->completion_lock);
+    state = ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state);
+    if (eidos_task_state_is_terminal(state)) {
+        eidos_lock_release(&task->completion_lock);
+        eidos_task_schedule_terminal_awaiter(task, awaiter, state);
+        return;
+    }
+
+    if (task->awaiters_tail) {
+        task->awaiters_tail->next = awaiter;
+    } else {
+        task->awaiters_head = awaiter;
+    }
+    task->awaiters_tail = awaiter;
+    ETASK_ATOMIC_STORE32((volatile int32_t*)&task->state, EIDOS_TASK_SUSPENDED);
+    eidos_lock_release(&task->completion_lock);
+}
+
+void eidos_task_await(EidosTask* task, EidosWorkItem continuation) {
+    eidos_task_await_internal(task, continuation, 0);
 }
 
 /**
@@ -621,25 +794,18 @@ void eidos_task_await(EidosTask* task, EidosWorkItem continuation) {
 void eidos_task_complete(EidosTask* task, void* result) {
     if (!task) return;
 
-    EidosWorkItem done;
-    memset(&done, 0, sizeof(EidosWorkItem));
+    EidosTaskAwaiter* awaiters = NULL;
     bool completed = false;
 
     eidos_lock_acquire(&task->completion_lock);
 
     int32_t previous_state = ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state);
-    if (previous_state != EIDOS_TASK_COMPLETED && previous_state != EIDOS_TASK_CANCELLED) {
+    if (!eidos_task_state_is_terminal(previous_state)) {
         task->result = result;
         eidos_task_retain_result(task, result);
         ETASK_ATOMIC_STORE32((volatile int32_t*)&task->state, EIDOS_TASK_COMPLETED);
         completed = true;
-
-        if (task->completion.invoke_fn) {
-            done.invoke_fn   = task->completion.invoke_fn;
-            done.closure_ptr = task->completion.closure_ptr;
-            done.arg         = result;
-            memset(&task->completion, 0, sizeof(EidosWorkItem));
-        }
+        awaiters = eidos_task_detach_awaiters(task);
     }
 
     eidos_lock_release(&task->completion_lock);
@@ -648,14 +814,66 @@ void eidos_task_complete(EidosTask* task, void* result) {
         return;
     }
 
-    if (done.invoke_fn) {
-        eidos_schedule(done);
-    }
+    eidos_task_schedule_awaiters(task, awaiters, result);
 
     /* Notify owning TaskGroup, if any. */
     if (task->group) {
         eidos_taskgroup_on_task_done(task->group);
     }
+}
+
+bool eidos_task_cancel(struct EidosTask* task)
+{
+    if (!task || !task->externally_driven) {
+        return false;
+    }
+
+    ensure_scheduler();
+    EidosTaskAwaiter* awaiters = NULL;
+    bool cancelled = false;
+
+    eidos_lock_acquire(&task->completion_lock);
+    int32_t previous_state = ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state);
+    if (!eidos_task_state_is_terminal(previous_state)) {
+        ETASK_ATOMIC_STORE32((volatile int32_t*)&task->state, EIDOS_TASK_CANCELLED);
+        awaiters = eidos_task_detach_awaiters(task);
+        cancelled = true;
+    }
+    eidos_lock_release(&task->completion_lock);
+
+    if (cancelled) {
+        eidos_task_schedule_awaiters(task, awaiters, NULL);
+    }
+    return cancelled;
+}
+
+bool eidos_task_fail(struct EidosTask* task, void* error)
+{
+    if (!task || !task->externally_driven) {
+        return false;
+    }
+
+    ensure_scheduler();
+    EidosTaskAwaiter* awaiters = NULL;
+    bool failed = false;
+
+    eidos_lock_acquire(&task->completion_lock);
+    int32_t previous_state = ETASK_ATOMIC_LOAD32((volatile int32_t*)&task->state);
+    if (!eidos_task_state_is_terminal(previous_state)) {
+        task->error = error;
+        if (error) {
+            eidos_incref_shared(error);
+        }
+        ETASK_ATOMIC_STORE32((volatile int32_t*)&task->state, EIDOS_TASK_FAILED);
+        awaiters = eidos_task_detach_awaiters(task);
+        failed = true;
+    }
+    eidos_lock_release(&task->completion_lock);
+
+    if (failed) {
+        eidos_task_schedule_awaiters(task, awaiters, NULL);
+    }
+    return failed;
 }
 
 /**
@@ -675,6 +893,13 @@ static void eidos_task_destructor(void* ptr) {
         eidos_task_release_result(task, task->result);
         task->result = NULL;
     }
+
+    if (task->error) {
+        eidos_decref_shared(task->error);
+        task->error = NULL;
+    }
+
+    eidos_task_discard_awaiters(eidos_task_detach_awaiters(task));
 
     /* Release group reference. */
     if (task->group) {

@@ -98,7 +98,7 @@ public sealed class RuntimeConcurrencyNativeSmokeTests
             ]);
 
         AssertSuccessfulExecution(execution);
-        Assert.Contains("6 run, 6 passed, 0 failed", execution.StandardOutput, StringComparison.Ordinal);
+        Assert.Contains("9 run, 9 passed, 0 failed", execution.StandardOutput, StringComparison.Ordinal);
     }
 
     private static void AssertSuccessfulExecution(ProcessExecutionResult execution)

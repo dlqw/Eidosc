@@ -481,7 +481,7 @@ main :: Unit -> Int
         Assert.NotEmpty(fixturePaths);
 
         var targetInfo = TargetInfo.Default;
-        var runtimeDirectory = TestSourceLoader.GetFullPath("Eidosc/src/Eidosc/Runtime");
+        var runtimeDirectory = Path.GetDirectoryName(ResolveRuntimeSourcePath())!;
 
         foreach (var fixturePath in fixturePaths)
         {
