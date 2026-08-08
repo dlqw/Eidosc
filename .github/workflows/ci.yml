@@ -104,6 +104,16 @@ jobs:
           -NoBuild
           -NoRestore
 
+      - name: Gate traversable consumer specialization proof
+        shell: pwsh
+        run: >
+          ./Eidosc/scripts/ci/run-required-test-shard.ps1
+          -Project Eidosc/src/Eidosc.Tests/Eidosc.Tests.csproj
+          -ShardName traversable-consumer-specialization
+          -Filter "FullyQualifiedName~TraversableConsumerSpecializationPassTests|FullyQualifiedName~StdGenericTraversableSequenceFixture_BuildsThroughMir"
+          -NoBuild
+          -NoRestore
+
       - name: Gate caller-owned escape proof tests
         shell: pwsh
         run: >

@@ -462,6 +462,29 @@ public partial class LlvmPipelineIntegrationTests
             mirModule.Functions.Count(function => function.Name.StartsWith("generic_for_each_void__spec_", StringComparison.Ordinal)) >= 1);
         Assert.True(
             mirModule.Functions.Count(function => function.Name.StartsWith("__eidos_prelude_core__Applicative__map__spec_", StringComparison.Ordinal)) >= 2);
+
+        var identityConsumerClones = mirModule.Functions
+            .Where(function => function.Name.Contains("__consumer_identity", StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(identityConsumerClones.Length >= 6);
+        Assert.All(identityConsumerClones, static clone =>
+        {
+            var calls = clone.BasicBlocks
+                .SelectMany(static block => block.Instructions)
+                .OfType<MirCall>()
+                .ToArray();
+            Assert.DoesNotContain(
+                calls,
+                static call => call.Function is MirPlace { Kind: PlaceKind.Local });
+        });
+        Assert.Contains(
+            identityConsumerClones,
+            static clone => clone.Name.Contains("__Seq__TraversableSeq__traverse", StringComparison.Ordinal) &&
+                            clone.BasicBlocks
+                                .SelectMany(static block => block.Instructions)
+                                .OfType<MirCall>()
+                                .Any(call => call.Function is MirFunctionRef functionRef &&
+                                             string.Equals(functionRef.Name, clone.Name, StringComparison.Ordinal)));
     }
 
     [Fact]
