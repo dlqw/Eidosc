@@ -94,6 +94,25 @@ static int wait_for_counter(volatile TEST_ATOMIC_LONG* counter,
     return (TEST_ATOMIC_READ(counter) >= expected);
 }
 
+static int wait_for_task_waiter_free_count(int64_t expected, int timeout_ms)
+{
+    int elapsed = 0;
+    const int poll_ms = 10;
+    while (elapsed < timeout_ms) {
+        if (eidos_task_waiter_free_count() >= expected) {
+            return 1;
+        }
+#if defined(_WIN32)
+        Sleep(poll_ms);
+#else
+        struct timespec ts = { 0, poll_ms * 1000000L };
+        nanosleep(&ts, NULL);
+#endif
+        elapsed += poll_ms;
+    }
+    return eidos_task_waiter_free_count() >= expected;
+}
+
 /* ============================================================
  * Test 1: Spawn + Await (Fast Path)
  *
@@ -101,13 +120,9 @@ static int wait_for_counter(volatile TEST_ATOMIC_LONG* counter,
  * completes, calls eidos_task_await with a continuation.
  * Verifies both the task body and the continuation executed.
  *
- * NOTE: We wait for the task body to finish before calling await
- * because the current implementation reuses task->completion for
- * both the user work (during spawn) and the awaiter continuation.
- * If await() runs before the trampoline extracts the user work, it
- * would overwrite the user function pointer. The wait ensures the
- * trampoline has cleared the completion slot so await can safely
- * store its continuation. This tests the COMPLETED fast path.
+ * NOTE: We wait for the task body to finish before calling await so
+ * this case specifically exercises the COMPLETED fast path. Pending
+ * registration and completion races are covered by later tests.
  * ============================================================ */
 
 static TEST_ATOMIC_LONG g_spawn_await_counter = 0;
@@ -410,6 +425,186 @@ static int test_pending_task_completion(void) {
 }
 
 /* ============================================================
+ * Test 7: Concurrent Multi-Awaiter Completion
+ * ============================================================ */
+
+#define MULTI_AWAITER_COUNT 16
+
+typedef struct MultiAwaiterContext {
+    struct EidosTask* task;
+    int expected_terminal_state;
+} MultiAwaiterContext;
+
+static TEST_ATOMIC_LONG g_multi_await_called = 0;
+static TEST_ATOMIC_LONG g_multi_await_failed = 0;
+
+static void* multi_await_cont_fn(void* closure, void* arg) {
+    MultiAwaiterContext* context = (MultiAwaiterContext*)closure;
+    if (arg != NULL) {
+        TEST_ATOMIC_INC(&g_multi_await_failed);
+    }
+    if (context->expected_terminal_state == EIDOS_TASK_COMPLETED &&
+        !eidos_task_is_completed(context->task)) {
+        TEST_ATOMIC_INC(&g_multi_await_failed);
+    }
+    if (context->expected_terminal_state == EIDOS_TASK_CANCELLED &&
+        !eidos_task_is_cancelled(context->task)) {
+        TEST_ATOMIC_INC(&g_multi_await_failed);
+    }
+    if (context->expected_terminal_state == EIDOS_TASK_FAILED &&
+        !eidos_task_is_failed(context->task)) {
+        TEST_ATOMIC_INC(&g_multi_await_failed);
+    }
+    TEST_ATOMIC_INC(&g_multi_await_called);
+    eidos_task_release_pending(context->task);
+    return NULL;
+}
+
+static void* register_multi_awaiter(void* arg) {
+    MultiAwaiterContext* context = (MultiAwaiterContext*)arg;
+    EidosWorkItem continuation;
+    continuation.invoke_fn = multi_await_cont_fn;
+    continuation.closure_ptr = context;
+    continuation.arg = NULL;
+    eidos_task_retain_pending(context->task);
+    eidos_task_await(context->task, continuation);
+    return NULL;
+}
+
+static int test_concurrent_multi_awaiter_completion(void) {
+    TEST_ATOMIC_SET(&g_multi_await_called, 0);
+    TEST_ATOMIC_SET(&g_multi_await_failed, 0);
+    eidos_task_waiter_counters_reset();
+
+    struct EidosTask* task = eidos_task_new_pending_value();
+    ASSERT(task != NULL, "pending task allocated for multi-await test");
+
+    EidosThread threads[MULTI_AWAITER_COUNT];
+    MultiAwaiterContext contexts[MULTI_AWAITER_COUNT + 1];
+    for (int i = 0; i < MULTI_AWAITER_COUNT; i++) {
+        contexts[i].task = task;
+        contexts[i].expected_terminal_state = EIDOS_TASK_COMPLETED;
+        ASSERT(eidos_thread_create(&threads[i], register_multi_awaiter, &contexts[i]) == 0,
+               "multi-await registration thread started");
+    }
+    for (int i = 0; i < MULTI_AWAITER_COUNT; i++) {
+        ASSERT(eidos_thread_join(threads[i]) == 0,
+               "multi-await registration thread joined");
+    }
+
+    eidos_task_complete(task, NULL);
+    ASSERT(wait_for_counter(&g_multi_await_called, MULTI_AWAITER_COUNT, 2000),
+           "every pending awaiter ran after completion");
+    ASSERT(TEST_ATOMIC_READ(&g_multi_await_failed) == 0,
+           "every pending awaiter observed completed state exactly once");
+    ASSERT(eidos_task_waiter_alloc_count() == MULTI_AWAITER_COUNT,
+           "one queue node allocated per pending awaiter");
+    ASSERT(wait_for_task_waiter_free_count(MULTI_AWAITER_COUNT, 2000),
+           "all pending awaiter dispatch nodes released");
+    ASSERT(eidos_task_waiter_free_count() == MULTI_AWAITER_COUNT,
+           "all pending awaiter nodes freed after completion");
+
+    contexts[MULTI_AWAITER_COUNT].task = task;
+    contexts[MULTI_AWAITER_COUNT].expected_terminal_state = EIDOS_TASK_COMPLETED;
+    register_multi_awaiter(&contexts[MULTI_AWAITER_COUNT]);
+    ASSERT(wait_for_counter(&g_multi_await_called, MULTI_AWAITER_COUNT + 1, 2000),
+           "late awaiter ran on completed fast path");
+    ASSERT(eidos_task_waiter_alloc_count() == MULTI_AWAITER_COUNT + 1,
+           "completed fast path allocated one ownership dispatch node");
+    ASSERT(wait_for_task_waiter_free_count(MULTI_AWAITER_COUNT + 1, 2000),
+           "completed fast-path dispatch node released");
+
+    eidos_task_release_pending(task);
+    eidos_task_runtime_shutdown();
+    return 0;
+}
+
+/* ============================================================
+ * Test 8: Pending Cancellation Drains Awaiters Once
+ * ============================================================ */
+
+static int test_pending_cancellation(void) {
+    const int waiter_count = 4;
+    TEST_ATOMIC_SET(&g_multi_await_called, 0);
+    TEST_ATOMIC_SET(&g_multi_await_failed, 0);
+    eidos_task_waiter_counters_reset();
+
+    struct EidosTask* task = eidos_task_new_pending_value();
+    ASSERT(task != NULL, "pending task allocated for cancellation");
+    MultiAwaiterContext contexts[4];
+    for (int i = 0; i < waiter_count; i++) {
+        contexts[i].task = task;
+        contexts[i].expected_terminal_state = EIDOS_TASK_CANCELLED;
+        register_multi_awaiter(&contexts[i]);
+    }
+
+    ASSERT(eidos_task_cancel(task), "first pending cancellation succeeds");
+    ASSERT(!eidos_task_cancel(task), "repeated pending cancellation is rejected");
+    eidos_task_complete(task, NULL);
+    ASSERT(wait_for_counter(&g_multi_await_called, waiter_count, 2000),
+           "cancellation scheduled every pending awaiter");
+    ASSERT(TEST_ATOMIC_READ(&g_multi_await_failed) == 0,
+           "cancelled awaiters observed cancellation");
+    ASSERT(eidos_task_waiter_alloc_count() == waiter_count,
+           "cancellation allocated one node per pending awaiter");
+    ASSERT(wait_for_task_waiter_free_count(waiter_count, 2000),
+           "cancellation released every dispatch node");
+    ASSERT(eidos_task_waiter_free_count() == waiter_count,
+           "cancellation freed every pending awaiter node");
+    ASSERT(!eidos_task_is_completed(task), "completion cannot overwrite cancellation");
+
+    eidos_task_release_pending(task);
+    eidos_task_runtime_shutdown();
+    return 0;
+}
+
+/* ============================================================
+ * Test 9: Pending Failure Retains Error And Drains Awaiters
+ * ============================================================ */
+
+static int test_pending_failure(void) {
+    const int waiter_count = 4;
+    TEST_ATOMIC_SET(&g_multi_await_called, 0);
+    TEST_ATOMIC_SET(&g_multi_await_failed, 0);
+    eidos_task_waiter_counters_reset();
+
+    struct EidosTask* task = eidos_task_new_pending_value();
+    ASSERT(task != NULL, "pending task allocated for failure");
+    MultiAwaiterContext contexts[4];
+    for (int i = 0; i < waiter_count; i++) {
+        contexts[i].task = task;
+        contexts[i].expected_terminal_state = EIDOS_TASK_FAILED;
+        register_multi_awaiter(&contexts[i]);
+    }
+
+    void* error = eidos_alloc(sizeof(int64_t), 9001);
+    ASSERT(error != NULL, "managed error payload allocated");
+    eidos_share(error);
+    ASSERT(eidos_task_fail(task, error), "first pending failure succeeds");
+    eidos_decref_shared(error);
+    ASSERT(!eidos_task_fail(task, NULL), "repeated pending failure is rejected");
+    ASSERT(!eidos_task_cancel(task), "failure cannot be overwritten by cancellation");
+    eidos_task_complete(task, NULL);
+
+    ASSERT(wait_for_counter(&g_multi_await_called, waiter_count, 2000),
+           "failure scheduled every pending awaiter");
+    ASSERT(TEST_ATOMIC_READ(&g_multi_await_failed) == 0,
+           "failed awaiters observed failed state");
+    ASSERT(eidos_task_try_get_error(task) == error,
+           "failed task retained the managed error payload");
+    ASSERT(eidos_task_waiter_alloc_count() == waiter_count,
+           "failure allocated one node per pending awaiter");
+    ASSERT(wait_for_task_waiter_free_count(waiter_count, 2000),
+           "failure released every dispatch node");
+    ASSERT(eidos_task_waiter_free_count() == waiter_count,
+           "failure freed every pending awaiter node");
+
+    eidos_task_release_pending(task);
+    eidos_task_runtime_shutdown();
+    return 0;
+}
+
+/* ============================================================
  * Main
  * ============================================================ */
 
@@ -422,6 +617,9 @@ int main(void) {
     RUN_TEST(test_taskgroup_join_before_spawn);
     RUN_TEST(test_complete_then_await);
     RUN_TEST(test_pending_task_completion);
+    RUN_TEST(test_concurrent_multi_awaiter_completion);
+    RUN_TEST(test_pending_cancellation);
+    RUN_TEST(test_pending_failure);
 
     printf("\n--- Results: %d run, %d passed, %d failed ---\n",
            g_tests_run, g_tests_passed, g_tests_failed);

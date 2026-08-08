@@ -775,7 +775,8 @@ typedef enum EidosTaskState {
     EIDOS_TASK_RUNNING   = 2,
     EIDOS_TASK_SUSPENDED = 3,
     EIDOS_TASK_COMPLETED = 4,
-    EIDOS_TASK_CANCELLED = 5
+    EIDOS_TASK_CANCELLED = 5,
+    EIDOS_TASK_FAILED    = 6
 } EidosTaskState;
 
 /** Work item: a closure + invoke function + argument. */
@@ -912,6 +913,14 @@ void eidos_task_await_closure_value(struct EidosTask* task,
 void eidos_task_complete(struct EidosTask* task, void* result);
 
 /**
+ * Cancel or fail an externally-driven pending task.
+ * Spawned scheduler work is not force-cancelled; these return false for it.
+ * Every registered awaiter is scheduled exactly once with a NULL argument.
+ */
+bool eidos_task_cancel(struct EidosTask* task);
+bool eidos_task_fail(struct EidosTask* task, void* error);
+
+/**
  * Create an already-completed raw-payload task.
  *
  * Raw-payload tasks do not retain or release result values. They are for
@@ -937,6 +946,8 @@ void eidos_task_release_pending(struct EidosTask* task);
  * Return whether a task has reached the completed state.
  */
 bool eidos_task_is_completed(struct EidosTask* task);
+bool eidos_task_is_cancelled(struct EidosTask* task);
+bool eidos_task_is_failed(struct EidosTask* task);
 
 /**
  * Return the completed raw payload immediately, or NULL when not completed.
@@ -947,6 +958,14 @@ void* eidos_task_try_get_raw(struct EidosTask* task);
  * Return the completed boxed payload immediately, or NULL when not completed.
  */
 void* eidos_task_try_get_value(struct EidosTask* task);
+
+/** Return the boxed failure payload, or NULL unless the task failed. */
+void* eidos_task_try_get_error(struct EidosTask* task);
+
+/** Optional waiter allocation-balance instrumentation. */
+void eidos_task_waiter_counters_reset(void);
+int64_t eidos_task_waiter_alloc_count(void);
+int64_t eidos_task_waiter_free_count(void);
 
 /**
  * Create a new TaskGroup.

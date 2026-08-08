@@ -15,7 +15,15 @@ export Task[A] :: type {handle:: RawPtr}
 /// Observable state of a runtime-backed Task.
 @[derive(Copy)]
 export Status :: type {
-    TaskPending :: type {} , TaskCompleted :: type {}
+    TaskPending :: type {}, TaskCompleted :: type {},
+    TaskCancelled :: type {}, TaskFailed :: type {}
+}
+
+/// Terminal observation result delivered to every registered observer.
+export Outcome[A] :: type {
+    TaskSucceeded :: type(A),
+    TaskCancelledOutcome :: type {},
+    TaskFailedOutcome :: type(String)
 }
 
 
@@ -38,6 +46,14 @@ new_pending_value_runtime :: Unit -> RawPtr compiler(internal) need ffi;
 complete_value_runtime :: RawPtr -> RawPtr -> Unit compiler(internal) need ffi;
 
 
+@[extern(c, name: "eidos_task_cancel")]
+cancel_pending_runtime :: RawPtr -> Bool compiler(internal) need ffi;
+
+
+@[extern(c, name: "eidos_task_fail")]
+fail_pending_runtime :: RawPtr -> RawPtr -> Bool compiler(internal) need ffi;
+
+
 @[extern(c, name: "eidos_task_retain_pending")]
 retain_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 
@@ -52,6 +68,14 @@ release_runtime :: RawPtr -> Unit compiler(internal) need ffi;
 is_completed_runtime :: RawPtr -> Bool compiler(internal) need ffi;
 
 
+@[extern(c, name: "eidos_task_is_cancelled")]
+is_cancelled_runtime :: RawPtr -> Bool compiler(internal) need ffi;
+
+
+@[extern(c, name: "eidos_task_is_failed")]
+is_failed_runtime :: RawPtr -> Bool compiler(internal) need ffi;
+
+
 
 
 @[extern(c, name: "eidos_task_try_get_raw")]
@@ -62,6 +86,10 @@ try_get_raw_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 @[extern(c, name: "eidos_task_try_get_value")]
 try_get_value_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
+
+
+@[extern(c, name: "eidos_task_try_get_error")]
+try_get_error_runtime :: RawPtr -> RawPtr compiler(internal) need ffi;
 
 
 
@@ -105,6 +133,18 @@ export completed_value[A] :: A -> Task[A] need ffi
     }
 }
 
+/// Create an already-failed task with a stable text error payload.
+export failed[A] :: String -> Task[A] need ffi
+{
+    error => {
+        handle := Task.new_pending_value_runtime();
+        boxed := Ffi.box_value[String](error);
+        accepted := Task.fail_pending_runtime(handle)(boxed);
+        Ffi.free_boxed_value(boxed);
+        Task{handle: handle}
+    }
+}
+
 /// Spawn a scheduler-backed raw pointer task from an Eidos thunk.
 export spawn_raw[E: effects] :: (Unit -> RawPtr need E) -> Task[RawPtr] need ffi, E
 {
@@ -117,6 +157,42 @@ export spawn[A, E: effects] :: (Unit -> A need E) -> Task[A] need ffi, E
     thunk => Task{handle: Task.spawn_closure_value_runtime(_ => Ffi.box_value[A](thunk(())))}
 }
 
+finish_cancelled :: RawPtr -> Unit need ffi
+ compiler(internal)
+{
+    handle => {
+        accepted := Task.cancel_pending_runtime(handle);
+        Task.release_runtime(handle)
+    }
+}
+
+finish_failed :: RawPtr -> String -> Unit need ffi
+ compiler(internal)
+{
+    handle => error => {
+        boxed := Ffi.box_value[String](error);
+        accepted := Task.fail_pending_runtime(handle)(boxed);
+        Ffi.free_boxed_value(boxed);
+        Task.release_runtime(handle)
+    }
+}
+
+/// Observe one terminal outcome. Multiple observers may be registered safely.
+export observe[A, E: effects] :: Task[A] -> (Outcome[A] -> Unit need E) -> Unit need ffi, E
+{
+    Task{handle: handle} => continuation => Task.await_closure_value_runtime(handle)(boxed => {
+        if Task.is_completed_runtime(handle) then {
+            continuation(TaskSucceeded(Ffi.unbox_value[A](boxed)))
+        } else if Task.is_cancelled_runtime(handle) then {
+            continuation(TaskCancelledOutcome())
+        } else {
+            error_boxed := Task.try_get_error_runtime(handle);
+            error := if ptr_is_null(error_boxed) then { "task failed" } else { Ffi.unbox_value[String](error_boxed) };
+            continuation(TaskFailedOutcome(error))
+        }
+    })
+}
+
 /// Map a completed or pending task through a continuation without blocking.
 export map[A, B, E: effects] :: Task[A] -> (A -> B need E) -> Task[B] need ffi, E
 {
@@ -124,11 +200,15 @@ export map[A, B, E: effects] :: Task[A] -> (A -> B need E) -> Task[B] need ffi, 
         pending_handle := Task.new_pending_value_runtime();
         pending := Task{handle: pending_handle};
         Task.retain_runtime(pending_handle);
-        Task.await_value(task)(value => {
-            boxed := Ffi.box_value[B](mapper(value));
-            Task.complete_value_runtime(pending_handle)(boxed);
-            Ffi.free_boxed_value(boxed);
-            Task.release_runtime(pending_handle)
+        Task.observe(task)(outcome => match outcome {
+            TaskSucceeded(value) => {
+                boxed := Ffi.box_value[B](mapper(value));
+                Task.complete_value_runtime(pending_handle)(boxed);
+                Ffi.free_boxed_value(boxed);
+                Task.release_runtime(pending_handle)
+            },
+            TaskCancelledOutcome() => Task.finish_cancelled(pending_handle),
+            TaskFailedOutcome(error) => Task.finish_failed(pending_handle)(error)
         });
         pending
     }
@@ -141,14 +221,22 @@ export and_then[A, B, E: effects] :: Task[A] -> (A -> Task[B] need E) -> Task[B]
         pending_handle := Task.new_pending_value_runtime();
         pending := Task{handle: pending_handle};
         Task.retain_runtime(pending_handle);
-        Task.await_value(task)(value => {
-            next := mapper(value);
-            Task.await_value(next)(inner => {
-                boxed := Ffi.box_value[B](inner);
-                Task.complete_value_runtime(pending_handle)(boxed);
-                Ffi.free_boxed_value(boxed);
-                Task.release_runtime(pending_handle)
-            })
+        Task.observe(task)(outcome => match outcome {
+            TaskSucceeded(value) => {
+                next := mapper(value);
+                Task.observe(next)(inner_outcome => match inner_outcome {
+                    TaskSucceeded(inner) => {
+                        boxed := Ffi.box_value[B](inner);
+                        Task.complete_value_runtime(pending_handle)(boxed);
+                        Ffi.free_boxed_value(boxed);
+                        Task.release_runtime(pending_handle)
+                    },
+                    TaskCancelledOutcome() => Task.finish_cancelled(pending_handle),
+                    TaskFailedOutcome(error) => Task.finish_failed(pending_handle)(error)
+                })
+            },
+            TaskCancelledOutcome() => Task.finish_cancelled(pending_handle),
+            TaskFailedOutcome(error) => Task.finish_failed(pending_handle)(error)
         });
         pending
     }
@@ -170,43 +258,110 @@ export is_completed[A] :: Task[A] -> Bool need ffi
     Task{handle: handle} => Task.is_completed_runtime(handle)
 }
 
+/// Check whether a compositional pending task was cancelled.
+export is_cancelled[A] :: Task[A] -> Bool need ffi
+{
+    Task{handle: handle} => Task.is_cancelled_runtime(handle)
+}
+
+/// Check whether a task terminated with a text error payload.
+export is_failed[A] :: Task[A] -> Bool need ffi
+{
+    Task{handle: handle} => Task.is_failed_runtime(handle)
+}
+
+/// Cancel an externally-driven pending task. Scheduler work is not force-cancelled.
+export cancel[A] :: Task[A] -> Bool need ffi
+{
+    Task{handle: handle} => Task.cancel_pending_runtime(handle)
+}
+
 /// Return true while the task has not completed.
 export is_pending[A] :: Task[A] -> Bool need ffi
 {
-    task => !Task.is_completed(task)
+    task => !Task.is_completed(task) && !Task.is_cancelled(task) && !Task.is_failed(task)
 }
 
 /// Return a task state snapshot.
 export status[A] :: Task[A] -> Status need ffi
 {
-    task => if Task.is_completed(task) then { TaskCompleted() } else { TaskPending() }
+    task => if Task.is_completed(task) then {
+        TaskCompleted()
+    } else if Task.is_cancelled(task) then {
+        TaskCancelled()
+    } else if Task.is_failed(task) then {
+        TaskFailed()
+    } else {
+        TaskPending()
+    }
 }
 
 /// Return true when a task status represents completion.
 export status_is_completed :: Status -> Bool
 {
     TaskPending() => false,
-    TaskCompleted() => true
+    TaskCompleted() => true,
+    TaskCancelled() => false,
+    TaskFailed() => false
 }
 
 /// Return true when a task status represents pending work.
 export status_is_pending :: Status -> Bool
 {
-    status => !Task.status_is_completed(status)
+    TaskPending() => true,
+    _ => false
+}
+
+/// Return true when a task status represents cancellation.
+export status_is_cancelled :: Status -> Bool
+{
+    TaskCancelled() => true,
+    _ => false
+}
+
+/// Return true when a task status represents failure.
+export status_is_failed :: Status -> Bool
+{
+    TaskFailed() => true,
+    _ => false
 }
 
 /// Select a value from a task status snapshot.
-export status_value_or[A] :: Status -> A -> A -> A
+export status_value_or[A] :: Status -> A -> A -> A -> A -> A
 {
-    TaskPending() => pending_value => _ => pending_value,
-    TaskCompleted() => _ => completed_value => completed_value
+    TaskPending() => pending_value => _ => _ => _ => pending_value,
+    TaskCompleted() => _ => completed_value => _ => _ => completed_value,
+    TaskCancelled() => _ => _ => cancelled_value => _ => cancelled_value,
+    TaskFailed() => _ => _ => _ => failed_value => failed_value
 }
 
 /// Lazily select a value from a task status snapshot.
-export status_value_or_else[A, E1: effects, E2: effects] :: Status -> (Unit -> A need E1) -> (Unit -> A need E2) -> A need E1, E2
+export status_value_or_else[A, E1: effects, E2: effects, E3: effects, E4: effects] :: Status -> (Unit -> A need E1) -> (Unit -> A need E2) -> (Unit -> A need E3) -> (Unit -> A need E4) -> A need E1, E2, E3, E4
 {
-    TaskPending() => pending_value => _ => pending_value(()),
-    TaskCompleted() => _ => completed_value => completed_value(())
+    TaskPending() => pending_value => _ => _ => _ => pending_value(()),
+    TaskCompleted() => _ => completed_value => _ => _ => completed_value(()),
+    TaskCancelled() => _ => _ => cancelled_value => _ => cancelled_value(()),
+    TaskFailed() => _ => _ => _ => failed_value => failed_value(())
+}
+
+/// Poll for a terminal outcome without registering a continuation.
+export try_outcome[A] :: Task[A] -> Option[Outcome[A]] need ffi
+{
+    task => match Task.status(task) {
+        TaskPending() => None(),
+        TaskCompleted() => match Task.try_await_value(task) {
+            Some(value) => Some(TaskSucceeded(value)),
+            None() => None()
+        },
+        TaskCancelled() => Some(TaskCancelledOutcome()),
+        TaskFailed() => match task {
+            Task{handle: handle} => {
+                error_boxed := Task.try_get_error_runtime(handle);
+                error := if ptr_is_null(error_boxed) then { "task failed" } else { Ffi.unbox_value[String](error_boxed) };
+                Some(TaskFailedOutcome(error))
+            }
+        }
+    }
 }
 
 /// Try to read a completed raw pointer payload without suspending the caller.
@@ -258,15 +413,21 @@ export try_await_value_or_else[A, E: effects] :: Task[A] -> (Unit -> A need E) -
 /// Register a raw pointer continuation to run when a scheduler-backed task completes.
 export await_raw[E: effects] :: Task[RawPtr] -> (RawPtr -> Unit need E) -> Unit need ffi, E
 {
-    Task{handle: handle} => continuation => Task.await_closure_raw_runtime(handle)(continuation)
+    Task{handle: handle} => continuation => Task.await_closure_raw_runtime(handle)(value => {
+        if Task.is_completed_runtime(handle) then { continuation(value) } else { () }
+    })
 }
 
 /// Register a continuation to run with the boxed Eidos value when the task completes.
 export await_value[A, E: effects] :: Task[A] -> (A -> Unit need E) -> Unit need ffi, E
 {
     Task{handle: handle} => continuation => Task.await_closure_value_runtime(handle)(boxed => {
-        value := Ffi.unbox_value[A](boxed);
-        continuation(value)
+        if Task.is_completed_runtime(handle) then {
+            value := Ffi.unbox_value[A](boxed);
+            continuation(value)
+        } else {
+            ()
+        }
     })
 }
 
