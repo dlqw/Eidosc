@@ -145,6 +145,7 @@ public sealed partial class MirOptimizer
         // consistent. Inlining runs before ownership finalization so inserted
         // drops cover the inlined code.
         optimizer.RegisterPass(new Inlining());
+        optimizer.RegisterPass(new TraversableConsumerSpecializationPass());
 
         // Round 2: Tail call optimization followed by ownership finalization.
         // Drop insertion must run after tail-call formation so it cannot place
