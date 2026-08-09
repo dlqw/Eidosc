@@ -216,8 +216,6 @@ public sealed partial class SymbolTable
         var mutRefId = RegisterSymbol(mutRefSymbol);
         CurrentScope!.BindType(WellKnownStrings.BuiltinTypes.MRef, mutRefId);
         _globalTypes[WellKnownStrings.BuiltinTypes.MRef] = mutRefId;
-        CurrentScope!.BindType(WellKnownStrings.BuiltinTypes.MutRef, mutRefId);
-        _globalTypes[WellKnownStrings.BuiltinTypes.MutRef] = mutRefId;
 
         // FFI 裸指针类型（不参与引用计数）
         var rawPtrSymbol = new AdtSymbol

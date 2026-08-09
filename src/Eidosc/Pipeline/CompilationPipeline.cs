@@ -131,6 +131,9 @@ public sealed partial class CompilationPipeline
             _compilerOwnedSourcePaths.Add(options.InputFile!);
         }
         ResolveInputLanguageVersion(options);
+        options.LanguageVersion = EidosLanguageVersions.Normalize(
+            options.LanguageVersion,
+            EidosLanguageVersions.Current);
         _profiler = new CompilationProfiler(options.EnableDetailedProfiling);
         _comptimeExecution = ComptimeExecutionOptions.Create(options);
 

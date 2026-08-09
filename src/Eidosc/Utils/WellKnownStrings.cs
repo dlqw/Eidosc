@@ -44,7 +44,6 @@ public static class WellKnownStrings
         public const string Result = "Result";
         public const string Ref = "Ref";
         public const string MRef = "MRef";
-        public const string MutRef = "MutRef";
         public const string Shared = "Shared";
         public const string RawPtr = "RawPtr";
         public const string Ptr = "Ptr";

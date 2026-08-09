@@ -158,7 +158,7 @@ public sealed partial class MirBuilder
 
             case HirUnaryOp
             {
-                Operator: Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef or Eidosc.Hir.UnaryOp.AddressOf
+                Operator: Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef
             } unaryOp:
             {
                 if (!TryConvertPlaceShapedExprPlace(unaryOp.Operand, out var referencedPlace))

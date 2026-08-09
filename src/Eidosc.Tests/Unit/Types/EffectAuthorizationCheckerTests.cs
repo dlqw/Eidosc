@@ -788,7 +788,7 @@ f :: Unit -> Unit need Writer
     }
 
     [Fact]
-    public void CompilationPipeline_CallerUnresolvedShortEffect_DoesNotAuthorizeImportedQualifiedRequirement()
+    public void CompilationPipeline_UnaliasedImport_OpensEffectForCallerAuthorization()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_ability_auth_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -828,10 +828,7 @@ main :: Unit -> Unit need Writer
         {
             var result = RunPipeline(entrySource, entryFile);
 
-            Assert.False(result.Success);
-            Assert.Contains(
-                result.Diagnostics,
-                diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E3000");
+            Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
         }
         finally
         {

@@ -2330,7 +2330,6 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         "-"    => UnaryOp.Negate,
         "!"    => UnaryOp.Not,
         "*"    => UnaryOp.Deref,
-        "&"    => UnaryOp.AddressOf,
         "ref"  => UnaryOp.Ref,
         "mref" => UnaryOp.MRef,
         _ => UnaryOp.Negate

@@ -29,6 +29,22 @@ public class RefTypeParserTests
     }
 
     [Fact]
+    public void MutRefType_IsNotACompilerBuiltin()
+    {
+        const string source = "modify :: MutRef[Int] -> Unit { r => () }";
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = "removed_mutref_type.eidos",
+            StopAtPhase = CompilationPhase.Types,
+            UseColors = false
+        }).Run();
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("MutRef", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void NestedRefType_InSource_IsValidSyntax()
     {
         var source = "deep :: Ref[Ref[Int]] -> Unit { r => () }";

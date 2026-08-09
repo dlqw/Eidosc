@@ -1252,7 +1252,6 @@ public sealed partial class HirBuilder
                     Ast.UnaryOp.Negate => UnaryOp.Neg,
                     Ast.UnaryOp.Not => UnaryOp.Not,
                     Ast.UnaryOp.Deref => UnaryOp.Deref,
-                    Ast.UnaryOp.AddressOf => UnaryOp.AddressOf,
                     Ast.UnaryOp.Ref => UnaryOp.Ref,
                     Ast.UnaryOp.MRef => UnaryOp.MRef,
                     _ => UnaryOp.Not

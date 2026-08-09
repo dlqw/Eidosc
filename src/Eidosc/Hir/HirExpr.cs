@@ -175,7 +175,6 @@ public enum UnaryOp
     Neg,
     Not,
     Deref,
-    AddressOf,
     Ref,
     MRef
 }

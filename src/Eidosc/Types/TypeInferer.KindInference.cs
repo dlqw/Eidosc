@@ -440,7 +440,7 @@ public sealed partial class TypeInferer
 
     private static bool IsBuiltinTypeName(string typeName)
     {
-        return typeName is WellKnownStrings.BuiltinTypes.Int or WellKnownStrings.BuiltinTypes.Float or WellKnownStrings.BuiltinTypes.Bool or WellKnownStrings.BuiltinTypes.String or WellKnownStrings.BuiltinTypes.Char or WellKnownStrings.BuiltinTypes.Unit or WellKnownStrings.BuiltinTypes.Never or "()" or WellKnownStrings.BuiltinTypes.Ref or WellKnownStrings.BuiltinTypes.MRef or WellKnownStrings.BuiltinTypes.MutRef or WellKnownStrings.BuiltinTypes.Shared;
+        return typeName is WellKnownStrings.BuiltinTypes.Int or WellKnownStrings.BuiltinTypes.Float or WellKnownStrings.BuiltinTypes.Bool or WellKnownStrings.BuiltinTypes.String or WellKnownStrings.BuiltinTypes.Char or WellKnownStrings.BuiltinTypes.Unit or WellKnownStrings.BuiltinTypes.Never or "()" or WellKnownStrings.BuiltinTypes.Ref or WellKnownStrings.BuiltinTypes.MRef or WellKnownStrings.BuiltinTypes.Shared;
     }
 
     private static bool TryGetBuiltinTypeConstructorKind(string typeName, out Kind kind)
@@ -449,7 +449,6 @@ public sealed partial class TypeInferer
         {
             case WellKnownStrings.BuiltinTypes.Ref:
             case WellKnownStrings.BuiltinTypes.MRef:
-            case WellKnownStrings.BuiltinTypes.MutRef:
             case WellKnownStrings.BuiltinTypes.Shared:
                 kind = Kind.BuildArrowKind(1);
                 return true;

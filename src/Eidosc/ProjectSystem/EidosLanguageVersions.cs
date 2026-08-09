@@ -15,8 +15,7 @@ public static class EidosLanguageVersions
 
     public static bool IsSupported(string value)
     {
-        return string.Equals(value, Current, StringComparison.Ordinal) ||
-               string.Equals(value, Version08, StringComparison.Ordinal);
+        return string.Equals(value, Current, StringComparison.Ordinal);
     }
 
     public static bool IsMigrationVersion(string value)
