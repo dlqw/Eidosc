@@ -237,6 +237,23 @@ public sealed class ConstantFolding : IMirOptimizationPass, IFunctionOptimizatio
             return FoldUnaryOp(unaryOp, knownConstants);
         }
 
+        if (instr is MirCopy { Target: MirPlace { Kind: PlaceKind.Local } copyTarget } copy)
+        {
+            if (PropagateOperand(copy.Source, knownConstants) is MirConstant constant)
+            {
+                knownConstants[copyTarget.Local] = constant;
+                return new MirAssign
+                {
+                    Target = copyTarget,
+                    Source = constant,
+                    Span = copy.Span
+                };
+            }
+
+            knownConstants.Remove(copyTarget.Local);
+            return copy;
+        }
+
         if (instr is MirSelect select)
         {
             var condition = PropagateOperand(select.Condition, knownConstants);

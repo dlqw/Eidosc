@@ -74,7 +74,7 @@ public sealed class ConstantFoldingCallTests
     }
 
     [Fact]
-    public void ConstantFolding_FibonacciBeyondStepBudget_NotFolded()
+    public void ConstantFolding_FibonacciBeyondStepBudget_RemainsUnfolded()
     {
         var fibonacci = CreateFibonacciFunction("fibonacci", new SymbolId(309));
         var caller = CreateConstantCallFunction(fibonacci, new SymbolId(310), IntConstant(32));
@@ -148,6 +148,274 @@ public sealed class ConstantFoldingCallTests
         var optimized = optimizer.Optimize(module);
 
         Assert.IsType<MirCall>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
+    }
+
+    [Fact]
+    public void ConstantFolding_NestedPureCallsWithCopyInBetween_Folds()
+    {
+        var fibonacci = CreateFibonacciFunction("fibonacci", new SymbolId(316));
+        var square = CreateSquareFunction("square", new SymbolId(317));
+        var first = Local(1, "first");
+        var copied = Local(2, "copied");
+        var result = Local(3, "result");
+        var caller = new MirFunc
+        {
+            Name = "caller",
+            SymbolId = new SymbolId(318),
+            FunctionId = new FunctionId { SymbolId = new SymbolId(318), Name = "caller", QualifiedName = "Main.caller" },
+            Locals = [first, copied, result],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        Call(first.Id, CreateFunctionRef(fibonacci), IntConstant(20)),
+                        Copy(copied.Id, Place(first.Id)),
+                        Call(result.Id, CreateFunctionRef(square), Place(copied.Id))
+                    ],
+                    Terminator = new MirReturn { Value = Place(result.Id) }
+                }
+            ]
+        };
+        var module = new MirModule { Name = "Main", Functions = [fibonacci, square, caller] };
+        var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(
+            (fibonacci, EffectRow.Pure),
+            (square, EffectRow.Pure)));
+        optimizer.RegisterPass(new ConstantFolding());
+
+        var optimized = optimizer.Optimize(module);
+
+        var instructions = optimized.Functions[2].BasicBlocks.Single().Instructions;
+        Assert.Equal(3, instructions.Count);
+        Assert.DoesNotContain(instructions, static instruction => instruction is MirCall);
+        var firstAssign = Assert.IsType<MirAssign>(instructions[0]);
+        Assert.Equal(6765L, Assert.IsType<MirConstantValue.IntValue>(Assert.IsType<MirConstant>(firstAssign.Source).Value).Value);
+        var copyAssign = Assert.IsType<MirAssign>(instructions[1]);
+        Assert.Equal(6765L, Assert.IsType<MirConstantValue.IntValue>(Assert.IsType<MirConstant>(copyAssign.Source).Value).Value);
+        var resultAssign = Assert.IsType<MirAssign>(instructions[2]);
+        Assert.Equal(45765225L, Assert.IsType<MirConstantValue.IntValue>(Assert.IsType<MirConstant>(resultAssign.Source).Value).Value);
+    }
+
+    [Fact]
+    public void ConstantFolding_EmptySelfLoop_StopsAtSharedBudget()
+    {
+        var loop = CreateSelfLoopFunction("self_loop", new SymbolId(319));
+        var caller = CreateConstantCallFunction(loop, new SymbolId(320), IntConstant(0));
+        var module = new MirModule { Name = "Main", Functions = [loop, caller] };
+        var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(loop, EffectRow.Pure));
+        optimizer.RegisterPass(new ConstantFolding());
+
+        var optimized = optimizer.Optimize(module);
+
+        Assert.IsType<MirCall>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
+    }
+
+    [Fact]
+    public void ConstantFolding_EmptyTwoBlockLoop_StopsAtSharedBudget()
+    {
+        var loop = CreateTwoBlockLoopFunction("two_block_loop", new SymbolId(321));
+        var caller = CreateConstantCallFunction(loop, new SymbolId(322), IntConstant(0));
+        var module = new MirModule { Name = "Main", Functions = [loop, caller] };
+        var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(loop, EffectRow.Pure));
+        optimizer.RegisterPass(new ConstantFolding());
+
+        var optimized = optimizer.Optimize(module);
+
+        Assert.IsType<MirCall>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
+    }
+
+    [Fact]
+    public void ConstantFolding_ConstantSwitchLoop_StopsAtSharedBudget()
+    {
+        var loop = CreateConstantSwitchLoopFunction("switch_loop", new SymbolId(323));
+        var caller = CreateConstantCallFunction(loop, new SymbolId(324), IntConstant(0));
+        var module = new MirModule { Name = "Main", Functions = [loop, caller] };
+        var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(loop, EffectRow.Pure));
+        optimizer.RegisterPass(new ConstantFolding());
+
+        var optimized = optimizer.Optimize(module);
+
+        Assert.IsType<MirCall>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
+    }
+
+    [Fact]
+    public void ConstantFolding_RecursiveCallWithUnchangedArguments_DetectsInProgressCycle()
+    {
+        var recursive = CreateNonProgressingRecursiveFunction("recursive_loop", new SymbolId(325));
+        var caller = CreateConstantCallFunction(recursive, new SymbolId(326), IntConstant(0));
+        var module = new MirModule { Name = "Main", Functions = [recursive, caller] };
+        var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(recursive, EffectRow.Pure));
+        optimizer.RegisterPass(new ConstantFolding());
+
+        var optimized = optimizer.Optimize(module);
+
+        Assert.IsType<MirCall>(optimized.Functions[1].BasicBlocks.Single().Instructions[0]);
+    }
+
+    [Fact]
+    public void ConstantFolding_RepeatedIdenticalCalls_ReusesMemoizedResult()
+    {
+        var fibonacci = CreateFibonacciFunction("fibonacci", new SymbolId(327));
+        var caller = CreateRepeatedConstantCallFunction(fibonacci, new SymbolId(328), IntConstant(20));
+        var module = new MirModule { Name = "Main", Functions = [fibonacci, caller] };
+        var optimizer = new MirOptimizer(effectSummaries: CreateSummaries(fibonacci, EffectRow.Pure));
+        optimizer.RegisterPass(new ConstantFolding());
+
+        var optimized = optimizer.Optimize(module);
+
+        var instructions = optimized.Functions[1].BasicBlocks.Single().Instructions;
+        Assert.All(instructions, static instruction => Assert.IsType<MirAssign>(instruction));
+        Assert.All(
+            instructions.Cast<MirAssign>(),
+            static instruction => Assert.Equal(
+                6765L,
+                Assert.IsType<MirConstantValue.IntValue>(Assert.IsType<MirConstant>(instruction.Source).Value).Value));
+    }
+
+    private static MirFunc CreateSquareFunction(string name, SymbolId symbolId)
+    {
+        var parameter = Local(1, "x", isParameter: true);
+        var result = Local(2, "result");
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main.{name}" },
+            Locals = [parameter, result],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Instructions = [BinOp(result.Id, BinaryOp.Mul, Place(parameter.Id), Place(parameter.Id))],
+                    Terminator = new MirReturn { Value = Place(result.Id) }
+                }
+            ]
+        };
+    }
+
+    private static MirFunc CreateSelfLoopFunction(string name, SymbolId symbolId)
+    {
+        var parameter = Local(1, "value", isParameter: true);
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main.{name}" },
+            Locals = [parameter],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Terminator = new MirGoto { Target = Block(1) }
+                }
+            ]
+        };
+    }
+
+    private static MirFunc CreateTwoBlockLoopFunction(string name, SymbolId symbolId)
+    {
+        var parameter = Local(1, "value", isParameter: true);
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main.{name}" },
+            Locals = [parameter],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Terminator = new MirGoto { Target = Block(2) }
+                },
+                new MirBasicBlock
+                {
+                    Id = Block(2),
+                    Terminator = new MirGoto { Target = Block(1) }
+                }
+            ]
+        };
+    }
+
+    private static MirFunc CreateConstantSwitchLoopFunction(string name, SymbolId symbolId)
+    {
+        var parameter = Local(1, "value", isParameter: true);
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main.{name}" },
+            Locals = [parameter],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Terminator = new MirSwitch
+                    {
+                        Discriminant = BoolConstant(true),
+                        Branches = [new MirSwitchBranch { Value = BoolConstant(true), Target = Block(1) }],
+                        DefaultTarget = Block(2)
+                    }
+                },
+                new MirBasicBlock
+                {
+                    Id = Block(2),
+                    Terminator = new MirReturn { Value = Place(parameter.Id) }
+                }
+            ]
+        };
+    }
+
+    private static MirFunc CreateNonProgressingRecursiveFunction(string name, SymbolId symbolId)
+    {
+        var parameter = Local(1, "value", isParameter: true);
+        var result = Local(2, "result");
+        var functionId = new FunctionId { SymbolId = symbolId, Name = name, QualifiedName = $"Main.{name}" };
+        return new MirFunc
+        {
+            Name = name,
+            SymbolId = symbolId,
+            FunctionId = functionId,
+            Locals = [parameter, result],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        Call(
+                            result.Id,
+                            new MirFunctionRef { Name = name, SymbolId = symbolId, FunctionId = functionId },
+                            Place(parameter.Id))
+                    ],
+                    Terminator = new MirReturn { Value = Place(result.Id) }
+                }
+            ]
+        };
     }
 
     private static MirFunc CreateIdentityFunction(string name, SymbolId symbolId)
@@ -301,12 +569,43 @@ public sealed class ConstantFoldingCallTests
         };
     }
 
+    private static MirFunc CreateRepeatedConstantCallFunction(MirFunc callee, SymbolId symbolId, MirConstant argument)
+    {
+        var first = Local(1, "first");
+        var second = Local(2, "second");
+        return new MirFunc
+        {
+            Name = "caller",
+            SymbolId = symbolId,
+            FunctionId = new FunctionId { SymbolId = symbolId, Name = "caller", QualifiedName = "Main.caller" },
+            Locals = [first, second],
+            EntryBlockId = Block(1),
+            ReturnType = IntType,
+            BasicBlocks =
+            [
+                new MirBasicBlock
+                {
+                    Id = Block(1),
+                    IsEntry = true,
+                    Instructions =
+                    [
+                        Call(first.Id, CreateFunctionRef(callee), argument),
+                        Call(second.Id, CreateFunctionRef(callee), argument)
+                    ],
+                    Terminator = new MirReturn { Value = Place(second.Id) }
+                }
+            ]
+        };
+    }
+
     private static Dictionary<SymbolId, FunctionEffectSummary> CreateSummaries(
         MirFunc function,
-        EffectRow effects) => new()
-    {
-        [function.SymbolId] = new FunctionEffectSummary(effects, effects)
-    };
+        EffectRow effects) => CreateSummaries((function, effects));
+
+    private static Dictionary<SymbolId, FunctionEffectSummary> CreateSummaries(params (MirFunc Function, EffectRow Effects)[] bindings) =>
+        bindings.ToDictionary(
+            static binding => binding.Function.SymbolId,
+            static binding => new FunctionEffectSummary(binding.Effects, binding.Effects));
 
     private static MirCall Call(LocalId target, MirFunctionRef function, params MirOperand[] arguments) => new()
     {
@@ -321,6 +620,12 @@ public sealed class ConstantFoldingCallTests
         Operator = op,
         Left = left,
         Right = right
+    };
+
+    private static MirCopy Copy(LocalId target, MirPlace source) => new()
+    {
+        Target = Place(target),
+        Source = source
     };
 
     private static MirSwitch Switch(MirOperand discriminant, BlockId baseBlock, BlockId recursiveBlock) => new()
