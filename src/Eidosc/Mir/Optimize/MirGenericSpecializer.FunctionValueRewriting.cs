@@ -28,6 +28,16 @@ public sealed partial class MirGenericSpecializer
                 rewrittenInstruction = store with { Value = rewrittenStoreValue };
                 return true;
 
+            case MirCaseInject injection when
+                TryRewriteFunctionValueOperand(
+                    injection.Operand,
+                    injection.Operand.TypeId,
+                    workingFunctions,
+                    queue,
+                    out var rewrittenInjectionOperand):
+                rewrittenInstruction = injection with { Operand = rewrittenInjectionOperand };
+                return true;
+
             default:
                 return false;
         }
@@ -51,6 +61,22 @@ public sealed partial class MirGenericSpecializer
         }
 
         return call with { Arguments = rewrittenArguments };
+    }
+
+    private MirCall RewriteCallArgumentFunctionValuesUsingOperandTypes(
+        MirCall call,
+        List<MirFunc> workingFunctions,
+        Queue<RewriteQueueItem> queue)
+    {
+        if (call.Arguments.Count == 0)
+        {
+            return call;
+        }
+
+        var rewrittenArguments = RewriteFunctionValueOperands(call.Arguments, [], workingFunctions, queue);
+        return ReferenceEquals(rewrittenArguments, call.Arguments)
+            ? call
+            : call with { Arguments = rewrittenArguments };
     }
 
     private MirCall RewriteCallArgumentFunctionValues(

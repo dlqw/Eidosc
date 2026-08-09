@@ -36,6 +36,14 @@ Traversable :: module {
         f, left, right => left.map(f).apply(right)
     }
 
+
+    map2_saturated[A, B, C, G: kind2 : Applicative.Applicative[G], E: effects] :: ((A -> B -> C need E), G[A], G[B]) -> G[C] need E
+     compiler(internal)
+{
+        (f, left, right) => left.map(f).apply(right)
+    }
+
+
     export sequence[A, T: kind2 : Traversable[T], G: kind2 : Applicative.Applicative[G]] :: T[G[A]] -> G[T[A]]
     {
         values => values.traverse(identity_applicative)

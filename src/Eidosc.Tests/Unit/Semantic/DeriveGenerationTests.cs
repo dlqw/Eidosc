@@ -292,6 +292,152 @@ Maybe[T] :: type
     }
 
     [Fact]
+    public void DeriveFunctionalTraits_GenericSum_CompilesThroughTypeInference()
+    {
+        const string source = """
+@[derive(Functor, Foldable, Traversable)]
+Maybe[A] :: type {
+    Just :: type(A),
+    Nothing :: type {}
+}
+""";
+
+        var result = CompileThroughTypeInference("derive_functional_maybe.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instances = result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>().ToList();
+        Assert.Contains(instances, instance => instance.Trait?.TraitName == "Functor");
+        Assert.Contains(instances, instance => instance.Trait?.TraitName == "Foldable");
+        Assert.Contains(instances, instance => instance.Trait?.TraitName == "Traversable");
+    }
+
+    [Fact]
+    public void DeriveFunctionalTraits_FixedPrefixAndPhantomFields_Compile()
+    {
+        const string source = """
+@[derive(Functor, Foldable, Traversable)]
+Validation[Error, Value] :: type {
+    Invalid :: type(Error),
+    Valid :: type(Value),
+    Empty :: type {}
+}
+""";
+
+        var result = CompileThroughTypeInference("derive_functional_fixed_prefix.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var functor = Assert.Single(result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            instance => instance.Trait?.TraitName == "Functor");
+        var target = Assert.IsType<Eidosc.Ast.Types.TypePath>(Assert.Single(functor.Trait!.TypeArgs));
+        Assert.Equal("Validation", target.TypeName);
+        Assert.Single(target.TypeArgs);
+        Assert.Equal("Error", Assert.IsType<Eidosc.Ast.Types.TypePath>(target.TypeArgs[0]).TypeName);
+    }
+
+    [Fact]
+    public void DeriveFunctionalTraits_NamedAndNestedFields_Compile()
+    {
+        const string source = """
+@[derive(Functor, Foldable, Traversable)]
+Envelope[A] :: type {
+    payload :: Seq[Option[A]],
+    revision :: Int
+}
+""";
+
+        var result = CompileThroughTypeInference("derive_functional_nested_named.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
+    public void DeriveFunctionalTraits_NestedHigherKindParameter_AddsConstraint()
+    {
+        const string source = """
+@[derive(Functor, Foldable, Traversable)]
+Higher[F: kind2, A] :: type { Higher :: type(F[A]) }
+""";
+
+        var result = CompileThroughTypeInference("derive_functional_nested_hkt.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var functor = Assert.Single(result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            instance => instance.Trait?.TraitName == "Functor");
+        var f = Assert.Single(functor.TypeParams, parameter => parameter.Name == "F");
+        Assert.Contains(f.TraitConstraints, constraint => constraint.TraitName == "Functor");
+    }
+
+    [Fact]
+    public void DeriveFunctionalTraits_RecursiveTree_Compiles()
+    {
+        const string source = """
+@[derive(Functor, Foldable, Traversable)]
+Tree[A] :: type {
+    Leaf :: type(A),
+    Branch :: type(Tree[A], Tree[A])
+}
+""";
+
+        var result = CompileThroughTypeInference("derive_functional_recursive_tree.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+    }
+
+    [Fact]
+    public void DeriveFunctionalTraits_GeneratedSignaturePreservesEffectsAndKinds()
+    {
+        const string source = """
+@[derive(Traversable)]
+Box[A] :: type { Box :: type(A) }
+""";
+
+        var result = Compile("derive_traversable_signature.eidos", source);
+
+        Assert.True(result.Success, FormatDiagnostics(result));
+        var instance = Assert.Single(result.Ast!.Declarations.OfType<Eidosc.Ast.Declarations.InstanceDecl>(),
+            declaration => declaration.Trait?.TraitName == "Traversable");
+        var traverse = Assert.Single(instance.Methods);
+        Assert.Contains(traverse.TypeParams, parameter => parameter.Name == "G" && parameter.GetKindArity() == 1);
+        Assert.Contains(traverse.TypeParams, parameter => parameter.Name == "E" && parameter.IsEffectSet);
+        Assert.Single(traverse.RequiredAbilities, requirement => requirement.Path.SequenceEqual(["E"]));
+        var receiverArrow = Assert.IsType<Eidosc.Ast.Types.ArrowType>(Assert.Single(traverse.Signature));
+        var callbackArrow = Assert.IsType<Eidosc.Ast.Types.ArrowType>(receiverArrow.ReturnType);
+        var callback = Assert.IsType<Eidosc.Ast.Types.ArrowType>(callbackArrow.ParamType);
+        Assert.Single(callback.RequiredEffects, requirement => requirement.Path.SequenceEqual(["E"]));
+    }
+
+    [Fact]
+    public void DeriveFunctionalTrait_RequiresFinalOrdinaryTypeParameter()
+    {
+        const string source = """
+@[derive(Functor)]
+Token :: type { Token :: type(Int) }
+""";
+
+        var result = Compile("derive_functor_no_parameter.eidos", source);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message ==
+            DiagnosticMessages.DeriveFunctionalTypeParameterRequired("Functor", "Token"));
+    }
+
+    [Fact]
+    public void DeriveFunctionalTrait_ReportsNonFinalOccurrenceAtField()
+    {
+        const string source = """
+@[derive(Functor)]
+Bad[A] :: type { Bad :: type(Result[A, Int]) }
+""";
+
+        var result = Compile("derive_functor_non_final.eidos", source);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Message.Contains("constructor 'Bad' field '#1'", StringComparison.Ordinal) &&
+            diagnostic.Message.Contains("non-final type argument", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DeriveUnsupportedTrait_ReportsDiagnostic()
     {
         const string source = """

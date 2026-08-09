@@ -499,6 +499,17 @@ internal static partial class DiagnosticMessages
     public static string DeriveTypeHasNoConstructors(string traitName, string typeName) =>
         Format(nameof(DeriveTypeHasNoConstructors), traitName, typeName);
 
+    public static string DeriveFunctionalTypeParameterRequired(string traitName, string typeName) =>
+        Format(nameof(DeriveFunctionalTypeParameterRequired), traitName, typeName);
+
+    public static string DeriveFunctionalFieldUnsupported(
+        string traitName,
+        string typeName,
+        string constructorName,
+        string fieldName,
+        string reason) =>
+        Format(nameof(DeriveFunctionalFieldUnsupported), traitName, typeName, constructorName, fieldName, reason);
+
     public static string DeriveUnsupportedTrait(string traitName) =>
         Format(nameof(DeriveUnsupportedTrait), traitName);
 

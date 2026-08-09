@@ -1062,6 +1062,12 @@
   <data name="DeriveTypeHasNoConstructors" xml:space="preserve">
     <value>@derive({0}): type '{1}' has no constructors</value>
   </data>
+  <data name="DeriveFunctionalTypeParameterRequired" xml:space="preserve">
+    <value>@derive({0}): type '{1}' must end in an ordinary kind1 type parameter used as the functional mapping slot</value>
+  </data>
+  <data name="DeriveFunctionalFieldUnsupported" xml:space="preserve">
+    <value>@derive({0}) cannot derive '{1}': constructor '{2}' field '{3}' is unsupported because {4}</value>
+  </data>
   <data name="DeriveUnsupportedTrait" xml:space="preserve">
     <value>@derive: unsupported trait '{0}'</value>
   </data>
