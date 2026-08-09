@@ -1341,7 +1341,7 @@ public sealed partial class MirBuilder
 
     private MirOperand ConvertHirUnaryOp(HirUnaryOp unaryOp)
     {
-        if (unaryOp.Operator is Eidosc.Hir.UnaryOp.AddressOf or Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef)
+        if (unaryOp.Operator is Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef)
         {
             var place = TryConvertPlaceShapedExprPlace(unaryOp.Operand, out var borrowablePlace)
                 ? borrowablePlace

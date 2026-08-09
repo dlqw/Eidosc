@@ -279,8 +279,6 @@ public record ListExpr : Expression
                     unaryExpr.SetOperator(UnaryOp.Not);
                 else if (terminalName == WellKnownStrings.Operators.Subtract || tokenText == WellKnownStrings.Operators.Subtract)
                     unaryExpr.SetOperator(UnaryOp.Negate);
-                else if (terminalName == WellKnownStrings.Operators.AddressOf || tokenText == WellKnownStrings.Operators.AddressOf)
-                    unaryExpr.SetOperator(UnaryOp.AddressOf);
                 else if (terminalName == WellKnownStrings.Operators.Ref || tokenText == WellKnownStrings.Operators.Ref)
                     unaryExpr.SetOperator(UnaryOp.Ref);
                 else if (terminalName == WellKnownStrings.Operators.MRef || tokenText == WellKnownStrings.Operators.MRef)

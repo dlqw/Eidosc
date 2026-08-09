@@ -54,7 +54,6 @@ public static class Precedence
         "-"    => new(UnaryPrefix, Assoc.Right),
         "!"    => new(UnaryPrefix, Assoc.Right),
         "*"    => new(UnaryPrefix, Assoc.Right),
-        "&"    => new(UnaryPrefix, Assoc.Right),
         "ref"  => new(UnaryPrefix, Assoc.Right),
         "mref" => new(UnaryPrefix, Assoc.Right),
         _ => null

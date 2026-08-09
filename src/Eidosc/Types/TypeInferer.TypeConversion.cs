@@ -879,7 +879,7 @@ public sealed partial class TypeInferer
             return new TyShared { Inner = innerType };
         }
 
-        if (path.ModulePath.Count == 0 && path.TypeName is WellKnownStrings.BuiltinTypes.Ref or WellKnownStrings.BuiltinTypes.MRef or WellKnownStrings.BuiltinTypes.MutRef)
+        if (path.ModulePath.Count == 0 && path.TypeName is WellKnownStrings.BuiltinTypes.Ref or WellKnownStrings.BuiltinTypes.MRef)
         {
             if (path.TypeArgs.Count != 1)
             {

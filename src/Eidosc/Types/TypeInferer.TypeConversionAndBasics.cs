@@ -818,7 +818,6 @@ public sealed partial class TypeInferer
             UnaryOp.Negate => _substitution.Apply(operandType),
             UnaryOp.Not => InferNotUnary(operandType, unary.Span),
             UnaryOp.Deref => InferDerefUnary(unary, operandType),
-            UnaryOp.AddressOf => hasValidReferenceBorrowOperand ? InferAddressOfUnary(operandType) : CreateErrorRecoveryType(),
             UnaryOp.Ref => hasValidReferenceBorrowOperand ? InferRefUnary(operandType) : CreateErrorRecoveryType(),
             UnaryOp.MRef => hasValidReferenceBorrowOperand ? InferMRefUnary(operandType) : CreateErrorRecoveryType(),
             _ => InferUnsupportedUnary(unary)
@@ -871,11 +870,6 @@ public sealed partial class TypeInferer
             }
     }
 
-    private Type InferAddressOfUnary(Type operandType)
-    {
-        return new TyRef { Inner = _substitution.Apply(operandType) };
-    }
-
     private Type InferRefUnary(Type operandType)
     {
         return new TyRef { Inner = _substitution.Apply(operandType) };
@@ -894,7 +888,7 @@ public sealed partial class TypeInferer
         }
 
         if (unary.Operand == null ||
-            unary.Operator is not UnaryOp.AddressOf and not UnaryOp.Ref and not UnaryOp.MRef)
+            unary.Operator is not UnaryOp.Ref and not UnaryOp.MRef)
         {
             return true;
         }

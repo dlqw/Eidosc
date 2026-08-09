@@ -1405,7 +1405,7 @@ internal static partial class MetaComptimeIntrinsics
             TypeParamSymbol => MetaTypeKind.TypeParameter,
             TraitSymbol => MetaTypeKind.Trait,
             AdtSymbol { Name: "Ref" } => MetaTypeKind.Reference,
-            AdtSymbol { Name: "MRef" or "MutRef" } => MetaTypeKind.MutableReference,
+            AdtSymbol { Name: "MRef" } => MetaTypeKind.MutableReference,
             AdtSymbol { Name: "Shared" } => MetaTypeKind.SharedReference,
             AdtSymbol { Name: "RawPtr" or "Ptr" } => MetaTypeKind.RawPointer,
             AdtSymbol { Name: "Cfn" } => MetaTypeKind.ForeignFunction,
@@ -1505,7 +1505,7 @@ internal static partial class MetaComptimeIntrinsics
                     : type.Name switch
                     {
                         "Ref" => MetaTypeKind.Reference,
-                        "MRef" or "MutRef" => MetaTypeKind.MutableReference,
+                        "MRef" => MetaTypeKind.MutableReference,
                         "Shared" => MetaTypeKind.SharedReference,
                         "RawPtr" or "Ptr" => MetaTypeKind.RawPointer,
                         "Cfn" => MetaTypeKind.ForeignFunction,
@@ -1609,7 +1609,7 @@ internal static partial class MetaComptimeIntrinsics
             symbol switch
             {
                 AdtSymbol { Name: "Ref" } => MetaTypeKind.Reference,
-                AdtSymbol { Name: "MRef" or "MutRef" } => MetaTypeKind.MutableReference,
+                AdtSymbol { Name: "MRef" } => MetaTypeKind.MutableReference,
                 AdtSymbol { Name: "Shared" } => MetaTypeKind.SharedReference,
                 AdtSymbol { Name: "RawPtr" or "Ptr" } => MetaTypeKind.RawPointer,
                 AdtSymbol { Name: "Cfn" } => MetaTypeKind.ForeignFunction,
@@ -2135,7 +2135,7 @@ internal static partial class MetaComptimeIntrinsics
         var kind = path.TypeName switch
         {
             "Ref" => MetaTypeKind.Reference,
-            "MRef" or "MutRef" => MetaTypeKind.MutableReference,
+            "MRef" => MetaTypeKind.MutableReference,
             "Shared" => MetaTypeKind.SharedReference,
             "RawPtr" or "Ptr" => MetaTypeKind.RawPointer,
             "Cfn" => MetaTypeKind.ForeignFunction,

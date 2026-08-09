@@ -46,7 +46,6 @@ public enum UnaryOp
     Negate,  // - (负号)
     Not,     // ! (逻辑非)
     Deref,   // * (解引用)
-    AddressOf, // & (取地址，过渡语法)
     Ref,     // ref (共享借用)
     MRef     // mref (可写借用)
 }
@@ -87,7 +86,6 @@ public static class OperatorHelper
         UnaryOp.Negate => WellKnownStrings.Operators.Subtract,
         UnaryOp.Not => WellKnownStrings.Operators.Not,
         UnaryOp.Deref => WellKnownStrings.Operators.Multiply,
-        UnaryOp.AddressOf => WellKnownStrings.Operators.AddressOf,
         UnaryOp.Ref => WellKnownStrings.Operators.Ref,
         UnaryOp.MRef => WellKnownStrings.Operators.MRef,
         _ => throw new ArgumentOutOfRangeException(nameof(op), op, null)

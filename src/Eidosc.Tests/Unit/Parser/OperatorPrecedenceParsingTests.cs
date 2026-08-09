@@ -151,6 +151,7 @@ main :: Unit -> Int
         y := mref x;
         x
     }
+
 }
 """;
 
@@ -166,6 +167,26 @@ main :: Unit -> Int
         Assert.Equal(Eidosc.Ast.UnaryOp.MRef, unary.Operator);
         var operand = Assert.IsType<IdentifierExpr>(unary.Operand);
         Assert.Equal("x", operand.Name);
+    }
+
+    [Fact]
+    public void Parser_AmpersandBorrow_IsRejected()
+    {
+        const string source = """
+main :: Unit -> Int
+{
+    _ => {
+        x := 1;
+        y := &x;
+        x
+    }
+}
+""";
+
+        var result = RunPipeline(source, CompilationPhase.Parser);
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code is "E4000" or "E4001");
     }
 
     [Fact]

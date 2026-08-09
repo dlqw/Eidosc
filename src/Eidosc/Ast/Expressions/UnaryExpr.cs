@@ -67,10 +67,6 @@ public record UnaryExpr : Expression
                     {
                         Operator = UnaryOp.Negate;
                     }
-                    else if (terminalName == WellKnownStrings.Operators.AddressOf || tokenText == WellKnownStrings.Operators.AddressOf)
-                    {
-                        Operator = UnaryOp.AddressOf;
-                    }
                     else if (terminalName == WellKnownStrings.Operators.Ref || tokenText == WellKnownStrings.Operators.Ref)
                     {
                         Operator = UnaryOp.Ref;

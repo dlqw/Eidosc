@@ -53,6 +53,32 @@ public sealed class EidosProjectLanguageVersionTests
     }
 
     [Fact]
+    public void LoadFromPath_PreviousLanguageVersion_IsRejected()
+    {
+        var tempDir = CreateTempDirectory();
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(tempDir, EidosProjectConfigurationLoader.DefaultFileName),
+                """
+                manifestSchema = 3
+
+                [language]
+                version = "0.8.0-alpha.1"
+                """);
+
+            var error = Assert.Throws<InvalidOperationException>(
+                () => EidosProjectConfigurationLoader.LoadFromPath(tempDir));
+
+            Assert.Contains("Unsupported Eidos language version", error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DeleteTempDirectory(tempDir);
+        }
+    }
+
+    [Fact]
     public void ToToml_LanguageVersion_WritesLanguageSectionAndSchema()
     {
         var manifest = new EidosProjectManifestDocument
