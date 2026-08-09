@@ -92,20 +92,28 @@ public sealed class EffectSummaryPipelineTests
             {
                 foreach (var instruction in block.Instructions)
                 {
-                    if (instruction is MirAssign
-                        {
-                            Source: MirConstant
-                            {
-                                Value: MirConstantValue.IntValue intValue
-                            }
-                        })
+                    switch (instruction)
                     {
-                        constants.Add(intValue.Value);
+                        case MirAssign { Source: var source }:
+                            AddIntConstant(source, constants);
+                            break;
+                        case MirBinOp { Left: var left, Right: var right }:
+                            AddIntConstant(left, constants);
+                            AddIntConstant(right, constants);
+                            break;
                     }
                 }
             }
         }
 
         return constants;
+    }
+
+    private static void AddIntConstant(MirOperand operand, List<long> constants)
+    {
+        if (operand is MirConstant { Value: MirConstantValue.IntValue intValue })
+        {
+            constants.Add(intValue.Value);
+        }
     }
 }
