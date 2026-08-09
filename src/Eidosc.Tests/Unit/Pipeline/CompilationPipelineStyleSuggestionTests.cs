@@ -16,6 +16,7 @@ public class CompilationPipelineStyleSuggestionTests
 
         var diagnostic = Assert.Single(result.Diagnostics, item => item.Code == "S1002");
         Assert.Equal(Eidosc.Diagnostic.DiagnosticLevel.Help, diagnostic.Level);
+        Assert.Contains("partial applications", diagnostic.Helps.Single(), StringComparison.OrdinalIgnoreCase);
         Assert.Contains(diagnostic.Suggestions, suggestion => suggestion.Replacement == "append(a, b)");
         Assert.Contains(diagnostic.Suggestions, suggestion => suggestion.Replacement == "a.append(b)");
     }

@@ -27,7 +27,7 @@ public sealed record ImportedSymbol
     public bool IsAliased { get; init; }
 
     /// <summary>
-    /// 是否由普通模块导入附带引入的短名。
+    /// 是否由无别名的普通模块导入附带引入的短名。
     /// </summary>
     public bool IsImplicitModuleMember { get; init; }
 
