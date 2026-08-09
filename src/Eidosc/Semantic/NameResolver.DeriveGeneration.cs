@@ -197,6 +197,9 @@ public sealed partial class NameResolver
             "Hash" => "hash",
             "Clone" => "clone",
             "Copy" => "_copy_marker",
+            "Functor" => "fmap",
+            "Foldable" => "fold_left",
+            "Traversable" => "traverse",
             _ => null
         };
 
@@ -209,22 +212,43 @@ public sealed partial class NameResolver
             return null;
         }
 
-        var derivedTypeParams = new List<TypeParam>(adt.TypeParams.Count);
-        var derivedMethodTypeParams = new List<TypeParam>(adt.TypeParams.Count);
-        var requiredConstraint = GetDeriveRequiredConstraint(traitName);
-        foreach (var tp in adt.TypeParams)
+        var functionalTrait = traitName is "Functor" or "Foldable" or "Traversable";
+        var mappedParameterIndex = functionalTrait ? adt.TypeParams.Count - 1 : -1;
+        if (functionalTrait &&
+            (mappedParameterIndex < 0 || adt.TypeParams[mappedParameterIndex].GetKindArity() != 0))
         {
-            var derivedTp = CreateDerivedTypeParam(
+            AddError(span, DiagnosticMessages.DeriveFunctionalTypeParameterRequired(traitName, adt.Name));
+            return null;
+        }
+
+        var derivedTypeParams = new List<TypeParam>(adt.TypeParams.Count);
+        var derivedMethodTypeParams = new List<TypeParam>(adt.TypeParams.Count + 5);
+        var requiredConstraint = GetDeriveRequiredConstraint(traitName);
+        for (var index = 0; index < adt.TypeParams.Count; index++)
+        {
+            if (index == mappedParameterIndex)
+            {
+                continue;
+            }
+            var tp = adt.TypeParams[index];
+            var usesFunctionalNested = functionalTrait && tp.GetKindArity() > 0 && AdtUsesTypeParameter(adt, tp.Name);
+            var instanceTypeParam = CreateDerivedTypeParam(
                 tp,
                 requiredConstraint,
-                traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
+                !functionalTrait && (traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name)),
                 span);
-            derivedTypeParams.Add(derivedTp);
-            derivedMethodTypeParams.Add(CreateDerivedTypeParam(
+            var methodTypeParam = CreateDerivedTypeParam(
                 tp,
                 requiredConstraint,
-                traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name),
-                span));
+                !functionalTrait && (traitName != "Copy" || AdtUsesTypeParameter(adt, tp.Name)),
+                span);
+            if (usesFunctionalNested)
+            {
+                AddFunctionalConstraint(instanceTypeParam, traitName, tp.Name, span);
+                AddFunctionalConstraint(methodTypeParam, traitName, tp.Name, span);
+            }
+            derivedTypeParams.Add(instanceTypeParam);
+            derivedMethodTypeParams.Add(methodTypeParam);
         }
 
         if (traitName == "Copy")
@@ -244,8 +268,6 @@ public sealed partial class NameResolver
 
         var funcDef = new FuncDef();
         SetPrivate(funcDef, "Name", funcName);
-        funcDef.TypeParams.AddRange(derivedMethodTypeParams);
-
         var returnType = traitName switch
         {
             "Eq" => CreateTypePath("Bool"),
@@ -253,33 +275,72 @@ public sealed partial class NameResolver
             "Ord" => CreateTypePath("Ordering"),
             "Hash" => CreateTypePath("Int"),
             "Clone" => CreateAdtSelfType(adt, span, targetPath),
+            "Functor" => CreateDerivedAppliedType(adt, mappedParameterIndex, "B", span),
+            "Foldable" => CreateTypePath("B"),
+            "Traversable" => CreateAppliedType(
+                CreateTypePath("G"),
+                CreateDerivedAppliedType(adt, mappedParameterIndex, "B", span),
+                span),
             _ => null
         };
 
+        if (functionalTrait)
+        {
+            var fixedTypeParams = derivedMethodTypeParams.ToList();
+            derivedMethodTypeParams.Clear();
+            derivedMethodTypeParams.Add(CreateGeneratedTypeParam("A", span));
+            derivedMethodTypeParams.Add(CreateGeneratedTypeParam("B", span));
+            if (traitName == "Traversable")
+            {
+                derivedMethodTypeParams.Add(CreateGeneratedKindTypeParam("G", "kind2", span));
+            }
+            derivedMethodTypeParams.AddRange(fixedTypeParams);
+            derivedMethodTypeParams.Add(CreateGeneratedEffectTypeParam("E", span));
+        }
+
+        funcDef.TypeParams.AddRange(derivedMethodTypeParams);
+
         if (returnType != null)
         {
-            var receiverType = traitName == "Clone"
-                ? CreateRefType(CreateAdtSelfType(adt, span, targetPath), span)
-                : CreateAdtSelfType(adt, span, targetPath);
-            var paramTypes = new List<TypeNode> { receiverType };
+            var paramTypes = functionalTrait
+                ? CreateFunctionalMethodParameterTypes(adt, traitName, mappedParameterIndex, span)
+                : new List<TypeNode>
+                {
+                    traitName == "Clone"
+                        ? CreateRefType(CreateAdtSelfType(adt, span, targetPath), span)
+                        : CreateAdtSelfType(adt, span, targetPath)
+                };
             if (traitName is "Eq" or "Ord")
             {
                 paramTypes.Add(CreateAdtSelfType(adt, span, targetPath));
             }
 
             funcDef.SetSignature(CreateCurriedArrowType(paramTypes, returnType, span));
+            if (functionalTrait)
+            {
+                funcDef.SetRequiredAbilities([new EffectRequirementNode { Path = ["E"], Span = span }]);
+            }
         }
 
-        var branches = GenerateDerivedBranches(adt, traitName, span);
+        var branches = GenerateDerivedBranches(adt, traitName, span, mappedParameterIndex);
         foreach (var branch in branches)
             funcDef.Body.Add(branch);
 
         if (funcDef.Body.Count == 0)
             return null;
 
+        if (traitName == "Traversable")
+        {
+            RegisterGeneratedTraversableConstructorHelpers(adt, mappedParameterIndex, span);
+        }
+
         var trait = new TraitRef();
         trait.SetTraitName(traitName);
         trait.SetSpan(span);
+        if (functionalTrait)
+        {
+            trait.TypeArgs.Add(CreateDerivedTargetType(adt, mappedParameterIndex, span));
+        }
 
         var instance = new InstanceDecl();
         instance.SetName(CreateDerivedInstanceName(traitName, adt.Name, targetPath));
@@ -416,7 +477,7 @@ public sealed partial class NameResolver
         };
     }
 
-    private List<PatternBranch> GenerateDerivedBranches(AdtDef adt, string traitName, SourceSpan span)
+    private List<PatternBranch> GenerateDerivedBranches(AdtDef adt, string traitName, SourceSpan span, int mappedParameterIndex = -1)
     {
         return traitName switch
         {
@@ -426,6 +487,9 @@ public sealed partial class NameResolver
             "Hash" => GenerateHashBranches(adt, span),
             "Clone" => GenerateCloneBranches(adt, span),
             "Copy" => [GenerateCopyBranch(span)],
+            "Functor" => GenerateFunctorBranches(adt, mappedParameterIndex, span),
+            "Foldable" => GenerateFoldableBranches(adt, mappedParameterIndex, span),
+            "Traversable" => GenerateTraversableBranches(adt, mappedParameterIndex, span),
             _ => []
         };
     }
@@ -1412,6 +1476,14 @@ public sealed partial class NameResolver
         var ctorExpr = new CtorExpr();
         SetPrivate(ctorExpr, "ConstructorName", ctor.Name);
         SetPrivate(ctorExpr, "Span", span);
+        if (ctor.SymbolId.IsValid)
+        {
+            var constructorPath = CreateTypePath(ctor.Name);
+            constructorPath.SetSpan(span);
+            constructorPath.SymbolId = ctor.SymbolId;
+            ctorExpr.SetConstructorPath(constructorPath);
+            ctorExpr.SymbolId = ctor.SymbolId;
+        }
 
         // Named-field constructors must be built with named field initializers.
         if (ctor.NamedArgs.Count > 0)

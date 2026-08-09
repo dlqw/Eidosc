@@ -135,6 +135,17 @@ public sealed partial class MirGenericSpecializer
                     out var boundArguments,
                     out var template))
             {
+                var rewrittenIndirectCall = RewriteCallArgumentFunctionValuesUsingOperandTypes(
+                    call,
+                    workingFunctions,
+                    queue);
+                if (!ReferenceEquals(rewrittenIndirectCall, call))
+                {
+                    instruction = rewrittenIndirectCall;
+                    block.Instructions[instructionIndex] = rewrittenIndirectCall;
+                    call = rewrittenIndirectCall;
+                }
+
                 UpdateLocalCallBindings(instruction, localCallBindings);
                 localTypesChanged |= RefineLocalTypesFromInstruction(function, instruction, localTypes);
                 continue;

@@ -30,7 +30,10 @@ internal static class CompilerMetaProtocolRegistry
             ["Ord"] = "Ord",
             ["Hash"] = "Hash",
             ["Clone"] = "Clone",
-            ["Copy"] = "Copy"
+            ["Copy"] = "Copy",
+            ["Functor"] = "Functor",
+            ["Foldable"] = "Foldable",
+            ["Traversable"] = "Traversable"
         };
 
     public static bool TryClassifyBuiltinDerive(

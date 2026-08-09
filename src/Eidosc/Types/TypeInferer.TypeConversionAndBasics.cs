@@ -918,6 +918,7 @@ public sealed partial class TypeInferer
         Dictionary<string, Type>? typeVarEnv = null;
         var recordUpdateBaseIsValid = true;
         var hasRecovery = false;
+        TyCon? promotedExpectedResult = null;
 
         if (bindingFound)
         {
@@ -927,6 +928,13 @@ public sealed partial class TypeInferer
             if (expectedResultType != null)
             {
                 var contextualResultType = CreateAdtTypeFromBinding(binding, typeVarEnv, ctor.Span);
+                if (contextualResultType is TyCon contextualConstructor &&
+                    TryPromoteClosedCaseToRoot(contextualConstructor, out var promotedConstructor))
+                {
+                    RecordClosedCaseInjection(contextualConstructor, promotedConstructor, ctor.Span);
+                    contextualResultType = promotedConstructor;
+                    promotedExpectedResult = promotedConstructor;
+                }
                 var unifiedResultType = TryUnify(
                     expectedResultType,
                     contextualResultType,
@@ -961,7 +969,7 @@ public sealed partial class TypeInferer
             ApplyAdtTypeParamConstraints(binding.AdtId, typeVarEnv, ctor.Span);
             ApplyConstructorTypeParamConstraints(binding, typeVarEnv, ctor.Span);
             return recordUpdateBaseIsValid && !hasRecovery
-                ? CreateAdtTypeFromBinding(binding, typeVarEnv, ctor.Span)
+                ? promotedExpectedResult ?? CreateAdtTypeFromBinding(binding, typeVarEnv, ctor.Span)
                 : CreateErrorRecoveryType();
         }
 

@@ -64,6 +64,8 @@ public sealed partial class MirToLlvmConverter
     // this to decide between closure materialization and a bare function
     // pointer.
     private readonly HashSet<LocalId> _functionValueEscapeLocals = [];
+    private readonly HashSet<LocalId> _aggregatePointerLocals = [];
+    private readonly Dictionary<LocalId, TypeId> _closureValueSourceTypeIds = [];
 
     private LlvmFunction? _builtinShowBoolHelper;
     private LlvmFunction? _erasedShowHelper;
@@ -547,6 +549,30 @@ public sealed partial class MirToLlvmConverter
             _nameMangler.ResetCounters();
             _currentMirFunction = func;
             _currentFunctionAllowsOpenLocalTypes = false;
+            _aggregatePointerLocals.Clear();
+            _closureValueSourceTypeIds.Clear();
+            foreach (var alloc in func.BasicBlocks
+                         .SelectMany(static block => block.Instructions)
+                         .OfType<MirAlloc>()
+                         .Where(static alloc => alloc.Target is MirPlace { Kind: PlaceKind.Local }))
+            {
+                _aggregatePointerLocals.Add(((MirPlace)alloc.Target).Local);
+            }
+
+            foreach (var injection in func.BasicBlocks
+                         .SelectMany(static block => block.Instructions)
+                         .OfType<MirCaseInject>()
+                         .Where(static injection => injection.Target is MirPlace { Kind: PlaceKind.Local }))
+            {
+                var sourceTypeId = injection.Operand.TypeId.IsValid
+                    ? injection.Operand.TypeId
+                    : injection.SourceTypeId;
+                if (sourceTypeId.IsValid &&
+                    _typeLowering.TryGetFunctionSignature(sourceTypeId, out _, out _))
+                {
+                    _closureValueSourceTypeIds[((MirPlace)injection.Target).Local] = sourceTypeId;
+                }
+            }
 
             foreach (var group in func.CallerOwnedAggregateAbi.LocalGroups)
             {
@@ -2124,6 +2150,11 @@ public sealed partial class MirToLlvmConverter
             IsSlotBackedLocal(place.Local) &&
             _locals.LocalSlots.TryGetValue(place.Local, out var slot))
         {
+            if (_aggregatePointerLocals.Contains(place.Local))
+            {
+                return LoadFromLocalSlot(place.Local, place.TypeId);
+            }
+
             return new LlvmInstructionRef
             {
                 Instruction = slot,

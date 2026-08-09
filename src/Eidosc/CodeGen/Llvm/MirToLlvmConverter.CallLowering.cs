@@ -973,6 +973,12 @@ public sealed partial class MirToLlvmConverter
     {
         functionType = default!;
 
+        if (TryResolveClosureSourceTypeId(functionOperand, out var sourceTypeId) &&
+            TryResolveClosureValueSignature(sourceTypeId, out functionType))
+        {
+            return true;
+        }
+
         switch (functionOperand)
         {
             case MirFunctionRef funcRef:
@@ -1004,6 +1010,12 @@ public sealed partial class MirToLlvmConverter
     {
         typeId = TypeId.None;
 
+        if (TryResolveClosureSourceTypeId(functionOperand, out var sourceTypeId))
+        {
+            typeId = sourceTypeId;
+            return true;
+        }
+
         switch (functionOperand)
         {
             case MirPlace place when place.TypeId.IsValid:
@@ -1029,6 +1041,14 @@ public sealed partial class MirToLlvmConverter
             default:
                 return false;
         }
+    }
+
+    private bool TryResolveClosureSourceTypeId(MirOperand functionOperand, out TypeId typeId)
+    {
+        typeId = TypeId.None;
+        return functionOperand is MirPlace { Kind: PlaceKind.Local, Local: var local } &&
+               _closureValueSourceTypeIds.TryGetValue(local, out typeId) &&
+               typeId.IsValid;
     }
 
     private LlvmCall EmitClosureValueCall(

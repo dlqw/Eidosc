@@ -377,7 +377,8 @@ public sealed partial class MirToLlvmConverter
             var slotValueType = LowerStorageTypeIdOrReport(
                 basePlace.TypeId,
                 "resolve slot-backed aggregate base pointer");
-            if (slotValueType is LlvmPointerType)
+            if (slotValueType is LlvmPointerType ||
+                _aggregatePointerLocals.Contains(basePlace.Local))
             {
                 return LoadFromLocalSlot(basePlace.Local, basePlace.TypeId);
             }
@@ -986,7 +987,9 @@ public sealed partial class MirToLlvmConverter
 
             var slot = new LlvmAlloca
             {
-                AllocatedType = loweredType,
+                AllocatedType = _aggregatePointerLocals.Contains(localId)
+                    ? LlvmPointerType.VoidPtr()
+                    : loweredType,
                 Alignment = 8,
                 ResultName = _nameMangler.NewTempName($"l{localId.Value}_slot")
             };
@@ -1024,7 +1027,7 @@ public sealed partial class MirToLlvmConverter
         {
             var allowOpenTypes = _currentFunctionAllowsOpenLocalTypes;
             var localStorageType = LowerStorageTypeIdOrReport(localTypeId, "local slot storage", allowOpenTypes);
-            if (localStorageType is LlvmStructType or LlvmArrayType &&
+            if (slot.AllocatedType is LlvmStructType or LlvmArrayType &&
                 value.Type is LlvmPointerType)
             {
                 var load = new LlvmLoad
@@ -1071,7 +1074,9 @@ public sealed partial class MirToLlvmConverter
             return GetOrCreateLocalById(localId, typeId);
         }
 
-        var loadType = LowerLocalTypeOrReport(localId, typeId, "load local slot");
+        var loadType = _aggregatePointerLocals.Contains(localId)
+            ? LlvmPointerType.VoidPtr()
+            : LowerLocalTypeOrReport(localId, typeId, "load local slot");
         if (loadType is LlvmVoidType)
         {
             return LlvmConstant.Zero;
