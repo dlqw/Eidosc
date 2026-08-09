@@ -3,6 +3,7 @@ using System.Linq;
 using Eidosc.Ast.Declarations;
 using Eidosc.Diagnostic;
 using Eidosc.Pipeline;
+using Eidosc.ProjectSystem;
 using Eidosc.Tests.Fixtures;
 using Xunit;
 
@@ -165,6 +166,161 @@ main :: Unit -> Int
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error &&
                           diagnostic.Message.Contains("Undefined identifier", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CompilationPipeline_ModuleImport_ExposesPublicTypesAndEffectsAsBareNames()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_open_namespace_import_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        var moduleFile = Path.Combine(tempDir, "Cap.eidos");
+        var entryFile = Path.Combine(tempDir, "Main.eidos");
+
+        const string moduleSource = """
+Cap :: module {
+    export Writer :: effect;
+
+    export Choice :: type {
+        Selected :: type(Int),
+        Empty :: type {}
+    }
+}
+""";
+
+        const string entrySource = """
+import Cap
+
+write :: String -> Unit need Writer
+{
+    _ => ()
+}
+
+selected :: Choice = Selected(1);
+empty :: Choice = Empty();
+
+main :: Unit -> Unit need Writer
+{
+    _ => write("ok")
+}
+""";
+
+        File.WriteAllText(moduleFile, moduleSource);
+        File.WriteAllText(entryFile, entrySource);
+
+        try
+        {
+            var result = new CompilationPipeline(entrySource, new CompilationOptions
+            {
+                InputFile = entryFile,
+                LanguageVersion = EidosLanguageVersions.Current,
+                StopAtPhase = CompilationPhase.Types,
+                ImportSearchRoots = [tempDir],
+                NoImplicitPrelude = true,
+                UseColors = false
+            }).Run();
+
+            Assert.True(
+                result.Success,
+                string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic =>
+                    $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void CompilationPipeline_ModuleImport_FunctionalCallsPreferGroupedArguments()
+    {
+        const string source = """
+import std.Option
+
+inc :: Int -> Int
+{
+    value => value + 1
+}
+
+lift_plus_ten :: Int -> Option[Int]
+{
+    value => Some(value + 10)
+}
+
+positive :: Int -> Bool
+{
+    value => value > 0
+}
+
+main :: Unit -> Int
+{
+    _ => {
+        mapped := map(Some(1), inc);
+        bound := bind(mapped, lift_plus_ten);
+        filtered := filter(bound, positive);
+        filtered ?? 0
+    }
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            StopAtPhase = CompilationPhase.Types,
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic =>
+                $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    [Fact]
+    public void CompilationPipeline_FunctionalMethodsSupportFluentMapBindFilterChains()
+    {
+        const string source = """
+import std.Option
+
+inc :: Int -> Int
+{
+    value => value + 1
+}
+
+lift_plus_ten :: Int -> Option[Int]
+{
+    value => Some(value + 10)
+}
+
+positive :: Int -> Bool
+{
+    value => value > 0
+}
+
+main :: Unit -> Int
+{
+    _ => Some(1).map(inc).bind(lift_plus_ten).filter(positive) ?? 0
+}
+""";
+
+        var result = new CompilationPipeline(source, new CompilationOptions
+        {
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            StopAtPhase = CompilationPhase.Types,
+            UseColors = false,
+            PackageImportRoots = StdPackageRoots()
+        }).Run();
+
+        Assert.True(
+            result.Success,
+            string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic =>
+                $"[{diagnostic.Level}] {diagnostic.Code} {diagnostic.Message}")));
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
     }
 
     [Fact]

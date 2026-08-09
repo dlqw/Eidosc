@@ -134,6 +134,7 @@ public sealed class ImportResolver
         if (import.Alias == null)
         {
             AppendPublicModuleMemberImports(importedSymbols, sourceModule, currentModule);
+            AppendPublicModuleNamespaceImports(importedSymbols, sourceModule, currentModule);
             AppendPublicModuleInstanceMethodImports(importedSymbols, sourceModule);
         }
 
@@ -266,7 +267,7 @@ public sealed class ImportResolver
     }
 
     /// <summary>
-    /// 模块导入额外暴露公开成员的裸名；同名冲突由使用点按歧义处理。
+    /// 模块导入额外暴露公开运行时成员的裸名；同名冲突由使用点按歧义处理。
     /// </summary>
     private void AppendPublicModuleMemberImports(
         List<ImportedSymbol> importedSymbols,
@@ -276,6 +277,33 @@ public sealed class ImportResolver
         foreach (var binding in _moduleRegistry.GetAccessibleBindings(sourceModule, currentModule))
         {
             if (binding.Kind is not (ResolutionKind.Value or ResolutionKind.Constructor))
+            {
+                continue;
+            }
+
+            importedSymbols.Add(new ImportedSymbol
+            {
+                Name = binding.Name,
+                SymbolId = binding.SymbolId,
+                Kind = binding.Kind,
+                IsAliased = false,
+                IsImplicitModuleMember = true
+            });
+        }
+    }
+
+    /// <summary>
+    /// 普通模块导入也开放公开的类型级名称（类型、trait 和 effect）。
+    /// 模块别名仍然保留，用于显式消歧和表达来源；带别名的导入不开放裸名。
+    /// </summary>
+    private void AppendPublicModuleNamespaceImports(
+        List<ImportedSymbol> importedSymbols,
+        SymbolId sourceModule,
+        SymbolId currentModule)
+    {
+        foreach (var binding in _moduleRegistry.GetAccessibleBindings(sourceModule, currentModule))
+        {
+            if (binding.Kind is not (ResolutionKind.Type or ResolutionKind.Effect))
             {
                 continue;
             }

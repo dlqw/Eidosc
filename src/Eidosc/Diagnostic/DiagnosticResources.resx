@@ -2452,10 +2452,10 @@
     <value>curried prefix call can be rewritten</value>
   </data>
   <data name="CurriedCallUseBestLocalStyleHelp" xml:space="preserve">
-    <value>Use the quick fix that best matches the local style.</value>
+    <value>When all arguments are available, prefer fluent or infix data flow, or one grouped call. Reserve staged curried calls for partial applications that are stored or passed as values.</value>
   </data>
   <data name="GroupedCallPreservesQualifiedFunctionPathHelp" xml:space="preserve">
-    <value>Grouped-call syntax preserves the qualified function path.</value>
+    <value>Use one grouped call when all arguments are available; reserve staged curried calls for partial applications. Grouped-call syntax preserves the qualified function path.</value>
   </data>
   <data name="IfExpressionMissingElseNonUnitDuringMir" xml:space="preserve">
     <value>If expression without an else branch reached MIR lowering with a non-Unit result type.</value>
