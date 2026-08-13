@@ -290,6 +290,22 @@ public sealed partial class MirToLlvmConverter
             return ConvertUIntConversion(call);
         }
 
+        // 有符号窄整型转换 intrinsics（Int ↔ Int8/16/32/64）
+        if (call.Function is MirFunctionRef intConvRef &&
+            MirBuiltinFunctions.TryGetIntrinsicName(intConvRef, out var intConvName) &&
+            MirBuiltinFunctions.IsIntConversionIntrinsicName(intConvName))
+        {
+            return ConvertIntConversion(call);
+        }
+
+        // 浮点窄化转换 intrinsics（Float ↔ Float16/32/64）
+        if (call.Function is MirFunctionRef floatConvRef &&
+            MirBuiltinFunctions.TryGetIntrinsicName(floatConvRef, out var floatConvName) &&
+            MirBuiltinFunctions.IsFloatConversionIntrinsicName(floatConvName))
+        {
+            return ConvertFloatConversion(call);
+        }
+
         if (call.Function is MirFunctionRef charConversionRef &&
             (TryGetBuiltinIntrinsicName(charConversionRef, "char_from_code", out _) ||
              TryGetBuiltinIntrinsicName(charConversionRef, "char_to_code", out _)))
@@ -1311,6 +1327,111 @@ public sealed partial class MirToLlvmConverter
         var converted = CoerceValueToType(source, targetStorageType, "uint_conv");
         AssignPlaceFromValue(target, converted);
         return null;
+    }
+
+    private LlvmCall? ConvertIntConversion(MirCall call)
+    {
+        if (call.Arguments.Count != 1 ||
+            call.Target is not MirPlace { Kind: PlaceKind.Local } target)
+        {
+            return null;
+        }
+
+        var source = ConvertOperand(call.Arguments[0]);
+        var targetStorageType = LowerStorageTypeIdOrReport(target.TypeId, "int conversion");
+        var converted = CoerceSignedToType(source, targetStorageType, "int_conv");
+        AssignPlaceFromValue(target, converted);
+        return null;
+    }
+
+    private LlvmCall? ConvertFloatConversion(MirCall call)
+    {
+        if (call.Arguments.Count != 1 ||
+            call.Target is not MirPlace { Kind: PlaceKind.Local } target)
+        {
+            return null;
+        }
+
+        var source = ConvertOperand(call.Arguments[0]);
+        var targetStorageType = LowerStorageTypeIdOrReport(target.TypeId, "float conversion");
+        var converted = CoerceFloatToType(source, targetStorageType, "float_conv");
+        AssignPlaceFromValue(target, converted);
+        return null;
+    }
+
+    private LlvmValue CoerceSignedToType(LlvmValue value, LlvmType expectedType, string tempPrefix)
+    {
+        if (value.Type == expectedType)
+        {
+            return value;
+        }
+
+        if (value.Type is LlvmIntType sourceInt && expectedType is LlvmIntType targetInt)
+        {
+            if (sourceInt.Bits < targetInt.Bits)
+            {
+                var sext = new LlvmCast
+                {
+                    Op = "sext",
+                    Value = value,
+                    TargetType = expectedType,
+                    ResultName = _nameMangler.NewTempName($"{tempPrefix}_sext")
+                };
+                _currentBlock?.Instructions.Add(sext);
+                return new LlvmInstructionRef { Instruction = sext, Type = expectedType };
+            }
+
+            if (sourceInt.Bits > targetInt.Bits)
+            {
+                var trunc = new LlvmTrunc
+                {
+                    Value = value,
+                    TargetType = expectedType,
+                    ResultName = _nameMangler.NewTempName($"{tempPrefix}_trunc")
+                };
+                _currentBlock?.Instructions.Add(trunc);
+                return new LlvmInstructionRef { Instruction = trunc, Type = expectedType };
+            }
+        }
+
+        return value;
+    }
+
+    private LlvmValue CoerceFloatToType(LlvmValue value, LlvmType expectedType, string tempPrefix)
+    {
+        if (value.Type == expectedType)
+        {
+            return value;
+        }
+
+        if (value.Type is LlvmFloatType sourceFloat && expectedType is LlvmFloatType targetFloat)
+        {
+            if (sourceFloat.Bits < targetFloat.Bits)
+            {
+                var fpext = new LlvmFpExt
+                {
+                    Value = value,
+                    TargetType = expectedType,
+                    ResultName = _nameMangler.NewTempName($"{tempPrefix}_fpext")
+                };
+                _currentBlock?.Instructions.Add(fpext);
+                return new LlvmInstructionRef { Instruction = fpext, Type = expectedType };
+            }
+
+            if (sourceFloat.Bits > targetFloat.Bits)
+            {
+                var fptrunc = new LlvmFpTrunc
+                {
+                    Value = value,
+                    TargetType = expectedType,
+                    ResultName = _nameMangler.NewTempName($"{tempPrefix}_fptrunc")
+                };
+                _currentBlock?.Instructions.Add(fptrunc);
+                return new LlvmInstructionRef { Instruction = fptrunc, Type = expectedType };
+            }
+        }
+
+        return value;
     }
 
     private bool CanEmitMustTail(

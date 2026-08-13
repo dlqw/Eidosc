@@ -122,6 +122,26 @@ sample :: module {
     }
 
     [Fact]
+    public void IntrinsicRegistry_RecognizesIntAndFloatConversionIntrinsicNames()
+    {
+        Assert.True(IntrinsicRegistry.IsIntConversionIntrinsicName("int8_from_int"));
+        Assert.True(IntrinsicRegistry.IsIntConversionIntrinsicName("int32_to_int"));
+        Assert.True(IntrinsicRegistry.IsFloatConversionIntrinsicName("float32_from_float"));
+        Assert.True(IntrinsicRegistry.IsFloatConversionIntrinsicName("float16_to_float"));
+        Assert.False(IntrinsicRegistry.IsIntConversionIntrinsicName("uint32_from_int"));
+        Assert.False(IntrinsicRegistry.IsFloatConversionIntrinsicName("float_add"));
+    }
+
+    [Fact]
+    public void IntrinsicRegistry_RegistersNarrowConversionDeclarations()
+    {
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("int8_from_int"));
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("int32_to_int"));
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("float32_from_float"));
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("float16_to_float"));
+    }
+
+    [Fact]
     public void IntrinsicRegistry_CapturesDeclaredEffects()
     {
         Assert.True(IntrinsicRegistry.TryGet("file_exists", out var ioIntrinsic));
