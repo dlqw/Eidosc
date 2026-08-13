@@ -2,6 +2,14 @@ using System.Text;
 
 namespace Eidosc.Bindgen;
 
+/// <summary>
+/// 自动 C shim 生成（P0 M4）。
+/// 规则：
+/// 1. struct 按值参数 → <c>void*</c> 参数 + 解引用转发；
+/// 2. struct 按值返回 → 静态槽 + 指针返回 shim（Eidos 侧绑定为 <c>RawPtr</c>，
+///    调用方从返回指针读取字段；单静态槽，不可重入，生成注释声明契约）；
+/// 3. 其余 ABI 形态（变参、捕获回调）保持 SKIP（生成器不产出危险转发）。
+/// </summary>
 public sealed class BindingCShimGenerator
 {
     private readonly CHeaderIr _ir;
@@ -34,15 +42,26 @@ public sealed class BindingCShimGenerator
     }
 
     private bool NeedsShim(CBindingFunction fn) =>
-        fn.Parameters.Any(parameter => _typeMapper.Map(parameter.Type).Category == BindingTypeCategory.StructByValue);
+        fn.Parameters.Any(parameter => _typeMapper.Map(parameter.Type).Category == BindingTypeCategory.StructByValue) ||
+        _typeMapper.Map(fn.ReturnType).Category == BindingTypeCategory.StructByValue;
 
     private void GenerateShim(StringBuilder sb, CBindingFunction fn)
     {
-        var returnMapping = _typeMapper.Map(fn.ReturnType);
-        if (returnMapping.Category == BindingTypeCategory.StructByValue)
-            throw new InvalidOperationException($"Function '{fn.Name}' returns struct by value; define an explicit pointer-returning C wrapper.");
+        if (_typeMapper.Map(fn.ReturnType).Category == BindingTypeCategory.StructByValue)
+        {
+            GenerateStaticSlotReturnShim(sb, fn);
+            return;
+        }
 
-        sb.Append($"{fn.ReturnType.Spelling} eidos_shim_{fn.Name}(");
+        GenerateParameterShim(sb, fn);
+    }
+
+    private void GenerateParameterShim(StringBuilder sb, CBindingFunction fn)
+    {
+        var returnMapping = _typeMapper.Map(fn.ReturnType);
+        var shimName = $"eidos_shim_{fn.Name}";
+
+        sb.Append($"{fn.ReturnType.Spelling} {shimName}(");
         sb.Append(string.Join(", ", fn.Parameters.Select(FormatShimParameter)));
         sb.AppendLine(")");
         sb.AppendLine("{");
@@ -52,6 +71,29 @@ public sealed class BindingCShimGenerator
         sb.Append($"{fn.Name}(");
         sb.Append(string.Join(", ", fn.Parameters.Select(FormatShimArgument)));
         sb.AppendLine(");");
+        sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// struct 按值返回：静态槽 + 指针返回。Eidos 侧绑定 <c>-> RawPtr</c>，
+    /// 调用方在下次调用前复制字段（单静态槽，不可重入）。
+    /// </summary>
+    private void GenerateStaticSlotReturnShim(StringBuilder sb, CBindingFunction fn)
+    {
+        var shimName = $"eidos_shim_{fn.Name}";
+        var returnType = fn.ReturnType.Spelling;
+
+        sb.AppendLine($"// {fn.ReturnType.Name} returned by value through a single static slot;");
+        sb.AppendLine($"// callers must copy the result before the next call to {shimName}.");
+        sb.AppendLine($"static {returnType} {shimName}_result;");
+        sb.Append($"{returnType}* {shimName}(");
+        sb.Append(string.Join(", ", fn.Parameters.Select(FormatShimParameter)));
+        sb.AppendLine(")");
+        sb.AppendLine("{");
+        sb.Append($"    {shimName}_result = {fn.Name}(");
+        sb.Append(string.Join(", ", fn.Parameters.Select(FormatShimArgument)));
+        sb.AppendLine(");");
+        sb.AppendLine($"    return &{shimName}_result;");
         sb.AppendLine("}");
     }
 

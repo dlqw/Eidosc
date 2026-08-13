@@ -168,8 +168,7 @@ public sealed class RawBindingGenerator
         var returnMapping = _typeMapper.Map(fn.ReturnType);
         if (returnMapping.Category == BindingTypeCategory.Unsupported)
             return (false, returnMapping.Note ?? $"unsupported return type {fn.ReturnType.Spelling}");
-        if (returnMapping.Category == BindingTypeCategory.StructByValue)
-            return (false, "struct-by-value returns require an explicit pointer-returning wrapper");
+        // struct 按值返回经静态槽 shim 绑定为 RawPtr（BindingCShimGenerator）。
 
         foreach (var parameter in fn.Parameters)
         {
@@ -182,7 +181,8 @@ public sealed class RawBindingGenerator
     }
 
     private bool NeedsShim(CBindingFunction fn) =>
-        fn.Parameters.Any(parameter => _typeMapper.Map(parameter.Type).Category == BindingTypeCategory.StructByValue);
+        fn.Parameters.Any(parameter => _typeMapper.Map(parameter.Type).Category == BindingTypeCategory.StructByValue) ||
+        _typeMapper.Map(fn.ReturnType).Category == BindingTypeCategory.StructByValue;
 
     private string FormatSignature(CBindingFunction fn, bool useShimTypes)
     {

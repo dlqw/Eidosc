@@ -96,6 +96,37 @@ public sealed class ClangBindingGeneratorTests
     }
 
     [Fact]
+    public void StructByValueReturn_GeneratesStaticSlotShimAndRawPtrBinding()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            typedef struct Point { int x; int y; } Point;
+            Point make_point(int x, int y);
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        Assert.Contains("@[extern(c, name: \"eidos_shim_make_point\")]", raw, StringComparison.Ordinal);
+        Assert.Contains("export make_point :: Int32 -> Int32 -> RawPtr need ffi;", raw, StringComparison.Ordinal);
+
+        var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
+        Assert.Contains("static Point eidos_shim_make_point_result;", shim, StringComparison.Ordinal);
+        Assert.Contains("return &eidos_shim_make_point_result;", shim, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BindingSpecDocument_ClangFields_RoundTrip()
     {
         using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
