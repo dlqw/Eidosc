@@ -83,6 +83,23 @@ public sealed class ExprParserTests
         Assert.Empty(ctx.Diagnostics);
     }
 
+    [Theory]
+    [InlineData("255u8", LiteralTypeSuffix.UInt8, 255)]
+    [InlineData("65535u16", LiteralTypeSuffix.UInt16, 65535)]
+    [InlineData("42u32", LiteralTypeSuffix.UInt32, 42)]
+    [InlineData("100u64", LiteralTypeSuffix.UInt64, 100)]
+    public void Parse_unsigned_suffix_literal(string source, LiteralTypeSuffix expectedSuffix, int expectedValue)
+    {
+        var ctx = MakeCtx(Num(source));
+        var parser = new ExprParser(ctx);
+        var result = parser.ParseExpr();
+        var lit = Assert.IsType<LiteralExpr>(result);
+        Assert.Equal(LiteralKind.Integer, lit.Kind);
+        Assert.Equal(expectedSuffix, lit.TypeSuffix);
+        Assert.Equal(expectedValue, lit.Value);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
     [Fact]
     public void Parse_string_literal()
     {

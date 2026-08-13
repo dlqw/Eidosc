@@ -196,6 +196,18 @@ internal sealed class TypeIdRegistry
 
         if (node is LiteralExpr lit)
         {
+            if (lit.TypeSuffix != Ast.Expressions.LiteralTypeSuffix.None)
+            {
+                return lit.TypeSuffix switch
+                {
+                    Ast.Expressions.LiteralTypeSuffix.UInt8 => new TypeId(BaseTypes.UInt8Id),
+                    Ast.Expressions.LiteralTypeSuffix.UInt16 => new TypeId(BaseTypes.UInt16Id),
+                    Ast.Expressions.LiteralTypeSuffix.UInt32 => new TypeId(BaseTypes.UInt32Id),
+                    Ast.Expressions.LiteralTypeSuffix.UInt64 => new TypeId(BaseTypes.UInt64Id),
+                    _ => new TypeId(BaseTypes.IntId)
+                };
+            }
+
             return lit.Kind switch
             {
                 Ast.Expressions.LiteralKind.Integer => new TypeId(BaseTypes.IntId),

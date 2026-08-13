@@ -339,6 +339,18 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
+        if (lit.TypeSuffix != LiteralTypeSuffix.None)
+        {
+            return lit.TypeSuffix switch
+            {
+                LiteralTypeSuffix.UInt8 => BaseTypes.UInt8,
+                LiteralTypeSuffix.UInt16 => BaseTypes.UInt16,
+                LiteralTypeSuffix.UInt32 => BaseTypes.UInt32,
+                LiteralTypeSuffix.UInt64 => BaseTypes.UInt64,
+                _ => BaseTypes.Int
+            };
+        }
+
         return lit.Kind switch
         {
             LiteralKind.Integer => BaseTypes.Int,
