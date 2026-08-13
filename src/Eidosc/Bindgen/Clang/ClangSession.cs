@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Eidosc.Bindgen.Clang;
 
 /// <summary>
@@ -136,6 +138,30 @@ internal sealed class ClangSession : IDisposable
     internal string GetCursorSpelling(ClangCursor cursor) => _api.GetString(_api.GetCursorSpelling(cursor));
 
     internal string GetTypeSpelling(ClangType type) => _api.GetString(_api.GetTypeSpelling(type));
+
+    /// <summary>
+    /// 返回游标 extent 的词法 token（kind + spelling）。用于宏常量求值回退路径。
+    /// </summary>
+    internal IReadOnlyList<(ClangTokenKind Kind, string Spelling)> TokenizeCursor(ClangCursor cursor)
+    {
+        var range = _api.GetCursorExtent(cursor);
+        _api.Tokenize(_translationUnit, range, out var tokens, out var count);
+        try
+        {
+            var result = new List<(ClangTokenKind, string)>(checked((int)count));
+            for (var i = 0; i < count; i++)
+            {
+                var token = Marshal.PtrToStructure<ClangToken>(IntPtr.Add(tokens, checked(i * Marshal.SizeOf<ClangToken>())));
+                result.Add(((ClangTokenKind)_api.GetTokenKind(token), _api.GetString(_api.GetTokenSpelling(_translationUnit, token))));
+            }
+
+            return result;
+        }
+        finally
+        {
+            _api.DisposeTokens(_translationUnit, tokens, count);
+        }
+    }
 
     public void Dispose()
     {

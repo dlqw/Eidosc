@@ -43,6 +43,34 @@ internal readonly struct ClangSourceLocation
     internal readonly uint IntData;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct ClangSourceRange
+{
+    internal readonly IntPtr Ptr0;
+    internal readonly IntPtr Ptr1;
+    internal readonly uint BeginIntData;
+    internal readonly uint EndIntData;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal readonly struct ClangToken
+{
+    internal readonly uint IntData0;
+    internal readonly uint IntData1;
+    internal readonly uint IntData2;
+    internal readonly uint IntData3;
+    internal readonly IntPtr PtrData;
+}
+
+internal enum ClangTokenKind : int
+{
+    Punctuation = 0,
+    Keyword = 1,
+    Identifier = 2,
+    Literal = 3,
+    Comment = 4
+}
+
 internal enum ClangChildVisitResult : uint
 {
     Break = 0,
@@ -234,6 +262,63 @@ internal delegate ClangString ClangGetFileNameFn(IntPtr file);
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate ClangString ClangGetClangVersionFn();
 
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangGetNumArgTypesFn(ClangType type);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate uint ClangIsFunctionTypeVariadicFn(ClangType type);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate uint ClangCursorIsVariadicFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate IntPtr ClangCursorEvaluateFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangEvalResultGetKindFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangEvalResultGetAsIntFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate long ClangEvalResultGetAsLongLongFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate IntPtr ClangEvalResultGetAsStrFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void ClangEvalResultDisposeFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangSourceRange ClangGetCursorExtentFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void ClangTokenizeFn(
+    IntPtr translationUnit,
+    ClangSourceRange range,
+    out IntPtr tokens,
+    out uint numTokens);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangGetTokenKindFn(ClangToken token);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangString ClangGetTokenSpellingFn(IntPtr translationUnit, ClangToken token);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate void ClangDisposeTokensFn(IntPtr translationUnit, IntPtr tokens, uint numTokens);
+
+internal enum ClangEvalResultKind : int
+{
+    UnExposed = 0,
+    Int = 1,
+    Float = 2,
+    ObjCStrLiteral = 3,
+    StrLiteral = 4,
+    CFStr = 5,
+    Other = 6
+}
+
 /// <summary>
 /// 一次加载后不可变的 libclang 导出函数集合。全部导出在构造时解析，
 /// 任一缺失立即失败（Fail-fast 便于诊断 libclang 版本不匹配）。
@@ -275,6 +360,20 @@ internal sealed class ClangApi
         GetFileLocation = GetExport<ClangGetFileLocationFn>(library, "clang_getFileLocation");
         GetFileName = GetExport<ClangGetFileNameFn>(library, "clang_getFileName");
         GetClangVersion = GetExport<ClangGetClangVersionFn>(library, "clang_getClangVersion");
+        GetNumArgTypes = GetExport<ClangGetNumArgTypesFn>(library, "clang_getNumArgTypes");
+        IsFunctionTypeVariadic = GetExport<ClangIsFunctionTypeVariadicFn>(library, "clang_isFunctionTypeVariadic");
+        CursorIsVariadic = GetExport<ClangCursorIsVariadicFn>(library, "clang_Cursor_isVariadic");
+        CursorEvaluate = GetExport<ClangCursorEvaluateFn>(library, "clang_Cursor_Evaluate");
+        EvalResultGetKind = GetExport<ClangEvalResultGetKindFn>(library, "clang_EvalResult_getKind");
+        EvalResultGetAsInt = GetExport<ClangEvalResultGetAsIntFn>(library, "clang_EvalResult_getAsInt");
+        EvalResultGetAsLongLong = GetExport<ClangEvalResultGetAsLongLongFn>(library, "clang_EvalResult_getAsLongLong");
+        EvalResultGetAsStr = GetExport<ClangEvalResultGetAsStrFn>(library, "clang_EvalResult_getAsStr");
+        EvalResultDispose = GetExport<ClangEvalResultDisposeFn>(library, "clang_EvalResult_dispose");
+        GetCursorExtent = GetExport<ClangGetCursorExtentFn>(library, "clang_getCursorExtent");
+        Tokenize = GetExport<ClangTokenizeFn>(library, "clang_tokenize");
+        GetTokenKind = GetExport<ClangGetTokenKindFn>(library, "clang_getTokenKind");
+        GetTokenSpelling = GetExport<ClangGetTokenSpellingFn>(library, "clang_getTokenSpelling");
+        DisposeTokens = GetExport<ClangDisposeTokensFn>(library, "clang_disposeTokens");
     }
 
     internal string LibraryPath { get; }
@@ -311,6 +410,20 @@ internal sealed class ClangApi
     internal ClangGetFileLocationFn GetFileLocation { get; }
     internal ClangGetFileNameFn GetFileName { get; }
     internal ClangGetClangVersionFn GetClangVersion { get; }
+    internal ClangGetNumArgTypesFn GetNumArgTypes { get; }
+    internal ClangIsFunctionTypeVariadicFn IsFunctionTypeVariadic { get; }
+    internal ClangCursorIsVariadicFn CursorIsVariadic { get; }
+    internal ClangCursorEvaluateFn CursorEvaluate { get; }
+    internal ClangEvalResultGetKindFn EvalResultGetKind { get; }
+    internal ClangEvalResultGetAsIntFn EvalResultGetAsInt { get; }
+    internal ClangEvalResultGetAsLongLongFn EvalResultGetAsLongLong { get; }
+    internal ClangEvalResultGetAsStrFn EvalResultGetAsStr { get; }
+    internal ClangEvalResultDisposeFn EvalResultDispose { get; }
+    internal ClangGetCursorExtentFn GetCursorExtent { get; }
+    internal ClangTokenizeFn Tokenize { get; }
+    internal ClangGetTokenKindFn GetTokenKind { get; }
+    internal ClangGetTokenSpellingFn GetTokenSpelling { get; }
+    internal ClangDisposeTokensFn DisposeTokens { get; }
 
     internal string GetString(ClangString str)
     {
