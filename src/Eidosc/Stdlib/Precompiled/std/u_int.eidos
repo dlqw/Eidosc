@@ -1,0 +1,20 @@
+UInt :: module {
+
+    uint8_from_int :: Int -> UInt8 compiler(internal, intrinsic: "uint8_from_int");
+    uint8_to_int :: UInt8 -> Int compiler(internal, intrinsic: "uint8_to_int");
+    uint16_from_int :: Int -> UInt16 compiler(internal, intrinsic: "uint16_from_int");
+    uint16_to_int :: UInt16 -> Int compiler(internal, intrinsic: "uint16_to_int");
+    uint32_from_int :: Int -> UInt32 compiler(internal, intrinsic: "uint32_from_int");
+    uint32_to_int :: UInt32 -> Int compiler(internal, intrinsic: "uint32_to_int");
+    uint64_from_int :: Int -> UInt64 compiler(internal, intrinsic: "uint64_from_int");
+    uint64_to_int :: UInt64 -> Int compiler(internal, intrinsic: "uint64_to_int");
+
+    export from_int8 :: Int -> UInt8 need ffi { x => uint8_from_int(x) }
+    export to_int8 :: UInt8 -> Int need ffi { x => uint8_to_int(x) }
+    export from_int16 :: Int -> UInt16 need ffi { x => uint16_from_int(x) }
+    export to_int16 :: UInt16 -> Int need ffi { x => uint16_to_int(x) }
+    export from_int32 :: Int -> UInt32 need ffi { x => uint32_from_int(x) }
+    export to_int32 :: UInt32 -> Int need ffi { x => uint32_to_int(x) }
+    export from_int64 :: Int -> UInt64 need ffi { x => uint64_from_int(x) }
+    export to_int64 :: UInt64 -> Int need ffi { x => uint64_to_int(x) }
+}

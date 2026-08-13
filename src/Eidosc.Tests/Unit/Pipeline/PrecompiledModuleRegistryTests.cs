@@ -102,6 +102,26 @@ sample :: module {
     }
 
     [Fact]
+    public void IntrinsicRegistry_RecognizesUIntConversionIntrinsicNames()
+    {
+        Assert.True(IntrinsicRegistry.IsUIntConversionIntrinsicName("uint8_from_int"));
+        Assert.True(IntrinsicRegistry.IsUIntConversionIntrinsicName("uint16_to_int"));
+        Assert.True(IntrinsicRegistry.IsUIntConversionIntrinsicName("uint32_from_int"));
+        Assert.True(IntrinsicRegistry.IsUIntConversionIntrinsicName("uint64_to_int"));
+        Assert.False(IntrinsicRegistry.IsUIntConversionIntrinsicName("math_trunc"));
+        Assert.False(IntrinsicRegistry.IsUIntConversionIntrinsicName("uint_add"));
+    }
+
+    [Fact]
+    public void IntrinsicRegistry_RegistersUIntConversionDeclarations()
+    {
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("uint8_from_int"));
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("uint16_to_int"));
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("uint32_from_int"));
+        Assert.True(IntrinsicRegistry.IsKnownIntrinsicName("uint64_to_int"));
+    }
+
+    [Fact]
     public void IntrinsicRegistry_CapturesDeclaredEffects()
     {
         Assert.True(IntrinsicRegistry.TryGet("file_exists", out var ioIntrinsic));

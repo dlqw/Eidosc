@@ -282,6 +282,14 @@ public sealed partial class MirToLlvmConverter
             return ConvertMathIntrinsic(call, mathName);
         }
 
+        // UInt 转换 intrinsics（Int ↔ UInt8/16/32/64）
+        if (call.Function is MirFunctionRef uintConvRef &&
+            MirBuiltinFunctions.TryGetIntrinsicName(uintConvRef, out var uintConvName) &&
+            MirBuiltinFunctions.IsUIntConversionIntrinsicName(uintConvName))
+        {
+            return ConvertUIntConversion(call);
+        }
+
         if (call.Function is MirFunctionRef charConversionRef &&
             (TryGetBuiltinIntrinsicName(charConversionRef, "char_from_code", out _) ||
              TryGetBuiltinIntrinsicName(charConversionRef, "char_to_code", out _)))
@@ -1287,6 +1295,21 @@ public sealed partial class MirToLlvmConverter
         var source = ConvertOperand(call.Arguments[0]);
         AssignPlaceFromValue(target, source);
 
+        return null;
+    }
+
+    private LlvmCall? ConvertUIntConversion(MirCall call)
+    {
+        if (call.Arguments.Count != 1 ||
+            call.Target is not MirPlace { Kind: PlaceKind.Local } target)
+        {
+            return null;
+        }
+
+        var source = ConvertOperand(call.Arguments[0]);
+        var targetStorageType = LowerStorageTypeIdOrReport(target.TypeId, "uint conversion");
+        var converted = CoerceValueToType(source, targetStorageType, "uint_conv");
+        AssignPlaceFromValue(target, converted);
         return null;
     }
 

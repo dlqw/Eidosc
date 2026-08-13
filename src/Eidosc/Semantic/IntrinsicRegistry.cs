@@ -69,6 +69,11 @@ public static class IntrinsicRegistry
 
     public static bool IsMathIntrinsicName(string name) => name.StartsWith("math_", StringComparison.Ordinal);
 
+    public static bool IsUIntConversionIntrinsicName(string name) =>
+        name.StartsWith("uint", StringComparison.Ordinal) &&
+        (name.EndsWith("_from_int", StringComparison.Ordinal) ||
+         name.EndsWith("_to_int", StringComparison.Ordinal));
+
     public static bool IsPointerLoadIntrinsicName(string name) => name.StartsWith("ptr_load_", StringComparison.Ordinal);
 
     public static bool IsPointerStoreIntrinsicName(string name) => name.StartsWith("ptr_store_", StringComparison.Ordinal);
