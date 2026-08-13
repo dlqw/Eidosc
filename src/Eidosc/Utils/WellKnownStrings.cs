@@ -30,6 +30,10 @@ public static class WellKnownStrings
         public const string Float64 = "Float64";
         public const string Float32 = "Float32";
         public const string Float16 = "Float16";
+        public const string UInt64 = "UInt64";
+        public const string UInt32 = "UInt32";
+        public const string UInt16 = "UInt16";
+        public const string UInt8 = "UInt8";
         public const string Bool = "Bool";
         public const string String = "String";
         public const string Char = "Char";

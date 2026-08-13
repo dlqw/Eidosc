@@ -750,6 +750,32 @@ public sealed partial class MirValidatorTests
         Assert.DoesNotContain(validator.Diagnostics, diagnostic => diagnostic.Code == MirValidator.UnknownTypeIdCode);
     }
 
+    [Theory]
+    [InlineData(BaseTypes.UInt64Id)]
+    [InlineData(BaseTypes.UInt32Id)]
+    [InlineData(BaseTypes.UInt16Id)]
+    [InlineData(BaseTypes.UInt8Id)]
+    public void Validate_UnsignedIntScalars_AreAcceptedAtBackendBoundary(int typeIdValue)
+    {
+        var typeId = new TypeId(typeIdValue);
+        var module = CreateSingleBlockModule(
+            typeId,
+            [],
+            new MirReturn
+            {
+                Value = new MirConstant
+                {
+                    TypeId = typeId,
+                    Value = new MirConstantValue.IntValue(0)
+                }
+            });
+
+        var validator = new MirValidator();
+
+        Assert.True(validator.Validate(module));
+        Assert.DoesNotContain(validator.Diagnostics, diagnostic => diagnostic.Code == MirValidator.UnknownTypeIdCode);
+    }
+
     [Fact]
     public void Validate_MissingFunctionReturnType_ReportsBackendBoundaryDiagnostic()
     {

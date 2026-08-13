@@ -1241,6 +1241,10 @@ public sealed class MirValidator
             BaseTypes.Int32Id or
             BaseTypes.Int16Id or
             BaseTypes.Int8Id or
+            BaseTypes.UInt64Id or
+            BaseTypes.UInt32Id or
+            BaseTypes.UInt16Id or
+            BaseTypes.UInt8Id or
             BaseTypes.FloatId or
             BaseTypes.Float64Id or
             BaseTypes.Float32Id or

@@ -101,4 +101,8 @@ public static class WellKnownTypeIds
     public const int MetaModulesId = 94;
     public const int BuildInputsId = 95;
     public const int MetaOwnershipId = 96;
+    public const int UInt64Id = 97;
+    public const int UInt32Id = 98;
+    public const int UInt16Id = 99;
+    public const int UInt8Id = 100;
 }

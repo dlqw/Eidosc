@@ -345,6 +345,10 @@ public sealed class TypeLowering
                 BaseTypes.Int32Id => LlvmIntType.I32,
                 BaseTypes.Int16Id => LlvmIntType.I16,
                 BaseTypes.Int8Id => LlvmIntType.I8,
+                BaseTypes.UInt64Id => LlvmIntType.I64,
+                BaseTypes.UInt32Id => LlvmIntType.I32,
+                BaseTypes.UInt16Id => LlvmIntType.I16,
+                BaseTypes.UInt8Id => LlvmIntType.I8,
                 BaseTypes.FloatId => LlvmFloatType.Double,
                 BaseTypes.Float64Id => LlvmFloatType.Double,
                 BaseTypes.Float32Id => LlvmFloatType.Float,
@@ -517,6 +521,10 @@ public sealed class TypeLowering
             WellKnownStrings.BuiltinTypes.Int32 => LlvmIntType.I32,
             WellKnownStrings.BuiltinTypes.Int16 => LlvmIntType.I16,
             WellKnownStrings.BuiltinTypes.Int8 => LlvmIntType.I8,
+            WellKnownStrings.BuiltinTypes.UInt64 => LlvmIntType.I64,
+            WellKnownStrings.BuiltinTypes.UInt32 => LlvmIntType.I32,
+            WellKnownStrings.BuiltinTypes.UInt16 => LlvmIntType.I16,
+            WellKnownStrings.BuiltinTypes.UInt8 => LlvmIntType.I8,
 
             // 浮点类型
             WellKnownStrings.BuiltinTypes.Float or WellKnownStrings.BuiltinTypes.Float64 => LlvmFloatType.Double,
@@ -804,10 +812,10 @@ public sealed class TypeLowering
 
         return typeId.Value switch
         {
-            BaseTypes.IntId or BaseTypes.Int64Id or BaseTypes.FloatId or BaseTypes.Float64Id => 8,
-            BaseTypes.Int32Id or BaseTypes.Float32Id or BaseTypes.CharId => 4,
-            BaseTypes.Int16Id or BaseTypes.Float16Id => 2,
-            BaseTypes.Int8Id or BaseTypes.BoolId or BaseTypes.UnitId => 1,
+            BaseTypes.IntId or BaseTypes.Int64Id or BaseTypes.FloatId or BaseTypes.Float64Id or BaseTypes.UInt64Id => 8,
+            BaseTypes.Int32Id or BaseTypes.Float32Id or BaseTypes.CharId or BaseTypes.UInt32Id => 4,
+            BaseTypes.Int16Id or BaseTypes.Float16Id or BaseTypes.UInt16Id => 2,
+            BaseTypes.Int8Id or BaseTypes.BoolId or BaseTypes.UnitId or BaseTypes.UInt8Id => 1,
             _ => 0
         };
     }
@@ -922,6 +930,10 @@ public sealed class TypeLowering
             BaseTypes.Int32Id or
             BaseTypes.Int16Id or
             BaseTypes.Int8Id or
+            BaseTypes.UInt64Id or
+            BaseTypes.UInt32Id or
+            BaseTypes.UInt16Id or
+            BaseTypes.UInt8Id or
             BaseTypes.FloatId or
             BaseTypes.Float64Id or
             BaseTypes.Float32Id or

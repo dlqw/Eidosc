@@ -431,6 +431,10 @@ public static class BaseTypes
     public const int Float64Id = WellKnownTypeIds.Float64Id;
     public const int Float32Id = WellKnownTypeIds.Float32Id;
     public const int Float16Id = WellKnownTypeIds.Float16Id;
+    public const int UInt64Id = WellKnownTypeIds.UInt64Id;
+    public const int UInt32Id = WellKnownTypeIds.UInt32Id;
+    public const int UInt16Id = WellKnownTypeIds.UInt16Id;
+    public const int UInt8Id = WellKnownTypeIds.UInt8Id;
 
     /// <summary>
     /// 整数类型
@@ -450,6 +454,10 @@ public static class BaseTypes
     public static TyCon Float64 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float64, Id = new TypeId(Float64Id) };
     public static TyCon Float32 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float32, Id = new TypeId(Float32Id) };
     public static TyCon Float16 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Float16, Id = new TypeId(Float16Id) };
+    public static TyCon UInt64 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.UInt64, Id = new TypeId(UInt64Id) };
+    public static TyCon UInt32 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.UInt32, Id = new TypeId(UInt32Id) };
+    public static TyCon UInt16 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.UInt16, Id = new TypeId(UInt16Id) };
+    public static TyCon UInt8 { get; } = new() { Name = WellKnownStrings.BuiltinTypes.UInt8, Id = new TypeId(UInt8Id) };
 
     /// <summary>
     /// 布尔类型
@@ -509,6 +517,10 @@ public static class BaseTypes
         WellKnownStrings.BuiltinTypes.Float64 => new TypeId(Float64Id),
         WellKnownStrings.BuiltinTypes.Float32 => new TypeId(Float32Id),
         WellKnownStrings.BuiltinTypes.Float16 => new TypeId(Float16Id),
+        WellKnownStrings.BuiltinTypes.UInt64 => new TypeId(UInt64Id),
+        WellKnownStrings.BuiltinTypes.UInt32 => new TypeId(UInt32Id),
+        WellKnownStrings.BuiltinTypes.UInt16 => new TypeId(UInt16Id),
+        WellKnownStrings.BuiltinTypes.UInt8 => new TypeId(UInt8Id),
         WellKnownStrings.BuiltinTypes.Bool => new TypeId(BoolId),
         WellKnownStrings.BuiltinTypes.String => new TypeId(StringId),
         WellKnownStrings.BuiltinTypes.Char => new TypeId(CharId),
@@ -530,7 +542,8 @@ public static class BaseTypes
     public static bool IsBuiltIn(TypeId id) =>
         id.Value is >= 1 and <= TypeValueId or
             Int64Id or Int32Id or Int16Id or Int8Id or
-            Float64Id or Float32Id or Float16Id;
+            Float64Id or Float32Id or Float16Id or
+            UInt64Id or UInt32Id or UInt16Id or UInt8Id;
 
     public static bool IsCompilerMeta(TypeId id) =>
         id.Value is >= WellKnownTypeIds.MetaTypeShapeId and <= WellKnownTypeIds.MetaResolveFailureId or
