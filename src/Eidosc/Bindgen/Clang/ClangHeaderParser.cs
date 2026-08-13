@@ -330,7 +330,13 @@ internal sealed class ClangHeaderParser
                 var isUnsigned = kind is ClangTypeKind.CharU or ClangTypeKind.UChar
                     or ClangTypeKind.UShort or ClangTypeKind.UInt
                     or ClangTypeKind.ULong or ClangTypeKind.ULongLong;
-                return new CBindingType(CBindingTypeKind.Primitive, name, spelling, IsUnsigned: isUnsigned, IsConst: isConst);
+                return new CBindingType(
+                    CBindingTypeKind.Primitive,
+                    name,
+                    spelling,
+                    IsUnsigned: isUnsigned,
+                    IsConst: isConst,
+                    Size: ComputeSize(normalized));
             }
 
             case ClangTypeKind.Pointer:
@@ -363,7 +369,12 @@ internal sealed class ClangHeaderParser
             }
 
             case ClangTypeKind.Enum:
-                return new CBindingType(CBindingTypeKind.Enum, StripTypePrefix(spelling, "enum "), spelling, IsConst: isConst);
+                return new CBindingType(
+                    CBindingTypeKind.Enum,
+                    StripTypePrefix(spelling, "enum "),
+                    spelling,
+                    IsConst: isConst,
+                    Size: ComputeSize(normalized));
 
             case ClangTypeKind.Typedef:
                 return new CBindingType(CBindingTypeKind.Typedef, spelling, spelling, IsConst: isConst);
@@ -404,6 +415,12 @@ internal sealed class ClangHeaderParser
             FunctionPointerArity: arity < 0 ? 0 : arity,
             FunctionPointerReturnType: ConvertType(session, _api.GetResultType(functionType)),
             FunctionPointerParameterTypes: parameterTypes);
+    }
+
+    private int ComputeSize(ClangType type)
+    {
+        var size = _api.TypeGetSizeOf(type);
+        return size < 0 ? 0 : (int)size;
     }
 
     private ClangType NormalizeType(ClangType type)

@@ -24,7 +24,8 @@ public sealed record CBindingType(
     int FunctionPointerArity = 0,
     int ArraySize = 0,
     CBindingType? FunctionPointerReturnType = null,
-    IReadOnlyList<CBindingType>? FunctionPointerParameterTypes = null);
+    IReadOnlyList<CBindingType>? FunctionPointerParameterTypes = null,
+    int Size = 0);
 
 public sealed record CBindingParameter(string Name, CBindingType Type);
 

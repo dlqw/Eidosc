@@ -20,6 +20,20 @@ public sealed class BindingTypeMapper
 {
     private const int MaxTypedefDepth = 8;
 
+    /// <summary>
+    /// Eidos 关键字表（docs/reference/grammar/Eidos-BNF.md keyword 产生式）。
+    /// 生成标识符与之冲突时追加 <c>_</c> 后缀转义（C 符号名经 extern name 保持原样）。
+    /// </summary>
+    internal static readonly HashSet<string> EidosKeywords = new(StringComparer.Ordinal)
+    {
+        "module", "import", "let", "mut", "func", "effect", "effects", "need",
+        "type", "trait", "instance", "export", "given", "comptime",
+        "if", "else", "then", "decide", "loop", "while", "match", "when",
+        "return", "break", "continue", "ref", "mref", "true", "false", "as"
+    };
+
+    internal static bool IsEidosKeyword(string name) => EidosKeywords.Contains(name);
+
     private readonly HashSet<string> _structNames;
     private readonly HashSet<string> _enumNames;
     private readonly IReadOnlyDictionary<string, CBindingTypedef> _typedefs;
@@ -65,12 +79,16 @@ public sealed class BindingTypeMapper
         return type.Name switch
         {
             "_Bool" or "bool" => new("Bool", BindingTypeCategory.Direct),
-            "float" or "double" => new("Float", BindingTypeCategory.Direct),
-            "char" or "signed char" or "unsigned char" or "int8_t" or "uint8_t" => new("Int8", BindingTypeCategory.Direct),
-            "short" or "unsigned short" or "int16_t" or "uint16_t" => new("Int16", BindingTypeCategory.Direct),
-            "int" or "unsigned int" or "int32_t" or "uint32_t" => new("Int32", BindingTypeCategory.Direct),
+            "float" => new("Float", BindingTypeCategory.Direct),
+            "double" => new("Float", BindingTypeCategory.Direct),
+            // 当前 MIR/backend 边界只支持 64 位标量（Int/Float）；窄整数与 float
+            // 由自动 shim 做 ABI 窄化（BindingCShimGenerator），Eidos 侧统一 64 位。
+            "char" or "signed char" or "unsigned char" or "int8_t" or "uint8_t" or
+                "short" or "unsigned short" or "int16_t" or "uint16_t" or
+                "int" or "unsigned int" or "int32_t" or "uint32_t" or
+                "long" or "unsigned long" => new("Int", BindingTypeCategory.Direct),
             "int64_t" => new("Int", BindingTypeCategory.Direct),
-            "long" or "unsigned long" or "long long" or "unsigned long long" or "uint64_t" or
+            "long long" or "unsigned long long" or "uint64_t" or
                 "size_t" or "uintptr_t" => new("Int64", BindingTypeCategory.Direct),
             _ => new("RawPtr", BindingTypeCategory.Unsupported, $"unknown type: {type.Spelling}")
         };
@@ -136,6 +154,7 @@ public sealed class BindingTypeMapper
             }
         }
 
-        return result.ToString();
+        var eidosName = result.ToString();
+        return IsEidosKeyword(eidosName) ? eidosName + "_" : eidosName;
     }
 }

@@ -28,7 +28,7 @@ public sealed class ClangBindingGeneratorTests
         var mapping = new BindingTypeMapper(result.Ir).Map(fn.Parameters[0].Type);
 
         Assert.Equal(BindingTypeCategory.Direct, mapping.Category);
-        Assert.Equal("Int64", mapping.EidosType);
+        Assert.Equal("Int", mapping.EidosType);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public sealed class ClangBindingGeneratorTests
         var fnMapping = new BindingTypeMapper(result.Ir).Map(apply.Parameters[0].Type);
 
         Assert.Equal(BindingTypeCategory.Direct, fnMapping.Category);
-        Assert.Equal("Cfn[Int32, Int32, Int32]", fnMapping.EidosType);
+        Assert.Equal("Cfn[Int, Int, Int]", fnMapping.EidosType);
     }
 
     [Fact]
@@ -85,11 +85,11 @@ public sealed class ClangBindingGeneratorTests
         // union / 全局 → 注释收编
         Assert.Contains("// SKIP union Value", raw, StringComparison.Ordinal);
         Assert.Contains("// SKIP global global_counter", raw, StringComparison.Ordinal);
-        // struct 按值参数 → 自动 shim 绑定（int 返回 → Int32）
+        // struct 按值参数 → 自动 shim 绑定（int 窄化 → Int）
         Assert.Contains("@[extern(c, name: \"eidos_shim_demo_init\")]", raw, StringComparison.Ordinal);
-        Assert.Contains("export demo_init :: RawPtr -> Int32 -> Int32 need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export demo_init :: RawPtr -> Int -> Int need ffi;", raw, StringComparison.Ordinal);
         // 函数指针 → Cfn
-        Assert.Contains("export apply :: Cfn[Int32, Int32] -> Int32 -> Int32 need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export apply :: Cfn[Int, Int] -> Int -> Int need ffi;", raw, StringComparison.Ordinal);
         // 内置/预定义宏（无源文件位置）不得进入生成物
         Assert.DoesNotContain("__llvm__", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("__clang_major__", raw, StringComparison.Ordinal);
@@ -119,11 +119,53 @@ public sealed class ClangBindingGeneratorTests
 
         var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
         Assert.Contains("@[extern(c, name: \"eidos_shim_make_point\")]", raw, StringComparison.Ordinal);
-        Assert.Contains("export make_point :: Int32 -> Int32 -> RawPtr need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export make_point :: Int -> Int -> RawPtr need ffi;", raw, StringComparison.Ordinal);
 
         var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
         Assert.Contains("static Point eidos_shim_make_point_result;", shim, StringComparison.Ordinal);
         Assert.Contains("return &eidos_shim_make_point_result;", shim, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NarrowScalars_GenerateNarrowingShims()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            int demo(int a, unsigned int b);
+            float scale(float f);
+            long long direct64(long long v);
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        // 窄标量经 shim，Eidos 侧统一 64 位
+        Assert.Contains("export demo :: Int -> Int -> Int need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export scale :: Float -> Float need ffi;", raw, StringComparison.Ordinal);
+        // 64 位标量直连
+        Assert.Contains("export direct64 :: Int64 -> Int64 need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("@[extern(c, name: \"direct64\")]", raw, StringComparison.Ordinal);
+
+        var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
+        // int/unsigned int → int64_t + 窄化 cast
+        Assert.Contains("int64_t eidos_shim_demo(int64_t a, int64_t b)", shim, StringComparison.Ordinal);
+        Assert.Contains("return (int64_t)demo((int)a, (unsigned int)b);", shim, StringComparison.Ordinal);
+        // float → double + 窄化 cast
+        Assert.Contains("double eidos_shim_scale(double f)", shim, StringComparison.Ordinal);
+        Assert.Contains("return (double)scale((float)f);", shim, StringComparison.Ordinal);
+        // direct64 不生成 shim
+        Assert.DoesNotContain("eidos_shim_direct64", shim, StringComparison.Ordinal);
     }
 
     [Fact]
