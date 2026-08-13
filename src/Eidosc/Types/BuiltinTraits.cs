@@ -57,6 +57,10 @@ public static class BuiltinTraits
     {
         [TypeNames.Int] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
         [TypeNames.Float] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.UInt8] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.UInt16] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.UInt32] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.UInt64] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
         [TypeNames.String] = [TraitNames.Eq, TraitNames.Show, TraitNames.Clone, TraitNames.Hash],
         [TypeNames.Bool] = [TraitNames.Eq, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
         [TypeNames.Char] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Show, TraitNames.Clone, TraitNames.Copy],
