@@ -407,6 +407,7 @@ public sealed class EidosupWp2Tests : IDisposable
             var expired = CreateIndex(3) with
             {
                 NextKeys = first.NextKeys,
+                GeneratedAt = DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
                 ExpiresAt = DateTimeOffset.Parse("2026-07-12T12:00:00Z")
             };
             var exception = await Assert.ThrowsAsync<EidosupException>(() => verifier.VerifyAsync(
@@ -696,14 +697,14 @@ public sealed class EidosupWp2Tests : IDisposable
     private static SignedReleaseIndex CreateIndex(long version) => new(
         1,
         version,
-        DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
-        DateTimeOffset.Parse("2026-08-12T00:00:00Z"),
+        DateTimeOffset.UtcNow.AddDays(-1),
+        DateTimeOffset.UtcNow.AddDays(30),
         [],
         [new SignedReleaseEntry(
             "eidosc-v0.5.0-alpha.1",
             "eidosc-v0.5.0-alpha.1",
             true,
-            DateTimeOffset.Parse("2026-07-12T00:00:00Z"),
+            DateTimeOffset.UtcNow.AddDays(-1),
             [new SignedReleaseAsset(
                 "SHA256SUMS",
                 "https://dist.example.test/SHA256SUMS",
