@@ -29,6 +29,11 @@ public record LiteralExpr : Expression
     public LiteralKind Kind { get; private set; }
 
     /// <summary>
+    /// 无符号字面量后缀（u8/u16/u32/u64），None 表示无后缀。
+    /// </summary>
+    public LiteralTypeSuffix TypeSuffix { get; private set; }
+
+    /// <summary>
     /// 原始文本表示
     /// </summary>
     public string RawText { get; private set; } = "";
@@ -49,8 +54,9 @@ public record LiteralExpr : Expression
                 if (child is TerminalCstNode term)
                 {
                     RawText = GetTokenText(term);
-                    Value = ParseLiteral(RawText, out var kind);
+                    Value = ParseLiteral(RawText, out var kind, out var typeSuffix);
                     Kind = kind;
+                    TypeSuffix = typeSuffix;
                 }
             }
         }
@@ -67,8 +73,9 @@ public record LiteralExpr : Expression
     public void SetLiteral(string rawText)
     {
         RawText = rawText;
-        Value = ParseLiteral(rawText, out var kind);
+        Value = ParseLiteral(rawText, out var kind, out var typeSuffix);
         Kind = kind;
+        TypeSuffix = typeSuffix;
     }
 
     public void MarkRecoveredError(string recoveryReason = AstRecoveryReasons.ParserRecoveredLiteral)
@@ -77,8 +84,11 @@ public record LiteralExpr : Expression
         MarkRecovered(recoveryReason);
     }
 
-    private static object? ParseLiteral(string text, out LiteralKind kind)
+    private static object? ParseLiteral(string text, out LiteralKind kind, out LiteralTypeSuffix typeSuffix)
     {
+        typeSuffix = LiteralTypeSuffix.None;
+        text = StripUnsignedSuffix(text, ref typeSuffix);
+
         if (text == "()")
         {
             kind = LiteralKind.Unit;
@@ -177,6 +187,31 @@ public record LiteralExpr : Expression
         return text;
     }
 
+    private static string StripUnsignedSuffix(string text, ref LiteralTypeSuffix typeSuffix)
+    {
+        if (text.EndsWith("u8", StringComparison.Ordinal))
+        {
+            typeSuffix = LiteralTypeSuffix.UInt8;
+            return text[..^2];
+        }
+        if (text.EndsWith("u16", StringComparison.Ordinal))
+        {
+            typeSuffix = LiteralTypeSuffix.UInt16;
+            return text[..^3];
+        }
+        if (text.EndsWith("u32", StringComparison.Ordinal))
+        {
+            typeSuffix = LiteralTypeSuffix.UInt32;
+            return text[..^3];
+        }
+        if (text.EndsWith("u64", StringComparison.Ordinal))
+        {
+            typeSuffix = LiteralTypeSuffix.UInt64;
+            return text[..^3];
+        }
+        return text;
+    }
+
     private static string ParseStringLiteral(string text)
     {
         var content = StripOuterQuote(text, '"');
@@ -267,4 +302,16 @@ public enum LiteralKind
     Char,
     Boolean,
     Unit
+}
+
+/// <summary>
+/// 无符号字面量类型后缀。
+/// </summary>
+public enum LiteralTypeSuffix
+{
+    None,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64
 }

@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using MemoryPack;
@@ -177,19 +177,31 @@ public partial class NumberLiteralRule : LiteralRule
         // 如果没有读取到任何有效数字位 (例如只读了前缀 "0x")
         if (pos == bodyStart) return null;
 
-        // 6. 处理后缀 (f, d, m, L, U...)
+        // 记录数字主体结束位置（不含后缀）
+        var bodyEnd = pos;
+
+        // 6. 处理后缀 (u8, u16, u32, u64, f, d, m, L, U...)
         if (pos < maxLen)
         {
-            char potentialSuffix = text[pos];
-            if (_suffixMap.TryGetValue(potentialSuffix, out TypeCode typeCode))
+            var unsignedType = MatchUnsignedSuffix(text, pos, maxLen, out var unsignedLength);
+            if (unsignedType.HasValue)
             {
-                ctx.TargetType = typeCode;
-                pos++;
+                ctx.TargetType = unsignedType.Value;
+                pos += unsignedLength;
+            }
+            else
+            {
+                char potentialSuffix = text[pos];
+                if (_suffixMap.TryGetValue(potentialSuffix, out TypeCode typeCode))
+                {
+                    ctx.TargetType = typeCode;
+                    pos++;
+                }
             }
         }
 
-        // 7. 提取 Body 并转换
-        ctx.BodySpan = text.AsSpan(startPos, pos - startPos); // 包含符号和前缀，为了 Parse 方便
+        // 7. 提取 Body 并转换（不含后缀）
+        ctx.BodySpan = text.AsSpan(startPos, bodyEnd - startPos);
 
         // 验证结果
         if (ConvertNumber(ref ctx))
@@ -201,6 +213,39 @@ public partial class NumberLiteralRule : LiteralRule
         // 转换失败（溢出或格式错误）
         stream.PreviewPosition = pos; // 仍然消耗掉字符，避免死循环，但返回错误
         return Token.CreateErrorToken(stream, GetErrorMessage(LexerErrorCode.InvalidNumber));
+    }
+
+    private static TypeCode? MatchUnsignedSuffix(string text, int pos, int maxLen, out int length)
+    {
+        length = 0;
+        if (pos + 1 >= maxLen || text[pos] != 'u')
+        {
+            return null;
+        }
+
+        var remaining = maxLen - pos;
+        if (remaining >= 2 && text[pos + 1] == '8')
+        {
+            length = 2;
+            return TypeCode.Byte;
+        }
+        if (remaining >= 3 && text[pos + 1] == '1' && text[pos + 2] == '6')
+        {
+            length = 3;
+            return TypeCode.UInt16;
+        }
+        if (remaining >= 3 && text[pos + 1] == '3' && text[pos + 2] == '2')
+        {
+            length = 3;
+            return TypeCode.UInt32;
+        }
+        if (remaining >= 3 && text[pos + 1] == '6' && text[pos + 2] == '4')
+        {
+            length = 3;
+            return TypeCode.UInt64;
+        }
+
+        return null;
     }
 
     private bool ConvertNumber(ref LiteralContext ctx)
@@ -256,6 +301,8 @@ public partial class NumberLiteralRule : LiteralRule
                 TypeCode.Decimal => decimal.TryParse(span, style, culture, out decimal m) && SetResult(ref ctx, m),
                 TypeCode.UInt32 => uint.TryParse(span, style, culture, out uint ui) && SetResult(ref ctx, ui),
                 TypeCode.UInt64 => ulong.TryParse(span, style, culture, out ulong ul) && SetResult(ref ctx, ul),
+                TypeCode.Byte => byte.TryParse(span, style, culture, out byte by) && SetResult(ref ctx, by),
+                TypeCode.UInt16 => ushort.TryParse(span, style, culture, out ushort us) && SetResult(ref ctx, us),
                 _ => double.TryParse(span, style, culture, out double def) && SetResult(ref ctx, def)
             };
         }
