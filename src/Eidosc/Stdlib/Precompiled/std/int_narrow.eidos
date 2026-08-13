@@ -1,0 +1,20 @@
+IntNarrow :: module {
+
+    int8_from_int :: Int -> Int8 compiler(internal, intrinsic: "int8_from_int");
+    int8_to_int :: Int8 -> Int compiler(internal, intrinsic: "int8_to_int");
+    int16_from_int :: Int -> Int16 compiler(internal, intrinsic: "int16_from_int");
+    int16_to_int :: Int16 -> Int compiler(internal, intrinsic: "int16_to_int");
+    int32_from_int :: Int -> Int32 compiler(internal, intrinsic: "int32_from_int");
+    int32_to_int :: Int32 -> Int compiler(internal, intrinsic: "int32_to_int");
+    int64_from_int :: Int -> Int64 compiler(internal, intrinsic: "int64_from_int");
+    int64_to_int :: Int64 -> Int compiler(internal, intrinsic: "int64_to_int");
+
+    export from_int8 :: Int -> Int8 need ffi { x => int8_from_int(x) }
+    export to_int8 :: Int8 -> Int need ffi { x => int8_to_int(x) }
+    export from_int16 :: Int -> Int16 need ffi { x => int16_from_int(x) }
+    export to_int16 :: Int16 -> Int need ffi { x => int16_to_int(x) }
+    export from_int32 :: Int -> Int32 need ffi { x => int32_from_int(x) }
+    export to_int32 :: Int32 -> Int need ffi { x => int32_to_int(x) }
+    export from_int64 :: Int -> Int64 need ffi { x => int64_from_int(x) }
+    export to_int64 :: Int64 -> Int need ffi { x => int64_to_int(x) }
+}

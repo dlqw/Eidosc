@@ -1,0 +1,16 @@
+FloatNarrow :: module {
+
+    float16_from_float :: Float -> Float16 compiler(internal, intrinsic: "float16_from_float");
+    float16_to_float :: Float16 -> Float compiler(internal, intrinsic: "float16_to_float");
+    float32_from_float :: Float -> Float32 compiler(internal, intrinsic: "float32_from_float");
+    float32_to_float :: Float32 -> Float compiler(internal, intrinsic: "float32_to_float");
+    float64_from_float :: Float -> Float64 compiler(internal, intrinsic: "float64_from_float");
+    float64_to_float :: Float64 -> Float compiler(internal, intrinsic: "float64_to_float");
+
+    export from_float16 :: Float -> Float16 need ffi { x => float16_from_float(x) }
+    export to_float16 :: Float16 -> Float need ffi { x => float16_to_float(x) }
+    export from_float32 :: Float -> Float32 need ffi { x => float32_from_float(x) }
+    export to_float32 :: Float32 -> Float need ffi { x => float32_to_float(x) }
+    export from_float64 :: Float -> Float64 need ffi { x => float64_from_float(x) }
+    export to_float64 :: Float64 -> Float need ffi { x => float64_to_float(x) }
+}
