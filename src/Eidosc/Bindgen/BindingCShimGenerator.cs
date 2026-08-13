@@ -50,9 +50,22 @@ public sealed class BindingCShimGenerator
         return sb.ToString();
     }
 
-    private bool NeedsShim(CBindingFunction fn) =>
-        fn.Parameters.Any(parameter => NeedsShim(parameter.Type)) ||
-        NeedsShim(fn.ReturnType);
+    private bool NeedsShim(CBindingFunction fn)
+    {
+        // 与 RawBindingGenerator.CanBindFunction 保持一致：任一 struct 参数不可拆分时
+        // 整个函数不可绑定，也不生成 shim（否则会产出缺参数的坏 C 代码）。
+        foreach (var parameter in fn.Parameters)
+        {
+            if (_typeMapper.Map(parameter.Type).Category == BindingTypeCategory.StructByValue &&
+                !CanSplitStruct(parameter.Type))
+            {
+                return false;
+            }
+        }
+
+        return fn.Parameters.Any(parameter => NeedsShim(parameter.Type)) ||
+               NeedsShim(fn.ReturnType);
+    }
 
     private bool NeedsShim(CBindingType type)
     {

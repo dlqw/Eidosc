@@ -117,6 +117,8 @@ public sealed class BindingPackageGenerator
     {
         var headerPath = ResolvePath(packageDirectory, spec.Headers![0]);
         var ir = ParseHeader(headerPath, spec);
+        if (spec.Symbols is { Length: > 0 })
+            ir = RestrictSymbols(ir, spec.Symbols);
         var rawResult = new RawBindingGenerator(spec, ir).Generate();
         var wrappers = new WrapperBindingGenerator(spec, ir, rawResult.RawFunctionNames).Generate();
         var files = new List<GeneratedFile>
@@ -182,6 +184,13 @@ public sealed class BindingPackageGenerator
         }
 
         return new SimpleCHeaderParser().Parse(headerPath);
+    }
+
+    private static CHeaderIr RestrictSymbols(CHeaderIr ir, IReadOnlyList<string> symbols)
+    {
+        var allowlist = symbols.ToHashSet(StringComparer.Ordinal);
+        var functions = ir.Functions.Where(fn => allowlist.Contains(fn.Name)).ToArray();
+        return ir with { Functions = functions };
     }
 
     private static string GenerateManifest(BindingSpecDocument spec, string? generatedShim)

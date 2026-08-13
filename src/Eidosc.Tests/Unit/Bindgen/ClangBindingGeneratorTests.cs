@@ -236,6 +236,65 @@ public sealed class ClangBindingGeneratorTests
     }
 
     [Fact]
+    public void MixedSplittableAndUnsplittableStructParams_SkipsFunctionAndGeneratesNoShim()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            typedef struct Good { int x; int y; } Good;
+            typedef struct Bad { char name[32]; int n; } Bad;
+            void mixed(Good g, Bad b);
+            void only_good(Good g);
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        // mixed：可拆分的 Good + 不可拆分的 Bad → 整函数 SKIP，不产出缺参数坏绑定
+        Assert.Contains("// SKIP mixed: struct parameter 'b' contains unsplittable fields (union/array/unknown)", raw, StringComparison.Ordinal);
+        Assert.Contains("export only_good :: Int -> Int -> Unit need ffi;", raw, StringComparison.Ordinal);
+
+        var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
+        Assert.DoesNotContain("eidos_shim_mixed", shim, StringComparison.Ordinal);
+        Assert.Contains("void eidos_shim_only_good(int64_t g_x, int64_t g_y)", shim, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SymbolAllowlist_RestrictsBoundFunctions()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", "void a(void); void b(void); void c(void);\n");
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+            symbols = ["a", "c"]
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: true));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        Assert.Contains("export a :: Unit -> Unit need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export c :: Unit -> Unit need ffi;", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("export b ::", raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BindingSpecDocument_ClangFields_RoundTrip()
     {
         using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");

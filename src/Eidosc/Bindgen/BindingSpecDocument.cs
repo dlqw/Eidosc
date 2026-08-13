@@ -15,6 +15,7 @@ public sealed class BindingSpecDocument
     public string[]? IncludePaths { get; set; }
     public string[]? NativeSources { get; set; }
     public string[]? LinkerFlags { get; set; }
+    public string[]? Symbols { get; set; }
     public string? ParseMode { get; set; }
     public string[]? ClangDefines { get; set; }
     public string[]? ClangArgs { get; set; }
@@ -52,6 +53,7 @@ public sealed class BindingSpecDocument
         AppendArray("includePaths", IncludePaths);
         AppendArray("nativeSources", NativeSources);
         AppendArray("linkerFlags", LinkerFlags);
+        AppendArray("symbols", Symbols);
 
         if (!string.IsNullOrWhiteSpace(ParseMode))
             lines.Add($"parseMode = {FormatString(ParseMode!)}");
