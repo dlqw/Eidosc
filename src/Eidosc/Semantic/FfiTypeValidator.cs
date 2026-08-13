@@ -46,6 +46,10 @@ public sealed class FfiTypeValidator
         "Float64",  // Float64 → f64
         "Float32",  // Float32 → f32
         "Float16",  // Float16 → f16
+        "UInt64",   // UInt64 → i64
+        "UInt32",   // UInt32 → i32
+        "UInt16",   // UInt16 → i16
+        "UInt8",    // UInt8 → i8
         WellKnownStrings.BuiltinTypes.Cfn       // Cfn[A..., Ret] → ptr（函数指针）
     ];
 
