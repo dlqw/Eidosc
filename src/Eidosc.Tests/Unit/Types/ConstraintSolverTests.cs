@@ -12,6 +12,18 @@ public class ConstraintSolverTests
 {
     private static readonly SourceSpan TestSpan = new(new SourceLocation(0, 0, 0), 0);
 
+    [Theory]
+    [InlineData(WellKnownStrings.BuiltinTypes.UInt8)]
+    [InlineData(WellKnownStrings.BuiltinTypes.UInt16)]
+    [InlineData(WellKnownStrings.BuiltinTypes.UInt32)]
+    [InlineData(WellKnownStrings.BuiltinTypes.UInt64)]
+    public void BuiltinTraits_UnsignedIntsImplementNumOrdEq(string typeName)
+    {
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Num));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Ord));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Eq));
+    }
+
     [Fact]
     public void Solve_TupleTraitConstraint_AllElementsSatisfyTrait_Succeeds()
     {

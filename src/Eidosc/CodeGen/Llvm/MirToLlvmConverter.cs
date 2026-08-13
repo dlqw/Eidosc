@@ -1646,6 +1646,7 @@ public sealed partial class MirToLlvmConverter
     {
         var left = ConvertOperand(binOp.Left);
         var right = ConvertOperand(binOp.Right);
+        var isUnsigned = IsUnsignedIntegerType(binOp.Left.TypeId);
         var targetLocalId = TryGetTargetLocal(binOp.Target);
         var targetUsesSlot = targetLocalId is { } id && IsSlotBackedLocal(id);
 
@@ -1696,10 +1697,10 @@ public sealed partial class MirToLlvmConverter
                 {
                     BinaryOp.Eq => "eq",
                     BinaryOp.Ne => "ne",
-                    BinaryOp.Lt => "slt",
-                    BinaryOp.Le => "sle",
-                    BinaryOp.Gt => "sgt",
-                    BinaryOp.Ge => "sge",
+                    BinaryOp.Lt => isUnsigned ? "ult" : "slt",
+                    BinaryOp.Le => isUnsigned ? "ule" : "sle",
+                    BinaryOp.Gt => isUnsigned ? "ugt" : "sgt",
+                    BinaryOp.Ge => isUnsigned ? "uge" : "sge",
                     _ => "eq"
                 },
                 Left = left,
@@ -1750,8 +1751,8 @@ public sealed partial class MirToLlvmConverter
             BinaryOp.Add => left.Type is LlvmFloatType ? "fadd" : "add",
             BinaryOp.Sub => left.Type is LlvmFloatType ? "fsub" : "sub",
             BinaryOp.Mul => left.Type is LlvmFloatType ? "fmul" : "mul",
-            BinaryOp.Div => left.Type is LlvmFloatType ? "fdiv" : "sdiv",
-            BinaryOp.Mod => left.Type is LlvmFloatType ? "frem" : "srem",
+            BinaryOp.Div => left.Type is LlvmFloatType ? "fdiv" : isUnsigned ? "udiv" : "sdiv",
+            BinaryOp.Mod => left.Type is LlvmFloatType ? "frem" : isUnsigned ? "urem" : "srem",
             BinaryOp.And => "and",
             BinaryOp.Or => "or",
             _ => "add"
@@ -1807,6 +1808,15 @@ public sealed partial class MirToLlvmConverter
         }
 
         return llvmBinOp;
+    }
+
+    private static bool IsUnsignedIntegerType(TypeId typeId)
+    {
+        return typeId.Value is
+            BaseTypes.UInt64Id or
+            BaseTypes.UInt32Id or
+            BaseTypes.UInt16Id or
+            BaseTypes.UInt8Id;
     }
 
     private (LlvmValue Left, LlvmValue Right) NormalizeComparisonOperands(
