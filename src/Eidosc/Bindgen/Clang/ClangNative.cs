@@ -308,6 +308,12 @@ internal delegate ClangString ClangGetTokenSpellingFn(IntPtr translationUnit, Cl
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void ClangDisposeTokensFn(IntPtr translationUnit, IntPtr tokens, uint numTokens);
 
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangType ClangGetResultTypeFn(ClangType type);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangType ClangGetArgTypeFn(ClangType type, uint index);
+
 internal enum ClangEvalResultKind : int
 {
     UnExposed = 0,
@@ -374,6 +380,8 @@ internal sealed class ClangApi
         GetTokenKind = GetExport<ClangGetTokenKindFn>(library, "clang_getTokenKind");
         GetTokenSpelling = GetExport<ClangGetTokenSpellingFn>(library, "clang_getTokenSpelling");
         DisposeTokens = GetExport<ClangDisposeTokensFn>(library, "clang_disposeTokens");
+        GetResultType = GetExport<ClangGetResultTypeFn>(library, "clang_getResultType");
+        GetArgType = GetExport<ClangGetArgTypeFn>(library, "clang_getArgType");
     }
 
     internal string LibraryPath { get; }
@@ -424,6 +432,8 @@ internal sealed class ClangApi
     internal ClangGetTokenKindFn GetTokenKind { get; }
     internal ClangGetTokenSpellingFn GetTokenSpelling { get; }
     internal ClangDisposeTokensFn DisposeTokens { get; }
+    internal ClangGetResultTypeFn GetResultType { get; }
+    internal ClangGetArgTypeFn GetArgType { get; }
 
     internal string GetString(ClangString str)
     {

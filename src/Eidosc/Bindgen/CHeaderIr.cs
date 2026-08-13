@@ -22,7 +22,9 @@ public sealed record CBindingType(
     bool IsConst = false,
     int PointerDepth = 0,
     int FunctionPointerArity = 0,
-    int ArraySize = 0);
+    int ArraySize = 0,
+    CBindingType? FunctionPointerReturnType = null,
+    IReadOnlyList<CBindingType>? FunctionPointerParameterTypes = null);
 
 public sealed record CBindingParameter(string Name, CBindingType Type);
 
@@ -43,7 +45,7 @@ public sealed record CBindingStruct(string Name, IReadOnlyList<CBindingField> Fi
 
 public sealed record CBindingUnion(string Name, IReadOnlyList<CBindingField> Fields, int Size = 0, int Alignment = 0);
 
-public sealed record CBindingTypedef(string Name, string Underlying, CBindingTypeKind UnderlyingKind);
+public sealed record CBindingTypedef(string Name, string Underlying, CBindingTypeKind UnderlyingKind, CBindingType? UnderlyingType = null);
 
 public sealed record CBindingConstant(string Name, string Value, bool IsString);
 

@@ -18,22 +18,36 @@ public sealed record BindingTypeMapping(
 
 public sealed class BindingTypeMapper
 {
+    private const int MaxTypedefDepth = 8;
+
     private readonly HashSet<string> _structNames;
     private readonly HashSet<string> _enumNames;
+    private readonly IReadOnlyDictionary<string, CBindingTypedef> _typedefs;
 
     public BindingTypeMapper(CHeaderIr ir)
     {
         _structNames = ir.Structs.Select(static st => st.Name).ToHashSet(StringComparer.Ordinal);
         _enumNames = ir.Enums.Select(static en => en.Name).ToHashSet(StringComparer.Ordinal);
+        _typedefs = (ir.TypedefsSafe ?? [])
+            .ToDictionary(static t => t.Name, StringComparer.Ordinal);
     }
 
-    public BindingTypeMapping Map(CBindingType type)
+    public BindingTypeMapping Map(CBindingType type) => Map(type, 0);
+
+    private BindingTypeMapping Map(CBindingType type, int depth)
     {
+        if (depth > MaxTypedefDepth)
+            return new("RawPtr", BindingTypeCategory.Unsupported, $"typedef chain too deep at: {type.Name}");
+
         if (type.Kind == CBindingTypeKind.Void)
             return new("Unit", BindingTypeCategory.Direct);
 
-        if (type.Kind is CBindingTypeKind.Array or CBindingTypeKind.FunctionPointer)
-            return new("RawPtr", BindingTypeCategory.Unsupported, "array or function pointer");
+        if (type.Kind == CBindingTypeKind.FunctionPointer)
+            return MapFunctionPointer(type);
+
+        if (type.Kind is CBindingTypeKind.Array or CBindingTypeKind.Union)
+            return new("RawPtr", BindingTypeCategory.Unsupported,
+                type.Kind == CBindingTypeKind.Union ? "union" : "array");
 
         if (type.Kind == CBindingTypeKind.Pointer || type.PointerDepth > 0)
             return new("RawPtr", BindingTypeCategory.RawPtr);
@@ -43,6 +57,10 @@ public sealed class BindingTypeMapper
 
         if (type.Kind == CBindingTypeKind.Struct || _structNames.Contains(type.Name))
             return new("RawPtr", BindingTypeCategory.StructByValue, $"struct by value: {type.Name}");
+
+        // typedef 链解析：typedef 名未直接命中 struct/enum 表时，按底层类型递归映射。
+        if (type.Kind == CBindingTypeKind.Typedef && _typedefs.TryGetValue(type.Name, out var typedef))
+            return Map(typedef.UnderlyingType ?? new CBindingType(typedef.UnderlyingKind, typedef.Underlying, typedef.Underlying), depth + 1);
 
         return type.Name switch
         {
@@ -56,6 +74,37 @@ public sealed class BindingTypeMapper
                 "size_t" or "uintptr_t" => new("Int64", BindingTypeCategory.Direct),
             _ => new("RawPtr", BindingTypeCategory.Unsupported, $"unknown type: {type.Spelling}")
         };
+    }
+
+    /// <summary>
+    /// 函数指针 → Eidos <c>Cfn[参数..., 返回]</c>（1..6 参、零捕获）。
+    /// 超出 Cfn 能力或包含不可映射类型的回调降级为 Unsupported（由 shim 兜底）。
+    /// </summary>
+    private BindingTypeMapping MapFunctionPointer(CBindingType type)
+    {
+        if (type.FunctionPointerArity is < 1 or > 6)
+            return new("RawPtr", BindingTypeCategory.Unsupported, $"callback arity {type.FunctionPointerArity} exceeds Cfn 1..6");
+
+        var parameterTypes = type.FunctionPointerParameterTypes;
+        var returnType = type.FunctionPointerReturnType;
+        if (parameterTypes == null || returnType == null)
+            return new("RawPtr", BindingTypeCategory.Unsupported, "function pointer signature unavailable");
+
+        var parts = new List<string>(parameterTypes.Count + 1);
+        foreach (var parameterType in parameterTypes)
+        {
+            var mapping = Map(parameterType);
+            if (mapping.Category is not (BindingTypeCategory.Direct or BindingTypeCategory.EnumAsInt or BindingTypeCategory.RawPtr))
+                return new("RawPtr", BindingTypeCategory.Unsupported, $"unsupported callback parameter {parameterType.Spelling}");
+            parts.Add(mapping.EidosType);
+        }
+
+        var returnMapping = Map(returnType);
+        if (returnMapping.Category is not (BindingTypeCategory.Direct or BindingTypeCategory.EnumAsInt or BindingTypeCategory.RawPtr))
+            return new("RawPtr", BindingTypeCategory.Unsupported, $"unsupported callback return {returnType.Spelling}");
+        parts.Add(returnMapping.EidosType);
+
+        return new($"Cfn[{string.Join(", ", parts)}]", BindingTypeCategory.Direct, $"callback: {type.Spelling}");
     }
 
     public static string ToEidosFunctionName(string cName)

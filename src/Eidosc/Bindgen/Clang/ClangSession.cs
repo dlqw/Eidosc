@@ -31,7 +31,8 @@ internal sealed class ClangSession : IDisposable
         string headerPath,
         IReadOnlyList<string>? includePaths = null,
         IReadOnlyList<string>? defines = null,
-        bool skipFunctionBodies = false)
+        bool skipFunctionBodies = false,
+        IReadOnlyList<string>? extraArgs = null)
     {
         if (_translationUnit != IntPtr.Zero)
         {
@@ -40,6 +41,8 @@ internal sealed class ClangSession : IDisposable
         }
 
         var arguments = new List<string> { "-x", "c" };
+        if (extraArgs != null)
+            arguments.AddRange(extraArgs);
         if (defines != null)
         {
             foreach (var define in defines)

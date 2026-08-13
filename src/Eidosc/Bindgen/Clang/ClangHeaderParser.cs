@@ -27,10 +27,11 @@ internal sealed class ClangHeaderParser
     internal ClangHeaderParseResult Parse(
         string headerPath,
         IReadOnlyList<string>? includePaths = null,
-        IReadOnlyList<string>? defines = null)
+        IReadOnlyList<string>? defines = null,
+        IReadOnlyList<string>? clangArgs = null)
     {
         using var session = new ClangSession(_api);
-        session.Parse(headerPath, includePaths, defines);
+        session.Parse(headerPath, includePaths, defines, skipFunctionBodies: false, extraArgs: clangArgs);
 
         var errors = session.Diagnostics
             .Where(static d => d.StartsWith("Error", StringComparison.Ordinal) || d.StartsWith("Fatal", StringComparison.Ordinal))
@@ -180,7 +181,8 @@ internal sealed class ClangHeaderParser
         return new CBindingTypedef(
             session.GetCursorSpelling(cursor),
             converted.Spelling,
-            converted.Kind);
+            converted.Kind,
+            converted);
     }
 
     private CBindingGlobal ExtractGlobal(ClangSession session, ClangCursor cursor) =>
@@ -338,15 +340,7 @@ internal sealed class ClangHeaderParser
 
                 // int (*fn)(int)：参数类型是 Pointer，其 pointee 是函数类型 → 归一为 FunctionPointer。
                 if (pointeeKind is ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto)
-                {
-                    var arity = _api.GetNumArgTypes(pointee);
-                    return new CBindingType(
-                        CBindingTypeKind.FunctionPointer,
-                        "function",
-                        spelling,
-                        IsConst: _api.IsConstQualifiedType(pointee) != 0,
-                        FunctionPointerArity: arity < 0 ? 0 : arity);
-                }
+                    return ConvertFunctionPointerType(session, pointee, spelling);
 
                 var pointerDepth = spelling.Count(static ch => ch == '*');
                 var baseName = spelling.Replace("*", "", StringComparison.Ordinal).Trim();
@@ -376,10 +370,7 @@ internal sealed class ClangHeaderParser
 
             case ClangTypeKind.FunctionProto:
             case ClangTypeKind.FunctionNoProto:
-            {
-                var arity = _api.GetNumArgTypes(normalized);
-                return new CBindingType(CBindingTypeKind.FunctionPointer, "function", spelling, IsConst: isConst, FunctionPointerArity: arity < 0 ? 0 : arity);
-            }
+                return ConvertFunctionPointerType(session, normalized, spelling);
 
             case ClangTypeKind.ConstantArray:
             case ClangTypeKind.IncompleteArray:
@@ -392,6 +383,27 @@ internal sealed class ClangHeaderParser
             default:
                 return new CBindingType(CBindingTypeKind.Unknown, spelling, spelling, IsConst: isConst);
         }
+    }
+
+    /// <summary>
+    /// 函数类型 → FunctionPointer 的 <see cref="CBindingType"/>，携带返回类型与参数类型
+    /// （供生成器映射为 Eidos <c>Cfn[...]</c>）。
+    /// </summary>
+    private CBindingType ConvertFunctionPointerType(ClangSession session, ClangType functionType, string spelling)
+    {
+        var arity = _api.GetNumArgTypes(functionType);
+        var parameterTypes = new List<CBindingType>();
+        for (var i = 0; i < arity && i < 16; i++)
+            parameterTypes.Add(ConvertType(session, _api.GetArgType(functionType, (uint)i)));
+
+        return new CBindingType(
+            CBindingTypeKind.FunctionPointer,
+            "function",
+            spelling,
+            IsConst: _api.IsConstQualifiedType(functionType) != 0,
+            FunctionPointerArity: arity < 0 ? 0 : arity,
+            FunctionPointerReturnType: ConvertType(session, _api.GetResultType(functionType)),
+            FunctionPointerParameterTypes: parameterTypes);
     }
 
     private ClangType NormalizeType(ClangType type)
@@ -412,7 +424,8 @@ internal sealed class ClangHeaderParser
     }
 
     /// <summary>
-    /// 只收集目标头文件自身定义的顶层声明，避免 include 展开带入系统头。
+    /// 只收集目标头文件自身定义的顶层声明，避免 include 展开带入系统头与内置宏
+    /// （内置/预定义宏没有源文件位置，file 为 null，必须跳过）。
     /// 与现有 C extractor（visitor.c is_from_header）的基线名规则一致；
     /// 项目 include 头（如 raylib 多文件）的收编规则在 M5 接线时细化。
     /// </summary>
@@ -420,11 +433,11 @@ internal sealed class ClangHeaderParser
     {
         _api.GetFileLocation(_api.GetCursorLocation(cursor), out var file, out _, out _, out _);
         if (file == IntPtr.Zero)
-            return true;
+            return false;
 
         var fileName = _api.GetString(_api.GetFileName(file));
         if (string.IsNullOrEmpty(fileName))
-            return true;
+            return false;
 
         var headerBase = Path.GetFileName(headerPath);
         var fileBase = Path.GetFileName(fileName);

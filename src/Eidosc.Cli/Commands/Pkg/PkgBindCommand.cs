@@ -26,7 +26,10 @@ public static class PkgBindCommand
             new Option<string[]>("--header", "C header to bind.") { IsRequired = true },
             new Option<string[]>("--include", "C include path."),
             new Option<string[]>("--native-source", "Native source file to compile with the binding package."),
-            new Option<string[]>("--linker-flag", "Native linker flag.")
+            new Option<string[]>("--linker-flag", "Native linker flag."),
+            new Option<string>("--parse-mode", "Header parser: \"simple\" (regex, default) or \"clang\" (in-process libclang)."),
+            new Option<string[]>("--clang-define", "Clang preprocessor define, e.g. RLAPI= (clang mode)."),
+            new Option<string[]>("--clang-arg", "Extra clang argument, e.g. -std=c11 (clang mode).")
         };
 
         command.Handler = CommandHandler.Create<InitOptions>(ExecuteInit);
@@ -56,6 +59,9 @@ public static class PkgBindCommand
         public string[] Include { get; set; } = [];
         public string[] NativeSource { get; set; } = [];
         public string[] LinkerFlag { get; set; } = [];
+        public string? ParseMode { get; set; }
+        public string[] ClangDefine { get; set; } = [];
+        public string[] ClangArg { get; set; } = [];
     }
 
     private sealed class GenerateOptions
@@ -77,7 +83,10 @@ public static class PkgBindCommand
                 options.Header,
                 options.Include,
                 options.NativeSource,
-                options.LinkerFlag);
+                options.LinkerFlag,
+                options.ParseMode,
+                options.ClangDefine,
+                options.ClangArg);
             Console.WriteLine($"Created binding package skeleton: {Path.GetFullPath(options.OutDir)}");
             return 0;
         }
