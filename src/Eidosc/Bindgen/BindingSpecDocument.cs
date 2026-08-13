@@ -15,6 +15,11 @@ public sealed class BindingSpecDocument
     public string[]? IncludePaths { get; set; }
     public string[]? NativeSources { get; set; }
     public string[]? LinkerFlags { get; set; }
+    public string[]? Symbols { get; set; }
+    public string? ParseMode { get; set; }
+    public string[]? ClangDefines { get; set; }
+    public string[]? ClangArgs { get; set; }
+    public BindingOptions? Options { get; set; }
     public BindingModuleRule[]? Modules { get; set; }
     public BindingWrapperRule[]? Wrappers { get; set; }
     public BindingEffectRule[]? Effects { get; set; }
@@ -48,6 +53,20 @@ public sealed class BindingSpecDocument
         AppendArray("includePaths", IncludePaths);
         AppendArray("nativeSources", NativeSources);
         AppendArray("linkerFlags", LinkerFlags);
+        AppendArray("symbols", Symbols);
+
+        if (!string.IsNullOrWhiteSpace(ParseMode))
+            lines.Add($"parseMode = {FormatString(ParseMode!)}");
+        AppendArray("clangDefines", ClangDefines);
+        AppendArray("clangArgs", ClangArgs);
+        if (Options != null)
+        {
+            lines.Add("[options]");
+            if (Options.EnumsAsConstants.HasValue)
+                lines.Add($"enumsAsConstants = {Options.EnumsAsConstants.Value.ToString().ToLowerInvariant()}");
+            if (Options.WrapStrings.HasValue)
+                lines.Add($"wrapStrings = {Options.WrapStrings.Value.ToString().ToLowerInvariant()}");
+        }
 
         foreach (var module in Modules ?? [])
         {
@@ -112,6 +131,11 @@ public sealed class BindingSpecDocument
             throw new InvalidOperationException($"{sourceName}: bindgen library is required.");
         if (Headers is not { Length: > 0 })
             throw new InvalidOperationException($"{sourceName}: at least one bindgen header is required.");
+        if (!string.IsNullOrWhiteSpace(ParseMode) &&
+            ParseMode is not ("clang" or "simple"))
+        {
+            throw new InvalidOperationException($"{sourceName}: parseMode must be \"clang\" or \"simple\".");
+        }
 
         var moduleNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var module in Modules ?? [])
@@ -187,6 +211,12 @@ public sealed class BindingModuleRule
     public string? Name { get; set; }
     public string? Prefix { get; set; }
     public string[]? Symbols { get; set; }
+}
+
+public sealed class BindingOptions
+{
+    public bool? EnumsAsConstants { get; set; }
+    public bool? WrapStrings { get; set; }
 }
 
 public sealed class BindingWrapperRule

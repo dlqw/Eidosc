@@ -85,7 +85,7 @@ public sealed class BindingPackageGeneratorTests
         var rawPath = Path.Combine(tempDir, "src", "raw.eidos");
         var raw = File.ReadAllText(rawPath);
         Assert.Contains("""@[extern(c, name: "demo_init")]""", raw, StringComparison.Ordinal);
-        Assert.Contains("""export demo_init :: Int32 -> Int32 -> Unit need ffi;""", raw, StringComparison.Ordinal);
+        Assert.Contains("""export demo_init :: Int -> Int -> Unit need ffi;""", raw, StringComparison.Ordinal);
         Assert.Contains("export demo_a :: Int = 1;", raw, StringComparison.Ordinal);
         Assert.Contains("@[repr(c)]", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("link \"demo\"", raw, StringComparison.Ordinal);
@@ -93,7 +93,7 @@ public sealed class BindingPackageGeneratorTests
         var wrapperPath = Path.Combine(tempDir, "src", "window.eidos");
         var wrapper = File.ReadAllText(wrapperPath);
         Assert.Contains("Window :: module", wrapper, StringComparison.Ordinal);
-        Assert.Contains("export init :: Int32 -> Int32 -> Unit", wrapper, StringComparison.Ordinal);
+        Assert.Contains("export init :: Int -> Int -> Unit", wrapper, StringComparison.Ordinal);
         Assert.Contains("Raw.demo_init(arg0, arg1)", wrapper, StringComparison.Ordinal);
         AssertGeneratedSourcePassesDenyStyle(rawPath);
         AssertGeneratedSourcePassesDenyStyle(wrapperPath);
@@ -121,7 +121,7 @@ public sealed class BindingPackageGeneratorTests
 
         Assert.True(result.Success, string.Join("; ", result.Diagnostics));
         var wrapper = File.ReadAllText(Path.Combine(tempDir, "src", "window.eidos"));
-        Assert.Contains("export should_close :: Unit -> Int32", wrapper, StringComparison.Ordinal);
+        Assert.Contains("export should_close :: Unit -> Int", wrapper, StringComparison.Ordinal);
         Assert.Contains("_ => Raw.demo_should_close()", wrapper, StringComparison.Ordinal);
         Assert.DoesNotContain("Raw.demo_should_close(())", wrapper, StringComparison.Ordinal);
     }

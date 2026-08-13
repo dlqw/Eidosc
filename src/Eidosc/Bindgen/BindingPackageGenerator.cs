@@ -1,3 +1,4 @@
+using Eidosc.Bindgen.Clang;
 using Eidosc.ProjectSystem;
 using Tomlyn;
 
@@ -70,7 +71,10 @@ public sealed class BindingPackageGenerator
         IReadOnlyList<string> headers,
         IReadOnlyList<string> includePaths,
         IReadOnlyList<string> nativeSources,
-        IReadOnlyList<string> linkerFlags)
+        IReadOnlyList<string> linkerFlags,
+        string? parseMode = null,
+        IReadOnlyList<string>? clangDefines = null,
+        IReadOnlyList<string>? clangArgs = null)
     {
         if (headers.Count == 0)
             throw new InvalidOperationException("pkg bind init requires at least one --header.");
@@ -89,6 +93,9 @@ public sealed class BindingPackageGenerator
             IncludePaths = includePaths.Select(path => ToPackageRelativePath(packageDirectory, path)).ToArray(),
             NativeSources = nativeSources.Select(path => ToPackageRelativePath(packageDirectory, path)).ToArray(),
             LinkerFlags = linkerFlags.ToArray(),
+            ParseMode = parseMode,
+            ClangDefines = clangDefines?.ToArray(),
+            ClangArgs = clangArgs?.ToArray(),
             Modules =
             [
                 new BindingModuleRule
@@ -109,7 +116,9 @@ public sealed class BindingPackageGenerator
         bool noShim)
     {
         var headerPath = ResolvePath(packageDirectory, spec.Headers![0]);
-        var ir = new SimpleCHeaderParser().Parse(headerPath);
+        var ir = ParseHeader(headerPath, spec);
+        if (spec.Symbols is { Length: > 0 })
+            ir = RestrictSymbols(ir, spec.Symbols);
         var rawResult = new RawBindingGenerator(spec, ir).Generate();
         var wrappers = new WrapperBindingGenerator(spec, ir, rawResult.RawFunctionNames).Generate();
         var files = new List<GeneratedFile>
@@ -151,6 +160,37 @@ public sealed class BindingPackageGenerator
                 ? $"native/{spec.Library}_shim.c"
                 : null;
         }
+    }
+
+    private static CHeaderIr ParseHeader(string headerPath, BindingSpecDocument spec)
+    {
+        if (string.Equals(spec.ParseMode, "clang", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!ClangNative.TryLoad(out var loadError, out var api))
+                throw new InvalidOperationException($"clang parse mode requires libclang: {loadError}");
+
+            var result = new ClangHeaderParser(api!).Parse(
+                headerPath,
+                spec.IncludePaths,
+                spec.ClangDefines,
+                spec.ClangArgs);
+            if (result.Errors.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"clang header parse failed:{Environment.NewLine}{string.Join(Environment.NewLine, result.Errors)}");
+            }
+
+            return result.Ir!;
+        }
+
+        return new SimpleCHeaderParser().Parse(headerPath);
+    }
+
+    private static CHeaderIr RestrictSymbols(CHeaderIr ir, IReadOnlyList<string> symbols)
+    {
+        var allowlist = symbols.ToHashSet(StringComparer.Ordinal);
+        var functions = ir.Functions.Where(fn => allowlist.Contains(fn.Name)).ToArray();
+        return ir with { Functions = functions };
     }
 
     private static string GenerateManifest(BindingSpecDocument spec, string? generatedShim)
