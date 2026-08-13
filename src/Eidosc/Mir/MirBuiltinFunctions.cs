@@ -15,6 +15,8 @@ internal static class MirBuiltinFunctions
 
     public static bool IsMathIntrinsicName(string name) => IntrinsicRegistry.IsMathIntrinsicName(name);
 
+    public static bool IsUIntConversionIntrinsicName(string name) => IntrinsicRegistry.IsUIntConversionIntrinsicName(name);
+
     public static bool IsPointerLoadIntrinsicName(string name) => IntrinsicRegistry.IsPointerLoadIntrinsicName(name);
 
     public static bool IsPointerStoreIntrinsicName(string name) => IntrinsicRegistry.IsPointerStoreIntrinsicName(name);
