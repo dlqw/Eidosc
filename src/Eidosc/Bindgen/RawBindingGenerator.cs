@@ -199,14 +199,27 @@ public sealed class RawBindingGenerator
             var mapping = _typeMapper.Map(parameter.Type);
             if (mapping.Category == BindingTypeCategory.Unsupported)
                 return (false, mapping.Note ?? $"unsupported parameter type {parameter.Type.Spelling}");
+            if (mapping.Category == BindingTypeCategory.StructByValue &&
+                !_typeMapper.TryFlattenStructFields(parameter.Type, out _))
+            {
+                return (false, $"struct parameter '{parameter.Name}' contains unsplittable fields (union/array/unknown)");
+            }
         }
 
         return (true, "");
     }
 
     private bool NeedsShim(CBindingFunction fn) =>
-        fn.Parameters.Any(parameter => _typeMapper.Map(parameter.Type).Category == BindingTypeCategory.StructByValue) ||
-        _typeMapper.Map(fn.ReturnType).Category == BindingTypeCategory.StructByValue;
+        fn.Parameters.Any(parameter => NeedsShim(parameter.Type)) ||
+        NeedsShim(fn.ReturnType);
+
+    private bool NeedsShim(CBindingType type)
+    {
+        var mapping = _typeMapper.Map(type);
+        return mapping.Category == BindingTypeCategory.StructByValue ||
+               type.Kind is CBindingTypeKind.Primitive or CBindingTypeKind.Enum && type.Size is not (0 or 8) &&
+               !(type.Kind == CBindingTypeKind.Primitive && type.Name is "bool" or "_Bool");
+    }
 
     private string FormatSignature(CBindingFunction fn, bool useShimTypes)
     {
@@ -214,14 +227,23 @@ public sealed class RawBindingGenerator
         if (fn.Parameters.Count == 0)
             return $"Unit -> {returnType}";
 
-        var parameterTypes = fn.Parameters
-            .Select(parameter =>
+        var parameterTypes = new List<string>();
+        foreach (var parameter in fn.Parameters)
+        {
+            var mapping = _typeMapper.Map(parameter.Type);
+            if (useShimTypes && mapping.Category == BindingTypeCategory.StructByValue)
             {
-                var mapping = _typeMapper.Map(parameter.Type);
-                return useShimTypes && mapping.Category == BindingTypeCategory.StructByValue
-                    ? "RawPtr"
-                    : mapping.EidosType;
-            });
+                if (_typeMapper.TryFlattenStructFields(parameter.Type, out var leaves))
+                {
+                    foreach (var leaf in leaves)
+                        parameterTypes.Add(_typeMapper.Map(leaf).EidosType);
+                    continue;
+                }
+            }
+
+            parameterTypes.Add(mapping.EidosType);
+        }
+
         return $"{string.Join(" -> ", parameterTypes)} -> {returnType}";
     }
 }

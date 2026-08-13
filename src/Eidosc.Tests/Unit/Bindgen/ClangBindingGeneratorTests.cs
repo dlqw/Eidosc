@@ -69,7 +69,7 @@ public sealed class ClangBindingGeneratorTests
             parseMode = "clang"
             """);
 
-        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: true));
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
 
         Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
         var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
@@ -85,14 +85,19 @@ public sealed class ClangBindingGeneratorTests
         // union / 全局 → 注释收编
         Assert.Contains("// SKIP union Value", raw, StringComparison.Ordinal);
         Assert.Contains("// SKIP global global_counter", raw, StringComparison.Ordinal);
-        // struct 按值参数 → 自动 shim 绑定（int 窄化 → Int）
+        // struct 按值参数 → 字段拆分 shim（int 字段窄化 → Int）
         Assert.Contains("@[extern(c, name: \"eidos_shim_demo_init\")]", raw, StringComparison.Ordinal);
-        Assert.Contains("export demo_init :: RawPtr -> Int -> Int need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export demo_init :: Int -> Int -> Int -> Int need ffi;", raw, StringComparison.Ordinal);
         // 函数指针 → Cfn
         Assert.Contains("export apply :: Cfn[Int, Int] -> Int -> Int need ffi;", raw, StringComparison.Ordinal);
         // 内置/预定义宏（无源文件位置）不得进入生成物
         Assert.DoesNotContain("__llvm__", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("__clang_major__", raw, StringComparison.Ordinal);
+
+        // 自动 shim：字段拆分 + compound literal 组装
+        var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
+        Assert.Contains("int64_t eidos_shim_demo_init(int64_t p_x, int64_t p_y, int64_t width)", shim, StringComparison.Ordinal);
+        Assert.Contains("return (int64_t)demo_init((struct Point){ (int)p_x, (int)p_y }, (int)width);", shim, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -166,6 +171,68 @@ public sealed class ClangBindingGeneratorTests
         Assert.Contains("return (double)scale((float)f);", shim, StringComparison.Ordinal);
         // direct64 不生成 shim
         Assert.DoesNotContain("eidos_shim_direct64", shim, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StructParams_WithFloatsAndNestedStructs_SplitRecursively()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            typedef struct Vector2 { float x; float y; } Vector2;
+            typedef struct Camera2D { Vector2 offset; float rotation; } Camera2D;
+            void draw_vec(Vector2 v, float scale);
+            void begin2d(Camera2D cam);
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        Assert.Contains("export draw_vec :: Float -> Float -> Float -> Unit need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export begin2d :: Float -> Float -> Float -> Unit need ffi;", raw, StringComparison.Ordinal);
+
+        var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
+        Assert.Contains("void eidos_shim_draw_vec(double v_x, double v_y, double scale)", shim, StringComparison.Ordinal);
+        Assert.Contains("    draw_vec((struct Vector2){ (float)v_x, (float)v_y }, (float)scale);", shim, StringComparison.Ordinal);
+        // 嵌套 struct 递归拆分
+        Assert.Contains("void eidos_shim_begin2d(double cam_offset_x, double cam_offset_y, double cam_rotation)", shim, StringComparison.Ordinal);
+        Assert.Contains("    begin2d((struct Camera2D){ (struct Vector2){ (float)cam_offset_x, (float)cam_offset_y }, (float)cam_rotation });", shim, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StructParams_WithUnionField_Skipped()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            union Value { int i; float f; };
+            typedef struct Box { union Value v; int size; } Box;
+            int box_area(Box b);
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: true));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        Assert.Contains("// SKIP box_area: struct parameter 'b' contains unsplittable fields (union/array/unknown)", raw, StringComparison.Ordinal);
     }
 
     [Fact]
