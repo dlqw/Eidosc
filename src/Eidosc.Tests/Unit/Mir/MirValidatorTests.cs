@@ -699,6 +699,57 @@ public sealed partial class MirValidatorTests
                           diagnostic.Notes.Contains("role: function return type"));
     }
 
+    [Theory]
+    [InlineData(BaseTypes.Int64Id)]
+    [InlineData(BaseTypes.Int32Id)]
+    [InlineData(BaseTypes.Int16Id)]
+    [InlineData(BaseTypes.Int8Id)]
+    public void Validate_NarrowIntScalars_AreAcceptedAtBackendBoundary(int typeIdValue)
+    {
+        var typeId = new TypeId(typeIdValue);
+        var module = CreateSingleBlockModule(
+            typeId,
+            [],
+            new MirReturn
+            {
+                Value = new MirConstant
+                {
+                    TypeId = typeId,
+                    Value = new MirConstantValue.IntValue(0)
+                }
+            });
+
+        var validator = new MirValidator();
+
+        Assert.True(validator.Validate(module));
+        Assert.DoesNotContain(validator.Diagnostics, diagnostic => diagnostic.Code == MirValidator.UnknownTypeIdCode);
+    }
+
+    [Theory]
+    [InlineData(BaseTypes.Float64Id)]
+    [InlineData(BaseTypes.Float32Id)]
+    [InlineData(BaseTypes.Float16Id)]
+    public void Validate_NarrowFloatScalars_AreAcceptedAtBackendBoundary(int typeIdValue)
+    {
+        var typeId = new TypeId(typeIdValue);
+        var module = CreateSingleBlockModule(
+            typeId,
+            [],
+            new MirReturn
+            {
+                Value = new MirConstant
+                {
+                    TypeId = typeId,
+                    Value = new MirConstantValue.FloatValue(0.0)
+                }
+            });
+
+        var validator = new MirValidator();
+
+        Assert.True(validator.Validate(module));
+        Assert.DoesNotContain(validator.Diagnostics, diagnostic => diagnostic.Code == MirValidator.UnknownTypeIdCode);
+    }
+
     [Fact]
     public void Validate_MissingFunctionReturnType_ReportsBackendBoundaryDiagnostic()
     {

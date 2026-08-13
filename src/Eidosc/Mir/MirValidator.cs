@@ -1237,7 +1237,14 @@ public sealed class MirValidator
     {
         return typeId.Value is
             BaseTypes.IntId or
+            BaseTypes.Int64Id or
+            BaseTypes.Int32Id or
+            BaseTypes.Int16Id or
+            BaseTypes.Int8Id or
             BaseTypes.FloatId or
+            BaseTypes.Float64Id or
+            BaseTypes.Float32Id or
+            BaseTypes.Float16Id or
             BaseTypes.BoolId or
             BaseTypes.StringId or
             BaseTypes.CharId or
