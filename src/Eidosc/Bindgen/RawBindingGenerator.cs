@@ -59,19 +59,43 @@ public sealed class RawBindingGenerator
         foreach (var st in _ir.Structs)
         {
             if (st.Fields.Count == 0)
+            {
+                sb.AppendLine($"    // SKIP struct {st.Name}: no fields (incomplete or forward declaration)");
                 continue;
+            }
 
-            usedNames.Add(st.Name);
-            sb.AppendLine("    @[repr(c)]");
-            sb.AppendLine($"    export {st.Name} :: type {{");
+            if (BindingTypeMapper.IsEidosKeyword(st.Name))
+            {
+                sb.AppendLine($"    // SKIP struct {st.Name}: name collides with an Eidos keyword");
+                continue;
+            }
+
+            var fieldNames = new HashSet<string>(StringComparer.Ordinal);
+            var emittedFields = new List<string>();
             foreach (var field in st.Fields)
             {
                 var mapping = _typeMapper.Map(field.Type);
                 if (mapping.Category == BindingTypeCategory.Unsupported)
                     continue;
 
-                sb.AppendLine($"        {BindingTypeMapper.ToEidosFunctionName(field.Name)} :: {mapping.EidosType},");
+                var fieldName = BindingTypeMapper.ToEidosFunctionName(field.Name);
+                if (!fieldNames.Add(fieldName))
+                    continue;
+
+                emittedFields.Add($"        {fieldName} :: {mapping.EidosType},");
             }
+
+            if (emittedFields.Count == 0)
+            {
+                sb.AppendLine($"    // SKIP struct {st.Name}: no FFI-safe fields; use pointer-based shims");
+                continue;
+            }
+
+            usedNames.Add(st.Name);
+            sb.AppendLine("    @[repr(c)]");
+            sb.AppendLine($"    export {st.Name} :: type {{");
+            foreach (var field in emittedFields)
+                sb.AppendLine(field);
 
             sb.AppendLine("    }");
             sb.AppendLine();
