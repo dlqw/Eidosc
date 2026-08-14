@@ -1910,6 +1910,7 @@ public sealed partial class NameResolver
             "operator.prepend" => CompilerSemanticRole.Prepend,
             "operator.append_last.singleton" => CompilerSemanticRole.AppendLastSingleton,
             "operator.append_last.append" => CompilerSemanticRole.AppendLastAppend,
+            "sequence.head" => CompilerSemanticRole.SequenceHead,
             "sequence.take" => CompilerSemanticRole.SequenceTake,
             "sequence.map" => CompilerSemanticRole.SequenceMap,
             "sequence.filter" => CompilerSemanticRole.SequenceFilter,
@@ -1926,6 +1927,7 @@ public sealed partial class NameResolver
             "sequence.partition" => CompilerSemanticRole.SequencePartition,
             "sequence.reverse" => CompilerSemanticRole.SequenceReverse,
             "sequence.for_each" => CompilerSemanticRole.SequenceForEach,
+            "sequence.builder.freeze" => CompilerSemanticRole.SequenceBuilderFreeze,
             _ => ReportUnknownCompilerSemanticRole(role, declaration.Span)
         };
     }

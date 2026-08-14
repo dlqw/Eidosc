@@ -29,8 +29,9 @@ public sealed class ReuseHints
 /// <summary>
 /// Reuse 分析器 —— 识别 drop-then-alloc 模式。
 ///
-/// Phase 1: 块内配对（前向扫描，维护可用复用槽栈）
-/// Phase 2: 跨块配对（数据流分析传播未配对 drop 到后继块）
+/// 块内和跨块使用同一前向 must-dataflow：只有一个 drop 槽在到达构造器的
+/// 每条控制流路径上都可用时，才允许跨基本块复用。分支独占的构造器可以
+/// 共享同一上游槽；不同路径各自产生的槽不会在 join 处被错误合并。
 ///
 /// 已被 Perceus 标记为 OmitDrop 的 drop 不参与复用（no-op 无内存可复用）。
 /// </summary>
@@ -59,211 +60,171 @@ public sealed class ReuseAnalyzer
         Hints.AllocReuseSites.Clear();
         Hints.SlotCount = 0;
 
-        var slotCounter = 0;
-
-        // Phase 1: Within-block pairing
-        foreach (var block in _function.BasicBlocks)
-        {
-            AnalyzeBlock(block, ref slotCounter);
-        }
-
-        var pairedSlots = Hints.AllocReuseSites.Values.ToHashSet();
-        foreach (var site in Hints.DropReuseSites
-                     .Where(entry => !pairedSlots.Contains(entry.Value))
-                     .Select(static entry => entry.Key)
-                     .ToArray())
-        {
-            Hints.DropReuseSites.Remove(site);
-        }
-
+        var dropSlots = AssignDropSlots(out var slotCounter);
         Hints.SlotCount = slotCounter;
-    }
+        if (dropSlots.Count == 0 || _function.BasicBlocks.Count == 0)
+            return;
 
-    // ---- Phase 1: Within-block pairing ----
-
-    private void AnalyzeBlock(MirBasicBlock block, ref int slotCounter)
-    {
-        var available = new Stack<(int Slot, TypeId TypeId)>();
-
-        for (int i = 0; i < block.Instructions.Count; i++)
-        {
-            var instr = block.Instructions[i];
-
-            if (instr is MirDrop drop)
-            {
-                var dropTypeId = drop.Value.TypeId;
-                if (!TypeSemantics.IsManagedType(dropTypeId))
-                    continue;
-
-                var slot = slotCounter++;
-                Hints.DropReuseSites[(block.Id, i)] = slot;
-                available.Push((slot, dropTypeId));
-            }
-            else if (IsHeapAllocatingConstructorCall(instr, out var targetTypeId))
-            {
-                if (TryMatchSlot(available, targetTypeId, out var matchedSlot))
-                {
-                    Hints.AllocReuseSites[(block.Id, i)] = matchedSlot;
-                }
-            }
-        }
-    }
-
-    // ---- Phase 2: Cross-block pairing ----
-
-    private void AnalyzeCrossBlock(ref int slotCounter)
-    {
-        // Collect unpaired drops per block (drops that weren't matched in Phase 1)
-        var pairedSlots = new HashSet<int>(Hints.AllocReuseSites.Values);
-        var unpairedDropsByBlock = new Dictionary<BlockId, List<(int Slot, TypeId TypeId)>>();
-
-        foreach (var block in _function.BasicBlocks)
-        {
-            var unpaired = new List<(int Slot, TypeId TypeId)>();
-            foreach (var ((blockId, index), slot) in Hints.DropReuseSites)
-            {
-                if (blockId.Equals(block.Id) && !pairedSlots.Contains(slot))
-                {
-                    var dropInstr = (MirDrop)block.Instructions[index];
-                    unpaired.Add((slot, dropInstr.Value.TypeId));
-                }
-            }
-            unpairedDropsByBlock[block.Id] = unpaired;
-        }
-
-        // Dataflow: propagate unpaired drops across block boundaries
         var predecessors = BuildPredecessorMap();
-        var inheritedDrops = ComputeInheritedDrops(predecessors, unpairedDropsByBlock);
+        var entryStates = ComputeEntryStates(dropSlots, predecessors);
+        var pairedAllocations = new Dictionary<(BlockId Block, int Index), int>();
 
-        // Pair unpaired constructors with inherited drops
         foreach (var block in _function.BasicBlocks)
         {
-            if (!inheritedDrops.TryGetValue(block.Id, out var available) || available.Count == 0)
-                continue;
-
-            var availableStack = new Stack<(int Slot, TypeId TypeId)>(available);
-
-            for (int i = 0; i < block.Instructions.Count; i++)
+            var available = entryStates.GetValueOrDefault(block.Id, [])
+                .OrderBy(static item => item.Slot)
+                .ToList();
+            for (var index = 0; index < block.Instructions.Count; index++)
             {
-                // Skip already-paired constructors
-                if (Hints.AllocReuseSites.ContainsKey((block.Id, i)))
+                if (dropSlots.TryGetValue((block.Id, index), out var drop))
+                {
+                    available.Add(drop);
                     continue;
-
-                // Push local unpaired drops onto stack (they might be usable by later constructors)
-                if (block.Instructions[i] is MirDrop drop &&
-                    Hints.DropReuseSites.TryGetValue((block.Id, i), out var dropSlot) &&
-                    !pairedSlots.Contains(dropSlot))
-                {
-                    availableStack.Push((dropSlot, drop.Value.TypeId));
                 }
 
-                if (IsHeapAllocatingConstructorCall(block.Instructions[i], out var targetTypeId))
+                if (!IsHeapAllocatingConstructorCall(block.Instructions[index], out var targetTypeId) ||
+                    !TryMatchSlot(available, targetTypeId, out var matchedSlot))
                 {
-                    if (TryMatchSlot(availableStack, targetTypeId, out var matchedSlot))
-                    {
-                        Hints.AllocReuseSites[(block.Id, i)] = matchedSlot;
-                    }
+                    continue;
                 }
+
+                pairedAllocations[(block.Id, index)] = matchedSlot;
             }
         }
-    }
 
-    /// <summary>
-    /// Dataflow analysis: propagate unpaired drop slots across blocks.
-    /// IN[B] = ∪ OUT[P] for all predecessors P of B.
-    /// OUT[B] = IN[B] ∪ gen[B]  (gen = unpaired drops in B).
-    /// </summary>
-    private Dictionary<BlockId, List<(int Slot, TypeId TypeId)>> ComputeInheritedDrops(
-        Dictionary<BlockId, List<BlockId>> predecessors,
-        Dictionary<BlockId, List<(int Slot, TypeId TypeId)>> unpairedDropsByBlock)
-    {
-        // Initialize OUT sets with local unpaired drops
-        var outSets = new Dictionary<BlockId, HashSet<(int Slot, TypeId TypeId)>>();
-        foreach (var block in _function.BasicBlocks)
+        var pairedSlots = pairedAllocations.Values.ToHashSet();
+        foreach (var (site, drop) in dropSlots)
         {
-            outSets[block.Id] = new HashSet<(int, TypeId)>(
-                unpairedDropsByBlock.GetValueOrDefault(block.Id, [])
-                    .Select(d => (d.Slot, d.TypeId)));
+            if (pairedSlots.Contains(drop.Slot))
+                Hints.DropReuseSites[site] = drop.Slot;
         }
 
-        // Fixed-point iteration
-        bool changed;
-        do
+        foreach (var (site, slot) in pairedAllocations)
+            Hints.AllocReuseSites[site] = slot;
+    }
+
+    private Dictionary<(BlockId Block, int Index), (int Slot, TypeId TypeId)> AssignDropSlots(
+        out int slotCounter)
+    {
+        slotCounter = 0;
+        var slots = new Dictionary<(BlockId Block, int Index), (int Slot, TypeId TypeId)>();
+        foreach (var block in _function.BasicBlocks)
+        {
+            for (var index = 0; index < block.Instructions.Count; index++)
+            {
+                if (block.Instructions[index] is not MirDrop drop ||
+                    !TypeSemantics.IsManagedType(drop.Value.TypeId) ||
+                    _perceusHints?.OmitDrop.Contains((block.Id, index)) == true)
+                {
+                    continue;
+                }
+
+                slots[(block.Id, index)] = (slotCounter++, drop.Value.TypeId);
+            }
+        }
+
+        return slots;
+    }
+
+    private Dictionary<BlockId, HashSet<(int Slot, TypeId TypeId)>> ComputeEntryStates(
+        IReadOnlyDictionary<(BlockId Block, int Index), (int Slot, TypeId TypeId)> dropSlots,
+        IReadOnlyDictionary<BlockId, List<BlockId>> predecessors)
+    {
+        var entryStates = _function.BasicBlocks.ToDictionary(
+            static block => block.Id,
+            _ => new HashSet<(int Slot, TypeId TypeId)>());
+        var exitStates = _function.BasicBlocks.ToDictionary(
+            static block => block.Id,
+            _ => new HashSet<(int Slot, TypeId TypeId)>());
+
+        var changed = true;
+        while (changed)
         {
             changed = false;
             foreach (var block in _function.BasicBlocks)
             {
-                // IN = ∪ OUT[P]
-                var inSet = new HashSet<(int, TypeId)>();
-                if (predecessors.TryGetValue(block.Id, out var preds))
+                var incoming = predecessors.GetValueOrDefault(block.Id, []);
+                var nextEntry = block.Id == _function.EntryBlockId || incoming.Count == 0
+                    ? new HashSet<(int Slot, TypeId TypeId)>()
+                    : IntersectPredecessorStates(incoming, exitStates);
+                var nextExit = Transfer(block, nextEntry, dropSlots);
+
+                if (!entryStates[block.Id].SetEquals(nextEntry))
                 {
-                    foreach (var pred in preds)
-                    {
-                        if (outSets.TryGetValue(pred, out var predOut))
-                            inSet.UnionWith(predOut);
-                    }
+                    entryStates[block.Id] = nextEntry;
+                    changed = true;
                 }
 
-                // OUT = IN ∪ gen
-                var newOut = new HashSet<(int, TypeId)>(inSet);
-                foreach (var drop in unpairedDropsByBlock.GetValueOrDefault(block.Id, []))
-                    newOut.Add((drop.Slot, drop.TypeId));
-
-                if (!newOut.SetEquals(outSets[block.Id]))
+                if (!exitStates[block.Id].SetEquals(nextExit))
                 {
-                    outSets[block.Id] = newOut;
+                    exitStates[block.Id] = nextExit;
                     changed = true;
                 }
             }
-        } while (changed);
-
-        // Result: IN set for each block (inherited drops at block entry)
-        var result = new Dictionary<BlockId, List<(int Slot, TypeId TypeId)>>();
-        foreach (var block in _function.BasicBlocks)
-        {
-            var inSet = new HashSet<(int, TypeId)>();
-            if (predecessors.TryGetValue(block.Id, out var preds))
-            {
-                foreach (var pred in preds)
-                {
-                    if (outSets.TryGetValue(pred, out var predOut))
-                        inSet.UnionWith(predOut);
-                }
-            }
-            result[block.Id] = inSet.ToList();
         }
 
-        return result;
+        return entryStates;
+    }
+
+    private static HashSet<(int Slot, TypeId TypeId)> IntersectPredecessorStates(
+        IReadOnlyList<BlockId> predecessors,
+        IReadOnlyDictionary<BlockId, HashSet<(int Slot, TypeId TypeId)>> exitStates)
+    {
+        HashSet<(int Slot, TypeId TypeId)>? result = null;
+        foreach (var predecessor in predecessors)
+        {
+            if (!exitStates.TryGetValue(predecessor, out var state))
+                continue;
+
+            result ??= new HashSet<(int Slot, TypeId TypeId)>(state);
+            result.IntersectWith(state);
+        }
+
+        return result ?? [];
+    }
+
+    private static HashSet<(int Slot, TypeId TypeId)> Transfer(
+        MirBasicBlock block,
+        HashSet<(int Slot, TypeId TypeId)> entry,
+        IReadOnlyDictionary<(BlockId Block, int Index), (int Slot, TypeId TypeId)> dropSlots)
+    {
+        var available = entry.OrderBy(static item => item.Slot).ToList();
+        for (var index = 0; index < block.Instructions.Count; index++)
+        {
+            if (dropSlots.TryGetValue((block.Id, index), out var drop))
+            {
+                available.Add(drop);
+                continue;
+            }
+
+            if (IsHeapAllocatingConstructorCall(block.Instructions[index], out var targetTypeId))
+                TryMatchSlot(available, targetTypeId, out _);
+        }
+
+        return available.ToHashSet();
     }
 
     private Dictionary<BlockId, List<BlockId>> BuildPredecessorMap()
     {
-        var predecessors = new Dictionary<BlockId, List<BlockId>>();
+        var predecessors = _function.BasicBlocks.ToDictionary(static block => block.Id, _ => new List<BlockId>());
         foreach (var block in _function.BasicBlocks)
         {
-            predecessors[block.Id] = [];
-        }
-
-        foreach (var block in _function.BasicBlocks)
-        {
-            if (block.Terminator == null) continue;
-
             switch (block.Terminator)
             {
-                case MirGoto gotoTerm:
-                    if (predecessors.TryGetValue(gotoTerm.Target, out var preds1))
-                        preds1.Add(block.Id);
+                case MirGoto gotoTerm when predecessors.TryGetValue(gotoTerm.Target, out var gotoPreds):
+                    gotoPreds.Add(block.Id);
                     break;
                 case MirSwitch sw:
                     foreach (var branch in sw.Branches)
                     {
-                        if (predecessors.TryGetValue(branch.Target, out var preds2))
-                            preds2.Add(block.Id);
+                        if (predecessors.TryGetValue(branch.Target, out var branchPreds))
+                            branchPreds.Add(block.Id);
                     }
-                    if (sw.DefaultTarget.HasValue &&
-                        predecessors.TryGetValue(sw.DefaultTarget.Value, out var preds3))
+
+                    if (sw.DefaultTarget is { } defaultTarget &&
+                        predecessors.TryGetValue(defaultTarget, out var defaultPreds))
                     {
-                        preds3.Add(block.Id);
+                        defaultPreds.Add(block.Id);
                     }
                     break;
             }
@@ -275,46 +236,28 @@ public sealed class ReuseAnalyzer
     // ---- Shared helpers ----
 
     /// <summary>
-    /// Try to find and remove a matching slot from the available stack.
-    /// Returns true if a match was found.
+    /// Try to find and remove the latest matching slot from the available list.
+    /// Returns true if a match was found. Removing the latest slot preserves
+    /// the previous block-local LIFO preference while keeping dataflow states
+    /// deterministic.
     /// </summary>
     private static bool TryMatchSlot(
-        Stack<(int Slot, TypeId TypeId)> available,
+        List<(int Slot, TypeId TypeId)> available,
         TypeId targetTypeId,
         out int matchedSlot)
     {
         matchedSlot = -1;
-        var matchIndex = -1;
-        var items = available.ToArray();
-
-        for (int j = 0; j < items.Length; j++)
+        for (var index = available.Count - 1; index >= 0; index--)
         {
-            if (items[j].TypeId.Equals(targetTypeId))
-            {
-                matchIndex = j;
-                break;
-            }
+            if (!available[index].TypeId.Equals(targetTypeId))
+                continue;
+
+            matchedSlot = available[index].Slot;
+            available.RemoveAt(index);
+            return true;
         }
 
-        if (matchIndex < 0)
-            return false;
-
-        matchedSlot = items[matchIndex].Slot;
-
-        // Remove matched item, preserve order
-        var remaining = new Stack<(int, TypeId)>();
-        for (int j = items.Length - 1; j >= 0; j--)
-        {
-            if (j != matchIndex)
-                remaining.Push(items[j]);
-        }
-
-        // Replace the stack contents
-        available.Clear();
-        while (remaining.Count > 0)
-            available.Push(remaining.Pop());
-
-        return true;
+        return false;
     }
 
     /// <summary>

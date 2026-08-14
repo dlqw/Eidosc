@@ -963,6 +963,11 @@ public sealed class BorrowChecker
                 ResolveSpan(call.Target.Span, call.Span));
         }
 
+        // Compiler-generated runtime borrows are scoped to this call.  End
+        // them before signature validation so capability or recovery exits
+        // cannot accidentally leak the temporary alias.
+        EndCompilerBorrowedArguments(call, blockId, index, currentState);
+
         if (signature == null)
         {
             return;
@@ -1041,6 +1046,43 @@ public sealed class BorrowChecker
                     sourceBorrow,
                     BorrowDiagnosticFormatter.BuildCallTrace(call, binding.ArgumentIndex, binding.TargetLocal, binding.Borrowee, blockId, index));
             });
+
+    }
+
+    /// <summary>
+    /// Ends compiler-generated borrows for runtime calls that do not have a
+    /// user-visible loan signature.  Runtime helpers still carry explicit
+    /// <see cref="MirCall.BorrowedArgumentIndices"/> metadata, so a temporary
+    /// readonly alias is scoped to the call instead of leaking into the rest
+    /// of the control-flow graph.
+    /// </summary>
+    private void EndCompilerBorrowedArguments(
+        MirCall call,
+        BlockId blockId,
+        int index,
+        BorrowFlowState currentState)
+    {
+        foreach (var argumentIndex in call.BorrowedArgumentIndices)
+        {
+            if (argumentIndex < 0 || argumentIndex >= call.Arguments.Count)
+            {
+                continue;
+            }
+
+            var argument = call.Arguments[argumentIndex];
+            var endSpan = ResolveSpan(argument.Span, call.Span);
+            if (argument is MirPlace { Kind: PlaceKind.Local, Local: var local } &&
+                currentState.IsBorrower(local))
+            {
+                EndBorrowsByBorrower(local, blockId, index, currentState, endSpan);
+                continue;
+            }
+
+            if (BorrowTarget.TryResolve(argument, out var target))
+            {
+                EndBorrowsByBorrowTarget(target, blockId, index, currentState, endSpan);
+            }
+        }
     }
 
     private bool VerifyCallArgumentCapabilities(

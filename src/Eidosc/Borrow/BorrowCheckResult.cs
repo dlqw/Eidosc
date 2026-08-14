@@ -91,6 +91,12 @@ public sealed class BorrowCheckResult
     public UnifiedStackPromotionHints? UnifiedStackPromotionHints { get; init; }
 
     /// <summary>
+    /// Unified ownership/borrow/escape facts consumed by later optimization
+    /// passes. This compiler-internal snapshot is invalidated with the MIR body.
+    /// </summary>
+    internal OwnershipAnalysisSnapshot? OwnershipSnapshot { get; init; }
+
+    /// <summary>
     /// 是否有错误
     /// </summary>
     public bool HasErrors =>

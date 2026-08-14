@@ -87,7 +87,10 @@ public sealed class RuntimeArrayRangeSpecializationPass : IMirOptimizationPass
         out FusionPlan plan)
     {
         plan = null!;
-        if (CountReadUses(function, slice.Source.Local) != 1)
+        var facts = SequenceOptimizationFacts.Analyze(function);
+        if (CountReadUses(function, slice.Source.Local) != 1 ||
+            facts.AliasedLocals.Contains(slice.Source.Local) ||
+            facts.BorrowedLocals.Contains(slice.Source.Local))
         {
             return false;
         }

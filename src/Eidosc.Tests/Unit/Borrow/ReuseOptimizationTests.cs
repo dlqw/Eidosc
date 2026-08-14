@@ -301,7 +301,7 @@ public sealed class ReuseOptimizationTests
     }
 
     [Fact]
-    public void ReuseAnalyzer_OnlyPublishesDropSlotsPairedInTheSameBlock()
+    public void ReuseAnalyzer_DoesNotPublishSlotsFromUnreachableBlocks()
     {
         var recordType = new TypeId(9002);
         var oldValue = LocalPlace(1, recordType);
@@ -327,6 +327,169 @@ public sealed class ReuseOptimizationTests
             analyzer.Hints.DropReuseSites[(pairedBlock.Id, 0)],
             analyzer.Hints.AllocReuseSites[(pairedBlock.Id, 1)]);
         Assert.DoesNotContain((unpairedBlock.Id, 0), analyzer.Hints.DropReuseSites.Keys);
+    }
+
+    [Fact]
+    public void ReuseAnalyzer_DropInPredecessor_PairsWithSuccessorConstructor()
+    {
+        var recordType = new TypeId(9004);
+        var oldValue = LocalPlace(1, recordType);
+        var newValue = LocalPlace(2, recordType);
+        var entry = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Instructions = [new MirDrop { Value = oldValue }],
+            Terminator = new MirGoto { Target = new BlockId { Value = 2 } }
+        };
+        var successor = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 2 },
+            Instructions = [ConstructorCall(newValue)],
+            Terminator = new MirReturn { Value = newValue }
+        };
+        var function = Assert.Single(Module(entry, recordType, recordType).Functions);
+        function.BasicBlocks.Add(successor);
+        var analyzer = new ReuseAnalyzer(function);
+
+        analyzer.Analyze();
+
+        Assert.Equal(
+            analyzer.Hints.DropReuseSites[(entry.Id, 0)],
+            analyzer.Hints.AllocReuseSites[(successor.Id, 0)]);
+    }
+
+    [Fact]
+    public void ReuseAnalyzer_DropMissingOnOneIncomingPath_DoesNotPairAtJoin()
+    {
+        var recordType = new TypeId(9005);
+        var boolType = new TypeId(BaseTypes.BoolId);
+        var oldValue = LocalPlace(1, recordType);
+        var newValue = LocalPlace(2, recordType);
+        var condition = LocalPlace(3, boolType);
+        var entry = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Terminator = new MirSwitch
+            {
+                Discriminant = condition,
+                Branches =
+                [
+                    new MirSwitchBranch
+                    {
+                        Value = new MirConstant
+                        {
+                            TypeId = boolType,
+                            Value = new MirConstantValue.BoolValue(true)
+                        },
+                        Target = new BlockId { Value = 2 }
+                    }
+                ],
+                DefaultTarget = new BlockId { Value = 3 }
+            }
+        };
+        var droppingPath = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 2 },
+            Instructions = [new MirDrop { Value = oldValue }],
+            Terminator = new MirGoto { Target = new BlockId { Value = 4 } }
+        };
+        var retainingPath = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 3 },
+            Terminator = new MirGoto { Target = new BlockId { Value = 4 } }
+        };
+        var join = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 4 },
+            Instructions = [ConstructorCall(newValue)],
+            Terminator = new MirReturn { Value = newValue }
+        };
+        var function = Assert.Single(Module(entry, recordType, recordType, boolType).Functions);
+        function.BasicBlocks.AddRange([droppingPath, retainingPath, join]);
+        var analyzer = new ReuseAnalyzer(function);
+
+        analyzer.Analyze();
+
+        Assert.Empty(analyzer.Hints.DropReuseSites);
+        Assert.Empty(analyzer.Hints.AllocReuseSites);
+    }
+
+    [Fact]
+    public void ReuseAnalyzer_UpstreamDrop_PairsWithMutuallyExclusiveBranchConstructors()
+    {
+        var recordType = new TypeId(9006);
+        var boolType = new TypeId(BaseTypes.BoolId);
+        var oldValue = LocalPlace(1, recordType);
+        var trueValue = LocalPlace(2, recordType);
+        var falseValue = LocalPlace(3, recordType);
+        var condition = LocalPlace(4, boolType);
+        var entry = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 1 },
+            IsEntry = true,
+            Instructions = [new MirDrop { Value = oldValue }],
+            Terminator = new MirSwitch
+            {
+                Discriminant = condition,
+                Branches =
+                [
+                    new MirSwitchBranch
+                    {
+                        Value = new MirConstant
+                        {
+                            TypeId = boolType,
+                            Value = new MirConstantValue.BoolValue(true)
+                        },
+                        Target = new BlockId { Value = 2 }
+                    }
+                ],
+                DefaultTarget = new BlockId { Value = 3 }
+            }
+        };
+        var trueBranch = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 2 },
+            Instructions = [ConstructorCall(trueValue)],
+            Terminator = new MirReturn { Value = trueValue }
+        };
+        var falseBranch = new MirBasicBlock
+        {
+            Id = new BlockId { Value = 3 },
+            Instructions = [ConstructorCall(falseValue)],
+            Terminator = new MirReturn { Value = falseValue }
+        };
+        var function = Assert.Single(Module(entry, recordType, recordType, recordType, boolType).Functions);
+        function.BasicBlocks.AddRange([trueBranch, falseBranch]);
+        var analyzer = new ReuseAnalyzer(function);
+
+        analyzer.Analyze();
+
+        var slot = analyzer.Hints.DropReuseSites[(entry.Id, 0)];
+        Assert.Equal(slot, analyzer.Hints.AllocReuseSites[(trueBranch.Id, 0)]);
+        Assert.Equal(slot, analyzer.Hints.AllocReuseSites[(falseBranch.Id, 0)]);
+    }
+
+    [Fact]
+    public void ReuseAnalyzer_PerceusOmittedDrop_DoesNotCreateReuseSlot()
+    {
+        var recordType = new TypeId(9007);
+        var oldValue = LocalPlace(1, recordType);
+        var newValue = LocalPlace(2, recordType);
+        var block = Block(
+            new MirDrop { Value = oldValue },
+            ConstructorCall(newValue));
+        var function = Assert.Single(Module(block, recordType, recordType).Functions);
+        var perceusHints = new PerceusHints();
+        perceusHints.OmitDrop.Add((block.Id, 0));
+        var analyzer = new ReuseAnalyzer(function, perceusHints);
+
+        analyzer.Analyze();
+
+        Assert.Equal(0, analyzer.Hints.SlotCount);
+        Assert.Empty(analyzer.Hints.DropReuseSites);
+        Assert.Empty(analyzer.Hints.AllocReuseSites);
     }
 
     [Fact]

@@ -146,7 +146,11 @@ public sealed partial class CompilationPipeline
             }
 
             capabilitySnapshots.TryGetValue(func.SymbolId, out var capabilitySnapshot);
-            var captureBorrowPointStates = _debugContext.IsEnabled;
+            // OwnershipAnalysisSnapshot is a shared authority for sequence,
+            // reuse and cleanup proofs, so borrow regions must be retained even
+            // outside debug builds. The snapshot is invalidated with MIR and
+            // avoids each consumer re-deriving a weaker lexical approximation.
+            var captureBorrowPointStates = true;
             var sharedCfg = cfgByFunc.GetValueOrDefault(func);
 
             VariableUsageAnalyzer usageAnalyzer;
@@ -271,6 +275,28 @@ public sealed partial class CompilationPipeline
                 }
             }
 
+            OwnershipAnalysisSnapshot ownershipSnapshot;
+            using (MeasureSubphase(CompilationPhase.Borrow, $"{profileName}.ownership_snapshot"))
+            {
+                ownershipSnapshot = OwnershipAnalysisSnapshot.Build(
+                    func,
+                    sharedCfg!,
+                    usageAnalyzer,
+                    livenessAnalyzer,
+                    borrowChecker,
+                    loanVerifier,
+                    perceusAnalyzer,
+                    reuseAnalyzer,
+                    loanResults);
+                AddProfilingCounter("ownership.functions_analyzed", 1);
+                AddProfilingCounter(
+                    "ownership.must_unique_roots",
+                    ownershipSnapshot.PlaceProvenance.Values.Count(static fact => fact.MustUnique));
+                AddProfilingCounter(
+                    "ownership.drop_obligations",
+                    ownershipSnapshot.DropObligations.Count);
+            }
+
             BorrowCheckResult funcResult;
             using (MeasureSubphase(CompilationPhase.Borrow, $"{profileName}.assemble_result"))
             {
@@ -292,7 +318,8 @@ public sealed partial class CompilationPipeline
                     StackPromotionAnalyzer = stackPromotionAnalyzer,
                     StackPromotionHints = stackPromotionAnalyzer?.Hints,
                     UnifiedStackPromotionAnalyzer = unifiedStackPromotionAnalyzer,
-                    UnifiedStackPromotionHints = unifiedStackPromotionAnalyzer?.Hints
+                    UnifiedStackPromotionHints = unifiedStackPromotionAnalyzer?.Hints,
+                    OwnershipSnapshot = ownershipSnapshot
                 };
 
                 _borrowCheckResult.AddResult(funcResult);

@@ -595,21 +595,26 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
             .Where(pair => uniqueParameterIndices.Contains(pair.index) && TypeSemantics.IsManagedType(pair.local.TypeId))
             .Select(pair => new PlaceSlot(pair.local.Id, string.Empty))
             .ToHashSet();
+        // Must-unique analysis starts at lattice top. Represent top as null
+        // instead of materializing the complete place universe for every
+        // block: large specialized functions can contain tens of thousands
+        // of MIR locals, and cloning that universe per block dominates both
+        // memory and transfer time.
         var inStates = function.BasicBlocks.ToDictionary(
             static block => block.Id,
-            _ => new HashSet<PlaceSlot>(context.PlaceUniverse));
+            static _ => (HashSet<PlaceSlot>?)null);
         var outStates = function.BasicBlocks.ToDictionary(
             static block => block.Id,
-            _ => new HashSet<PlaceSlot>(context.PlaceUniverse));
+            static _ => (HashSet<PlaceSlot>?)null);
         var runtimeUniqueInStates = context.RequiresRuntimeOwnershipFacts
             ? function.BasicBlocks.ToDictionary(
                 static block => block.Id,
-                _ => new HashSet<PlaceSlot>(context.PlaceUniverse))
+                static _ => (HashSet<PlaceSlot>?)null)
             : null;
         var runtimeUniqueOutStates = context.RequiresRuntimeOwnershipFacts
             ? function.BasicBlocks.ToDictionary(
                 static block => block.Id,
-                _ => new HashSet<PlaceSlot>(context.PlaceUniverse))
+                static _ => (HashSet<PlaceSlot>?)null)
             : null;
 
         var changed = true;
@@ -626,12 +631,18 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
 
                 foreach (var predecessor in context.ControlFlow.GetPredecessors(block.Id))
                 {
-                    incoming.Add(outStates[predecessor]);
+                    if (outStates[predecessor] is { } predecessorState)
+                    {
+                        incoming.Add(predecessorState);
+                    }
                 }
 
-                var nextIn = incoming.Count == 0
-                    ? []
-                    : new HashSet<PlaceSlot>(incoming[0]);
+                if (incoming.Count == 0)
+                {
+                    continue;
+                }
+
+                var nextIn = new HashSet<PlaceSlot>(incoming[0]);
                 for (var index = 1; index < incoming.Count; index++)
                 {
                     nextIn.IntersectWith(incoming[index]);
@@ -654,11 +665,16 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
                     }
                     foreach (var predecessor in context.ControlFlow.GetPredecessors(block.Id))
                     {
-                        runtimeIncoming.Add(runtimeUniqueOutStates[predecessor]);
+                        if (runtimeUniqueOutStates[predecessor] is { } predecessorState)
+                        {
+                            runtimeIncoming.Add(predecessorState);
+                        }
                     }
-                    nextRuntimeIn = runtimeIncoming.Count == 0
-                        ? []
-                        : new HashSet<PlaceSlot>(runtimeIncoming[0]);
+                    if (runtimeIncoming.Count == 0)
+                    {
+                        continue;
+                    }
+                    nextRuntimeIn = new HashSet<PlaceSlot>(runtimeIncoming[0]);
                     for (var index = 1; index < runtimeIncoming.Count; index++)
                     {
                         nextRuntimeIn.IntersectWith(runtimeIncoming[index]);
@@ -670,25 +686,27 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
                     }
                 }
 
-                if (!inStates[block.Id].SetEquals(nextIn))
+                if (inStates[block.Id] is not { } currentIn || !currentIn.SetEquals(nextIn))
                 {
                     inStates[block.Id] = nextIn;
                     changed = true;
                 }
 
-                if (!outStates[block.Id].SetEquals(nextOut))
+                if (outStates[block.Id] is not { } currentOut || !currentOut.SetEquals(nextOut))
                 {
                     outStates[block.Id] = nextOut;
                     changed = true;
                 }
                 if (nextRuntimeIn != null &&
-                    !runtimeUniqueInStates![block.Id].SetEquals(nextRuntimeIn))
+                    (runtimeUniqueInStates![block.Id] is not { } currentRuntimeIn ||
+                     !currentRuntimeIn.SetEquals(nextRuntimeIn)))
                 {
                     runtimeUniqueInStates[block.Id] = nextRuntimeIn;
                     changed = true;
                 }
                 if (nextRuntimeOut != null &&
-                    !runtimeUniqueOutStates![block.Id].SetEquals(nextRuntimeOut))
+                    (runtimeUniqueOutStates![block.Id] is not { } currentRuntimeOut ||
+                     !currentRuntimeOut.SetEquals(nextRuntimeOut)))
                 {
                     runtimeUniqueOutStates[block.Id] = nextRuntimeOut;
                     changed = true;
@@ -701,10 +719,14 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
         var calls = new List<CallFact>();
         foreach (var block in function.BasicBlocks)
         {
-            var state = new HashSet<PlaceSlot>(inStates[block.Id]);
+            var state = inStates[block.Id] is { } blockIn
+                ? new HashSet<PlaceSlot>(blockIn)
+                : [];
             var runtimeUniqueState = runtimeUniqueInStates == null
                 ? state
-                : new HashSet<PlaceSlot>(runtimeUniqueInStates[block.Id]);
+                : runtimeUniqueInStates[block.Id] is { } runtimeBlockIn
+                    ? new HashSet<PlaceSlot>(runtimeBlockIn)
+                    : [];
             for (var index = 0; index < block.Instructions.Count; index++)
             {
                 if (block.Instructions[index] is MirCall call)
@@ -762,7 +784,8 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
             .Where(pair => TypeSemantics.IsManagedType(pair.Return.Value!.TypeId))
             .ToArray();
         var uniqueReturn = managedReturns.Length > 0 && managedReturns.All(pair =>
-            IsUnique(pair.Return.Value!, outStates[pair.Block.Id]));
+            outStates[pair.Block.Id] is { } blockOut &&
+            IsUnique(pair.Return.Value!, blockOut));
 
         return new AnalysisResult(uniqueReturn, recordUpdates, recordRebuilds, calls);
     }
@@ -861,11 +884,25 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
     private static bool IsUnique(MirOperand operand, IReadOnlySet<PlaceSlot> state) =>
         TryGetSlot(operand, out var slot) && ContainsUnique(slot, state);
 
-    private static bool ContainsUnique(PlaceSlot slot, IReadOnlySet<PlaceSlot> state) =>
-        state.Any(candidate => candidate.Root == slot.Root &&
-            (candidate.Path == slot.Path ||
-             candidate.Path.Length == 0 ||
-             slot.Path.StartsWith($"{candidate.Path}/", StringComparison.Ordinal)));
+    private static bool ContainsUnique(PlaceSlot slot, IReadOnlySet<PlaceSlot> state)
+    {
+        if (state.Contains(slot) || state.Contains(new PlaceSlot(slot.Root, string.Empty)))
+        {
+            return true;
+        }
+
+        var ancestorEnd = slot.Path.LastIndexOf('/');
+        while (ancestorEnd > 0)
+        {
+            if (state.Contains(new PlaceSlot(slot.Root, slot.Path[..ancestorEnd])))
+            {
+                return true;
+            }
+            ancestorEnd = slot.Path.LastIndexOf('/', ancestorEnd - 1);
+        }
+
+        return false;
+    }
 
     private static void SetUnique(MirPlace target, bool isUnique, HashSet<PlaceSlot> state)
     {
@@ -878,6 +915,11 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
 
     private static void Remove(MirOperand operand, HashSet<PlaceSlot> state)
     {
+        if (!TypeSemantics.IsManagedType(operand.TypeId))
+        {
+            return;
+        }
+
         if (TryGetSlot(operand, out var slot))
         {
             Remove(slot, state);
@@ -1052,13 +1094,11 @@ public sealed class UniqueRecordUpdateSpecializationPass : IMirOptimizationPass
 
     private sealed record FunctionAnalysisContext(
         ControlFlowGraph ControlFlow,
-        IReadOnlySet<PlaceSlot> PlaceUniverse,
         IReadOnlySet<BlockId> ReachableBlocks,
         bool RequiresRuntimeOwnershipFacts)
     {
         public static FunctionAnalysisContext Create(MirFunc function) => new(
             new ControlFlowGraph(function),
-            CollectPlaceSlots(function),
             CollectReachableBlocks(function),
             MayContainFullRecordRebuild(function) ||
             function.BasicBlocks.SelectMany(static block => block.Instructions).Any(instruction =>
