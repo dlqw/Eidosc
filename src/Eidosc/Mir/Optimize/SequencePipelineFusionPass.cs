@@ -66,7 +66,9 @@ public sealed partial class SequencePipelineFusionPass :
             foreach (var function in module.Functions.Where(static function => function.BasicBlocks.Count > 0))
             {
                 _factsByFunction[MirFunctionIdentity.GetStableKey(function)] =
-                    SequenceOptimizationFacts.Analyze(function);
+                    SequenceOptimizationFacts.Analyze(
+                        function,
+                        functionRef => GetEffectiveSequenceRole(functionRef, functionsByKey));
             }
         }
 
@@ -576,7 +578,7 @@ public sealed partial class SequencePipelineFusionPass :
                     !HasSingleUseNonEscaping(function, filterOutput.Local) ||
                     !HasSingleUseNonEscaping(function, takeTarget.Local) ||
                     !HasSingleUseNonEscaping(function, takeOutput.Local) ||
-                    !AllowsCallbackReordering(module, predicate, predicateFunction))
+                    !AllowsShortCircuitCallbackReordering(module, predicate, predicateFunction))
                 {
                     Stats.FallbackOwnership++;
                     continue;
@@ -693,7 +695,7 @@ public sealed partial class SequencePipelineFusionPass :
                     continue;
                 }
 
-                if (!AllowsCallbackReordering(module, predicate, predicateFunction))
+                if (!AllowsShortCircuitCallbackReordering(module, predicate, predicateFunction))
                 {
                     RecordCallbackProofFallback(predicate);
                     continue;
@@ -951,11 +953,22 @@ public sealed partial class SequencePipelineFusionPass :
             return true;
         }
 
-        // The inline fallback still reorders callback execution relative to
-        // the original eager pipeline. Inline proof alone is intentionally
-        // weaker, so require the same observable-safety facts explicitly;
-        // otherwise a trusted callback that may panic/diverge could be
-        // rewritten merely because its body is locally simple.
+        return _functionProofs.Allows(callback, FunctionOptimizationCapability.InlineSequenceCallback) &&
+               !_functionProofs.IsRecursive(function) &&
+               IsLocallyReorderSafe(function);
+    }
+
+    private bool AllowsShortCircuitCallbackReordering(MirModule module, MirFunctionRef callback, MirFunc function)
+    {
+        if (_functionProofs.Allows(callback, FunctionOptimizationCapability.ReorderSequenceCallback))
+        {
+            return true;
+        }
+
+        // Short-circuiting filter|head rewrites skip source elements after the
+        // first hit, so the inline fallback may only be used when the callback
+        // summary excludes every observable safety hazard. This tighter gate is
+        // deliberately not applied to eager map/filter/fold fusion.
         if (!_functionProofs.TryGetSummary(callback, out var summary) ||
             !summary.IsTrusted ||
             !summary.Effects.IsPure ||
@@ -1593,12 +1606,13 @@ public sealed partial class SequencePipelineFusionPass :
     private bool HasSingleUseNonEscaping(MirFunc function, LocalId local)
     {
         var key = MirFunctionIdentity.GetStableKey(function);
+        if (_factsByFunction.TryGetValue(key, out var facts))
+            return facts.IsSingleUseNonEscaping(local);
+
         if (_ownershipSnapshots.TryGetValue(key, out var snapshot))
             return snapshot.SequenceFacts.IsSingleUseNonEscaping(local);
 
-        return _factsByFunction.TryGetValue(key, out var facts)
-            ? facts.IsSingleUseNonEscaping(local)
-            : SequenceOptimizationFacts.Analyze(function).IsSingleUseNonEscaping(local);
+        return SequenceOptimizationFacts.Analyze(function).IsSingleUseNonEscaping(local);
     }
 
     private static bool IsLocal(MirOperand operand, LocalId local) =>

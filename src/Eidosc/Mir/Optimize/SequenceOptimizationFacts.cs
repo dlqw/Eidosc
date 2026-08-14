@@ -71,7 +71,12 @@ public sealed class SequenceOptimizationFacts
         !AliasedLocals.Contains(local) &&
         !BorrowedLocals.Contains(local);
 
-    public static SequenceOptimizationFacts Analyze(MirFunc function)
+    public static SequenceOptimizationFacts Analyze(MirFunc function) =>
+        Analyze(function, effectiveRoleResolver: null);
+
+    public static SequenceOptimizationFacts Analyze(
+        MirFunc function,
+        Func<MirFunctionRef, CompilerSemanticRole>? effectiveRoleResolver)
     {
         var reads = function.Locals.ToDictionary(static local => local.Id, static _ => 0);
         var escaped = new HashSet<LocalId>();
@@ -83,7 +88,7 @@ public sealed class SequenceOptimizationFacts
             foreach (var instruction in block.Instructions)
             {
                 AddInstructionReads(instruction, reads, aliased, borrowed);
-                AddInstructionEscapes(instruction, escaped);
+                AddInstructionEscapes(instruction, escaped, effectiveRoleResolver);
             }
 
             AddTerminatorReads(block.Terminator, reads);
@@ -176,14 +181,15 @@ public sealed class SequenceOptimizationFacts
 
     private static void AddInstructionEscapes(
         MirInstruction instruction,
-        ISet<LocalId> escaped)
+        ISet<LocalId> escaped,
+        Func<MirFunctionRef, CompilerSemanticRole>? effectiveRoleResolver)
     {
         switch (instruction)
         {
             case MirStore store when store.Target.Kind != PlaceKind.Local:
                 AddOperandLocals(store.Value, escaped);
                 break;
-            case MirCall call when !IsKnownNonEscapingConsumer(call):
+            case MirCall call when !IsKnownNonEscapingConsumer(call, effectiveRoleResolver):
                 for (var index = 0; index < call.Arguments.Count; index++)
                 {
                     // An explicit borrow is a non-retaining boundary. All
@@ -205,9 +211,24 @@ public sealed class SequenceOptimizationFacts
             AddOperandLocals(value, escaped);
     }
 
-    private static bool IsKnownNonEscapingConsumer(MirCall call) =>
-        call.Function is MirFunctionRef functionRef &&
-        NonEscapingConsumerRoles.Contains(functionRef.CompilerSemanticRole);
+    private static bool IsKnownNonEscapingConsumer(
+        MirCall call,
+        Func<MirFunctionRef, CompilerSemanticRole>? effectiveRoleResolver)
+    {
+        if (call.Function is not MirFunctionRef functionRef)
+        {
+            return false;
+        }
+
+        if (NonEscapingConsumerRoles.Contains(functionRef.CompilerSemanticRole))
+        {
+            return true;
+        }
+
+        var effectiveRole = effectiveRoleResolver?.Invoke(functionRef) ?? CompilerSemanticRole.None;
+        return effectiveRole != CompilerSemanticRole.None &&
+               NonEscapingConsumerRoles.Contains(effectiveRole);
+    }
 
     private static void AddOperandReads(
         MirOperand operand,

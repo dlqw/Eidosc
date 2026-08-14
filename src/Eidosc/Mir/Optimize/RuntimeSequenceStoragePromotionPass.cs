@@ -151,13 +151,57 @@ public sealed class RuntimeSequenceStoragePromotionPass :
         }
 
         var root = ((MirPlace)allocation.Target!).Local;
+        if (!TryGetPostAllocationState(
+                snapshot,
+                allocationPoint.block.Id,
+                allocationPoint.index,
+                root,
+                out var fact,
+                out var rootState))
+        {
+            // Optimization rewrites synthesize local array storages after the
+            // snapshot is captured. An unknown allocation point is not a proof
+            // of unsafety: keep the existing local candidate analysis route.
+            return true;
+        }
+
+        if (rootState != OwnershipPlaceState.Owned ||
+            !fact.MustOwned.Contains(root) ||
+            !fact.MustUnique.Contains(root) ||
+            fact.ActiveBorrowRoots.Contains(root))
+        {
+            return false;
+        }
+
         return snapshot.EscapeFacts.GetValueOrDefault(root) == OwnershipEscapeKind.None &&
-               snapshot.IsMustOwned(root, allocationPoint.block.Id, allocationPoint.index) &&
-               snapshot.IsMustUnique(root, allocationPoint.block.Id, allocationPoint.index) &&
-               !snapshot.HasActiveBorrow(root, allocationPoint.block.Id, allocationPoint.index) &&
                aliases.All(alias =>
                    snapshot.EscapeFacts.GetValueOrDefault(alias) == OwnershipEscapeKind.None &&
                    !snapshot.HasActiveBorrow(alias, allocationPoint.block.Id, allocationPoint.index));
+    }
+
+    private static bool TryGetPostAllocationState(
+        OwnershipAnalysisSnapshot snapshot,
+        BlockId block,
+        int allocationIndex,
+        LocalId root,
+        out OwnershipInstructionFact fact,
+        out OwnershipPlaceState state)
+    {
+        fact = null!;
+        state = OwnershipPlaceState.Uninitialized;
+        for (var index = allocationIndex + 1;
+             snapshot.PerInstructionFacts.TryGetValue((block, index), out var candidate);
+             index++)
+        {
+            if (candidate.States.TryGetValue(root, out var candidateState))
+            {
+                fact = candidate;
+                state = candidateState;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static HashSet<LocalId> BuildDirectLocalAliasComponent(MirFunc function, LocalId seed)
