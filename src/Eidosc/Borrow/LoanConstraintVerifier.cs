@@ -290,8 +290,6 @@ public sealed partial class LoanConstraintVerifier
             PrepareWrite(targetLocal, call.Span, blockId, instructionIndex, state, results);
         }
 
-        EndCompilerBorrowedArguments(call, blockId, instructionIndex, state);
-
         var calleeSignature = LoanCallAnalysis.TryResolveCalleeSignature(call, _signatureCache, _symbolTable);
         if (calleeSignature == null)
         {
@@ -356,34 +354,6 @@ public sealed partial class LoanConstraintVerifier
             returnedBorrowSources);
 
         return LoanConstraintResult.Success();
-    }
-
-    private void EndCompilerBorrowedArguments(
-        MirCall call,
-        BlockId blockId,
-        int instructionIndex,
-        LoanVerifierState state)
-    {
-        foreach (var argumentIndex in call.BorrowedArgumentIndices)
-        {
-            if (argumentIndex < 0 || argumentIndex >= call.Arguments.Count)
-            {
-                continue;
-            }
-
-            var argument = call.Arguments[argumentIndex];
-            if (argument is MirPlace { Kind: PlaceKind.Local, Local: var local } &&
-                IsBorrower(local, state))
-            {
-                EndBorrowsByBorrower(local, blockId, instructionIndex, state);
-                continue;
-            }
-
-            if (BorrowTarget.TryResolve(argument, out var target))
-            {
-                EndBorrowsByBorrowTarget(target, blockId, instructionIndex, state);
-            }
-        }
     }
 
     private LoanConstraintResult VerifyArgConstraint(

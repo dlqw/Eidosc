@@ -971,7 +971,6 @@ public sealed partial class MirBuilder
                 PrepareReadonlyStringEqualsArgument(left, stringType, span),
                 PrepareReadonlyStringEqualsArgument(right, stringType, span)
             ],
-            BorrowedArgumentIndices = new HashSet<int> { 0, 1 },
             Span = span
         });
 
