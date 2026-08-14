@@ -61,6 +61,7 @@ public sealed class DeadCodeElimination : IMirOptimizationPass, IFunctionOptimiz
             PackageInstanceKey = module.PackageInstanceKey,
             Path = module.Path.ToList(),
             Functions = optimizedFunctions,
+            ModuleVars = module.ModuleVars.ToList(),
             DynamicTypeKeys = new Dictionary<int, string>(module.DynamicTypeKeys),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(module.TypeDescriptors),
             CStructAccessors = new Dictionary<string, CStructAccessorInfo>(module.CStructAccessors),

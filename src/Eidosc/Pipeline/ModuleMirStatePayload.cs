@@ -81,6 +81,7 @@ public sealed record ModuleMirStateArtifactPayload(
             Path = module.Path.ToList(),
             Span = module.Span,
             Functions = functions,
+            ModuleVars = module.ModuleVars.ToList(),
             DynamicTypeKeys = new Dictionary<int, string>(module.DynamicTypeKeys),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(module.TypeDescriptors),
             LinkLibraries = module.LinkLibraries.ToList(),
@@ -273,7 +274,8 @@ public sealed record MirStateModulePayload(
     IReadOnlyList<MirStateTraitInfoPayload> TraitInfos,
     IReadOnlyList<MirStateTypeAliasInfoPayload> TypeAliases,
     IReadOnlyList<MirStateTypeConstructorInfoPayload> TypeConstructors,
-    IReadOnlyList<MirStateSpecializationFailurePayload> SpecializationFailures)
+    IReadOnlyList<MirStateSpecializationFailurePayload> SpecializationFailures,
+    IReadOnlyList<MirStateModuleVarPayload>? ModuleVars = null)
 {
     public static MirStateModulePayload Create(MirModule module, MirStatePayloadCreateContext context) =>
         new(
@@ -311,7 +313,8 @@ public sealed record MirStateModulePayload(
             module.TraitInfos.Select(MirStateTraitInfoPayload.Create).ToArray(),
             module.TypeAliases.Select(MirStateTypeAliasInfoPayload.Create).ToArray(),
             module.TypeConstructors.Select(MirStateTypeConstructorInfoPayload.Create).ToArray(),
-            module.SpecializationFailures.Select(MirStateSpecializationFailurePayload.Create).ToArray());
+            module.SpecializationFailures.Select(MirStateSpecializationFailurePayload.Create).ToArray(),
+            module.ModuleVars.Select(moduleVar => MirStateModuleVarPayload.Create(moduleVar, context)).ToArray());
 
     public bool TryRestore(out MirModule module)
     {
@@ -323,6 +326,7 @@ public sealed record MirStateModulePayload(
             Path = Path.ToList(),
             Span = Span.ToSourceSpan(),
             Functions = Functions.Select(static function => function.Restore()).ToList(),
+            ModuleVars = (this.ModuleVars ?? []).Select(static moduleVar => moduleVar.Restore()).ToList(),
             DynamicTypeKeys = DynamicTypeKeys.ToDictionary(static entry => entry.TypeId, static entry => entry.TypeKey),
             LinkLibraries = LinkLibraries.ToList(),
             CStructAccessors = CStructAccessors.ToDictionary(static entry => entry.Name, static entry => entry.Accessor.Restore()),
@@ -368,6 +372,35 @@ public sealed record MirStateModulePayload(
         module.TraitImpls.AddRange(traitImpls);
         return true;
     }
+}
+
+public sealed record MirStateModuleVarPayload(
+    string Name,
+    int SymbolId,
+    int TypeId,
+    bool IsMutable,
+    MirStateOperandPayload Initializer,
+    SourceSpanPayload Span)
+{
+    public static MirStateModuleVarPayload Create(MirModuleVar moduleVar, MirStatePayloadCreateContext context) =>
+        new(
+            moduleVar.Name,
+            moduleVar.SymbolId.Value,
+            moduleVar.TypeId.Value,
+            moduleVar.IsMutable,
+            MirStateOperandPayload.Create(moduleVar.Initializer, context),
+            SourceSpanPayload.Create(moduleVar.Span));
+
+    public MirModuleVar Restore() =>
+        new()
+        {
+            Name = Name,
+            SymbolId = new SymbolId(SymbolId),
+            TypeId = new TypeId(TypeId),
+            IsMutable = IsMutable,
+            Initializer = Initializer.Restore(),
+            Span = Span.ToSourceSpan()
+        };
 }
 
 public sealed record MirStateFunctionPayload(
@@ -982,7 +1015,9 @@ public sealed record MirStateOperandPayload(
     string? FieldName = null,
     MirStateOperandPayload? Index = null,
     string? IndexAccessKind = null,
-    int TempId = 0)
+    int TempId = 0,
+    string? ModuleVarName = null,
+    int ModuleVarSymbol = 0)
 {
     public static MirStateOperandPayload Create(MirOperand operand, MirStatePayloadCreateContext context)
     {
@@ -1036,7 +1071,9 @@ public sealed record MirStateOperandPayload(
                 Base: place.Base == null ? null : Create(place.Base, context),
                 FieldName: place.FieldName,
                 Index: place.Index == null ? null : Create(place.Index, context),
-                IndexAccessKind: place.IndexAccessKind.ToString()),
+                IndexAccessKind: place.IndexAccessKind.ToString(),
+                ModuleVarName: place.ModuleVarName,
+                ModuleVarSymbol: place.ModuleVarSymbol.Value),
             MirTemp temp => new MirStateOperandPayload(
                 nameof(MirTemp),
                 span,
@@ -1053,7 +1090,7 @@ public sealed record MirStateOperandPayload(
             nameof(MirConstant) => new MirConstant { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Value = RestoreConstantValue(ConstantValue) },
             nameof(MirConstGenericValue) => new MirConstGenericValue { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", ParameterIndex = ParameterIndex },
             nameof(MirFunctionRef) => new MirFunctionRef { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), SymbolId = new SymbolId(SymbolId), Name = Name ?? "", SymbolKind = Enum.Parse<SymbolKind>(SymbolKind ?? ""), FunctionId = FunctionId?.Restore() ?? new FunctionId(), SignatureTypeId = new TypeId(SignatureTypeId), TypeArgumentIds = (TypeArgumentIds ?? []).Select(static id => new TypeId(id)).ToArray(), ValueArguments = (ValueArguments ?? []).Select(static argument => argument.Restore()).ToArray(), TraitOwnerId = new SymbolId(TraitOwnerId), TraitSelfPosition = Enum.Parse<SelfPosition>(TraitSelfPosition ?? ""), TraitSelfParameterIndices = (TraitSelfParameterIndices ?? []).ToArray(), TraitSelfInResult = TraitSelfInResult, CompilerSemanticRole = Enum.Parse<CompilerSemanticRole>(CompilerSemanticRole ?? "") },
-            nameof(MirPlace) => new MirPlace { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Kind = Enum.Parse<PlaceKind>(PlaceKind ?? ""), Local = new LocalId { Value = Local }, Base = Base?.Restore() as MirPlace, FieldName = FieldName, Index = Index?.Restore(), IndexAccessKind = Enum.Parse<MirIndexAccessKind>(IndexAccessKind ?? "") },
+            nameof(MirPlace) => new MirPlace { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Kind = Enum.Parse<PlaceKind>(PlaceKind ?? ""), Local = new LocalId { Value = Local }, Base = Base?.Restore() as MirPlace, FieldName = FieldName, Index = Index?.Restore(), IndexAccessKind = Enum.Parse<MirIndexAccessKind>(IndexAccessKind ?? ""), ModuleVarName = ModuleVarName ?? "", ModuleVarSymbol = new SymbolId(ModuleVarSymbol) },
             nameof(MirTemp) => new MirTemp { Span = Span.ToSourceSpan(), TypeId = new TypeId(TypeId), Id = new TempId { Value = TempId } },
             _ => throw new InvalidOperationException($"Unsupported MIR operand payload '{Kind}'.")
         };

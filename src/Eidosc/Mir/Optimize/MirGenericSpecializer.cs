@@ -403,6 +403,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
             PackageInstanceKey = source.PackageInstanceKey,
             Path = source.Path,
             Functions = functions,
+            ModuleVars = source.ModuleVars.ToList(),
             DynamicTypeKeys = new Dictionary<int, string>(_dynamicTypes.KeyByIdDict),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(_dynamicTypes.DescriptorByIdDict),
             ConstructorLayouts = constructorLayouts,

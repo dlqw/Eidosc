@@ -44,6 +44,8 @@ public sealed partial class MirBuilder
     private readonly Dictionary<string, FunctionId> _moduleValueGetterFunctionIdByName = new(StringComparer.Ordinal);
     private readonly Dictionary<SymbolId, TypeId> _moduleValueGetterReturnTypeBySymbol = new();
     private readonly Dictionary<string, TypeId> _moduleValueGetterReturnTypeByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<SymbolId, MirModuleVar> _moduleVarsBySymbol = new();
+    private readonly Dictionary<string, MirModuleVar> _moduleVarsByName = new(StringComparer.Ordinal);
     private readonly HashSet<SymbolId> _blockedModuleValueSymbols = [];
     private readonly HashSet<string> _blockedModuleValueNames = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, int>> _constructorFieldOrderByName = new(StringComparer.Ordinal);
@@ -241,6 +243,8 @@ public sealed partial class MirBuilder
         _moduleValueGetterFunctionIdByName.Clear();
         _moduleValueGetterReturnTypeBySymbol.Clear();
         _moduleValueGetterReturnTypeByName.Clear();
+        _moduleVarsBySymbol.Clear();
+        _moduleVarsByName.Clear();
         _blockedModuleValueSymbols.Clear();
         _blockedModuleValueNames.Clear();
         _constructorFieldOrderByName.Clear();
@@ -323,6 +327,12 @@ public sealed partial class MirBuilder
             .ToList();
         DetectModuleValueCycles(moduleValueDecls);
 
+        var moduleVarDecls = resolutionDeclarations
+            .OfType<HirVarDecl>()
+            .Where(static variable => variable.IsModuleLevel)
+            .ToList();
+        RegisterModuleVars(moduleVarDecls);
+
 
         foreach (var val in resolutionDeclarations.OfType<HirVal>())
         {
@@ -355,6 +365,7 @@ public sealed partial class MirBuilder
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(_typeDescriptorsById),
             ConstructorLayouts = new Dictionary<int, List<ConstructorTypeLayout>>(_constructorLayouts),
             CopyLikeTypeIds = new HashSet<int>(_extraCopyLikeTypeIds),
+            ModuleVars = CreateModuleVarList(moduleVarDecls),
             TraitImpls = hirModule.Declarations
                 .OfType<HirImpl>()
                 .Select(static impl => impl.ImplMetadata)
@@ -1028,6 +1039,11 @@ public sealed partial class MirBuilder
                 Span = var.Span,
                 TypeId = var.TypeId
             };
+        }
+
+        if (TryResolveModuleVarPlace(var, out var moduleVarPlace))
+        {
+            return moduleVarPlace;
         }
 
         if (TryGetModuleValueGetterForVariable(var, out var getterName, out var getterFunctionId))

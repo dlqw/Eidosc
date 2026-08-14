@@ -23,6 +23,11 @@ public static class MirFormatter
         sb.AppendLine(PipelineMessages.MirHeader);
         sb.AppendLine(PipelineMessages.ModuleLine(module.Name));
         sb.AppendLine(PipelineMessages.FunctionCount(module.Functions.Count));
+        foreach (var moduleVar in module.ModuleVars)
+        {
+            sb.AppendLine($"module var {moduleVar.Name}: type={moduleVar.TypeId.Value} mutable={moduleVar.IsMutable} init={moduleVar.Initializer}");
+        }
+
         foreach (var (typeId, key) in module.DynamicTypeKeys.OrderBy(static pair => pair.Key))
         {
             if (typeId >= 4400 && typeId <= 4520)

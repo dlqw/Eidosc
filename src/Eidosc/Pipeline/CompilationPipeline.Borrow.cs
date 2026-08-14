@@ -963,6 +963,7 @@ public sealed partial class CompilationPipeline
             PackageInstanceKey = borrowModule.PackageInstanceKey,
             Path = borrowModule.Path.ToList(),
             Functions = filteredFunctions,
+            ModuleVars = borrowModule.ModuleVars.ToList(),
             DynamicTypeKeys = new Dictionary<int, string>(borrowModule.DynamicTypeKeys),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(borrowModule.TypeDescriptors),
             LinkLibraries = borrowModule.LinkLibraries.ToList(),

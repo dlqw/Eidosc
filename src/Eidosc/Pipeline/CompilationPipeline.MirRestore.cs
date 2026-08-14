@@ -522,6 +522,7 @@ public sealed partial class CompilationPipeline
                 .Concat(orderedModules.SelectMany(static entry =>
                     entry.Module.Functions.Where(static function => !function.SymbolId.IsValid)))
                 .ToList(),
+            ModuleVars = stateSource.ModuleVars.ToList(),
             DynamicTypeKeys = new Dictionary<int, string>(stateSource.DynamicTypeKeys),
             TypeDescriptors = new Dictionary<int, TypeDescriptor>(stateSource.TypeDescriptors),
             LinkLibraries = modules
