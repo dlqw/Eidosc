@@ -349,6 +349,8 @@ public static class MirFunctionFingerprintBuilder
         writer.Add(place.FieldName ?? "");
         AddOperand(writer, place.Index);
         writer.Add((int)place.IndexAccessKind);
+        writer.Add(place.ModuleVarName ?? "");
+        writer.Add(place.ModuleVarSymbol.Value);
     }
 
     private static void AddConstant(HashWriter writer, MirConstantValue? constant)

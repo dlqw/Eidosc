@@ -229,6 +229,16 @@ public sealed record MirPlace : MirOperand
     /// </summary>
     public MirIndexAccessKind IndexAccessKind { get; init; } = MirIndexAccessKind.Aggregate;
 
+    /// <summary>
+    /// 模块级变量名称（用于 ModuleVar 类型）
+    /// </summary>
+    public string ModuleVarName { get; init; } = "";
+
+    /// <summary>
+    /// 模块级变量符号 ID（用于 ModuleVar 类型）
+    /// </summary>
+    public SymbolId ModuleVarSymbol { get; init; } = SymbolId.None;
+
     public override string ToString()
     {
         return Kind switch
@@ -237,6 +247,7 @@ public sealed record MirPlace : MirOperand
             PlaceKind.Field => $"{Base}.{FieldName}",
             PlaceKind.Index => $"{Base}[{Index}]",
             PlaceKind.Deref => $"*{Base}",
+            PlaceKind.ModuleVar => $"global {ModuleVarName}",
             _ => "?"
         };
     }
@@ -281,7 +292,12 @@ public enum PlaceKind
     /// <summary>
     /// 解引用
     /// </summary>
-    Deref
+    Deref,
+
+    /// <summary>
+    /// 模块级可变变量
+    /// </summary>
+    ModuleVar
 }
 
 /// <summary>

@@ -144,6 +144,19 @@ public sealed partial class CompilationPipeline
         }
         builder.Append(']');
 
+        builder.Append("module-vars[");
+        foreach (var moduleVar in module.ModuleVars
+                     .OrderBy(static moduleVar => moduleVar.SymbolId.Value)
+                     .ThenBy(static moduleVar => moduleVar.Name, StringComparer.Ordinal))
+        {
+            Append(builder, moduleVar.SymbolId.Value);
+            Append(builder, moduleVar.Name);
+            Append(builder, moduleVar.TypeId.Value);
+            Append(builder, moduleVar.IsMutable);
+            AppendOperand(builder, moduleVar.Initializer);
+        }
+        builder.Append(']');
+
         builder.Append("functions[");
         foreach (var function in module.Functions)
         {
@@ -414,6 +427,8 @@ public sealed partial class CompilationPipeline
         Append(builder, place.FieldName ?? "");
         AppendOperand(builder, place.Index);
         Append(builder, place.IndexAccessKind);
+        Append(builder, place.ModuleVarName ?? "");
+        Append(builder, place.ModuleVarSymbol.Value);
     }
 
     private static void AppendConstantValue(StringBuilder builder, MirConstantValue? value)

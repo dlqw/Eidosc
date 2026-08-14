@@ -156,6 +156,10 @@ public sealed partial class MirBuilder
                 };
                 return true;
 
+            case HirVar variable when TryResolveModuleVarPlace(variable, out var moduleVarPlace):
+                place = moduleVarPlace;
+                return true;
+
             case HirUnaryOp
             {
                 Operator: Eidosc.Hir.UnaryOp.Ref or Eidosc.Hir.UnaryOp.MRef

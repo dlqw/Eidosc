@@ -33,6 +33,11 @@ public sealed class MirModule
     public List<MirFunc> Functions { get; init; } = [];
 
     /// <summary>
+    /// 模块级可变变量列表。
+    /// </summary>
+    public List<MirModuleVar> ModuleVars { get; init; } = [];
+
+    /// <summary>
     /// 编译期动态类型键（例如 TyVar/Fun/Tuple）到 TypeId 的反查表。
     /// </summary>
     public Dictionary<int, string> DynamicTypeKeys { get; init; } = [];
@@ -111,6 +116,7 @@ public sealed class MirModule
         PackageInstanceKey = PackageInstanceKey,
         Path = Path,
         Functions = functions,
+        ModuleVars = ModuleVars.ToList(),
         DynamicTypeKeys = DynamicTypeKeys,
         TypeDescriptors = TypeDescriptors,
         LinkLibraries = LinkLibraries,
@@ -126,6 +132,44 @@ public sealed class MirModule
     };
 
     public override string ToString() => $"module {Name}";
+}
+
+/// <summary>
+/// 模块级可变变量。
+/// </summary>
+public sealed record MirModuleVar
+{
+    /// <summary>
+    /// 源码可见名称。
+    /// </summary>
+    public string Name { get; init; } = "";
+
+    /// <summary>
+    /// 符号 ID。
+    /// </summary>
+    public SymbolId SymbolId { get; init; } = SymbolId.None;
+
+    /// <summary>
+    /// 运行时类型。
+    /// </summary>
+    public TypeId TypeId { get; init; } = TypeId.None;
+
+    /// <summary>
+    /// 是否可变。
+    /// </summary>
+    public bool IsMutable { get; init; }
+
+    /// <summary>
+    /// 编译期常量初始化值。
+    /// </summary>
+    public MirOperand Initializer { get; init; } = null!;
+
+    /// <summary>
+    /// 源码位置。
+    /// </summary>
+    public SourceSpan Span { get; init; }
+
+    public override string ToString() => $"module var {Name}";
 }
 
 /// <summary>

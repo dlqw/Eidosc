@@ -197,6 +197,23 @@ public sealed partial class CompilationPipeline
             h.Add(combined);
         }
 
+        // ModuleVars — ordered by source declaration order
+        h.Add("module-vars");
+        {
+            ulong combined = 0;
+            foreach (var moduleVar in module.ModuleVars)
+            {
+                var vh = new ConvergenceHash();
+                vh.Add(moduleVar.SymbolId.Value);
+                vh.Add(moduleVar.Name);
+                vh.Add(moduleVar.TypeId.Value);
+                vh.Add(moduleVar.IsMutable);
+                HashOperand(ref vh, moduleVar.Initializer);
+                combined ^= vh.Value;
+            }
+            h.Add(combined);
+        }
+
         // Functions — ORDERED list (no sort in original)
         h.Add("functions");
         foreach (var func in module.Functions)
@@ -492,6 +509,8 @@ public sealed partial class CompilationPipeline
         h.Add(place.FieldName ?? "");
         HashOperand(ref h, place.Index);
         h.Add(place.IndexAccessKind);
+        h.Add(place.ModuleVarName ?? "");
+        h.Add(place.ModuleVarSymbol.Value);
     }
 
     // ──────────────────────────────────────────────

@@ -1045,7 +1045,7 @@ public sealed class MirValidator
         MirBasicBlock block,
         int? instructionIndex)
     {
-        if (place.Kind is PlaceKind.Local or PlaceKind.Field or PlaceKind.Index or PlaceKind.Deref)
+        if (place.Kind is PlaceKind.Local or PlaceKind.Field or PlaceKind.Index or PlaceKind.Deref or PlaceKind.ModuleVar)
         {
             ValidateIndexAccessKind(place, function, block, instructionIndex);
             ValidatePlaceShape(place, function, block, instructionIndex);
@@ -1104,6 +1104,14 @@ public sealed class MirValidator
                 if (place.Base == null)
                 {
                     ReportInvalidPlaceShape("deref place base", place, function, block, instructionIndex);
+                }
+
+                break;
+
+            case PlaceKind.ModuleVar:
+                if (string.IsNullOrWhiteSpace(place.ModuleVarName))
+                {
+                    ReportInvalidPlaceShape("module variable place name", place, function, block, instructionIndex);
                 }
 
                 break;

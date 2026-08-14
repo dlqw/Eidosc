@@ -11,6 +11,7 @@ internal static class MirOptimizationCloner
         PackageInstanceKey = module.PackageInstanceKey,
         Path = module.Path.ToList(),
         Functions = functions,
+        ModuleVars = module.ModuleVars.ToList(),
         DynamicTypeKeys = new Dictionary<int, string>(module.DynamicTypeKeys),
         TypeDescriptors = new Dictionary<int, TypeDescriptor>(module.TypeDescriptors),
         LinkLibraries = module.LinkLibraries.ToList(),
