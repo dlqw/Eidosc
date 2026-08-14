@@ -205,6 +205,9 @@ public sealed partial class MirToLlvmConverter
                 _currentBlock?.Instructions.Add(indexPtr);
                 return new LlvmInstructionRef { Instruction = indexPtr, Type = LlvmPointerType.VoidPtr() };
 
+            case PlaceKind.ModuleVar:
+                return ResolveModuleVarGlobal(place);
+
             default:
                 return ReportUnsupportedPlaceKindFallback(place, "place conversion");
         }

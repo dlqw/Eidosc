@@ -162,6 +162,32 @@ public sealed class DeclParserTests
     }
 
     [Fact]
+    public void Parse_name_first_module_level_mut_binding_assignment_in_function_body()
+    {
+        var ctx = MakeNameFirstCtx(
+            "mut", Ident("counter"), ":=", Num("0"), ";",
+            Ident("inc"), "::", TypeId("Unit"), "->", TypeId("Int"),
+            "{", "_", "=>", "{",
+            Ident("counter"), ":=", Num("1"), ";",
+            Ident("counter"),
+            "}", "}");
+        var parser = new DeclParser(ctx);
+
+        var nodes = parser.ParseProgram();
+
+        Assert.Equal(2, nodes.Count);
+        var func = Assert.IsType<FuncDef>(nodes[1]);
+        var body = Assert.Single(func.Body);
+        var block = Assert.IsType<BlockExpr>(body.Expression);
+        Assert.Equal(2, block.Statements.Count);
+        var assignment = Assert.IsType<Assignment>(block.Statements[0]);
+        Assert.Equal("counter", assignment.Target);
+        Assert.IsType<IdentifierExpr>(block.Statements[1]);
+        Assert.IsType<IdentifierExpr>(block.ResultExpression);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
     public void Parse_let_decl()
     {
         var ctx = MakeCtx("let", Ident("a"), "=", Num("1"), ";");

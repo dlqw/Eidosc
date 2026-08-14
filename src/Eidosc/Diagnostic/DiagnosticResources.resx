@@ -2043,6 +2043,12 @@
   <data name="ModuleVariableInitializerNotConstantLabel" xml:space="preserve">
     <value>module-level mutable variable initializer is not a compile-time constant</value>
   </data>
+  <data name="ModuleVariableInitializerNotStaticScalar" xml:space="preserve">
+    <value>Module-level mutable variable '{0}' initializer must lower to a static scalar value; managed runtime values are not supported yet.</value>
+  </data>
+  <data name="ModuleVariableInitializerNotStaticScalarLabel" xml:space="preserve">
+    <value>module-level mutable variable initializer is not a static scalar</value>
+  </data>
   <data name="ModuleLambdaCapturesState" xml:space="preserve">
     <value>Module-level lambda '{0}' captures local state and cannot be lowered as a standalone function.</value>
   </data>

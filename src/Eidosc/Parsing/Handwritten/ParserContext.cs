@@ -18,6 +18,7 @@ public sealed class ParserContext
         WellKnownStrings.Meta.Module,
         WellKnownStrings.Build.Module
     };
+    private readonly HashSet<string> _moduleLevelMutableBindings = new(StringComparer.Ordinal);
     private int _stepCount;
     private const int MaxSteps = 500_000;
 
@@ -303,6 +304,17 @@ public sealed class ParserContext
 
     public bool IsKnownNamespaceRoot(Token token) =>
         TokenKind.IsAnyIdentifier(token) && _namespaceRoots.Contains(GetText(token));
+
+    public void RegisterModuleLevelMutableBinding(string? name)
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            _moduleLevelMutableBindings.Add(name);
+        }
+    }
+
+    public bool IsKnownModuleLevelMutableBinding(Token token) =>
+        TokenKind.IsAnyIdentifier(token) && _moduleLevelMutableBindings.Contains(GetText(token));
 
     private static bool TextEquals(Token token, string expected)
     {

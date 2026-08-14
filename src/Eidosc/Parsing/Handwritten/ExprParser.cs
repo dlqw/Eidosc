@@ -1683,6 +1683,8 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                     stmt = ParseNameFirstAssignment();
                 else if (ctx.IsNameFirstSyntax && IsKnownMutableLocalAssignmentStart())
                     stmt = ParseNameFirstAssignment();
+                else if (ctx.IsNameFirstSyntax && IsKnownModuleLevelMutableAssignmentStart())
+                    stmt = ParseNameFirstAssignment();
                 else if (ctx.IsNameFirstSyntax && IsNameFirstLocalBindingStart())
                     stmt = ParseNameFirstLocalBinding();
                 else if (ctx.IsNameFirstSyntax && IsNameFirstAssignmentStart())
@@ -1964,6 +1966,13 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         return _mutableBlockBindings.Count > 0 &&
                TokenKind.IsIdentifier(ctx.Current) &&
                _mutableBlockBindings.Peek().Contains(ctx.GetText()) &&
+               ctx.CheckPeek(1, ":=");
+    }
+
+    private bool IsKnownModuleLevelMutableAssignmentStart()
+    {
+        return TokenKind.IsIdentifier(ctx.Current) &&
+               ctx.IsKnownModuleLevelMutableBinding(ctx.Current) &&
                ctx.CheckPeek(1, ":=");
     }
 
