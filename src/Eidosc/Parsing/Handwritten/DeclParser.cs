@@ -225,6 +225,7 @@ public sealed class DeclParser(ParserContext ctx)
         ctx.Expect(WellKnownStrings.Keywords.Mut);
         var name = ctx.GetText();
         ctx.Advance();
+        ctx.RegisterModuleLevelMutableBinding(name);
 
         TypeNode? typeAnnotation = null;
         if (ctx.Match(":"))

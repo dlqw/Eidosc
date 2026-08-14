@@ -49,6 +49,8 @@ public sealed partial class MirToLlvmConverter
     private readonly HashSet<LocalId> _borrowedProjectionLocals = [];
     private readonly List<LlvmFunction> _synthesizedClosureHelpers = [];
     private readonly Dictionary<string, LlvmGlobal> _stringLiteralGlobals = new(StringComparer.Ordinal);
+    private readonly Dictionary<SymbolId, LlvmGlobal> _moduleVarGlobalsBySymbol = [];
+    private readonly Dictionary<string, LlvmGlobal> _moduleVarGlobalsByName = new(StringComparer.Ordinal);
     private readonly Dictionary<SymbolId, PerceusHints> _perceusHintsByFunctionSymbol = [];
     private readonly Dictionary<string, PerceusHints> _perceusHintsByFunction = new(StringComparer.Ordinal);
     private readonly Dictionary<SymbolId, ReuseHints> _reuseHintsByFunctionSymbol = [];
@@ -268,6 +270,11 @@ public sealed partial class MirToLlvmConverter
                 Id = 0,
                 Attributes = ["alwaysinline"]
             });
+        }
+
+        using (MeasureConverterSubphase("lower_module_variables"))
+        {
+            LowerModuleVariables(module, llvmModule);
         }
 
         // Collect all named struct types from TypeLowering into the module

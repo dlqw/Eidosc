@@ -41,6 +41,11 @@ public sealed partial class MirToLlvmConverter
             });
         }
 
+        using (MeasureConverterSubphase("lower_module_variables"))
+        {
+            LowerModuleVariables(module, llvmModule);
+        }
+
         using (MeasureConverterSubphase("collect_named_struct_types"))
         {
             CollectNamedStructTypes(llvmModule);
@@ -132,6 +137,8 @@ public sealed partial class MirToLlvmConverter
             _runtimeFunctionGlobalCache.Clear();
             _arrayElementPolicies.Clear();
             _stringLiteralGlobals.Clear();
+            _moduleVarGlobalsBySymbol.Clear();
+            _moduleVarGlobalsByName.Clear();
             _stringLiteralCounter = 0;
             _closureThunkCounter = 0;
             _synthesizedClosureHelpers.Clear();

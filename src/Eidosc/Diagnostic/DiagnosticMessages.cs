@@ -1864,6 +1864,12 @@ internal static partial class DiagnosticMessages
     public static string ModuleVariableInitializerNotConstantLabel =>
         Get(nameof(ModuleVariableInitializerNotConstantLabel));
 
+    public static string ModuleVariableInitializerNotStaticScalar(string variableName) =>
+        Format(nameof(ModuleVariableInitializerNotStaticScalar), variableName);
+
+    public static string ModuleVariableInitializerNotStaticScalarLabel =>
+        Get(nameof(ModuleVariableInitializerNotStaticScalarLabel));
+
     public static string ModuleLambdaCapturesState(string valueName) =>
         Format(nameof(ModuleLambdaCapturesState), valueName);
 
