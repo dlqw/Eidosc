@@ -130,6 +130,11 @@ public sealed class DeclParser(ParserContext ctx)
             return ParseNameFirstDeclaration(attrs, isExport);
         }
 
+        if (ctx.IsNameFirstSyntax && text == WellKnownStrings.Keywords.Mut)
+        {
+            return ParseTopLevelMutBinding(attrs, isExport);
+        }
+
         return text switch
         {
             "expand"  => ParseExpandDeclaration(SyntaxCategory.Item),
@@ -212,6 +217,38 @@ public sealed class DeclParser(ParserContext ctx)
                TokenKind.IsOperatorIdentifier(ctx.Peek(1)) &&
                ctx.CheckPeek(2, ")") &&
                ctx.CheckPeek(3, "::");
+    }
+
+    private LetDecl ParseTopLevelMutBinding(List<AstAttribute> attrs, bool isExport)
+    {
+        var startToken = ctx.Current;
+        ctx.Expect(WellKnownStrings.Keywords.Mut);
+        var name = ctx.GetText();
+        ctx.Advance();
+
+        TypeNode? typeAnnotation = null;
+        if (ctx.Match(":"))
+        {
+            typeAnnotation = _typeParser.ParseType();
+        }
+
+        ctx.Expect(":=");
+        var value = _exprParser.ParseExpr();
+        ctx.Match(";");
+
+        var pattern = new VarPattern();
+        pattern.SetSpan(new SourceSpan(startToken.Location, startToken.Length));
+        pattern.SetName(name);
+
+        var decl = new LetDecl();
+        decl.SetSpan(ctx.SpanFrom(startToken));
+        decl.SetMutable(true);
+        decl.SetPattern(pattern);
+        decl.SetTypeAnnotation(typeAnnotation);
+        decl.SetValue(value);
+        decl.SetAttributes(attrs);
+        decl.SetExported(isExport);
+        return decl;
     }
 
     private Declaration ParseNameFirstDeclaration(List<AstAttribute> attrs, bool isExport)

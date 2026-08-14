@@ -148,6 +148,20 @@ public sealed class DeclParserTests
     }
 
     [Fact]
+    public void Parse_name_first_top_level_mut_binding()
+    {
+        var ctx = MakeNameFirstCtx("mut", Ident("counter"), ":=", Num("0"), ";");
+        var parser = new DeclParser(ctx);
+        var result = parser.ParseTopLevel();
+        var decl = Assert.IsType<LetDecl>(result);
+        var pattern = Assert.IsType<VarPattern>(decl.Pattern);
+        Assert.True(decl.IsMutable);
+        Assert.Equal("counter", pattern.Name);
+        Assert.NotNull(decl.Value);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
     public void Parse_let_decl()
     {
         var ctx = MakeCtx("let", Ident("a"), "=", Num("1"), ";");
