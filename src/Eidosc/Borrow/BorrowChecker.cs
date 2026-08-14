@@ -1041,6 +1041,7 @@ public sealed class BorrowChecker
                     sourceBorrow,
                     BorrowDiagnosticFormatter.BuildCallTrace(call, binding.ArgumentIndex, binding.TargetLocal, binding.Borrowee, blockId, index));
             });
+
     }
 
     private bool VerifyCallArgumentCapabilities(

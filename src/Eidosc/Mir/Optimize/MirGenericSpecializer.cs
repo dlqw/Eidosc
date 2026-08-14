@@ -919,6 +919,7 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
     {
         CompilerSemanticRole.AppendLastAppend or
         CompilerSemanticRole.AppendLastSingleton or
+        CompilerSemanticRole.SequenceHead or
         CompilerSemanticRole.SequenceTake or
         CompilerSemanticRole.SequenceMap or
         CompilerSemanticRole.SequenceFilter or
@@ -934,7 +935,8 @@ public sealed partial class MirGenericSpecializer : IMirOptimizationPass
         CompilerSemanticRole.SequenceZipWith or
         CompilerSemanticRole.SequencePartition or
         CompilerSemanticRole.SequenceReverse or
-        CompilerSemanticRole.SequenceForEach => role,
+        CompilerSemanticRole.SequenceForEach or
+        CompilerSemanticRole.SequenceBuilderFreeze => role,
         _ => CompilerSemanticRole.None
     };
 

@@ -1,4 +1,5 @@
 using Eidosc.Types;
+using Eidosc.Borrow;
 
 namespace Eidosc.Mir.Optimize;
 
@@ -501,4 +502,9 @@ public static class FunctionOptimizationSummaryAnalyzer
 internal interface IFunctionOptimizationProofConsumer
 {
     FunctionOptimizationProofIndex FunctionProofs { set; }
+}
+
+internal interface IOwnershipAnalysisSnapshotConsumer
+{
+    IReadOnlyDictionary<string, OwnershipAnalysisSnapshot> OwnershipSnapshots { set; }
 }

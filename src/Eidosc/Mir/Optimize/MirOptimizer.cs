@@ -48,12 +48,16 @@ public sealed partial class MirOptimizer
         var passStats = new List<MirOptimizationPassStats>(_passes.Count);
         MirModule? proofModule = null;
         var functionProofs = FunctionOptimizationProofIndex.Empty;
+        MirModule? ownershipSnapshotModule = null;
+        IReadOnlyDictionary<string, OwnershipAnalysisSnapshot> ownershipSnapshots =
+            new Dictionary<string, OwnershipAnalysisSnapshot>(StringComparer.Ordinal);
 
         for (var passIndex = 0; passIndex < _passes.Count; passIndex++)
         {
             var pass = _passes[passIndex];
             var before = current;
             var proofConsumer = pass as IFunctionOptimizationProofConsumer;
+            var ownershipConsumer = pass as IOwnershipAnalysisSnapshotConsumer;
             if (proofConsumer != null)
             {
                 if (!ReferenceEquals(proofModule, current))
@@ -71,6 +75,21 @@ public sealed partial class MirOptimizer
                 proofConsumer.FunctionProofs = functionProofs;
             }
 
+            if (ownershipConsumer != null)
+            {
+                if (!ReferenceEquals(ownershipSnapshotModule, current))
+                {
+                    using (MeasureOptimizerSubphase("ownership-snapshot.analyze"))
+                    {
+                        ownershipSnapshots = OwnershipAnalysisSnapshot.BuildForOptimization(current);
+                    }
+
+                    ownershipSnapshotModule = current;
+                }
+
+                ownershipConsumer.OwnershipSnapshots = ownershipSnapshots;
+            }
+
             try
             {
                 using (MeasureOptimizerSubphase($"pass.{passIndex}.{pass.Name}"))
@@ -83,6 +102,12 @@ public sealed partial class MirOptimizer
                 if (proofConsumer != null)
                 {
                     proofConsumer.FunctionProofs = FunctionOptimizationProofIndex.Empty;
+                }
+
+                if (ownershipConsumer != null)
+                {
+                    ownershipConsumer.OwnershipSnapshots =
+                        new Dictionary<string, OwnershipAnalysisSnapshot>(StringComparer.Ordinal);
                 }
             }
 
@@ -145,6 +170,7 @@ public sealed partial class MirOptimizer
         // consistent. Inlining runs before ownership finalization so inserted
         // drops cover the inlined code.
         optimizer.RegisterPass(new Inlining());
+        optimizer.RegisterPass(new SequenceBuilderFusionPass());
         optimizer.RegisterPass(new TraversableConsumerSpecializationPass());
 
         // Round 2: Tail call optimization followed by ownership finalization.

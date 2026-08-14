@@ -168,6 +168,7 @@ public enum CompilerSemanticRole
     Prepend,
     AppendLastSingleton,
     AppendLastAppend,
+    SequenceHead,
     SequenceTake,
     SequenceMap,
     SequenceFilter,
@@ -183,7 +184,8 @@ public enum CompilerSemanticRole
     SequenceZipWith,
     SequencePartition,
     SequenceReverse,
-    SequenceForEach
+    SequenceForEach,
+    SequenceBuilderFreeze
 }
 
 public enum BuiltinIntrinsicRole

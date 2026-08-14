@@ -848,9 +848,9 @@ classify :: OptionI -> Int
     public void Build_ListPatternMatch_WithRestBinding_EmitsLengthChecksAndTailMaterialization()
     {
         const string source = """
-head_or_zero :: Int -> Int
+head_or_zero :: Seq[Int] -> Int
 {
-    _ => match [1, 2, 3]
+    xs => match xs
     {
         [head, ..tail] => head,
         [] => 0

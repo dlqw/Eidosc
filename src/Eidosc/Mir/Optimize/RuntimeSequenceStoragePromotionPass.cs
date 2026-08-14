@@ -1,4 +1,5 @@
 using Eidosc.Types;
+using Eidosc.Borrow;
 using Eidosc.Utils;
 
 namespace Eidosc.Mir.Optimize;
@@ -8,7 +9,8 @@ namespace Eidosc.Mir.Optimize;
 /// </summary>
 public sealed class RuntimeSequenceStoragePromotionPass :
     IMirOptimizationPass,
-    IMirOptimizationMetricsProvider
+    IMirOptimizationMetricsProvider,
+    IOwnershipAnalysisSnapshotConsumer
 {
     private const long RuntimeArrayStorageOverheadBytes = 64;
     private const long MaxInlineArrayStorageBytes = 4096;
@@ -16,6 +18,15 @@ public sealed class RuntimeSequenceStoragePromotionPass :
     public string Name => "RuntimeSequenceStoragePromotion";
 
     public long StoragesPromoted { get; private set; }
+
+    private IReadOnlyDictionary<string, OwnershipAnalysisSnapshot> _ownershipSnapshots =
+        new Dictionary<string, OwnershipAnalysisSnapshot>(StringComparer.Ordinal);
+
+    IReadOnlyDictionary<string, OwnershipAnalysisSnapshot> IOwnershipAnalysisSnapshotConsumer.OwnershipSnapshots
+    {
+        set => _ownershipSnapshots = value ??
+            new Dictionary<string, OwnershipAnalysisSnapshot>(StringComparer.Ordinal);
+    }
 
     public IReadOnlyDictionary<string, long> GetMetricsSnapshot() =>
         new Dictionary<string, long>(StringComparer.Ordinal)
@@ -35,7 +46,10 @@ public sealed class RuntimeSequenceStoragePromotionPass :
                 continue;
             }
 
-            var storages = FindLocalArrayStorages(function);
+            _ownershipSnapshots.TryGetValue(
+                MirFunctionIdentity.GetStableKey(function),
+                out var snapshot);
+            var storages = FindLocalArrayStorages(function, snapshot);
             if (HaveSameStorages(function.CallerOwnedAggregateAbi.LocalArrayStorages, storages))
             {
                 continue;
@@ -52,7 +66,9 @@ public sealed class RuntimeSequenceStoragePromotionPass :
         return changed ? module.WithFunctions(module.Functions.ToList()) : module;
     }
 
-    private static IReadOnlyList<MirCallerOwnedArrayStorage> FindLocalArrayStorages(MirFunc function)
+    private static IReadOnlyList<MirCallerOwnedArrayStorage> FindLocalArrayStorages(
+        MirFunc function,
+        OwnershipAnalysisSnapshot? snapshot)
     {
         var allocations = function.BasicBlocks
             .SelectMany(static block => block.Instructions)
@@ -75,7 +91,8 @@ public sealed class RuntimeSequenceStoragePromotionPass :
             }
 
             var aliases = BuildDirectLocalAliasComponent(function, target.Local);
-            if (!IsSafeLocalArrayCandidate(function, allocation, aliases))
+            if (!IsSafeLocalArrayCandidate(function, allocation, aliases) ||
+                !IsSnapshotStorageSafe(function, allocation, aliases, snapshot))
             {
                 continue;
             }
@@ -112,6 +129,79 @@ public sealed class RuntimeSequenceStoragePromotionPass :
             .Select(static group => group.First())
             .OrderBy(static storage => storage.Key, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static bool IsSnapshotStorageSafe(
+        MirFunc function,
+        MirCall allocation,
+        IReadOnlySet<LocalId> aliases,
+        OwnershipAnalysisSnapshot? snapshot)
+    {
+        if (snapshot is null)
+        {
+            return true;
+        }
+
+        var allocationPoint = function.BasicBlocks
+            .SelectMany(block => block.Instructions.Select((instruction, index) => (block, instruction, index)))
+            .FirstOrDefault(candidate => ReferenceEquals(candidate.instruction, allocation));
+        if (allocationPoint.block is null)
+        {
+            return false;
+        }
+
+        var root = ((MirPlace)allocation.Target!).Local;
+        if (!TryGetPostAllocationState(
+                snapshot,
+                allocationPoint.block.Id,
+                allocationPoint.index,
+                root,
+                out var fact,
+                out var rootState))
+        {
+            // Optimization rewrites synthesize local array storages after the
+            // snapshot is captured. An unknown allocation point is not a proof
+            // of unsafety: keep the existing local candidate analysis route.
+            return true;
+        }
+
+        if (rootState != OwnershipPlaceState.Owned ||
+            !fact.MustOwned.Contains(root) ||
+            !fact.MustUnique.Contains(root) ||
+            fact.ActiveBorrowRoots.Contains(root))
+        {
+            return false;
+        }
+
+        return snapshot.EscapeFacts.GetValueOrDefault(root) == OwnershipEscapeKind.None &&
+               aliases.All(alias =>
+                   snapshot.EscapeFacts.GetValueOrDefault(alias) == OwnershipEscapeKind.None &&
+                   !snapshot.HasActiveBorrow(alias, allocationPoint.block.Id, allocationPoint.index));
+    }
+
+    private static bool TryGetPostAllocationState(
+        OwnershipAnalysisSnapshot snapshot,
+        BlockId block,
+        int allocationIndex,
+        LocalId root,
+        out OwnershipInstructionFact fact,
+        out OwnershipPlaceState state)
+    {
+        fact = null!;
+        state = OwnershipPlaceState.Uninitialized;
+        for (var index = allocationIndex + 1;
+             snapshot.PerInstructionFacts.TryGetValue((block, index), out var candidate);
+             index++)
+        {
+            if (candidate.States.TryGetValue(root, out var candidateState))
+            {
+                fact = candidate;
+                state = candidateState;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static HashSet<LocalId> BuildDirectLocalAliasComponent(MirFunc function, LocalId seed)

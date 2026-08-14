@@ -41,7 +41,7 @@ Seq :: module {
         }
     }
 
-    export head[T] :: Seq[T] -> Option[T]
+    export head[T] :: Seq[T] -> Option[T] compiler(role: "sequence.head")
     {
         [first, ..] => Some(first),
         [] => None()
@@ -186,16 +186,16 @@ Seq :: module {
             len := Seq.len_ref(ref xs)
             mut index := 0
             mut result: Option[T] := None()
-            mut found := false
             loop {
-                if index >= len || found then { break }
+                if index >= len then { break }
                 else {
                     value := xs[index]
                     if pred(ref value) then {
                         result = Some(value)
-                        found = true
-                    } else { () }
-                    index = index + 1
+                        break
+                    } else {
+                        index = index + 1
+                    }
                 }
             }
             result
@@ -230,16 +230,13 @@ Seq :: module {
         xs => pred => {
             len := Seq.len_ref(ref xs);
             mut index := 0;
-            mut found := false;
             loop {
-                if index >= len || found then { break }
+                if index >= len then { break }
                 else {
-                    if pred(xs[index]) then { found = true } else { () };
-                    index = index + 1;
-                    ()
+                    if pred(xs[index]) then { break } else { index = index + 1 }
                 }
             }
-            found
+            index < len
         }
     }
 
@@ -250,11 +247,9 @@ Seq :: module {
             mut index := 0;
             mut ok := true;
             loop {
-                if index >= len || !ok then { break }
+                if index >= len then { break }
                 else {
-                    if pred(xs[index]) then { () } else { ok = false };
-                    index = index + 1;
-                    ()
+                    if pred(xs[index]) then { index = index + 1 } else { ok = false; break }
                 }
             }
             ok

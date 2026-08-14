@@ -53,7 +53,12 @@ public sealed partial class MirBuilder
     private MirOperand ConvertMatch(HirMatch match)
     {
         var scrutinee = ConvertExpr(match.Scrutinee);
-        scrutinee = EnsureReadValue(scrutinee, match.Scrutinee.TypeId, match.Span);
+        // A by-value, non-Copy local is already an owned match scrutinee.  Loading
+        // it through a temporary would create a shared alias before the pattern
+        // branches can move their rest/field places, which rejects ordinary
+        // recursive list/ADT destructuring.  Keep the place so pattern lowering
+        // can materialize owned projections explicitly; rvalues, Copy values and
+        // references still use the normal read path.
         var scrutineePlace = EnsurePlaceOperand(scrutinee, match.Scrutinee.TypeId, match.Span);
         if (TryConvertSingleIrrefutableMatch(match, scrutineePlace, out var directResult))
         {

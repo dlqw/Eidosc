@@ -133,7 +133,7 @@ SeqBuilder :: module {
     }
 
     // Freeze into a read-only Seq view. Shares the buffer (no copy).
-    export freeze[T] :: SeqBuilder[T] -> Seq[T]
+    export freeze[T] :: SeqBuilder[T] -> Seq[T] compiler(role: "sequence.builder.freeze")
     {
         SeqBuilder(buf) => buf
     }
