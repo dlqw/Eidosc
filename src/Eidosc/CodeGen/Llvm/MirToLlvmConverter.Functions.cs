@@ -743,7 +743,7 @@ public sealed partial class MirToLlvmConverter
 
         var diagnostic = Diagnostic.Diagnostic.Error(
                 DiagnosticMessages.UnresolvedFunctionSignatureRole(role),
-                "E5302")
+                "E5314")
             .WithNote(DiagnosticMessages.FunctionNote(function.Name))
             .WithNote(DiagnosticMessages.EnsureInferenceMonomorphizationBeforeLlvm);
 

@@ -87,4 +87,26 @@ public partial class LlvmPipelineIntegrationTests
 
         Assert.Equal(2, execution.ExitCode);
     }
+
+    [Fact]
+    public void ModuleLevelMutableGlobal_NonStaticScalarInitializer_ReportsE5313AndFallsBackToZero()
+    {
+        const string source = """
+        mut greeting := "hello";
+
+        main :: Unit -> Int
+        {
+            _ => 0
+        }
+        """;
+
+        var result = RunSourceAtLlvm(source, "module_level_global_static_scalar_fallback.eidos");
+
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, static diagnostic => diagnostic.Code == "E5313");
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+
+        var llvmIr = Assert.IsType<string>(result.LlvmIrText);
+        Assert.Matches(@"@eidos_g_\w+_greeting = global \w+ zeroinitializer", llvmIr);
+    }
 }

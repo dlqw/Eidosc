@@ -119,7 +119,7 @@ public partial class MirBuilderTests
     }
 
     [Fact]
-    public void Build_ModuleLevelMutableVar_NonConstantInitializer_ReportsE5301AndPoison()
+    public void Build_ModuleLevelMutableVar_NonConstantInitializer_ReportsE5312AndPoison()
     {
         var intType = new TypeId(BaseTypes.IntId);
         var counterSymbol = new SymbolId(3110);
@@ -158,7 +158,7 @@ public partial class MirBuilderTests
         var builder = new MirBuilder();
         var mirModule = builder.Build(module);
 
-        Assert.Contains(builder.Diagnostics, diagnostic => diagnostic.Code == "E5301");
+        Assert.Contains(builder.Diagnostics, diagnostic => diagnostic.Code == "E5312");
         var moduleVar = Assert.Single(mirModule.ModuleVars);
         Assert.IsType<MirPoison>(moduleVar.Initializer);
     }

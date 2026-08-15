@@ -70,7 +70,7 @@ public sealed partial class MirToLlvmConverter
     {
         var diagnostic = Diagnostic.Diagnostic.Error(
             DiagnosticMessages.ModuleVariableInitializerNotStaticScalar(moduleVar.Name),
-            "E5302");
+            "E5313");
         if (HasSpan(moduleVar.Span))
         {
             diagnostic.WithLabel(moduleVar.Span, DiagnosticMessages.ModuleVariableInitializerNotStaticScalarLabel);

@@ -122,7 +122,7 @@ public sealed partial class MirBuilder
 
         var diagnostic = Diagnostic.Diagnostic.Error(
             DiagnosticMessages.ModuleVariableInitializerNotConstant(varDecl.Name),
-            "E5301");
+            "E5312");
         if (HasSpan(varDecl.Span))
         {
             diagnostic.WithLabel(
