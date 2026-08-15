@@ -5,12 +5,13 @@ namespace Eidosc.Bindgen;
 /// <summary>
 /// 自动 C shim 生成（P0 M4/M5）。
 /// 规则：
-/// 1. struct 按值参数 → 字段拆分 shim（递归展开为 <c>int64_t</c>/<c>double</c>/指针叶字段，
-///    调用侧用 C99 compound literal 组装；Eidos 侧全部 64 位，可构造）；
+/// 1. struct 按值参数 → 字段拆分 shim（叶字段以原生位宽直连，enum 叶宽化为 <c>int64_t</c>；
+///    调用侧用 C99 compound literal 组装；Eidos 侧签名与叶字段一一对应）；
 /// 2. struct 按值返回 → 静态槽 + 指针返回 shim（Eidos 侧 <c>RawPtr</c>，不可重入；
 ///    读取字段需等 Eidosc 窄标量支持落地）；
-/// 3. 窄标量（非 64 位整数、<c>float</c>、enum）→ <c>int64_t</c>/<c>double</c> 参数/返回 +
-///    C 类型转换（Eidos 无法构造窄值，边界统一 64 位）；
+/// 3. 仍映射为 64 位 Eidos 标量的窄 C 尺寸（enum、无布局事实残留）→
+///    <c>int64_t</c>/<c>double</c> 参数/返回 + C 类型转换；char/short/int 与 float
+///    已直接映射 Eidos 窄标量，原生位宽过边界，不再窄化；
 /// 4. 其余 ABI 形态（变参、捕获回调、含 union/数组字段的 struct 参数）保持 SKIP。
 /// </summary>
 public sealed class BindingCShimGenerator
@@ -76,13 +77,14 @@ public sealed class BindingCShimGenerator
     }
 
     /// <summary>
-    /// 当前编译器 FFI 边界只支持 64 位标量（E5337 白名单修复后窄类型仍无法从 Eidos 构造）；
-    /// 窄标量（char/short/int/float/enum，不含 64 位整数与 bool）必须经 shim 窄化。
-    /// Size==0（简单模式）视为未知 → 不 shim。
+    /// 窄化 shim 只服务"仍映射为 64 位 Eidos 标量"的窄 C 尺寸：enum（EnumAsInt → Int）与
+    /// 无布局事实的残留路径。char/short/int 与 float 已直接映射 Eidos 窄标量（E5337 收口），
+    /// 以原生位宽过 FFI 边界，不再生成 shim。Size==0（简单模式）视为未知 → 不 shim。
     /// </summary>
     private bool NeedsNarrowing(CBindingType type) =>
         type.Size is not (0 or 8) &&
-        !(type.Kind == CBindingTypeKind.Primitive && type.Name is "bool" or "_Bool");
+        !(type.Kind == CBindingTypeKind.Primitive && type.Name is "bool" or "_Bool") &&
+        _typeMapper.Map(type).EidosType is "Int" or "Int64" or "Float";
 
     private bool CanSplitStruct(CBindingType type) =>
         TrySplitStruct(type, "p", 0, out _, out _);
@@ -190,8 +192,9 @@ public sealed class BindingCShimGenerator
     }
 
     /// <summary>
-    /// struct 按值参数递归拆分：叶字段产出 shim 参数（int64_t/double/指针原样）与
-    /// compound literal 成员表达式；嵌套 struct 递归组装。
+    /// struct 按值参数递归拆分：叶字段以原生位宽产出 shim 参数与 compound literal
+    /// 成员表达式（enum 叶保持 int64_t 宽化 + cast，对齐 Eidos 侧 Int）；
+    /// 嵌套 struct 递归组装。
     /// </summary>
     private bool TrySplitStruct(CBindingType type, string paramName, int depth, out List<SplitField> fields, out string literal)
     {
@@ -238,17 +241,10 @@ public sealed class BindingCShimGenerator
 
         if (type.Kind == CBindingTypeKind.Primitive)
         {
-            var isFloat = type.Name == "float";
-            var shimType = isFloat ? "double" : "int64_t";
-            var cast = type.Name switch
-            {
-                "float" => "float",
-                "double" or "long long" or "unsigned long long" => null,
-                _ => type.Spelling
-            };
-            var member = cast == null ? paramName : $"({cast}){paramName}";
-            fields.Add(new SplitField(paramName, shimType, member));
-            literal = member;
+            // 叶字段以原生位宽直连（与 Eidos 侧 Map 产出的窄标量签名一致）；
+            // 仅 enum 叶（下方）保持 int64_t 宽化 + cast。
+            fields.Add(new SplitField(paramName, type.Spelling, paramName));
+            literal = paramName;
             return true;
         }
 

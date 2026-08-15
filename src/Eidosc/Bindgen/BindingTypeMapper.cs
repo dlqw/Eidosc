@@ -81,17 +81,29 @@ public sealed class BindingTypeMapper
         return type.Name switch
         {
             "_Bool" or "bool" => new("Bool", BindingTypeCategory.Direct),
-            "float" => new("Float", BindingTypeCategory.Direct),
+            "float" => new("Float32", BindingTypeCategory.Direct),
             "double" => new("Float", BindingTypeCategory.Direct),
-            // 当前 MIR/backend 边界只支持 64 位标量（Int/Float）；窄整数与 float
-            // 由自动 shim 做 ABI 窄化（BindingCShimGenerator），Eidos 侧统一 64 位。
-            "char" or "signed char" or "unsigned char" or "int8_t" or "uint8_t" or
-                "short" or "unsigned short" or "int16_t" or "uint16_t" or
-                "int" or "unsigned int" or "int32_t" or "uint32_t" or
-                "long" or "unsigned long" => new("Int", BindingTypeCategory.Direct),
-            "int64_t" => new("Int", BindingTypeCategory.Direct),
-            "long long" or "unsigned long long" or "uint64_t" or
-                "size_t" or "uintptr_t" => new("Int64", BindingTypeCategory.Direct),
+            // E5337 收口后 extern(c) 以原生位宽过 FFI 边界：窄整数与 float 直接映射
+            // Eidos 窄标量，不再经 shim 窄化。仅 enum（下方 EnumAsInt → Int）和
+            // 无布局事实的残留路径仍由 BindingCShimGenerator 宽化。
+            // clang 提取器把 char 家族规整为 "char" + IsUnsigned 标志，需按符号分流。
+            "char" => new(type.IsUnsigned ? "UInt8" : "Int8", BindingTypeCategory.Direct),
+            "signed char" or "int8_t" => new("Int8", BindingTypeCategory.Direct),
+            "unsigned char" or "uint8_t" => new("UInt8", BindingTypeCategory.Direct),
+            "short" or "int16_t" => new("Int16", BindingTypeCategory.Direct),
+            "unsigned short" or "uint16_t" => new("UInt16", BindingTypeCategory.Direct),
+            "int" or "int32_t" => new("Int32", BindingTypeCategory.Direct),
+            "unsigned int" or "uint32_t" => new("UInt32", BindingTypeCategory.Direct),
+            "int64_t" or "long long" => new("Int", BindingTypeCategory.Direct),
+            "unsigned long long" or "uint64_t" or "size_t" or "uintptr_t" =>
+                new("UInt64", BindingTypeCategory.Direct),
+            // long 的宽度随平台（LP64=8、LLP64=4），有布局事实按尺寸映射，无则保守 64 位。
+            "long" => type.Size == 4
+                ? new("Int32", BindingTypeCategory.Direct)
+                : new("Int", BindingTypeCategory.Direct),
+            "unsigned long" => type.Size == 4
+                ? new("UInt32", BindingTypeCategory.Direct)
+                : new("UInt64", BindingTypeCategory.Direct),
             _ => new("RawPtr", BindingTypeCategory.Unsupported, $"unknown type: {type.Spelling}")
         };
     }

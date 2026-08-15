@@ -217,8 +217,9 @@ public sealed class RawBindingGenerator
     {
         var mapping = _typeMapper.Map(type);
         return mapping.Category == BindingTypeCategory.StructByValue ||
-               type.Kind is CBindingTypeKind.Primitive or CBindingTypeKind.Enum && type.Size is not (0 or 8) &&
-               !(type.Kind == CBindingTypeKind.Primitive && type.Name is "bool" or "_Bool");
+               (type.Kind is CBindingTypeKind.Primitive or CBindingTypeKind.Enum && type.Size is not (0 or 8) &&
+                !(type.Kind == CBindingTypeKind.Primitive && type.Name is "bool" or "_Bool") &&
+                mapping.EidosType is "Int" or "Int64" or "Float");
     }
 
     private string FormatSignature(CBindingFunction fn, bool useShimTypes)
