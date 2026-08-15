@@ -424,8 +424,17 @@ public sealed partial class TypeInferer
         {
             [WellKnownStrings.Keywords.Self] = receiverType
         };
-        var kindEnvByName = CreateTypeParamKindMap(methodDef.TypeParams);
+        var ownerTrait = GetOwnerTraitDefinition(methodId);
+        var kindEnvByName = ownerTrait == null
+            ? []
+            : CreateTypeParamKindMapForOwner(ownerTrait.SymbolId, GetTraitTypeParamNames(ownerTrait));
+        foreach (var pair in CreateTypeParamKindMap(methodDef.TypeParams))
+        {
+            kindEnvByName[pair.Key] = pair.Value;
+        }
+
         var kindEnvByTypeVar = new Dictionary<int, Kind>();
+        RegisterSignatureTypeParams(ownerTrait?.TypeParams ?? [], kindEnvByName, typeVarEnv, kindEnvByTypeVar);
         RegisterSignatureTypeParams(methodDef.TypeParams, kindEnvByName, typeVarEnv, kindEnvByTypeVar);
 
         _typeParamKindStack.Push(kindEnvByName);
@@ -445,6 +454,18 @@ public sealed partial class TypeInferer
             _typeParamVarKindStack.Pop();
             _typeParamKindStack.Pop();
         }
+    }
+
+    private TraitDef? GetOwnerTraitDefinition(SymbolId methodId)
+    {
+        if (_symbolTable.GetSymbol(methodId) is not FuncSymbol { OwnerTrait: { } ownerTraitId } ||
+            !ownerTraitId.IsValid ||
+            !_traitDefinitionsBySymbol.TryGetValue(ownerTraitId, out var ownerTrait))
+        {
+            return null;
+        }
+
+        return ownerTrait;
     }
 
     private bool TryGetConstrainedReceiverVariableIndex(Type receiverType, out int variableIndex)
