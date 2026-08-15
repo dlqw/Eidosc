@@ -60,6 +60,7 @@ public sealed partial class MirBuilder
     private HashSet<LocalId> _runtimeArrayLocals = [];
     private HashSet<LocalId> _comprehensionElementLocals = [];
     private readonly List<MirFunc> _generatedLambdaFunctions = new();
+    private readonly List<(HirVarDecl VarDecl, string InitName, int Order)> _pendingModuleVarInitializers = new();
     private Stack<LoopLoweringContext> _loopContextStack = new();
     private readonly Stack<RecursiveClosureBindingContext> _recursiveClosureBindings = new();
     private readonly Stack<RecursiveClosureGroupContext> _recursiveClosureGroups = new();
@@ -433,6 +434,17 @@ public sealed partial class MirBuilder
         if (_generatedLambdaFunctions.Count > 0)
         {
             mirModule.Functions.AddRange(_generatedLambdaFunctions);
+        }
+
+        // 模块变量运行时初始化函数（依赖拓扑序即登记序）。
+        foreach (var (pendingVarDecl, pendingInitName, pendingOrder) in
+                 _pendingModuleVarInitializers.OrderBy(static pending => pending.Order))
+        {
+            var initFunc = ConvertModuleVarRuntimeInitializer(pendingVarDecl, pendingInitName);
+            if (initFunc != null)
+            {
+                mirModule.Functions.Add(initFunc);
+            }
         }
 
         RefreshModuleTypeMetadata(mirModule);

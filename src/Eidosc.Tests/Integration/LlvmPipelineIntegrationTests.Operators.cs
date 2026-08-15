@@ -9,7 +9,7 @@ public partial class LlvmPipelineIntegrationTests
     [Fact]
     public void LlvmPhase_FunctionalInfixChainStyleTutorial_PartialOperatorCallsHaveMirTypes()
     {
-        var result = RunFixtureAtLlvm(Paths.TutorialExample("55_functional_infix_chain_style.eidos"));
+        var result = RunFixtureAtLlvm(Paths.TutorialExample("functional/55_functional_infix_chain_style.eidos"));
 
         Assert.True(result.Success, string.Join(
             Environment.NewLine,

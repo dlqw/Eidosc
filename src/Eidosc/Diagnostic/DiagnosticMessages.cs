@@ -184,6 +184,9 @@ internal static partial class DiagnosticMessages
     public static string CfnFromCapturedClosureUnsupported =>
         Get(nameof(CfnFromCapturedClosureUnsupported));
 
+    public static string CfnCtxFromRequiresClosure =>
+        Get(nameof(CfnCtxFromRequiresClosure));
+
     public static string ContinueExpressionOutsideLoop => Get(nameof(ContinueExpressionOutsideLoop));
 
     public static string HandlerBranchMissingOperationName => Get(nameof(HandlerBranchMissingOperationName));

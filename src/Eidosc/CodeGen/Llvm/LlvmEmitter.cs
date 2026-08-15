@@ -152,9 +152,16 @@ public sealed class LlvmEmitter
     /// </summary>
     private void EmitGlobal(LlvmGlobal global)
     {
-        var linkage = global.Linkage == LlvmLinkage.External ? "" : $"{global.Linkage.ToIrString()} ";
         var type = global.Type.ToIrString();
         var name = $"@{global.Name}";
+
+        if (global.IsExternalDeclaration)
+        {
+            EmitLine($"{name} = external global {type}");
+            return;
+        }
+
+        var linkage = global.Linkage == LlvmLinkage.External ? "" : $"{global.Linkage.ToIrString()} ";
         var storageClass = global.IsConstant ? "constant" : "global";
         var initializer = global.Initializer != null
             ? $" {global.Initializer.ToIrString()}"

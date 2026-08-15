@@ -181,19 +181,37 @@ public sealed partial class SequencePipelineFusionPass
         }
 
         plans = discovered
-            .OrderByDescending(static candidate => candidate switch
-            {
-                DirectSequenceSinkPlan direct => direct.Block.Id.Value,
-                _ => 0
-            })
-            .ThenByDescending(static candidate => candidate switch
-            {
-                DirectSequenceSinkPlan direct => direct.InstructionIndex,
-                _ => 0
-            })
+            .GroupBy(GetSinkPlanBlock, static (block, candidates) => candidates
+                .OrderBy(GetSinkPlanStartIndex)
+                .First())
+            .OrderByDescending(GetSinkPlanStartIndex)
             .ToArray();
         return plans.Count > 0;
     }
+
+    private static MirBasicBlock GetSinkPlanBlock(SequencePipelinePlan plan) => plan switch
+    {
+        DirectZipSequenceSinkPlan zipSink => zipSink.Block,
+        DirectPartitionPlan partition => partition.Block,
+        DirectSequenceSinkPlan sink => sink.Block,
+        FlatMapCountPlan count => count.Block,
+        FlatMapDirectSinkPlan flatMapSink => flatMapSink.Block,
+        FlatMapFoldPlan flatMapFold => flatMapFold.Block,
+        FlatMapCollectPlan flatMapCollect => flatMapCollect.Block,
+        _ => throw new InvalidOperationException($"Unsupported sink plan '{plan.GetType().Name}'.")
+    };
+
+    private static int GetSinkPlanStartIndex(SequencePipelinePlan plan) => plan switch
+    {
+        DirectZipSequenceSinkPlan zipSink => zipSink.FirstInstructionIndex,
+        DirectPartitionPlan partition => partition.InstructionIndex,
+        DirectSequenceSinkPlan sink => sink.FirstInstructionIndex,
+        FlatMapCountPlan count => count.FlatMapInstructionIndex,
+        FlatMapDirectSinkPlan flatMapSink => flatMapSink.FlatMapInstructionIndex,
+        FlatMapFoldPlan flatMapFold => flatMapFold.FlatMapInstructionIndex,
+        FlatMapCollectPlan flatMapCollect => flatMapCollect.FlatMapInstructionIndex,
+        _ => throw new InvalidOperationException($"Unsupported sink plan '{plan.GetType().Name}'.")
+    };
 
     private bool CanMovePartitionElement(
         MirFunc function,

@@ -42,6 +42,96 @@ public sealed partial class TypeInferer
         return true;
     }
 
+    /// <summary>
+    /// cfn_ctx_from(closure)：ctx-pointer 约定回调。闭包 invoke thunk 的 ABI 恰为
+    /// (closure_ptr, args...)，与 C 侧 callback(void* ctx, args...) 同构，故在
+    /// Cfn 签名前置换 ctx 槽位（RawPtr）。
+    /// </summary>
+    private bool TryInferCfnCtxFromCall(CallExpr call, out Type resultType)
+    {
+        resultType = BaseTypes.Unit;
+        var candidates = GetCompilerIntrinsicCalleeCandidates(call.Function, "cfn_ctx_from");
+        if (candidates.Count == 0 || call.PositionalArgs.Count != 1)
+        {
+            return false;
+        }
+
+        var callbackType = SafeInferExpression(call.PositionalArgs[0]);
+        if (InferNamedArgumentValues(call.NamedArgs))
+        {
+            resultType = CreateErrorRecoveryType();
+            return true;
+        }
+
+        if (TryBuildCfnType(callbackType, out var cfnType) &&
+            cfnType is TyCon cfnConstructor)
+        {
+            var ctxArgs = new List<Type>
+            {
+                new TyCon
+                {
+                    Name = WellKnownStrings.BuiltinTypes.RawPtr,
+                    Id = new TypeId(BaseTypes.RawPtrId)
+                }
+            };
+            ctxArgs.AddRange(cfnConstructor.Args);
+            BindBuiltinIntrinsicCallee(
+                call.Function,
+                "cfn_ctx_from");
+            resultType = new TyCon
+            {
+                Name = WellKnownStrings.BuiltinTypes.Cfn,
+                Id = new TypeId(BaseTypes.CfnId),
+                Args = ctxArgs
+            };
+            return true;
+        }
+
+        AddError(
+            call.Span,
+            DiagnosticMessages.CfnFromArgumentNotFunction,
+            TypeErrorCode);
+        resultType = CreateErrorRecoveryType();
+        return true;
+    }
+
+    private bool TryInferCfnCtxDataCall(CallExpr call, out Type resultType)
+    {
+        resultType = BaseTypes.Unit;
+        var candidates = GetCompilerIntrinsicCalleeCandidates(call.Function, "cfn_ctx_data");
+        if (candidates.Count == 0 || call.PositionalArgs.Count != 1)
+        {
+            return false;
+        }
+
+        var callbackType = SafeInferExpression(call.PositionalArgs[0]);
+        if (InferNamedArgumentValues(call.NamedArgs))
+        {
+            resultType = CreateErrorRecoveryType();
+            return true;
+        }
+
+        if (TryBuildCfnType(callbackType, out _))
+        {
+            BindBuiltinIntrinsicCallee(
+                call.Function,
+                "cfn_ctx_data");
+            resultType = new TyCon
+            {
+                Name = WellKnownStrings.BuiltinTypes.RawPtr,
+                Id = new TypeId(BaseTypes.RawPtrId)
+            };
+            return true;
+        }
+
+        AddError(
+            call.Span,
+            DiagnosticMessages.CfnFromArgumentNotFunction,
+            TypeErrorCode);
+        resultType = CreateErrorRecoveryType();
+        return true;
+    }
+
     private bool TryInferCfnCall(CallExpr call, out Type resultType)
     {
         resultType = BaseTypes.Unit;

@@ -129,6 +129,26 @@ Ffi :: module {
     export cfn_call[A, B, C, D, E, R] :: Cfn[A, B, C, D, E, R] -> A -> B -> C -> D -> E -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, B, C, D, E, F, R] :: Cfn[A, B, C, D, E, F, R] -> A -> B -> C -> D -> E -> F -> R compiler(intrinsic: "cfn_call") need ffi;
 
+    // ctx-pointer 约定回调：闭包 invoke thunk 的 ABI 恰为 (closure_ptr, args...)，
+    // 与 C 侧 callback(void* ctx, args...) 同构。cfn_ctx_from 取 invoke_fn 作为
+    // 回调指针（ctx 槽位前置），cfn_ctx_data 取闭包对象指针作为 ctx。
+    // 闭包生命周期由调用方保证（C 侧注册期间不得释放）。
+    export cfn_ctx_from[R] :: (Unit -> R) -> Cfn[RawPtr, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, R] :: (A -> R) -> Cfn[RawPtr, A, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, R] :: (A -> B -> R) -> Cfn[RawPtr, A, B, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, R] :: (A -> B -> C -> R) -> Cfn[RawPtr, A, B, C, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> Cfn[RawPtr, A, B, C, D, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> Cfn[RawPtr, A, B, C, D, E, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> Cfn[RawPtr, A, B, C, D, E, F, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+
+    export cfn_ctx_data[R] :: (Unit -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, R] :: (A -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, R] :: (A -> B -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, R] :: (A -> B -> C -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+
 
 
     string_to_cstr :: String -> RawPtr compiler(internal, intrinsic: "string_to_cstr") need ffi;

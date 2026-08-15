@@ -24,6 +24,24 @@ public class ConstraintSolverTests
         Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Eq));
     }
 
+    [Theory]
+    [InlineData(WellKnownStrings.BuiltinTypes.Int64)]
+    [InlineData(WellKnownStrings.BuiltinTypes.Int32)]
+    [InlineData(WellKnownStrings.BuiltinTypes.Int16)]
+    [InlineData(WellKnownStrings.BuiltinTypes.Int8)]
+    [InlineData(WellKnownStrings.BuiltinTypes.Float64)]
+    [InlineData(WellKnownStrings.BuiltinTypes.Float32)]
+    [InlineData(WellKnownStrings.BuiltinTypes.Float16)]
+    public void BuiltinTraits_NarrowScalarsImplementNumOrdEqShowCloneCopy(string typeName)
+    {
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Num));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Ord));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Eq));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Show));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Clone));
+        Assert.True(BuiltinTraits.HasTrait(typeName, BuiltinTraits.TraitNames.Copy));
+    }
+
     [Fact]
     public void Solve_TupleTraitConstraint_AllElementsSatisfyTrait_Succeeds()
     {

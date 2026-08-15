@@ -49,7 +49,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Borrow,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -86,7 +86,7 @@ main :: Unit -> String
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -122,7 +122,7 @@ hash :: module {
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             NoImplicitPrelude = true,
             UseColors = false,
@@ -153,7 +153,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -268,7 +268,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -310,7 +310,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -342,7 +342,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -379,7 +379,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -406,7 +406,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -437,7 +437,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             EnableDetailedProfiling = true,
             UseColors = false,
@@ -460,7 +460,7 @@ main :: Unit -> Int
 
         var second = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             EnableDetailedProfiling = true,
             PreviousTypeDirectedCallableResolutionSnapshot = result.TypeDirectedCallableResolutionSnapshot,
@@ -502,7 +502,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -535,7 +535,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -605,7 +605,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("42_stdlib_safe_and_traits.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/42_stdlib_safe_and_traits.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -812,7 +812,7 @@ f :: append;
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -842,7 +842,7 @@ main :: Unit -> Int
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Llvm,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -894,7 +894,7 @@ Probe :: module {
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()
@@ -927,7 +927,7 @@ eq_self[T: Traits.Eq] :: T -> Bool
 
         var result = new CompilationPipeline(source, new CompilationOptions
         {
-            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("29_precompiled_stdlib.eidos")),
+            InputFile = TestSourceLoader.GetFullPath(Paths.TutorialExample("stdlib/29_precompiled_stdlib.eidos")),
             StopAtPhase = CompilationPhase.Types,
             UseColors = false,
             PackageImportRoots = StdPackageRoots()

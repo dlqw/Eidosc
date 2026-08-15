@@ -31,7 +31,7 @@ public sealed class BindingTypeMapperTests
             "uint64_t",
             IsUnsigned: true));
 
-        Assert.Equal("Int64", mapping.EidosType);
+        Assert.Equal("UInt64", mapping.EidosType);
         Assert.Equal(BindingTypeCategory.Direct, mapping.Category);
     }
 }

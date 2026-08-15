@@ -519,10 +519,71 @@ public sealed partial class NameResolver
             bindingMode: varPattern.BindingMode,
             isComptime: letDecl.IsComptime,
             isPublic: IsDeclarationPublic(letDecl));
+
+        if (!TryApplyForeignVariableContract(letDecl, symbolId, bindingName))
+        {
+            varPattern.SymbolId = SymbolId.None;
+            letDecl.SymbolId = SymbolId.None;
+            return;
+        }
+
         varPattern.SymbolId = symbolId;
         letDecl.SymbolId = symbolId;
         RegisterSyntaxIdentitySymbol(varPattern, symbolId);
         RegisterSyntaxIdentitySymbol(letDecl, symbolId);
+    }
+
+    /// <summary>
+    /// extern(c) 变量声明：必须可变、必须显式类型注解、不能带初始化器；
+    /// 非 extern 的声明形式（无初始化器）直接拒绝。契约写入 VarSymbol 元数据。
+    /// </summary>
+    private bool TryApplyForeignVariableContract(LetDecl letDecl, SymbolId symbolId, string bindingName)
+    {
+        var clauseSemantics = _clauseSemanticBinder.Bind(letDecl, bindingName);
+        AddClauseSemanticDiagnostics(clauseSemantics);
+        var ffiInfo = clauseSemantics.Ffi;
+        if (letDecl.Value == null && ffiInfo == null)
+        {
+            // stdlib 的 signature-only 解析会省略初始化器；只在完整源码中视为错误。
+            if (!PrecompiledModuleRegistry.IsStdlibSourcePath(letDecl.Span.FilePath))
+            {
+                AddError(
+                    letDecl.Span,
+                    "module-level mutable binding requires an initializer unless it declares extern(c)",
+                    "E3050");
+                return false;
+            }
+
+            return true;
+        }
+
+        if (ffiInfo == null)
+        {
+            return true;
+        }
+
+        if (!letDecl.IsMutable)
+        {
+            AddError(letDecl.Span, "foreign variable declaration must be mutable", "E3050");
+            return false;
+        }
+
+        if (letDecl.TypeAnnotation == null)
+        {
+            AddError(letDecl.Span, "foreign variable requires an explicit type annotation", "E3050");
+            return false;
+        }
+
+        var varSymbol = _symbolTable.GetSymbol<VarSymbol>(symbolId);
+        if (varSymbol == null)
+        {
+            return false;
+        }
+
+        varSymbol.IsExternal = true;
+        varSymbol.ExternalSymbolName = ffiInfo.SymbolName;
+        varSymbol.ExternalLibrary = ffiInfo.LibraryName;
+        return true;
     }
 
     private void CollectAdtDef(AdtDef adt)

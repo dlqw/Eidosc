@@ -42,4 +42,19 @@ public sealed record VarSymbol : Symbol
     /// 模式绑定方式（仅对 IsPatternBound 生效）。
     /// </summary>
     public PatternBindingMode BindingMode { get; init; } = PatternBindingMode.ByValue;
+
+    /// <summary>
+    /// 是否为 extern(c) 外部变量（链接 C 侧符号，无 Eidos 初始化器）。
+    /// </summary>
+    public bool IsExternal { get; set; }
+
+    /// <summary>
+    /// extern 变量的 C 符号名；为空时使用绑定名。
+    /// </summary>
+    public string? ExternalSymbolName { get; set; }
+
+    /// <summary>
+    /// extern 变量所属的链接库名。
+    /// </summary>
+    public string? ExternalLibrary { get; set; }
 }

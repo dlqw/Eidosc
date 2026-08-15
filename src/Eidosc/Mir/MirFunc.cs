@@ -160,9 +160,30 @@ public sealed record MirModuleVar
     public bool IsMutable { get; init; }
 
     /// <summary>
-    /// 编译期常量初始化值。
+    /// 编译期常量初始化值。运行时初始化的变量此处为 poison 占位。
     /// </summary>
     public MirOperand Initializer { get; init; } = null!;
+
+    /// <summary>
+    /// 运行时初始化函数名（非字面量/字符串初始化器经合成函数在
+    /// <c>eidos_module_init</c> 中求值）；为空表示纯静态初始化。
+    /// </summary>
+    public string? RuntimeInitializerName { get; init; }
+
+    /// <summary>
+    /// 运行时初始化拓扑序（被依赖者在前）；静态初始化为 0。
+    /// </summary>
+    public int RuntimeInitOrder { get; init; }
+
+    /// <summary>
+    /// extern(c) 外部变量：链接 C 符号（declaration-only 全局），无 Eidos 初始化。
+    /// </summary>
+    public bool IsExternal { get; init; }
+
+    /// <summary>
+    /// extern 变量的 C 符号名；为空时使用绑定名。
+    /// </summary>
+    public string? ExternalName { get; init; }
 
     /// <summary>
     /// 源码位置。

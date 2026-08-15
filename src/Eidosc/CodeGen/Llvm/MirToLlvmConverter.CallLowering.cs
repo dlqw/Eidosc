@@ -218,6 +218,20 @@ public sealed partial class MirToLlvmConverter
             return ConvertCfnFromCall(call);
         }
 
+        // FFI: cfn_ctx_from(closure) — ctx-pointer 约定回调（闭包 invoke thunk 直连）
+        if (call.Function is MirFunctionRef cfnCtxFromRef &&
+            TryGetBuiltinIntrinsicName(cfnCtxFromRef, "cfn_ctx_from", out _))
+        {
+            return ConvertCfnCtxFromCall(call);
+        }
+
+        // FFI: cfn_ctx_data(closure) — 闭包对象指针作为 ctx
+        if (call.Function is MirFunctionRef cfnCtxDataRef &&
+            TryGetBuiltinIntrinsicName(cfnCtxDataRef, "cfn_ctx_data", out _))
+        {
+            return ConvertCfnCtxDataCall(call);
+        }
+
         // FFI: cfn_call(fn_ptr, arg1, arg2, ...) — 通过 C 函数指针调用
         if (call.Function is MirFunctionRef cfnCallRef &&
             TryGetBuiltinIntrinsicName(cfnCallRef, "cfn_call", out _))

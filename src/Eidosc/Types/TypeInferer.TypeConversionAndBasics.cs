@@ -923,6 +923,9 @@ public sealed partial class TypeInferer
             {
                 var contextualResultType = CreateAdtTypeFromBinding(binding, typeVarEnv, ctor.Span);
                 if (contextualResultType is TyCon contextualConstructor &&
+                    (expectedResultType is TyVar ||
+                     (expectedResultType is TyCon expectedConstructor &&
+                      TryDescribeClosedCaseInjection(expectedConstructor, contextualConstructor, out _))) &&
                     TryPromoteClosedCaseToRoot(contextualConstructor, out var promotedConstructor))
                 {
                     RecordClosedCaseInjection(contextualConstructor, promotedConstructor, ctor.Span);

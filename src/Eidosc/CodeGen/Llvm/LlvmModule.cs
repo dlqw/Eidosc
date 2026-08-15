@@ -218,6 +218,11 @@ public sealed class LlvmGlobal : LlvmValue
     public bool IsConstant { get; init; }
 
     /// <summary>
+    /// declaration-only 全局（extern 变量）：发射 external 声明而非定义。
+    /// </summary>
+    public bool IsExternalDeclaration { get; init; }
+
+    /// <summary>
     /// 对齐
     /// </summary>
     public int Alignment { get; init; }

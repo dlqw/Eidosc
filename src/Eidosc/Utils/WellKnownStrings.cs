@@ -571,6 +571,7 @@ public static class WellKnownStrings
 
         // Internal name prefixes
         public const string ModuleValueGetterPrefix = "__module_val__";
+        public const string ModuleVarInitializerPrefix = "__module_var_init_";
         public const string ResumeValuePrefix = "__resume_value_";
         public const string LambdaPrefix = "__lambda_";
         public const string LetQuestionErrorPrefix = "__let_question_error_";

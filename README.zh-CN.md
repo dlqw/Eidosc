@@ -27,8 +27,8 @@ Eidos 将面向表达式的语言设计、基于 LLVM 的原生编译流程和�
 
 > [!IMPORTANT]
 > Eidos 目前仍处于预发布阶段，语言与工具接口可能在预发布版本之间发生变化，
-> 包括不兼容变化。当前语言基线为 **Eidos 0.6.0-alpha.1**；Eidos 语言、
-> Eidosc、Std、Eidosup 与 Bindgen 采用相互独立的版本号。
+> 包括不兼容变化。当前语言基线为 **Eidos 0.9.0-alpha.1**；Eidos 语言、
+> Eidosc、Std、Eidosup 与 Bindgen 采用统一版本列车。
 
 ## 为什么选择 Eidos？
 

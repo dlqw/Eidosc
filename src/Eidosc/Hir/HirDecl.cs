@@ -298,9 +298,24 @@ public sealed record HirVarDecl : HirDecl
     public TypeId TypeAnnotation { get; init; } = TypeId.None;
 
     /// <summary>
-    /// 初始化表达式
+    /// 初始化表达式。extern(c) 声明形式无初始化器，此处为 null。
     /// </summary>
-    public HirNode Initializer { get; init; } = null!;
+    public HirNode? Initializer { get; init; }
+
+    /// <summary>
+    /// extern(c) 外部变量：链接 C 符号而非 Eidos 全局。
+    /// </summary>
+    public bool IsExternal { get; init; }
+
+    /// <summary>
+    /// extern 变量的 C 符号名；为空时使用绑定名。
+    /// </summary>
+    public string? ExternalSymbolName { get; init; }
+
+    /// <summary>
+    /// extern 变量所属的链接库名。
+    /// </summary>
+    public string? ExternalLibrary { get; init; }
 
     public override string ToString() => $"Var({Name})";
 }

@@ -279,6 +279,17 @@ public sealed partial class LlvmCompiler
     /// </summary>
     private CodeGenResult RunLlc(string irPath, string outputPath)
     {
+        // LTO 模式必须经 clang -flto 产 LLVM bitcode 对象；llc -filetype=obj 只产
+        // 本机对象，链接期 -flto 对其无优化可做（跨语言内联无从发生）。
+        if (_enableLto)
+        {
+            var clangPathForLto = FindTool("clang");
+            if (clangPathForLto != null)
+            {
+                return RunClangCompileIr(clangPathForLto, irPath, outputPath);
+            }
+        }
+
         var llcPath = FindTool("llc");
         if (llcPath != null)
         {
@@ -476,6 +487,14 @@ public sealed partial class LlvmCompiler
             arguments.Add(objFile);
         }
 
+        // Windows（MSVC 目标）下 lld-link 的默认库集不含 clang_rt.builtins，
+        // 而 LLVM IR 中的 half 换算等会发出 compiler-rt libcalls（如 __truncdfhf2）；
+        // 在 clang 安装目录旁找到对应库时显式加入链接。
+        foreach (var builtinsPath in EnumerateWindowsCompilerRtBuiltinsPaths(clangPath))
+        {
+            arguments.Add(builtinsPath);
+        }
+
         // 库文件
         if (libraryPaths != null)
         {
@@ -557,6 +576,43 @@ public sealed partial class LlvmCompiler
             ? ["-fuse-ld=lld"]
             : [];
 
+    internal IEnumerable<string> EnumerateWindowsCompilerRtBuiltinsPaths(string clangPath)
+    {
+        if (_targetInfo.Os != TargetOs.Windows)
+        {
+            return [];
+        }
+
+        var archName = _targetInfo.Arch switch
+        {
+            TargetArch.X86 or TargetArch.X86_64 => "x86_64",
+            TargetArch.Arm or TargetArch.Arm64 => "aarch64",
+            _ => null
+        };
+        if (archName == null)
+        {
+            return [];
+        }
+
+        var clangDirectory = Path.GetDirectoryName(clangPath);
+        if (string.IsNullOrWhiteSpace(clangDirectory))
+        {
+            return [];
+        }
+
+        var libraryName = $"clang_rt.builtins-{archName}.lib";
+        var clangResourceParent = Path.GetFullPath(Path.Combine(clangDirectory, "..", "lib", "clang"));
+        if (!Directory.Exists(clangResourceParent))
+        {
+            return [];
+        }
+
+        return Directory.EnumerateDirectories(clangResourceParent)
+            .Order(StringComparer.Ordinal)
+            .Select(versionDirectory => Path.Combine(versionDirectory, "lib", "windows", libraryName))
+            .Where(File.Exists);
+    }
+
     internal static NativeObjectRelocationFlags GetDefaultObjectRelocationFlags(
         TargetInfo targetInfo,
         NativeLinkMode linkMode)
@@ -598,8 +654,13 @@ public sealed partial class LlvmCompiler
         return false;
     }
 
-    private IReadOnlyList<string> GetDefaultClangObjectCompileFlags() =>
-        GetDefaultObjectRelocationFlags(_targetInfo, _linkMode).ClangFlags;
+    private IReadOnlyList<string> GetDefaultClangObjectCompileFlags()
+    {
+        var flags = GetDefaultObjectRelocationFlags(_targetInfo, _linkMode).ClangFlags;
+        // LTO 模式下 native/shim/runtime 对象统一带 -flto（与 IR 侧 bitcode 对象、
+        // 链接期 -flto 一致），否则链接期优化对本机对象输入无事可做。
+        return _enableLto ? [.. flags, "-flto"] : flags;
+    }
 
     private CodeGenResult TryCompileEntryShim(LlvmModule module, string sourcePath, string outputObjectPath)
     {

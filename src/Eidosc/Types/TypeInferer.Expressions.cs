@@ -1690,6 +1690,16 @@ public sealed partial class TypeInferer
             return cfnFromResult;
         }
 
+        if (TryInferCfnCtxFromCall(call, out var cfnCtxFromResult))
+        {
+            return cfnCtxFromResult;
+        }
+
+        if (TryInferCfnCtxDataCall(call, out var cfnCtxDataResult))
+        {
+            return cfnCtxDataResult;
+        }
+
         if (TryInferCfnCall(call, out var cfnCallResult))
         {
             return cfnCallResult;

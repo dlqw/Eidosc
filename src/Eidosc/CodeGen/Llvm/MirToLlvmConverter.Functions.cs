@@ -511,6 +511,11 @@ public sealed partial class MirToLlvmConverter
             llvmName = ResolveOrAllocateSymbolFunctionInstanceName(func, functionType, signatureKey, func.SymbolId);
         }
 
+        if (!string.IsNullOrEmpty(func.Name) && _pendingModuleVarInitNames.Remove(func.Name))
+        {
+            _moduleVarInitLlvmNames[func.Name] = llvmName;
+        }
+
         if (TryGetFunctionIdLookupKey(func, out var functionIdKey))
         {
             _funcCache.FunctionTypeByFunctionId[functionIdKey] = functionType;
@@ -743,7 +748,7 @@ public sealed partial class MirToLlvmConverter
 
         var diagnostic = Diagnostic.Diagnostic.Error(
                 DiagnosticMessages.UnresolvedFunctionSignatureRole(role),
-                "E5302")
+                "E5314")
             .WithNote(DiagnosticMessages.FunctionNote(function.Name))
             .WithNote(DiagnosticMessages.EnsureInferenceMonomorphizationBeforeLlvm);
 
