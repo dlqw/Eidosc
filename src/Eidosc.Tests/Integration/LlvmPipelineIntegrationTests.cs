@@ -191,6 +191,7 @@ main :: Int -> Int
             EnableMirOptimizations = enableMirOptimizations,
             EnableDetailedProfiling = enableDetailedProfiling,
             UseColors = false,
+            AllowVirtualInputFile = true,
             PackageImportRoots = ExplicitStdPackageRoots
         };
 

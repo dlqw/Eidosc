@@ -476,6 +476,14 @@ public sealed partial class LlvmCompiler
             arguments.Add(objFile);
         }
 
+        // Windows（MSVC 目标）下 lld-link 的默认库集不含 clang_rt.builtins，
+        // 而 LLVM IR 中的 half 换算等会发出 compiler-rt libcalls（如 __truncdfhf2）；
+        // 在 clang 安装目录旁找到对应库时显式加入链接。
+        foreach (var builtinsPath in EnumerateWindowsCompilerRtBuiltinsPaths(clangPath))
+        {
+            arguments.Add(builtinsPath);
+        }
+
         // 库文件
         if (libraryPaths != null)
         {
@@ -556,6 +564,43 @@ public sealed partial class LlvmCompiler
         targetInfo.Os == TargetOs.Windows
             ? ["-fuse-ld=lld"]
             : [];
+
+    internal IEnumerable<string> EnumerateWindowsCompilerRtBuiltinsPaths(string clangPath)
+    {
+        if (_targetInfo.Os != TargetOs.Windows)
+        {
+            return [];
+        }
+
+        var archName = _targetInfo.Arch switch
+        {
+            TargetArch.X86 or TargetArch.X86_64 => "x86_64",
+            TargetArch.Arm or TargetArch.Arm64 => "aarch64",
+            _ => null
+        };
+        if (archName == null)
+        {
+            return [];
+        }
+
+        var clangDirectory = Path.GetDirectoryName(clangPath);
+        if (string.IsNullOrWhiteSpace(clangDirectory))
+        {
+            return [];
+        }
+
+        var libraryName = $"clang_rt.builtins-{archName}.lib";
+        var clangResourceParent = Path.GetFullPath(Path.Combine(clangDirectory, "..", "lib", "clang"));
+        if (!Directory.Exists(clangResourceParent))
+        {
+            return [];
+        }
+
+        return Directory.EnumerateDirectories(clangResourceParent)
+            .Order(StringComparer.Ordinal)
+            .Select(versionDirectory => Path.Combine(versionDirectory, "lib", "windows", libraryName))
+            .Where(File.Exists);
+    }
 
     internal static NativeObjectRelocationFlags GetDefaultObjectRelocationFlags(
         TargetInfo targetInfo,
