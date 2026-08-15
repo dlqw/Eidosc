@@ -1020,6 +1020,11 @@ public sealed partial class MirToLlvmConverter
 
     private LlvmStore? CreateStoreToLocalSlot(LocalId localId, LlvmValue value)
     {
+        return CreateStoreToLocalSlot(localId, value, pendingLoadBuffer: null);
+    }
+
+    private LlvmStore? CreateStoreToLocalSlot(LocalId localId, LlvmValue value, List<LlvmInstruction>? pendingLoadBuffer)
+    {
         if (value.Type is LlvmVoidType || !_locals.LocalSlots.TryGetValue(localId, out var slot))
         {
             return null;
@@ -1040,7 +1045,15 @@ public sealed partial class MirToLlvmConverter
                     IsVolatile = false,
                     ResultName = _nameMangler.NewTempName($"l{localId.Value}_slot_value")
                 };
-                _currentBlock?.Instructions.Add(load);
+                if (pendingLoadBuffer != null)
+                {
+                    pendingLoadBuffer.Add(load);
+                }
+                else
+                {
+                    _currentBlock?.Instructions.Add(load);
+                }
+
                 storeValue = new LlvmInstructionRef
                 {
                     Instruction = load,
@@ -1063,9 +1076,14 @@ public sealed partial class MirToLlvmConverter
 
     private void QueueStoreToLocalSlot(LocalId localId, LlvmValue value)
     {
-        var store = CreateStoreToLocalSlot(localId, value);
+        // The load reading the struct value out of the producing pointer must be
+        // queued with the store: appending it to the current block directly would
+        // place it before the queued producing instruction (e.g. a runtime call).
+        var pendingLoads = new List<LlvmInstruction>();
+        var store = CreateStoreToLocalSlot(localId, value, pendingLoads);
         if (store != null)
         {
+            _postInstructionBuffer.AddRange(pendingLoads);
             _postInstructionBuffer.Add(store);
         }
     }
