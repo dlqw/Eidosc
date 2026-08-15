@@ -242,27 +242,25 @@ event_value_encode :: EventValue -> RawPtr -> Unit need ffi  -- 写 tag + 成员
 - 收益：SDL/X11/libuv 类事件结构自然成为可模式匹配的 Eidos ADT；C2E 的
   switch-on-tag 惯用法直接译为模式匹配。
 
-## 9. M5 — 捕获闭包 → Cfn（ctx-pointer 约定）
+## 9. M5 — 捕获闭包 → Cfn（ctx-pointer 约定）——已落地
 
-**目标**：E3053（`cfn_from does not support closures with captures yet`，
-FfiCalls.cs:119-123）不再是无解终点。根因：Eidos 闭包 invoke ABI 是 `(closure_ptr, args...)`
-（Closures.cs:416-427、:484-510），C 回调约定没有隐式首参。
+**状态**：核心机制已实现并验证（2026-08-15）。`std.Ffi` 新增
+`cfn_ctx_from`/`cfn_ctx_data` intrinsic（0..6 参重载）：闭包 invoke thunk 的 ABI
+`(closure_ptr, args...)` 与 C 侧 `callback(void* ctx, args...)` 同构，
+`Ffi.cfn_ctx_from(closure)` 取 invoke_fn（闭包 offset 8）作回调指针，
+`Ffi.cfn_ctx_data(closure)` 取闭包对象指针作 ctx；Cfn 结果类型前置 ctx 槽位
+（`Cfn[RawPtr, A..., R]`）。零捕获函数传入 `cfn_ctx_from` 报 E3053 引导包 lambda；
+`cfn_from` 语义不变，其 E3053 文案已指向 `cfn_ctx_from`，报错后的死代码已移除。
+闭包生命周期由调用方在 C 侧注册期间保证。
 
-**选定路径：面向 ctx-pointer 型 C API**（运行时已全面采用 fn+ctx 二元组约定，
-`EidosWorkItem`/`eidos_task_spawn`，eidos_runtime.h:782-786、:860-862）：
+验证：IR 断言（GEP 8 + invoke_fn 加载 + 双 ptr 传参）+ 原生冒烟（C visitor
+`int(*)(void*, int)` 驱动 Eidos 捕获闭包，捕获值参与每次回调，exit 123）。
 
-1. 复用 thunk 合成器（`eidos_closure_invoke_N`，ABI 恰为 `(ptr closure, args...)`）作为回调
-   函数指针半边；新增 std.ffi 面：如 `cfn_ctx_from(closure) -> Cfn` +
-   `cfn_context(cfn) -> RawPtr`（具体形态在实现时定，保持与 `cfn_from`/`cfn_call` 的
-   overload 风格一致，注意 arity 上限来自 stdlib 重载数 0..6）。
-2. C API 约定 `callback(void* ctx, ...)` 直接消费该二元组；`cfn_from` 保持零捕获语义不变。
-3. bindgen：识别 `(ctx, callback)` 参数对的 API 生成惯用 wrapper。
-4. 移除 E3053 报错后的死代码路径（FfiCalls.cs:125-156"加载 invoke_fn"分支）。
+**遗留后续**：bindgen 识别 `(ctx, callback)` 参数对生成惯用 wrapper（人体工学层，
+机制已就绪）。
 
 明确不做（记录为显式弃置）：libffi 式无 ctx trampoline（需闭包指针烧录/trampoline 页的
 运行时新设施，成本高一个量级；真实 C 库中 ctx-pointer 约定覆盖面足够）。
-
-验收门：ctx 型回调 E2E native smoke（对标 qsort 用例）；E3053 仅在真正无路径时报告。
 
 ## 10. M6 — 混合编译接线（真跨语言 LTO）
 

@@ -475,7 +475,10 @@
     <value>Cannot infer cfn_from result type because the argument is not a function value</value>
   </data>
   <data name="CfnFromCapturedClosureUnsupported" xml:space="preserve">
-    <value>cfn_from does not support closures with captures yet. Use a zero-capture function, such as a top-level function or zero-capture lambda.</value>
+    <value>cfn_from does not support closures with captures. Use a zero-capture function, or use cfn_ctx_from with ctx-pointer style C callbacks.</value>
+  </data>
+  <data name="CfnCtxFromRequiresClosure" xml:space="preserve">
+    <value>cfn_ctx_from requires a closure operand; wrap zero-capture functions in a lambda such as (a => f(a)).</value>
   </data>
   <data name="ConstructorCannotUseRecordUpdateUnknownFields" xml:space="preserve">
     <value>Constructor '{0}' cannot use record update because its fields are unknown</value>

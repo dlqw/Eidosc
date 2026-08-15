@@ -116,12 +116,42 @@ public sealed partial class MirToLlvmConverter
             return null;
         }
 
-        // 情况 2：参数是闭包值（带捕获）— 当前不支持 trampoline 合成，报错
-        // 原因：invoke_fn 需要 closure_ptr 作为第一参数，但 C 回调不会传入
+        // 情况 2：参数是闭包值（带捕获）— 无 ctx 约定时 C 回调不传 closure_ptr，
+        // 无 trampoline 机制；指向 cfn_ctx_from（ctx-pointer 约定）。
         Diagnostics.Add(Diagnostic.Diagnostic.Error(
             DiagnosticMessages.CfnFromCapturedClosureUnsupported,
             "E3053"));
+        return null;
+    }
 
+    /// <summary>
+    /// 处理 cfn_ctx_from(closure)：ctx-pointer 约定回调。闭包 invoke thunk 的 ABI
+    /// 恰为 (closure_ptr, args...)，与 C 侧 callback(void* ctx, args...) 同构，
+    /// 故直接取闭包对象的 invoke_fn 字段作为回调指针（ctx = 闭包指针，见
+    /// <see cref="ConvertCfnCtxDataCall"/>）。闭包生命周期由调用方保证。
+    /// </summary>
+    private LlvmCall? ConvertCfnCtxFromCall(MirCall call)
+    {
+        if (call.Arguments.Count != 1)
+        {
+            return null;
+        }
+
+        var targetPlace = call.Target as MirPlace;
+        if (targetPlace == null)
+        {
+            return null;
+        }
+
+        if (call.Arguments[0] is MirFunctionRef)
+        {
+            Diagnostics.Add(Diagnostic.Diagnostic.Error(
+                DiagnosticMessages.CfnCtxFromRequiresClosure,
+                "E3053"));
+            return null;
+        }
+
+        var resultName = _nameMangler.NewTempName($"l{targetPlace.Local.Value}");
         var closureValue = ConvertOperand(call.Arguments[0]);
 
         // 加载 invoke_fn：GEP offset 8 (skip header), load
@@ -129,8 +159,8 @@ public sealed partial class MirToLlvmConverter
         {
             Pointer = CoerceToPointer(closureValue),
             ElementType = LlvmIntType.I8,
-            Index = new LlvmConstant { Value = "8", Type = LlvmIntType.I64 },
-            ResultName = _nameMangler.NewTempName("cfn_invoke_ptr")
+            Index = new LlvmConstant { Value = ClosureInvokeOffset, Type = LlvmIntType.I64 },
+            ResultName = _nameMangler.NewTempName("cfn_ctx_invoke_ptr")
         };
         _currentBlock?.Instructions.Add(invokeFnPtr);
 
@@ -150,6 +180,35 @@ public sealed partial class MirToLlvmConverter
         _locals.LocalMap[targetPlace.Local] = new LlvmLocal
         {
             Name = resultName,
+            Type = LlvmPointerType.VoidPtr()
+        };
+
+        return null;
+    }
+
+    /// <summary>
+    /// 处理 cfn_ctx_data(closure)：闭包对象指针即 ctx（与 invoke thunk 的隐式首参一致）。
+    /// </summary>
+    private LlvmCall? ConvertCfnCtxDataCall(MirCall call)
+    {
+        if (call.Arguments.Count != 1)
+        {
+            return null;
+        }
+
+        var targetPlace = call.Target as MirPlace;
+        if (targetPlace == null)
+        {
+            return null;
+        }
+
+        var closureValue = ConvertOperand(call.Arguments[0]);
+        var closurePtr = CoerceToPointer(closureValue);
+
+        ClearGenericLocal(targetPlace.Local);
+        _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+        {
+            Name = closurePtr.ToIrString(),
             Type = LlvmPointerType.VoidPtr()
         };
 

@@ -434,6 +434,8 @@ public sealed partial class SymbolTable
         // FFI: 回调函数指针
         new("cfn_from", T_RawPtr, [T_RawPtr], A_FFI),
         new("cfn_call", TypeId.None, [TypeId.None], A_FFI),
+        new("cfn_ctx_from", T_RawPtr, [T_RawPtr], A_FFI),
+        new("cfn_ctx_data", T_RawPtr, [T_RawPtr], A_FFI),
 
         // FFI: generic value boxing intrinsics
         new(WellKnownStrings.InternalNames.ValueBox, T_RawPtr, [TypeId.None], A_FFI, BuiltinIntrinsicRole.ValueBox),
