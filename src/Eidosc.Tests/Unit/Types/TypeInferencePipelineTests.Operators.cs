@@ -47,7 +47,7 @@ main :: Unit -> Option[Int]
             source,
             CompilationPhase.Types,
             options => options.InputFile = TestSourceLoader.GetFullPath(
-                TestPathConfig.Current.TutorialExample("29_precompiled_stdlib.eidos")));
+                TestPathConfig.Current.TutorialExample("stdlib/29_precompiled_stdlib.eidos")));
 
         Assert.True(result.Success, result.Diagnostics.Count > 0
             ? string.Join("; ", result.Diagnostics.Select(diagnostic => diagnostic.Message))
@@ -71,7 +71,7 @@ main :: Unit -> Float
             source,
             CompilationPhase.Types,
             options => options.InputFile = TestSourceLoader.GetFullPath(
-                TestPathConfig.Current.TutorialExample("29_precompiled_stdlib.eidos")));
+                TestPathConfig.Current.TutorialExample("stdlib/29_precompiled_stdlib.eidos")));
 
         Assert.True(result.Success, result.Diagnostics.Count > 0
             ? string.Join("; ", result.Diagnostics.Select(diagnostic => diagnostic.Message))
@@ -130,7 +130,7 @@ main :: Unit -> Int
             source,
             CompilationPhase.Types,
             options => options.InputFile = TestSourceLoader.GetFullPath(
-                TestPathConfig.Current.TutorialExample("29_precompiled_stdlib.eidos")));
+                TestPathConfig.Current.TutorialExample("stdlib/29_precompiled_stdlib.eidos")));
 
         Assert.True(
             result.Success,
@@ -173,7 +173,7 @@ main :: Unit -> Int
             source,
             CompilationPhase.Types,
             options => options.InputFile = TestSourceLoader.GetFullPath(
-                TestPathConfig.Current.TutorialExample("29_precompiled_stdlib.eidos")));
+                TestPathConfig.Current.TutorialExample("stdlib/29_precompiled_stdlib.eidos")));
 
         Assert.False(result.Success);
         Assert.DoesNotContain(
