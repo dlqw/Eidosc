@@ -580,8 +580,8 @@ public sealed partial class SequencePipelineFusionPass
         increment.Instructions.Add(new MirStore { Target = index, Value = nextIndex, Span = span });
         increment.Terminator = new MirGoto { Target = header.Id, Span = span };
         exit.Instructions.Add(new MirAlloc { Target = plan.ResultTarget, TypeId = plan.ResultTarget.TypeId, Span = span });
-        exit.Instructions.Add(new MirMove { Target = AggregateField(0, plan.SequenceType), Source = left, Span = span });
-        exit.Instructions.Add(new MirMove { Target = AggregateField(1, plan.SequenceType), Source = right, Span = span });
+        exit.Instructions.Add(new MirStore { Target = AggregateField(0, plan.SequenceType), Value = left, Span = span });
+        exit.Instructions.Add(new MirStore { Target = AggregateField(1, plan.SequenceType), Value = right, Span = span });
         exit.Terminator = new MirGoto { Target = continuation.Id, Span = span };
     }
 
