@@ -30,8 +30,8 @@ language services.
 > [!IMPORTANT]
 > Eidos is prerelease software. Language and tooling interfaces may change
 > between prereleases, including incompatible changes. The current language
-> baseline is **Eidos 0.6.0-alpha.1**; Eidos, Eidosc, Std, Eidosup, and Bindgen
-> are versioned independently.
+> baseline is **Eidos 0.9.0-alpha.1**; Eidos, Eidosc, Std, Eidosup, and Bindgen
+> share a unified version train.
 
 ## Why Eidos?
 
