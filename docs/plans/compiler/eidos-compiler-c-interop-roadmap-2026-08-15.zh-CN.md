@@ -53,8 +53,9 @@ LLVM 类型映射（`src/Eidosc/CodeGen/Llvm/TypeLowering.cs:341-367`）与语�
 | M1 | 窄标量 FFI 收口（编译器+bindgen 摘 shim） | M | M0 | extern(c) 窄参数/返回原生往返；raylib 门禁无窄化 shim |
 | M2 | 模块级 mut 运行时初始化（E5301/E5302 放宽） | M | M0 | 非字面量初始化器 E2E 可用，初始化顺序确定 |
 | M3 | extern(c) 全局变量（解 bindgen 全局 SKIP） | M/L | M2 | C 全局标量/指针在 Eidos 读写 E2E；bindgen 生成 extern 声明 |
-| M4a | union 指针式表示（bindgen 侧，零编译器改动） | S | — | union 经 offset 常量 + ptr_load_as 可读写 |
+| M4a | union 成员视图（shim 访问器 + 布局常量，零编译器改动） | S | — | union 经生成访问器可读写，raylib 门禁维持 |
 | M4b | 语言级 repr(c) union | L | M4a + 设计决策 | （另行立项） |
+| M4c | union→ADT 桥接（声明式标签关联 + decode/encode） | M | M4a | tagged-union 结构生成可模式匹配的 ADT |
 | M5 | 捕获闭包 → Cfn（ctx-pointer 约定） | M | M0 | ctx 型回调 E2E native smoke |
 | M6 | 混合编译接线（真跨语言 LTO） | S/M | M1 | --lto 产出真 LTO 对象并跨语言优化；关闭时行为不变 |
 | M7 | C2E 垂直切片（body translation 起步） | L（切片 M） | M1-M6 | 小型真实 C 文件翻译产物过全管线且行为与 C 一致 |
@@ -185,25 +186,61 @@ Eidos 直接读写 C 全局。clang 提取侧数据已具备（`CBindingGlobal`�
 
 ## 8. M4 — union 表示
 
-### M4a：指针式表示（bindgen 侧，零编译器改动）
+### 8.0 设计结论：C union 与 Eidos ADT 不存在表示层映射
+
+C union 是**无标签**重叠存储（成员全部 offset 0，size = max，跨成员读 = C11 允许的
+type punning）；Eidos ADT 是**带判别式**的和类型（tag + 最大 payload）。两者布局与
+读取语义都不同，任何"union ↦ ADT"的直译都不健全：读方向无从得知匹配哪个构造器，
+往返也不等价。因此分三层，各自回答不同的问题：
+
+| 层 | 回答的问题 | 机制 | 语义地位 |
+| --- | --- | --- | --- |
+| M4a 成员视图 | 如何在 Eidos 里读写 union 内存 | shim 访问器 + size/align 常量 | 无类型存储 + 类型化成员访问（不安全面） |
+| M4b repr(c) union | union 值是否按值过 FFI | 重叠布局的语言级存储类型 | 不安全的存储类型，**不是**和类型 |
+| M4c ADT 桥接 | 何时可以当和类型用 | 声明式标签关联 → 生成 decode/encode | 只在 C 侧自己维护标签（enum+union 惯用法）时健全 |
+
+C2E 翻译 union 用法时的精确规则：**同成员写后读** = 变体访问（构造器/模式匹配，健全）；
+**成员写** = 变体切换（写后其它成员未指定——C 标准语义——故"丢掉"旧变体是忠实的）；
+**跨成员读** = type punning，回落 M4a 原始视图，不套 ADT。
+
+### M4a：成员视图（bindgen 侧，零编译器改动）
 
 union 的 size/align/成员 offset/成员类型在 clang 提取侧已全部具备
 （`ClangHeaderParser.ExtractUnion` + `ExtractFields` 带 per-field offset，
-CHeaderIr.cs:43-47），只是消费端缺表示。动作：
+CHeaderIr.cs:43-47）。std.Ffi 的指针操作全部是 `compiler(internal)`，生成代码不可
+调用，因此成员访问器经自动 C shim 实现：
 
-- `RawBindingGenerator.GenerateSkippedDeclarations`（:134-141）把 SKIP 注释替换为：
-  union size/align 常量、每成员 offset 常量、指针式访问函数（入参 RawPtr，经
-  `ptr_add` + `ptr_load_as[T]/ptr_store_as[T]` 读写）。
-- 解除连坐：`CanBindFunction`（:202-206）对"含 union 字段的 struct 按值"仍可维持 SKIP
-  （struct-by-value 拆分与 union 重叠存储是两个问题），仅放开指针路径。
-- 配 `meta.layout_of` 断言（MetaComptimeLayouts.cs:69-77 已支持 CStruct）。
+- Eidos 侧：`@[extern(c)]` 访问器声明——`{u}_{m}_get :: RawPtr -> T`、
+  `{u}_{m}_set :: RawPtr -> T -> Unit`（标量/指针成员直连，聚合成员返回成员地址
+  RawPtr），外加 `{u}_size/{u}_align :: Int` 常量。
+- shim 侧：成员 get/set C 函数（union 定义可见，shim 已 include 头文件）。
+- 含 union 字段的 struct 按值参数、union 按值参数维持 SKIP（两个问题分离）。
 
 ### M4b：语言级 repr(c) union（另行立项，含设计决策）
 
-需要先做语言设计决策（重叠字段语法、未初始化读取限制、与封闭 case 类型的关系），
-实现面集中在 `CollectCStructDef`（NameResolver.Declarations.cs:773-858）+
-`CStructLayoutComputer`（重叠 offset 计算），CodeGen 无需新机制（访问本就按 offset GEP）。
-**不阻塞 C2E 垂直切片**——切片内 union 走 M4a 指针路径。
+重叠字段语法、未初始化读取限制、与封闭 case 类型的关系需要语言设计决策；实现面
+集中在 `CollectCStructDef` + `CStructLayoutComputer`（重叠 offset）。只在出现
+"union 按值过边界"的真实需求时立项。
+
+### M4c：ADT 桥接（bindgen 生成层，声明式标签关联）
+
+针对 C 的 tagged-union 惯用法（`struct { enum Kind kind; union Payload payload; }`），
+bindgen.toml 声明标签关联后生成：
+
+```eidos
+-- enum + union 对 ↦ 单个和类型
+EventValue :: type { Click(Int32), Move(Float32) }
+event_value_decode :: RawPtr -> EventValue need ffi   -- 读 tag 分支 + 取成员
+event_value_encode :: EventValue -> RawPtr -> Unit need ffi  -- 写 tag + 成员
+```
+
+- 标签来源必须**声明式**给出（`[[unions]]` 表：struct/tagField/payloadField/tagEnum +
+  每个 variant 的 tag→member 映射），不从使用模式猜测。
+- decode/encode 基于宿主 struct 的 @cstruct 点访问（tag 字段）+ M4a 成员访问器
+  （payload 字段经 shim 取 `&p->payload`）。
+- 变体成员限定为标量/指针映射（聚合负载要求指针成员）。
+- 收益：SDL/X11/libuv 类事件结构自然成为可模式匹配的 Eidos ADT；C2E 的
+  switch-on-tag 惯用法直接译为模式匹配。
 
 ## 9. M5 — 捕获闭包 → Cfn（ctx-pointer 约定）
 

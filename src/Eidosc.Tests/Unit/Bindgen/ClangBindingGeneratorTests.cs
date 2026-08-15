@@ -83,8 +83,12 @@ public sealed class ClangBindingGeneratorTests
         Assert.Contains("export green :: Int = 5;", raw, StringComparison.Ordinal);
         // 宏常量
         Assert.Contains("export version :: Int = 42;", raw, StringComparison.Ordinal);
-        // union → 注释收编；标量 C 全局 → extern(c) 声明
-        Assert.Contains("// SKIP union Value", raw, StringComparison.Ordinal);
+        // union → 成员视图访问器（M4a）；标量 C 全局 → extern(c) 声明
+        Assert.Contains("export value_size :: Int = 4;", raw, StringComparison.Ordinal);
+        Assert.Contains("export value_align :: Int = 4;", raw, StringComparison.Ordinal);
+        Assert.Contains("@[extern(c, name: \"eidos_shim_union_Value_i_get\")]", raw, StringComparison.Ordinal);
+        Assert.Contains("export value_i_get :: RawPtr -> Int32 need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export value_f_set :: RawPtr -> Float32 -> Unit need ffi;", raw, StringComparison.Ordinal);
         Assert.Contains("@[extern(c, name: \"global_counter\")]", raw, StringComparison.Ordinal);
         Assert.Contains("export mut global_counter : Int32;", raw, StringComparison.Ordinal);
         // struct 按值参数 → 字段拆分 shim（int 叶字段原生位宽直连）
@@ -206,6 +210,123 @@ public sealed class ClangBindingGeneratorTests
         // 嵌套 struct 递归拆分
         Assert.Contains("void eidos_shim_begin2d(float cam_offset_x, float cam_offset_y, float cam_rotation)", shim, StringComparison.Ordinal);
         Assert.Contains("    begin2d((struct Camera2D){ (struct Vector2){ cam_offset_x, cam_offset_y }, cam_rotation });", shim, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TaggedUnion_DeclaredAssociation_GeneratesAdtWithDecodeEncode()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            union Value { int i; float f; };
+            enum Kind { KIND_CLICK, KIND_MOVE };
+            struct Event {
+                enum Kind kind;
+                union Value payload;
+            };
+            void handle_event(struct Event* e);
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+
+            [[unions]]
+            union = "Value"
+            struct = "Event"
+            tagField = "kind"
+            payloadField = "payload"
+            tagEnum = "Kind"
+            name = "EventValue"
+
+            [[unions.variants]]
+            tag = "KIND_CLICK"
+            member = "i"
+
+            [[unions.variants]]
+            tag = "KIND_MOVE"
+            member = "f"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
+
+        Assert.True(result.Success, string.Join(Environment.NewLine, result.Diagnostics));
+
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        // enum + union 对 ↦ 单个和类型（case-type 形式）
+        Assert.Contains("export EventValue :: type { KindClick :: type(Int32), KindMove :: type(Float32) }", raw, StringComparison.Ordinal);
+        Assert.Contains("export event_value_decode :: RawPtr -> EventValue need ffi", raw, StringComparison.Ordinal);
+        Assert.Contains("tag == kind_click then KindClick(value_i_get(event_payload_ptr(p)))", raw, StringComparison.Ordinal);
+        Assert.Contains("export event_value_encode :: EventValue -> RawPtr -> Unit need ffi", raw, StringComparison.Ordinal);
+        Assert.Contains("KindClick(value) => p => {", raw, StringComparison.Ordinal);
+        Assert.Contains("event_kind_set(p, kind_click);", raw, StringComparison.Ordinal);
+        // 宿主 struct 辅助访问器
+        Assert.Contains("export event_kind_get :: RawPtr -> Int need ffi;", raw, StringComparison.Ordinal);
+        Assert.Contains("export event_payload_ptr :: RawPtr -> RawPtr need ffi;", raw, StringComparison.Ordinal);
+
+        var shim = File.ReadAllText(Path.Combine(packageDir, "native", "demo_shim.c"));
+        Assert.Contains("int64_t eidos_shim_struct_Event_kind_get(void* p)", shim, StringComparison.Ordinal);
+        Assert.Contains("void eidos_shim_struct_Event_kind_set(void* p, int64_t v)", shim, StringComparison.Ordinal);
+        Assert.Contains("void* eidos_shim_struct_Event_payload_ptr(void* p)", shim, StringComparison.Ordinal);
+
+        // 生成模块过完整语义管线（extern + ADT + decode/encode）
+        var rawPath = Path.Combine(packageDir, "src", "raw.eidos");
+        var pipeline = new Eidosc.Pipeline.CompilationPipeline(
+            File.ReadAllText(rawPath),
+            new Eidosc.Pipeline.CompilationOptions
+            {
+                InputFile = rawPath,
+                StopAtPhase = Eidosc.Pipeline.CompilationPhase.Llvm,
+                UseColors = false,
+                AllowVirtualInputFile = true
+            });
+        var analysis = pipeline.Run();
+        Assert.True(analysis.Success, string.Join(
+            Environment.NewLine,
+            analysis.Diagnostics.Select(static diagnostic => $"{diagnostic.Code}: {diagnostic.Message}")));
+    }
+
+    [Fact]
+    public void TaggedUnion_UnknownMember_SkipsWithComment()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        workspace.WriteText("demo.h", """
+            union Value { int i; float f; };
+            enum Kind { KIND_CLICK };
+            struct Event {
+                enum Kind kind;
+                union Value payload;
+            };
+            """);
+        var packageDir = workspace.Path("binding");
+        Directory.CreateDirectory(packageDir);
+        workspace.WriteText("binding/bindgen.toml", """
+            package = "dev.eidos.demo"
+            version = "0.1.0"
+            library = "demo"
+            headers = ["../demo.h"]
+            parseMode = "clang"
+
+            [[unions]]
+            union = "Value"
+            struct = "Event"
+            tagField = "kind"
+            payloadField = "payload"
+            tagEnum = "Kind"
+
+            [[unions.variants]]
+            tag = "KIND_CLICK"
+            member = "missing_member"
+            """);
+
+        var result = new BindingPackageGenerator().Generate(new BindingPackageGenerateOptions(packageDir, Check: false, NoShim: false));
+
+        Assert.True(result.Success);
+        var raw = File.ReadAllText(Path.Combine(packageDir, "src", "raw.eidos"));
+        Assert.Contains("// SKIP tagged union Value: union member 'Value.missing_member' not found", raw, StringComparison.Ordinal);
     }
 
     [Fact]

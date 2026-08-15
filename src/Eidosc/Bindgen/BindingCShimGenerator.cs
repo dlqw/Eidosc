@@ -20,17 +20,22 @@ public sealed class BindingCShimGenerator
     private readonly BindingTypeMapper _typeMapper;
     private readonly IReadOnlyDictionary<string, CBindingStruct> _structsByName;
     private readonly IReadOnlyDictionary<string, CBindingTypedef> _typedefs;
+    private readonly BindingSpecDocument? _spec;
 
-    public BindingCShimGenerator(CHeaderIr ir)
+    public BindingCShimGenerator(CHeaderIr ir, BindingSpecDocument? spec = null)
     {
         _ir = ir;
+        _spec = spec;
         _typeMapper = new BindingTypeMapper(ir);
         _structsByName = ir.Structs.ToDictionary(static st => st.Name, StringComparer.Ordinal);
         _typedefs = (ir.TypedefsSafe ?? [])
             .ToDictionary(static t => t.Name, StringComparer.Ordinal);
     }
 
-    public bool HasShims => _ir.Functions.Any(NeedsShim);
+    public bool HasShims =>
+        _ir.Functions.Any(NeedsShim) ||
+        (_spec?.Unions is { Length: > 0 }) ||
+        _ir.UnionsSafe.Any(static u => !string.IsNullOrWhiteSpace(u.Name) && u.Size > 0 && u.Fields.Count > 0);
 
     public string Generate()
     {
@@ -48,7 +53,87 @@ public sealed class BindingCShimGenerator
             sb.AppendLine();
         }
 
+        foreach (var u in _ir.UnionsSafe
+                     .Where(static u => !string.IsNullOrWhiteSpace(u.Name) && u.Size > 0)
+                     .OrderBy(static u => u.Name, StringComparer.Ordinal))
+        {
+            GenerateUnionAccessors(sb, u);
+            sb.AppendLine();
+        }
+
+        GenerateTaggedUnionHelpers(sb);
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// tagged-union 桥接辅助（M4c）：宿主 struct 的标签字段读写（int64_t 宽化）与
+    /// 有效负载字段取址。
+    /// </summary>
+    private void GenerateTaggedUnionHelpers(StringBuilder sb)
+    {
+        foreach (var rule in _spec?.Unions ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(rule.Struct) ||
+                !_structsByName.TryGetValue(rule.Struct!, out var hostStruct))
+            {
+                continue;
+            }
+
+            var structType = _typedefs.ContainsKey(hostStruct.Name) ? hostStruct.Name : $"struct {hostStruct.Name}";
+            var tagField = hostStruct.Fields.FirstOrDefault(f => string.Equals(f.Name, rule.TagField, StringComparison.Ordinal));
+            if (tagField != null)
+            {
+                var tagGet = RawBindingGenerator.StructFieldShimName(rule.Struct!, rule.TagField!, "get");
+                var tagSet = RawBindingGenerator.StructFieldShimName(rule.Struct!, rule.TagField!, "set");
+                sb.AppendLine($"int64_t {tagGet}(void* p) {{ return (int64_t)(({structType}*)p)->{tagField.Name}; }}");
+                sb.AppendLine($"void {tagSet}(void* p, int64_t v) {{ (({structType}*)p)->{tagField.Name} = ({tagField.Type.Spelling})v; }}");
+            }
+
+            if (hostStruct.Fields.Any(f => string.Equals(f.Name, rule.PayloadField, StringComparison.Ordinal)))
+            {
+                var payloadPtr = RawBindingGenerator.StructFieldPtrShimName(rule.Struct!, rule.PayloadField!);
+                sb.AppendLine($"void* {payloadPtr}(void* p) {{ return &(({structType}*)p)->{rule.PayloadField}; }}");
+            }
+
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>
+    /// union 成员视图访问器（M4a）：标量/指针成员值读写，聚合成员取地址。
+    /// 入参为指向 union 的指针（void* + 内部转换到 union 类型）。
+    /// </summary>
+    private void GenerateUnionAccessors(StringBuilder sb, CBindingUnion union)
+    {
+        var unionType = _typedefs.ContainsKey(union.Name) ? union.Name : $"union {union.Name}";
+        foreach (var field in union.Fields.OrderBy(static f => f.Name, StringComparer.Ordinal))
+        {
+            var mapping = _typeMapper.Map(field.Type);
+            var isAggregate = mapping.Category is not (BindingTypeCategory.Direct or
+                BindingTypeCategory.RawPtr or
+                BindingTypeCategory.EnumAsInt);
+            var shimGet = RawBindingGenerator.UnionShimName(union.Name, field.Name, "get");
+            var shimSet = RawBindingGenerator.UnionShimName(union.Name, field.Name, "set");
+
+            if (isAggregate)
+            {
+                sb.AppendLine($"void* {shimGet}(void* p) {{ return &(({unionType}*)p)->{field.Name}; }}");
+                continue;
+            }
+
+            var memberSpelling = field.Type.Spelling;
+            if (mapping.Category == BindingTypeCategory.EnumAsInt)
+            {
+                // enum 成员：Eidos 侧 Int（i64），shim 侧 int64_t 宽化 + 枚举窄化。
+                sb.AppendLine($"int64_t {shimGet}(void* p) {{ return (int64_t)(({unionType}*)p)->{field.Name}; }}");
+                sb.AppendLine($"void {shimSet}(void* p, int64_t v) {{ (({unionType}*)p)->{field.Name} = ({field.Type.Spelling})v; }}");
+                continue;
+            }
+
+            sb.AppendLine($"{memberSpelling} {shimGet}(void* p) {{ return (({unionType}*)p)->{field.Name}; }}");
+            sb.AppendLine($"void {shimSet}(void* p, {memberSpelling} v) {{ (({unionType}*)p)->{field.Name} = v; }}");
+        }
     }
 
     private bool NeedsShim(CBindingFunction fn)

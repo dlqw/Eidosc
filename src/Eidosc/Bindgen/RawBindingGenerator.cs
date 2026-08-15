@@ -31,6 +31,8 @@ public sealed class RawBindingGenerator
         GenerateEnums(sb, usedNames);
         GenerateStructs(sb, usedNames);
         GenerateConstants(sb, usedNames);
+        GenerateUnionAccessors(sb, usedNames);
+        GenerateUnionAdts(sb, usedNames);
         GenerateSkippedDeclarations(sb, usedNames);
         GenerateFunctions(sb, rawFunctionNames, usedNames);
 
@@ -128,19 +130,12 @@ public sealed class RawBindingGenerator
     }
 
     /// <summary>
-    /// 无法在 Eidos 中表达或需要 shim 的声明：union、typedef 链。
-    /// 标量/指针 C 全局变量直接生成为 extern(c) 声明（declaration-only 全局）；
-    /// 聚合或未知类型的全局维持 SKIP 注释。
+    /// 无法在 Eidos 中表达或需要 shim 的声明：全局变量（标量/指针直出）、typedef 链。
+    /// union 生成为成员视图访问器（GenerateUnionAccessors）。
     /// </summary>
     private void GenerateSkippedDeclarations(StringBuilder sb, HashSet<string> usedNames)
     {
         var emitted = false;
-        foreach (var u in _ir.UnionsSafe)
-        {
-            sb.AppendLine($"    // SKIP union {u.Name}: unions are not representable in Eidos; use pointer-based shims");
-            emitted = true;
-        }
-
         foreach (var g in _ir.GlobalsSafe)
         {
             var mapping = _typeMapper.Map(g.Type);
@@ -174,6 +169,276 @@ public sealed class RawBindingGenerator
         if (emitted)
             sb.AppendLine();
     }
+
+    /// <summary>
+    /// union 成员视图（M4a）：union 是无标签重叠存储，不是和类型；此处生成
+    /// size/align 布局常量与经自动 shim 的成员访问器（"当前哪个成员有效"由调用方维护）。
+    /// 标量/指针成员有值 get/set；聚合成员只提供取地址 get（RawPtr）。
+    /// </summary>
+    private void GenerateUnionAccessors(StringBuilder sb, HashSet<string> usedNames)
+    {
+        foreach (var u in _ir.UnionsSafe)
+        {
+            if (string.IsNullOrWhiteSpace(u.Name) || u.Size <= 0)
+            {
+                sb.AppendLine($"    // SKIP union {u.Name}: no usable tag or layout facts");
+                continue;
+            }
+
+            var unionPrefix = BindingTypeMapper.ToEidosFunctionName(u.Name);
+            if (usedNames.Add($"{unionPrefix}_size"))
+            {
+                sb.AppendLine($"    export {unionPrefix}_size :: Int = {u.Size};");
+            }
+
+            if (usedNames.Add($"{unionPrefix}_align"))
+            {
+                sb.AppendLine($"    export {unionPrefix}_align :: Int = {u.Alignment};");
+            }
+
+            foreach (var field in u.Fields)
+            {
+                var mapping = _typeMapper.Map(field.Type);
+                var memberName = $"{unionPrefix}_{BindingTypeMapper.ToEidosFunctionName(field.Name)}";
+                var shimGet = UnionShimName(u.Name, field.Name, "get");
+                var shimSet = UnionShimName(u.Name, field.Name, "set");
+                if (!usedNames.Add($"{memberName}_get"))
+                {
+                    sb.AppendLine($"    // SKIP union member {u.Name}.{field.Name}: generated name '{memberName}_get' collides");
+                    continue;
+                }
+
+                var isAggregate = mapping.Category is not (BindingTypeCategory.Direct or
+                    BindingTypeCategory.RawPtr or
+                    BindingTypeCategory.EnumAsInt);
+                var memberType = isAggregate ? "RawPtr" : mapping.EidosType;
+                sb.AppendLine($"    @[extern(c, name: \"{shimGet}\")]");
+                sb.AppendLine($"    export {memberName}_get :: RawPtr -> {memberType} need ffi;");
+                if (!isAggregate)
+                {
+                    usedNames.Add($"{memberName}_set");
+                    sb.AppendLine($"    @[extern(c, name: \"{shimSet}\")]");
+                    sb.AppendLine($"    export {memberName}_set :: RawPtr -> {memberType} -> Unit need ffi;");
+                }
+            }
+
+            sb.AppendLine();
+        }
+
+        if (_ir.UnionsSafe.Count > 0)
+        {
+            sb.AppendLine();
+        }
+    }
+
+    internal static string UnionShimName(string unionName, string fieldName, string accessor) =>
+        $"eidos_shim_union_{unionName}_{fieldName}_{accessor}";
+
+    internal static string StructFieldShimName(string structName, string fieldName, string accessor) =>
+        $"eidos_shim_struct_{structName}_{fieldName}_{accessor}";
+
+    internal static string StructFieldPtrShimName(string structName, string fieldName) =>
+        $"eidos_shim_struct_{structName}_{fieldName}_ptr";
+
+    /// <summary>
+    /// tagged-union 桥接（M4c）：宿主 struct 的标签字段 + union 有效负载声明为
+    /// 标签关联后，生成 Eidos ADT 与 decode/encode。C union 无判别式，
+    /// 只有 C 侧自己维护标签（enum+union 惯用法）时该映射才健全——关联必须显式声明。
+    /// decode 未知 tag 回落到最后一个变体；encode 写标签 + 成员。
+    /// </summary>
+    private void GenerateUnionAdts(StringBuilder sb, HashSet<string> usedNames)
+    {
+        foreach (var rule in _spec.Unions ?? [])
+        {
+            if (!TryResolveTaggedUnion(rule, out var resolved, out var error))
+            {
+                sb.AppendLine($"    // SKIP tagged union {rule.Union}: {error}");
+                continue;
+            }
+
+            var adtName = resolved.AdtName;
+            if (!usedNames.Add(adtName))
+            {
+                sb.AppendLine($"    // SKIP tagged union {rule.Union}: result name '{adtName}' collides with another declaration");
+                continue;
+            }
+
+            EmitStructFieldAuxiliaries(sb, usedNames, resolved);
+
+            sb.AppendLine($"    // tagged union: {rule.Struct}.{rule.TagField} ({rule.TagEnum}) discriminates {rule.Struct}.{rule.PayloadField} ({rule.Union})");
+            var constructors = string.Join(", ", resolved.Variants.Select(static v => $"{v.Constructor} :: type({v.EidosType})"));
+            sb.AppendLine($"    export {adtName} :: type {{ {constructors} }}");
+            sb.AppendLine();
+            EmitDecode(sb, resolved);
+            EmitEncode(sb, resolved);
+            sb.AppendLine();
+        }
+    }
+
+    private void EmitStructFieldAuxiliaries(StringBuilder sb, HashSet<string> usedNames, TaggedUnionResolution resolved)
+    {
+        var structSnake = BindingTypeMapper.ToEidosFunctionName(resolved.Rule.Struct!);
+        var tagGet = $"{structSnake}_{resolved.Rule.TagField}_get";
+        var tagSet = $"{structSnake}_{resolved.Rule.TagField}_set";
+        var payloadPtr = $"{structSnake}_{resolved.Rule.PayloadField}_ptr";
+        if (usedNames.Add(tagGet))
+        {
+            sb.AppendLine($"    @[extern(c, name: \"{StructFieldShimName(resolved.Rule.Struct!, resolved.Rule.TagField!, "get")}\")]");
+            sb.AppendLine($"    export {tagGet} :: RawPtr -> Int need ffi;");
+        }
+
+        if (usedNames.Add(tagSet))
+        {
+            sb.AppendLine($"    @[extern(c, name: \"{StructFieldShimName(resolved.Rule.Struct!, resolved.Rule.TagField!, "set")}\")]");
+            sb.AppendLine($"    export {tagSet} :: RawPtr -> Int -> Unit need ffi;");
+        }
+
+        if (usedNames.Add(payloadPtr))
+        {
+            sb.AppendLine($"    @[extern(c, name: \"{StructFieldPtrShimName(resolved.Rule.Struct!, resolved.Rule.PayloadField!)}\")]");
+            sb.AppendLine($"    export {payloadPtr} :: RawPtr -> RawPtr need ffi;");
+        }
+
+        sb.AppendLine();
+    }
+
+    private void EmitDecode(StringBuilder sb, TaggedUnionResolution resolved)
+    {
+        var decodeName = $"{BindingTypeMapper.ToEidosFunctionName(resolved.AdtName)}_decode";
+        var tagGet = $"{BindingTypeMapper.ToEidosFunctionName(resolved.Rule.Struct!)}_{resolved.Rule.TagField}_get";
+        var payloadPtr = $"{BindingTypeMapper.ToEidosFunctionName(resolved.Rule.Struct!)}_{resolved.Rule.PayloadField}_ptr";
+        sb.AppendLine($"    // 未知 tag 回落到最后一个变体");
+        sb.AppendLine($"    export {decodeName} :: RawPtr -> {resolved.AdtName} need ffi");
+        sb.AppendLine("    {");
+        sb.AppendLine("        p => {");
+        sb.AppendLine($"            tag: Int := {tagGet}(p);");
+
+        var conditions = resolved.Variants
+            .Select(static variant => (variant.TagConstant, variant.Constructor, variant.MemberGet))
+            .ToList();
+        var last = conditions[^1];
+        var chained = conditions
+            .Take(conditions.Count - 1)
+            .Aggregate(
+                (string)$"{last.Constructor}({last.MemberGet}({payloadPtr}(p)))",
+                (current, next) =>
+                    $"tag == {next.TagConstant} then {next.Constructor}({next.MemberGet}({payloadPtr}(p))) else ({current})");
+        sb.AppendLine($"            {chained}");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+    }
+
+    private void EmitEncode(StringBuilder sb, TaggedUnionResolution resolved)
+    {
+        var encodeName = $"{BindingTypeMapper.ToEidosFunctionName(resolved.AdtName)}_encode";
+        var structSnake = BindingTypeMapper.ToEidosFunctionName(resolved.Rule.Struct!);
+        var tagSet = $"{structSnake}_{resolved.Rule.TagField}_set";
+        var payloadPtr = $"{structSnake}_{resolved.Rule.PayloadField}_ptr";
+        sb.AppendLine($"    export {encodeName} :: {resolved.AdtName} -> RawPtr -> Unit need ffi");
+        sb.AppendLine("    {");
+        var branches = resolved.Variants
+            .Select(variant => string.Join(Environment.NewLine, new[]
+            {
+                $"        {variant.Constructor}(value) => p => {{",
+                $"            {tagSet}(p, {variant.TagConstant});",
+                $"            {variant.MemberSet}({payloadPtr}(p), value)",
+                "        }"
+            }))
+            .ToList();
+        sb.AppendLine(string.Join("," + Environment.NewLine, branches));
+        sb.AppendLine("    }");
+    }
+
+    private bool TryResolveTaggedUnion(
+        BindingTaggedUnionRule rule,
+        out TaggedUnionResolution resolved,
+        out string error)
+    {
+        resolved = null!;
+        error = "";
+        var union = _ir.UnionsSafe.FirstOrDefault(u => string.Equals(u.Name, rule.Union, StringComparison.Ordinal));
+        if (union == null)
+        {
+            error = $"union '{rule.Union}' not found in header";
+            return false;
+        }
+
+        var hostStruct = _ir.Structs.FirstOrDefault(s => string.Equals(s.Name, rule.Struct, StringComparison.Ordinal));
+        if (hostStruct == null)
+        {
+            error = $"struct '{rule.Struct}' not found in header";
+            return false;
+        }
+
+        var tagField = hostStruct.Fields.FirstOrDefault(f => string.Equals(f.Name, rule.TagField, StringComparison.Ordinal));
+        if (tagField == null)
+        {
+            error = $"tag field '{rule.Struct}.{rule.TagField}' not found";
+            return false;
+        }
+
+        if (hostStruct.Fields.All(f => !string.Equals(f.Name, rule.PayloadField, StringComparison.Ordinal)))
+        {
+            error = $"payload field '{rule.Struct}.{rule.PayloadField}' not found";
+            return false;
+        }
+
+        var tagEnum = _ir.Enums.FirstOrDefault(e => string.Equals(e.Name, rule.TagEnum, StringComparison.Ordinal));
+        if (tagEnum == null)
+        {
+            error = $"tag enum '{rule.TagEnum}' not found in header";
+            return false;
+        }
+
+        var unionSnake = BindingTypeMapper.ToEidosFunctionName(union.Name);
+        var variants = new List<TaggedUnionVariant>();
+        foreach (var variantRule in rule.Variants ?? [])
+        {
+            var enumValue = tagEnum.Values.FirstOrDefault(v => string.Equals(v.Name, variantRule.Tag, StringComparison.Ordinal));
+            if (enumValue == null)
+            {
+                error = $"tag constant '{variantRule.Tag}' not found in enum '{rule.TagEnum}'";
+                return false;
+            }
+
+            var member = union.Fields.FirstOrDefault(f => string.Equals(f.Name, variantRule.Member, StringComparison.Ordinal));
+            if (member == null)
+            {
+                error = $"union member '{rule.Union}.{variantRule.Member}' not found";
+                return false;
+            }
+
+            var mapping = _typeMapper.Map(member.Type);
+            if (mapping.Category is not (BindingTypeCategory.Direct or BindingTypeCategory.RawPtr))
+            {
+                error = $"variant member '{rule.Union}.{variantRule.Member}' must map to a scalar or pointer (got {mapping.Note ?? mapping.Category.ToString()}); use a pointer member for aggregates";
+                return false;
+            }
+
+            variants.Add(new TaggedUnionVariant(
+                variantRule.Constructor ?? BindingSpecDocument.ToPascalCase(variantRule.Tag!),
+                BindingTypeMapper.ToEidosFunctionName(enumValue.Name),
+                mapping.EidosType,
+                $"{unionSnake}_{BindingTypeMapper.ToEidosFunctionName(member.Name)}_get",
+                $"{unionSnake}_{BindingTypeMapper.ToEidosFunctionName(member.Name)}_set"));
+        }
+
+        resolved = new TaggedUnionResolution(rule, rule.Name ?? union.Name, variants);
+        return true;
+    }
+
+    private sealed record TaggedUnionResolution(
+        BindingTaggedUnionRule Rule,
+        string AdtName,
+        IReadOnlyList<TaggedUnionVariant> Variants);
+
+    private sealed record TaggedUnionVariant(
+        string Constructor,
+        string TagConstant,
+        string EidosType,
+        string MemberGet,
+        string MemberSet);
 
     private void GenerateFunctions(StringBuilder sb, Dictionary<string, string> rawFunctionNames, HashSet<string> usedNames)
     {

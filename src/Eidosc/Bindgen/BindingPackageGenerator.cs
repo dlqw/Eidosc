@@ -142,7 +142,7 @@ public sealed class BindingPackageGenerator
 
         if (!noShim)
         {
-            var shimGenerator = new BindingCShimGenerator(ir);
+            var shimGenerator = new BindingCShimGenerator(ir, spec);
             if (shimGenerator.HasShims)
             {
                 files.Add(new GeneratedFile(
@@ -155,7 +155,7 @@ public sealed class BindingPackageGenerator
 
         string? CreateShimPathIfNeeded(CHeaderIr headerIr)
         {
-            var shimGenerator = new BindingCShimGenerator(headerIr);
+            var shimGenerator = new BindingCShimGenerator(headerIr, spec);
             return shimGenerator.HasShims
                 ? $"native/{spec.Library}_shim.c"
                 : null;

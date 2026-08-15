@@ -312,12 +312,6 @@ main :: Int -> Int
         }
 
         var result = RunSourceAtLlvm(source, sourcePath, enableMirOptimizations);
-        if (nativeCSource != null)
-        {
-            var cSourcePath = Path.Combine(sourceDir, $"{executableBaseName}_native.c");
-            File.WriteAllText(cSourcePath, nativeCSource);
-            result.LlvmModule!.NativeSources.Add(cSourcePath);
-        }
         Assert.True(
             result.Success,
             string.Join(
@@ -326,6 +320,12 @@ main :: Int -> Int
         Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
         Assert.NotNull(result.LlvmModule);
+        if (nativeCSource != null)
+        {
+            var cSourcePath = Path.Combine(sourceDir, $"{executableBaseName}_native.c");
+            File.WriteAllText(cSourcePath, nativeCSource);
+            result.LlvmModule!.NativeSources.Add(cSourcePath);
+        }
         var tempDir = Path.Combine(Path.GetTempPath(), $"eidosc_native_source_smoke_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
 

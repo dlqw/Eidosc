@@ -24,6 +24,7 @@ public sealed class BindingSpecDocument
     public BindingWrapperRule[]? Wrappers { get; set; }
     public BindingEffectRule[]? Effects { get; set; }
     public BindingOwnershipRule[]? Ownership { get; set; }
+    public BindingTaggedUnionRule[]? Unions { get; set; }
 
     public static BindingSpecDocument Load(string path)
     {
@@ -112,6 +113,28 @@ public sealed class BindingSpecDocument
                 lines.Add($"nullable = {ownership.Nullable.Value.ToString().ToLowerInvariant()}");
         }
 
+        foreach (var taggedUnion in Unions ?? [])
+        {
+            lines.Add("");
+            lines.Add("[[unions]]");
+            lines.Add($"union = {FormatString(taggedUnion.Union ?? "")}");
+            lines.Add($"struct = {FormatString(taggedUnion.Struct ?? "")}");
+            lines.Add($"tagField = {FormatString(taggedUnion.TagField ?? "")}");
+            lines.Add($"payloadField = {FormatString(taggedUnion.PayloadField ?? "")}");
+            lines.Add($"tagEnum = {FormatString(taggedUnion.TagEnum ?? "")}");
+            if (!string.IsNullOrWhiteSpace(taggedUnion.Name))
+                lines.Add($"name = {FormatString(taggedUnion.Name!)}");
+            foreach (var variant in taggedUnion.Variants ?? [])
+            {
+                lines.Add("");
+                lines.Add("[[unions.variants]]");
+                lines.Add($"tag = {FormatString(variant.Tag ?? "")}");
+                lines.Add($"member = {FormatString(variant.Member ?? "")}");
+                if (!string.IsNullOrWhiteSpace(variant.Constructor))
+                    lines.Add($"constructor = {FormatString(variant.Constructor!)}");
+            }
+        }
+
         return string.Join(Environment.NewLine, lines) + Environment.NewLine;
 
         void AppendArray(string name, string[]? values)
@@ -136,6 +159,8 @@ public sealed class BindingSpecDocument
         {
             throw new InvalidOperationException($"{sourceName}: parseMode must be \"clang\" or \"simple\".");
         }
+
+        ValidateTaggedUnions(sourceName);
 
         var moduleNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var module in Modules ?? [])
@@ -169,6 +194,7 @@ public sealed class BindingSpecDocument
             {
                 throw new InvalidOperationException($"{sourceName}: wrapper rule requires module, raw, and name.");
             }
+
             if (!IsModulePath(wrapper.Module))
                 throw new InvalidOperationException($"{sourceName}: wrapper module '{wrapper.Module}' must use lower_snake_case path segments.");
             if (!ManifestNamingRules.IsModuleSegment(wrapper.Name))
@@ -196,6 +222,56 @@ public sealed class BindingSpecDocument
             .Split('.', StringSplitOptions.RemoveEmptyEntries)
             .All(ManifestNamingRules.IsModuleSegment);
     }
+
+    private void ValidateTaggedUnions(string sourceName)
+    {
+        var adtNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var taggedUnion in Unions ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(taggedUnion.Union) ||
+                string.IsNullOrWhiteSpace(taggedUnion.Struct) ||
+                string.IsNullOrWhiteSpace(taggedUnion.TagField) ||
+                string.IsNullOrWhiteSpace(taggedUnion.PayloadField) ||
+                string.IsNullOrWhiteSpace(taggedUnion.TagEnum))
+            {
+                throw new InvalidOperationException(
+                    $"{sourceName}: tagged union rule requires union, struct, tagField, payloadField, and tagEnum.");
+            }
+
+            if (taggedUnion.Variants is not { Length: > 0 })
+            {
+                throw new InvalidOperationException(
+                    $"{sourceName}: tagged union '{taggedUnion.Union}' requires at least one [[unions.variants]] entry.");
+            }
+
+            if (!adtNames.Add(taggedUnion.Name ?? taggedUnion.Union!))
+            {
+                throw new InvalidOperationException(
+                    $"{sourceName}: duplicate tagged union result name '{taggedUnion.Name ?? taggedUnion.Union}'.");
+            }
+
+            var constructors = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var variant in taggedUnion.Variants)
+            {
+                if (string.IsNullOrWhiteSpace(variant.Tag) || string.IsNullOrWhiteSpace(variant.Member))
+                {
+                    throw new InvalidOperationException(
+                        $"{sourceName}: tagged union '{taggedUnion.Union}' variant requires tag and member.");
+                }
+
+                var constructor = variant.Constructor ?? ToPascalCase(variant.Tag!);
+                if (!constructors.Add(constructor))
+                {
+                    throw new InvalidOperationException(
+                        $"{sourceName}: tagged union '{taggedUnion.Union}' has duplicate constructor '{constructor}'.");
+                }
+            }
+        }
+    }
+
+    internal static string ToPascalCase(string tag) => string.Concat(tag
+        .Split('_', StringSplitOptions.RemoveEmptyEntries)
+        .Select(static word => char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant()));
 
     private static string FormatString(string value) =>
         System.Text.Json.JsonSerializer.Serialize(value);
@@ -240,4 +316,27 @@ public sealed class BindingOwnershipRule
     public string? Result { get; set; }
     public string? MustFreeWith { get; set; }
     public bool? Nullable { get; set; }
+}
+
+/// <summary>
+/// tagged-union 桥接规则（M4c）：声明宿主 struct 的标签字段与 union 有效负载字段、
+/// 提供判别常量的 enum，以及 tag 常量到 union 成员的映射；据此生成 Eidos ADT 与
+/// decode/encode。标签关联必须显式声明，不从使用模式推断。
+/// </summary>
+public sealed class BindingTaggedUnionRule
+{
+    public string? Union { get; set; }
+    public string? Struct { get; set; }
+    public string? TagField { get; set; }
+    public string? PayloadField { get; set; }
+    public string? TagEnum { get; set; }
+    public string? Name { get; set; }
+    public BindingTaggedUnionVariantRule[]? Variants { get; set; }
+}
+
+public sealed class BindingTaggedUnionVariantRule
+{
+    public string? Tag { get; set; }
+    public string? Member { get; set; }
+    public string? Constructor { get; set; }
 }
