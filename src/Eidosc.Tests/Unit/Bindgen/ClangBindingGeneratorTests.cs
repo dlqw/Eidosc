@@ -83,9 +83,10 @@ public sealed class ClangBindingGeneratorTests
         Assert.Contains("export green :: Int = 5;", raw, StringComparison.Ordinal);
         // 宏常量
         Assert.Contains("export version :: Int = 42;", raw, StringComparison.Ordinal);
-        // union / 全局 → 注释收编
+        // union → 注释收编；标量 C 全局 → extern(c) 声明
         Assert.Contains("// SKIP union Value", raw, StringComparison.Ordinal);
-        Assert.Contains("// SKIP global global_counter", raw, StringComparison.Ordinal);
+        Assert.Contains("@[extern(c, name: \"global_counter\")]", raw, StringComparison.Ordinal);
+        Assert.Contains("export mut global_counter : Int32;", raw, StringComparison.Ordinal);
         // struct 按值参数 → 字段拆分 shim（int 叶字段原生位宽直连）
         Assert.Contains("@[extern(c, name: \"eidos_shim_demo_init\")]", raw, StringComparison.Ordinal);
         Assert.Contains("export demo_init :: Int32 -> Int32 -> Int32 -> Int32 need ffi;", raw, StringComparison.Ordinal);

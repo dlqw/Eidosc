@@ -233,8 +233,13 @@ public sealed class DeclParser(ParserContext ctx)
             typeAnnotation = _typeParser.ParseType();
         }
 
-        ctx.Expect(":=");
-        var value = _exprParser.ParseExpr();
+        // 声明形式（无初始化器）只对外部（extern）变量合法；语义层负责校验。
+        EidosAstNode? value = null;
+        if (ctx.Match(":="))
+        {
+            value = _exprParser.ParseExpr();
+        }
+
         ctx.Match(";");
 
         var pattern = new VarPattern();

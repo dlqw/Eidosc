@@ -176,6 +176,16 @@ public sealed record MirModuleVar
     public int RuntimeInitOrder { get; init; }
 
     /// <summary>
+    /// extern(c) 外部变量：链接 C 符号（declaration-only 全局），无 Eidos 初始化。
+    /// </summary>
+    public bool IsExternal { get; init; }
+
+    /// <summary>
+    /// extern 变量的 C 符号名；为空时使用绑定名。
+    /// </summary>
+    public string? ExternalName { get; init; }
+
+    /// <summary>
     /// 源码位置。
     /// </summary>
     public SourceSpan Span { get; init; }

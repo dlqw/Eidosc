@@ -379,10 +379,12 @@ public sealed record MirStateModuleVarPayload(
     int SymbolId,
     int TypeId,
     bool IsMutable,
-    MirStateOperandPayload Initializer,
+    MirStateOperandPayload? Initializer,
     SourceSpanPayload Span,
     string? RuntimeInitializerName = null,
-    int RuntimeInitOrder = 0)
+    int RuntimeInitOrder = 0,
+    bool IsExternal = false,
+    string? ExternalName = null)
 {
     public static MirStateModuleVarPayload Create(MirModuleVar moduleVar, MirStatePayloadCreateContext context) =>
         new(
@@ -390,10 +392,12 @@ public sealed record MirStateModuleVarPayload(
             moduleVar.SymbolId.Value,
             moduleVar.TypeId.Value,
             moduleVar.IsMutable,
-            MirStateOperandPayload.Create(moduleVar.Initializer, context),
+            moduleVar.Initializer == null ? null : MirStateOperandPayload.Create(moduleVar.Initializer, context),
             SourceSpanPayload.Create(moduleVar.Span),
             moduleVar.RuntimeInitializerName,
-            moduleVar.RuntimeInitOrder);
+            moduleVar.RuntimeInitOrder,
+            moduleVar.IsExternal,
+            moduleVar.ExternalName);
 
     public MirModuleVar Restore() =>
         new()
@@ -402,9 +406,11 @@ public sealed record MirStateModuleVarPayload(
             SymbolId = new SymbolId(SymbolId),
             TypeId = new TypeId(TypeId),
             IsMutable = IsMutable,
-            Initializer = Initializer.Restore(),
+            Initializer = Initializer == null ? null! : Initializer.Restore(),
             RuntimeInitializerName = RuntimeInitializerName,
             RuntimeInitOrder = RuntimeInitOrder,
+            IsExternal = IsExternal,
+            ExternalName = ExternalName,
             Span = Span.ToSourceSpan()
         };
 }

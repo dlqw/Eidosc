@@ -15,7 +15,8 @@ public sealed partial class TypeInferer
     {
         var isSignatureOnlyValue = letDecl.Value == null &&
                                    letDecl.TypeAnnotation != null &&
-                                   ShouldUseSignatureOnlyForValue(letDecl);
+                                   (ShouldUseSignatureOnlyForValue(letDecl) ||
+                                    ForeignContractIR.FromDeclaration(letDecl) != null);
         var type = letDecl.TypeAnnotation != null && (letDecl.Value != null || isSignatureOnlyValue)
             ? ConvertTypeInCurrentTypeParamContext(letDecl.TypeAnnotation)
             : letDecl.Value == null

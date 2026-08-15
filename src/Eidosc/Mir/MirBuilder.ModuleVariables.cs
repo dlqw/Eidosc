@@ -18,16 +18,52 @@ public sealed partial class MirBuilder
         foreach (var varDecl in moduleVars)
         {
             var typeId = ResolveModuleVarType(varDecl);
+
+            // extern(c) 变量：declaration-only 全局，不参与任何初始化路径。
+            if (varDecl.IsExternal)
+            {
+                var externalVar = new MirModuleVar
+                {
+                    Name = string.IsNullOrWhiteSpace(varDecl.Name) ? "$var" : varDecl.Name,
+                    SymbolId = varDecl.SymbolId,
+                    TypeId = typeId,
+                    IsMutable = true,
+                    IsExternal = true,
+                    ExternalName = varDecl.ExternalSymbolName,
+                    Span = varDecl.Span
+                };
+
+                if (varDecl.SymbolId.IsValid)
+                {
+                    _moduleVarsBySymbol[varDecl.SymbolId] = externalVar;
+                }
+
+                if (!string.IsNullOrWhiteSpace(varDecl.Name))
+                {
+                    _moduleVarsByName[varDecl.Name] = externalVar;
+                }
+
+                continue;
+            }
+
             var hasConstantInit = TryConvertModuleVarConstantInitializer(varDecl.Initializer, out var constant);
             var needsRuntimeInit = !hasConstantInit || constant is MirConstant
             {
                 Value: MirConstantValue.StringValue or MirConstantValue.RawStringValue
             };
 
-            if (needsRuntimeInit &&
-                TryFindUnsupportedModuleVarRuntimeInitNode(varDecl.Initializer, out var unsupportedSpan))
+            var hasUnsupportedRuntimeInit = needsRuntimeInit && varDecl.Initializer == null;
+            SourceSpan unsupportedSpan = default;
+            if (needsRuntimeInit && !hasUnsupportedRuntimeInit)
             {
-                // 控制流逃逸（return/break/loop/推导式）不能作为 init 函数体，维持 E5312。
+                hasUnsupportedRuntimeInit =
+                    TryFindUnsupportedModuleVarRuntimeInitNode(varDecl.Initializer, out unsupportedSpan);
+            }
+
+            if (hasUnsupportedRuntimeInit)
+            {
+                // 控制流逃逸（return/break/loop/推导式）或缺失的初始化器
+                // 不能作为 init 函数体，维持 E5312。
                 var diagnostic = Diagnostic.Diagnostic.Error(
                     DiagnosticMessages.ModuleVariableInitializerNotConstant(varDecl.Name),
                     "E5312");

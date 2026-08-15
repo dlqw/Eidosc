@@ -1108,16 +1108,22 @@ public sealed partial class HirBuilder
             ? "$let"
             : bindingName!;
 
+        var varSymbol = _symbolTable.GetSymbol<VarSymbol>(bindingSymbol);
         return new HirVarDecl
         {
             Name = resolvedName,
-            Initializer = ConvertExprOrFallback(
-                letDecl.Value,
-                "initializer of mutable let pattern binding",
-                letDecl.Span),
+            Initializer = letDecl.Value != null
+                ? ConvertExprOrFallback(
+                    letDecl.Value,
+                    "initializer of mutable let pattern binding",
+                    letDecl.Span)
+                : null,
             Span = letDecl.Span,
             SymbolId = bindingSymbol,
-            IsModuleLevel = _symbolTable.GetSymbol(bindingSymbol) is VarSymbol { IsModuleLevel: true },
+            IsModuleLevel = varSymbol is { IsModuleLevel: true },
+            IsExternal = varSymbol is { IsExternal: true },
+            ExternalSymbolName = varSymbol?.ExternalSymbolName,
+            ExternalLibrary = varSymbol?.ExternalLibrary,
             Pattern = ConvertPattern(letDecl.Pattern),
             TypeId = GetTypeId(letDecl)
         };

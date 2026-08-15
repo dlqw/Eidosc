@@ -312,6 +312,21 @@ internal static class DeclarationClauseBinder
             diagnostics.Add(new ClauseBindingDiagnostic(externClause.Span, "extern currently requires ABI 'c'", "E3057"));
         }
 
+        // 值目标（模块级 mut 绑定）不带 need 子句：effect 行只属于函数签名；
+        // 外部变量必须使用无初始化器的声明形式。
+        if (declaration is LetDecl foreignVariable)
+        {
+            if (foreignVariable.Value != null)
+            {
+                diagnostics.Add(new ClauseBindingDiagnostic(
+                    externClause.Span,
+                    $"foreign variable '{GetDeclarationName(declaration)}' cannot have an initializer",
+                    "E3050"));
+            }
+
+            return;
+        }
+
         var hasFfiNeed = occurrences.TryGetValue(DeclarationClauseKind.Need, out var needClauses) &&
                          needClauses.SelectMany(static clause => clause.ArgumentTokens)
                              .Any(static argument => string.Equals(argument.Trim(), "ffi", StringComparison.Ordinal));

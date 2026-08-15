@@ -20,6 +20,34 @@ public sealed partial class MirToLlvmConverter
                 continue;
             }
 
+            // extern(c) 变量：以 C 符号名直连 declaration-only 全局（无定义、无初始化）。
+            if (moduleVar.IsExternal)
+            {
+                var externalGlobal = new LlvmGlobal
+                {
+                    Name = !string.IsNullOrWhiteSpace(moduleVar.ExternalName)
+                        ? moduleVar.ExternalName!
+                        : moduleVar.Name,
+                    Type = loweredType,
+                    Linkage = LlvmLinkage.External,
+                    IsExternalDeclaration = true
+                };
+                llvmModule.Globals.Add(externalGlobal);
+                llvmModule.NamedGlobals[externalGlobal.Name] = externalGlobal;
+
+                if (moduleVar.SymbolId.IsValid)
+                {
+                    _moduleVarGlobalsBySymbol[moduleVar.SymbolId] = externalGlobal;
+                }
+
+                if (!string.IsNullOrWhiteSpace(moduleVar.Name))
+                {
+                    _moduleVarGlobalsByName[moduleVar.Name] = externalGlobal;
+                }
+
+                continue;
+            }
+
             var globalName = _nameMangler.MangleGlobalName(mirModule.Name, moduleVar.Name);
             var runtimeInitName = moduleVar.RuntimeInitializerName;
             var initializer = runtimeInitName != null

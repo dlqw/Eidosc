@@ -236,7 +236,10 @@ public sealed record HirStateDeclPayload(
             {
                 Pattern = HirStatePatternPayload.Create(varDecl.Pattern, context),
                 TypeAnnotation = varDecl.TypeAnnotation.Value,
-                Initializer = HirStateNodePayload.Create(varDecl.Initializer, context)
+                Initializer = varDecl.Initializer == null ? null : HirStateNodePayload.Create(varDecl.Initializer, context),
+                IsExternal = varDecl.IsExternal,
+                ExternalSymbolName = varDecl.ExternalSymbolName,
+                ExternalLibrary = varDecl.ExternalLibrary
             },
             HirAdt adt => Empty(AdtKind, adt) with
             {
@@ -300,9 +303,10 @@ public sealed record HirStateDeclPayload(
                 });
                 return true;
             case VarKind:
-                if (Pattern == null || Initializer == null ||
-                    !Pattern.TryRestore(out var varPattern) ||
-                    !Initializer.TryRestore(out var varInitializer))
+                Hir.HirNode? varInitializer = null;
+                if (Pattern == null ||
+                    (Initializer != null && !Initializer.TryRestore(out varInitializer)) ||
+                    !Pattern.TryRestore(out var varPattern))
                 {
                     return false;
                 }
@@ -311,7 +315,10 @@ public sealed record HirStateDeclPayload(
                 {
                     Pattern = varPattern,
                     TypeAnnotation = new TypeId(TypeAnnotation),
-                    Initializer = varInitializer
+                    Initializer = varInitializer,
+                    IsExternal = IsExternal,
+                    ExternalSymbolName = ExternalSymbolName,
+                    ExternalLibrary = ExternalLibrary
                 });
                 return true;
             case AdtKind:

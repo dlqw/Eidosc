@@ -247,7 +247,8 @@ main :: Int -> Int
         string? nativeExtraCFlags = null,
         string? nativeExtraLinkFlags = null,
         int optimizationLevel = 2,
-        bool enableMirOptimizations = true)
+        bool enableMirOptimizations = true,
+        string? nativeCSource = null)
     {
         using var executable = CompileSourceToNativeExecutable(
             source,
@@ -259,7 +260,8 @@ main :: Int -> Int
             nativeExtraCFlags,
             nativeExtraLinkFlags,
             optimizationLevel,
-            enableMirOptimizations);
+            enableMirOptimizations,
+            nativeCSource);
 
         return ExecuteProcess(
             executable.ExecutablePath,
@@ -292,7 +294,8 @@ main :: Int -> Int
         string? nativeExtraCFlags = null,
         string? nativeExtraLinkFlags = null,
         int optimizationLevel = 2,
-        bool enableMirOptimizations = true)
+        bool enableMirOptimizations = true,
+        string? nativeCSource = null)
     {
         var sourceDir = Path.Combine(Path.GetTempPath(), $"eidosc_network_native_sources_{Guid.NewGuid():N}");
         Directory.CreateDirectory(sourceDir);
@@ -309,6 +312,12 @@ main :: Int -> Int
         }
 
         var result = RunSourceAtLlvm(source, sourcePath, enableMirOptimizations);
+        if (nativeCSource != null)
+        {
+            var cSourcePath = Path.Combine(sourceDir, $"{executableBaseName}_native.c");
+            File.WriteAllText(cSourcePath, nativeCSource);
+            result.LlvmModule!.NativeSources.Add(cSourcePath);
+        }
         Assert.True(
             result.Success,
             string.Join(

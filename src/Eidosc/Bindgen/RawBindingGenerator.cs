@@ -31,7 +31,7 @@ public sealed class RawBindingGenerator
         GenerateEnums(sb, usedNames);
         GenerateStructs(sb, usedNames);
         GenerateConstants(sb, usedNames);
-        GenerateSkippedDeclarations(sb);
+        GenerateSkippedDeclarations(sb, usedNames);
         GenerateFunctions(sb, rawFunctionNames, usedNames);
 
         sb.AppendLine("}");
@@ -128,10 +128,11 @@ public sealed class RawBindingGenerator
     }
 
     /// <summary>
-    /// 无法在 Eidos 中表达或需要 shim 的声明：union、全局变量、typedef 链。
-    /// P0 只收编为注释（语义事实保留在生成文件里），shim 收编在 M4。
+    /// 无法在 Eidos 中表达或需要 shim 的声明：union、typedef 链。
+    /// 标量/指针 C 全局变量直接生成为 extern(c) 声明（declaration-only 全局）；
+    /// 聚合或未知类型的全局维持 SKIP 注释。
     /// </summary>
-    private void GenerateSkippedDeclarations(StringBuilder sb)
+    private void GenerateSkippedDeclarations(StringBuilder sb, HashSet<string> usedNames)
     {
         var emitted = false;
         foreach (var u in _ir.UnionsSafe)
@@ -142,8 +143,26 @@ public sealed class RawBindingGenerator
 
         foreach (var g in _ir.GlobalsSafe)
         {
-            sb.AppendLine($"    // SKIP global {g.Name}: Eidos has no module-level mutable state; expose via shims");
-            emitted = true;
+            var mapping = _typeMapper.Map(g.Type);
+            var bindable = mapping.Category is BindingTypeCategory.Direct or BindingTypeCategory.RawPtr;
+            var eidosName = BindingTypeMapper.ToEidosFunctionName(g.Name);
+            if (bindable && !usedNames.Add(eidosName))
+            {
+                sb.AppendLine($"    // SKIP global {g.Name}: generated name '{eidosName}' collides with another declaration");
+                emitted = true;
+                continue;
+            }
+
+            if (!bindable)
+            {
+                sb.AppendLine($"    // SKIP global {g.Name}: {mapping.Note ?? $"unsupported type {g.Type.Spelling}"}; expose via shims");
+                emitted = true;
+                continue;
+            }
+
+            sb.AppendLine($"    @[extern(c, name: \"{g.Name}\")]");
+            sb.AppendLine($"    export mut {eidosName} : {mapping.EidosType};");
+            sb.AppendLine();
         }
 
         foreach (var t in _ir.TypedefsSafe)
