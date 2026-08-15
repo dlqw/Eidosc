@@ -1696,7 +1696,7 @@ public sealed partial class MirToLlvmConverter
                 return fcmp;
             }
 
-            (left, right) = NormalizeComparisonOperands(left, right, binOp.Operator);
+            (left, right) = NormalizeComparisonOperands(left, right, binOp.Operator, binOp.Left.TypeId, binOp.Right.TypeId);
 
             var icmp = new LlvmIcmp
             {
@@ -1776,8 +1776,8 @@ public sealed partial class MirToLlvmConverter
             else
             {
                 resultType = LlvmIntType.I64;
-                left = CoerceToI64(left);
-                right = CoerceToI64(right);
+                left = CoerceIntOperandToWord(left, binOp.Left.TypeId);
+                right = CoerceIntOperandToWord(right, binOp.Right.TypeId);
             }
         }
         else if (binOp.Operator is BinaryOp.And or BinaryOp.Or)
@@ -1826,10 +1826,46 @@ public sealed partial class MirToLlvmConverter
             BaseTypes.UInt8Id;
     }
 
+    /// <summary>
+    /// 把整数操作数宽化到 i64 词宽。窄有符号整数必须符号扩展：
+    /// 零扩展会让 sdiv/srem 与有序比较在负值上得到错误结果。
+    /// </summary>
+    private LlvmValue CoerceIntOperandToWord(LlvmValue value, TypeId semanticTypeId)
+    {
+        if (value.Type is not LlvmIntType sourceInt ||
+            sourceInt.Bits >= 64 ||
+            IsUnsignedIntegerType(semanticTypeId))
+        {
+            return CoerceToI64(value);
+        }
+
+        var sext = new LlvmCast
+        {
+            Op = "sext",
+            Value = value,
+            TargetType = LlvmIntType.I64,
+            ResultName = _nameMangler.NewTempName("word_sext")
+        };
+        _currentBlock?.Instructions.Add(sext);
+        return new LlvmInstructionRef { Instruction = sext, Type = LlvmIntType.I64 };
+    }
+
     private (LlvmValue Left, LlvmValue Right) NormalizeComparisonOperands(
         LlvmValue left,
         LlvmValue right,
         BinaryOp comparisonOp)
+    {
+        // 相等性比较只用于常量折叠场景；两侧一致的符号扩展不影响 eq/ne 语义，
+        // 无 TypeId 上下文时按有符号处理。
+        return NormalizeComparisonOperands(left, right, comparisonOp, leftTypeId: default, rightTypeId: default);
+    }
+
+    private (LlvmValue Left, LlvmValue Right) NormalizeComparisonOperands(
+        LlvmValue left,
+        LlvmValue right,
+        BinaryOp comparisonOp,
+        TypeId leftTypeId,
+        TypeId rightTypeId)
     {
         if (left.Type is LlvmPointerType && right.Type is LlvmPointerType)
         {
@@ -1845,7 +1881,7 @@ public sealed partial class MirToLlvmConverter
 
         if (left.Type is LlvmIntType leftInt && right.Type is LlvmIntType rightInt && leftInt.Bits != rightInt.Bits)
         {
-            return (CoerceToI64(left), CoerceToI64(right));
+            return (CoerceIntOperandToWord(left, leftTypeId), CoerceIntOperandToWord(right, rightTypeId));
         }
 
         return (left, right);
