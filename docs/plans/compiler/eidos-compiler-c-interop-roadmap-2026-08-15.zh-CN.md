@@ -273,13 +273,31 @@ event_value_encode :: EventValue -> RawPtr -> Unit need ffi  -- 写 tag + 成员
 **遗留后续**：跨语言内联的强断言（符号消失/性能对比）与 `-flto=thin` 评估；
 Linux/macOS 的 lld 可用性矩阵。
 
-## 11. M7 — C2E 垂直切片（body translation 起步）——已落地（切片范围）
+## 11. M7 — C2E 垂直切片（body translation 起步）——已落地（切片 + 矩阵扩展）
 
-**状态**（2026-08-15）：`CBodyTranslator` 实现切片全集——标量算术/比较、局部变量
+**状态**（2026-08-16，矩阵扩展）：切片全集之上新增三类构造——
+
+- **指针/RawPtr**：`T*`/`void*`/多级指针映射 `RawPtr`；`*p` 读写经 `Ffi.load[T]`/
+  `Ffi.store[T]`；`p == 0`/`p != 0`/`!p` 经 `Ffi.pointer_eq`；指针位置的 `0`/`(T*)0`
+  翻成 `Ffi.null_pointer()`（非零整数当指针用则拒绝）。指针算术/下标仍不支持。
+- **union/struct 成员桥（M4 风格）**：`s->field` 读写经自动生成的
+  `c2e_<Record>_<field>_get/set` extern(c) 声明 + 随产物返回的 C shim 源
+  （`C2EResult.NativeShimSource`，`#include` 原 C 文件后定义 accessor）。
+- **extern 互操作**：调用"已声明未定义"的 C 函数时，按原型签名自动生成
+  `c2e_ext_<name>` extern(c) 声明并翻译调用（变参原型仍跳过）。
+- 一元 `-`、裸调用语句支持；unary/member/cast cursor kind 按 clang 22 实测重校
+  （UnaryOperator=112、MemberRefExpr=102、CStyleCastExpr=117）。
+
+对拍门：`C2E_PointerDerefAndNull/UnionMemberBridge/ExternalCall_ParityWithClang`
+（clang 参照与翻译产物 native 运行退出码一致）。
+
+**状态**（2026-08-15，切片）：`CBodyTranslator` 实现切片全集——标量算术/比较、局部变量
 声明与赋值、if/else、while/for（loop+break 去糖）、return、整型/浮点字面量
 （clang_Cursor_Evaluate）、同文件函数调用；不支持构造跳过并记录原因。对拍门通过：
 同一 C 源经 clang 编译与翻译后编译，运行退出码一致。C 定宽溢出不建模（统一 Int）。
-**后续矩阵**：指针（RawPtr）、union（M4 桥接）、extern 互操作、switch/goto、变参。
+**后续矩阵**：指针算术/下标、switch/goto、变参、按值聚合传递、字符串字面量。
+（注：Eidos 标识符不可以下划线开头——解析层对 `_` 前缀名报 E4001/E3000，
+生成名一律用字母前缀。）
 
 
 **目标**：在 M1-M6 前置齐备后，验证"C 函数体 → Eidos 函数体"翻译管线的端到端可行性。
