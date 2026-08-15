@@ -57,6 +57,13 @@ public static class BuiltinTraits
     {
         [TypeNames.Int] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
         [TypeNames.Float] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Int64] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Int32] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Int16] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Int8] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Float64] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Float32] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Copy],
+        [WellKnownStrings.BuiltinTypes.Float16] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Copy],
         [WellKnownStrings.BuiltinTypes.UInt8] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
         [WellKnownStrings.BuiltinTypes.UInt16] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
         [WellKnownStrings.BuiltinTypes.UInt32] = [TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show, TraitNames.Clone, TraitNames.Hash, TraitNames.Copy],
