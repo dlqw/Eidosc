@@ -21,19 +21,28 @@ public sealed partial class MirToLlvmConverter
             }
 
             var globalName = _nameMangler.MangleGlobalName(mirModule.Name, moduleVar.Name);
-            var initializer = TryConvertModuleVarInitializer(moduleVar, loweredType, out var constant)
-                ? constant
-                : ReportModuleVarInitializerFallback(moduleVar, loweredType);
+            var runtimeInitName = moduleVar.RuntimeInitializerName;
+            var initializer = runtimeInitName != null
+                ? new LlvmZeroInitializer { Type = loweredType }
+                : TryConvertModuleVarInitializer(moduleVar, loweredType, out var constant)
+                    ? constant
+                    : ReportModuleVarInitializerFallback(moduleVar, loweredType);
 
             var global = new LlvmGlobal
             {
                 Name = globalName,
                 Type = loweredType,
                 Initializer = initializer,
+                Linkage = LlvmLinkage.Internal,
                 IsConstant = false
             };
             llvmModule.Globals.Add(global);
             llvmModule.NamedGlobals[globalName] = global;
+
+            if (runtimeInitName != null)
+            {
+                _runtimeInitModuleVars.Add(new RuntimeInitModuleVarEntry(global, runtimeInitName, moduleVar.RuntimeInitOrder));
+            }
 
             if (moduleVar.SymbolId.IsValid)
             {

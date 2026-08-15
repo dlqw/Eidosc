@@ -484,12 +484,15 @@ public sealed partial class MirToLlvmConverter
     }
 
     /// <summary>
-    /// 生成模块初始化函数，注册所有析构器
+    /// 生成模块初始化函数：按拓扑序求值运行时初始化的模块变量并存储到全局，
+    /// 随后注册所有析构器。
     /// </summary>
-    /// <param name="destructors">析构器列表: (typeId, destructorName)</param>
+    /// <param name="typeOperations">析构器列表: (typeId, destructorName, retainerName)</param>
+    /// <param name="runtimeInitVars">运行时初始化的模块变量: (全局, init 函数 LLVM 名)，已按依赖序排列</param>
     /// <returns>初始化函数</returns>
     public LlvmFunction GenerateModuleInit(
-        List<(int typeId, string destructorName, string retainerName)> typeOperations)
+        List<(int typeId, string destructorName, string retainerName)> typeOperations,
+        IReadOnlyList<(LlvmGlobal Global, string LlvmInitName)>? runtimeInitVars = null)
     {
         var initFunc = new LlvmFunction
         {
@@ -502,6 +505,32 @@ public sealed partial class MirToLlvmConverter
         {
             Label = WellKnownStrings.InternalNames.Entry
         };
+
+        // 模块变量运行时初始化：调用合成 init 函数并存储（依赖序已由 MIR 排定）。
+        foreach (var (global, llvmInitName) in runtimeInitVars ?? [])
+        {
+            var initCall = new LlvmCall
+            {
+                Function = new LlvmGlobal
+                {
+                    Name = llvmInitName,
+                    Type = new LlvmFunctionType
+                    {
+                        ReturnType = global.Type,
+                        ParameterTypes = []
+                    }
+                },
+                Arguments = [],
+                ReturnType = global.Type,
+                ResultName = _nameMangler.NewTempName("module_var_init_value")
+            };
+            entryBlock.Instructions.Add(initCall);
+            entryBlock.Instructions.Add(new LlvmStore
+            {
+                Pointer = global,
+                Value = new LlvmInstructionRef { Instruction = initCall, Type = global.Type }
+            });
+        }
 
         // 为每个析构器生成注册调用
         foreach (var (typeId, destructorName, retainerName) in typeOperations)
@@ -557,13 +586,14 @@ public sealed partial class MirToLlvmConverter
     }
 
     /// <summary>
-    /// 为所有 ADT 构造器生成析构器，并生成 eidos_module_init 注册函数。
-    /// 仅在有构造器布局时生成，无 ADT 的程序不需要此函数（入口 shim 提供弱桩）。
+    /// 生成 eidos_module_init：模块变量运行时初始化（若存在）+ ADT 析构器注册。
+    /// 两者皆无时不生成（入口 shim 提供弱桩）。
     /// </summary>
     private void SynthesizeAdtDestructors(MirModule mirModule, LlvmModule llvmModule)
     {
+        var runtimeInitVars = CollectRuntimeInitModuleVarEntries();
         var allocatedTypeIds = CollectAllocatedRuntimeTypeIds(llvmModule);
-        if (allocatedTypeIds.Count == 0)
+        if (allocatedTypeIds.Count == 0 && runtimeInitVars.Count == 0)
         {
             return;
         }
@@ -621,13 +651,36 @@ public sealed partial class MirToLlvmConverter
             typeOperations.Add((boxRuntimeTypeId, destructorFunc.Name, string.Empty));
         }
 
-        if (typeOperations.Count == 0)
+        if (typeOperations.Count == 0 && runtimeInitVars.Count == 0)
         {
             return;
         }
 
-        var moduleInit = GenerateModuleInit(typeOperations);
+        var moduleInit = GenerateModuleInit(typeOperations, runtimeInitVars);
         llvmModule.Functions.Add(moduleInit);
+    }
+
+    /// <summary>
+    /// 汇总运行时初始化模块变量的 (全局, LLVM init 函数名)，按 MIR 排定的拓扑序。
+    /// 未解析到 LLVM 名的 init 函数（合成失败/被裁剪）跳过，变量保持零初始化。
+    /// </summary>
+    private List<(LlvmGlobal Global, string LlvmInitName)> CollectRuntimeInitModuleVarEntries()
+    {
+        var result = new List<(LlvmGlobal Global, string LlvmInitName)>();
+        foreach (var entry in _runtimeInitModuleVars.OrderBy(static entry => entry.Order))
+        {
+            if (entry.Global.Type is LlvmVoidType)
+            {
+                continue;
+            }
+
+            if (_moduleVarInitLlvmNames.TryGetValue(entry.MirInitName, out var llvmName))
+            {
+                result.Add((entry.Global, llvmName));
+            }
+        }
+
+        return result;
     }
 
     private static int ComputeRuntimeConstructorTypeId(ConstructorTypeLayout layout)

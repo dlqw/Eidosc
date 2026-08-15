@@ -51,6 +51,11 @@ public sealed partial class MirToLlvmConverter
     private readonly Dictionary<string, LlvmGlobal> _stringLiteralGlobals = new(StringComparer.Ordinal);
     private readonly Dictionary<SymbolId, LlvmGlobal> _moduleVarGlobalsBySymbol = [];
     private readonly Dictionary<string, LlvmGlobal> _moduleVarGlobalsByName = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _pendingModuleVarInitNames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _moduleVarInitLlvmNames = new(StringComparer.Ordinal);
+    private readonly List<RuntimeInitModuleVarEntry> _runtimeInitModuleVars = [];
+
+    private sealed record RuntimeInitModuleVarEntry(LlvmGlobal Global, string MirInitName, int Order);
     private readonly Dictionary<SymbolId, PerceusHints> _perceusHintsByFunctionSymbol = [];
     private readonly Dictionary<string, PerceusHints> _perceusHintsByFunction = new(StringComparer.Ordinal);
     private readonly Dictionary<SymbolId, ReuseHints> _reuseHintsByFunctionSymbol = [];
@@ -236,6 +241,16 @@ public sealed partial class MirToLlvmConverter
     {
         Diagnostics.Clear();
         ResetAndIndexModuleContext(module);
+
+        // 运行时初始化函数名先于函数类型注册登记，RegisterFunctionType 才能
+        // 捕获其最终 LLVM 实例名（供 eidos_module_init 生成调用）。
+        foreach (var moduleVar in module.ModuleVars)
+        {
+            if (!string.IsNullOrEmpty(moduleVar.RuntimeInitializerName))
+            {
+                _pendingModuleVarInitNames.Add(moduleVar.RuntimeInitializerName);
+            }
+        }
 
         using (MeasureConverterSubphase("register_function_types"))
         {
