@@ -279,6 +279,17 @@ public sealed partial class LlvmCompiler
     /// </summary>
     private CodeGenResult RunLlc(string irPath, string outputPath)
     {
+        // LTO 模式必须经 clang -flto 产 LLVM bitcode 对象；llc -filetype=obj 只产
+        // 本机对象，链接期 -flto 对其无优化可做（跨语言内联无从发生）。
+        if (_enableLto)
+        {
+            var clangPathForLto = FindTool("clang");
+            if (clangPathForLto != null)
+            {
+                return RunClangCompileIr(clangPathForLto, irPath, outputPath);
+            }
+        }
+
         var llcPath = FindTool("llc");
         if (llcPath != null)
         {
@@ -643,8 +654,13 @@ public sealed partial class LlvmCompiler
         return false;
     }
 
-    private IReadOnlyList<string> GetDefaultClangObjectCompileFlags() =>
-        GetDefaultObjectRelocationFlags(_targetInfo, _linkMode).ClangFlags;
+    private IReadOnlyList<string> GetDefaultClangObjectCompileFlags()
+    {
+        var flags = GetDefaultObjectRelocationFlags(_targetInfo, _linkMode).ClangFlags;
+        // LTO 模式下 native/shim/runtime 对象统一带 -flto（与 IR 侧 bitcode 对象、
+        // 链接期 -flto 一致），否则链接期优化对本机对象输入无事可做。
+        return _enableLto ? [.. flags, "-flto"] : flags;
+    }
 
     private CodeGenResult TryCompileEntryShim(LlvmModule module, string sourcePath, string outputObjectPath)
     {

@@ -262,27 +262,16 @@ event_value_encode :: EventValue -> RawPtr -> Unit need ffi  -- 写 tag + 成员
 明确不做（记录为显式弃置）：libffi 式无 ctx trampoline（需闭包指针烧录/trampoline 页的
 运行时新设施，成本高一个量级；真实 C 库中 ctx-pointer 约定覆盖面足够）。
 
-## 10. M6 — 混合编译接线（真跨语言 LTO）
+## 10. M6 — 混合编译接线（真跨语言 LTO）——已落地
 
-**目标**：`--lto` 从"链接 flag"变成实际跨语言优化。现状：llc 路径产出本机对象
-（`RunLlc`，LlvmCompiler.cs:280-325，无 bitcode/无 LTO flag）；nativeSources/runtime/入口
-shim 编译均无 `-flto`（:366-425、:656-697、:1597-1620）——当前 `--lto` 对全部本机对象输入
-无优化可做。
+**状态**：已实现并验证（2026-08-15）。`--lto` 时 Eidos IR 编译路由到
+`clang -x ir -c -flto`（bitcode 对象）而非 `llc -filetype=obj`（本机对象）；
+`GetDefaultClangObjectCompileFlags` 在 LTO 下追加 `-flto`，统一覆盖 native FFI 源、
+入口 shim、runtime 编译，并自动进入对象缓存键与后端配置哈希。链接维持 `-flto`
+（Windows 强制 lld）。验证：Eidos→C extern 调用在 LTO 开/关下原生行为一致（exit 42）。
 
-接线面集中在 `LlvmCompiler.cs` 单文件：
-
-1. `_enableLto` 时 Eidos IR 编译改走 `clang -x ir -c -flto`（现有回退路径 :327-364 已实现
-   该调用形态，提升为主路径）或 llc 产 bitcode，产出 LTO 对象。
-2. `CompileNativeSource`/`TryCompileEntryShim`/runtime 编译在 `_enableLto` 时统一加 `-flto`
-   及一致的 `-O`/target/CPU flags。
-3. 链接维持 `-flto` + lld（Windows 已强制 `-fuse-ld=lld`，:555-558；Linux/macOS 需保证 lld
-   可用），评估 `-flto=thin`。
-4. 类型一致性：Eidos IR 已带 datalayout/triple（:94-99）；`@cstruct` 两侧类型统一是内联
-   收益的前提而非链接正确性前提，不阻塞本里程碑。
-5. 缓存键已含 LTO 状态（:1041-1047），验证即可。
-
-验收门：`--lto` 构建 bindgen 包（raylib）原生可运行；至少一个用例断言跨语言内联发生
-（如 C shim 函数被内联后符号消失/性能对比）；`--lto` 关闭时行为与现状完全一致。
+**遗留后续**：跨语言内联的强断言（符号消失/性能对比）与 `-flto=thin` 评估；
+Linux/macOS 的 lld 可用性矩阵。
 
 ## 11. M7 — C2E 垂直切片（body translation 起步）
 

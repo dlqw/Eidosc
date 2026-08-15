@@ -248,7 +248,8 @@ main :: Int -> Int
         string? nativeExtraLinkFlags = null,
         int optimizationLevel = 2,
         bool enableMirOptimizations = true,
-        string? nativeCSource = null)
+        string? nativeCSource = null,
+        bool enableLto = false)
     {
         using var executable = CompileSourceToNativeExecutable(
             source,
@@ -261,7 +262,8 @@ main :: Int -> Int
             nativeExtraLinkFlags,
             optimizationLevel,
             enableMirOptimizations,
-            nativeCSource);
+            nativeCSource,
+            enableLto);
 
         return ExecuteProcess(
             executable.ExecutablePath,
@@ -295,7 +297,8 @@ main :: Int -> Int
         string? nativeExtraLinkFlags = null,
         int optimizationLevel = 2,
         bool enableMirOptimizations = true,
-        string? nativeCSource = null)
+        string? nativeCSource = null,
+        bool enableLto = false)
     {
         var sourceDir = Path.Combine(Path.GetTempPath(), $"eidosc_network_native_sources_{Guid.NewGuid():N}");
         Directory.CreateDirectory(sourceDir);
@@ -344,7 +347,8 @@ main :: Int -> Int
                 linkMode,
                 optimizationLevel,
                 nativeExtraCFlags,
-                nativeExtraLinkFlags);
+                nativeExtraLinkFlags,
+                enableLto);
             var nativeResult = compiler.CompileToExecutable(result.LlvmModule!, executablePath);
 
             Assert.True(nativeResult.Success, nativeResult.ErrorMessage);
@@ -682,7 +686,8 @@ main :: Int -> Int
         NativeLinkMode linkMode = NativeLinkMode.NonPieExecutable,
         int optimizationLevel = 2,
         string? extraCFlags = null,
-        string? extraLinkFlags = null) =>
+        string? extraLinkFlags = null,
+        bool enableLto = false) =>
         new(
             targetInfo,
             optimizationLevel: optimizationLevel,
@@ -690,7 +695,8 @@ main :: Int -> Int
             extraCFlags: extraCFlags,
             extraLinkFlags: extraLinkFlags,
             temporaryDirectory: temporaryDirectory,
-            linkMode: linkMode);
+            linkMode: linkMode,
+            enableLto: enableLto);
 
     private static IReadOnlyDictionary<string, string?> CreateHttpEnvironment(string? httpBackend) =>
         new Dictionary<string, string?>
