@@ -60,7 +60,7 @@ public sealed partial class SequencePipelineFusionPass
                     } partitionCall &&
                     GetEffectiveSequenceRole(partitionFunction, functionsByKey) == CompilerSemanticRole.SequencePartition &&
                     TryResolveCallback(functionsByKey, partitionPredicate, out var partitionCallback) &&
-                    TryGetPartitionElementType(module, partitionTarget.TypeId, partitionCallback, out var partitionElementType, out var partitionParameterType) &&
+                    TryGetPartitionElementType(module, partitionTarget.TypeId, partitionCallback, out var partitionElementType, out var partitionParameterType, out var partitionSequenceType) &&
                     (IsCopyType(module, partitionElementType) ||
                      CanMovePartitionElement(function, partitionSource, block, index)) &&
                     HasSingleUseNonEscaping(function, partitionSource.Local) &&
@@ -75,7 +75,7 @@ public sealed partial class SequencePipelineFusionPass
                         partitionTarget,
                         partitionElementType,
                         partitionParameterType,
-                        partitionTarget.TypeId,
+                        partitionSequenceType,
                         GetRuntimeElementSize(module, partitionElementType),
                         partitionCall.Span));
                     continue;
@@ -720,10 +720,12 @@ public sealed partial class SequencePipelineFusionPass
         TypeId resultType,
         MirFunc callback,
         out TypeId elementType,
-        out TypeId parameterType)
+        out TypeId parameterType,
+        out TypeId sequenceType)
     {
         elementType = TypeId.None;
         parameterType = TypeId.None;
+        sequenceType = TypeId.None;
         var parameters = callback.Locals.Where(static local => local.IsParameter).ToArray();
         if (parameters.Length != 1 || callback.ReturnType != new TypeId(BaseTypes.BoolId) ||
             !TryGetSharedBorrowInnerType(module, parameters[0].TypeId, out elementType))
@@ -732,10 +734,19 @@ public sealed partial class SequencePipelineFusionPass
         }
 
         parameterType = parameters[0].TypeId;
-        return module.TypeDescriptors.TryGetValue(resultType.Value, out var descriptor) &&
-               descriptor is TypeDescriptor.Tuple { FieldTypes.Length: 2 } tuple &&
-               tuple.FieldTypes[0] == tuple.FieldTypes[1] &&
-               tuple.FieldTypes[0].IsValid;
+        if (!module.TypeDescriptors.TryGetValue(resultType.Value, out var descriptor) ||
+            descriptor is not TypeDescriptor.Tuple { FieldTypes.Length: 2 } tuple ||
+            tuple.FieldTypes[0] != tuple.FieldTypes[1] ||
+            !tuple.FieldTypes[0].IsValid)
+        {
+            return false;
+        }
+
+        // The accumulators hold one sequence each; the partition result is the
+        // (sequence, sequence) tuple, so locals must use the field type rather
+        // than the tuple type itself.
+        sequenceType = tuple.FieldTypes[0];
+        return true;
     }
 
     private bool TryFindViewSpine(
