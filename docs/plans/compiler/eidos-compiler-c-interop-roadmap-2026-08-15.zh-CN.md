@@ -273,7 +273,14 @@ event_value_encode :: EventValue -> RawPtr -> Unit need ffi  -- 写 tag + 成员
 **遗留后续**：跨语言内联的强断言（符号消失/性能对比）与 `-flto=thin` 评估；
 Linux/macOS 的 lld 可用性矩阵。
 
-## 11. M7 — C2E 垂直切片（body translation 起步）
+## 11. M7 — C2E 垂直切片（body translation 起步）——已落地（切片范围）
+
+**状态**（2026-08-15）：`CBodyTranslator` 实现切片全集——标量算术/比较、局部变量
+声明与赋值、if/else、while/for（loop+break 去糖）、return、整型/浮点字面量
+（clang_Cursor_Evaluate）、同文件函数调用；不支持构造跳过并记录原因。对拍门通过：
+同一 C 源经 clang 编译与翻译后编译，运行退出码一致。C 定宽溢出不建模（统一 Int）。
+**后续矩阵**：指针（RawPtr）、union（M4 桥接）、extern 互操作、switch/goto、变参。
+
 
 **目标**：在 M1-M6 前置齐备后，验证"C 函数体 → Eidos 函数体"翻译管线的端到端可行性。
 前端底座现成：`ClangSession` 解析已保留函数体（`ClangHeaderParser.cs:34`
