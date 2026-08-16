@@ -18,6 +18,12 @@
 > deref 负例仍报错）。另确认 §4.2 语言侧**早已存在**（`Ffi.offset_bytes`/
 > `load[T]`/`store[T]`/`ptr_add` intrinsic 全链路在库），缺的只是 C2E 侧数组下标接线。
 > 已知失败剩 1 个：#85 并发压力 soak flake。
+> **通用性收尾（同会话，提交 b9a6436）**：活性终结推广为语言级机制——三条管线的
+> 优化器构建点共享 Ref/MutRef 解析器；经典 BorrowChecker 与 LoanConstraintVerifier
+> 的**全部**冲突路径统一经 `BorrowLivenessGate` 剪枝（借用者在冲突指令自身被消费
+> 视为存活）；Seq 判别器局部类型表缓存化并覆盖嵌套/解引用基。语义确定：
+> "比较后重绑定"（`mut cond := x == "hello"; x := "world"`）合法（借用者已死），
+> 相应负例夹具转为正例，字段/索引敏感锚点改为存活借用者形态仍断言 E1002。
 
 ## 0. 当前状态（新会话先读这段）
 
