@@ -34,6 +34,13 @@ public enum BinaryOp
     Equal,       // ==
     NotEqual,    // !=
 
+    // 优先级（C 式插入，见 Precedence）：移位高于比较，& ^ | 依次低于比较
+    ShiftLeft,   // <<
+    ShiftRight,  // >>
+    BitAnd,      // &
+    BitXor,      // ^
+    BitOr,       // |
+
     // 优先级 7 - 逻辑与
     And,         // &&
 
@@ -76,6 +83,11 @@ public static class OperatorHelper
         BinaryOp.GreaterEqual => WellKnownStrings.Operators.GreaterEqual,
         BinaryOp.Equal => WellKnownStrings.Operators.Equal,
         BinaryOp.NotEqual => WellKnownStrings.Operators.NotEqual,
+        BinaryOp.ShiftLeft => WellKnownStrings.Operators.ShiftLeft,
+        BinaryOp.ShiftRight => WellKnownStrings.Operators.ShiftRight,
+        BinaryOp.BitAnd => WellKnownStrings.Operators.BitAnd,
+        BinaryOp.BitXor => WellKnownStrings.Operators.BitXor,
+        BinaryOp.BitOr => WellKnownStrings.Operators.BitOr,
         BinaryOp.And => WellKnownStrings.Operators.And,
         BinaryOp.Or => WellKnownStrings.Operators.Or,
         _ => throw new ArgumentOutOfRangeException(nameof(op), op, null)

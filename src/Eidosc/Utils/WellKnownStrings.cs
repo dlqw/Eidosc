@@ -475,6 +475,11 @@ public static class WellKnownStrings
         public const string GreaterEqual = ">=";
         public const string Equal = "==";
         public const string NotEqual = "!=";
+        public const string ShiftLeft = "<<";
+        public const string ShiftRight = ">>";
+        public const string BitAnd = "&";
+        public const string BitXor = "^";
+        public const string BitOr = "|";
         public const string And = "&&";
         public const string Or = "||";
         public const string Coalesce = "??";

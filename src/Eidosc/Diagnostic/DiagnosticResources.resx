@@ -45,6 +45,9 @@
   <data name="OpenDynamicTypeReachedLlvmLowering" xml:space="preserve">
     <value>Open dynamic type '{0}' reached LLVM lowering as '{1}'.</value>
   </data>
+  <data name="BitwiseOperandMustBeInt" xml:space="preserve">
+    <value>Bitwise operator operands must be Int</value>
+  </data>
   <data name="EffectAuthorizationAvailableNote" xml:space="preserve">
     <value>available: {0}</value>
   </data>

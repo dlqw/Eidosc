@@ -79,6 +79,11 @@ public sealed class EidosInterpreter
             BinaryOp.Le => new BoolValue(CompareValues(left, right) <= 0),
             BinaryOp.Gt => new BoolValue(CompareValues(left, right) > 0),
             BinaryOp.Ge => new BoolValue(CompareValues(left, right) >= 0),
+            BinaryOp.BitAnd => new IntValue(left.AssertType<IntValue>().Value & right.AssertType<IntValue>().Value),
+            BinaryOp.BitOr => new IntValue(left.AssertType<IntValue>().Value | right.AssertType<IntValue>().Value),
+            BinaryOp.BitXor => new IntValue(left.AssertType<IntValue>().Value ^ right.AssertType<IntValue>().Value),
+            BinaryOp.Shl => new IntValue(left.AssertType<IntValue>().Value << (int)right.AssertType<IntValue>().Value),
+            BinaryOp.Shr => new IntValue(left.AssertType<IntValue>().Value >> (int)right.AssertType<IntValue>().Value),
             BinaryOp.Concat => new StringValue(left.AssertType<StringValue>().Value + right.AssertType<StringValue>().Value),
             _ => throw new InterpreterException(InterpreterMessages.UnsupportedBinaryOperator(bin.Operator))
         };

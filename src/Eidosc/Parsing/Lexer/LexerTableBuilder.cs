@@ -127,6 +127,9 @@ public static class LexerTableBuilder
         AddOp("+:");    // OpPrepend
         AddOp(":+");    // OpAppendLast
         AddOp("?");     // OpQuestion
+        AddOp("^");     // OpCaret（位异或）
+        AddOp("<<");    // OpLessLess（左移；与 <<< 组合左组合成仍按最长匹配）
+        AddOp(">>");    // OpGreaterGreater（右移；与 >>=/>>> 共享前缀，最长匹配优先）
 
         // ──────────────────────────────────────────────────────────────
         //  Punctuation (priority 0, IsPunctuation flag)

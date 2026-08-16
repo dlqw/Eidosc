@@ -232,7 +232,9 @@ public record BinaryExpr : Expression
             or WellKnownStrings.Operators.Less or WellKnownStrings.Operators.Greater
             or WellKnownStrings.Operators.LessEqual or WellKnownStrings.Operators.GreaterEqual
             or WellKnownStrings.Operators.Equal or WellKnownStrings.Operators.NotEqual
-            or WellKnownStrings.Operators.And or WellKnownStrings.Operators.Or;
+            or WellKnownStrings.Operators.And or WellKnownStrings.Operators.Or
+            or WellKnownStrings.Operators.ShiftLeft or WellKnownStrings.Operators.ShiftRight
+            or WellKnownStrings.Operators.BitAnd or WellKnownStrings.Operators.BitXor or WellKnownStrings.Operators.BitOr;
     }
 
     /// <summary>
@@ -300,6 +302,11 @@ public record BinaryExpr : Expression
         WellKnownStrings.Operators.GreaterEqual => BinaryOp.GreaterEqual,
         WellKnownStrings.Operators.Equal => BinaryOp.Equal,
         WellKnownStrings.Operators.NotEqual => BinaryOp.NotEqual,
+        WellKnownStrings.Operators.ShiftLeft => BinaryOp.ShiftLeft,
+        WellKnownStrings.Operators.ShiftRight => BinaryOp.ShiftRight,
+        WellKnownStrings.Operators.BitAnd => BinaryOp.BitAnd,
+        WellKnownStrings.Operators.BitXor => BinaryOp.BitXor,
+        WellKnownStrings.Operators.BitOr => BinaryOp.BitOr,
         WellKnownStrings.Operators.And => BinaryOp.And,
         WellKnownStrings.Operators.Or => BinaryOp.Or,
         _ => BinaryOp.Add
