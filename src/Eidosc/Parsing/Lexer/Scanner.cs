@@ -94,12 +94,13 @@ public static class Scanner
         Token? newToken;
         char previewChar = stream.PreviewChar;
 
-        // Selection placeholders such as _0 are identifiers, not the wildcard
-        // token followed by a numeric literal. Route this reserved spelling
-        // through the identifier rules before the single-character '_' rule.
+        // A leading '_' only forms the wildcard token on its own; `_x`, `__x`
+        // and selection placeholders such as `_0` are identifiers. Route these
+        // spellings through the identifier rules before the single-character
+        // '_' rule can win the dispatch-by-first-char lookup.
         if (previewChar == '_' &&
             stream.RemainingSpan.Length > 1 &&
-            char.IsAsciiDigit(stream.RemainingSpan[1]))
+            (char.IsAsciiLetterOrDigit(stream.RemainingSpan[1]) || stream.RemainingSpan[1] == '_'))
         {
             newToken = TokenizeLongest(context.OtherLexerSymbols, context);
             if (newToken != null)

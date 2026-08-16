@@ -341,6 +341,13 @@ main :: Unit -> Int { Peer.call() }
             diagnostic.Message.Contains("clause 'compiler' is reserved for toolchain-owned source", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 经显式 import 才会加载的模块所承载的角色：不在隐式 prelude 核心 image 里，
+    /// 因此空程序编译时不会注册。新增此类角色时在此登记。
+    /// </summary>
+    private static readonly HashSet<CompilerSemanticRole> RolesOutsideCoreImage =
+        [CompilerSemanticRole.SequenceBuilderFreeze];
+
     [Fact]
     public void CompilationPipeline_CoreImage_RegistersEveryTypedElaborationRoleExactlyOnce()
     {
@@ -348,7 +355,8 @@ main :: Unit -> Int { Peer.call() }
 
         Assert.True(result.Success, FormatDiagnostics(result));
         var functions = result.SymbolTable!.Symbols.Values.OfType<FuncSymbol>().ToArray();
-        foreach (var role in Enum.GetValues<CompilerSemanticRole>().Where(role => role != CompilerSemanticRole.None))
+        foreach (var role in Enum.GetValues<CompilerSemanticRole>()
+                     .Where(role => role != CompilerSemanticRole.None && !RolesOutsideCoreImage.Contains(role)))
         {
             Assert.Single(functions, function => function.CompilerSemanticRole == role);
         }
