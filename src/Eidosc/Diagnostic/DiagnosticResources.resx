@@ -36,6 +36,9 @@
   <data name="DiagnosticMemoryFilePath" xml:space="preserve">
     <value>&lt;memory&gt;</value>
   </data>
+  <data name="DiagnosticForeignSourceUnavailable" xml:space="preserve">
+    <value>(source text unavailable)</value>
+  </data>
   <data name="DiagnosticSuggestionHelpUrl" xml:space="preserve">
     <value>see: {0}</value>
   </data>

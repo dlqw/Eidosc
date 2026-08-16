@@ -6,6 +6,12 @@ public sealed class DiagnosticRenderOptions
 {
     public bool UseColors { get; init; } = true;
     public string? FilePath { get; init; }
+
+    /// <summary>
+    /// 按文件路径解析标签源文本。返回 null 表示无法解析（例如虚拟源名）。
+    /// 未提供时，渲染器对磁盘上存在的绝对路径标签文件做受限回退读取。
+    /// </summary>
+    public Func<string, string?>? SourceResolver { get; init; }
 }
 
 public static class DiagnosticRenderer
@@ -23,9 +29,11 @@ public static class DiagnosticRenderer
         output.Write(": ");
         WriteColored(output, diagnostic.Message, ConsoleColor.White, options.UseColors, lineBreak: true);
 
+        var foreignSourceCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var label in diagnostic.Labels)
         {
-            RenderSnippet(label, source, output, diagnostic.Level, options);
+            RenderSnippet(label, source, output, diagnostic.Level, options, foreignSourceCache);
         }
 
         foreach (var note in diagnostic.Notes)
@@ -58,7 +66,7 @@ public static class DiagnosticRenderer
                 options.UseColors);
             if (suggestion.Span is { } suggestionSpan)
             {
-                RenderSnippet(new DiagnosticLabel(suggestionSpan, suggestion.Replacement ?? string.Empty), source, output, DiagnosticLevel.Help, options);
+                RenderSnippet(new DiagnosticLabel(suggestionSpan, suggestion.Replacement ?? string.Empty), source, output, DiagnosticLevel.Help, options, foreignSourceCache);
             }
 
             if (!string.IsNullOrEmpty(suggestion.HelpUrl))
@@ -82,7 +90,7 @@ public static class DiagnosticRenderer
                 options.UseColors);
             foreach (var label in related.Labels)
             {
-                RenderSnippet(label, source, output, related.Level, options);
+                RenderSnippet(label, source, output, related.Level, options, foreignSourceCache);
             }
         }
 
@@ -94,11 +102,34 @@ public static class DiagnosticRenderer
         ISourceStream source,
         TextWriter output,
         DiagnosticLevel level,
-        DiagnosticRenderOptions options)
+        DiagnosticRenderOptions options,
+        Dictionary<string, string?>? foreignSourceCache = null)
     {
         var span = label.Span;
         var startLoc = span.Location;
-        var fullText = source.Text;
+
+        // 标签可能指向根输入之外的文件（import 的模块）。打印标签自己的文件路径，
+        // 并解析该文件的文本；解析不到时退回根文本但不再谎报根文件的位置。
+        var labelFilePath = span.FilePath;
+        var isForeignLabel = !string.IsNullOrEmpty(labelFilePath) &&
+                             !string.Equals(labelFilePath, options.FilePath, StringComparison.OrdinalIgnoreCase);
+        string fullText = source.Text;
+        string filePath = options.FilePath ?? DiagnosticMessages.DiagnosticMemoryFilePath;
+        if (isForeignLabel)
+        {
+            filePath = labelFilePath!;
+            var foreignText = TryResolveForeignSourceText(labelFilePath!, options, foreignSourceCache);
+            if (foreignText != null)
+            {
+                fullText = foreignText;
+            }
+            else
+            {
+                WriteSnippetHeader(output, filePath, startLoc, options, sourceUnavailable: true);
+                return;
+            }
+        }
+
         if (fullText.Length == 0)
         {
             return;
@@ -125,9 +156,8 @@ public static class DiagnosticRenderer
         var lineNumStr = lineNumber.ToString();
         var gutterWidth = lineNumStr.Length;
         var blankGutter = new string(' ', gutterWidth);
-        var filePath = options.FilePath ?? DiagnosticMessages.DiagnosticMemoryFilePath;
 
-        WriteColored(output, $" {blankGutter}--> {filePath}:{lineNumber}:{startLoc.Column + 1}", ConsoleColor.DarkCyan, options.UseColors, true);
+        WriteSnippetHeader(output, filePath, startLoc, options, sourceUnavailable: false);
         WriteColored(output, $" {blankGutter} |", ConsoleColor.DarkCyan, options.UseColors, true);
 
         output.Write($" {lineNumStr} |");
@@ -151,6 +181,77 @@ public static class DiagnosticRenderer
         }
 
         output.WriteLine();
+    }
+
+    private static void WriteSnippetHeader(
+        TextWriter output,
+        string filePath,
+        SourceLocation startLoc,
+        DiagnosticRenderOptions options,
+        bool sourceUnavailable)
+    {
+        var lineDisplay = startLoc.Line + 1;
+        var gutter = new string(' ', lineDisplay.ToString().Length);
+        WriteColored(
+            output,
+            $" {gutter}--> {filePath}:{lineDisplay}:{startLoc.Column + 1}",
+            ConsoleColor.DarkCyan,
+            options.UseColors,
+            lineBreak: true);
+        if (sourceUnavailable)
+        {
+            WriteColored(output, $" {gutter} |", ConsoleColor.DarkCyan, options.UseColors, lineBreak: true);
+            WriteColored(
+                output,
+                $" {gutter} | {DiagnosticMessages.DiagnosticForeignSourceUnavailable}",
+                ConsoleColor.DarkCyan,
+                options.UseColors,
+                lineBreak: true);
+        }
+    }
+
+    /// <summary>
+    /// 解析根输入之外的标签文件文本：优先使用调用方提供的解析器，
+    /// 其次对磁盘上存在的绝对路径做一次受限读取（结果在单次渲染内缓存）。
+    /// </summary>
+    private static string? TryResolveForeignSourceText(
+        string filePath,
+        DiagnosticRenderOptions options,
+        Dictionary<string, string?>? cache)
+    {
+        if (cache != null && cache.TryGetValue(filePath, out var cached))
+        {
+            return cached;
+        }
+
+        string? resolved = null;
+        if (options.SourceResolver != null)
+        {
+            resolved = options.SourceResolver(filePath);
+        }
+
+        if (resolved == null && Path.IsPathRooted(filePath) && File.Exists(filePath))
+        {
+            try
+            {
+                resolved = File.ReadAllText(filePath);
+            }
+            catch (IOException)
+            {
+                resolved = null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                resolved = null;
+            }
+        }
+
+        if (cache != null)
+        {
+            cache[filePath] = resolved;
+        }
+
+        return resolved;
     }
 
     private static void WriteAnnotation(TextWriter output, string prefix, string message, ConsoleColor color, bool useColors)

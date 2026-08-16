@@ -16,6 +16,8 @@ internal static partial class DiagnosticMessages
 
     public static string DiagnosticMemoryFilePath => Get(nameof(DiagnosticMemoryFilePath));
 
+    public static string DiagnosticForeignSourceUnavailable => Get(nameof(DiagnosticForeignSourceUnavailable));
+
     public static string DiagnosticSuggestionHelpUrl(string helpUrl) =>
         Format(nameof(DiagnosticSuggestionHelpUrl), helpUrl);
 
