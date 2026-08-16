@@ -326,15 +326,19 @@ public sealed partial class MirBuilder
 
     private bool ShouldCreateBorrowAliasForProjectedArgument(TypeId typeId, bool forceCopy)
     {
-        // A projected argument whose parameter is by-value must be an owned
-        // value.  The load therefore materializes an independent aggregate
-        // (the LLVM lowering retains managed payloads) instead of creating a
-        // borrow alias that cannot satisfy the callee's ownership contract.
-        // First-class Ref/MRef arguments are returned as places above and do
-        // not reach this helper.
-        _ = typeId;
         _ = forceCopy;
-        return false;
+
+        if (IsFirstClassReferenceType(typeId))
+        {
+            return false;
+        }
+
+        // Copy types never create borrow aliases — the loaded value is an
+        // independent copy. Non-Copy projected loads create borrow aliases:
+        // moving one element out of an owning aggregate is not an owned value,
+        // and the borrow checker must see the alias so partial applications
+        // that capture it report E1002 instead of silently moving storage.
+        return !IsCopyType(typeId);
     }
 
     private bool IsFirstClassReferenceType(TypeId typeId)
