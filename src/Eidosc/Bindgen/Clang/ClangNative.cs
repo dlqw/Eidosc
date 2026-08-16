@@ -284,6 +284,9 @@ internal delegate int ClangEvalResultGetAsIntFn(IntPtr evalResult);
 internal delegate long ClangEvalResultGetAsLongLongFn(IntPtr evalResult);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate double ClangEvalResultGetAsDoubleFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate IntPtr ClangEvalResultGetAsStrFn(IntPtr evalResult);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -373,6 +376,7 @@ internal sealed class ClangApi
         EvalResultGetKind = GetExport<ClangEvalResultGetKindFn>(library, "clang_EvalResult_getKind");
         EvalResultGetAsInt = GetExport<ClangEvalResultGetAsIntFn>(library, "clang_EvalResult_getAsInt");
         EvalResultGetAsLongLong = GetExport<ClangEvalResultGetAsLongLongFn>(library, "clang_EvalResult_getAsLongLong");
+        EvalResultGetAsDouble = GetExport<ClangEvalResultGetAsDoubleFn>(library, "clang_EvalResult_getAsDouble");
         EvalResultGetAsStr = GetExport<ClangEvalResultGetAsStrFn>(library, "clang_EvalResult_getAsStr");
         EvalResultDispose = GetExport<ClangEvalResultDisposeFn>(library, "clang_EvalResult_dispose");
         GetCursorExtent = GetExport<ClangGetCursorExtentFn>(library, "clang_getCursorExtent");
@@ -425,6 +429,7 @@ internal sealed class ClangApi
     internal ClangEvalResultGetKindFn EvalResultGetKind { get; }
     internal ClangEvalResultGetAsIntFn EvalResultGetAsInt { get; }
     internal ClangEvalResultGetAsLongLongFn EvalResultGetAsLongLong { get; }
+    internal ClangEvalResultGetAsDoubleFn EvalResultGetAsDouble { get; }
     internal ClangEvalResultGetAsStrFn EvalResultGetAsStr { get; }
     internal ClangEvalResultDisposeFn EvalResultDispose { get; }
     internal ClangGetCursorExtentFn GetCursorExtent { get; }

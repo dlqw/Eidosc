@@ -19,23 +19,30 @@ public partial class LlvmPipelineIntegrationTests
 
     private static string TranslateC2E(string cSource, out string nativeShimSource)
     {
+        var source = TranslateC2EKeepingInputFile(cSource, out nativeShimSource, out var inputDirectory);
+        Directory.Delete(inputDirectory, true);
+        return source;
+    }
+
+    /// <summary>
+    /// 翻译并保留 input.c 所在目录：union 用例的 C shim 以绝对路径 include 该文件，
+    /// 原生编译发生在本方法返回之后，由调用方在用完后删除目录。
+    /// </summary>
+    private static string TranslateC2EKeepingInputFile(
+        string cSource,
+        out string nativeShimSource,
+        out string inputDirectory)
+    {
         Assert.True(ClangNative.TryLoad(out var loadError, out var api), loadError);
-        var dir = Path.Combine(Path.GetTempPath(), $"c2e_parity_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(dir);
-        try
-        {
-            var cPath = Path.Combine(dir, "input.c");
-            File.WriteAllText(cPath, cSource);
-            var result = new CBodyTranslator(api!).Translate(cPath);
-            Assert.Empty(result.SkippedFunctions);
-            Assert.False(result.IsEmpty);
-            nativeShimSource = result.NativeShimSource;
-            return result.Source;
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        inputDirectory = Path.Combine(Path.GetTempPath(), $"c2e_parity_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(inputDirectory);
+        var cPath = Path.Combine(inputDirectory, "input.c");
+        File.WriteAllText(cPath, cSource);
+        var result = new CBodyTranslator(api!).Translate(cPath);
+        Assert.Empty(result.SkippedFunctions);
+        Assert.False(result.IsEmpty);
+        nativeShimSource = result.NativeShimSource;
+        return result.Source;
     }
 
     /// <summary>编译并运行 C 参照程序，返回退出码。</summary>
@@ -244,39 +251,52 @@ public partial class LlvmPipelineIntegrationTests
                 }
                 """);
 
-        var translated = TranslateC2E(cSource, out var nativeShimSource);
-        Assert.Contains("c2e_Shape_radius_get", translated, StringComparison.Ordinal);
-        Assert.Contains("c2e_Shape_radius_set", translated, StringComparison.Ordinal);
-        Assert.Contains("c2e_Shape_width_get", translated, StringComparison.Ordinal);
-        Assert.Contains("#include \"", nativeShimSource, StringComparison.Ordinal);
-        var eidosSource = translated + """
+        var inputDirectory = string.Empty;
+        try
+        {
+            var translated = TranslateC2EKeepingInputFile(cSource, out var nativeShimSource, out inputDirectory);
+            Assert.Contains("c2e_Shape_radius_get", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Shape_radius_set", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Shape_width_get", translated, StringComparison.Ordinal);
+            Assert.Contains("#include \"", nativeShimSource, StringComparison.Ordinal);
+            var eidosSource = translated + """
 
-            @[extern(c, name: "test_alloc_shape")]
-            test_alloc_shape :: Unit -> RawPtr need ffi;
+                @[extern(c, name: "test_alloc_shape")]
+                test_alloc_shape :: Unit -> RawPtr need ffi;
 
-            main :: Unit -> Int
-            {
-                _ => {
-                    s := test_alloc_shape();
-                    c2e_Shape_radius_set(s)(3);
-                    compute(s)
+                main :: Unit -> Int
+                {
+                    _ => {
+                        s := test_alloc_shape();
+                        c2e_Shape_radius_set(s)(3);
+                        compute(s)
+                    }
                 }
+                """;
+
+            var execution = CompileAndRunSourceAtNative(
+                eidosSource,
+                "c2e_union_parity_native.eidos",
+                "c2e_union_parity_native",
+                nativeCSource: nativeShimSource + """
+
+                    #include <stdlib.h>
+
+                    void* test_alloc_shape(void) { return malloc(16); }
+                    """);
+
+            Assert.Equal(referenceExit, execution.ExitCode);
+            // 联合体别名语义（x86 小端 IEEE-754）：5.5 与 12.5 的 double 低 32 位均为 0，
+            // radius 读作 0 → first = 0；第二次 12.5 > 10.0 触发 +100 → second = 100。
+            Assert.Equal(100, execution.ExitCode);
+        }
+        finally
+        {
+            if (inputDirectory.Length > 0)
+            {
+                Directory.Delete(inputDirectory, true);
             }
-            """;
-
-        var execution = CompileAndRunSourceAtNative(
-            eidosSource,
-            "c2e_union_parity_native.eidos",
-            "c2e_union_parity_native",
-            nativeCSource: nativeShimSource + """
-
-                #include <stdlib.h>
-
-                void* test_alloc_shape(void) { return malloc(16); }
-                """);
-
-        Assert.Equal(referenceExit, execution.ExitCode);
-        Assert.Equal(148, execution.ExitCode);
+        }
     }
 
     [Fact]
@@ -329,6 +349,65 @@ public partial class LlvmPipelineIntegrationTests
     }
 
     [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_StructValueBridge_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            typedef struct V2 { float x; float y; } V2;
+
+            int corner_code(float rotation)
+            {
+                V2 a = { 1, 2 };
+                V2 b = (V2){ 3.5, 4.5 };
+                if (rotation == 0.0f)
+                {
+                    a = (V2){ a.x + b.x, a.y };
+                }
+                else
+                {
+                    a.y = (a.y + b.y) * (rotation + 1.0f);
+                }
+                float total = (a.x + a.y) * 10.0f;
+                if (total > 60.0f) { return 1; }
+                return 0;
+            }
+
+            int compute(void)
+            {
+                return corner_code(0.0f) + 2 * corner_code(1.0f);
+            }
+            """;
+
+        var referenceExit = RunCReference(cSource, "int compute(void);\nint main(void) { return compute(); }\n");
+
+        var translated = TranslateC2E(cSource);
+        Assert.Contains("V2 {", translated, StringComparison.Ordinal);
+        Assert.Contains(".{y:", translated, StringComparison.Ordinal);
+        Assert.Contains("(a.y + b.y) * (rotation + 1.0)", translated, StringComparison.Ordinal);
+
+        var eidosSource = translated + """
+
+            main :: Unit -> Int
+            {
+                _ => compute()
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            eidosSource,
+            "c2e_struct_bridge_native.eidos",
+            "c2e_struct_bridge_native");
+
+        Assert.Equal(referenceExit, execution.ExitCode);
+        Assert.Equal(3, execution.ExitCode);
+    }
+
+    [Fact]
     public void C2E_UnsupportedConstruct_SkipsWithReason()
     {
         Assert.True(ClangNative.TryLoad(out var loadError, out var api), loadError);
@@ -338,7 +417,7 @@ public partial class LlvmPipelineIntegrationTests
         {
             var cPath = Path.Combine(dir, "input.c");
             File.WriteAllText(cPath, """
-                struct Big { int a; int b; };
+                struct Big { int a; int arr[4]; };
                 int bad(struct Big s) { return s.a; }
                 int good(int x) { return x + 1; }
                 """);
