@@ -431,4 +431,49 @@ public partial class LlvmPipelineIntegrationTests
             Directory.Delete(dir, true);
         }
     }
+
+    /// <summary>
+    /// L1 边界识别：-isystem 头里的无 body 声明是二进制边界（floor 符号），
+    /// -I 项目头里的无 body 声明是跨 TU 符号（cross-TU）。
+    /// </summary>
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_ExternClassification_SystemVsProjectHeader()
+    {
+        Assert.True(ClangNative.TryLoad(out var loadError, out var api), loadError);
+        var dir = Path.Combine(Path.GetTempPath(), $"c2e_floor_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "project"));
+            Directory.CreateDirectory(Path.Combine(dir, "system"));
+            File.WriteAllText(Path.Combine(dir, "project", "proj.h"), "int project_helper(int v);\n");
+            File.WriteAllText(Path.Combine(dir, "system", "sys.h"), "int system_helper(int v);\n");
+            var cPath = Path.Combine(dir, "input.c");
+            File.WriteAllText(cPath, """
+                #include "proj.h"
+                #include <sys.h>
+
+                int caller(int x)
+                {
+                    return project_helper(x) + system_helper(x);
+                }
+                """);
+            var result = new CBodyTranslator(api!).Translate(
+                cPath,
+                includePaths: [Path.Combine(dir, "project")],
+                defines: null,
+                systemIncludePaths: [Path.Combine(dir, "system")]);
+            Assert.Empty(result.SkippedFunctions);
+            Assert.Contains("system_helper", result.FloorSymbols);
+            Assert.DoesNotContain("system_helper", result.CrossTuSymbols);
+            Assert.Contains("project_helper", result.CrossTuSymbols);
+            Assert.DoesNotContain("project_helper", result.FloorSymbols);
+            Assert.Contains("caller :: Int -> Int", result.Source, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
 }

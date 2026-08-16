@@ -453,7 +453,8 @@ public sealed class EidosProjectManifestDocument
                 ffi.LibraryPaths != null ||
                 ffi.IncludePaths != null ||
                 ffi.NativeSources != null ||
-                ffi.LinkerFlags != null)
+                ffi.LinkerFlags != null ||
+                ffi.FloorSymbols != null)
             {
                 AppendSection("ffi");
                 AppendOptionalProperty("libraries", ffi.Libraries);
@@ -461,6 +462,8 @@ public sealed class EidosProjectManifestDocument
                 AppendOptionalProperty("includePaths", ffi.IncludePaths);
                 AppendOptionalProperty("nativeSources", ffi.NativeSources);
                 AppendOptionalProperty("linkerFlags", ffi.LinkerFlags);
+                // L1 地板符号清单（C2E 从系统头 extern 分类生成）：链接契约的文档化/审查面。
+                AppendOptionalProperty("floorSymbols", ffi.FloorSymbols);
                 wroteFfi = true;
             }
 
@@ -712,6 +715,12 @@ public sealed class EidosProjectFfiManifestDocument
     public string[]? NativeSources { get; set; }
     public string[]? LinkerFlags { get; set; }
     public Dictionary<string, string[]>? Platform { get; set; }
+
+    /// <summary>
+    /// L1 地板符号清单：C2E 对系统头（二进制边界）extern 的自动分类结果，
+    /// 由 regen 脚本写入。链接器已兜底符号存在性，此清单用于审查"地板厚度"。
+    /// </summary>
+    public string[]? FloorSymbols { get; set; }
 }
 
 public sealed class EidosProjectBuildManifestDocument

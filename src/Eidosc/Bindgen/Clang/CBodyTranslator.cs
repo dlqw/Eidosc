@@ -26,7 +26,9 @@ internal sealed class CBodyTranslator
     internal sealed record C2EResult(
         string Source,
         string NativeShimSource,
-        IReadOnlyList<string> SkippedFunctions)
+        IReadOnlyList<string> SkippedFunctions,
+        IReadOnlyList<string> FloorSymbols,
+        IReadOnlyList<string> CrossTuSymbols)
     {
         public bool IsEmpty => Source.Length == 0;
     }
@@ -40,26 +42,47 @@ internal sealed class CBodyTranslator
         IReadOnlyList<(string Spelling, bool IsFloat)> Parameters,
         (string Spelling, bool IsFloat) Return);
 
-    /// <summary>被翻译函数调用的外部 C 函数。</summary>
-    private sealed record PendingExtern(string CName, string EidosName, IReadOnlyList<string> ParameterTypes, string ReturnType);
+    /// <summary>
+    /// 被翻译函数调用的外部 C 函数。<see cref="ForeignCName"/> 是真正的外来链接符号
+    /// （float ABI shim 生效时 <see cref="CName"/> 指向自建 shim）；<see cref="IsFloor"/>
+    /// 标注 L1 地板（声明在系统头 = 二进制边界），否则为跨 TU 的项目符号。
+    /// </summary>
+    private sealed record PendingExtern(
+        string CName,
+        string EidosName,
+        IReadOnlyList<string> ParameterTypes,
+        string ReturnType,
+        string ForeignCName,
+        bool IsFloor);
+
+    /// <summary>TranslateFunctions 的产出：跳过清单与 extern 三级分类结果。</summary>
+    private sealed record FunctionTranslationOutcome(
+        List<string> Skipped,
+        IReadOnlyList<string> FloorSymbols,
+        IReadOnlyList<string> CrossTuSymbols);
+
+    /// <summary>声明位于系统头（-isystem 或 clang 内置 SDK 搜索）→ L1 二进制边界，无 C 源可翻。</summary>
+    private bool IsSystemDeclaration(ClangCursor cursor) =>
+        _api.LocationIsInSystemHeader(_api.GetCursorLocation(cursor)) != 0;
 
     public C2EResult Translate(string cSourcePath) =>
         Translate(cSourcePath, includePaths: null, defines: null, onlyFunctions: null);
 
     /// <summary>
-    /// 带编译环境（-I/-D）的翻译入口：真实项目的 C 源几乎都依赖头搜索路径与配置宏。
+    /// 带编译环境（-I/-D/-isystem）的翻译入口：真实项目的 C 源几乎都依赖头搜索路径与配置宏。
     /// </summary>
     public C2EResult Translate(
         string cSourcePath,
         IReadOnlyList<string>? includePaths,
         IReadOnlyList<string>? defines,
-        IReadOnlySet<string>? onlyFunctions = null)
+        IReadOnlySet<string>? onlyFunctions = null,
+        IReadOnlyList<string>? systemIncludePaths = null)
     {
         using var session = new ClangSession(_api);
         _session = session;
         try
         {
-            session.Parse(cSourcePath, includePaths: includePaths, defines: defines, skipFunctionBodies: false);
+            session.Parse(cSourcePath, includePaths: includePaths, defines: defines, skipFunctionBodies: false, systemIncludePaths: systemIncludePaths);
             var functions = new List<ClangCursor>();
             session.VisitChildren(session.RootCursor, (cursor, _, _) =>
             {
@@ -82,8 +105,8 @@ internal sealed class CBodyTranslator
             ResolveRecordFields();
             _resolvingRecords = false;
 
-            var skipped = TranslateFunctions(functions, cSourcePath, out var source, out var shimSource, onlyFunctions);
-            return new C2EResult(source, shimSource, skipped);
+            var outcome = TranslateFunctions(functions, cSourcePath, out var source, out var shimSource, onlyFunctions);
+            return new C2EResult(source, shimSource, outcome.Skipped, outcome.FloorSymbols, outcome.CrossTuSymbols);
         }
         finally
         {
@@ -250,7 +273,7 @@ internal sealed class CBodyTranslator
         return closure.ToList();
     }
 
-    private List<string> TranslateFunctions(
+    private FunctionTranslationOutcome TranslateFunctions(
         List<ClangCursor> functions,
         string cSourcePath,
         out string source,
@@ -449,7 +472,20 @@ internal sealed class CBodyTranslator
         }
 
         shimSource = shimText;
-        return skipped;
+
+        // extern 三级分类：系统头声明 = L1 地板符号（链接契约），项目头/主文件声明 = 跨 TU 符号。
+        // 注：不动点重试期间可能留下未被最终引用的 extern（上游被禁后其引用消失），清单为保守过近似。
+        var floorSymbols = state.PendingExterns.Values
+            .Where(static pending => pending.IsFloor)
+            .Select(static pending => pending.ForeignCName)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToList();
+        var crossTuSymbols = state.PendingExterns.Values
+            .Where(static pending => !pending.IsFloor)
+            .Select(static pending => pending.ForeignCName)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToList();
+        return new FunctionTranslationOutcome(skipped, floorSymbols, crossTuSymbols);
     }
 
     /// <summary>C float ABI 中转 shim：Eidos Float(f64) ↔ C float，C 侧显式窄化。</summary>
@@ -1576,11 +1612,14 @@ internal sealed class CBodyTranslator
         if (!state.PendingExterns.TryGetValue(callee, out var pending))
         {
             // float ABI shim 生效时，Eidos 侧 extern 绑定到 shim 符号（c2e_ext_<name>_f）。
+            // 分类：声明在系统头 → L1 地板（无 C 源可翻）；否则为跨 TU 项目符号（供人工核对并入翻译）。
             pending = new PendingExtern(
                 floatShimNeeded ? $"c2e_ext_{callee}_f" : callee,
                 floatShimNeeded ? $"c2e_ext_{callee}_f" : $"c2e_ext_{callee}",
                 parameterMappings.Select(static mapping => mapping.EidosType).ToList(),
-                returnMapping.EidosType);
+                returnMapping.EidosType,
+                callee,
+                IsSystemDeclaration(declaration));
             state.PendingExterns[callee] = pending;
         }
 

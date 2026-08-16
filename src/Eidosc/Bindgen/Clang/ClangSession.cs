@@ -32,7 +32,8 @@ internal sealed class ClangSession : IDisposable
         IReadOnlyList<string>? includePaths = null,
         IReadOnlyList<string>? defines = null,
         bool skipFunctionBodies = false,
-        IReadOnlyList<string>? extraArgs = null)
+        IReadOnlyList<string>? extraArgs = null,
+        IReadOnlyList<string>? systemIncludePaths = null)
     {
         if (_translationUnit != IntPtr.Zero)
         {
@@ -55,6 +56,17 @@ internal sealed class ClangSession : IDisposable
             {
                 arguments.Add("-I");
                 arguments.Add(includePath);
+            }
+        }
+
+        // -isystem 头按 clang 语义标记为系统头（clang_Location_isInSystemHeader 可读），
+        // 供 C2E 区分"有源码可翻的项目头"与"二进制边界的系统头"。
+        if (systemIncludePaths != null)
+        {
+            foreach (var systemIncludePath in systemIncludePaths)
+            {
+                arguments.Add("-isystem");
+                arguments.Add(systemIncludePath);
             }
         }
 
