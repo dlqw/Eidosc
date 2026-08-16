@@ -8,6 +8,14 @@ namespace Eidosc.Pipeline;
 
 public sealed partial class CompilationPipeline
 {
+    /// <summary>HIR 类型描述表里的 Ref/MutRef 判定：供 MIR 内联器把借用参数绑定为借用而非 move。</summary>
+    private bool IsHirBorrowType(TypeId typeId)
+    {
+        return typeId.IsValid &&
+               _hirTypeDescriptors.TryGetValue(typeId.Value, out var descriptor) &&
+               descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef;
+    }
+
     private bool RunMirBuilder()
     {
         if (TryRestoreLiveState(CompilationPhase.Mir))
@@ -99,7 +107,8 @@ public sealed partial class CompilationPipeline
                 // aborts compilation on failure, so the inferer is present.
                 optimizer = MirOptimizer.CreateDefault(
                     MeasureMirOptimizerSubphase,
-                    _abilityInferer!.FunctionSummariesBySymbol);
+                    _abilityInferer!.FunctionSummariesBySymbol,
+                    IsHirBorrowType);
                 optimizationPasses = optimizer.PassNames;
                 optimizationApplied = true;
             }

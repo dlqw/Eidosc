@@ -233,6 +233,88 @@ main :: Unit -> Int
             function => function.Name.Contains("not", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 函数级序列模式匹配 + 尾递归（自递归转循环）+ 构造器字符串实参的守卫求值：
+    /// 守卫产生的 load 别名必须随借用者死亡而终结，不得绕回边累积成
+    /// MutateWhileBorrowed 误报（原 projects/ecc 模板 183 处同类阻塞）。
+    /// </summary>
+    [Fact]
+    public void TailRecursiveSeqPatternMatch_CompilesThroughLlvm()
+    {
+        const string source = """
+            Tk :: type
+            {
+                Kw:: type(String),
+                Eof:: type {}
+            }
+
+            count_kws :: Seq[Tk] -> Int
+            {
+                [Kw(w), ..rest] => 1 + count_kws(rest),
+                [Eof(), ..rest] => count_kws(rest),
+                [] => 0
+            }
+
+            main :: Unit -> Int
+            {
+                _ => count_kws([Kw("static"), Kw("const"), Eof {}])
+            }
+            """;
+
+        var result = RunSourceAtLlvm(source, "borrow_tail_loop_pattern.eidos");
+
+        Assert.True(result.Success);
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    /// <summary>
+    /// Seq 索引投影（xs[i]）直接进入所有权参数位：运行时语义是独立引用计数副本
+    ///（非别名载入 IncRef），不得按 owning-aggregate 移出挂借用别名报 E1002。
+    /// </summary>
+    [Fact]
+    public void SeqIndexProjectionAsOwnedArgument_CompilesThroughLlvm()
+    {
+        const string source = """
+            import std.Seq
+
+            Box :: type { text :: String }
+
+            weight :: Box -> Int
+            {
+                _ => 1
+            }
+
+            collect :: Seq[Box] -> Int
+            {
+                items => {
+                    len := Seq.len(ref items)
+                    mut total := 0
+                    mut index := 0
+                    loop {
+                        if index >= len then { break }
+                        else {
+                            total = total + weight(items[index])
+                            index = index + 1
+                        }
+                    }
+                    total
+                }
+            }
+
+            main :: Unit -> Int
+            {
+                _ => collect([Box { text: "ab" }, Box { text: "cde" }])
+            }
+            """;
+
+        var result = RunSourceAtLlvm(source, "borrow_seq_index_argument.eidos");
+
+        Assert.True(result.Success);
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
     [Fact]
     public void EccMainTemplate_NativeRuntimeSmoke_SucceedsWhenToolchainAvailable()
     {

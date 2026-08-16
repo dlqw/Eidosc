@@ -150,7 +150,8 @@ public sealed partial class MirOptimizer
     /// </summary>
     public static MirOptimizer CreateDefault(
         Func<string, IDisposable>? measureSubphase = null,
-        IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries = null)
+        IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries = null,
+        Func<TypeId, bool>? isBorrowType = null)
     {
         var optimizer = new MirOptimizer(measureSubphase, effectSummaries);
 
@@ -169,7 +170,7 @@ public sealed partial class MirOptimizer
         // the expanded bodies and keep their instruction-site identities
         // consistent. Inlining runs before ownership finalization so inserted
         // drops cover the inlined code.
-        optimizer.RegisterPass(new Inlining());
+        optimizer.RegisterPass(new Inlining(30, isBorrowType));
         optimizer.RegisterPass(new SequenceBuilderFusionPass());
         optimizer.RegisterPass(new TraversableConsumerSpecializationPass());
 

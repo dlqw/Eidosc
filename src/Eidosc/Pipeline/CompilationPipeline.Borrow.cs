@@ -257,7 +257,8 @@ public sealed partial class CompilationPipeline
                     _symbolTable!,
                     capabilitySnapshot,
                     captureBorrowPointStates,
-                    borrowModule.DynamicTypeKeys);
+                    borrowModule.DynamicTypeKeys,
+                    livenessAnalyzer);
                 loanResults = loanVerifier.VerifyFunction(func, sharedCfg);
             }
 

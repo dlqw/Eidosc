@@ -59,8 +59,10 @@ public sealed partial class LoanConstraintVerifier
     private readonly Func<TypeId, bool> _hasCopyImplResolver;
     private readonly IReadOnlyDictionary<int, string>? _dynamicTypeKeys;
     private readonly BorrowCapabilitySnapshot? _capabilitySnapshot;
+    private readonly LivenessAnalyzer? _liveness;
     private MirFunc? _currentFunction;
     private Dictionary<LocalId, MirLocal> _localsById = [];
+    private Dictionary<BlockId, MirBasicBlock> _blocksById = [];
     private IReadOnlyDictionary<LocalId, int> _localIndexMap = new Dictionary<LocalId, int>();
     private LocalId[] _localsByIndex = [];
     private readonly HashSet<string> _reportedDiagnostics = [];
@@ -76,7 +78,8 @@ public sealed partial class LoanConstraintVerifier
         SymbolTable symbolTable,
         BorrowCapabilitySnapshot? capabilitySnapshot = null,
         bool capturePointStates = true,
-        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null)
+        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null,
+        LivenessAnalyzer? liveness = null)
     {
         _signatureCache = signatureCache;
         _symbolTable = symbolTable;
@@ -84,6 +87,7 @@ public sealed partial class LoanConstraintVerifier
         _dynamicTypeKeys = dynamicTypeKeys;
         _capabilitySnapshot = capabilitySnapshot;
         _capturePointStates = capturePointStates;
+        _liveness = liveness;
     }
 
     public LoanConstraintResult VerifyCall(
@@ -111,6 +115,7 @@ public sealed partial class LoanConstraintVerifier
         var controlFlow = cfg ?? new ControlFlowGraph(function);
         var oneShotBackedgeSuppressions = OneShotLoopMoveAnalysis.CollectBackedgeSuppressions(function, controlFlow);
         var blockById = function.BasicBlocks.ToDictionary(block => block.Id);
+        _blocksById = blockById;
         var blockOutStates = new Dictionary<BlockId, LoanVerifierState>();
         var pendingBlocks = new Queue<BlockId>(function.BasicBlocks.Select(block => block.Id));
         var queuedBlocks = function.BasicBlocks.Select(block => block.Id).ToHashSet();
@@ -1468,6 +1473,115 @@ public sealed partial class LoanConstraintVerifier
         state.MovedVars.Remove(localId);
     }
 
+    /// <summary>
+    /// 终结目标上"借用者已死"的借用：borrower 在写入点之后不再被读取
+    ///（块内先重定义后使用，或既无块内后续使用也不在 LiveOut）时，
+    /// 重定义 borrowee 不会使借用悬空，应从状态收缩而非报冲突。
+    /// </summary>
+    private void EndDeadBorrowsForTarget(BorrowTarget target, BlockId blockId, int instructionIndex, LoanVerifierState state)
+    {
+        if (!target.IsValid)
+        {
+            return;
+        }
+
+        state.EndBorrowsByBorrowee(
+            target.BaseLocal,
+            borrow => IsBorrowerDeadAfter(borrow.Borrower, blockId, instructionIndex),
+            (blockId, instructionIndex));
+    }
+
+    private bool IsBorrowerDeadAfter(LocalId borrower, BlockId blockId, int instructionIndex)
+    {
+        if (!_blocksById.TryGetValue(blockId, out var block))
+        {
+            return false;
+        }
+
+        for (var i = instructionIndex + 1; i < block.Instructions.Count; i++)
+        {
+            if (InstructionDefinesLocal(block.Instructions[i], borrower))
+            {
+                return true;
+            }
+
+            if (InstructionUsesLocal(block.Instructions[i], borrower))
+            {
+                return false;
+            }
+        }
+
+        if (block.Terminator != null && TerminatorUsesLocal(block.Terminator, borrower))
+        {
+            return false;
+        }
+
+        // 块内无后续使用：跨块活性交给 LivenessAnalyzer（缺失时保守视为活）。
+        return _liveness?.LiveOut.TryGetValue(blockId, out var liveOut) == true && !liveOut.Contains(borrower);
+    }
+
+    private static bool InstructionDefinesLocal(MirInstruction instruction, LocalId local)
+    {
+        var target = instruction switch
+        {
+            MirAssign assign => assign.Target,
+            MirCaseInject injection => injection.Target,
+            MirCall { Target: { } callTarget } => callTarget,
+            MirBinOp binary => binary.Target,
+            MirUnaryOp unary => unary.Target,
+            MirSelect select => select.Target,
+            MirLoad load => load.Target,
+            MirStore store => store.Target,
+            MirCopy copy => copy.Target,
+            MirMove move => move.Target,
+            MirAlloc alloc => alloc.Target,
+            _ => null
+        };
+
+        return target is MirPlace { Kind: PlaceKind.Local } place && place.Local.Equals(local);
+    }
+
+    private static bool InstructionUsesLocal(MirInstruction instruction, LocalId local)
+    {
+        return instruction switch
+        {
+            MirAssign assign => ContainsLocalOperand(assign.Source, local),
+            MirCaseInject injection => ContainsLocalOperand(injection.Operand, local) || ContainsLocalOperand(injection.Target, local),
+            MirCall call => ContainsLocalOperand(call.Function, local) ||
+                            call.Arguments.Any(argument => ContainsLocalOperand(argument, local)),
+            MirBinOp binary => ContainsLocalOperand(binary.Left, local) || ContainsLocalOperand(binary.Right, local),
+            MirUnaryOp unary => ContainsLocalOperand(unary.Operand, local),
+            MirSelect select => ContainsLocalOperand(select.Condition, local) ||
+                                ContainsLocalOperand(select.TrueValue, local) ||
+                                ContainsLocalOperand(select.FalseValue, local),
+            MirLoad load => ContainsLocalOperand(load.Source, local),
+            MirStore store => ContainsLocalOperand(store.Target, local) || ContainsLocalOperand(store.Value, local),
+            MirDrop drop => ContainsLocalOperand(drop.Value, local),
+            MirCopy copy => ContainsLocalOperand(copy.Source, local),
+            MirMove move => ContainsLocalOperand(move.Source, local),
+            _ => false
+        };
+    }
+
+    private static bool TerminatorUsesLocal(MirTerminator terminator, LocalId local) => terminator switch
+    {
+        MirReturn { Value: { } value } => ContainsLocalOperand(value, local),
+        MirSwitch @switch => ContainsLocalOperand(@switch.Discriminant, local),
+        _ => false
+    };
+
+    private static bool ContainsLocalOperand(MirOperand? operand, LocalId local)
+    {
+        if (operand is not MirPlace place)
+        {
+            return false;
+        }
+
+        return place.Kind == PlaceKind.Local && place.Local.Equals(local) ||
+               ContainsLocalOperand(place.Base, local) ||
+               ContainsLocalOperand(place.Index, local);
+    }
+
     private void ReportMutateWhileBorrowedConflict(
         BorrowTarget borrowTarget,
         SourceSpan span,
@@ -1476,6 +1590,11 @@ public sealed partial class LoanConstraintVerifier
         LoanVerifierState state,
         List<LoanConstraintResult> results)
     {
+        // 写入前先收缩状态：借用者在此点之后已死的借用随重定义终结，
+        // 否则自递归循环（尾调用转 loop）会把守卫求值的别名带回回边，
+        // 在下一轮迭代重定义临时量时误报 MutateWhileBorrowed。
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
         var activeBorrows = GetActiveBorrows(borrowTarget, state);
         if (activeBorrows.Count == 0)
         {
@@ -1533,6 +1652,8 @@ public sealed partial class LoanConstraintVerifier
                 span,
                 hint: DiagnosticMessages.BorrowMoveOrCopyHint);
         }
+
+        EndDeadBorrowsForTarget(BorrowTarget.ForLocal(localId), blockId, instructionIndex, state);
 
         var activeBorrows = GetActiveBorrows(BorrowTarget.ForLocal(localId), state);
         if (activeBorrows.Count == 0)
@@ -1635,6 +1756,15 @@ internal sealed class LoanVerifierState
     {
         _state.EndBorrowsByBorrowee(
             borrowee,
+            borrow => borrow.EndLocation = endLocation);
+    }
+
+    /// <summary>按谓词终结 borrowee 上的借用：借用者已死时收缩状态，避免跨回边累积。</summary>
+    public void EndBorrowsByBorrowee(LocalId borrowee, Func<ActiveBorrowInfo, bool> shouldEnd, (BlockId Block, int Index) endLocation)
+    {
+        _state.EndBorrowsByBorrowee(
+            borrowee,
+            shouldEnd,
             borrow => borrow.EndLocation = endLocation);
     }
 
