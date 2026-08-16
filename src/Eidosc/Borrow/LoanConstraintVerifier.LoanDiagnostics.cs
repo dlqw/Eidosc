@@ -193,6 +193,9 @@ public sealed partial class LoanConstraintVerifier
         int instructionIndex,
         LoanVerifierState state)
     {
+        // 新借用登记前收缩状态：借用者已死的旧借用不应触发多重借用冲突。
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
         var existingBorrows = state.GetBorrowsByBorrowTarget(borrowTarget);
 
         foreach (var existing in existingBorrows)

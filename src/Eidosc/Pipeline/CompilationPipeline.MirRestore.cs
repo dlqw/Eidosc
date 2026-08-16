@@ -435,7 +435,8 @@ public sealed partial class CompilationPipeline
             ? MirOptimizer.CreateDefault(
                 // The abilities phase runs unconditionally before MIR and
                 // aborts compilation on failure, so the inferer is present.
-                effectSummaries: _abilityInferer!.FunctionSummariesBySymbol)
+                effectSummaries: _abilityInferer!.FunctionSummariesBySymbol,
+                isBorrowType: IsHirBorrowType)
             : null;
         var specialization = RunSpecializationLoop(mirModule, specializer, optimizer);
         mirModule = specialization.Module;

@@ -326,11 +326,15 @@ public sealed partial class MirBuilder
 
     /// <summary>
     /// Seq 索引投影（xs[i]）可靠判别：基位置的类型是内建 Seq TyCon。
-    /// 判据链：基 place 的 TypeId → 局部声明类型 → 描述符/动态键里的
-    /// TyCon 构造键 == SymbolTable 解析到的 Seq 符号（缓存）。
+    /// 判据链：基 place 的 TypeId →（Local 基）当前函数局部声明类型表 → 描述符/
+    /// 动态键里的 TyCon 构造键 == SymbolTable 解析到的 Seq 符号（缓存）。
+    /// 嵌套投影（xs[i][j]）与 Ref[Seq] 解引用基经 Deref/Index place 自带的
+    /// TypeId 走主路径。
     /// </summary>
     private TypeConstructorKey? _sequenceConstructorKey;
     private readonly HashSet<int> _sequenceTypeIds = [];
+    private MirFunc? _sequenceLocalTypesFunc;
+    private Dictionary<LocalId, TypeId>? _sequenceLocalTypes;
 
     private bool IsSequenceIndexProjection(MirPlace place)
     {
@@ -340,13 +344,32 @@ public sealed partial class MirBuilder
         }
 
         var baseTypeId = place.Base.TypeId;
-        if (!baseTypeId.IsValid && place.Base.Kind == PlaceKind.Local)
+        if (!baseTypeId.IsValid &&
+            place.Base.Kind == PlaceKind.Local &&
+            TryGetLocalTypeId(place.Base.Local, out var declaredTypeId))
         {
-            baseTypeId = _currentFunc?.Locals.FirstOrDefault(
-                local => local.Id.Equals(place.Base.Local))?.TypeId ?? TypeId.None;
+            baseTypeId = declaredTypeId;
         }
 
         return IsSequenceTypeId(baseTypeId);
+    }
+
+    /// <summary>当前函数的局部 → 声明类型表（按函数缓存，避免逐次线性扫描）。</summary>
+    private bool TryGetLocalTypeId(LocalId localId, out TypeId typeId)
+    {
+        typeId = TypeId.None;
+        if (_currentFunc == null)
+        {
+            return false;
+        }
+
+        if (_sequenceLocalTypesFunc != _currentFunc || _sequenceLocalTypes == null)
+        {
+            _sequenceLocalTypesFunc = _currentFunc;
+            _sequenceLocalTypes = _currentFunc.Locals.ToDictionary(static local => local.Id, static local => local.TypeId);
+        }
+
+        return _sequenceLocalTypes.TryGetValue(localId, out typeId!) && typeId.IsValid;
     }
 
     private bool IsSequenceTypeId(TypeId typeId)

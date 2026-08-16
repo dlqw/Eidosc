@@ -269,6 +269,100 @@ main :: Unit -> Int
     }
 
     /// <summary>
+    /// 循环内联 Ref 实参：每次迭代的借用绑定在使用者死亡后终结，
+    /// 下一轮对同一局部的变更与再借用不得被上一轮的陈旧别名阻塞。
+    /// </summary>
+    [Fact]
+    public void InlinedRefArgumentInLoop_SurvivesIterationAliasTurnover()
+    {
+        const string source = """
+            peek :: Ref[Int] -> Int
+            {
+                r => 1
+            }
+
+            main :: Unit -> Int
+            {
+                _ => {
+                    mut total := 0
+                    mut i := 0
+                    loop {
+                        if i >= 4 then { break }
+                        else {
+                            total = total + peek(ref i)
+                            i = i + 1
+                        }
+                    }
+                    total
+                }
+            }
+            """;
+
+        var result = RunSourceAtLlvm(source, "borrow_inlined_ref_loop.eidos");
+
+        Assert.True(result.Success);
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    /// <summary>
+    /// 嵌套 Seq 投影：grid[i]（元素 Seq[Int]，非 Copy）直接进入所有权参数位，
+    /// 判别器需经 Index 基的 TypeId 识别外层 Seq。
+    /// </summary>
+    [Fact]
+    public void NestedSeqProjectionAsOwnedArgument_CompilesThroughLlvm()
+    {
+        const string source = """
+            import std.Seq
+
+            sum1 :: Seq[Int] -> Int
+            {
+                ns => {
+                    len := Seq.len(ref ns)
+                    mut total := 0
+                    mut index := 0
+                    loop {
+                        if index >= len then { break }
+                        else {
+                            total = total + ns[index]
+                            index = index + 1
+                        }
+                    }
+                    total
+                }
+            }
+
+            sum2 :: Seq[Seq[Int]] -> Int
+            {
+                grid => {
+                    len := Seq.len(ref grid)
+                    mut total := 0
+                    mut index := 0
+                    loop {
+                        if index >= len then { break }
+                        else {
+                            total = total + sum1(grid[index])
+                            index = index + 1
+                        }
+                    }
+                    total
+                }
+            }
+
+            main :: Unit -> Int
+            {
+                _ => sum2([[1, 2], [3, 4, 5]])
+            }
+            """;
+
+        var result = RunSourceAtLlvm(source, "borrow_nested_seq_projection.eidos");
+
+        Assert.True(result.Success);
+        Assert.Equal(CompilationPhase.Llvm, result.CompletedPhase);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Level == DiagnosticLevel.Error);
+    }
+
+    /// <summary>
     /// Seq 索引投影（xs[i]）直接进入所有权参数位：运行时语义是独立引用计数副本
     ///（非别名载入 IncRef），不得按 owning-aggregate 移出挂借用别名报 E1002。
     /// </summary>

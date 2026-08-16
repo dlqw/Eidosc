@@ -8,8 +8,10 @@ namespace Eidosc.Tests.Unit.Borrow;
 public class BorrowPipelineDiagnosticsTests
 {
     [Fact]
-    public void CompilationPipeline_MutateConflict_ReportsSinglePrimaryE1002()
+    public void CompilationPipeline_DeadBorrowBeforeReassign_NoE1002()
     {
+        // 比较临时量的共享借用在其最后一次使用后死亡（借用按活性终结）：
+        // 随后的 mut 重绑定合法。原用例编码的是旧的全程序存活近似。
         const string source = """
 main[A] :: Int -> A
 {
@@ -30,22 +32,21 @@ main[A] :: Int -> A
         };
 
         var result = new CompilationPipeline(source, options).Run();
-        Assert.Single(result.Diagnostics, diagnostic => diagnostic.Code == "E1002");
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Code == "E1002");
         Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Message == "值被借用中，无法修改");
     }
 
     [Fact]
-    public void CompilationPipeline_MutateConflict_DiagnosticCarriesAliasTraceIdNotes()
+    public void CompilationPipeline_LiveMutBorrowConflict_DiagnosticCarriesAliasTraceIdNotes()
     {
+        // mref 借用者在其后的共享借用创建点仍活跃（结尾使用 y）：真冲突。
         const string source = """
-main[A] :: Int -> A
+demo :: Int -> Int
 {
-    _ => {
-        mut x := "hello";
-        mut cond := x == "hello";
-        x := "world";
-        cond := false;
-        0;
+    x => {
+        mref y := x;
+        ref z := x;
+        x + y + z
     }
 }
 """;
@@ -67,13 +68,14 @@ main[A] :: Int -> A
     [Fact]
     public void CompilationPipeline_PatternRefAfterMutBinding_ReportsBorrowConflict()
     {
+        // mref y 在 ref z 创建点仍活跃（结尾读取 y）——不可创建共享借用。
         const string source = """
 demo :: Int -> Int
 {
     x => {
         mref y := x;
         ref z := x;
-        x
+        x + y + z
     }
 }
 """;

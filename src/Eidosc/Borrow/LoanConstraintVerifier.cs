@@ -547,6 +547,9 @@ public sealed partial class LoanConstraintVerifier
             return movedResult;
         }
 
+        // 借用者已死的旧借用不构成新借用的冲突（循环携带别名的同一类收敛）。
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
         var mutableBorrows = GetActiveBorrows(borrowTarget, state)
             .Where(borrow => borrow.IsMutable)
             .ToList();
@@ -594,6 +597,8 @@ public sealed partial class LoanConstraintVerifier
         {
             return movedResult;
         }
+
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
 
         var activeBorrows = GetActiveBorrows(borrowTarget, state);
         if (activeBorrows.Count == 0)
@@ -695,6 +700,8 @@ public sealed partial class LoanConstraintVerifier
         var borrowTargets = ResolveBorrowTargets(localId, state);
         foreach (var borrowTarget in borrowTargets)
         {
+            EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
             var mutableBorrows = GetActiveBorrows(borrowTarget, state)
                 .Where(borrow => borrow.IsMutable)
                 .ToList();
@@ -749,6 +756,8 @@ public sealed partial class LoanConstraintVerifier
         var borrowTargets = ResolveBorrowTargets(localId, state);
         foreach (var borrowTarget in borrowTargets)
         {
+            EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
             var activeBorrows = GetActiveBorrows(borrowTarget, state);
             if (activeBorrows.Count == 0)
             {
@@ -1493,93 +1502,7 @@ public sealed partial class LoanConstraintVerifier
 
     private bool IsBorrowerDeadAfter(LocalId borrower, BlockId blockId, int instructionIndex)
     {
-        if (!_blocksById.TryGetValue(blockId, out var block))
-        {
-            return false;
-        }
-
-        for (var i = instructionIndex + 1; i < block.Instructions.Count; i++)
-        {
-            if (InstructionDefinesLocal(block.Instructions[i], borrower))
-            {
-                return true;
-            }
-
-            if (InstructionUsesLocal(block.Instructions[i], borrower))
-            {
-                return false;
-            }
-        }
-
-        if (block.Terminator != null && TerminatorUsesLocal(block.Terminator, borrower))
-        {
-            return false;
-        }
-
-        // 块内无后续使用：跨块活性交给 LivenessAnalyzer（缺失时保守视为活）。
-        return _liveness?.LiveOut.TryGetValue(blockId, out var liveOut) == true && !liveOut.Contains(borrower);
-    }
-
-    private static bool InstructionDefinesLocal(MirInstruction instruction, LocalId local)
-    {
-        var target = instruction switch
-        {
-            MirAssign assign => assign.Target,
-            MirCaseInject injection => injection.Target,
-            MirCall { Target: { } callTarget } => callTarget,
-            MirBinOp binary => binary.Target,
-            MirUnaryOp unary => unary.Target,
-            MirSelect select => select.Target,
-            MirLoad load => load.Target,
-            MirStore store => store.Target,
-            MirCopy copy => copy.Target,
-            MirMove move => move.Target,
-            MirAlloc alloc => alloc.Target,
-            _ => null
-        };
-
-        return target is MirPlace { Kind: PlaceKind.Local } place && place.Local.Equals(local);
-    }
-
-    private static bool InstructionUsesLocal(MirInstruction instruction, LocalId local)
-    {
-        return instruction switch
-        {
-            MirAssign assign => ContainsLocalOperand(assign.Source, local),
-            MirCaseInject injection => ContainsLocalOperand(injection.Operand, local) || ContainsLocalOperand(injection.Target, local),
-            MirCall call => ContainsLocalOperand(call.Function, local) ||
-                            call.Arguments.Any(argument => ContainsLocalOperand(argument, local)),
-            MirBinOp binary => ContainsLocalOperand(binary.Left, local) || ContainsLocalOperand(binary.Right, local),
-            MirUnaryOp unary => ContainsLocalOperand(unary.Operand, local),
-            MirSelect select => ContainsLocalOperand(select.Condition, local) ||
-                                ContainsLocalOperand(select.TrueValue, local) ||
-                                ContainsLocalOperand(select.FalseValue, local),
-            MirLoad load => ContainsLocalOperand(load.Source, local),
-            MirStore store => ContainsLocalOperand(store.Target, local) || ContainsLocalOperand(store.Value, local),
-            MirDrop drop => ContainsLocalOperand(drop.Value, local),
-            MirCopy copy => ContainsLocalOperand(copy.Source, local),
-            MirMove move => ContainsLocalOperand(move.Source, local),
-            _ => false
-        };
-    }
-
-    private static bool TerminatorUsesLocal(MirTerminator terminator, LocalId local) => terminator switch
-    {
-        MirReturn { Value: { } value } => ContainsLocalOperand(value, local),
-        MirSwitch @switch => ContainsLocalOperand(@switch.Discriminant, local),
-        _ => false
-    };
-
-    private static bool ContainsLocalOperand(MirOperand? operand, LocalId local)
-    {
-        if (operand is not MirPlace place)
-        {
-            return false;
-        }
-
-        return place.Kind == PlaceKind.Local && place.Local.Equals(local) ||
-               ContainsLocalOperand(place.Base, local) ||
-               ContainsLocalOperand(place.Index, local);
+        return BorrowLivenessGate.IsLocalDeadAfter(borrower, blockId, instructionIndex, _blocksById, _liveness);
     }
 
     private void ReportMutateWhileBorrowedConflict(

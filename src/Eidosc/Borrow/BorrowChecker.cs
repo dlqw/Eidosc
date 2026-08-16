@@ -95,6 +95,7 @@ public sealed class BorrowChecker
     private readonly BorrowCapabilitySnapshot? _capabilitySnapshot;
     private readonly Dictionary<LocalId, MirLocal> _localsById;
     private readonly bool _capturePointStates;
+    private Dictionary<BlockId, MirBasicBlock>? _blocksById;
 
     /// <summary>
     /// 错误恢复上下文
@@ -701,6 +702,22 @@ public sealed class BorrowChecker
         BorrowFlowState currentState,
         SourceSpan span)
     {
+        // 与 LoanConstraintVerifier 相同的活性收敛：借用者已死的旧借用在新借用
+        // 登记前终结，避免循环携带的陈旧别名误报多重借用冲突。
+        if (_blocksById == null)
+        {
+            _blocksById = _function.BasicBlocks.ToDictionary(static block => block.Id);
+        }
+
+        currentState.EndBorrowsByBorrowee(
+            borrowTarget.BaseLocal,
+            borrow => BorrowLivenessGate.IsLocalDeadAfter(
+                borrow.Borrower,
+                blockId,
+                index,
+                _blocksById,
+                _livenessAnalyzer));
+
         // 找到对该变量的所有活跃借用
         var existingBorrows = currentState.GetBorrowsByBorrowTarget(borrowTarget);
 
@@ -1498,6 +1515,12 @@ internal sealed class BorrowFlowState
     public void EndBorrowsByBorrowee(LocalId localId, Action<ActiveBorrow> onBorrowEnded)
     {
         _state.EndBorrowsByBorrowee(localId, onBorrowEnded);
+    }
+
+    /// <summary>按谓词终结 borrowee 上的借用（借用者已死时的活性收敛）。</summary>
+    public void EndBorrowsByBorrowee(LocalId localId, Func<ActiveBorrow, bool> shouldEnd)
+    {
+        _state.EndBorrowsByBorrowee(localId, shouldEnd, static _ => { });
     }
 
     public void EndBorrowsByBorrowTarget(BorrowTarget target, Action<ActiveBorrow> onBorrowEnded)
