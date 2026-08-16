@@ -476,4 +476,128 @@ public partial class LlvmPipelineIntegrationTests
             Directory.Delete(dir, true);
         }
     }
+
+    /// <summary>
+    /// 位运算对拍：C 的 & | ^ << >> ~ 翻译为 Eidos 同形运算符，
+    /// 含 C 隐式优先级用例（翻译器平文本再解析，Eidos 优先级必须与 C 等价重分组）。
+    /// </summary>
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_BitwiseOperators_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            int bit_mix(int x, int y)
+            {
+                int and_ = x & y;
+                int or_ = x | y;
+                int xor_ = x ^ y;
+                int shl_ = x << 3;
+                int shr_ = y >> 2;
+                int not_ = ~x;
+                return (and_ + or_ + xor_ + shl_ + shr_ + not_) & 0x7F;
+            }
+
+            int prec_mix(int a, int b)
+            {
+                return a & 1 ^ b & 2 | a << 1 & 3;
+            }
+
+            int compute(void)
+            {
+                return bit_mix(0x25, 0x1A) + bit_mix(0x7, 0x40) + prec_mix(9, 5);
+            }
+            """;
+
+        var referenceExit = RunCReference(cSource, "int compute(void);\nint main(void) { return compute(); }\n");
+
+        var translated = TranslateC2E(cSource);
+        Assert.Contains(" ^ ", translated, StringComparison.Ordinal);
+        Assert.Contains(" ^ -1", translated, StringComparison.Ordinal);
+        Assert.Contains(" << ", translated, StringComparison.Ordinal);
+        Assert.Contains(" >> ", translated, StringComparison.Ordinal);
+
+        var eidosSource = translated + """
+
+            main :: Unit -> Int
+            {
+                _ => compute()
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            eidosSource,
+            "c2e_bitwise_native.eidos",
+            "c2e_bitwise_native");
+
+        Assert.Equal(referenceExit, execution.ExitCode);
+        Assert.Equal(87, execution.ExitCode);
+    }
+
+    /// <summary>
+    /// 字符串字面量对拍：C 字符串字面量翻为 Eidos String，进入 RawPtr 语境
+    /// （const char* 局部/参数/返回）时边界处 Ffi.to_c_string；转义集对齐。
+    /// </summary>
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_StringLiterals_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            extern int c_strlen(const char *s);
+
+            int tag_weight(const char *tag)
+            {
+                return c_strlen(tag);
+            }
+
+            const char *fixed_label(void)
+            {
+                return "a\"b\\c";
+            }
+
+            int compute(void)
+            {
+                const char *msg = "hello\tworld";
+                int a = tag_weight(msg);
+                int b = tag_weight("raylib");
+                return a + b + c_strlen(fixed_label());
+            }
+            """;
+
+        var helperC = "#include <string.h>\nint c_strlen(const char *s) { return (int)strlen(s); }\n";
+        var referenceExit = RunCReference(
+            cSource,
+            helperC + "int compute(void);\nint main(void) { return compute(); }\n");
+
+        var translated = TranslateC2E(cSource);
+        Assert.Contains("""Ffi.to_c_string("hello\tworld")""", translated, StringComparison.Ordinal);
+        Assert.Contains("""Ffi.to_c_string("raylib")""", translated, StringComparison.Ordinal);
+        Assert.Contains("""Ffi.to_c_string("a\"b\\c")""", translated, StringComparison.Ordinal);
+
+        var eidosSource = translated + """
+
+            main :: Unit -> Int
+            {
+                _ => compute()
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            eidosSource,
+            "c2e_string_native.eidos",
+            "c2e_string_native",
+            nativeCSource: helperC);
+
+        Assert.Equal(referenceExit, execution.ExitCode);
+        Assert.Equal(22, execution.ExitCode);
+    }
 }

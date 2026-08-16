@@ -687,6 +687,7 @@ internal sealed class CBodyTranslator
                         if (init != null)
                         {
                             init = CoerceNumeric(init, EidosTypeOf(initChildren[0]), varType.EidosType, state);
+                            init = CoerceStringToPointerTarget(initChildren[0], init, varType.EidosType, state);
                         }
                     }
                     else
@@ -727,6 +728,7 @@ internal sealed class CBodyTranslator
                 }
 
                 value = CoerceNumeric(value, EidosTypeOf(valueChildren[0]), context.ReturnEidosType, state);
+                value = CoerceStringToPointerTarget(valueChildren[0], value, context.ReturnEidosType, state);
                 return $"return {value};";
             }
 
@@ -977,6 +979,9 @@ internal sealed class CBodyTranslator
             case ClangCursorKind2.FloatingLiteral:
                 return EvaluateLiteral(expression, integer: false);
 
+            case ClangCursorKind2.StringLiteral:
+                return TranslateStringLiteral(expression);
+
             case ClangCursorKind2.UnaryOperator:
                 return TranslateUnaryOperator(expression, context, state);
 
@@ -1129,6 +1134,8 @@ internal sealed class CBodyTranslator
                 return op switch
                 {
                     "+" or "-" or "*" or "/" or "%" or "<" or "<=" or ">" or ">=" or "==" or "!=" => $"{left} {op} {right}",
+                    // 位运算（Int-only）：Eidos 侧同形运算符透传；两侧强制 Int 语义由 C 源保证。
+                    "&" or "|" or "^" or "<<" or ">>" => $"{left} {op} {right}",
                     _ when op == "&&" => $"{left} && {right}",
                     _ when op == "||" => $"{left} || {right}",
                     _ => Skip(op),
@@ -1193,7 +1200,6 @@ internal sealed class CBodyTranslator
             {
                 SkipReason = expression.Kind switch
                 {
-                    ClangCursorKind2.StringLiteral => "string literal",
                     ClangCursorKind2.ConditionalOperator => "ternary conditional",
                     ClangCursorKind2.ArraySubscriptExpr => "array subscript",
                     _ => $"unsupported expression kind {expression.Kind}"
@@ -1250,6 +1256,13 @@ internal sealed class CBodyTranslator
         {
             var operandText = TranslateExpression(operand, context, state);
             return operandText == null ? null : $"-{operandText}";
+        }
+
+        // ~x → (x ^ -1)：按位取反 = 与全 1 异或（补码恒等），Eidos 无需专门的一元运算符。
+        if (op == "~")
+        {
+            var operandText = TranslateExpression(operand, context, state);
+            return operandText == null ? null : $"({operandText} ^ -1)";
         }
 
         SkipReason = $"unsupported unary operator '{op}'";
@@ -1412,10 +1425,45 @@ internal sealed class CBodyTranslator
             if (context.VarTypes.TryGetValue(targetName, out var targetMapping))
             {
                 valueText = CoerceNumeric(valueText, EidosTypeOf(value), targetMapping.EidosType, state);
+                valueText = CoerceStringToPointerTarget(value, valueText, targetMapping.EidosType, state);
             }
         }
 
         return TryFormatStorageAssignment(target, valueText, context, state);
+    }
+
+    /// <summary>
+    /// C 字符串字面量进入 RawPtr 语境（指针参数/局部/返回/赋值目标）时，
+    /// 以 Eidos String 承载、在边界处经 Ffi.to_c_string 转为 C 字符串。
+    /// 字面量可能被 UnexposedExpr（隐式转换，如 char[N] → const char* 退化）或
+    /// 括号/显式转换包裹，先解包再判定。
+    /// </summary>
+    private string? CoerceStringToPointerTarget(ClangCursor valueCursor, string? valueText, string? targetEidosType, TranslationState state)
+    {
+        if (valueText == null || targetEidosType != "RawPtr")
+        {
+            return valueText;
+        }
+
+        var current = valueCursor;
+        while (current.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr or ClangCursorKind2.CStyleCastExpr)
+        {
+            var inner = ValueChildren(current);
+            if (inner.Count != 1)
+            {
+                break;
+            }
+
+            current = inner[0];
+        }
+
+        if (current.Kind != ClangCursorKind2.StringLiteral)
+        {
+            return valueText;
+        }
+
+        state.NeedsFfiImport = true;
+        return $"Ffi.to_c_string({valueText})";
     }
 
     /// <summary>把赋值格式化为 Eidos 可存储目标：mut 局部/模块级全局直接重绑；参数不可变，整体跳过。</summary>
@@ -1535,6 +1583,8 @@ internal sealed class CBodyTranslator
             return null;
         }
 
+        // 字符串字面量落在 RawPtr 参数位（const char* 形参）：边界处转 C 字符串。
+        translated = CoerceStringToPointerTarget(argument, translated, parameter?.EidosType, state);
         return CoerceNumeric(translated, EidosTypeOf(argument), parameter?.EidosType, state);
     }
 
@@ -1794,6 +1844,107 @@ internal sealed class CBodyTranslator
         }
 
         return text + ".0";
+    }
+
+    /// <summary>
+    /// C 字符串字面量 → Eidos String 字面量：解码 C 转义（含 \xNN 与八进制），
+    /// 以 Eidos 支持的转义集（\\n \\r \\t \\\\ \\0 等见 StringLiteralRule.EscapeMap）重编码；
+    /// 该集无法表示的控制字符视为不可翻译。
+    /// </summary>
+    private string? TranslateStringLiteral(ClangCursor expression)
+    {
+        var spelling = _api.GetString(_api.GetCursorSpelling(expression));
+        var start = spelling.IndexOf('"');
+        var end = spelling.LastIndexOf('"');
+        if (start < 0 || end <= start)
+        {
+            SkipReason = "unsupported string literal form";
+            return null;
+        }
+
+        // 解码（编码前缀 u8/u/U/L 已随起始引号定位剥离）。
+        var decoded = new StringBuilder();
+        for (var i = start + 1; i < end; i++)
+        {
+            var c = spelling[i];
+            if (c != '\\')
+            {
+                decoded.Append(c);
+                continue;
+            }
+
+            if (++i >= end)
+            {
+                SkipReason = "malformed escape in string literal";
+                return null;
+            }
+
+            var escape = spelling[i];
+            switch (escape)
+            {
+                case 'n': decoded.Append('\n'); break;
+                case 't': decoded.Append('\t'); break;
+                case 'r': decoded.Append('\r'); break;
+                case 'a': decoded.Append('\a'); break;
+                case 'b': decoded.Append('\b'); break;
+                case 'v': decoded.Append('\v'); break;
+                case 'f': decoded.Append('\f'); break;
+                case '0': decoded.Append('\0'); break;
+                case '\\': decoded.Append('\\'); break;
+                case '"': decoded.Append('"'); break;
+                case '\'': decoded.Append('\''); break;
+                case 'x':
+                {
+                    var hex = 0;
+                    var digits = 0;
+                    while (i + 1 < end && Uri.IsHexDigit(spelling[i + 1]) && digits < 2)
+                    {
+                        hex = hex * 16 + Uri.FromHex(spelling[++i]);
+                        digits++;
+                    }
+
+                    decoded.Append((char)hex);
+                    break;
+                }
+                default:
+                    // clang 对 StringLiteral 的 spelling 是"值重编码"（如 \x41 已按值、
+                    // 仅重转义引号等）：未知转义视为值里真实的 反斜杠+字符。
+                    decoded.Append('\\');
+                    decoded.Append(escape);
+                    break;
+            }
+        }
+
+        // 重编码到 Eidos 转义集。
+        var encoded = new StringBuilder("\"");
+        foreach (var ch in decoded.ToString())
+        {
+            switch (ch)
+            {
+                case '\\': encoded.Append("\\\\"); break;
+                case '"': encoded.Append("\\\""); break;
+                case '\n': encoded.Append("\\n"); break;
+                case '\t': encoded.Append("\\t"); break;
+                case '\r': encoded.Append("\\r"); break;
+                case '\a': encoded.Append("\\a"); break;
+                case '\b': encoded.Append("\\b"); break;
+                case '\v': encoded.Append("\\v"); break;
+                case '\f': encoded.Append("\\f"); break;
+                case '\0': encoded.Append("\\0"); break;
+                default:
+                    if (ch < 0x20)
+                    {
+                        SkipReason = "string literal contains a control character without an Eidos escape";
+                        return null;
+                    }
+
+                    encoded.Append(ch);
+                    break;
+            }
+        }
+
+        encoded.Append('"');
+        return encoded.ToString();
     }
 
     private static string DefaultZero(string eidosType) => eidosType switch
