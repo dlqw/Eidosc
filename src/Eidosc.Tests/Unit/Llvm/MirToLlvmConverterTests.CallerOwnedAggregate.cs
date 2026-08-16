@@ -146,7 +146,10 @@ public partial class MirToLlvmConverterTests
         var ir = new LlvmEmitter().Emit(new MirToLlvmConverter().Convert(module));
 
         Assert.Matches(@"define private void @.*make_owned.*\(ptr %__aggregate_out\)", ir);
-        Assert.Matches(@"%aggregate_l1_\d+ = alloca %struct\.eidos_Owned", ir);
+        // blob 带栈头（字段 0），聚合体数据位于字段 1。
+        Assert.Matches(@"%aggregate_l1_\d+ = alloca \{\[2 x i32\], %struct\.eidos_Owned\}", ir);
+        Assert.Matches(@"%aggregate_l1_data_\d+ = getelementptr \{\[2 x i32\], %struct\.eidos_Owned\}", ir);
+        Assert.Contains("store i32 1073741825", ir, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(ir, @"call void @eidos_decref_shared\(ptr %aggregate_drop_field0_ptr_\d+_payload_val\)").Count);
         Assert.Equal(
             2,
@@ -479,7 +482,7 @@ public partial class MirToLlvmConverterTests
 
         var ir = new LlvmEmitter().Emit(new MirToLlvmConverter().Convert(module));
 
-        Assert.Matches(@"alloca \{%struct\.eidos_Nested, \[11 x i64\]\}", ir);
+        Assert.Matches(@"alloca \{\[2 x i32\], %struct\.eidos_Nested, \[11 x i64\]\}", ir);
         Assert.Matches(@"define private void @.*make_nested.*\(ptr %__aggregate_out, ptr %__array_storage_0\)", ir);
         Assert.Matches(@"call ptr @eidos_array_new_in_storage\(ptr %__array_storage_0, i64 88, i64 3, i64 8, ptr @eidos_array_retain_elem__[0-9A-F]+, ptr @eidos_array_release_elem__[0-9A-F]+\)", ir);
         var outDefinition = Regex.Match(ir, @"define private void @.*make_nested[\s\S]*?^}", RegexOptions.Multiline).Value;

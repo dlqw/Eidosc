@@ -17,6 +17,12 @@ public sealed partial class MirToLlvmConverter
     private const int UnknownGenericRemainingArity = -1;
     private const long CallerOwnedArrayStorageOverheadBytes = 64;
     private const long MaxCallerOwnedInlineArrayStorageBytes = 4096;
+
+    /// <summary>
+    /// EIDOS_STACK_BIT | 1（见 eidos_runtime.h）：调用方持有的聚合体栈头初始引用计数。
+    /// 栈位保证对象不会随 decref 释放，只会按借用协议增减计数。
+    /// </summary>
+    private const long CallerOwnedStackHeaderInitialRefCount = 0x40000001;
     private readonly TypeLowering _typeLowering;
     private readonly NameMangler _nameMangler;
     private readonly LlvmSymbolNameAllocator _symbolNameAllocator;
