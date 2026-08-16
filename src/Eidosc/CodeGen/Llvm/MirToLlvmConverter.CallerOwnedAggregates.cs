@@ -579,13 +579,73 @@ public sealed partial class MirToLlvmConverter
             ResultName = _nameMangler.NewTempName($"aggregate_l{group.CanonicalLocal.Value}")
         };
         EmitAllocaInEntryBlock(alloca);
-        var storage = new LlvmLocal
+        var entryBlock = GetAllocaInsertionBlock();
+        var allocaPointer = new LlvmLocal
         {
             Name = alloca.ResultName!,
             Type = LlvmPointerType.VoidPtr()
         };
+        // The blob carries an EidosHeader with the stack bit so refcount-protocol
+        // callees (incref/decref/type_id on `ref` receivers) operate on a
+        // well-formed header instead of whatever lives 8 bytes before the blob.
+        EmitCallerOwnedStackHeaderStores(entryBlock, allocaPointer, group, insertIndex: 1);
+        var aggregatePointer = new LlvmGetElementPtr
+        {
+            Pointer = allocaPointer,
+            StructType = (LlvmStructType)allocatedType,
+            StructFieldIndex = CallerOwnedAggregateWrapperFirstFieldIndex + 1,
+            ResultName = _nameMangler.NewTempName($"aggregate_l{group.CanonicalLocal.Value}_data")
+        };
+        entryBlock.Instructions.Insert(3, aggregatePointer);
+        var storage = new LlvmInstructionRef
+        {
+            Instruction = aggregatePointer,
+            Type = LlvmPointerType.VoidPtr()
+        };
         _callerOwnedStorageByCanonicalLocal[group.CanonicalLocal] = storage;
         return storage;
+    }
+
+    /// <summary>
+    /// 头部字段布局：wrapper = { header(8B), aggregate, inline array storages... }。
+    /// header 低 4 字节为 ref_count（EIDOS_STACK_BIT|1），高 4 字节为构造器运行时类型 id。
+    /// </summary>
+    private const int CallerOwnedAggregateWrapperFirstFieldIndex = 0;
+
+    private void EmitCallerOwnedStackHeaderStores(
+        LlvmBasicBlock entryBlock,
+        LlvmValue allocaPointer,
+        MirCallerOwnedAggregateGroup group,
+        int insertIndex)
+    {
+        var refCountStore = new LlvmStore
+        {
+            Value = new LlvmConstant { Value = CallerOwnedStackHeaderInitialRefCount, Type = LlvmIntType.I32 },
+            Pointer = allocaPointer
+        };
+        var typeIdPointer = new LlvmGetElementPtr
+        {
+            Pointer = allocaPointer,
+            ElementType = LlvmIntType.I8,
+            Index = new LlvmConstant { Value = 4L, Type = LlvmIntType.I64 },
+            ResultName = _nameMangler.NewTempName($"aggregate_l{group.CanonicalLocal.Value}_hdr_tid")
+        };
+        var typeIdStore = new LlvmStore
+        {
+            Value = new LlvmConstant { Value = ResolveCallerOwnedRuntimeTypeId(group), Type = LlvmIntType.I32 },
+            Pointer = new LlvmInstructionRef { Instruction = typeIdPointer, Type = LlvmPointerType.VoidPtr() }
+        };
+
+        entryBlock.Instructions.Insert(insertIndex, refCountStore);
+        entryBlock.Instructions.Insert(insertIndex + 1, typeIdPointer);
+        entryBlock.Instructions.Insert(insertIndex + 2, typeIdStore);
+    }
+
+    private long ResolveCallerOwnedRuntimeTypeId(MirCallerOwnedAggregateGroup group)
+    {
+        return _typeLowering.TryGetConstructorLayouts(group.TypeId, out var layouts) && layouts.Count == 1
+            ? ComputeRuntimeConstructorTypeId(layouts[0])
+            : 0;
     }
 
     private LlvmValue? GetCallerOwnedArrayStorage(MirPlace target, string key)
@@ -621,7 +681,7 @@ public sealed partial class MirToLlvmConverter
         {
             Pointer = CoerceToPointer(destination),
             StructType = wrapperType,
-            StructFieldIndex = storageIndex + 1,
+            StructFieldIndex = CallerOwnedAggregateWrapperFirstFieldIndex + 2 + storageIndex,
             ResultName = _nameMangler.NewTempName($"aggregate_l{group.CanonicalLocal.Value}_array{storageIndex}")
         };
         _currentBlock!.Instructions.Add(pointer);
@@ -634,11 +694,6 @@ public sealed partial class MirToLlvmConverter
         MirCallerOwnedAggregateGroup group,
         LlvmStructType aggregateType)
     {
-        if (group.ArrayStorages.Count == 0)
-        {
-            return aggregateType;
-        }
-
         if (_callerOwnedWrapperTypeByCanonicalLocal.TryGetValue(group.CanonicalLocal, out var existing))
         {
             return existing;
@@ -648,6 +703,8 @@ public sealed partial class MirToLlvmConverter
         {
             Fields =
             [
+                // EidosHeader (ref_count + type_id), see EmitCallerOwnedStackHeaderStores.
+                new LlvmArrayType { Element = LlvmIntType.I32, Size = 2 },
                 aggregateType,
                 .. group.ArrayStorages
                     .OrderBy(static storage => storage.Key, StringComparer.Ordinal)
