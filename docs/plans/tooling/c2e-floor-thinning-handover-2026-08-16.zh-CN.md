@@ -9,6 +9,16 @@
 > `feat/c2e-translator-extensions`，提交 8da5888/9543edb/61cbb0a + 位运算提交）。
 > 本文档 §0/§3 数据已刷新为第二会话后基线；§2/§4.1 保留原文并在标题标注【已完成】。
 
+> **进度（第三会话，2026-08-17，语言/编译器侧）**：`projects/ecc` 模板**首次完整编译通过**
+>（201 个借用错误 → 0，两个 `EccMainTemplate_*` 门转绿），根因是三处所有权分析缺陷
+>（提交 856ea26）：(1) 借用按活性终结——自递归尾调用转循环后守卫别名绕回边累积成
+> MutateWhileBorrowed 误报（183 处）；(2) 内联器对 Ref/MutRef 参数改借用绑定
+>（原物化为 move，8 处移动链误报）；(3) 可靠 Seq 判别器——Seq 索引投影按运行时语义
+> 是 IncRef 独立副本，不再挂 owning-aggregate 借用别名（#84 的聚合投影严格性不变，
+> deref 负例仍报错）。另确认 §4.2 语言侧**早已存在**（`Ffi.offset_bytes`/
+> `load[T]`/`store[T]`/`ptr_add` intrinsic 全链路在库），缺的只是 C2E 侧数组下标接线。
+> 已知失败剩 1 个：#85 并发压力 soak flake。
+
 ## 0. 当前状态（新会话先读这段）
 
 - **可运行样板**：`projects/snake-gui-c2e`（游戏逻辑与 bindgen 版逐字节一致，无头校验和一致，
@@ -132,13 +142,15 @@
 
 ## 6. 验证门（每项落地后必须跑）
 
-1. `dotnet test Eidosc/src/Eidosc.Tests --filter "FullyQualifiedName~C2E_"`（当前 8/8）；
+1. `dotnet test Eidosc/src/Eidosc.Tests --filter "FullyQualifiedName~C2E_"`（当前 9/9）；
    新能力各配一个 clang 对拍门（模板：`C2E_StructValueBridge_ParityWithClang`）。
 2. `tools/c2e --report` 四模块翻译率不得回退（基线见 §0）。
 3. `projects/bindings/raylib-c2e/regen.sh` + `eidosc build projects/snake-gui-c2e` +
    `./build/main.exe --bench-steps 2000000` 必须 == **837999808**（逻辑层不变的锚点）。
 4. GUI 冒烟：`timeout 6 ./build/main.exe`（exit 124 = 存活到超时）。
-5. 全量回归一次（本轮基线 4308/4311，3 个失败核对为既知项：#83 模板迁移 / #85 flake）。
+5. 全量回归一次（第三会话后基线：仅 1 个既知失败 = #85 并发压力 soak flake；
+   #83 的 EccMainTemplate 两个测试已随借用修复转绿）。
+6. `projects/ecc`：干净构建 + `./build/main.exe` 退出码 0（模板迁移完成门）。
 
 ## 7. 新会话启动清单
 
