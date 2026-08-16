@@ -154,4 +154,88 @@ ShowPersonAlias :: instance Show {
         Assert.Contains("instance Show for Person", text);
         Assert.Contains("--> impl_overlap.eidos:11:1", text);
     }
+
+    [Fact]
+    public void Render_ForeignFileLabel_UsesLabelFilePathAndTextViaResolver()
+    {
+        var rootSource = new SourceStream("main :: Unit -> Int\n{\n    _ => 0\n}\n", 4);
+        const string moduleText = "helper :: Unit -> Int\n{\n    _ => 1\n}\n";
+        var labelSpan = new SourceSpan(
+            new SourceLocation(moduleText.IndexOf("1", StringComparison.Ordinal), 2, 11, "D:\\project\\Ecc\\Owned.eidos"),
+            1);
+
+        var diagnostic = Eidosc.Diagnostic.Diagnostic.Error("变量被移动两次", "E1001")
+            .WithLabel(labelSpan, "DoubleMove");
+
+        var writer = new StringWriter();
+        DiagnosticRenderer.Render(
+            diagnostic,
+            rootSource,
+            writer,
+            new DiagnosticRenderOptions
+            {
+                UseColors = false,
+                FilePath = "main.eidos",
+                SourceResolver = path => path.EndsWith("Owned.eidos", StringComparison.OrdinalIgnoreCase)
+                    ? moduleText
+                    : null
+            });
+
+        var text = writer.ToString();
+        Assert.Contains("--> D:\\project\\Ecc\\Owned.eidos:3:12", text);
+        Assert.Contains("    _ => 1", text);
+        Assert.DoesNotContain("--> main.eidos", text);
+    }
+
+    [Fact]
+    public void Render_ForeignFileLabelWithoutResolvableSource_ReportsLabelPathWithoutRootExcerpt()
+    {
+        var rootSource = new SourceStream("main :: Unit -> Int\n{\n    _ => 0\n}\n", 4);
+        var labelSpan = new SourceSpan(
+            new SourceLocation(0, 426, 103, "<precompiled:std.Core>"),
+            1);
+
+        var diagnostic = Eidosc.Diagnostic.Diagnostic.Error("值被借用中，无法修改", "E1002")
+            .WithLabel(labelSpan, "MutateWhileBorrowed");
+
+        var writer = new StringWriter();
+        DiagnosticRenderer.Render(
+            diagnostic,
+            rootSource,
+            writer,
+            new DiagnosticRenderOptions
+            {
+                UseColors = false,
+                FilePath = "main.eidos"
+            });
+
+        var text = writer.ToString();
+        Assert.Contains("--> <precompiled:std.Core>:427:104", text);
+        Assert.Contains("(source text unavailable)", text);
+        Assert.DoesNotContain("--> main.eidos", text);
+        Assert.DoesNotContain("    _ => 0", text);
+    }
+
+    [Fact]
+    public void Render_RootFileLabel_StillUsesRootSource()
+    {
+        var rootSource = new SourceStream("x :: y\n", 4);
+        var diagnostic = Eidosc.Diagnostic.Diagnostic.Error("cannot find value `y`", "E3000")
+            .WithLabel(new SourceSpan(new SourceLocation(8, 0, 8, "test.eidos"), 1), "unknown symbol");
+
+        var writer = new StringWriter();
+        DiagnosticRenderer.Render(
+            diagnostic,
+            rootSource,
+            writer,
+            new DiagnosticRenderOptions
+            {
+                UseColors = false,
+                FilePath = "test.eidos"
+            });
+
+        var text = writer.ToString();
+        Assert.Contains("--> test.eidos:1:9", text);
+        Assert.Contains("x :: y", text);
+    }
 }
