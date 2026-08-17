@@ -33,19 +33,19 @@
 - **驱动工具**：`tools/c2e`（dotnet；`--report` 出逐函数可行性矩阵 + 三级分类统计
   （translated / floor-extern / cross-TU），`--only` 选入口，`-I/-D/--isystem` 编译环境，
   `--floor-out` 落地板清单）。
-- **翻译率现状**（真实 raylib 源，`PLATFORM_DESKTOP_WIN32 + GRAPHICS_API_OPENGL_33`，
-  2026-08-17 数组下标/局部缓冲落地后）：rcore 729、rshapes 66、rtext 440、
-  rtextures 596；raymath 173（分母随函数在 skip/翻译桶间移动微变，
-  2026-08-17 实测 translated+skipped：rcore 729+643、rshapes 66+61、rtext 440+282、
-  rtextures 596+641、raymath 173+36）。地板分类：rcore 159 floor / 35 cross-TU，
-  rshapes 9/7，rtext 73/36，rtextures 86/52，raymath 14/0。
+- **翻译率现状**（真实 raylib 源，2026-08-18 第一档构造全量落地后）：
+  rcore 821/1335（61%）、rshapes 112/162（69%）、rtext 604/766（79%）、
+  rtextures 754/1238（61%）、raymath 168/201（84%，真实 skip 10→7；计数口径
+  含 accessor 声明，值成员读取不再发射 accessor 后计数下降非回退）。
+  地板分类：rcore 157/42，rshapes 11/8，rtext 75/28，rtextures 96/80，raymath 14/0。
 - **git 状态**：第一会话的未提交改动已在分支 `feat/c2e-translator-extensions` 提交
   （翻译器扩展 + 交接文档 + L1 识别）；第二会话的位运算改动见该分支后续提交。
   工作区（repo 外）：`projects/bindings/raylib-c2e/`、`projects/snake-gui-c2e/`、
   `tools/c2e/`、`AGENTS.md` 注册行。**分支未推送**（push 需代理，见 §7）。
-- **C2E 测试基线**：10/10（新增数组下标/局部缓冲/宽度类型化访存对拍门
-  `C2E_ArraySubscript_ParityWithClang`）。全量回归基线：4308/4311，
-  3 个失败应核对为既知项（#83 模板迁移 / #85 flake）。
+- **C2E 测试基线**：11/11（2026-08-18 新增第一档综合对拍门
+  `C2E_TierOneConstructs_ParityWithClang`：switch/do-while/for 形态/break-continue/
+  参数可变/字符字面量/窄化 cast/嵌套成员路径/cast 基/成员取址/条件位赋值/sret/2D 数组）。
+  全量回归基线：4316/4317（唯一既知失败 #85 soak flake，基线提交复现验证过）。
 
 ## 1. 三层地板模型（本会话结论，指导后续取舍）
 
@@ -97,11 +97,11 @@
 | 3 | ~~字符串字面量~~ | 已完成 | 见 2026-08-16 changelog（`Ffi.to_c_string` 边界转换） |
 | 4 | 一元取址 `&x`（含 `&global`） | 47 | `&record局部` 需 §4.3 语言侧取址；`&global`（模块 mut 绑定）可先行：模块 mut 的地址经 accessor/全局桥获取 |
 | 5 | 非记录指针基的成员访问（`p->f` 基类型解析失败） | 99 | 多为 void*/强制转换后的指针；部分随 §4.2 指针算术与 CastExpr 解包消化 |
-| 6 | 表达式位 `++`/`--`（`x++` 作值） | ~98 | 值位自增去糖：`let old := x; x := x + 1; old`；语句位已支持 |
+| 6 | ~~语句位 `++`/`--`（含 `a[i]++` 后缀）~~ | 已完成 | token 扫描不取位置；值位（返回旧值）仍不支持 |
 | 7 | 语句 kind 208 / for 形态 / 表达式 136/110 | 78+75+53 | kind 208 疑为 CompoundStmt 变体，需逐个确认；for 非常规形态（多初始化/空段）；136/110 待归类 |
 | 8 | 嵌套成员赋值 `a.b.c = v` | 34 | 发射 `a := a.{b: a.b.{c: v}}`（需验证 Eidos 嵌套 record update 语法；先查 `TypeInferencePipelineTests` 与 snake-gui 是否已有用例） |
-| 9 | switch（kind 206） | 25 | 去糖为 `decide`/if-else 链：`case A: ... break;` → 分支；注意 fallthrough 与 `default`；无 break 的 fallthrough 用嵌套块拼接。键位映射表是主要用户 |
-| 10 | extern 结构体按值 ABI（`rlGetMatrixTransform` 等） | 39 | 生成 sret shim：C 侧 `void __c2e_sret_F(S* out){ *out = F(); }`，Eidos 侧 extern `Unit -> RawPtr` + 生成的字段读取拼装记录（复用 accessor 机制）。落地后 `DrawRectangleLines` 可真翻译，撤掉 drawing.eidos 的四矩形兜底 |
+| 9 | ~~switch（kind 206）~~ | 已完成 | 包装循环 + 段级入口（进入后标签只执行该段起）+ 匹配闩锁；break 终止段复位闩锁；条件 break 退出包装；体内 continue 映射为 break |
+| 10 | ~~extern 结构体按值返回（sret shim）~~ | 已完成 | C 侧静态槽 + 指针返回，Eidos 侧块表达式内经 accessor 重组记录；参数位按值仍挡住（调用点记录→blob 桥缺失）。`DrawRectangleLines` 的前置 `rlGetMatrixTransform` 可评估接入 |
 | 11 | va_list（`TraceLog`） | 少量 | **策略性跳过**：翻译器对 va_list 原型已跳过；不建议支持，日志类函数留地板 |
 
 ## 4. L3 Eidos 语言/编译器项

@@ -153,6 +153,84 @@ public sealed partial class MirToLlvmConverter
     }
 
     /// <summary>
+    /// 处理 ptr_to_int(ptr) 调用：指针位模式转整数（ptrdiff 算术）。
+    /// 生成 LLVM: ptrtoint ptr %p to i64
+    /// </summary>
+    private LlvmCall? ConvertPtrToInt(MirCall call)
+    {
+        if (call.Arguments.Count != 1)
+        {
+            return null;
+        }
+
+        var targetPlace = call.Target as MirPlace;
+        if (targetPlace == null)
+        {
+            return null;
+        }
+
+        var resultName = _nameMangler.NewTempName($"l{targetPlace.Local.Value}");
+        var ptrValue = CoerceToPointer(ConvertOperand(call.Arguments[0]));
+
+        var cast = new LlvmCast
+        {
+            Op = "ptrtoint",
+            Value = ptrValue,
+            TargetType = LlvmIntType.I64,
+            ResultName = resultName
+        };
+        _currentBlock?.Instructions.Add(cast);
+
+        ClearGenericLocal(targetPlace.Local);
+        _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+        {
+            Name = resultName,
+            Type = LlvmIntType.I64
+        };
+
+        return null;
+    }
+
+    /// <summary>
+    /// 处理 float_to_int(v) 调用：C 截断语义的 Float→Int。
+    /// 生成 LLVM: fptosi double %v to i64
+    /// </summary>
+    private LlvmCall? ConvertFloatToInt(MirCall call)
+    {
+        if (call.Arguments.Count != 1)
+        {
+            return null;
+        }
+
+        var targetPlace = call.Target as MirPlace;
+        if (targetPlace == null)
+        {
+            return null;
+        }
+
+        var resultName = _nameMangler.NewTempName($"l{targetPlace.Local.Value}");
+        var value = ConvertOperand(call.Arguments[0]);
+
+        var cast = new LlvmCast
+        {
+            Op = "fptosi",
+            Value = value,
+            TargetType = LlvmIntType.I64,
+            ResultName = resultName
+        };
+        _currentBlock?.Instructions.Add(cast);
+
+        ClearGenericLocal(targetPlace.Local);
+        _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+        {
+            Name = resultName,
+            Type = LlvmIntType.I64
+        };
+
+        return null;
+    }
+
+    /// <summary>
     /// 处理 ptr_load_int(ptr) 调用：从指针加载 i64 值。
     /// 生成 LLVM: load i64, ptr %ptr
     /// </summary>

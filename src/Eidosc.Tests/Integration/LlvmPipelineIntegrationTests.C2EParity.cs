@@ -388,7 +388,8 @@ public partial class LlvmPipelineIntegrationTests
 
         var translated = TranslateC2E(cSource);
         Assert.Contains("V2 {", translated, StringComparison.Ordinal);
-        Assert.Contains(".{y:", translated, StringComparison.Ordinal);
+        // 成员写为整记录重建（投影简写基不稳定，E4000）。
+        Assert.Contains("y: ", translated, StringComparison.Ordinal);
         Assert.Contains("(a.y + b.y) * (rotation + 1.0)", translated, StringComparison.Ordinal);
 
         var eidosSource = translated + """
@@ -864,6 +865,255 @@ public partial class LlvmPipelineIntegrationTests
                 eidosSource,
                 "c2e_subscript_native.eidos",
                 "c2e_subscript_native",
+                nativeCSource: nativeShimSource + helperC);
+
+            Assert.Equal(referenceExit, execution.ExitCode);
+            Assert.NotEqual(0, execution.ExitCode);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(inputDirectory))
+            {
+                Directory.Delete(inputDirectory, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 第一档构造综合对拍：switch（fallthrough/嵌套标签/条件 break/default）、
+    /// do-while 与 for 的 continue 语义（轮转式去糖）、for 空槽与逗号序列、
+    /// 参数可变影拷贝、字符字面量、Float→Int 截断与指针→整数 cast、
+    /// 嵌套成员路径赋值（值局部头/指针头）、cast 基成员访问、&amp;p->m 成员取址 shim、
+    /// 条件位赋值提升、extern 结构体按值返回（sret shim）、二维数组缓冲。
+    /// </summary>
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_TierOneConstructs_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            struct Inner { int a; int b; };
+            struct Outer { struct Inner in; int tag; };
+            struct Pair { int x; int y; };
+            extern int next_flag(void);
+            extern struct Pair make_pair(int a, int b);
+
+            int classify(int x, int brake)
+            {
+                int r = 0;
+                switch (x)
+                {
+                    case 1: r += 10; break;
+                    case 2:
+                    case 3: r += 20;
+                    case 4: r += 1; break;
+                    case 9: if (brake) { break; } r += 5; break;
+                    default: r = 99; break;
+                }
+                return r;
+            }
+
+            int dowhile_sum(int n)
+            {
+                int s = 0;
+                int i = 0;
+                do
+                {
+                    i++;
+                    if (i % 3 == 0) continue;
+                    if (i > n) break;
+                    s += i;
+                } while (i < n * 2);
+                return s;
+            }
+
+            int for_variants(int n)
+            {
+                int s = 0;
+                int i, j;
+                for (i = 0, j = n; i < j; i++, j--) { s += i * j; }
+                for (;;) { if (n <= 0) break; n--; }
+                int k = 0;
+                for (; k < 3;) { s += k; k++; }
+                return s + n;
+            }
+
+            int char_cast_mix(void* p)
+            {
+                char c = 'A';
+                double d = 3.75;
+                int a = (int)d;
+                long q = (long)p;
+                (void)c;
+                // q 依赖运行时地址，仅弃用式消费（跨二进制不确定），不进返回值。
+                (void)(q % 7);
+                return c + a + 'Z';
+            }
+
+            int nested_members(struct Outer* o, int delta)
+            {
+                o->in.a = delta;
+                o->in.b = o->in.a * 2;
+                o->in.a += o->in.b;
+                o->tag = o->in.a + o->in.b;
+                return o->tag;
+            }
+
+            int local_nested(int seed)
+            {
+                struct Outer o;
+                o.tag = seed;
+                o.in.a = seed * 2;
+                o.in.b = seed * 3;
+                o.in.b += o.in.a;
+                return o.tag + o.in.a + o.in.b;
+            }
+
+            int cast_member(void* raw)
+            {
+                struct Outer* o = (struct Outer*)raw;
+                o->tag = 42;
+                ((struct Outer*)raw)->in.a = 7;
+                return o->tag + ((struct Outer*)raw)->in.a;
+            }
+
+            extern int read_through(void* p);
+
+            int member_address(struct Outer* o)
+            {
+                o->tag = 11;
+                o->in.a = 12;
+                return read_through(&o->tag) + read_through(&o->in.a);
+            }
+
+            int cond_assign(void)
+            {
+                int total = 0;
+                int x = 0;
+                while ((x = next_flag()))
+                {
+                    total += x;
+                }
+                if ((x = next_flag())) total += 100;
+                return total;
+            }
+
+            int use_sret(int a, int b)
+            {
+                struct Pair p = make_pair(a, b);
+                return p.x * 100 + p.y;
+            }
+
+            int twod_array(int seed)
+            {
+                int grid[3][4];
+                for (int i = 0; i < 3; i++)
+                {
+                    for (int j = 0; j < 4; j++)
+                    {
+                        grid[i][j] = seed + i * 4 + j;
+                    }
+                }
+                int s = 0;
+                for (int i = 0; i < 3; i++)
+                {
+                    s += grid[i][i];
+                }
+                return s;
+            }
+
+            int compute(struct Outer* o, void* raw)
+            {
+                int a = classify(2, 0) + classify(3, 0) + classify(4, 0) + classify(9, 1) + classify(9, 0) + classify(77, 0);
+                int b = dowhile_sum(4);
+                int c = for_variants(5);
+                int d = char_cast_mix(o);
+                int e = nested_members(o, 3);
+                int f = local_nested(2);
+                int g = cast_member(raw);
+                int h = member_address(o);
+                int i2 = cond_assign();
+                int j2 = use_sret(6, 7);
+                int k = twod_array(10);
+                return (a + b + c + d + e + f + g + h + i2 + j2 + k) % 251;
+            }
+            """;
+
+        var helperC = """
+            int read_through(void* p) { return *(int*)p; }
+
+            int next_flag(void)
+            {
+                static int step = 0;
+                static const int seq[4] = {3, 5, 0, 7};
+                int v = seq[step];
+                step = (step + 1) % 4;
+                return v;
+            }
+
+            struct Pair make_pair(int a, int b) { struct Pair p; p.x = a; p.y = b; return p; }
+
+            void* test_outer(void)
+            {
+                static struct Outer { struct Inner { int a; int b; } in; int tag; } slot;
+                return &slot;
+            }
+
+            void* test_raw(void)
+            {
+                static struct Outer { struct Inner { int a; int b; } in; int tag; } slot;
+                return &slot;
+            }
+            """;
+
+        var referenceExit = RunCReference(
+            cSource,
+            """
+                struct Pair { int x; int y; };
+                """ + helperC + """
+                int compute(void*, void*);
+                int main(void) { return compute(test_outer(), test_raw()); }
+                """);
+
+        var inputDirectory = string.Empty;
+        try
+        {
+            var translated = TranslateC2EKeepingInputFile(cSource, out var nativeShimSource, out inputDirectory);
+            Assert.Contains("c2e_sw_matched", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_do_first", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_inc_first", translated, StringComparison.Ordinal);
+            Assert.Contains("continue;", translated, StringComparison.Ordinal);
+            Assert.Contains("mut n := n;", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.trunc_to_int(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.ptr_as_int(", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Inner_a_set(c2e_Outer_in_addr(", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Outer_tag_addr(", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Inner_a_addr(", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_ext_make_pair_sret", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_ext_read_through", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_ext_next_flag", translated, StringComparison.Ordinal);
+
+            var eidosSource = translated + """
+
+                @[extern(c, name: "test_outer")]
+                test_outer :: Unit -> RawPtr need ffi;
+                @[extern(c, name: "test_raw")]
+                test_raw :: Unit -> RawPtr need ffi;
+
+                main :: Unit -> Int need ffi
+                {
+                    _ => compute(test_outer(), test_raw())
+                }
+                """;
+
+            var execution = CompileAndRunSourceAtNative(
+                eidosSource,
+                "c2e_tierone_native.eidos",
+                "c2e_tierone_native",
                 nativeCSource: nativeShimSource + helperC);
 
             Assert.Equal(referenceExit, execution.ExitCode);

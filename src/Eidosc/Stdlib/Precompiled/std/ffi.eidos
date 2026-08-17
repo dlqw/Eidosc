@@ -21,6 +21,10 @@ Ffi :: module {
 
     ptr_add :: RawPtr -> Int -> RawPtr compiler(internal, intrinsic: "ptr_add") need ffi;
 
+    ptr_to_int :: RawPtr -> Int compiler(internal, intrinsic: "ptr_to_int") need ffi;
+
+    float_to_int :: Float -> Int compiler(internal, intrinsic: "float_to_int") need ffi;
+
 
 
 
@@ -249,6 +253,17 @@ Ffi :: module {
     // 按宽度命名的指针读写（C int/short/char/float 元素）：
     // Ffi.load[Int]/store[Int] 是 i64 存取，C 定宽元素必须用对应宽度变体，
     // 否则相邻元素会被跨写/读到合并值。
+    // 指针↔整数（ptrdiff 算术）与 C 截断语义的 Float→Int（fptosi，向零截断）。
+    export ptr_as_int :: RawPtr -> Int need ffi
+    {
+        p => ptr_to_int(p)
+    }
+
+    export trunc_to_int :: Float -> Int need ffi
+    {
+        v => float_to_int(v)
+    }
+
     export load_i32 :: RawPtr -> Int need ffi
     {
         ptr => ptr_load_i32(ptr)
