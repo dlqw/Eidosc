@@ -175,15 +175,16 @@ public partial class LlvmPipelineIntegrationTests
             "int compute(int*);\nint main(void) { int cell = 41; return compute(&cell); }\n");
 
         var translated = TranslateC2E(cSource);
-        Assert.Contains("Ffi.load[Int](p)", translated, StringComparison.Ordinal);
-        Assert.Contains("Ffi.store[Int](p)", translated, StringComparison.Ordinal);
+        // C int*（4 字节元素）走 i32 变体；Ffi.load[Int] 是 i64 存取。
+        Assert.Contains("Ffi.load_i32(p)", translated, StringComparison.Ordinal);
+        Assert.Contains("Ffi.store_i32(p)", translated, StringComparison.Ordinal);
         Assert.Contains("Ffi.pointer_eq(p)(Ffi.null_pointer())", translated, StringComparison.Ordinal);
         var eidosSource = translated + """
 
             @[extern(c, name: "test_box_i64")]
             test_box_i64 :: Int -> RawPtr need ffi;
 
-            main :: Unit -> Int
+            main :: Unit -> Int need ffi
             {
                 _ => compute(test_box_i64(41))
             }
@@ -599,5 +600,281 @@ public partial class LlvmPipelineIntegrationTests
 
         Assert.Equal(referenceExit, execution.ExitCode);
         Assert.Equal(22, execution.ExitCode);
+    }
+
+    /// <summary>
+    /// 数组下标与指针算术对拍：a[i]/rows[i][j] 经 Ffi.offset_bytes 寻址 + load/store[T]；
+    /// C float（32 位）元素经 c2e_f32 shim（Ffi.load[Float] 是 f64 存储）；
+    /// T a[N] 局部映射 RawPtr 堆缓冲（malloc / calloc+store）；&amp;a[i] 取址、
+    /// sizeof 常量求值、记录元素下标成员（pts[i].f）经 accessor 桥。
+    /// </summary>
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_ArraySubscript_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            struct Point { int x; int y; };
+
+            int sum_ints(int* a, int n)
+            {
+                int s = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    s += a[i];
+                }
+                return s;
+            }
+
+            void fill_squares(int* a, int n)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    a[i] = i * i;
+                }
+            }
+
+            int bump_elems(int* a, int n)
+            {
+                int s = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    a[i] += 3;
+                    a[i]++;
+                    s += a[i];
+                }
+                return s;
+            }
+
+            int matrix_trace(int* m, int n)
+            {
+                int t = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    t += m[i * n + i];
+                }
+                return t;
+            }
+
+            double sum_floats(float* a, int n)
+            {
+                double s = 0.0;
+                for (int i = 0; i < n; i++)
+                {
+                    s += a[i];
+                }
+                return s;
+            }
+
+            void scale_floats(float* a, int n, float f)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    a[i] = a[i] * f;
+                }
+            }
+
+            double sum_doubles(double* a, int n)
+            {
+                double s = 0.0;
+                for (int i = 0; i < n; i++)
+                {
+                    s += a[i];
+                }
+                return s;
+            }
+
+            int point_array_sum(struct Point* pts, int n)
+            {
+                int s = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    pts[i].x += i;
+                    pts[i].y = pts[i].x * 2;
+                    s += pts[i].x + pts[i].y;
+                }
+                return s;
+            }
+
+            int sum_indirect(int** rows, int n)
+            {
+                int s = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    s += rows[i][0] + rows[i][1];
+                }
+                return s;
+            }
+
+            int local_array_sum(int seed)
+            {
+                int buf[6];
+                for (int i = 0; i < 6; i++)
+                {
+                    buf[i] = seed + i;
+                }
+                int partial[4] = { 10, 20, 30 };
+                int s = 0;
+                for (int i = 0; i < 6; i++)
+                {
+                    s += buf[i];
+                }
+                for (int i = 0; i < 4; i++)
+                {
+                    s += partial[i];
+                }
+                return s;
+            }
+
+            int sizeof_mix(int n)
+            {
+                return n * (int)sizeof(int) + (int)sizeof(double);
+            }
+
+            int addr_and_deref(int* a)
+            {
+                int* p = &a[2];
+                *p = *p + 5;
+                return p[1];
+            }
+
+            int compute(int* ints, float* floats, double* doubles, struct Point* pts, int** rows)
+            {
+                fill_squares(ints, 8);
+                int a = sum_ints(ints, 8);
+                int b = bump_elems(ints, 8);
+                int m[9];
+                for (int i = 0; i < 9; i++)
+                {
+                    m[i] = i;
+                }
+                int t = matrix_trace(m, 3);
+                double fs = sum_floats(floats, 6);
+                scale_floats(floats, 6, 4.0f);
+                double fs2 = sum_floats(floats, 6);
+                double ds = sum_doubles(doubles, 5);
+                int ps = point_array_sum(pts, 4);
+                int rs = sum_indirect(rows, 3);
+                int local = local_array_sum(7);
+                int sf = sizeof_mix(3);
+                int ad = addr_and_deref(ints);
+                if (fs > 5.0) { a += 1; }
+                if (fs2 > 20.0) { a += 2; }
+                if (ds > 15.0) { a += 4; }
+                return (a + b + t + ps + rs + local + sf + ad) % 251;
+            }
+            """;
+
+        var helperC = """
+            #include <stdlib.h>
+
+            // 外部链接：Eidos 侧 extern(c) 引用来自其他编译单元，static 会造成链接期 undefined symbol。
+            void* test_int_array(void)
+            {
+                int* a = (int*)malloc(8 * sizeof(int));
+                return a;
+            }
+
+            void* test_float_array(void)
+            {
+                float* a = (float*)malloc(6 * sizeof(float));
+                for (int i = 0; i < 6; i++) { a[i] = 0.25f * (float)(i + 1); }
+                return a;
+            }
+
+            void* test_double_array(void)
+            {
+                double* a = (double*)malloc(5 * sizeof(double));
+                for (int i = 0; i < 5; i++) { a[i] = 1.5 * (double)i; }
+                return a;
+            }
+
+            void* test_point_array(void)
+            {
+                struct Point { int x; int y; };
+                struct Point* p = (struct Point*)malloc(4 * sizeof(struct Point));
+                for (int i = 0; i < 4; i++) { p[i].x = i + 1; p[i].y = 0; }
+                return p;
+            }
+
+            void* test_row_array(void)
+            {
+                int** r = (int**)malloc(3 * sizeof(int*));
+                for (int i = 0; i < 3; i++)
+                {
+                    r[i] = (int*)malloc(2 * sizeof(int));
+                    r[i][0] = i + 1;
+                    r[i][1] = 2 * (i + 1);
+                }
+                return r;
+            }
+            """;
+
+        var referenceExit = RunCReference(
+            cSource,
+            helperC + """
+                int compute(int*, float*, double*, void*, int**);
+                int main(void)
+                {
+                    return compute(test_int_array(), test_float_array(), test_double_array(), test_point_array(), test_row_array());
+                }
+                """);
+
+        var inputDirectory = string.Empty;
+        try
+        {
+            var translated = TranslateC2EKeepingInputFile(cSource, out var nativeShimSource, out inputDirectory);
+            Assert.Contains("Ffi.offset_bytes(", translated, StringComparison.Ordinal);
+            // C int（4 字节）元素走 i32 变体；Ffi.load[Int] 是 i64 存取。
+            Assert.Contains("Ffi.load_i32(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.store_i32(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.load[Float]", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.load[RawPtr]", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.load_f32(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.store_f32(", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Point_x_get(", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_Point_y_set(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.malloc(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.calloc(", translated, StringComparison.Ordinal);
+
+            var eidosSource = translated + """
+
+                @[extern(c, name: "test_int_array")]
+                test_int_array :: Unit -> RawPtr need ffi;
+                @[extern(c, name: "test_float_array")]
+                test_float_array :: Unit -> RawPtr need ffi;
+                @[extern(c, name: "test_double_array")]
+                test_double_array :: Unit -> RawPtr need ffi;
+                @[extern(c, name: "test_point_array")]
+                test_point_array :: Unit -> RawPtr need ffi;
+                @[extern(c, name: "test_row_array")]
+                test_row_array :: Unit -> RawPtr need ffi;
+
+                main :: Unit -> Int need ffi
+                {
+                    _ => compute(test_int_array(), test_float_array(), test_double_array(), test_point_array(), test_row_array())
+                }
+                """;
+
+            var execution = CompileAndRunSourceAtNative(
+                eidosSource,
+                "c2e_subscript_native.eidos",
+                "c2e_subscript_native",
+                nativeCSource: nativeShimSource + helperC);
+
+            Assert.Equal(referenceExit, execution.ExitCode);
+            Assert.NotEqual(0, execution.ExitCode);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(inputDirectory))
+            {
+                Directory.Delete(inputDirectory, true);
+            }
+        }
     }
 }

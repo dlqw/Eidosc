@@ -65,6 +65,12 @@ Ffi :: module {
 
     ptr_load_bool :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_load_bool") need ffi;
 
+    // C 定宽元素的类型化加载（C2E 下标/解引用按元素宽度选择）：
+    // i16/f32 加载后拓宽（zext/fpext）到 Eidos Int/Float（i64/f64）。
+    ptr_load_i16 :: RawPtr -> Int compiler(internal, intrinsic: "ptr_load_i16") need ffi compiler(llvm_abi: "ptr -> i16");
+
+    ptr_load_f32 :: RawPtr -> Float compiler(internal, intrinsic: "ptr_load_f32") need ffi compiler(llvm_abi: "ptr -> float");
+
 
 
 
@@ -96,6 +102,10 @@ Ffi :: module {
 
 
     ptr_store_bool :: RawPtr -> Bool -> Unit compiler(internal, intrinsic: "ptr_store_bool") need ffi;
+
+    ptr_store_i16 :: RawPtr -> Int -> Unit compiler(internal, intrinsic: "ptr_store_i16") need ffi compiler(llvm_abi: "ptr, i16 -> void");
+
+    ptr_store_f32 :: RawPtr -> Float -> Unit compiler(internal, intrinsic: "ptr_store_f32") need ffi compiler(llvm_abi: "ptr, float -> void");
 
 
 
@@ -234,6 +244,49 @@ Ffi :: module {
     export store[T] :: RawPtr -> T -> Unit need ffi
     {
         ptr => value => ptr_store_as[T](ptr)(value)
+    }
+
+    // 按宽度命名的指针读写（C int/short/char/float 元素）：
+    // Ffi.load[Int]/store[Int] 是 i64 存取，C 定宽元素必须用对应宽度变体，
+    // 否则相邻元素会被跨写/读到合并值。
+    export load_i32 :: RawPtr -> Int need ffi
+    {
+        ptr => ptr_load_i32(ptr)
+    }
+
+    export store_i32 :: RawPtr -> Int -> Unit need ffi
+    {
+        ptr => value => ptr_store_i32(ptr)(value)
+    }
+
+    export load_i16 :: RawPtr -> Int need ffi
+    {
+        ptr => ptr_load_i16(ptr)
+    }
+
+    export store_i16 :: RawPtr -> Int -> Unit need ffi
+    {
+        ptr => value => ptr_store_i16(ptr)(value)
+    }
+
+    export load_i8 :: RawPtr -> Int need ffi
+    {
+        ptr => ptr_load_i8(ptr)
+    }
+
+    export store_i8 :: RawPtr -> Int -> Unit need ffi
+    {
+        ptr => value => ptr_store_i8(ptr)(value)
+    }
+
+    export load_f32 :: RawPtr -> Float need ffi
+    {
+        ptr => ptr_load_f32(ptr)
+    }
+
+    export store_f32 :: RawPtr -> Float -> Unit need ffi
+    {
+        ptr => value => ptr_store_f32(ptr)(value)
     }
 
     export to_c_string :: String -> RawPtr need ffi

@@ -556,13 +556,17 @@ public static class WellKnownStrings
         public const string PtrLoadFloat = "ptr_load_float";
         public const string PtrLoadPtr = "ptr_load_ptr";
         public const string PtrLoadI32 = "ptr_load_i32";
+        public const string PtrLoadI16 = "ptr_load_i16";
         public const string PtrLoadI8 = "ptr_load_i8";
+        public const string PtrLoadF32 = "ptr_load_f32";
         public const string PtrLoadBool = "ptr_load_bool";
         public const string PtrStoreInt = "ptr_store_int";
         public const string PtrStoreFloat = "ptr_store_float";
         public const string PtrStorePtr = "ptr_store_ptr";
         public const string PtrStoreI32 = "ptr_store_i32";
+        public const string PtrStoreI16 = "ptr_store_i16";
         public const string PtrStoreI8 = "ptr_store_i8";
+        public const string PtrStoreF32 = "ptr_store_f32";
         public const string PtrStoreBool = "ptr_store_bool";
         public const string PtrLoadAs = "ptr_load_as";
         public const string PtrStoreAs = "ptr_store_as";

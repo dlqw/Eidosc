@@ -213,6 +213,9 @@ internal delegate uint ClangIsConstQualifiedTypeFn(ClangType type);
 internal delegate long ClangGetArraySizeFn(ClangType type);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangType ClangGetArrayElementTypeFn(ClangType type);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate long ClangCursorGetOffsetOfFieldFn(ClangCursor cursor);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -357,6 +360,7 @@ internal sealed class ClangApi
         GetPointeeType = GetExport<ClangGetPointeeTypeFn>(library, "clang_getPointeeType");
         IsConstQualifiedType = GetExport<ClangIsConstQualifiedTypeFn>(library, "clang_isConstQualifiedType");
         GetArraySize = GetExport<ClangGetArraySizeFn>(library, "clang_getArraySize");
+        GetArrayElementType = GetExport<ClangGetArrayElementTypeFn>(library, "clang_getArrayElementType");
         CursorGetOffsetOfField = GetExport<ClangCursorGetOffsetOfFieldFn>(library, "clang_Cursor_getOffsetOfField");
         TypeGetSizeOf = GetExport<ClangTypeGetSizeOfFn>(library, "clang_Type_getSizeOf");
         TypeGetAlignOf = GetExport<ClangTypeGetAlignOfFn>(library, "clang_Type_getAlignOf");
@@ -411,6 +415,7 @@ internal sealed class ClangApi
     internal ClangGetPointeeTypeFn GetPointeeType { get; }
     internal ClangIsConstQualifiedTypeFn IsConstQualifiedType { get; }
     internal ClangGetArraySizeFn GetArraySize { get; }
+    internal ClangGetArrayElementTypeFn GetArrayElementType { get; }
     internal ClangCursorGetOffsetOfFieldFn CursorGetOffsetOfField { get; }
     internal ClangTypeGetSizeOfFn TypeGetSizeOf { get; }
     internal ClangTypeGetAlignOfFn TypeGetAlignOf { get; }

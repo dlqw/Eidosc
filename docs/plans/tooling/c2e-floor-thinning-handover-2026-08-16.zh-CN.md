@@ -34,14 +34,17 @@
   （translated / floor-extern / cross-TU），`--only` 选入口，`-I/-D/--isystem` 编译环境，
   `--floor-out` 落地板清单）。
 - **翻译率现状**（真实 raylib 源，`PLATFORM_DESKTOP_WIN32 + GRAPHICS_API_OPENGL_33`，
-  2026-08-16 第二会话后）：rcore 661/1326、rshapes 62/127、rtext 323/628、
-  rtextures 489/1156；raymath 162/174。地板分类：rcore 148 floor / 36 cross-TU，
-  rshapes 9/7，rtext 66/39，rtextures 75/30。
+  2026-08-17 数组下标/局部缓冲落地后）：rcore 729、rshapes 66、rtext 440、
+  rtextures 596；raymath 173（分母随函数在 skip/翻译桶间移动微变，
+  2026-08-17 实测 translated+skipped：rcore 729+643、rshapes 66+61、rtext 440+282、
+  rtextures 596+641、raymath 173+36）。地板分类：rcore 159 floor / 35 cross-TU，
+  rshapes 9/7，rtext 73/36，rtextures 86/52，raymath 14/0。
 - **git 状态**：第一会话的未提交改动已在分支 `feat/c2e-translator-extensions` 提交
   （翻译器扩展 + 交接文档 + L1 识别）；第二会话的位运算改动见该分支后续提交。
   工作区（repo 外）：`projects/bindings/raylib-c2e/`、`projects/snake-gui-c2e/`、
   `tools/c2e/`、`AGENTS.md` 注册行。**分支未推送**（push 需代理，见 §7）。
-- **C2E 测试基线**：8/8（新增分类与位运算对拍门）。全量回归基线：4308/4311，
+- **C2E 测试基线**：10/10（新增数组下标/局部缓冲/宽度类型化访存对拍门
+  `C2E_ArraySubscript_ParityWithClang`）。全量回归基线：4308/4311，
   3 个失败应核对为既知项（#83 模板迁移 / #85 flake）。
 
 ## 1. 三层地板模型（本会话结论，指导后续取舍）
@@ -84,14 +87,14 @@
 ## 3. L2 剩余 C2E 工程项（按实测阻塞量排序）
 
 数据为四模块（rcore/rshapes/rtext/rtextures）全量 skip 聚合
-（2026-08-16 第二会话后，位运算与一元 `~` 已消化；另有 452 处
-"call to untranslated function" 为下游传播，上游落地自动消解，不计入下表）：
+（2026-08-17 数组下标/局部缓冲/sizeof/语句位自增已消化；changelog
+`2026-08-17-...-c2e-array-subscript-and-typed-pointer-access.md`）：
 
 | # | 阻塞 | 量 | 实施要点 |
 |---|---|---|---|
-| 1 | 数组下标 `a[i]`（指针算术） | 94+ | 见 §4.2（依赖语言侧 Ffi 指针算术）；翻译层：元素地址 = `Ffi.pointer_add(base, i * sizeof(T))` + `load/store[T]`；C 数组形参（`T a[]`/`T* a`）在 MapType 已落 RawPtr，缺的是下标表达式 |
-| 2 | 局部/参数不可映射类型（多为数组与数组指针） | 125+118 | 大头是 `T a[N]` 局部与 `T*` 指向数组的形参；依赖 §4.2（数组缓冲 = RawPtr + 尺寸） |
-| 3 | 字符串字面量 | 101 | 映射为 Eidos `String`；在 extern `RawPtr` 实参位自动 `Ffi.to_c_string(...)`（复用 `TranslateCallArgument` 的参数映射）；同文件内传给已翻函数的场景保持 String |
+| 1 | ~~数组下标 `a[i]`（指针算术）~~ | 已完成 | 元素地址 = `Ffi.offset_bytes(base)(i * sizeof(T))` + 按宽度选择的 load/store 变体（i64/i32/i16/i8/f32/ptr）；读写/复合赋值/自增/`&a[i]`/嵌套下标/记录元素成员访问全链路 |
+| 2 | ~~局部 `T a[N]` 不可映射~~ | 已完成 | RawPtr 堆缓冲：无初始化器 `Ffi.malloc(N*S)`、带初始化列表 `Ffi.calloc` + 逐元素 store；另修复既有 `*p` 解引用的宽度错误（`Ffi.load[Int]` 是 i64，C int 走 `load_i32`） |
+| 3 | ~~字符串字面量~~ | 已完成 | 见 2026-08-16 changelog（`Ffi.to_c_string` 边界转换） |
 | 4 | 一元取址 `&x`（含 `&global`） | 47 | `&record局部` 需 §4.3 语言侧取址；`&global`（模块 mut 绑定）可先行：模块 mut 的地址经 accessor/全局桥获取 |
 | 5 | 非记录指针基的成员访问（`p->f` 基类型解析失败） | 99 | 多为 void*/强制转换后的指针；部分随 §4.2 指针算术与 CastExpr 解包消化 |
 | 6 | 表达式位 `++`/`--`（`x++` 作值） | ~98 | 值位自增去糖：`let old := x; x := x + 1; old`；语句位已支持 |
@@ -115,13 +118,17 @@
 - changelog：`2026-08-16-0.9.0-alpha.2-bitwise-operators.md`。
 - 后续（低优先）：Bool 位运算不做；unsigned 语义已由 #69 的 isUnsigned 路径覆盖右移。
 
-### 4.2 Ffi 指针算术（解锁数组下标与 C 缓冲遍历）
+### 4.2 Ffi 指针算术【已完成，2026-08-17，含宽度类型化访存】
 
-- `std.Ffi` 增加：`pointer_add :: RawPtr -> Int -> RawPtr need ffi`（+ `pointer_byte_add`），
-  runtime `eidos_memory.c` 实现为 `(char*)p + n`；可选 `load_at[T]`/`store_at[T]`（带偏移）。
-- 安全策略：与 `load/store` 一致的 `need ffi` 能力门槛即可（翻译产物本就 `need ffi`）。
-- C2E 侧据此实现 §3-#1；同时 `sizeof(T)` 需在翻译期确定（clang `TypeGetSizeOf` 已在
-  `ClangApi` 里，`CursorGetType` + `GetTypeSizeOf` 可得元素大小，发射为常量）。
+- `Ffi.offset_bytes` 既有导出即指针算术入口；本轮新增按宽度命名的类型化访存：
+  `load_i32/store_i32`、`load_i16/store_i16`、`load_i8/store_i8`（新 intrinsic
+  `ptr_load/store_i16`）、`load_f32/store_f32`（新 intrinsic，fpext/fptrunc）。
+  动机：`Ffi.load[Int]/store[Int]` 是 i64 存取，C int/short/char/float 元素必须用
+  对应宽度变体，否则相邻元素被跨写/读到合并值（既有 `*p` 解引用的宽度缺陷一并修复）。
+- `sizeof(T)` 经 clang 常量求值在翻译期折叠为字面量；元素大小同样取自
+  `clang_Type_getSizeOf`（新增导出 `clang_getArrayElementType` 支撑局部数组映射）。
+- 翻译器侧需注意：生成函数签名按"体内是否触及 Ffi/extern/accessor"发射 `need ffi`
+  并沿内部调用图传播（效果推断不覆盖循环体/嵌套操作数位）。
 
 ### 4.3 局部取址（`&local`）
 
@@ -130,7 +137,15 @@
   （`Ffi.local_ref(x)`?）——**需要语言设计讨论**（与借用系统交互），交接时标记为
   设计项而非直接实现项；rcore 平台层多数场景可用"记录指针参数改传引用"绕开。
 
-### 4.4 其他
+### 4.4 效果推断覆盖缺口（编译器侧已知项，2026-08-17 登记）
+
+- 效果推断只覆盖尾表达式/直接语句位的调用；循环体、中缀操作数、嵌套块内的调用
+  不参与推断，但授权检查仍会看到它们并报 E3003（callee 为泛型应用时显示
+  `<unknown-callee>`，是 `ResolveCalleeDisplayName` 不认 GenericApply 的展示缺陷）。
+- C2E 侧已用"按函数发射 need ffi + 调用图传播"绕开（changelog 2026-08-17 数组
+  下标条目）；若后续手写 Eidos 大量遇到同类 E3003，应修推断管线而非继续手工声明。
+
+### 4.5 其他
 
 - C 函数指针回调（WndProc）：Eidos 已有 M4 ctx 回调先例（`cfn_ctx_from/data`，
   见 `LlvmPipelineIntegrationTests.CfnCtxCallback.cs`）。C2E 生成 extern 回调注册

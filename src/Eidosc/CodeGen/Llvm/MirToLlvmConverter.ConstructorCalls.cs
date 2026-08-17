@@ -222,8 +222,10 @@ public sealed partial class MirToLlvmConverter
     private static (LlvmType LoadType, LlvmType LocalType) GetTypedLoadInfo(string name) => name switch
     {
         WellKnownStrings.InternalNames.PtrLoadFloat => (LlvmFloatType.Double, LlvmFloatType.Double),
+        WellKnownStrings.InternalNames.PtrLoadF32   => (LlvmFloatType.Float, LlvmFloatType.Double),
         WellKnownStrings.InternalNames.PtrLoadPtr   => (LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr()),
         WellKnownStrings.InternalNames.PtrLoadI32   => (LlvmIntType.I32, LlvmIntType.I64),
+        WellKnownStrings.InternalNames.PtrLoadI16   => (LlvmIntType.I16, LlvmIntType.I64),
         WellKnownStrings.InternalNames.PtrLoadI8    => (LlvmIntType.I8, LlvmIntType.I64),
         WellKnownStrings.InternalNames.PtrLoadBool  => (LlvmIntType.I1, LlvmIntType.I1),
         _ => (LlvmIntType.I64, LlvmIntType.I64)
@@ -235,8 +237,10 @@ public sealed partial class MirToLlvmConverter
     private static LlvmType GetTypedStoreValueType(string name) => name switch
     {
         WellKnownStrings.InternalNames.PtrStoreFloat => LlvmFloatType.Double,
+        WellKnownStrings.InternalNames.PtrStoreF32   => LlvmFloatType.Float,
         WellKnownStrings.InternalNames.PtrStorePtr   => LlvmPointerType.VoidPtr(),
         WellKnownStrings.InternalNames.PtrStoreI32   => LlvmIntType.I32,
+        WellKnownStrings.InternalNames.PtrStoreI16   => LlvmIntType.I16,
         WellKnownStrings.InternalNames.PtrStoreI8    => LlvmIntType.I8,
         WellKnownStrings.InternalNames.PtrStoreBool  => LlvmIntType.I1,
         _ => LlvmIntType.I64
@@ -278,6 +282,9 @@ public sealed partial class MirToLlvmConverter
         var needsExt = localType is LlvmIntType { Bits: > 0 } localInt
             && loadType is LlvmIntType { Bits: > 0 } loadInt
             && localInt.Bits > loadInt.Bits;
+        // C float（32 位）加载后 fpext 到 Eidos Float（f64）
+        var needsFpExt = localType is LlvmFloatType { Bits: 64 } localFloat
+            && loadType is LlvmFloatType { Bits: 32 } loadFloat;
         if (needsExt)
         {
             var ext = new LlvmCast
@@ -286,6 +293,19 @@ public sealed partial class MirToLlvmConverter
                 Value = new LlvmInstructionRef { Instruction = load, Type = loadType },
                 TargetType = localType,
                 ResultName = _nameMangler.NewTempName("zext")
+            };
+            _currentBlock?.Instructions.Add(ext);
+            resultRef = new LlvmInstructionRef { Instruction = ext, Type = localType };
+            resultName = ext.ResultName!;
+        }
+        else if (needsFpExt)
+        {
+            var ext = new LlvmCast
+            {
+                Op = "fpext",
+                Value = new LlvmInstructionRef { Instruction = load, Type = loadType },
+                TargetType = localType,
+                ResultName = _nameMangler.NewTempName("fpext")
             };
             _currentBlock?.Instructions.Add(ext);
             resultRef = new LlvmInstructionRef { Instruction = ext, Type = localType };
@@ -340,6 +360,19 @@ public sealed partial class MirToLlvmConverter
                 Value = rawValue,
                 TargetType = valueType,
                 ResultName = _nameMangler.NewTempName("trunc")
+            };
+            _currentBlock?.Instructions.Add(trunc);
+            storeValue = new LlvmInstructionRef { Instruction = trunc, Type = valueType };
+        }
+        else if (rawValue.Type is LlvmFloatType { Bits: 64 } && valueType is LlvmFloatType { Bits: < 64 })
+        {
+            // C float（32 位）写入：Eidos Float（f64）值 fptrunc 后存储。
+            var trunc = new LlvmCast
+            {
+                Op = "fptrunc",
+                Value = rawValue,
+                TargetType = valueType,
+                ResultName = _nameMangler.NewTempName("fptrunc")
             };
             _currentBlock?.Instructions.Add(trunc);
             storeValue = new LlvmInstructionRef { Instruction = trunc, Type = valueType };
