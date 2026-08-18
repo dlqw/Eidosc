@@ -27,6 +27,20 @@
 
 ## 0. 当前状态（新会话先读这段）
 
+> **进度（2026-08-18 第三会话，项目管线）**：驱动新增 `--project` 模式（提交见
+> changelog `2026-08-18-...-c2e-project-pipeline-and-semantic-gate.md`）：双遍跨 TU
+> 清单解析（跨 TU 调用直呼翻译产物）+ 分桶合并（声明先于使用）+ 包生成 + **语义编译门**
+> （Types/Llvm 相位，行号诊断落 gate_diagnostics.txt）。raylib 四真实 TU 合并产物：
+> **624 函数 / 105 个类型级错误**——这是"可用率"的真基线（正则翻译计数一直虚高）。
+> 门驱动的修复：超 i32 字面量加 `l` 后缀；保留字标识符消毒（字段/局部/参数/全局，
+> 如 `type` 字段、raymath 的 `fn` 局部）；`RecordNameFromSpelling` 循环剥前缀词
+> （`const struct X` 曾产出带空格的 accessor 名）；系统头内联函数同时移出候选集；
+> 枚举常量发射为模块绑定；不可映射全局引用诚实跳过。剩余 105 错的类别（下一会话）：
+> RawPtr↔Int 的调用/返回/赋值型失配（指针整数算术模式）、位运算非 Int 操作数、
+> 静态数组全局应映射为模块级 calloc 缓冲而非跳过。
+
+
+
 - **可运行样板**：`projects/snake-gui-c2e`（游戏逻辑与 bindgen 版逐字节一致，无头校验和一致，
   GUI 已冒烟）。图形包 `projects/bindings/raylib-c2e`（`regen.sh` 一键重生成翻译层，
   自动把地板符号清单写进 `eidos.toml [ffi].floorSymbols`）。

@@ -25,12 +25,19 @@ internal sealed class CBodyTranslator
         _api = api;
     }
 
+    /// <summary>成功翻译函数的 Eidos 签名（跨 TU 清单：别的 TU 据此直呼翻译产物）。</summary>
+    internal sealed record TranslatedFunctionSignature(
+        IReadOnlyList<string> ParameterTypes,
+        string ReturnType,
+        bool NeedsFfi);
+
     internal sealed record C2EResult(
         string Source,
         string NativeShimSource,
         IReadOnlyList<string> SkippedFunctions,
         IReadOnlyList<string> FloorSymbols,
-        IReadOnlyList<string> CrossTuSymbols)
+        IReadOnlyList<string> CrossTuSymbols,
+        IReadOnlyDictionary<string, TranslatedFunctionSignature> FunctionSignatures)
     {
         public bool IsEmpty => Source.Length == 0;
     }
@@ -76,11 +83,12 @@ internal sealed class CBodyTranslator
         string ForeignCName,
         bool IsFloor);
 
-    /// <summary>TranslateFunctions 的产出：跳过清单与 extern 三级分类结果。</summary>
+    /// <summary>TranslateFunctions 的产出：跳过清单、extern 三级分类与翻译成功的签名清单。</summary>
     private sealed record FunctionTranslationOutcome(
         List<string> Skipped,
         IReadOnlyList<string> FloorSymbols,
-        IReadOnlyList<string> CrossTuSymbols);
+        IReadOnlyList<string> CrossTuSymbols,
+        Dictionary<string, TranslatedFunctionSignature> Signatures);
 
     /// <summary>声明位于系统头（-isystem 或 clang 内置 SDK 搜索）→ L1 二进制边界，无 C 源可翻。</summary>
     private bool IsSystemDeclaration(ClangCursor cursor) =>
@@ -91,16 +99,20 @@ internal sealed class CBodyTranslator
 
     /// <summary>
     /// 带编译环境（-I/-D/-isystem）的翻译入口：真实项目的 C 源几乎都依赖头搜索路径与配置宏。
+    /// crossTuFunctions：其它 TU 已翻译函数的清单——调用它们时直呼翻译产物（同模块），
+    /// 不再回退 extern(c) 地板。
     /// </summary>
     public C2EResult Translate(
         string cSourcePath,
         IReadOnlyList<string>? includePaths,
         IReadOnlyList<string>? defines,
         IReadOnlySet<string>? onlyFunctions = null,
-        IReadOnlyList<string>? systemIncludePaths = null)
+        IReadOnlyList<string>? systemIncludePaths = null,
+        IReadOnlyDictionary<string, TranslatedFunctionSignature>? crossTuFunctions = null)
     {
         using var session = new ClangSession(_api);
         _session = session;
+        _crossTuFunctions = crossTuFunctions;
         try
         {
             session.Parse(cSourcePath, includePaths: includePaths, defines: defines, skipFunctionBodies: false, systemIncludePaths: systemIncludePaths);
@@ -119,6 +131,17 @@ internal sealed class CBodyTranslator
                 {
                     _globals[_api.GetString(_api.GetCursorSpelling(cursor))] = cursor;
                 }
+                else if ((ClangCursorKind)cursor.Kind == ClangCursorKind.EnumDecl)
+                {
+                    foreach (var constant in Children(cursor))
+                    {
+                        if ((ClangCursorKind)constant.Kind == ClangCursorKind.EnumConstantDecl)
+                        {
+                            _enumConstants[_api.GetString(_api.GetCursorSpelling(constant))] =
+                                _api.GetEnumConstantDeclValue(constant);
+                        }
+                    }
+                }
 
                 return ClangChildVisitResult.Continue;
             }, IntPtr.Zero);
@@ -126,12 +149,13 @@ internal sealed class CBodyTranslator
             ResolveRecordFields();
             _resolvingRecords = false;
 
-            var outcome = TranslateFunctions(functions, cSourcePath, out var source, out var shimSource, onlyFunctions);
-            return new C2EResult(source, shimSource, outcome.Skipped, outcome.FloorSymbols, outcome.CrossTuSymbols);
+            var outcome = TranslateFunctions(functions, cSourcePath, out var source, out var shimSource, onlyFunctions, crossTuFunctions);
+            return new C2EResult(source, shimSource, outcome.Skipped, outcome.FloorSymbols, outcome.CrossTuSymbols, outcome.Signatures);
         }
         finally
         {
             _session = null;
+            _crossTuFunctions = null;
         }
     }
 
@@ -148,9 +172,14 @@ internal sealed class CBodyTranslator
     private readonly Dictionary<string, RecordSchema> _records = new(StringComparer.Ordinal);
     private readonly HashSet<string> _usedRecords = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ClangCursor> _globals = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _enumConstants = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _usedEnumConstants = new(StringComparer.Ordinal);
 
     /// <summary>当前是否在 switch 体翻译中（continue 需映射为退出包装循环的 break）。</summary>
     private int _inSwitchBody;
+
+    /// <summary>其它 TU 已翻译函数清单（项目模式第二遍）：调用直呼翻译产物而非 extern 地板。</summary>
+    private IReadOnlyDictionary<string, TranslatedFunctionSignature>? _crossTuFunctions;
     private readonly List<string> _usedGlobals = new();
     private readonly HashSet<string> _bannedCallees = [];
     private readonly HashSet<string> _translatableCandidates = new(StringComparer.Ordinal);
@@ -241,9 +270,25 @@ internal sealed class CBodyTranslator
 
     private static string RecordNameFromSpelling(string spelling)
     {
-        var separator = spelling.IndexOf(' ');
-        var name = separator > 0 ? spelling[(separator + 1)..] : spelling;
-        return name.Trim();
+        // 循环剥离 C 类型前缀词：clang 拼写可能是 "const struct Vector2" 这类多级形态，
+        // 只剥一层会把 "struct Vector2" 当记录名（accessor 前缀随之带空格）。
+        var name = spelling.Trim();
+        while (true)
+        {
+            var separator = name.IndexOf(' ');
+            if (separator <= 0)
+            {
+                return name;
+            }
+
+            if (name[..separator] is "struct" or "union" or "enum" or "const" or "volatile")
+            {
+                name = name[(separator + 1)..].Trim();
+                continue;
+            }
+
+            return name;
+        }
     }
 
     /// <summary>引用文件级全局（可映射时登记使用，供模块级 mut 发射）。</summary>
@@ -271,6 +316,22 @@ internal sealed class CBodyTranslator
 
         return context;
     }
+
+    /// <summary>Eidos 保留字：与 C 标识符同名时字段名加 c2e 后缀（accessor C 符号仍用原名）。</summary>
+    private static readonly HashSet<string> ReservedWords =
+    [
+        "module", "import", "export", "let", "func", "effect", "effects", "type", "trait",
+        "fn", "if", "then", "else", "decide", "while", "loop", "match", "when", "return",
+        "need", "requires", "break", "continue", "as", "ref", "mut", "mref", "do",
+        "unreachable", "quote"
+    ];
+
+    private static string SanitizeIdent(string name) =>
+        ReservedWords.Contains(name) ? name + "c2e" : name;
+
+    /// <summary>局部/参数的 C 名 → Eidos 名（保留字加 c2e 后缀，声明与引用一致）。</summary>
+    private static string EidosRefName(string cName, FunctionContext context) =>
+        context.RenamedLocals.TryGetValue(cName, out var renamed) ? renamed : cName;
 
     /// <summary>使用到的记录闭包：字段引用的嵌套记录一并发射声明。</summary>
     private List<string> CollectUsedRecordClosure()
@@ -302,7 +363,8 @@ internal sealed class CBodyTranslator
         string cSourcePath,
         out string source,
         out string shimSource,
-        IReadOnlySet<string>? onlyFunctions = null)
+        IReadOnlySet<string>? onlyFunctions = null,
+        IReadOnlyDictionary<string, TranslatedFunctionSignature>? crossTuFunctions = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated>");
@@ -345,10 +407,18 @@ internal sealed class CBodyTranslator
         }
 
         // 不动点重试：调用"定义了但翻译失败"的同文件函数会随失败传播逐轮跳过。
-        _translatableCandidates.UnionWith(onlyFunctions ?? defined.Where(static name => name != "main"));
+        // 系统头内带体函数（UCRT 内联数学等）不进候选：留在候选集会让调用走
+        // 内部直呼路径发射裸名（其体被跳过不发射，落成未定义符号）。
+        var systemHeaderFunctions = new HashSet<string>(
+            functions.Where(IsSystemDeclaration).Select(function => _api.GetString(_api.GetCursorSpelling(function))),
+            StringComparer.Ordinal);
+        _translatableCandidates.UnionWith(
+            onlyFunctions ??
+            defined.Where(name => name != "main" && !systemHeaderFunctions.Contains(name)));
         var bodies = new List<(string Name, string Text)>();
         var banned = new HashSet<string>(StringComparer.Ordinal);
         var lastSkipReasons = new Dictionary<string, string>(StringComparer.Ordinal);
+        var signatures = new Dictionary<string, TranslatedFunctionSignature>(StringComparer.Ordinal);
         while (true)
         {
             var bannedCount = banned.Count;
@@ -356,11 +426,19 @@ internal sealed class CBodyTranslator
             _bannedCallees.UnionWith(banned);
             bodies.Clear();
             skipped.Clear();
+            signatures.Clear();
 
             foreach (var function in functions)
             {
                 var name = _api.GetString(_api.GetCursorSpelling(function));
                 if (!HasBody(function) || name == "main")
+                {
+                    continue;
+                }
+
+                // 系统头内的带体函数（UCRT 内联数学等）是 L1 二进制边界的组成部分：
+                // 翻译无意义，留待 extern 地板路径按需声明。
+                if (IsSystemDeclaration(function))
                 {
                     continue;
                 }
@@ -396,6 +474,13 @@ internal sealed class CBodyTranslator
                 }
 
                 bodies.Add((name, translated));
+                var paramTypes = state.FunctionParameters.TryGetValue(name, out var signatureMappings)
+                    ? signatureMappings.Select(static mapping => mapping.EidosType).ToList()
+                    : [];
+                signatures[name] = new TranslatedFunctionSignature(
+                    paramTypes,
+                    state.FunctionReturnTypes.GetValueOrDefault(name, "Unit"),
+                    state.FunctionUsesFfi.Contains(name));
             }
 
             if (banned.Count == bannedCount)
@@ -431,7 +516,7 @@ internal sealed class CBodyTranslator
         {
             var record = _records[recordName];
             sb.AppendLine($"{record.EidosName} :: type {{");
-            sb.AppendLine($"    {string.Join($",{Environment.NewLine}    ", record.Fields!.Select(field => $"{field.Name} :: {field.EidosType}"))}");
+            sb.AppendLine($"    {string.Join($",{Environment.NewLine}    ", record.Fields!.Select(field => $"{SanitizeIdent(field.Name)} :: {field.EidosType}"))}");
             sb.AppendLine("}");
             sb.AppendLine();
         }
@@ -442,6 +527,13 @@ internal sealed class CBodyTranslator
             // 避免与 runtime 自有的 eidos_int_to_float 符号冲突。
             sb.AppendLine("@[extern(c, name: \"c2e_int_to_float_shim\")]");
             sb.AppendLine("c2e_int_to_float :: Int -> Float need ffi;");
+            sb.AppendLine();
+        }
+
+        // 枚举常量 → 模块级绑定（C 的枚举值是 int 常量，按使用面发射）。
+        foreach (var constantName in _usedEnumConstants.OrderBy(static name => name, StringComparer.Ordinal))
+        {
+            sb.AppendLine($"mut {constantName} := {FormatIntLiteral(_enumConstants[constantName])};");
             sb.AppendLine();
         }
 
@@ -515,6 +607,12 @@ internal sealed class CBodyTranslator
 
         foreach (var (name, body) in bodies)
         {
+            // 体间空行分隔：块级合并（空行分块）依赖它区分相邻函数。
+            if (bodies.Count > 0)
+            {
+                sb.AppendLine();
+            }
+
             if (body.Length > 0 && state.FunctionUsesFfi.Contains(name))
             {
                 // 签名行补 need ffi（首行即 "{name} :: {signature}"）。
@@ -569,7 +667,7 @@ internal sealed class CBodyTranslator
             .Select(static pending => pending.ForeignCName)
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToList();
-        return new FunctionTranslationOutcome(skipped, floorSymbols, crossTuSymbols);
+        return new FunctionTranslationOutcome(skipped, floorSymbols, crossTuSymbols, signatures);
     }
 
     /// <summary>sret shim：按值返回结构体的外部函数 → 静态槽 + 指针返回；float 参数 double 中转。</summary>
@@ -729,6 +827,10 @@ internal sealed class CBodyTranslator
             paramNames.Add(paramName);
             context.VarTypes[paramName] = mapping;
             context.ParameterNames.Add(paramName);
+            if (SanitizeIdent(paramName) != paramName)
+            {
+                context.RenamedLocals[paramName] = SanitizeIdent(paramName);
+            }
         }
 
         var returnMapping = MapType(_api.GetCursorResultType(function));
@@ -766,9 +868,10 @@ internal sealed class CBodyTranslator
         var signature = paramTypes.Count == 0
             ? $"Unit -> {returnType}"
             : $"{string.Join(" -> ", paramTypes)} -> {returnType}";
+        state.FunctionReturnTypes[name] = returnType;
         var binders = paramNames.Count == 0
             ? "_ =>"
-            : string.Join(" => ", paramNames) + " =>";
+            : string.Join(" => ", paramNames.Select(name => EidosRefName(name, context))) + " =>";
         // 兜底尾值按返回类型给出（记录/Float/指针各自的零值）。
         var tail = ZeroOf(returnType, state);
 
@@ -900,7 +1003,7 @@ internal sealed class CBodyTranslator
 
             try
             {
-                var valueText = _api.EvalResultGetAsLongLong(evaluated).ToString();
+                var valueText = FormatIntLiteral(_api.EvalResultGetAsLongLong(evaluated));
                 runLabels.Add(valueText);
                 allCaseValues.Add(valueText);
             }
@@ -1173,7 +1276,7 @@ internal sealed class CBodyTranslator
             var shadows = string.Join(
                 Environment.NewLine,
                 context.MutableParams.OrderBy(static p => p, StringComparer.Ordinal)
-                    .Select(static param => $"mut {param} := {param};"));
+                    .Select(param => $"mut {EidosRefName(param, context)} := {EidosRefName(param, context)};"));
             bodyText = shadows + Environment.NewLine + bodyText;
         }
 
@@ -1274,7 +1377,8 @@ internal sealed class CBodyTranslator
             return null;
         }
 
-        var lines = new List<string> { $"mut {varName} := Ffi.calloc({count})({elementSize});" };
+        var eidosVarName = EidosRefName(varName, context);
+        var lines = new List<string> { $"mut {eidosVarName} := Ffi.calloc({count})({elementSize});" };
         var elementType = MapType(elementCanonical)?.EidosType;
         for (var i = 0; i < elements.Count; i++)
         {
@@ -1287,7 +1391,7 @@ internal sealed class CBodyTranslator
             value = CoerceNumeric(value, EidosTypeOf(elements[i]), elementType, state);
             var store = FormatElementStore(
                 elementCanonical,
-                $"Ffi.offset_bytes({varName})({i} * {elementSize})",
+                $"Ffi.offset_bytes({eidosVarName})({i} * {elementSize})",
                 value,
                 state);
             if (store == null)
@@ -1382,7 +1486,12 @@ internal sealed class CBodyTranslator
                     }
 
                     context.VarTypes[varName] = varType;
-                    lines.Add($"mut {varName} := {init};");
+                    if (SanitizeIdent(varName) != varName)
+                    {
+                        context.RenamedLocals[varName] = SanitizeIdent(varName);
+                    }
+
+                    lines.Add($"mut {EidosRefName(varName, context)} := {init};");
                 }
 
                 return string.Join(Environment.NewLine, lines);
@@ -1811,7 +1920,22 @@ internal sealed class CBodyTranslator
             {
                 var name = _api.GetString(_api.GetCursorSpelling(expression));
                 MarkGlobalUsed(name);
-                return name;
+                if (_enumConstants.ContainsKey(name))
+                {
+                    _usedEnumConstants.Add(name);
+                }
+
+                // 不可映射全局（静态数组/查找表等）的引用：诚实跳过该函数，
+                // 而非发射裸名落成未定义符号。
+                if (!context.VarTypes.ContainsKey(name) &&
+                    _globals.TryGetValue(name, out var unsupportedGlobal) &&
+                    MapType(_api.GetCursorType(unsupportedGlobal)) == null)
+                {
+                    SkipReason = $"global '{name}' has an unsupported type";
+                    return null;
+                }
+
+                return EidosRefName(name, context);
             }
 
             case ClangCursorKind2.IntegerLiteral:
@@ -1864,7 +1988,7 @@ internal sealed class CBodyTranslator
                     var field = record.Fields[i];
                     if (i >= values.Count)
                     {
-                        parts.Add($"{field.Name}: {ZeroOf(field.EidosType, state)}");
+                        parts.Add($"{SanitizeIdent(field.Name)}: {ZeroOf(field.EidosType, state)}");
                         continue;
                     }
 
@@ -1885,7 +2009,7 @@ internal sealed class CBodyTranslator
                         value = CoerceNumeric(value, EidosTypeOf(values[i]), field.EidosType, state);
                     }
 
-                    parts.Add($"{field.Name}: {value}");
+                    parts.Add($"{SanitizeIdent(field.Name)}: {value}");
                 }
 
                 return $"{record.EidosName} {{ {string.Join(", ", parts)} }}";
@@ -2453,7 +2577,7 @@ internal sealed class CBodyTranslator
             }
 
             var baseText = TranslateExpression(baseCursor, context, state);
-            return baseText == null ? null : $"{baseText}.{member}";
+            return baseText == null ? null : $"{baseText}.{SanitizeIdent(member)}";
         }
 
         SkipReason = "member access on a non-record-pointer base";
@@ -2705,22 +2829,23 @@ internal sealed class CBodyTranslator
             var headName = _api.GetString(_api.GetCursorSpelling(head));
             if (context.VarTypes.TryGetValue(headName, out var headMapping) && IsValueRecord(headMapping))
             {
+                var headEidosName = EidosRefName(headName, context);
                 if (context.ParameterNames.Contains(headName) && !context.MutableParams.Contains(headName))
                 {
                     SkipReason = $"mutation of parameter '{headName}'";
                     return null;
                 }
 
-                var updated = BuildNestedRecordUpdate(headName, headMapping.EidosType, members, assigned);
-                return updated == null ? null : $"{headName} := {updated}";
+                var updated = BuildNestedRecordUpdate(headEidosName, headMapping.EidosType, members, assigned);
+                return updated == null ? null : $"{headEidosName} := {updated}";
             }
 
             if (headName.Length > 0 && _globals.TryGetValue(headName, out var globalDecl) &&
                 MapType(_api.GetCursorType(globalDecl)) is { } globalMapping && IsValueRecord(globalMapping))
             {
                 MarkGlobalUsed(headName);
-                var updatedGlobal = BuildNestedRecordUpdate(headName, globalMapping.EidosType, members, assigned);
-                return updatedGlobal == null ? null : $"{headName} := {updatedGlobal}";
+                var updatedGlobal = BuildNestedRecordUpdate(SanitizeIdent(headName), globalMapping.EidosType, members, assigned);
+                return updatedGlobal == null ? null : $"{SanitizeIdent(headName)} := {updatedGlobal}";
             }
         }
 
@@ -2811,7 +2936,7 @@ internal sealed class CBodyTranslator
             if (field.Name == members[0])
             {
                 var inner = BuildNestedRecordUpdate(
-                    $"{recordValueText}.{field.Name}",
+                    $"{recordValueText}.{SanitizeIdent(field.Name)}",
                     field.EidosType,
                     members.Count > 1 ? members[1..] : [],
                     assigned);
@@ -2820,11 +2945,11 @@ internal sealed class CBodyTranslator
                     return null;
                 }
 
-                parts.Add($"{field.Name}: {inner}");
+                parts.Add($"{SanitizeIdent(field.Name)}: {inner}");
             }
             else
             {
-                parts.Add($"{field.Name}: {recordValueText}.{field.Name}");
+                parts.Add($"{SanitizeIdent(field.Name)}: {recordValueText}.{SanitizeIdent(field.Name)}");
             }
         }
 
@@ -2992,20 +3117,21 @@ internal sealed class CBodyTranslator
             var name = _api.GetString(_api.GetCursorSpelling(target));
             if (context.VarTypes.TryGetValue(name, out _))
             {
+                var eidosName = EidosRefName(name, context);
                 if (context.ParameterNames.Contains(name) && !context.MutableParams.Contains(name))
                 {
                     SkipReason = $"mutation of parameter '{name}'";
                     return null;
                 }
 
-                return $"{name} := {valueText}";
+                return $"{eidosName} := {valueText}";
             }
 
             // 文件级全局 → 模块级 mut 绑定。
             if (_globals.TryGetValue(name, out var declaration) && MapType(_api.GetCursorType(declaration)) != null)
             {
                 MarkGlobalUsed(name);
-                return $"{name} := {valueText}";
+                return $"{SanitizeIdent(name)} := {valueText}";
             }
 
             SkipReason = $"assignment to '{name}' outside the supported local scope";
@@ -3185,7 +3311,7 @@ internal sealed class CBodyTranslator
                 fieldClang != null ? _api.GetString(_api.GetTypeSpelling(fieldClang.Value)) : field.EidosType,
                 field.EidosType,
                 fieldClang != null && (ClangTypeKind)fieldClang.Value.Kind == ClangTypeKind.Float);
-            fields.Add($"{field.Name}: c2e_{record.EidosName}_{field.Name}_get(slot)");
+            fields.Add($"{SanitizeIdent(field.Name)}: c2e_{record.EidosName}_{field.Name}_get(slot)");
         }
 
         return $"{{{Environment.NewLine}    slot := {sretName}({string.Join(", ", argumentTexts)});{Environment.NewLine}    {record.EidosName} {{ {string.Join(", ", fields)} }}{Environment.NewLine}}}";
@@ -3193,6 +3319,44 @@ internal sealed class CBodyTranslator
 
     private string? TranslateExternalCall(string callee, IEnumerable<ClangCursor> arguments, FunctionContext context, TranslationState state)
     {
+        // 跨 TU 清单命中：该函数在其它 TU 已翻译为同模块函数——直呼并按清单签名矫正实参。
+        if (_crossTuFunctions != null &&
+            state.DeclaredFunctions.TryGetValue(callee, out var manifestDeclaration) &&
+            _api.CursorIsVariadic(manifestDeclaration) == 0 &&
+            _crossTuFunctions.TryGetValue(callee, out var manifest))
+        {
+            var manifestFunctionType = _api.GetCursorType(manifestDeclaration);
+            var manifestArity = (int)_api.GetNumArgTypes(manifestFunctionType);
+            var manifestArguments = arguments.ToList();
+            if (manifestArity == manifestArguments.Count && manifestArity == manifest.ParameterTypes.Count)
+            {
+                var manifestTexts = new List<string>(manifestArguments.Count);
+                for (var i = 0; i < manifestArguments.Count; i++)
+                {
+                    var mapping = MapType(_api.GetArgType(manifestFunctionType, (uint)i));
+                    var manifestType = mapping?.EidosType ?? manifest.ParameterTypes[i];
+                    var translated = TranslateCallArgument(manifestArguments[i],
+                        new CTypeMapping(manifestType, mapping?.ElementEidosType, mapping?.RecordSpelling, mapping?.RecordName),
+                        context,
+                        state);
+                    if (translated == null)
+                    {
+                        return null;
+                    }
+
+                    manifestTexts.Add(translated);
+                }
+
+                if (manifest.NeedsFfi)
+                {
+                    // 调用 need ffi 的翻译函数：调用方签名同样需要。
+                    state.FunctionUsesFfi.Add(state.CurrentFunction);
+                }
+
+                return $"{callee}({string.Join(", ", manifestTexts)})";
+            }
+        }
+
         if (!state.DeclaredFunctions.TryGetValue(callee, out var declaration) ||
             _api.CursorIsVariadic(declaration) != 0)
         {
@@ -3425,7 +3589,7 @@ internal sealed class CBodyTranslator
             var kind = _api.EvalResultGetKind(result);
             if (integer)
             {
-                return _api.EvalResultGetAsLongLong(result).ToString();
+                return FormatIntLiteral(_api.EvalResultGetAsLongLong(result));
             }
 
             if ((ClangEvalResultKind)kind != ClangEvalResultKind.Float)
@@ -3444,6 +3608,13 @@ internal sealed class CBodyTranslator
             _api.EvalResultDispose(result);
         }
     }
+
+    /// <summary>
+    /// 整数字面量文本：Eidos 词法默认按 Int32 解析，超出 i32 值域的 C 无符号常量
+    /// （如 2864434397 = 0xAABBCCDD）必须带 Int64 后缀 l。
+    /// </summary>
+    private static string FormatIntLiteral(long value) =>
+        value is > int.MaxValue or < int.MinValue ? $"{value}l" : value.ToString();
 
     private static string NormalizeFloat(string text)
     {
@@ -3618,7 +3789,7 @@ internal sealed class CBodyTranslator
     private string ZeroValue(string recordName, TranslationState state)
     {
         var record = _records[recordName];
-        var parts = record.Fields!.Select(field => $"{field.Name}: {ZeroOf(field.EidosType, state)}");
+        var parts = record.Fields!.Select(field => $"{SanitizeIdent(field.Name)}: {ZeroOf(field.EidosType, state)}");
         return $"{record.EidosName} {{ {string.Join(", ", parts)} }}";
     }
 
@@ -3817,6 +3988,9 @@ internal sealed class CBodyTranslator
 
         /// <summary>被 C 直接改写的参数：体首影拷贝为 mut 局部（遮蔽不可变参数绑定）。</summary>
         public HashSet<string> MutableParams { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>C 名 → Eidos 名（保留字标识符重命名表）。</summary>
+        public Dictionary<string, string> RenamedLocals { get; } = new(StringComparer.Ordinal);
     }
 
     private sealed class TranslationState(
@@ -3826,6 +4000,7 @@ internal sealed class CBodyTranslator
         public IReadOnlySet<string> DefinedNames { get; } = definedNames;
         public IReadOnlyDictionary<string, ClangCursor> DeclaredFunctions { get; } = declaredFunctions;
         public Dictionary<string, IReadOnlyList<CTypeMapping>> FunctionParameters { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> FunctionReturnTypes { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, PendingExtern> PendingExterns { get; } = new(StringComparer.Ordinal);
         public Dictionary<(string Record, string Member), RecordMemberAccess> RecordMembers { get; } = new();
         public Dictionary<string, FloatAbiShim> FloatShims { get; } = new(StringComparer.Ordinal);
