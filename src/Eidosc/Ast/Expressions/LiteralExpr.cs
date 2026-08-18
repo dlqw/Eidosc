@@ -89,6 +89,14 @@ public record LiteralExpr : Expression
         typeSuffix = LiteralTypeSuffix.None;
         text = StripUnsignedSuffix(text, ref typeSuffix);
 
+        // 词法层认 'l' 为 Int64 后缀（超出 Int32 的字面量必须带它才能过词法），
+        // 但类型系统里整数只有一个 Int；剥掉后缀按 long 解析即可。
+        // 不剥的话 long.TryParse 连后缀一起失败，会落入下方 String 兜底。
+        if (text.EndsWith("l", StringComparison.Ordinal) && text.Length > 1)
+        {
+            text = text[..^1];
+        }
+
         if (text == "()")
         {
             kind = LiteralKind.Unit;
@@ -103,6 +111,10 @@ public record LiteralExpr : Expression
             {
                 return hexVal;
             }
+            if (long.TryParse(text[2..], System.Globalization.NumberStyles.HexNumber, null, out var hexLong))
+            {
+                return hexLong;
+            }
             return 0;
         }
 
@@ -116,7 +128,14 @@ public record LiteralExpr : Expression
             }
             catch
             {
-                return 0;
+                try
+                {
+                    return Convert.ToInt64(text[2..], 2);
+                }
+                catch
+                {
+                    return 0;
+                }
             }
         }
 
@@ -130,7 +149,14 @@ public record LiteralExpr : Expression
             }
             catch
             {
-                return 0;
+                try
+                {
+                    return Convert.ToInt64(text[2..], 8);
+                }
+                catch
+                {
+                    return 0;
+                }
             }
         }
 

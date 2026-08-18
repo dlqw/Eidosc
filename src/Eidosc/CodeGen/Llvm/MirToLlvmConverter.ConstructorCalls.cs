@@ -192,6 +192,45 @@ public sealed partial class MirToLlvmConverter
     }
 
     /// <summary>
+    /// 处理 int_to_ptr(v) 调用：整数位模式回指针（C 的 (T*)n）。
+    /// 生成 LLVM: inttoptr i64 %v to ptr
+    /// </summary>
+    private LlvmCall? ConvertIntToPtr(MirCall call)
+    {
+        if (call.Arguments.Count != 1)
+        {
+            return null;
+        }
+
+        var targetPlace = call.Target as MirPlace;
+        if (targetPlace == null)
+        {
+            return null;
+        }
+
+        var resultName = _nameMangler.NewTempName($"l{targetPlace.Local.Value}");
+        var intValue = CoerceToI64(ConvertOperand(call.Arguments[0]));
+
+        var cast = new LlvmCast
+        {
+            Op = "inttoptr",
+            Value = intValue,
+            TargetType = LlvmPointerType.VoidPtr(),
+            ResultName = resultName
+        };
+        _currentBlock?.Instructions.Add(cast);
+
+        ClearGenericLocal(targetPlace.Local);
+        _locals.LocalMap[targetPlace.Local] = new LlvmLocal
+        {
+            Name = resultName,
+            Type = LlvmPointerType.VoidPtr()
+        };
+
+        return null;
+    }
+
+    /// <summary>
     /// 处理 float_to_int(v) 调用：C 截断语义的 Float→Int。
     /// 生成 LLVM: fptosi double %v to i64
     /// </summary>

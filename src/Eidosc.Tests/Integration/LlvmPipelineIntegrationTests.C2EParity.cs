@@ -1127,4 +1127,231 @@ public partial class LlvmPipelineIntegrationTests
             }
         }
     }
+
+    /// <summary>
+    /// 指针算术与语境强转对拍：p±n / p1-p2（元素差）/ 复合赋值与 ++ 的指针形态、
+    /// NULL 跨语境（初始化/赋值/比较/实参/返回/下标存储）、位运算条件的括号保护、
+    /// &amp;&amp;/|| 的 Int 真值归一、Bool 比较 0、比较进算术、float 复合赋值提升、
+    /// Float→Int 截断赋值、&gt;i32 常量（'l' 后缀）、字符串字面量下标、{ 0 } 记录整体零初始化。
+    /// </summary>
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_PointerArithmeticAndCoercions_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            #include <stddef.h>
+
+            struct Vec2 { int x; int y; };
+            struct Ray { struct Vec2 pos; int tag; };
+            extern int ray_area(struct Ray r);
+
+            int stage_ray(int tag)
+            {
+                struct Ray r = { { tag + 1, tag + 2 }, tag + 3 };
+                return ray_area(r) + ray_area(r);
+            }
+
+            unsigned int big_seed(void)
+            {
+                return 3993919788u + 1u;
+            }
+
+            int ptr_walk(int* a, int n)
+            {
+                int* p = a + 2;
+                int* q = p - 1;
+                p += 1;
+                p++;
+                int s = 0;
+                for (int* r = a; r < a + n; r += 2)
+                {
+                    s += *r;
+                }
+                return *p + *q + s;
+            }
+
+            int ptr_diff(int* a)
+            {
+                int* b = a + 7;
+                return (int)(b - a);
+            }
+
+            int null_flow(int* p)
+            {
+                int* q = NULL;
+                if (p != NULL) { q = p + 1; }
+                if (q == NULL) { return 1; }
+                q = 0;
+                return q == 0 ? *q : 3;
+            }
+
+            int* null_return(void)
+            {
+                return NULL;
+            }
+
+            int flag_bits(int flags)
+            {
+                int r = 0;
+                if (flags & 4) { r += 1; }
+                if ((flags & 8) != 0) { r += 2; }
+                if (((flags & 1) && (flags & 2)) == 0) { r += 4; }
+                return r;
+            }
+
+            int bool_arith(int a, int b, int c)
+            {
+                return (a > b) + (b > c) * 2 + ((a > c) != 0);
+            }
+
+            int logic_truth(int a, int b)
+            {
+                return (a % 2) || (b % 3) ? 10 : 20;
+            }
+
+            float scale_twice(float f)
+            {
+                f *= 2;
+                f += 1;
+                return f;
+            }
+
+            int trunc_store(float f)
+            {
+                int i = f;
+                return i;
+            }
+
+            int magic_bytes(void)
+            {
+                return "OTTO"[1] + "ttcf"[2] * 100;
+            }
+
+            int ray_zero(void)
+            {
+                struct Ray r = { 0 };
+                r.tag += 5;
+                return r.pos.x + r.pos.y + r.tag;
+            }
+
+            int table_slot(int* a)
+            {
+                int* slots[3] = { 0 };
+                slots[1] = a + 3;
+                return *slots[1] + (slots[0] == NULL ? 40 : 50);
+            }
+
+            int compute(int* ints)
+            {
+                int w = ptr_walk(ints, 6);
+                int d = ptr_diff(ints);
+                int n = null_flow(ints);
+                int nr = null_return() == NULL ? 10 : 20;
+                int f = flag_bits(12);
+                int b = bool_arith(5, 3, 4);
+                int l = logic_truth(3, 4);
+                float s = scale_twice(2.5f);
+                int t = trunc_store(7.9f);
+                int m = magic_bytes();
+                int rz = ray_zero();
+                int ts = table_slot(ints);
+                int sr = stage_ray(5);
+                unsigned big = big_seed();
+                return (w + d + n + nr + f + b + l + t + m + rz + ts + sr) % 251
+                    + (int)s % 7 * 3
+                    + (int)(big % 97u);
+            }
+            """;
+
+        var helperC = """
+            #include <stdlib.h>
+
+            // 外部链接：Eidos 侧 extern(c) 引用来自其他编译单元。
+            void* test_int_array(void)
+            {
+                int* a = (int*)malloc(6 * sizeof(int));
+                for (int i = 0; i < 6; i++) { a[i] = 3 + i * 2; }
+                return a;
+            }
+
+            // 按值结构体参数的 extern（_v 包装 shim + staging 槽装载的对拍对象）。
+            // shim 侧 TU 先 #include input.c（struct Vec2/Ray 定义处）再拼接本段，
+            // 这里不得重定义同名结构，否则 C 见到冲突的 ray_area 声明。
+            int ray_area(struct Ray r)
+            {
+                return r.pos.x + r.pos.y + r.tag;
+            }
+            """;
+
+        var referenceExit = RunCReference(
+            cSource,
+            """
+                #include <stdlib.h>
+
+                struct Vec2 { int x; int y; };
+                struct Ray { struct Vec2 pos; int tag; };
+
+                void* test_int_array(void)
+                {
+                    int* a = (int*)malloc(6 * sizeof(int));
+                    for (int i = 0; i < 6; i++) { a[i] = 3 + i * 2; }
+                    return a;
+                }
+
+                int ray_area(struct Ray r)
+                {
+                    return r.pos.x + r.pos.y + r.tag;
+                }
+
+                int compute(int*);
+                int main(void)
+                {
+                    return compute(test_int_array());
+                }
+                """);
+
+        var inputDirectory = string.Empty;
+        try
+        {
+            var translated = TranslateC2EKeepingInputFile(cSource, out var nativeShimSource, out inputDirectory);
+            Assert.Contains("Ffi.offset_bytes(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.ptr_as_int(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.null_pointer()", translated, StringComparison.Ordinal);
+            Assert.Contains("3993919788l", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.to_c_string(", translated, StringComparison.Ordinal);
+            Assert.Contains("Ffi.trunc_to_int(", translated, StringComparison.Ordinal);
+
+            var eidosSource = translated + """
+
+                @[extern(c, name: "test_int_array")]
+                test_int_array :: Unit -> RawPtr need ffi;
+
+                main :: Unit -> Int need ffi
+                {
+                    _ => compute(test_int_array())
+                }
+                """;
+
+            var execution = CompileAndRunSourceAtNative(
+                eidosSource,
+                "c2e_ptrarith_native.eidos",
+                "c2e_ptrarith_native",
+                nativeCSource: nativeShimSource + helperC);
+
+            Assert.Equal(referenceExit, execution.ExitCode);
+            Assert.NotEqual(0, execution.ExitCode);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(inputDirectory))
+            {
+                Directory.Delete(inputDirectory, true);
+            }
+        }
+    }
 }

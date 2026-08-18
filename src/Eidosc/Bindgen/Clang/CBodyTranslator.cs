@@ -60,7 +60,14 @@ internal sealed class CBodyTranslator
     /// </summary>
     private sealed record SretExtern(
         string CName,
-        IReadOnlyList<(string Spelling, bool IsFloat)> Parameters,
+        IReadOnlyList<(string Spelling, bool IsFloat, bool IsStruct)> Parameters,
+        string ReturnSpelling,
+        bool IsFloor);
+
+    /// <summary>按值结构体参数的外部函数：C 侧包装 shim（指针收参、调用点解引用）。</summary>
+    private sealed record StructArgExtern(
+        string CName,
+        IReadOnlyList<(string Spelling, bool IsFloat, bool IsStruct)> Parameters,
         string ReturnSpelling,
         bool IsFloor);
 
@@ -512,9 +519,12 @@ internal sealed class CBodyTranslator
         }
 
         // 值记录声明（含字段引用的传递闭包），先于函数与 extern。
+        // derive Copy：C 结构体是值语义（按值传参/赋值即拷贝），
+        // 不派生的话记录按值进函数是 move，同变量二次传参触发 E1001。
         foreach (var recordName in CollectUsedRecordClosure())
         {
             var record = _records[recordName];
+            sb.AppendLine("@[derive(Copy)]");
             sb.AppendLine($"{record.EidosName} :: type {{");
             sb.AppendLine($"    {string.Join($",{Environment.NewLine}    ", record.Fields!.Select(field => $"{SanitizeIdent(field.Name)} :: {field.EidosType}"))}");
             sb.AppendLine("}");
@@ -530,15 +540,11 @@ internal sealed class CBodyTranslator
             sb.AppendLine();
         }
 
-        // 枚举常量 → 模块级绑定（C 的枚举值是 int 常量，按使用面发射）。
-        foreach (var constantName in _usedEnumConstants.OrderBy(static name => name, StringComparer.Ordinal))
-        {
-            sb.AppendLine($"mut {constantName} := {FormatIntLiteral(_enumConstants[constantName])};");
-            sb.AppendLine();
-        }
-
         // 文件级全局 → 模块级 mut 绑定（仅发射被引用且可映射者）。
+        // 先翻译全部初始化器再发射：全局初值引用枚举常量（logTypeLevel = LOG_INFO）
+        // 的注册发生在翻译期，必须先于枚举常量绑定段的发射。
         var globalContext = BuildGlobalContext();
+        var globalInits = new List<(string Name, string Init)>();
         foreach (var globalName in _usedGlobals)
         {
             if (!_globals.TryGetValue(globalName, out var declaration))
@@ -560,7 +566,25 @@ internal sealed class CBodyTranslator
             {
                 init = ZeroOf(mapping.EidosType, state);
             }
+            else if (initChildren.Count > 0)
+            {
+                // 全局初始化与局部同规则：NULL 字面量/字符串字面量按指针语境转换。
+                init = CoerceStringToPointerTarget(initChildren[0], init, mapping.EidosType, state);
+                init = CoercePointerLiteralTarget(initChildren[0], init, mapping.EidosType, state);
+            }
 
+            globalInits.Add((globalName, init));
+        }
+
+        // 枚举常量 → 模块级绑定（C 的枚举值是 int 常量，按使用面发射）。
+        foreach (var constantName in _usedEnumConstants.OrderBy(static name => name, StringComparer.Ordinal))
+        {
+            sb.AppendLine($"mut {constantName} := {FormatIntLiteral(_enumConstants[constantName])};");
+            sb.AppendLine();
+        }
+
+        foreach (var (globalName, init) in globalInits)
+        {
             sb.AppendLine($"mut {globalName} := {init};");
             sb.AppendLine();
         }
@@ -633,7 +657,8 @@ internal sealed class CBodyTranslator
         {
             BuildRecordMemberShimSource(cSourcePath, state.RecordMembers.Values),
             BuildFloatShimSource(cSourcePath, state.FloatShims.Values),
-            BuildSretShimSource(cSourcePath, state.SretExterns.Values)
+            BuildSretShimSource(cSourcePath, state.SretExterns.Values),
+            BuildStructArgShimSource(cSourcePath, state.StructArgExterns.Values)
         };
         var shimText = shimBodies.All(static body => body.Length == 0)
             ? string.Empty
@@ -683,20 +708,61 @@ internal sealed class CBodyTranslator
         foreach (var entry in list)
         {
             var eidosName = $"c2e_ext_{entry.CName}_sret";
+            // 按值结构体参数 → 指针收参、调用点解引用（Eidos 侧经 staging 槽装载）。
             var parameters = string.Join(", ", entry.Parameters.Select(static (parameter, index) =>
-                parameter.IsFloat ? $"double p{index}" : $"{parameter.Spelling} p{index}"));
+                parameter.IsFloat ? $"double p{index}"
+                    : parameter.IsStruct ? $"{parameter.Spelling}* p{index}"
+                    : $"{parameter.Spelling} p{index}"));
             if (parameters.Length == 0)
             {
                 parameters = "void";
             }
 
             var callArguments = string.Join(", ", entry.Parameters.Select(static (parameter, index) =>
-                parameter.IsFloat ? $"(float)p{index}" : $"p{index}"));
+                parameter.IsFloat ? $"(float)p{index}"
+                    : parameter.IsStruct ? $"*p{index}"
+                    : $"p{index}"));
             shim.AppendLine($"{entry.ReturnSpelling}* {eidosName}({parameters})");
             shim.AppendLine("{");
             shim.AppendLine($"    static {entry.ReturnSpelling} __slot;");
             shim.AppendLine($"    __slot = {entry.CName}({callArguments});");
             shim.AppendLine("    return &__slot;");
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
+    /// <summary>按值结构体参数的包装 shim：Eidos 调用点以 staging 槽（RawPtr）传参。</summary>
+    private string BuildStructArgShimSource(string cSourcePath, IEnumerable<StructArgExtern> externs)
+    {
+        var list = externs.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            var eidosName = $"c2e_ext_{entry.CName}_v";
+            var parameters = string.Join(", ", entry.Parameters.Select(static (parameter, index) =>
+                parameter.IsFloat ? $"double p{index}"
+                    : parameter.IsStruct ? $"{parameter.Spelling}* p{index}"
+                    : $"{parameter.Spelling} p{index}"));
+            if (parameters.Length == 0)
+            {
+                parameters = "void";
+            }
+
+            var callArguments = string.Join(", ", entry.Parameters.Select(static (parameter, index) =>
+                parameter.IsFloat ? $"(float)p{index}"
+                    : parameter.IsStruct ? $"*p{index}"
+                    : $"p{index}"));
+            var returnsVoid = entry.ReturnSpelling == "void";
+            shim.AppendLine($"{entry.ReturnSpelling} {eidosName}({parameters})");
+            shim.AppendLine("{");
+            shim.AppendLine($"    {(returnsVoid ? string.Empty : "return ")}{entry.CName}({callArguments});");
             shim.AppendLine("}");
         }
 
@@ -937,10 +1003,24 @@ internal sealed class CBodyTranslator
     /// C 的整数值条件归一为比较（Eidos 条件必须 Bool）。判据按表达式形态而非
     /// clang 类型：C 比较表达式的类型是 int，但翻译产物是 Eidos Bool。
     /// </summary>
-    private string? NormalizeConditionText(string? condition, ClangCursor conditionCursor) =>
-        condition != null && !IsBoolValuedCondition(conditionCursor) && EidosTypeOf(conditionCursor) == "Int"
-            ? $"({condition} != 0)"
-            : condition;
+    private string? NormalizeConditionText(string? condition, ClangCursor conditionCursor, TranslationState state)
+    {
+        if (condition == null || IsBoolValuedCondition(conditionCursor))
+        {
+            return condition;
+        }
+
+        // C 指针真值（if (p)）：Eidos 侧 Bool 语境必须经 pointer_eq 判空。
+        if (EidosTypeOf(conditionCursor) == "RawPtr")
+        {
+            state.MarkFfiImport();
+            return $"(!(Ffi.pointer_eq({condition})(Ffi.null_pointer())))";
+        }
+
+        // 内层必须整体加括号：Eidos 与 C 的位运算/比较相对优先级一致（!= 高于 &），
+        // `flags & FLAG` 直接拼 `!= 0` 会变成 `flags & (FLAG != 0)`。
+        return EidosTypeOf(conditionCursor) == "Int" ? $"(({condition}) != 0)" : condition;
+    }
 
     /// <summary>条件表达式是否为 Bool 值形态（比较/逻辑运算及其包裹）。</summary>
     private bool IsBoolValuedCondition(ClangCursor expression)
@@ -963,6 +1043,15 @@ internal sealed class CBodyTranslator
             if (current.Kind == ClangCursorKind2.BinaryOperator)
             {
                 return _api.GetString(_api.GetCursorSpelling(current)) is "<" or "<=" or ">" or ">=" or "==" or "!=" or "&&" or "||";
+            }
+
+            // 三值 `c ? a&&b : c&&d`（C int 结果）：两臂皆 Bool 形态时整体是 Bool 值。
+            if (current.Kind == ClangCursorKind2.ConditionalOperator)
+            {
+                var arms = ValueChildren(current);
+                return arms.Count == 3 &&
+                    IsBoolValuedCondition(arms[1]) &&
+                    IsBoolValuedCondition(arms[2]);
             }
 
             if (current.Kind is ClangCursorKind2.UnaryOperator or ClangCursorKind2.UnaryExpr)
@@ -1389,6 +1478,7 @@ internal sealed class CBodyTranslator
             }
 
             value = CoerceNumeric(value, EidosTypeOf(elements[i]), elementType, state);
+            value = CoercePointerLiteralTarget(elements[i], value, elementType, state);
             var store = FormatElementStore(
                 elementCanonical,
                 $"Ffi.offset_bytes({eidosVarName})({i} * {elementSize})",
@@ -1473,6 +1563,9 @@ internal sealed class CBodyTranslator
                         {
                             init = CoerceNumeric(init, EidosTypeOf(initChildren[0]), varType.EidosType, state);
                             init = CoerceStringToPointerTarget(initChildren[0], init, varType.EidosType, state);
+                            init = CoercePointerLiteralTarget(initChildren[0], init, varType.EidosType, state);
+                            init = CoerceBoolToIntValue(initChildren[0], init, varType.EidosType);
+                            init = CoerceIntToBoolValue(initChildren[0], init, varType.EidosType);
                         }
                     }
                     else
@@ -1519,6 +1612,9 @@ internal sealed class CBodyTranslator
 
                 value = CoerceNumeric(value, EidosTypeOf(valueChildren[0]), context.ReturnEidosType, state);
                 value = CoerceStringToPointerTarget(valueChildren[0], value, context.ReturnEidosType, state);
+                value = CoercePointerLiteralTarget(valueChildren[0], value, context.ReturnEidosType, state);
+                value = CoerceBoolToIntValue(valueChildren[0], value, context.ReturnEidosType);
+                value = CoerceIntToBoolValue(valueChildren[0], value, context.ReturnEidosType);
                 return $"return {value};";
             }
 
@@ -1537,7 +1633,7 @@ internal sealed class CBodyTranslator
                     return null;
                 }
 
-                condition = NormalizeConditionText(condition, parts[0]);
+                condition = NormalizeConditionText(condition, parts[0], state);
                 var thenBody = TranslateStatements(StatementBodyChildren(parts[1]), context, state);
                 if (thenBody == null)
                 {
@@ -1583,7 +1679,7 @@ internal sealed class CBodyTranslator
                     return null;
                 }
 
-                condition = NormalizeConditionText(condition, parts[0]);
+                condition = NormalizeConditionText(condition, parts[0], state);
                 var body = TranslateStatements(StatementBodyChildren(parts[1]), context, state);
                 if (body == null)
                 {
@@ -1631,7 +1727,7 @@ internal sealed class CBodyTranslator
                     return null;
                 }
 
-                doCondition = NormalizeConditionText(doCondition, doParts[1]);
+                doCondition = NormalizeConditionText(doCondition, doParts[1], state);
                 var doCondBlock = new StringBuilder();
                 doCondBlock.AppendLine("        if !(c2e_do_first) then {");
                 if (doAssignment != null)
@@ -1798,24 +1894,8 @@ internal sealed class CBodyTranslator
                 // 复合赋值语句（x += v / a[i] += v）去糖为读取-合并-写回。
                 if (statement.Kind == ClangCursorKind2.CompoundAssignOperator)
                 {
-                    var op = _api.GetString(_api.GetCursorSpelling(statement));
-                    var operands = Children(statement);
-                    if (operands.Count != 2 || op == null || !op.EndsWith("=", StringComparison.Ordinal) || op == "=")
-                    {
-                        SkipReason = "unsupported compound assignment";
-                        return null;
-                    }
-
-                    var baseOp = op[..^1];
-                    var current = TranslateExpression(operands[0], context, state);
-                    var value = TranslateExpression(operands[1], context, state);
-                    if (current == null || value == null)
-                    {
-                        return null;
-                    }
-
-                    return TryFormatStorageAssignment(operands[0], $"{current} {baseOp} ({value})", context, state) is { } combined
-                        ? $"{combined};"
+                    return TranslateCompoundAssignStatement(statement, context, state) is { } compoundText
+                        ? $"{compoundText};"
                         : null;
                 }
 
@@ -1836,10 +1916,74 @@ internal sealed class CBodyTranslator
         }
     }
 
+    /// <summary>
+    /// 复合赋值（x += v / a[i] += v / p += n）去糖为读取-合并-写回；
+    /// 语句位与 for 增量位（TranslateExpression asStatement）共用。
+    /// </summary>
+    private string? TranslateCompoundAssignStatement(ClangCursor statement, FunctionContext context, TranslationState state)
+    {
+        var op = _api.GetString(_api.GetCursorSpelling(statement));
+        var operands = Children(statement);
+        if (operands.Count != 2 || op == null || !op.EndsWith("=", StringComparison.Ordinal) || op == "=")
+        {
+            SkipReason = "unsupported compound assignment";
+            return null;
+        }
+
+        var baseOp = op[..^1];
+        var current = TranslateExpression(operands[0], context, state);
+        var value = TranslateExpression(operands[1], context, state);
+        if (current == null || value == null)
+        {
+            return null;
+        }
+
+        // 指针复合赋值（p += n / p -= n）：与普通二元运算同去往字节偏移。
+        if (baseOp is "+" or "-" && IsPointerTyped(operands[0]) && !IsPointerTyped(operands[1]))
+        {
+            state.MarkFfiImport();
+            var signedOffset = baseOp == "-" ? $"-({value})" : value;
+            return TryFormatStorageAssignment(
+                operands[0], $"Ffi.offset_bytes({current})({signedOffset})", context, state) is { } pointerCombined
+                ? pointerCombined
+                : null;
+        }
+
+        // 与普通二元运算同规则：`a *= 2`（a 为 float）必须提升 Int 侧，
+        // 否则合并文本是 Float*Int，Eidos 拒绝。
+        if (baseOp is "+" or "-" or "*" or "/" or "%")
+        {
+            var currentType = EidosTypeOf(operands[0]);
+            var valueType = EidosTypeOf(operands[1]);
+            if (currentType == "Float" && valueType == "Int")
+            {
+                value = CoerceNumeric(value, valueType, "Float", state);
+            }
+            else if (valueType == "Float" && currentType == "Int")
+            {
+                current = CoerceNumeric(current, currentType, "Float", state);
+            }
+        }
+
+        return TryFormatStorageAssignment(operands[0], $"{current} {baseOp} ({value})", context, state);
+    }
+
     private string? TranslateExpression(ClangCursor expression, FunctionContext context, TranslationState state, bool asStatement = false)
     {
         switch (expression.Kind)
         {
+            case ClangCursorKind2.CompoundAssignOperator:
+            {
+                // for 增量位等表达式语境的复合赋值：与语句位共用去糖（值位语义不支持）。
+                if (!asStatement)
+                {
+                    SkipReason = "compound assignment in expression context";
+                    return null;
+                }
+
+                return TranslateCompoundAssignStatement(expression, context, state);
+            }
+
             case ClangCursorKind2.UnexposedExpr:
             {
                 var inner = Children(expression);
@@ -1897,17 +2041,36 @@ internal sealed class CBodyTranslator
                         : $"{{{Environment.NewLine}    {discarded};{Environment.NewLine}    (){Environment.NewLine}}}";
                 }
 
-                if (castMapping.EidosType == "RawPtr" ||
-                    castMapping.EidosType == innerMapping?.EidosType)
+                if (castMapping.EidosType == "RawPtr")
                 {
-                    // 指针视角转换（如 (void*)0）、同 Eidos 类型（含记录、整数宽度变化）
-                    // 均按值域内语义透明透传。
+                    // 指针视角转换（如 (void*)0）按值透明；整数→指针（(T*)(size_t)x
+                    // 宏惯用法）位模式回指针。
+                    var casted = TranslateExpression(inner[0], context, state, asStatement);
+                    if (casted == null)
+                    {
+                        return null;
+                    }
+
+                    if (innerMapping?.EidosType == "Int")
+                    {
+                        state.MarkFfiImport();
+                        return $"Ffi.int_as_ptr({casted})";
+                    }
+
+                    return casted;
+                }
+
+                if (castMapping.EidosType == innerMapping?.EidosType)
+                {
+                    // 同 Eidos 类型（含记录、整数宽度变化）按值域内语义透明透传。
                     return TranslateExpression(inner[0], context, state, asStatement);
                 }
 
                 if (castMapping.EidosType == "Float" && innerMapping?.EidosType == "Int")
                 {
+                    // c2e_int_to_float 是 extern：必须 tick，否则调用方签名漏 need ffi（E3003）。
                     state.NeedsIntToFloat = true;
+                    state.MarkFfiImport();
                     var intValue = TranslateExpression(inner[0], context, state);
                     return intValue == null ? null : $"c2e_int_to_float({intValue})";
                 }
@@ -1932,6 +2095,15 @@ internal sealed class CBodyTranslator
                     MapType(_api.GetCursorType(unsupportedGlobal)) == null)
                 {
                     SkipReason = $"global '{name}' has an unsupported type";
+                    return null;
+                }
+
+                // 函数名出现在值位（函数指针实参，如 glad 的 loader 回调）：
+                // Eidos 无法对函数取址，诚实跳过。
+                if (!context.VarTypes.ContainsKey(name) && !_globals.ContainsKey(name) &&
+                    state.DeclaredFunctions.ContainsKey(name))
+                {
+                    SkipReason = $"function '{name}' used as a value (function pointer)";
                     return null;
                 }
 
@@ -2000,7 +2172,12 @@ internal sealed class CBodyTranslator
 
                     // C 允许 { 0 } 跨类型零初始化（整型 0 写 float 字段）；
                     // 字面量可能被隐式转换节点包裹，先解包再判定。
-                    if (field.EidosType == "Float" && IsIntegerLiteralValue(values[i]))
+                    if (IsZeroIntegerLiteral(values[i]) && field.EidosType is not ("Int" or "Float"))
+                    {
+                        // { 0 } 对记录/指针字段是整体零值（嵌套记录逐字段零、指针为 NULL）。
+                        value = ZeroOf(field.EidosType, state);
+                    }
+                    else if (field.EidosType == "Float" && IsIntegerLiteralValue(values[i]))
                     {
                         value += ".0";
                     }
@@ -2017,7 +2194,7 @@ internal sealed class CBodyTranslator
 
             case ClangCursorKind2.ConditionalOperator:
             {
-                // c ? a : b → Eidos if 表达式；Int 条件归一为比较，两臂做数值提升。
+                // c ? a : b → Eidos if 表达式；Int/指针条件归一为 Bool，两臂做语境提升。
                 var operands = ValueChildren(expression);
                 if (operands.Count != 3)
                 {
@@ -2033,20 +2210,41 @@ internal sealed class CBodyTranslator
                     return null;
                 }
 
-                if (!IsBoolValuedCondition(operands[0]) && EidosTypeOf(operands[0]) == "Int")
-                {
-                    condition = $"({condition} != 0)";
-                }
+                condition = NormalizeConditionText(condition, operands[0], state) ?? condition;
 
+                // 结果语境是 C 的复合类型（指针臂 + 0 臂的 realloc 形态）：整体按指针处理。
+                var resultEidosType = MapType(_api.GetCursorType(expression))?.EidosType;
                 var thenType = EidosTypeOf(operands[1]);
                 var elseType = EidosTypeOf(operands[2]);
-                if (thenType == "Float" && elseType == "Int")
+                if (resultEidosType == "RawPtr")
+                {
+                    thenText = CoerceStringToPointerTarget(operands[1], thenText, "RawPtr", state);
+                    thenText = CoercePointerLiteralTarget(operands[1], thenText, "RawPtr", state);
+                    elseText = CoerceStringToPointerTarget(operands[2], elseText, "RawPtr", state);
+                    elseText = CoercePointerLiteralTarget(operands[2], elseText, "RawPtr", state);
+                }
+                else if (thenType == "Float" && elseType == "Int")
                 {
                     elseText = CoerceNumeric(elseText, elseType, "Float", state);
                 }
                 else if (elseType == "Float" && thenType == "Int")
                 {
                     thenText = CoerceNumeric(thenText, thenType, "Float", state);
+                }
+
+                // 比较器惯用法 `c ? -1 : (a < b)`：一臂 Int 一臂 Bool 时，Bool 臂数字化。
+                var thenBool = IsBoolValuedCondition(operands[1]);
+                var elseBool = IsBoolValuedCondition(operands[2]);
+                if (thenBool != elseBool)
+                {
+                    if (thenBool)
+                    {
+                        thenText = $"(if {thenText} then 1 else 0)";
+                    }
+                    else
+                    {
+                        elseText = $"(if {elseText} then 1 else 0)";
+                    }
                 }
 
                 return $"(if {condition} then {thenText} else {elseText})";
@@ -2083,10 +2281,49 @@ internal sealed class CBodyTranslator
                         : $"{commaLeft};{Environment.NewLine}{commaRight}";
                 }
 
-                if (op is "==" or "!=" &&
+                if (op is "==" or "!=" or "<" or "<=" or ">" or ">=" &&
                     (IsPointerTyped(operands[0]) || IsPointerTyped(operands[1])))
                 {
                     return TranslatePointerComparison(op, operands[0], operands[1], context, state);
+                }
+
+                // C 指针算术：p + n / n + p / p - n → 字节偏移（Eidos 侧无指针加减）。
+                var leftPointer = IsPointerTyped(operands[0]);
+                var rightPointer = IsPointerTyped(operands[1]);
+                if ((op == "+" && (leftPointer || rightPointer)) ||
+                    (op == "-" && leftPointer && !rightPointer))
+                {
+                    var pointerCursor = leftPointer ? operands[0] : operands[1];
+                    var offsetCursor = leftPointer ? operands[1] : operands[0];
+                    var pointer = TranslateExpression(pointerCursor, context, state);
+                    var offset = TranslateExpression(offsetCursor, context, state);
+                    if (pointer == null || offset == null)
+                    {
+                        return null;
+                    }
+
+                    state.MarkFfiImport();
+                    // p - n 取负偏移；n + p 只有加法形态（C 里 n - p 非法）。
+                    var signedOffset = op == "-" ? $"-({offset})" : offset;
+                    return $"Ffi.offset_bytes({pointer})({signedOffset})";
+                }
+
+                // 指针差：C 语义为 pointee 元素数（char*/void* 即字节数）。
+                if (op == "-" && leftPointer && rightPointer)
+                {
+                    var leftText = TranslateExpression(operands[0], context, state);
+                    var rightText = TranslateExpression(operands[1], context, state);
+                    if (leftText == null || rightText == null)
+                    {
+                        return null;
+                    }
+
+                    state.MarkFfiImport();
+                    var difference = $"(Ffi.ptr_as_int({leftText}) - Ffi.ptr_as_int({rightText}))";
+                    var pointee = _api.GetCanonicalType(
+                        _api.GetPointeeType(_api.GetCanonicalType(_api.GetCursorType(operands[0]))));
+                    var elementSize = _api.TypeGetSizeOf(pointee);
+                    return elementSize > 1 ? $"({difference} / {elementSize})" : difference;
                 }
 
                 var left = TranslateExpression(operands[0], context, state);
@@ -2109,6 +2346,41 @@ internal sealed class CBodyTranslator
                     {
                         left = CoerceNumeric(left, leftType, "Float", state);
                     }
+                }
+
+                // C 比较/逻辑结果是 int 0/1：进入算术/位运算语境时显式数字化
+                //（Eidos 比较是 Bool，不能直接参与 & | + - 等运算）。
+                if (op is "+" or "-" or "*" or "/" or "%" or "&" or "|" or "^" or "<<" or ">>")
+                {
+                    if (IsBoolValuedCondition(operands[0]))
+                    {
+                        left = $"(if {left} then 1 else 0)";
+                    }
+
+                    if (IsBoolValuedCondition(operands[1]))
+                    {
+                        right = $"(if {right} then 1 else 0)";
+                    }
+                }
+
+                // C `bool == 0` / `bool != 0`：Eidos 里比较对象是 Bool，改写为取反/原值。
+                if (op is "==" or "!=" &&
+                    (IsBoolValuedCondition(operands[0]) ^ IsBoolValuedCondition(operands[1])))
+                {
+                    var boolCursor = IsBoolValuedCondition(operands[0]) ? operands[0] : operands[1];
+                    var zeroCursor = IsBoolValuedCondition(operands[0]) ? operands[1] : operands[0];
+                    if (IsZeroIntegerLiteral(zeroCursor))
+                    {
+                        var boolText = TranslateExpression(boolCursor, context, state);
+                        return boolText == null ? null : op == "==" ? $"!({boolText})" : boolText;
+                    }
+                }
+
+                // && / || 两侧必须 Bool：Int 真值与指针真值按条件归一。
+                if (op is "&&" or "||")
+                {
+                    left = NormalizeConditionText(left, operands[0], state) ?? left;
+                    right = NormalizeConditionText(right, operands[1], state) ?? right;
                 }
 
                 return op switch
@@ -2215,6 +2487,9 @@ internal sealed class CBodyTranslator
         {
             return null;
         }
+
+        // 下标基址为字符串字面量（C `"OTTO"[0]` 形态）：先进 C 字符串再取偏移。
+        baseText = CoerceStringToPointerTarget(operands[0], baseText, "RawPtr", state);
 
         state.MarkFfiImport();
         return $"Ffi.offset_bytes({baseText})(({indexText}) * {elementSize})";
@@ -2369,6 +2644,22 @@ internal sealed class CBodyTranslator
                 return null;
             }
 
+            // 指针自增/自减（p++ / p--）：字节偏移 ±元素大小。
+            if (IsPointerTyped(operands[0]))
+            {
+                var pointee = _api.GetCanonicalType(
+                    _api.GetPointeeType(_api.GetCanonicalType(_api.GetCursorType(operands[0]))));
+                var step = _api.TypeGetSizeOf(pointee);
+                if (step > 0)
+                {
+                    state.MarkFfiImport();
+                    var stepped = incDec == "++"
+                        ? $"Ffi.offset_bytes({current})({step})"
+                        : $"Ffi.offset_bytes({current})(-{step})";
+                    return TryFormatStorageAssignment(operands[0], stepped, context, state);
+                }
+            }
+
             var arithmetic = incDec == "++" ? $"{current} + 1" : $"{current} - 1";
             return TryFormatStorageAssignment(operands[0], arithmetic, context, state);
         }
@@ -2420,17 +2711,44 @@ internal sealed class CBodyTranslator
 
         if (op == "*")
         {
+            // 解包隐式转换/括号：*a[i] 的下标与 *(a+3) 的算术都包在 ImplicitCast/Paren 里。
+            var derefOperand = operand;
+            while (derefOperand.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr or ClangCursorKind2.CStyleCastExpr)
+            {
+                var inner = Children(derefOperand);
+                if (inner.Count != 1)
+                {
+                    break;
+                }
+
+                derefOperand = inner[0];
+            }
+
+            // *a[i]：下标表达式先装载指针值，再按该指针的 pointee 定元素（双重间接）。
+            if (derefOperand.Kind == ClangCursorKind2.ArraySubscriptExpr)
+            {
+                var loadedPointer = TranslateSubscriptValue(derefOperand, context, state);
+                if (loadedPointer == null)
+                {
+                    return null;
+                }
+
+                var loadedPointee = _api.GetCanonicalType(
+                    _api.GetPointeeType(_api.GetCanonicalType(_api.GetCursorType(derefOperand))));
+                return FormatElementLoad(loadedPointee, loadedPointer, state);
+            }
+
             // 基可以是 cast 表达式（*(int*)p）：按操作数自身类型的 pointee 定元素，
-            // 不依赖变量声明类型；可解析局部或显式 cast 之一才放行。
-            var operandIsCast = operand.Kind == ClangCursorKind2.CStyleCastExpr;
-            if (!operandIsCast && !TryResolveBaseVariable(operand, context, out _))
+            // 不依赖变量声明类型；指针算术结果（*(a+3)）同为指针类型，一并放行。
+            var operandIsCast = derefOperand.Kind == ClangCursorKind2.CStyleCastExpr;
+            if (!operandIsCast && !TryResolveBaseVariable(derefOperand, context, out _) && !IsPointerTyped(derefOperand))
             {
                 SkipReason = "dereference of a pointer without a supported element type";
                 return null;
             }
 
             var pointeeCanonical = _api.GetCanonicalType(
-                _api.GetPointeeType(_api.GetCanonicalType(_api.GetCursorType(operand))));
+                _api.GetPointeeType(_api.GetCanonicalType(_api.GetCursorType(derefOperand))));
             if ((ClangTypeKind)pointeeCanonical.Kind == ClangTypeKind.Record)
             {
                 SkipReason = "dereference of a record pointer outside member access";
@@ -2460,7 +2778,10 @@ internal sealed class CBodyTranslator
                 return $"Ffi.pointer_eq({operandText})(Ffi.null_pointer())";
             }
 
-            return $"({operandText} == 0)";
+            // Bool 形态操作数直接取反；Int 真值先归一为比较再取反。
+            return IsBoolValuedCondition(operand)
+                ? $"!({operandText})"
+                : $"!(({operandText}) != 0)";
         }
 
         if (op == "-")
@@ -2556,13 +2877,29 @@ internal sealed class CBodyTranslator
                 return null;
             }
 
-            state.RecordMembers[(elementRecord.RecordName!, subscriptMember)] = new RecordMemberAccess(
+            RegisterMemberAccess(state, new RecordMemberAccess(
                 elementRecord.RecordSpelling!,
                 elementRecord.RecordName!,
                 subscriptMember,
                 _api.GetString(_api.GetTypeSpelling(_api.GetCursorType(expression))),
                 subscriptMemberMapping.EidosType,
-                (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(expression)).Kind == ClangTypeKind.Float);
+                (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(expression)).Kind == ClangTypeKind.Float));
+
+            // 记录值成员（glyphs[i].image）：struct 无按值 extern ABI，经 _addr 槽
+            // 逐字段 accessor 重组记录值。
+            if (_records.TryGetValue(subscriptMemberMapping.EidosType, out var memberRecord) &&
+                memberRecord.Mappable)
+            {
+                var memberKey = (elementRecord.RecordName!, subscriptMember);
+                state.RecordMembers[memberKey] = state.RecordMembers[memberKey] with { NeedsAddress = true };
+                var slot = $"c2e_{elementRecord.RecordName}_{subscriptMember}_addr({memberAddress})";
+                var reassembled = ReassembleRecordAtAddress(memberRecord, slot, state);
+                if (reassembled != null)
+                {
+                    return reassembled;
+                }
+            }
+
             return $"c2e_{elementRecord.RecordName}_{subscriptMember}_get({memberAddress})";
         }
 
@@ -2628,6 +2965,18 @@ internal sealed class CBodyTranslator
         }
 
         state.RecordMembers[key] = access;
+    }
+
+    /// <summary>
+    /// 直接登记成员 accessor：与既有条目合并 NeedsAddress（后翻译的函数不得
+    /// 抹掉早前 &amp;p->m 登记过的地址需求，否则 _addr shim 漏发成未定义符号）。
+    /// </summary>
+    private static void RegisterMemberAccess(TranslationState state, RecordMemberAccess access)
+    {
+        var key = (access.RecordName, access.Member);
+        state.RecordMembers[key] = state.RecordMembers.TryGetValue(key, out var existing)
+            ? existing with { NeedsAddress = existing.NeedsAddress || access.NeedsAddress }
+            : access;
     }
 
     /// <summary>记录字段查找（Eidos 名）。</summary>
@@ -2791,11 +3140,12 @@ internal sealed class CBodyTranslator
             return null;
         }
 
-        assigned = CoerceNumeric(
-            assigned,
-            EidosTypeOf(value),
-            MapType(_api.GetCursorType(target))?.EidosType,
-            state);
+        var memberEidosType = MapType(_api.GetCursorType(target))?.EidosType;
+        assigned = CoerceNumeric(assigned, EidosTypeOf(value), memberEidosType, state);
+        assigned = CoerceStringToPointerTarget(value, assigned, memberEidosType, state);
+        assigned = CoercePointerLiteralTarget(value, assigned, memberEidosType, state);
+        assigned = CoerceBoolToIntValue(value, assigned, memberEidosType);
+        assigned = CoerceIntToBoolValue(value, assigned, memberEidosType);
         return TranslateMemberPathStoreText(target, assigned, head, members, context, state);
     }
 
@@ -2972,13 +3322,13 @@ internal sealed class CBodyTranslator
             return null;
         }
 
-        state.RecordMembers[(recordMapping.RecordName!, member)] = new RecordMemberAccess(
+        RegisterMemberAccess(state, new RecordMemberAccess(
             recordMapping.RecordSpelling!,
             recordMapping.RecordName!,
             member,
             _api.GetString(_api.GetTypeSpelling(_api.GetCursorType(memberAccess))),
             memberMapping.EidosType,
-            (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(memberAccess)).Kind == ClangTypeKind.Float);
+            (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(memberAccess)).Kind == ClangTypeKind.Float));
         return $"c2e_{recordMapping.RecordName}_{member}_set({address})({value})";
     }
 
@@ -3030,7 +3380,11 @@ internal sealed class CBodyTranslator
             }
 
             var elementCanonical = _api.GetCanonicalType(_api.GetCursorType(target));
-            assigned = CoerceNumeric(assigned, EidosTypeOf(value), MapType(elementCanonical)?.EidosType, state);
+            var elementEidosType = MapType(elementCanonical)?.EidosType;
+            assigned = CoerceNumeric(assigned, EidosTypeOf(value), elementEidosType, state);
+            assigned = CoercePointerLiteralTarget(value, assigned, elementEidosType, state);
+            assigned = CoerceBoolToIntValue(value, assigned, elementEidosType);
+            assigned = CoerceIntToBoolValue(value, assigned, elementEidosType);
             return FormatElementStore(elementCanonical, address, assigned, state);
         }
 
@@ -3053,6 +3407,9 @@ internal sealed class CBodyTranslator
             {
                 valueText = CoerceNumeric(valueText, EidosTypeOf(value), targetMapping.EidosType, state);
                 valueText = CoerceStringToPointerTarget(value, valueText, targetMapping.EidosType, state);
+                valueText = CoercePointerLiteralTarget(value, valueText, targetMapping.EidosType, state);
+                valueText = CoerceBoolToIntValue(value, valueText, targetMapping.EidosType);
+                valueText = CoerceIntToBoolValue(value, valueText, targetMapping.EidosType);
             }
         }
 
@@ -3091,6 +3448,57 @@ internal sealed class CBodyTranslator
 
         state.MarkFfiImport();
         return $"Ffi.to_c_string({valueText})";
+    }
+
+    /// <summary>目标要求 Int 而值是比较/逻辑形态（C 里是 int 0/1）：数字化为 if-then-else。</summary>
+    private string? CoerceBoolToIntValue(ClangCursor valueCursor, string? valueText, string? targetEidosType)
+    {
+        if (valueText == null || targetEidosType != "Int" || !IsBoolValuedCondition(valueCursor))
+        {
+            return valueText;
+        }
+
+        return $"(if {valueText} then 1 else 0)";
+    }
+
+    /// <summary>目标要求 Bool（C _Bool）而值是普通 Int 表达式：按 C 语义 != 0。</summary>
+    private string? CoerceIntToBoolValue(ClangCursor valueCursor, string? valueText, string? targetEidosType)
+    {
+        if (valueText == null || targetEidosType != "Bool" || IsBoolValuedCondition(valueCursor) ||
+            EidosTypeOf(valueCursor) != "Int")
+        {
+            return valueText;
+        }
+
+        return $"({valueText} != 0)";
+    }
+
+    /// <summary>
+    /// 目标要求 RawPtr 而值是整数字面量：NULL（0/(T*)0）统一 Ffi.null_pointer()；
+    /// 非零（(T*)n，如 Win32 MAKEINTRESOURCE 资源句柄）经 Ffi.int_as_ptr 位模式回指针。
+    /// </summary>
+    private string? CoercePointerLiteralTarget(
+        ClangCursor valueCursor,
+        string? valueText,
+        string? targetEidosType,
+        TranslationState state)
+    {
+        if (valueText == null || targetEidosType != "RawPtr")
+        {
+            return valueText;
+        }
+
+        switch (ClassifyPointerLiteral(valueCursor))
+        {
+            case PointerLiteralKind.NullLiteral:
+                state.MarkFfiImport();
+                return "Ffi.null_pointer()";
+            case PointerLiteralKind.NonNullLiteral:
+                state.MarkFfiImport();
+                return $"Ffi.int_as_ptr({valueText})";
+            default:
+                return valueText;
+        }
     }
 
     /// <summary>把赋值格式化为 Eidos 可存储目标：mut 局部/模块级全局直接重绑；参数不可变，整体跳过。</summary>
@@ -3173,6 +3581,13 @@ internal sealed class CBodyTranslator
         }
 
         state.MarkFfiImport();
+
+        // 指针序比较（encode < end_output 缓冲哨兵）：整数位模式序与 C 一致。
+        if (op is "<" or "<=" or ">" or ">=")
+        {
+            return $"Ffi.ptr_as_int({leftText}) {op} Ffi.ptr_as_int({rightText})";
+        }
+
         var equality = $"Ffi.pointer_eq({leftText})({rightText})";
         return op == "!=" ? $"!({equality})" : equality;
     }
@@ -3180,8 +3595,21 @@ internal sealed class CBodyTranslator
     /// <summary>占位映射：调用实参强转查询失败时按普通标量处理。</summary>
     private static readonly CTypeMapping UnsupportedMapping = new("Int", null, null, null);
 
+    /// <summary>std.Ffi 已 extern 的 CRT 函数：调用直呼 Ffi.&lt;name&gt; 而非再发 extern。</summary>
+    private static readonly HashSet<string> StdFfiExternNames =
+        ["malloc", "free", "calloc", "realloc", "memcpy", "memset"];
+
     private string? TranslateCall(string callee, IEnumerable<ClangCursor> arguments, FunctionContext context, TranslationState state)
     {
+        // C 变参内部函数（stbiw__outfile 类：fmt 驱动 va_list）：定参签名无法承载
+        // 调用点的可变实参，诚实跳过调用方。
+        if (state.DeclaredFunctions.TryGetValue(callee, out var internalDeclaration) &&
+            _api.CursorIsVariadic(internalDeclaration) != 0)
+        {
+            SkipReason = $"call to variadic function '{callee}'";
+            return null;
+        }
+
         // 内部调用边登记：被调函数的 need ffi 经调用图传播到调用方。
         if (!string.IsNullOrEmpty(state.CurrentFunction))
         {
@@ -3214,7 +3642,7 @@ internal sealed class CBodyTranslator
         return $"{callee}({string.Join(", ", argumentTexts)})";
     }
 
-    /// <summary>调用实参翻译：指针参数位置的 0/(T*)0 视为 NULL 字面量。</summary>
+    /// <summary>调用实参翻译：指针参数位置的整数字面量按 NULL/句柄语义转换。</summary>
     private string? TranslateCallArgument(ClangCursor argument, CTypeMapping? parameter, FunctionContext context, TranslationState state)
     {
         if (parameter?.EidosType == "RawPtr")
@@ -3225,8 +3653,16 @@ internal sealed class CBodyTranslator
                     state.MarkFfiImport();
                     return "Ffi.null_pointer()";
                 case PointerLiteralKind.NonNullLiteral:
-                    SkipReason = "non-null integer used as a pointer value";
-                    return null;
+                {
+                    var nonNullText = TranslateExpression(argument, context, state);
+                    if (nonNullText == null)
+                    {
+                        return null;
+                    }
+
+                    state.MarkFfiImport();
+                    return $"Ffi.int_as_ptr({nonNullText})";
+                }
             }
         }
 
@@ -3238,6 +3674,8 @@ internal sealed class CBodyTranslator
 
         // 字符串字面量落在 RawPtr 参数位（const char* 形参）：边界处转 C 字符串。
         translated = CoerceStringToPointerTarget(argument, translated, parameter?.EidosType, state);
+        translated = CoerceBoolToIntValue(argument, translated, parameter?.EidosType);
+        translated = CoerceIntToBoolValue(argument, translated, parameter?.EidosType);
         return CoerceNumeric(translated, EidosTypeOf(argument), parameter?.EidosType, state);
     }
 
@@ -3263,13 +3701,14 @@ internal sealed class CBodyTranslator
 
         var functionType = _api.GetCursorType(declaration);
         var arity = _api.GetNumArgTypes(functionType);
-        var parameterSpells = new List<(string Spelling, bool IsFloat)>(argumentList.Count);
+        var parameterSpells = new List<(string Spelling, bool IsFloat, bool IsStruct)>(argumentList.Count);
         for (var i = 0; i < arity; i++)
         {
             var rawArg = _api.GetCanonicalType(_api.GetArgType(functionType, (uint)i));
             parameterSpells.Add((
                 _api.GetString(_api.GetTypeSpelling(_api.GetArgType(functionType, (uint)i))),
-                (ClangTypeKind)rawArg.Kind == ClangTypeKind.Float));
+                (ClangTypeKind)rawArg.Kind == ClangTypeKind.Float,
+                IsValueRecord(parameterMappings[i])));
         }
 
         state.SretExterns.TryAdd(callee, new SretExtern(
@@ -3282,14 +3721,40 @@ internal sealed class CBodyTranslator
         state.PendingExterns.TryAdd(callee, new PendingExtern(
             sretName,
             sretName,
-            parameterMappings.Select(static mapping => mapping.EidosType).ToList(),
+            parameterMappings.Select(static mapping => IsValueRecord(mapping) ? "RawPtr" : mapping.EidosType).ToList(),
             "RawPtr",
             sretName,
             IsSystemDeclaration(declaration)));
 
+        // 按值结构体实参 → calloc staging 槽 + 逐字段 accessor 装载（嵌套记录经 _addr 递归）。
+        var stagingStatements = new List<string>();
         var argumentTexts = new List<string>(argumentList.Count);
         for (var i = 0; i < argumentList.Count; i++)
         {
+            if (IsValueRecord(parameterMappings[i]))
+            {
+                var translatedStruct = TranslateExpression(argumentList[i], context, state);
+                if (translatedStruct == null)
+                {
+                    return null;
+                }
+
+                var staged = TryStageStructArgument(
+                    _api.GetCanonicalType(_api.GetArgType(functionType, (uint)i)),
+                    parameterMappings[i].EidosType,
+                    translatedStruct,
+                    $"c2e_stage{i}",
+                    stagingStatements,
+                    state);
+                if (staged == null)
+                {
+                    return null;
+                }
+
+                argumentTexts.Add(staged);
+                continue;
+            }
+
             var translated = TranslateCallArgument(argumentList[i], parameterMappings[i], context, state);
             if (translated == null)
             {
@@ -3304,17 +3769,226 @@ internal sealed class CBodyTranslator
         foreach (var field in record.Fields!)
         {
             var fieldClang = TryGetMemberClangType(record.EidosName, field.Name);
-            state.RecordMembers[(record.EidosName, field.Name)] = new RecordMemberAccess(
+            RegisterMemberAccess(state, new RecordMemberAccess(
+                record.CSpelling,
+                record.EidosName,
+                field.Name,
+                fieldClang != null ? _api.GetString(_api.GetTypeSpelling(fieldClang.Value)) : field.EidosType,
+                field.EidosType,
+                fieldClang != null && (ClangTypeKind)fieldClang.Value.Kind == ClangTypeKind.Float));
+            fields.Add($"{SanitizeIdent(field.Name)}: c2e_{record.EidosName}_{field.Name}_get(slot)");
+        }
+
+        var stagingPrefix = stagingStatements.Count == 0
+            ? string.Empty
+            : string.Join(Environment.NewLine + "    ", stagingStatements) + Environment.NewLine + "    ";
+        return $"{{{Environment.NewLine}    {stagingPrefix}slot := {sretName}({string.Join(", ", argumentTexts)});{Environment.NewLine}    {record.EidosName} {{ {string.Join(", ", fields)} }}{Environment.NewLine}}}";
+    }
+
+    /// <summary>
+    /// 按值结构体实参 → staging 槽：calloc 定位 + 逐字段 accessor 写入；嵌套记录字段经
+    /// 成员 _addr 递归装载。返回槽表达式；不可装载（无布局/不可映射字段）返回 null。
+    /// </summary>
+    private string? TryStageStructArgument(
+        ClangType recordCanonical,
+        string recordEidosName,
+        string argumentText,
+        string slotName,
+        List<string> statements,
+        TranslationState state)
+    {
+        var size = _api.TypeGetSizeOf(recordCanonical);
+        if (size <= 0 || !_records.TryGetValue(recordEidosName, out var record) || !record.Mappable)
+        {
+            SkipReason = $"struct argument of type '{recordEidosName}' cannot be staged";
+            return null;
+        }
+
+        state.MarkFfiImport();
+        statements.Add($"{slotName} := Ffi.calloc(1)({size});");
+        if (!TryAppendRecordStaging(record, slotName, argumentText, statements, state))
+        {
+            SkipReason = $"struct argument of type '{recordEidosName}' has unstaged fields";
+            return null;
+        }
+
+        return slotName;
+    }
+
+    /// <summary>
+    /// 按值结构体参数的外部调用（返回标量/指针）：C 侧 _v 包装 shim 指针收参，
+    /// Eidos 侧块表达式内 staging 槽装载后直呼，返回值即块值。
+    /// </summary>
+    private string? TranslateStructArgExternalCall(
+        string callee,
+        ClangCursor declaration,
+        List<ClangCursor> argumentList,
+        List<CTypeMapping> parameterMappings,
+        CTypeMapping returnMapping,
+        FunctionContext context,
+        TranslationState state)
+    {
+        var functionType = _api.GetCursorType(declaration);
+        var arity = _api.GetNumArgTypes(functionType);
+        var parameterSpells = new List<(string Spelling, bool IsFloat, bool IsStruct)>(argumentList.Count);
+        for (var i = 0; i < arity; i++)
+        {
+            var rawArg = _api.GetCanonicalType(_api.GetArgType(functionType, (uint)i));
+            parameterSpells.Add((
+                _api.GetString(_api.GetTypeSpelling(_api.GetArgType(functionType, (uint)i))),
+                (ClangTypeKind)rawArg.Kind == ClangTypeKind.Float,
+                IsValueRecord(parameterMappings[i])));
+        }
+
+        state.StructArgExterns.TryAdd(callee, new StructArgExtern(
+            callee,
+            parameterSpells,
+            _api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(_api.GetResultType(functionType)))),
+            IsSystemDeclaration(declaration)));
+
+        var wrapperName = $"c2e_ext_{callee}_v";
+        state.PendingExterns.TryAdd(callee, new PendingExtern(
+            wrapperName,
+            wrapperName,
+            parameterMappings.Select(static mapping => IsValueRecord(mapping) ? "RawPtr" : mapping.EidosType).ToList(),
+            returnMapping.EidosType,
+            wrapperName,
+            IsSystemDeclaration(declaration)));
+
+        var stagingStatements = new List<string>();
+        var argumentTexts = new List<string>(argumentList.Count);
+        for (var i = 0; i < argumentList.Count; i++)
+        {
+            if (IsValueRecord(parameterMappings[i]))
+            {
+                var translatedStruct = TranslateExpression(argumentList[i], context, state);
+                if (translatedStruct == null)
+                {
+                    return null;
+                }
+
+                var staged = TryStageStructArgument(
+                    _api.GetCanonicalType(_api.GetArgType(functionType, (uint)i)),
+                    parameterMappings[i].EidosType,
+                    translatedStruct,
+                    $"c2e_stage{i}",
+                    stagingStatements,
+                    state);
+                if (staged == null)
+                {
+                    return null;
+                }
+
+                argumentTexts.Add(staged);
+                continue;
+            }
+
+            var translated = TranslateCallArgument(argumentList[i], parameterMappings[i], context, state);
+            if (translated == null)
+            {
+                return null;
+            }
+
+            argumentTexts.Add(translated);
+        }
+
+        var call = $"{wrapperName}({string.Join(", ", argumentTexts)})";
+        if (returnMapping.EidosType == "Unit")
+        {
+            var unitStatements = string.Join(Environment.NewLine + "    ", stagingStatements);
+            return stagingStatements.Count == 0
+                ? call
+                : $"{{{Environment.NewLine}    {unitStatements}{Environment.NewLine}    (){Environment.NewLine}}}";
+        }
+
+        var stagingPrefix = string.Join(Environment.NewLine + "    ", stagingStatements);
+        return stagingStatements.Count == 0
+            ? call
+            : $"{{{Environment.NewLine}    {stagingPrefix}{Environment.NewLine}    {call}{Environment.NewLine}}}";
+    }
+
+    /// <summary>staging 递归体：标量字段 setter 写入；记录字段经 _addr 深入。</summary>
+    private bool TryAppendRecordStaging(
+        RecordSchema record,
+        string slotExpr,
+        string argumentText,
+        List<string> statements,
+        TranslationState state)
+    {
+        if (record.Fields == null)
+        {
+            return false;
+        }
+
+        foreach (var field in record.Fields)
+        {
+            var fieldClang = TryGetMemberClangType(record.EidosName, field.Name);
+            var access = new RecordMemberAccess(
                 record.CSpelling,
                 record.EidosName,
                 field.Name,
                 fieldClang != null ? _api.GetString(_api.GetTypeSpelling(fieldClang.Value)) : field.EidosType,
                 field.EidosType,
                 fieldClang != null && (ClangTypeKind)fieldClang.Value.Kind == ClangTypeKind.Float);
-            fields.Add($"{SanitizeIdent(field.Name)}: c2e_{record.EidosName}_{field.Name}_get(slot)");
+            var projection = $"({argumentText}).{SanitizeIdent(field.Name)}";
+
+            if (_records.TryGetValue(field.EidosType, out var nestedRecord))
+            {
+                // 嵌套记录字段：struct 成员只有 _addr，沿成员地址递归装载。
+                RegisterMemberAccess(state, access with { NeedsAddress = true });
+                if (!nestedRecord.Mappable ||
+                    !TryAppendRecordStaging(
+                        nestedRecord,
+                        $"c2e_{record.EidosName}_{field.Name}_addr({slotExpr})",
+                        projection,
+                        statements,
+                        state))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            RegisterMemberAccess(state, access);
+            statements.Add($"c2e_{record.EidosName}_{field.Name}_set({slotExpr})({projection});");
         }
 
-        return $"{{{Environment.NewLine}    slot := {sretName}({string.Join(", ", argumentTexts)});{Environment.NewLine}    {record.EidosName} {{ {string.Join(", ", fields)} }}{Environment.NewLine}}}";
+        return true;
+    }
+
+    /// <summary>
+    /// 记录值成员读取（p[i].rec 值位）：成员 _addr 槽上逐字段 accessor 重组记录值
+    ///（struct 无按值 extern ABI，与 sret shim 的 accessor 重组同型）。仅展开一层；
+    /// 嵌套记录字段暂不递归（该位置出现时按未支持处理）。
+    /// </summary>
+    private string? ReassembleRecordAtAddress(RecordSchema record, string slot, TranslationState state)
+    {
+        if (record.Fields == null)
+        {
+            return null;
+        }
+
+        var fields = new List<string>();
+        foreach (var field in record.Fields)
+        {
+            if (_records.ContainsKey(field.EidosType))
+            {
+                return null;
+            }
+
+            var fieldClang = TryGetMemberClangType(record.EidosName, field.Name);
+            RegisterMemberAccess(state, new RecordMemberAccess(
+                record.CSpelling,
+                record.EidosName,
+                field.Name,
+                fieldClang != null ? _api.GetString(_api.GetTypeSpelling(fieldClang.Value)) : field.EidosType,
+                field.EidosType,
+                fieldClang != null && (ClangTypeKind)fieldClang.Value.Kind == ClangTypeKind.Float));
+            fields.Add($"{SanitizeIdent(field.Name)}: c2e_{record.EidosName}_{field.Name}_get({slot})");
+        }
+
+        return $"{record.EidosName} {{ {string.Join(", ", fields)} }}";
     }
 
     private string? TranslateExternalCall(string callee, IEnumerable<ClangCursor> arguments, FunctionContext context, TranslationState state)
@@ -3364,6 +4038,14 @@ internal sealed class CBodyTranslator
             return null;
         }
 
+        // extern 调用（含 float ABI / sret / _v staging 各形态）意味着调用方需要
+        // need ffi。不能依赖 PendingExterns/FloatShims 计数差：TryAdd 对重复 extern
+        // 不增长，第二个及以后的调用方会漏标（E3003）。
+        if (!string.IsNullOrEmpty(state.CurrentFunction))
+        {
+            state.FunctionUsesFfi.Add(state.CurrentFunction);
+        }
+
         var functionType = _api.GetCursorType(declaration);
         var arity = _api.GetNumArgTypes(functionType);
         var argumentList = arguments.ToList();
@@ -3393,17 +4075,36 @@ internal sealed class CBodyTranslator
             return null;
         }
 
-        // 按值返回的结构体：经 sret shim（静态槽 + accessor 重组）桥接；
-        // 按值传参的结构体仍挡住（Eidos 侧缺少调用点记录→blob 的通用桥）。
+        // 按值返回的结构体：经 sret shim（静态槽 + accessor 重组）桥接。
         if (IsValueRecord(returnMapping))
         {
             return TranslateSretExternalCall(callee, declaration, argumentList, parameterMappings, returnMapping, context, state);
         }
 
+        // 按值结构体参数：C 侧包装 shim（_v，指针收参）+ 调用点 staging 槽装载。
         if (parameterMappings.Any(static mapping => IsValueRecord(mapping)))
         {
-            SkipReason = $"extern '{callee}' passes a struct by value across the C ABI";
-            return null;
+            return TranslateStructArgExternalCall(callee, declaration, argumentList, parameterMappings, returnMapping, context, state);
+        }
+
+        // std.Ffi 已 extern 的 CRT 六件套：直呼 Ffi.<name>，避免与预编译模块的
+        // extern 绑定撞 C 符号（E3054 duplicate extern binding）。
+        if (StdFfiExternNames.Contains(callee))
+        {
+            var redirectedArguments = new List<string>(argumentList.Count);
+            for (var i = 0; i < argumentList.Count; i++)
+            {
+                var redirected = TranslateCallArgument(argumentList[i], parameterMappings[i], context, state);
+                if (redirected == null)
+                {
+                    return null;
+                }
+
+                redirectedArguments.Add(redirected);
+            }
+
+            state.MarkFfiImport();
+            return $"Ffi.{callee}({string.Join(", ", redirectedArguments)})";
         }
 
         // C float（32 位）参数/返回值与 Eidos Float（f64）extern ABI 不兼容：
@@ -3509,14 +4210,13 @@ internal sealed class CBodyTranslator
         }
     }
 
-    /// <summary>结构判定：cursor 是否为指针位置的整数字面量（含转换/包裹）。</summary>
+    /// <summary>
+    /// 结构判定：cursor 是否为指针语境的整数字面量（含转换/包裹）。
+    /// 入口不要求字面量自身为指针类型：C 里 `p != 0` / `f(p, 0)` 的 0 是 int 型，
+    /// 是否处于指针语境由调用方（比较另一侧/赋值目标/形参映射）保证。
+    /// </summary>
     private bool IsPointerLiteral(ClangCursor operand)
     {
-        if (!IsPointerTyped(operand))
-        {
-            return false;
-        }
-
         var current = operand;
         while (true)
         {
@@ -3525,7 +4225,7 @@ internal sealed class CBodyTranslator
                 return true;
             }
 
-            if (current.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.CStyleCastExpr)
+            if (current.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr or ClangCursorKind2.CStyleCastExpr)
             {
                 var inner = Children(current);
                 if (inner.Count != 1)
@@ -3936,6 +4636,42 @@ internal sealed class CBodyTranslator
         return current.Kind == ClangCursorKind2.IntegerLiteral;
     }
 
+    /// <summary>（可能被包裹的）整数字面量且值为 0：C `{ 0 }` 全零初始化形态。</summary>
+    private bool IsZeroIntegerLiteral(ClangCursor cursor)
+    {
+        var current = cursor;
+        while (current.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr or ClangCursorKind2.CStyleCastExpr)
+        {
+            var inner = Children(current);
+            if (inner.Count != 1)
+            {
+                return false;
+            }
+
+            current = inner[0];
+        }
+
+        if (current.Kind != ClangCursorKind2.IntegerLiteral)
+        {
+            return false;
+        }
+
+        var result = _api.CursorEvaluate(current);
+        if (result == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _api.EvalResultGetAsLongLong(result) == 0;
+        }
+        finally
+        {
+            _api.EvalResultDispose(result);
+        }
+    }
+
     /// <summary>表达式的 Eidos 类型：解包隐式转换/括号后按底层值判定
     ///（隐式转换节点会报告转换后的 C 类型，而发射文本仍是原值）。</summary>
     private string? EidosTypeOf(ClangCursor expression)
@@ -3957,19 +4693,31 @@ internal sealed class CBodyTranslator
 
     /// <summary>
     /// C 常规算术转换的窄子集：消费点要求 Float 而值是 Int 时显式转换
-    ///（Int→Float 经 runtime eidos_int_to_float；字面量调用方可自行优化）。
+    ///（Int→Float 经 runtime eidos_int_to_float；字面量调用方可自行优化）；
+    /// 反向（Int 消费点收 Float）按 C 截断语义走 Ffi.trunc_to_int（fptosi，向零截断）。
     /// </summary>
-    private string CoerceNumeric(string text, string? fromType, string toType, TranslationState state)
+    private string CoerceNumeric(string text, string? fromType, string? toType, TranslationState state)
     {
-        if (fromType == toType || fromType != "Int" || toType != "Float")
+        if (fromType == toType)
         {
             return text;
         }
 
-        state.NeedsIntToFloat = true;
-        // c2e_int_to_float 是 need ffi 的 extern：调用方签名同样需要 need ffi。
-        state.MarkFfiImport();
-        return $"c2e_int_to_float({text})";
+        if (fromType == "Int" && toType == "Float")
+        {
+            state.NeedsIntToFloat = true;
+            // c2e_int_to_float 是 need ffi 的 extern：调用方签名同样需要 need ffi。
+            state.MarkFfiImport();
+            return $"c2e_int_to_float({text})";
+        }
+
+        if (fromType == "Float" && toType == "Int")
+        {
+            state.MarkFfiImport();
+            return $"Ffi.trunc_to_int({text})";
+        }
+
+        return text;
     }
 
     private static string Indent(string text, int width)
@@ -4005,6 +4753,7 @@ internal sealed class CBodyTranslator
         public Dictionary<(string Record, string Member), RecordMemberAccess> RecordMembers { get; } = new();
         public Dictionary<string, FloatAbiShim> FloatShims { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, SretExtern> SretExterns { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, StructArgExtern> StructArgExterns { get; } = new(StringComparer.Ordinal);
         public bool NeedsFfiImport { get; private set; }
         public bool NeedsIntToFloat { get; set; }
 

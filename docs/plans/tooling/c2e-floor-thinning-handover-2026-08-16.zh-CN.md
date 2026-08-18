@@ -27,17 +27,32 @@
 
 ## 0. 当前状态（新会话先读这段）
 
-> **进度（2026-08-18 第三会话，项目管线）**：驱动新增 `--project` 模式（提交见
-> changelog `2026-08-18-...-c2e-project-pipeline-and-semantic-gate.md`）：双遍跨 TU
-> 清单解析（跨 TU 调用直呼翻译产物）+ 分桶合并（声明先于使用）+ 包生成 + **语义编译门**
-> （Types/Llvm 相位，行号诊断落 gate_diagnostics.txt）。raylib 四真实 TU 合并产物：
-> **624 函数 / 105 个类型级错误**——这是"可用率"的真基线（正则翻译计数一直虚高）。
-> 门驱动的修复：超 i32 字面量加 `l` 后缀；保留字标识符消毒（字段/局部/参数/全局，
-> 如 `type` 字段、raymath 的 `fn` 局部）；`RecordNameFromSpelling` 循环剥前缀词
-> （`const struct X` 曾产出带空格的 accessor 名）；系统头内联函数同时移出候选集；
-> 枚举常量发射为模块绑定；不可映射全局引用诚实跳过。剩余 105 错的类别（下一会话）：
-> RawPtr↔Int 的调用/返回/赋值型失配（指针整数算术模式）、位运算非 Int 操作数、
-> 静态数组全局应映射为模块级 calloc 缓冲而非跳过。
+> **进度（2026-08-19 第四会话，门全线通过）**：raylib 四真实 TU 合并产物
+> **654 函数，`--gate-phase Llvm` 全后端门 PASSED（0 错误）**——即 parse →
+> namer → types → effects → borrow → MIR → LLVM 全链路通过（changelog
+> `2026-08-19-...-c2e-context-coercions-and-int-as-ptr.md`）。修复分四轮：
+> (1) 编译器侧 `LiteralExpr.ParseLiteral` 对 `l` 后缀落入 String 兜底（37 错
+> 的根因）+ 进制分支 long 回退；(2) 语境强转全套：指针±int/指针差/指针序比较/
+> NULL 跨语境（ParenExpr 解包）/`int_as_ptr` intrinsic（MAKEINTRESOURCE 形态）/
+> Bool↔Int 数字化/复合赋值 Float 提升/Float→Int 截断/字符串下标基；(3) 结构体
+> 按值参数跨 ABI：`_v`/`_sret` C 包装 shim 指针收参 + 调用点 calloc staging 槽
+> 逐字段装载（嵌套记录经 `_addr` 递归）；(4) 门深入到 Effects/Borrow 相位暴露的
+> 漏标：extern 调用方 need ffi 不能靠字典计数差（TryAdd 对重复 extern 不增长）、
+> `(float)x` cast 未 tick、翻译记录 `@[derive(Copy)]`（C 值语义，否则按值传参即
+> move，104 个 E1001 一行清除）、accessor 登记 NeedsAddress 合并而非覆写、驱动
+> 合并对 accessor 块按 `@[extern]` 声明对去重（get/set/addr 同块不同 TU 子集）。
+> 诚实跳过新增：变参内部调用（stbiw__outfile 的 fmt 驱动 va_list）、函数名值用
+> （glad 回调）。对拍门新增 `C2E_PointerArithmeticAndCoercions_ParityWithClang`
+> （12/12）。验证全套：snake anchor 837999808 复现、ecc 编译冒烟 exit 42、
+> 全量回归 4318/4319（仅 #85 已知 flake）。
+>
+> **下一会话开工项**：门内 0 错 ≠ 能跑——距离"转译即最新版 Eidos 程序"还差：
+> (a) 原生链接 + 运行（eidos.toml floorSymbols/原生 shim 已生成，需真实链
+> raylib.dll 与 CRT 符号后跑冒烟）；(b) 翻译率本身（各 TU 仍有约 1/3 函数因
+> 未支持构造跳过：goto/labels、函数指针值、static 局部、指派初始化——tier-2
+> 清单）；(c) 变参与 va_list、位域、longjmp 等 floor 决策；(d) 编译器侧登记项：
+> 诊断行号在 CRLF/混合换行文件上漂移（renderer 的行映射）、namer 大模块病态
+> 性能（22k 行 ~6 分钟）、效果推断覆盖缺口（§4.4）。
 
 
 

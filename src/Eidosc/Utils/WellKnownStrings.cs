@@ -569,6 +569,7 @@ public static class WellKnownStrings
         public const string PtrStoreF32 = "ptr_store_f32";
         public const string PtrStoreBool = "ptr_store_bool";
         public const string PtrToInt = "ptr_to_int";
+        public const string IntToPtr = "int_to_ptr";
         public const string FloatToInt = "float_to_int";
         public const string PtrLoadAs = "ptr_load_as";
         public const string PtrStoreAs = "ptr_store_as";

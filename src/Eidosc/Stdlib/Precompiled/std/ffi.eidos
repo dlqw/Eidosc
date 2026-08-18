@@ -23,6 +23,8 @@ Ffi :: module {
 
     ptr_to_int :: RawPtr -> Int compiler(internal, intrinsic: "ptr_to_int") need ffi;
 
+    int_to_ptr :: Int -> RawPtr compiler(internal, intrinsic: "int_to_ptr") need ffi;
+
     float_to_int :: Float -> Int compiler(internal, intrinsic: "float_to_int") need ffi;
 
 
@@ -257,6 +259,12 @@ Ffi :: module {
     export ptr_as_int :: RawPtr -> Int need ffi
     {
         p => ptr_to_int(p)
+    }
+
+    // 整数位模式回指针（C 的 (T*)n，如 Win32 MAKEINTRESOURCE 资源句柄形态）。
+    export int_as_ptr :: Int -> RawPtr need ffi
+    {
+        v => int_to_ptr(v)
     }
 
     export trunc_to_int :: Float -> Int need ffi
