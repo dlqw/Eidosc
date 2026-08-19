@@ -52,7 +52,10 @@ internal sealed class CBodyTranslator
         string MemberCType,
         string MemberEidosType,
         bool MemberIsFloat = false,
-        bool NeedsAddress = false);
+        bool NeedsAddress = false,
+        bool ArrayMember = false,
+        string? MemberPath = null,
+        bool IsRecordMember = false);
 
     /// <summary>
     /// 按值返回结构体的外部函数：sret shim 规格（C 侧静态槽收返回值并给出指针，
@@ -99,6 +102,35 @@ internal sealed class CBodyTranslator
         string CName,
         string Target);
 
+    /// <summary>
+    /// 变参调用点转发 shim：调用点实参类型固化后转调真实 C 函数（原 .c 经 shim TU
+    /// 包含在场，转发即真语义）。返回/形参禁 C float 与函数指针。
+    /// </summary>
+    private sealed record VarArgShim(
+        string CName,
+        string Callee,
+        IReadOnlyList<string> ParameterSpells,
+        IReadOnlyList<string> ParameterEidosTypes,
+        string ReturnSpelling,
+        string ReturnEidosType);
+
+    /// <summary>不可映射 record 全局存储：C 侧 static 实例 + getter（c2e_glob_*）。record 全局 Count=1；
+    /// 标量数组全局（静态查找表）元素拼写 + 数量，初始化器原样 tokens。
+    /// </summary>
+    private sealed record OpaqueGlobalShim(string CName, string GlobalName, string TypeSpelling, bool IsStatic);
+
+    /// <summary>
+    /// 返回不可映射 record 的调用（rlMatrixToFloatV 型）：C 侧 malloc 槽收返回值给出指针
+    ///（逐调用槽——表达式语境无释放点，静态槽在嵌套调用时会互踩；泄漏换正确性）。
+    /// 值记录参数以 void* 槽中转（cast 位取回）。
+    /// </summary>
+    private sealed record OsretParam(string Spelling, bool IsStruct, string EidosType);
+
+    private sealed record OsretExtern(
+        string Callee,
+        IReadOnlyList<OsretParam> Parameters,
+        string ReturnSpelling);
+
     /// <summary>static 数组（零值与非零查表）：C 侧以真正的 static 局部承载
     ///（非零时 token 原文回填初始化器），Eidos 引用位直呼 getter extern——
     /// 模块级初始化不得触 Ffi/extern（效果授权不含 module-init），且 C static
@@ -141,7 +173,8 @@ internal sealed class CBodyTranslator
     private bool NeedsForwarderShim(ClangCursor declaration, string callee) =>
         _api.GetCursorLinkage(declaration) == 2 ||
         _api.CursorIsFunctionInlined(declaration) != 0 ||
-        (IsSystemDeclaration(declaration) && !HasBody(declaration) && callee.StartsWith("__", StringComparison.Ordinal));
+        (IsSystemDeclaration(declaration) && !HasBody(declaration) &&
+            (callee.StartsWith("__", StringComparison.Ordinal) || callee is "_alloca"));
 
     /// <summary>static 存储的局部 VarDecl（CX_StorageClass_Static == 3）：生命周期跨调用。</summary>
     private bool IsStaticStorage(ClangCursor cursor) =>
@@ -182,6 +215,24 @@ internal sealed class CBodyTranslator
                 else if ((ClangCursorKind)cursor.Kind is ClangCursorKind.StructDecl or ClangCursorKind.UnionDecl)
                 {
                     CollectRecord(cursor);
+                }
+                else if ((ClangCursorKind)cursor.Kind == ClangCursorKind.TypedefDecl)
+                {
+                    // 匿名 struct 的 typedef（typedef struct { ... } Vec4Box;）：struct 声明
+                    // 自身的类型拼写不可用作键，按 typedef 名登记（CSpelling 用 typedef 名，
+                    // C 侧 (Vec4Box*) cast 合法）。
+                    var underlying = _api.GetCanonicalType(_api.GetTypedefDeclUnderlyingType(cursor));
+                    if ((ClangTypeKind)underlying.Kind == ClangTypeKind.Record)
+                    {
+                        var typedefName = _api.GetString(_api.GetCursorSpelling(cursor));
+                        if (typedefName.Length > 0 && !_records.ContainsKey(typedefName))
+                        {
+                            _records[typedefName] = new RecordSchema(typedefName, typedefName)
+                            {
+                                Declaration = _api.GetTypeDeclaration(underlying)
+                            };
+                        }
+                    }
                 }
                 else if ((ClangCursorKind)cursor.Kind == ClangCursorKind.VarDecl)
                 {
@@ -484,6 +535,9 @@ internal sealed class CBodyTranslator
                 continue;
             }
 
+            //（rtext/rshapes 的 static Font defaultFont、static Texture2D shapesTexture 型）：
+            // 该全局在 shim TU 内另有 C 定义，Eidos 侧模块绑定会与之分裂——含引用的函数
+            // 保持 C 侧（经 extern/sret 直呼 C 实现），确保与 C 调用方可观测状态一致。
             var parameterMappings = new List<CTypeMapping>();
             foreach (var child in Children(function))
             {
@@ -714,11 +768,39 @@ internal sealed class CBodyTranslator
             sb.AppendLine();
         }
 
+        foreach (var vararg in state.VarArgShims.Values)
+        {
+            sb.AppendLine($"@[extern(c, name: \"{vararg.CName}\")]");
+            var varargSignature = vararg.ParameterEidosTypes.Count == 0
+                ? $"Unit -> {vararg.ReturnEidosType}"
+                : $"{string.Join(" -> ", vararg.ParameterEidosTypes)} -> {vararg.ReturnEidosType}";
+            sb.AppendLine($"{vararg.CName} :: {varargSignature} need ffi;");
+            sb.AppendLine();
+        }
+
+        // 不透明 record 全局存储 getter：模块级 extern（引用方经 need ffi 授权）。
+        foreach (var opaque in state.OpaqueGlobals.Values)
+        {
+            sb.AppendLine($"@[extern(c, name: \"{opaque.CName}\")]");
+            sb.AppendLine($"{opaque.CName} :: Unit -> RawPtr need ffi;");
+            sb.AppendLine();
+        }
+
+        foreach (var osret in state.OsretExterns.Values)
+        {
+            sb.AppendLine($"@[extern(c, name: \"c2e_ext_{osret.Callee}_osret\")]");
+            var osretSignature = osret.Parameters.Count == 0
+                ? "Unit -> RawPtr"
+                : $"{string.Join(" -> ", osret.Parameters.Select(static p => p.IsStruct ? "RawPtr" : p.EidosType))} -> RawPtr";
+            sb.AppendLine($"c2e_ext_{osret.Callee}_osret :: {osretSignature} need ffi;");
+            sb.AppendLine();
+        }
+
         foreach (var access in state.RecordMembers.Values)
         {
             var prefix = $"c2e_{access.RecordName}_{access.Member}";
-            var memberIsRecord = _records.ContainsKey(access.MemberEidosType);
-            if (!memberIsRecord)
+            var memberIsRecord = _records.ContainsKey(access.MemberEidosType) || access.IsRecordMember;
+            if (!memberIsRecord && !access.ArrayMember)
             {
                 // 标量成员：get/set accessor。struct 成员无安全的按值返回/传参 ABI，
                 // 仅经 _addr 链访问（E3051）。
@@ -776,6 +858,9 @@ internal sealed class CBodyTranslator
             BuildICallShimSource(state.ICallShims.Values),
             BuildFnAddrShimSource(state.FnAddrShims.Values),
             BuildStaticInitShimSource(state.StaticInitShims.Values),
+            BuildVarArgShimSource(state.VarArgShims.Values),
+            BuildOpaqueGlobalShimSource(state.OpaqueGlobals.Values),
+            BuildOsretShimSource(state.OsretExterns.Values),
             BuildSretShimSource(cSourcePath, state.SretExterns.Values),
             BuildStructArgShimSource(cSourcePath, state.StructArgExterns.Values)
         };
@@ -1137,6 +1222,112 @@ internal sealed class CBodyTranslator
         return shim.ToString();
     }
 
+    /// <summary>变参转发 shim：固化形参直接转调真实 C 函数（void 返回无 return）。</summary>
+    private string BuildVarArgShimSource(IEnumerable<VarArgShim> shims)
+    {
+        var list = shims.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            var parameters = string.Join(", ", entry.ParameterSpells.Select(static (spell, index) => $"{spell} a{index}"));
+            if (parameters.Length == 0)
+            {
+                parameters = "void";
+            }
+
+            var callArguments = string.Join(", ", entry.ParameterSpells.Select(static (_, index) => $"a{index}"));
+            var call = $"{entry.Callee}({callArguments})";
+            shim.AppendLine($"{entry.ReturnSpelling} {entry.CName}({parameters})");
+            shim.AppendLine("{");
+            shim.AppendLine(entry.ReturnSpelling == "void" ? $"    {call};" : $"    return {call};");
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
+    /// <summary>osret 包装：malloc 槽收按值 record 返回值（值记录参数经 void* 槽 cast 取回）。</summary>
+    private string BuildOsretShimSource(IEnumerable<OsretExtern> externs)
+    {
+        var list = externs.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        shim.AppendLine("#include <stdlib.h>");
+        foreach (var entry in list)
+        {
+            var parameters = string.Join(", ", entry.Parameters.Select(static (p, index) =>
+                p.IsStruct || p.Spelling.Contains("(*)") ? $"void* p{index}" : $"{p.Spelling} p{index}"));
+            if (parameters.Length == 0)
+            {
+                parameters = "void";
+            }
+
+            var callArguments = string.Join(", ", entry.Parameters.Select(static (p, index) =>
+                p.IsStruct || p.Spelling.Contains("(*)") ? $"(*({p.Spelling}*)p{index})" : $"p{index}"));
+            shim.AppendLine($"void* c2e_ext_{entry.Callee}_osret({parameters})");
+            shim.AppendLine("{");
+            shim.AppendLine($"    {entry.ReturnSpelling}* __slot = ({entry.ReturnSpelling}*)malloc(sizeof({entry.ReturnSpelling}));");
+            shim.AppendLine($"    *__slot = {entry.Callee}({callArguments});");
+            shim.AppendLine("    return (void*)__slot;");
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
+    /// <summary>不透明全局地址 getter：C 侧 extern 声明 + 取址（与 shim TU 内原 .c 定义共享状态）。</summary>
+    private string BuildOpaqueGlobalShimSource(IEnumerable<OpaqueGlobalShim> shims)
+    {
+        var list = shims.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            // 数组类型拼写 "const unsigned char[9]"：声明位名字须在基类型与维数之间。
+            var baseType = entry.TypeSpelling;
+            var dims = string.Empty;
+            if (baseType.Contains('['))
+            {
+                var bracket = baseType.IndexOf('[');
+                dims = baseType[bracket..];
+                baseType = baseType[..bracket].TrimEnd();
+            }
+
+            // static 全局：定义在 shim TU 内已可见，直接取址（重复 extern 会与既有
+            // const/static 定义冲突）；外部链接全局以 extern（与定义一致）声明后取址。
+            // 非 static 函数：跨 TU 同名去重后须作全局符号供 extern 绑定（内部链接全局
+            // 经 _sourceTag 区分，各 TU 的 static 定义各自对应）。
+            shim.AppendLine($"void* {entry.CName}(void)");
+            shim.AppendLine("{");
+            if (entry.IsStatic)
+            {
+                shim.AppendLine($"    return &{entry.GlobalName};");
+            }
+            else
+            {
+                shim.AppendLine($"    extern {baseType} {entry.GlobalName}{dims};");
+                shim.AppendLine($"    return &{entry.GlobalName};");
+            }
+
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
     private string BuildStaticForwarderShimSource(IEnumerable<StaticForwarder> forwarders)
     {
         var list = forwarders.ToList();
@@ -1235,12 +1426,27 @@ internal sealed class CBodyTranslator
             // C float（32 位）成员以 double 签名中转：Eidos Float extern ABI 是 f64，
             // 直接返回 float 会把 xmm0 高 32 位的未定义位带进 Eidos 侧。
             // struct 成员仅发射 _addr（按值 get/set 无安全 ABI）。
+            // 路径摊平成员（MemberPath）：C 侧以 m1.m2....mk 点路径引用（匿名嵌套 struct）。
             var prefix = $"c2e_{access.RecordName}_{access.Member}";
-            if (_records.ContainsKey(access.MemberEidosType))
+            var memberRef = access.MemberPath ?? access.Member;
+            var memberIsRecord = _records.ContainsKey(access.MemberEidosType) || access.IsRecordMember;
+            if (memberIsRecord)
             {
                 if (access.NeedsAddress)
                 {
-                    shim.AppendLine($"void* {prefix}_addr(void* __p) {{ return (void*)&((({access.RecordSpelling}*)__p)->{access.Member}); }}");
+                    shim.AppendLine($"void* {prefix}_addr(void* __p) {{ return (void*)&((({access.RecordSpelling}*)__p)->{memberRef}); }}");
+                }
+
+                continue;
+            }
+
+            if (access.ArrayMember)
+            {
+                // 数组成员无按值 get/set（返回数组类型是非法 C），仅 _addr（首元素地址，
+                // C 数组退化的对应物）。
+                if (access.NeedsAddress)
+                {
+                    shim.AppendLine($"void* {prefix}_addr(void* __p) {{ return (void*)&((({access.RecordSpelling}*)__p)->{memberRef}[0]); }}");
                 }
 
                 continue;
@@ -1248,25 +1454,25 @@ internal sealed class CBodyTranslator
 
             if (access.MemberIsFloat)
             {
-                shim.AppendLine($"double {prefix}_get(void* __p) {{ return (double)((({access.RecordSpelling}*)__p)->{access.Member}); }}");
-                shim.AppendLine($"void {prefix}_set(void* __p, double __v) {{ (({access.RecordSpelling}*)__p)->{access.Member} = ({access.MemberCType})__v; }}");
+                shim.AppendLine($"double {prefix}_get(void* __p) {{ return (double)((({access.RecordSpelling}*)__p)->{memberRef}); }}");
+                shim.AppendLine($"void {prefix}_set(void* __p, double __v) {{ (({access.RecordSpelling}*)__p)->{memberRef} = ({access.MemberCType})__v; }}");
             }
             else if (access.MemberCType.Contains("(*)"))
             {
                 // 函数指针成员：`float (*)(float, void*)` 形态不能作声明符返回类型，
                 // 以 void* 中转（作 cast 合法）；Eidos 侧该成员即 RawPtr。
-                shim.AppendLine($"void* {prefix}_get(void* __p) {{ return (void*)((({access.RecordSpelling}*)__p)->{access.Member}); }}");
-                shim.AppendLine($"void {prefix}_set(void* __p, void* __v) {{ (({access.RecordSpelling}*)__p)->{access.Member} = ({access.MemberCType})__v; }}");
+                shim.AppendLine($"void* {prefix}_get(void* __p) {{ return (void*)((({access.RecordSpelling}*)__p)->{memberRef}); }}");
+                shim.AppendLine($"void {prefix}_set(void* __p, void* __v) {{ (({access.RecordSpelling}*)__p)->{memberRef} = ({access.MemberCType})__v; }}");
             }
             else
             {
-                shim.AppendLine($"{access.MemberCType} {prefix}_get(void* __p) {{ return (({access.RecordSpelling}*)__p)->{access.Member}; }}");
-                shim.AppendLine($"void {prefix}_set(void* __p, {access.MemberCType} __v) {{ (({access.RecordSpelling}*)__p)->{access.Member} = __v; }}");
+                shim.AppendLine($"{access.MemberCType} {prefix}_get(void* __p) {{ return (({access.RecordSpelling}*)__p)->{memberRef}; }}");
+                shim.AppendLine($"void {prefix}_set(void* __p, {access.MemberCType} __v) {{ (({access.RecordSpelling}*)__p)->{memberRef} = __v; }}");
             }
 
             if (access.NeedsAddress)
             {
-                shim.AppendLine($"void* {prefix}_addr(void* __p) {{ return (void*)&((({access.RecordSpelling}*)__p)->{access.Member}); }}");
+                shim.AppendLine($"void* {prefix}_addr(void* __p) {{ return (void*)&((({access.RecordSpelling}*)__p)->{memberRef}); }}");
             }
         }
 
@@ -1281,6 +1487,16 @@ internal sealed class CBodyTranslator
     private string? TryTranslateFunction(ClangCursor function, TranslationState state)
     {
         SkipReason = null;
+        // 引用可映射值记录全局（rtext 的 static Font defaultFont、rshapes 的 static
+        // Texture2D shapesTexture 型）：该全局在 shim TU 内另有 C 定义，Eidos 模块绑定
+        // 与之分裂。函数保持 C 侧（进 banned → 调用方回退 extern，值记录返回经 sret），
+        // 与 C 调用方可观测状态一致。
+        if (ReferencesValueRecordGlobal(function))
+        {
+            SkipReason = "references a record-value global (C-side state)";
+            return null;
+        }
+
         var children = Children(function);
         var body = children.FirstOrDefault(static c => c.Kind == ClangCursorKind2.CompoundStmt);
 
@@ -1729,6 +1945,20 @@ internal sealed class CBodyTranslator
         var headCanonical = _api.GetCanonicalType(_api.GetCursorType(head));
         if ((ClangTypeKind)headCanonical.Kind != ClangTypeKind.Pointer)
         {
+            // 不透明 record 头（&CORE.Window.position 型）：路径摊平 accessor 直达末级成员地址。
+            if (TryResolveOpaqueRecordHead(head, context, state, out var opaqueRecord) is { } opaqueAddress)
+            {
+                var opaqueChained = ResolveOpaqueMemberAddressChain(opaqueAddress, opaqueRecord, members);
+                if (opaqueChained == null)
+                {
+                    return null;
+                }
+
+                var (opaqueFinalAddress, opaqueRootRecord, opaqueMemberPath, opaqueFinalType) = opaqueChained.Value;
+                var prefix = RegisterMemberPathAccessor(opaqueRootRecord, opaqueMemberPath, opaqueFinalType, state, needsAddress: true);
+                return $"{prefix}_addr({opaqueFinalAddress})";
+            }
+
             return null;
         }
 
@@ -1766,12 +1996,23 @@ internal sealed class CBodyTranslator
 
             var match = System.Text.RegularExpressions.Regex.Match(
                 SkipReason ?? string.Empty, @"^mutation of parameter '([^']+)'$");
-            if (!match.Success ||
-                !context.ParameterNames.Contains(match.Groups[1].Value) ||
-                !context.MutableParams.Add(match.Groups[1].Value))
+            if (match.Success &&
+                context.ParameterNames.Contains(match.Groups[1].Value) &&
+                context.MutableParams.Add(match.Groups[1].Value))
             {
-                return null;
+                continue;
             }
+
+            // &rec（值记录局部）：升级为 calloc 存储盒后整体重译（绑定改持地址，
+            // 成员经 accessor 链访问——与不透明 record 局部同型）。
+            var boxMatch = System.Text.RegularExpressions.Regex.Match(
+                SkipReason ?? string.Empty, @"^box record local '([^']+)'$");
+            if (boxMatch.Success)
+            {
+                continue;
+            }
+
+            return null;
         }
 
         if (context.MutableParams.Count > 0)
@@ -1969,6 +2210,222 @@ internal sealed class CBodyTranslator
     /// </summary>
     /// <summary>static 局部提升为模块级 mut 绑定（C 静态存储 = 文件作用域生命周期）。
     /// 数组仅接受零初始化（calloc 即 C 静态零初始化）；标量经与全局一致的初始化翻译。</summary>
+    /// <summary>
+    /// 不透明 record 局部（stbi__context s / LARGE_INTEGER now 型）：Eidos 侧以 calloc
+    /// 存储承载（绑定即地址），成员经 accessor 链访问。仅限无初始化/零初始化列表；
+    /// 非零初始化与按值拷贝初始化诚实跳过（返回 null）。
+    /// </summary>
+    private string? TryTranslateOpaqueRecordLocal(
+        ClangCursor varDecl,
+        string varName,
+        ClangType canonicalType,
+        bool isArray,
+        FunctionContext context,
+        TranslationState state)
+    {
+        if (isArray || !TryGetOpaqueRecordName(canonicalType, out var recordName))
+        {
+            return null;
+        }
+
+        var initChildren = ValueChildren(varDecl);
+        if (initChildren.Count > 0)
+        {
+            var last = initChildren[^1];
+            while (last.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+            {
+                var inner = ValueChildren(last);
+                if (inner.Count != 1)
+                {
+                    break;
+                }
+
+                last = inner[0];
+            }
+
+            if (last.Kind != ClangCursorKind2.InitListExpr || !IsZeroInitializerExpr(last))
+            {
+                // 非零初始化列表 / 记录值拷贝初始化：无按值桥。
+                SkipReason = $"local '{varName}' has an unsupported initializer";
+                return null;
+            }
+        }
+
+        var size = _api.TypeGetSizeOf(canonicalType);
+        if (size <= 0)
+        {
+            SkipReason = $"local '{varName}' has an unknown size";
+            return null;
+        }
+
+        state.MarkFfiImport();
+        context.VarTypes[varName] = new CTypeMapping(
+            "RawPtr",
+            null,
+            _api.GetString(_api.GetTypeSpelling(canonicalType)),
+            recordName);
+        if (SanitizeIdent(varName) != varName)
+        {
+            context.RenamedLocals[varName] = SanitizeIdent(varName);
+        }
+
+        return $"mut {EidosRefName(varName, context)} := Ffi.calloc(1)({size});";
+    }
+
+    /// <summary>
+    /// 盒化的值记录局部（&msg 供输出参数写回）：calloc 存储 + RawPtr 绑定。仅限
+    /// 无初始化/零初始化（盒初值即零位）；非零初始化诚实跳过。
+    /// </summary>
+    private string? TryTranslateBoxedRecordLocal(
+        ClangCursor varDecl,
+        string varName,
+        ClangType canonicalType,
+        FunctionContext context,
+        TranslationState state)
+    {
+        if (MapType(canonicalType) is not { } mapping || !IsValueRecord(mapping))
+        {
+            SkipReason = $"local '{varName}' has unsupported type";
+            return null;
+        }
+
+        var initChildren = ValueChildren(varDecl);
+        if (initChildren.Count > 0)
+        {
+            var last = initChildren[^1];
+            while (last.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+            {
+                var inner = ValueChildren(last);
+                if (inner.Count != 1)
+                {
+                    break;
+                }
+
+                last = inner[0];
+            }
+
+            if (last.Kind != ClangCursorKind2.InitListExpr || !IsZeroInitializerExpr(last))
+            {
+                SkipReason = $"local '{varName}' has an unsupported initializer";
+                return null;
+            }
+        }
+
+        var size = _api.TypeGetSizeOf(canonicalType);
+        if (size <= 0)
+        {
+            SkipReason = $"local '{varName}' has an unknown size";
+            return null;
+        }
+
+        state.MarkFfiImport();
+        context.VarTypes[varName] = new CTypeMapping(
+            "RawPtr",
+            null,
+            _api.GetString(_api.GetTypeSpelling(canonicalType)),
+            mapping.EidosType);
+        if (SanitizeIdent(varName) != varName)
+        {
+            context.RenamedLocals[varName] = SanitizeIdent(varName);
+        }
+
+        return $"mut {EidosRefName(varName, context)} := Ffi.calloc(1)({size});";
+    }
+
+    /// <summary>
+    /// 递归扫描函数体是否引用可映射值记录全局（rtext.c 的 `static Font defaultFont` 型）：
+    /// 该类全局在 shim TU 内另有 C 定义，Eidos 侧模块绑定会与之分裂——含引用的函数
+    /// 保持 C 侧（经 extern/sret 直呼 C 实现），确保与 C 调用方可观测状态一致。
+    /// </summary>
+    private bool ReferencesValueRecordGlobal(ClangCursor function)
+    {
+        return CursorContainsReference(function, cursor =>
+        {
+            if (cursor.Kind != ClangCursorKind2.DeclRefExpr)
+            {
+                return false;
+            }
+
+            var refName = _api.GetString(_api.GetCursorSpelling(cursor));
+            return _globals.TryGetValue(refName, out var global) &&
+                MapType(_api.GetCursorType(global)) is { } mapping &&
+                IsValueRecord(mapping);
+        });
+    }
+
+    /// <summary>递归子树存在满足谓词的游标。</summary>
+    private bool CursorContainsReference(ClangCursor root, Func<ClangCursor, bool> predicate)
+    {
+        var pending = new Stack<ClangCursor>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            if (predicate(current))
+            {
+                return true;
+            }
+
+            foreach (var child in Children(current))
+            {
+                pending.Push(child);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 盒化值记录局部的按值使用位（return / 值实参）：绑定是地址（RawPtr），从盒地址
+    /// 逐字段 accessor 重组记录值。仅盒化局部——指针到可映射 record 的映射同样携带
+    /// RecordName，须以 clang 类型是 record 值（非指针）为准。
+    /// </summary>
+    private string? TryReassembleBoxedRecord(ClangCursor expression, FunctionContext context, TranslationState state)
+    {
+        var current = expression;
+        while (current.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+        {
+            var inner = ValueChildren(current);
+            if (inner.Count != 1)
+            {
+                break;
+            }
+
+            current = inner[0];
+        }
+
+        if (current.Kind != ClangCursorKind2.DeclRefExpr ||
+            (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(current)).Kind != ClangTypeKind.Record)
+        {
+            return null;
+        }
+
+        var name = _api.GetString(_api.GetCursorSpelling(current));
+        if (!context.VarTypes.TryGetValue(name, out var mapping) ||
+            mapping.EidosType != "RawPtr" ||
+            mapping.RecordName == null ||
+            !_records.TryGetValue(mapping.RecordName, out var record) ||
+            !record.Mappable)
+        {
+            return null;
+        }
+
+        return ReassembleRecordAtAddress(record, EidosRefName(name, context), state);
+    }
+
+    /// <summary>初始化器文本（C 侧原样承载）：拼接待注释过滤的 token（注释嵌在
+    /// 初始化元素间会切断声明）。宏展开泄漏/预处理残渣（含 #、换行、超长单行）判不可读
+    /// 返回空串（调用方诚实跳过）。</summary>
+    private string InitializerTokens(ClangCursor listExpression)
+    {
+        var joined = string.Join(" ", Tokenize(listExpression)
+            .Where(static token => token.Kind != ClangTokenKind.Comment)
+            .Select(static token => token.Spelling));
+        return joined.Length > 8192 || joined.Contains('\n') || joined.Contains('#')
+            ? string.Empty
+            : joined;
+    }
+
     private bool TryHoistStaticLocal(
         ClangCursor varDecl,
         string varName,
@@ -2025,7 +2482,7 @@ internal sealed class CBodyTranslator
 
                 if (last.Kind == ClangCursorKind2.InitListExpr && !IsZeroInitializerExpr(last))
                 {
-                    initText = string.Join(" ", Tokenize(last).Select(static token => token.Spelling));
+                    initText = InitializerTokens(last);
                     if (initText.Length == 0)
                     {
                         SkipReason = $"static local array '{varName}' has an unreadable initializer";
@@ -2054,6 +2511,55 @@ internal sealed class CBodyTranslator
         var varType = MapType(declarationType);
         if (varType == null)
         {
+            // 不透明 record static 局部：与数组同型走 C 侧 static 存储 getter（Count=1）。
+            if (!isArray && TryGetOpaqueRecordName(canonicalType, out _))
+            {
+                string? initText = null;
+                if (initChildren.Count > 0)
+                {
+                    var last = initChildren[^1];
+                    while (last.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+                    {
+                        var inner = ValueChildren(last);
+                        if (inner.Count != 1)
+                        {
+                            break;
+                        }
+
+                        last = inner[0];
+                    }
+
+                    if (last.Kind == ClangCursorKind2.InitListExpr && !IsZeroInitializerExpr(last))
+                    {
+                        initText = InitializerTokens(last);
+                        if (initText.Length == 0)
+                        {
+                            SkipReason = $"static local '{varName}' has an unreadable initializer";
+                            return false;
+                        }
+                    }
+                    else if (last.Kind != ClangCursorKind2.InitListExpr)
+                    {
+                        SkipReason = $"static local '{varName}' has an unsupported initializer";
+                        return false;
+                    }
+                }
+
+                var shimCName = $"c2e_static_{_sourceTag}_{SanitizeIdent(context.FunctionName ?? "fn")}_{SanitizeIdent(varName)}_init";
+                state.StaticInitShims[promotedName] = new StaticInitShim(
+                    shimCName,
+                    _api.GetString(_api.GetTypeSpelling(canonicalType)),
+                    initText,
+                    1);
+                if (!string.IsNullOrEmpty(context.FunctionName))
+                {
+                    state.FunctionUsesFfi.Add(context.FunctionName);
+                }
+
+                promotedName = $"{shimCName}()";
+                return true;
+            }
+
             SkipReason = $"static local '{varName}' has unsupported type";
             return false;
         }
@@ -2421,6 +2927,22 @@ internal sealed class CBodyTranslator
                     var isArrayLocal = (ClangTypeKind)canonicalDeclType.Kind
                         is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray;
 
+                    // 被取址的值记录局部（&msg）：calloc 存储盒（绑定即地址，
+                    // 输出参数写回经盒生效；成员改走 accessor 链）。
+                    if (context.BoxedRecords.Contains(varName) && !isArrayLocal &&
+                        (ClangTypeKind)canonicalDeclType.Kind == ClangTypeKind.Record)
+                    {
+                        var boxedLine = TryTranslateBoxedRecordLocal(
+                            varDecl, varName, canonicalDeclType, context, state);
+                        if (boxedLine != null)
+                        {
+                            lines.Add(boxedLine);
+                            continue;
+                        }
+
+                        return null;
+                    }
+
                     // static 局部：生命周期跨调用 → 提升为模块级 mut 绑定（C 语义即文件作用域存储）。
                     if (IsStaticStorage(varDecl))
                     {
@@ -2430,7 +2952,15 @@ internal sealed class CBodyTranslator
                             return null;
                         }
 
-                        var staticMapping = MapType(declarationType, allowArrays: isArrayLocal);
+                        // 不透明 record static 局部：提升为 getter 基址（RawPtr）。
+                        var staticMapping = MapType(declarationType, allowArrays: isArrayLocal) ??
+                            (!isArrayLocal && TryGetOpaqueRecordName(canonicalDeclType, out var staticOpaqueRecord)
+                                ? new CTypeMapping(
+                                    "RawPtr",
+                                    null,
+                                    _api.GetString(_api.GetTypeSpelling(canonicalDeclType)),
+                                    staticOpaqueRecord)
+                                : null);
                         if (staticMapping == null)
                         {
                             SkipReason = $"static local '{varName}' has unsupported type";
@@ -2445,6 +2975,15 @@ internal sealed class CBodyTranslator
                     var varType = MapType(declarationType, allowArrays: isArrayLocal);
                     if (varType == null)
                     {
+                        // 不透明 record 局部（stbi__context s 型）：calloc 存储承载（绑定即地址）。
+                        var opaqueLine = TryTranslateOpaqueRecordLocal(
+                            varDecl, varName, canonicalDeclType, isArrayLocal, context, state);
+                        if (opaqueLine != null)
+                        {
+                            lines.Add(opaqueLine);
+                            continue;
+                        }
+
                         SkipReason = $"local '{varName}' has unsupported type";
                         return null;
                     }
@@ -2511,6 +3050,13 @@ internal sealed class CBodyTranslator
                 if (valueChildren.Count == 0)
                 {
                     return string.Empty;
+                }
+
+                // 盒化值记录局部按值返回（return files，files 因取址被盒化）：从盒地址
+                // 逐字段重组记录值。
+                if (TryReassembleBoxedRecord(valueChildren[0], context, state) is { } boxedReturn)
+                {
+                    return $"return {boxedReturn};";
                 }
 
                 var value = TranslateExpression(valueChildren[0], context, state);
@@ -3003,13 +3549,24 @@ internal sealed class CBodyTranslator
                     _usedEnumConstants.Add(name);
                 }
 
-                // 不可映射全局（静态数组/查找表等）的引用：诚实跳过该函数，
-                // 而非发射裸名落成未定义符号。
+                // 不可映射全局的引用：标量数组（静态查找表）在 C 中无值语义——任何
+                // 使用位都衰减为首地址，经 C 侧存储 getter 承载；record 全局仅在成员
+                // 路径头/取址位使用（值位拷贝语义无桥，诚实跳过）。
                 if (!context.VarTypes.ContainsKey(name) &&
                     _globals.TryGetValue(name, out var unsupportedGlobal) &&
                     MapType(_api.GetCursorType(unsupportedGlobal)) == null)
                 {
-                    SkipReason = $"global '{name}' has an unsupported type";
+                    var unsupportedCanonical = _api.GetCanonicalType(_api.GetCursorType(unsupportedGlobal));
+                    if ((ClangTypeKind)unsupportedCanonical.Kind is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray)
+                    {
+                        var tableAddress = RegisterOpaqueGlobal(name, unsupportedGlobal, state);
+                        if (tableAddress != null)
+                        {
+                            return tableAddress;
+                        }
+                    }
+
+                    SkipReason = SkipReason ?? $"global '{name}' has an unsupported type";
                     return null;
                 }
 
@@ -3488,8 +4045,22 @@ internal sealed class CBodyTranslator
                 // m[i]（元素本身是数组）退化为元素首地址，供外层下标/指针语境使用。
                 return address;
             case ClangTypeKind.Record:
+            {
+                // 记录元素（GetFontDefault().recs[95]）：地址上逐字段 accessor 重组值。
+                var elementSpelling = _api.GetString(_api.GetTypeSpelling(elementCanonical));
+                var elementRecordName = RecordNameFromSpelling(elementSpelling);
+                if (_records.TryGetValue(elementRecordName, out var elementRecord) && elementRecord.Mappable)
+                {
+                    var reassembled = ReassembleRecordAtAddress(elementRecord, address, state);
+                    if (reassembled != null)
+                    {
+                        return reassembled;
+                    }
+                }
+
                 SkipReason = "subscript of a record element outside member access";
                 return null;
+            }
             default:
                 SkipReason = "subscript element type is not a supported scalar or pointer";
                 return null;
@@ -3524,6 +4095,35 @@ internal sealed class CBodyTranslator
                 return $"Ffi.store[Float]({address})({value})";
             case ClangTypeKind.Pointer:
                 return $"Ffi.store[RawPtr]({address})({value})";
+            case ClangTypeKind.Record:
+            {
+                // 记录元素写（recs[i] = rec）：地址上逐字段 accessor 装载
+                //（块表达式内绑定一次，保持 C 单次求值语义）。
+                var elementSpelling = _api.GetString(_api.GetTypeSpelling(elementCanonical));
+                var elementRecordName = RecordNameFromSpelling(elementSpelling);
+                if (_records.TryGetValue(elementRecordName, out var elementRecord) && elementRecord.Mappable)
+                {
+                    var writes = new List<string>();
+                    foreach (var field in elementRecord.Fields!)
+                    {
+                        if (_records.ContainsKey(field.EidosType))
+                        {
+                            break;
+                        }
+
+                        RegisterMemberAccessor(elementRecord.EidosName, field.Name, state);
+                        writes.Add($"c2e_{elementRecord.EidosName}_{field.Name}_set({address})(value.{SanitizeIdent(field.Name)});");
+                    }
+
+                    if (writes.Count == elementRecord.Fields!.Count)
+                    {
+                        return $"{{{Environment.NewLine}    value := {value};{Environment.NewLine}    {string.Join(Environment.NewLine + "    ", writes)}{Environment.NewLine}}}";
+                    }
+                }
+
+                SkipReason = "assignment to an unsupported array element type";
+                return null;
+            }
             default:
                 SkipReason = "assignment to an unsupported array element type";
                 return null;
@@ -3650,7 +4250,57 @@ internal sealed class CBodyTranslator
                 (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(current)).Kind
                     is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray)
             {
-                return _api.GetString(_api.GetCursorSpelling(current));
+                // &arr == arr（C 数组退化）：局部数组绑定即首地址；全局查找表经存储 getter。
+                var arrayName = _api.GetString(_api.GetCursorSpelling(current));
+                if (context.VarTypes.ContainsKey(arrayName))
+                {
+                    return EidosRefName(arrayName, context);
+                }
+
+                if (_globals.TryGetValue(arrayName, out var arrayGlobal))
+                {
+                    var globalTableAddress = RegisterOpaqueGlobal(arrayName, arrayGlobal, state);
+                    if (globalTableAddress != null)
+                    {
+                        return globalTableAddress;
+                    }
+                }
+
+                return arrayName;
+            }
+
+            // &v（不透明 record 局部）：绑定即存储地址；&G（不透明 record 全局）：存储 getter；
+            // &rec（值记录局部，&msg 供 PeekMessageW 类输出参数写回）：升级为存储盒重译。
+            if (current.Kind == ClangCursorKind2.DeclRefExpr)
+            {
+                var operandName = _api.GetString(_api.GetCursorSpelling(current));
+                if (context.VarTypes.TryGetValue(operandName, out var operandMapping) &&
+                    operandMapping.EidosType == "RawPtr" &&
+                    (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(current)).Kind == ClangTypeKind.Record)
+                {
+                    return EidosRefName(operandName, context);
+                }
+
+                if (context.VarTypes.TryGetValue(operandName, out var boxMapping) &&
+                    IsValueRecord(boxMapping) &&
+                    (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(current)).Kind == ClangTypeKind.Record)
+                {
+                    if (context.ParameterNames.Contains(operandName))
+                    {
+                        SkipReason = $"address of parameter '{operandName}'";
+                        return null;
+                    }
+
+                    context.BoxedRecords.Add(operandName);
+                    SkipReason = $"box record local '{operandName}'";
+                    return null;
+                }
+
+                if (_globals.TryGetValue(operandName, out var operandGlobal) &&
+                    TryGetOpaqueRecordName(_api.GetCanonicalType(_api.GetCursorType(operandGlobal)), out _))
+                {
+                    return RegisterOpaqueGlobal(operandName, operandGlobal, state);
+                }
             }
 
             SkipReason = "unsupported address-of operand";
@@ -3808,9 +4458,43 @@ internal sealed class CBodyTranslator
                 var pathPointee = _api.GetCanonicalType(_api.GetPointeeType(pathHeadCanonical));
                 if ((ClangTypeKind)pathPointee.Kind == ClangTypeKind.Record)
                 {
+                    // 指向不透明 record 的指针（CoreData* 型）：同走路径摊平（匿名嵌套）。
+                    if (TryGetOpaqueRecordName(pathPointee, out var opaquePointeeRecord))
+                    {
+                        var directAddress = TranslateExpression(pathHead, context, state);
+                        if (directAddress == null)
+                        {
+                            return null;
+                        }
+
+                        var directChained = ResolveOpaqueMemberAddressChain(directAddress, opaquePointeeRecord, pathMembers);
+                        if (directChained == null)
+                        {
+                            return null;
+                        }
+
+                        var (directFinalAddress, directRootRecord, directMemberPath, directFinalType) = directChained.Value;
+                        return FormatOpaqueMemberRead(directFinalAddress, directRootRecord, pathMembers, directMemberPath, directFinalType, state);
+                    }
+
                     return FormatPointerMemberPathRead(pathHead, pathMembers, context, state);
                 }
             }
+        }
+
+        // 不透明 record 头（CORE.Window.ready 型）：路径摊平 accessor（匿名嵌套 struct
+        // 无以命名），末级标量 get / 值记录重组 / 数组衰减地址。
+        if (TryResolveMemberPath(expression, out var opaqueHead, out var opaqueMembers) && opaqueMembers.Count > 0 &&
+            TryResolveOpaqueRecordHead(opaqueHead, context, state, out var opaqueRecord) is { } opaqueAddress)
+        {
+            var opaqueChained = ResolveOpaqueMemberAddressChain(opaqueAddress, opaqueRecord, opaqueMembers);
+            if (opaqueChained == null)
+            {
+                return null;
+            }
+
+            var (opaqueFinalAddress, opaqueRootRecord, opaqueMemberPath, opaqueFinalType) = opaqueChained.Value;
+            return FormatOpaqueMemberRead(opaqueFinalAddress, opaqueRootRecord, opaqueMembers, opaqueMemberPath, opaqueFinalType, state);
         }
 
         // p[i].f（基是记录元素下标）：元素地址上的 accessor get。
@@ -3865,8 +4549,177 @@ internal sealed class CBodyTranslator
             return baseText == null ? null : $"{baseText}.{SanitizeIdent(member)}";
         }
 
+        // 返回不可映射 record 的调用 + 成员访问（rlMatrixToFloatV(mat).v）：C 侧 malloc 槽
+        // 收返回值，成员经槽地址的路径摊平 accessor 访问。
+        var osretBase = baseCursor;
+        while (osretBase.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+        {
+            var osretInner = ValueChildren(osretBase);
+            if (osretInner.Count != 1)
+            {
+                break;
+            }
+
+            osretBase = osretInner[0];
+        }
+
+        if (osretBase.Kind == ClangCursorKind2.CallExpr &&
+            TryTranslateOsretMemberAccess(osretBase, expression, context, state) is { } osretText)
+        {
+            return osretText;
+        }
+
         SkipReason = "member access on a non-record-pointer base";
         return null;
+    }
+
+    /// <summary>
+    /// osret 调用成员访问：被调声明返回不可映射 record（typedef 名即记录键），参数按声明
+    /// 固化（值记录参数经 staging 槽），返回槽地址上走路径摊平成员读取。
+    /// </summary>
+    private string? TryTranslateOsretMemberAccess(
+        ClangCursor call,
+        ClangCursor memberAccess,
+        FunctionContext context,
+        TranslationState state)
+    {
+        var operands = Children(call);
+        if (operands.Count == 0)
+        {
+            return null;
+        }
+
+        var calleeCursor = operands[0];
+        var callee = _api.GetString(_api.GetCursorSpelling(calleeCursor));
+        while (string.IsNullOrEmpty(callee) &&
+               calleeCursor.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+        {
+            var innerCallee = ValueChildren(calleeCursor);
+            if (innerCallee.Count != 1)
+            {
+                break;
+            }
+
+            calleeCursor = innerCallee[0];
+            callee = _api.GetString(_api.GetCursorSpelling(calleeCursor));
+        }
+
+        if (string.IsNullOrEmpty(callee) || !state.DeclaredFunctions.TryGetValue(callee, out var declaration))
+        {
+            return null;
+        }
+
+        // 记录键取按书写拼写（typedef 名）：匿名 struct 的 canonical 拼写不可用作键。
+        var returnRecordName = RecordNameFromSpelling(_api.GetString(_api.GetTypeSpelling(_api.GetCursorResultType(declaration))));
+        if (returnRecordName.Length == 0 ||
+            !_records.TryGetValue(returnRecordName, out var returnRecord) ||
+            returnRecord.Mappable ||
+            returnRecord.Declaration is null)
+        {
+            return null;
+        }
+
+        if (!TryResolveMemberPath(memberAccess, out _, out var members) || members.Count == 0)
+        {
+            return null;
+        }
+
+        var functionType = _api.GetCursorType(declaration);
+        var arity = (int)_api.GetNumArgTypes(functionType);
+        var argumentList = operands.Skip(1).ToList();
+        if (arity != argumentList.Count)
+        {
+            SkipReason = $"call to '{callee}' does not match its declaration";
+            return null;
+        }
+
+        var parameterSpells = new List<OsretParam>(arity);
+        var parameterMappings = new List<CTypeMapping>(arity);
+        for (var i = 0; i < arity; i++)
+        {
+            var argType = _api.GetArgType(functionType, (uint)i);
+            var argCanonical = _api.GetCanonicalType(argType);
+            if ((ClangTypeKind)argCanonical.Kind == ClangTypeKind.Float)
+            {
+                SkipReason = $"call to '{callee}' involves a C float parameter";
+                return null;
+            }
+
+            var mapping = MapType(argType);
+            if (mapping == null)
+            {
+                SkipReason = $"parameter {i + 1} of '{callee}' has an unsupported type";
+                return null;
+            }
+
+            parameterSpells.Add(new OsretParam(
+                _api.GetString(_api.GetTypeSpelling(argType)),
+                IsValueRecord(mapping),
+                mapping.EidosType));
+            parameterMappings.Add(mapping);
+        }
+
+        state.OsretExterns.TryAdd(callee, new OsretExtern(
+            callee,
+            parameterSpells,
+            _api.GetString(_api.GetTypeSpelling(_api.GetCursorResultType(declaration)))));
+        MarkFunctionUsesAccessors(state);
+
+        var stagingStatements = new List<string>();
+        var argumentTexts = new List<string>(argumentList.Count);
+        for (var i = 0; i < argumentList.Count; i++)
+        {
+            if (IsValueRecord(parameterMappings[i]))
+            {
+                var translatedStruct = TranslateExpression(argumentList[i], context, state);
+                if (translatedStruct == null)
+                {
+                    return null;
+                }
+
+                var staged = TryStageStructArgument(
+                    _api.GetCanonicalType(_api.GetArgType(functionType, (uint)i)),
+                    parameterMappings[i].EidosType,
+                    translatedStruct,
+                    $"c2e_stage{i}",
+                    stagingStatements,
+                    state);
+                if (staged == null)
+                {
+                    return null;
+                }
+
+                argumentTexts.Add(staged);
+                continue;
+            }
+
+            var translated = TranslateCallArgument(argumentList[i], parameterMappings[i], context, state);
+            if (translated == null)
+            {
+                return null;
+            }
+
+            argumentTexts.Add(translated);
+        }
+
+        var callText = $"c2e_ext_{callee}_osret({string.Join(", ", argumentTexts)})";
+        var chained = ResolveOpaqueMemberAddressChain(callText, returnRecordName, members);
+        if (chained == null)
+        {
+            return null;
+        }
+
+        var (osretAddress, osretRootRecord, osretMemberPath, osretFinalType) = chained.Value;
+        var read = FormatOpaqueMemberRead(osretAddress, osretRootRecord, members, osretMemberPath, osretFinalType, state);
+        if (read == null)
+        {
+            return null;
+        }
+
+        // staging 语句（值记录参数）须先于读取执行：包成块表达式。
+        return stagingStatements.Count == 0
+            ? read
+            : $"{{{Environment.NewLine}    {string.Join(Environment.NewLine + "    ", stagingStatements)}{Environment.NewLine}    {read}{Environment.NewLine}}}";
     }
 
     /// <summary>
@@ -3891,9 +4744,12 @@ internal sealed class CBodyTranslator
         return $"c2e_{finalRecord}_{finalMember}_get({address})";
     }
 
-    /// <summary>记录成员 accessor 登记（get/set/可选 addr 的 C shim 与 extern 声明由此发射）。</summary>
+    /// <summary>记录成员 accessor 登记（get/set/可选 addr 的 C shim 与 extern 声明由此发射）。
+    /// accessor 是 extern：调用方签名直接标记 need ffi（计数差只覆盖首次登记，
+    /// 后续调用方会漏标——E3003）。</summary>
     private void RegisterMemberAccessor(string recordName, string member, TranslationState state, bool needsAddress = false)
     {
+        MarkFunctionUsesAccessors(state);
         var memberClangType = TryGetMemberClangType(recordName, member);
         var memberEidosType = memberClangType == null
             ? TryGetMemberField(recordName, member)?.EidosType ?? "Int"
@@ -3902,11 +4758,16 @@ internal sealed class CBodyTranslator
         var cSpelling = memberClangType != null
             ? _api.GetString(_api.GetTypeSpelling(memberClangType.Value))
             : memberEidosType;
+        var isArrayMember = memberClangType != null &&
+            (ClangTypeKind)_api.GetCanonicalType(memberClangType.Value).Kind
+                is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray;
         var key = (recordName, member);
         var access = state.RecordMembers.TryGetValue(key, out var existing)
             ? existing
             : new RecordMemberAccess(spelling, recordName, member, cSpelling, memberEidosType,
-                memberClangType != null && (ClangTypeKind)memberClangType.Value.Kind == ClangTypeKind.Float);
+                memberClangType != null && (ClangTypeKind)memberClangType.Value.Kind == ClangTypeKind.Float,
+                ArrayMember: isArrayMember,
+                IsRecordMember: memberClangType != null && (ClangTypeKind)memberClangType.Value.Kind == ClangTypeKind.Record);
         if (needsAddress)
         {
             access = access with { NeedsAddress = true };
@@ -3918,13 +4779,24 @@ internal sealed class CBodyTranslator
     /// <summary>
     /// 直接登记成员 accessor：与既有条目合并 NeedsAddress（后翻译的函数不得
     /// 抹掉早前 &amp;p->m 登记过的地址需求，否则 _addr shim 漏发成未定义符号）。
+    /// accessor 是 extern：调用方签名直接标记 need ffi（同 RegisterMemberAccessor）。
     /// </summary>
     private static void RegisterMemberAccess(TranslationState state, RecordMemberAccess access)
     {
+        MarkFunctionUsesAccessors(state);
         var key = (access.RecordName, access.Member);
         state.RecordMembers[key] = state.RecordMembers.TryGetValue(key, out var existing)
             ? existing with { NeedsAddress = existing.NeedsAddress || access.NeedsAddress }
             : access;
+    }
+
+    /// <summary>accessor 调用方标记 need ffi（全局初始化语境 CurrentFunction 为空则跳过）。</summary>
+    private static void MarkFunctionUsesAccessors(TranslationState state)
+    {
+        if (!string.IsNullOrEmpty(state.CurrentFunction))
+        {
+            state.FunctionUsesFfi.Add(state.CurrentFunction);
+        }
     }
 
     /// <summary>记录字段查找（Eidos 名）。</summary>
@@ -4015,6 +4887,103 @@ internal sealed class CBodyTranslator
     /// 成员访问的基是记录元素下标（p[i].f，含隐式转换/括号包裹）：解包后给出
     /// 下标游标与元素记录映射。仅记录元素；指针基（p->f）与值记录基不由本路径处理。
     /// </summary>
+    /// <summary>
+    /// 不透明 record 成员路径读取尾部：末级数组衰减地址 / 值记录 _addr 重组 / 标量 get。
+    /// </summary>
+    private string? FormatOpaqueMemberRead(
+        string address,
+        string rootRecord,
+        List<string> members,
+        string memberPath,
+        ClangType finalType,
+        TranslationState state)
+    {
+        if ((ClangTypeKind)finalType.Kind is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray)
+        {
+            // 数组成员：首地址（C 数组退化的对应物），Eidos 侧即 RawPtr。
+            var arrayPrefix = RegisterMemberPathAccessor(rootRecord, memberPath, finalType, state, needsAddress: true);
+            return $"{arrayPrefix}_addr({address})";
+        }
+
+        var finalMapping = MapType(finalType);
+        if (finalMapping == null)
+        {
+            SkipReason = $"member '{members[^1]}' has an unsupported type";
+            return null;
+        }
+
+        if (IsValueRecord(finalMapping))
+        {
+            // 记录值成员：_addr 槽上逐字段 accessor 重组（无按值 get ABI）。
+            if (_records.TryGetValue(finalMapping.EidosType, out var memberRecord) && memberRecord.Mappable)
+            {
+                var recordPrefix = RegisterMemberPathAccessor(rootRecord, memberPath, finalType, state, needsAddress: true);
+                var reassembled = ReassembleRecordAtAddress(memberRecord, $"{recordPrefix}_addr({address})", state);
+                if (reassembled != null)
+                {
+                    return reassembled;
+                }
+            }
+
+            SkipReason = $"member '{members[^1]}' is not a scalar field";
+            return null;
+        }
+
+        var scalarPrefix = RegisterMemberPathAccessor(rootRecord, memberPath, finalType, state);
+        return $"{scalarPrefix}_get({address})";
+    }
+
+    /// <summary>
+    /// 不透明 record 成员路径写回尾部：末级标量 set；值记录成员经 _addr 槽逐字段装载
+    ///（块表达式内绑定一次，保持 C 单次求值语义）。
+    /// </summary>
+    private string? FormatOpaqueMemberStore(
+        string address,
+        List<string> members,
+        string memberPath,
+        ClangType finalType,
+        string assigned,
+        string rootRecord,
+        TranslationState state)
+    {
+        var finalMapping = MapType(finalType);
+        if (finalMapping != null && IsValueRecord(finalMapping))
+        {
+            if (!_records.TryGetValue(finalMapping.EidosType, out var memberRecord) || !memberRecord.Mappable)
+            {
+                SkipReason = $"member '{members[^1]}' is not a scalar field";
+                return null;
+            }
+
+            var recordPrefix = RegisterMemberPathAccessor(rootRecord, memberPath, finalType, state, needsAddress: true);
+            var slot = $"{recordPrefix}_addr({address})";
+            var writes = new List<string>();
+            foreach (var field in memberRecord.Fields!)
+            {
+                if (_records.ContainsKey(field.EidosType))
+                {
+                    SkipReason = $"member '{members[^1]}' has an unstaged field";
+                    return null;
+                }
+
+                RegisterMemberAccessor(memberRecord.EidosName, field.Name, state);
+                writes.Add($"c2e_{memberRecord.EidosName}_{field.Name}_set({slot})(value.{SanitizeIdent(field.Name)});");
+            }
+
+            return $"{{{Environment.NewLine}    value := {assigned};{Environment.NewLine}    {string.Join(Environment.NewLine + "    ", writes)}{Environment.NewLine}}}";
+        }
+
+        if (finalMapping == null ||
+            (ClangTypeKind)finalType.Kind is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray)
+        {
+            SkipReason = $"member '{members[^1]}' is not a scalar field";
+            return null;
+        }
+
+        var scalarPrefix = RegisterMemberPathAccessor(rootRecord, memberPath, finalType, state);
+        return $"{scalarPrefix}_set({address})({assigned})";
+    }
+
     private bool TryResolveSubscriptMemberTarget(
         ClangCursor memberAccess,
         out ClangCursor subscriptBase,
@@ -4147,6 +5116,20 @@ internal sealed class CBodyTranslator
             }
         }
 
+        // 头 1.5：不透明 record 存储（局部/static 提升/全局 getter）——路径摊平 accessor，
+        // 末级标量 set / 值记录逐字段装载。
+        if (TryResolveOpaqueRecordHead(head, context, state, out var opaqueRecord) is { } opaqueAddress)
+        {
+            var opaqueChained = ResolveOpaqueMemberAddressChain(opaqueAddress, opaqueRecord, members);
+            if (opaqueChained == null)
+            {
+                return null;
+            }
+
+            var (opaqueFinalAddress, opaqueRootRecord, opaqueMemberPath, opaqueFinalType) = opaqueChained.Value;
+            return FormatOpaqueMemberStore(opaqueFinalAddress, members, opaqueMemberPath, opaqueFinalType, assigned, opaqueRootRecord, state);
+        }
+
         // 头 2：指向记录的指针表达式（p / (T*)q / 链式基）或记录元素下标（pts[i]，
         // 其自身类型即记录元素而非指针）：struct 中间成员经 _addr shim 推进，末级标量 accessor set。
         var headCanonical = _api.GetCanonicalType(_api.GetCursorType(head));
@@ -4154,6 +5137,29 @@ internal sealed class CBodyTranslator
             (ClangTypeKind)headCanonical.Kind == ClangTypeKind.Record;
         if ((ClangTypeKind)headCanonical.Kind == ClangTypeKind.Pointer || headIsRecordSubscript)
         {
+            // 指向不透明 record 的指针（匿名嵌套）：路径摊平 accessor set。
+            if ((ClangTypeKind)headCanonical.Kind == ClangTypeKind.Pointer)
+            {
+                var headPointee = _api.GetCanonicalType(_api.GetPointeeType(headCanonical));
+                if (TryGetOpaqueRecordName(headPointee, out var opaquePointeeRecord))
+                {
+                    var directAddress = TranslateExpression(head, context, state);
+                    if (directAddress == null)
+                    {
+                        return null;
+                    }
+
+                    var directChained = ResolveOpaqueMemberAddressChain(directAddress, opaquePointeeRecord, members);
+                    if (directChained == null)
+                    {
+                        return null;
+                    }
+
+                    var (directFinalAddress, directRootRecord, directMemberPath, directFinalType) = directChained.Value;
+                    return FormatOpaqueMemberStore(directFinalAddress, members, directMemberPath, directFinalType, assigned, directRootRecord, state);
+                }
+            }
+
             var chained = ResolvePointerMemberAddressChain(head, members, context, state);
             if (chained == null)
             {
@@ -4209,6 +5215,199 @@ internal sealed class CBodyTranslator
         }
 
         return false;
+    }
+
+    /// <summary>不可映射 record 判定（opaque 存储）：可映射记录是值记录，不走本路径。</summary>
+    private bool TryGetOpaqueRecordName(ClangType canonicalType, out string recordName)
+    {
+        recordName = string.Empty;
+        if ((ClangTypeKind)canonicalType.Kind != ClangTypeKind.Record)
+        {
+            return false;
+        }
+
+        var spelling = _api.GetString(_api.GetTypeSpelling(canonicalType));
+        var name = RecordNameFromSpelling(spelling);
+        if (name.Length == 0 || (_records.TryGetValue(name, out var record) && record.Mappable))
+        {
+            return false;
+        }
+
+        recordName = name;
+        return true;
+    }
+
+    /// <summary>
+    /// 成员路径头是 record 存储头（calloc 局部 / 盒化值记录局部 / static 提升 getter /
+    /// 全局存储 getter）：给出存储地址文本与记录 C 名。指针头与（未盒化的）值记录头
+    /// 不由本方法处理；全局仅限不可映射 record（可映射者是模块绑定值语义）。
+    /// </summary>
+    private string? TryResolveOpaqueRecordHead(
+        ClangCursor head,
+        FunctionContext context,
+        TranslationState state,
+        out string recordName)
+    {
+        recordName = string.Empty;
+        var headCanonical = _api.GetCanonicalType(_api.GetCursorType(head));
+        if ((ClangTypeKind)headCanonical.Kind != ClangTypeKind.Record)
+        {
+            return null;
+        }
+
+        var spelling = _api.GetString(_api.GetTypeSpelling(headCanonical));
+        var name = RecordNameFromSpelling(spelling);
+        if (name.Length == 0)
+        {
+            return null;
+        }
+
+        if (head.Kind != ClangCursorKind2.DeclRefExpr)
+        {
+            return null;
+        }
+
+        var headName = _api.GetString(_api.GetCursorSpelling(head));
+        if (context.VarTypes.TryGetValue(headName, out var headMapping) && headMapping.EidosType == "RawPtr")
+        {
+            // 不透明/盒化 record 局部（绑定即地址）或 static 提升（getter 调用文本）。
+            recordName = name;
+            return EidosRefName(headName, context);
+        }
+
+        if (_globals.TryGetValue(headName, out var globalDeclaration) &&
+            !(_records.TryGetValue(name, out var globalRecord) && globalRecord.Mappable))
+        {
+            recordName = name;
+            return RegisterOpaqueGlobal(headName, globalDeclaration, state);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 不透明全局登记：C 侧 static 存储 + getter（c2e_glob_*）。record 全局（Count=1）
+    /// 与标量数组全局（静态查找表，元素 + 数量）同型承载。内部链接全局加 _sourceTag
+    /// （各 TU 独立存储，与 C static 语义一致）。非列表初始化不支持。
+    /// </summary>
+    private string? RegisterOpaqueGlobal(string name, ClangCursor declaration, TranslationState state)
+    {
+        if (state.OpaqueGlobals.TryGetValue(name, out var existing))
+        {
+            return $"{existing.CName}()";
+        }
+
+        var canonical = _api.GetCanonicalType(_api.GetCursorType(declaration));
+        var canonicalKind = (ClangTypeKind)canonical.Kind;
+        if (canonicalKind != ClangTypeKind.Record &&
+            canonicalKind is not (ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray))
+        {
+            SkipReason = $"global '{name}' has an unsupported type";
+            return null;
+        }
+
+        // 类型拼写取 as-written（保留 typedef 名与 const：extern 重声明须与定义完全一致）。
+        var typeSpelling = _api.GetString(_api.GetTypeSpelling(_api.GetCursorType(declaration)));
+
+        var internalLinkage = _api.GetCursorLinkage(declaration) == 2;
+        var cName = internalLinkage ? $"c2e_glob_{_sourceTag}_{SanitizeIdent(name)}" : $"c2e_glob_{SanitizeIdent(name)}";
+        state.OpaqueGlobals[name] = new OpaqueGlobalShim(cName, name, typeSpelling, internalLinkage);
+        if (!string.IsNullOrEmpty(state.CurrentFunction))
+        {
+            state.FunctionUsesFfi.Add(state.CurrentFunction);
+        }
+
+        return $"{cName}()";
+    }
+
+    /// <summary>
+    /// 不透明 record 头的成员链解析：路径摊平为单 accessor（c2e_&lt;root&gt;_&lt;m1_m2_...&gt;），
+    /// C 侧 `((root*)p)-&gt;m1.m2....mk` 一步到位——匿名嵌套 struct 无以命名，按名逐级
+    /// 推进不可行。游标链（getTypeDeclaration）逐级验证字段存在性。
+    /// </summary>
+    private (string Address, string RootRecord, string MemberPath, ClangType FinalMemberType)? ResolveOpaqueMemberAddressChain(
+        string address,
+        string rootRecordName,
+        List<string> members)
+    {
+        if (!_records.TryGetValue(rootRecordName, out var rootRecord) || rootRecord.Declaration is not { } declaration)
+        {
+            SkipReason = $"member '{members[0]}' is not a struct field on the path";
+            return null;
+        }
+
+        var currentDeclaration = declaration;
+        for (var i = 0; i < members.Count - 1; i++)
+        {
+            var fieldType = FindFieldClangType(currentDeclaration, members[i]);
+            if (fieldType == null || (ClangTypeKind)_api.GetCanonicalType(fieldType.Value).Kind != ClangTypeKind.Record)
+            {
+                SkipReason = $"member '{members[i]}' is not a struct field on the path";
+                return null;
+            }
+
+            currentDeclaration = _api.GetTypeDeclaration(_api.GetCanonicalType(fieldType.Value));
+        }
+
+        var finalType = FindFieldClangType(currentDeclaration, members[^1]);
+        if (finalType == null)
+        {
+            SkipReason = $"member '{members[^1]}' is not a struct field on the path";
+            return null;
+        }
+
+        return (address, rootRecordName, string.Join(".", members), _api.GetCanonicalType(finalType.Value));
+    }
+
+    /// <summary>记录声明内按字段名查 clang 类型（匿名嵌套 struct 的声明游标同样适用）。</summary>
+    private ClangType? FindFieldClangType(ClangCursor recordDeclaration, string member)
+    {
+        foreach (var child in Children(recordDeclaration))
+        {
+            if ((ClangCursorKind)child.Kind == ClangCursorKind.FieldDecl &&
+                _api.GetString(_api.GetCursorSpelling(child)) == member)
+            {
+                return _api.GetCanonicalType(_api.GetCursorType(child));
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 路径摊平成员 accessor 登记：Member 为下划线连接路径（Eidos 名），MemberPath 为
+    /// 点连接路径（C 侧成员引用）。get/set/addr 发射与普通成员同构。
+    /// </summary>
+    private string RegisterMemberPathAccessor(
+        string rootRecordName,
+        string memberPath,
+        ClangType finalMemberType,
+        TranslationState state,
+        bool needsAddress = false)
+    {
+        MarkFunctionUsesAccessors(state);
+        var memberKey = memberPath.Replace('.', '_');
+        var isRecordMember = (ClangTypeKind)finalMemberType.Kind == ClangTypeKind.Record;
+        var mapping = MapType(finalMemberType);
+        var access = state.RecordMembers.TryGetValue((rootRecordName, memberKey), out var existing)
+            ? existing
+            : new RecordMemberAccess(
+                _records.TryGetValue(rootRecordName, out var rootRecord) ? rootRecord.CSpelling : rootRecordName,
+                rootRecordName,
+                memberKey,
+                _api.GetString(_api.GetTypeSpelling(finalMemberType)),
+                mapping?.EidosType ?? "Int",
+                (ClangTypeKind)finalMemberType.Kind == ClangTypeKind.Float,
+                ArrayMember: (ClangTypeKind)finalMemberType.Kind is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray,
+                MemberPath: memberPath,
+                IsRecordMember: isRecordMember);
+        if (needsAddress)
+        {
+            access = access with { NeedsAddress = true };
+        }
+
+        state.RecordMembers[(rootRecordName, memberKey)] = access;
+        return $"c2e_{rootRecordName}_{memberKey}";
     }
 
     /// <summary>
@@ -4314,6 +5513,10 @@ internal sealed class CBodyTranslator
             // 按被指类型的 clang 布局宽度写回（Ffi.store[Int] 是 i64 存取）。
             var targetPointee = _api.GetCanonicalType(
                 _api.GetPointeeType(_api.GetCanonicalType(_api.GetCursorType(targetOperands[0]))));
+            // 与下标写回同规则：被指 float 的整型值矫正、指针槽的 NULL 字面量转换。
+            var pointeeEidosType = MapType(targetPointee)?.EidosType;
+            assigned = CoerceNumeric(assigned, EidosTypeOf(value), pointeeEidosType, state);
+            assigned = CoercePointerLiteralTarget(value, assigned, pointeeEidosType, state);
             return FormatElementStore(targetPointee, pointer, assigned, state);
         }
 
@@ -4549,13 +5752,11 @@ internal sealed class CBodyTranslator
 
     private string? TranslateCall(string callee, IEnumerable<ClangCursor> arguments, FunctionContext context, TranslationState state)
     {
-        // C 变参内部函数（stbiw__outfile 类：fmt 驱动 va_list）：定参签名无法承载
-        // 调用点的可变实参，诚实跳过调用方。
+        // C 变参内部函数：调用点实参固化后经 C 转发 shim 调真实函数体（shim TU 包含原 .c）。
         if (state.DeclaredFunctions.TryGetValue(callee, out var internalDeclaration) &&
             _api.CursorIsVariadic(internalDeclaration) != 0)
         {
-            SkipReason = $"call to variadic function '{callee}'";
-            return null;
+            return TranslateVariadicCall(callee, internalDeclaration, arguments.ToList(), context, state);
         }
 
         // 内部调用边登记：被调函数的 need ffi 经调用图传播到调用方。
@@ -4590,6 +5791,110 @@ internal sealed class CBodyTranslator
         return $"{callee}({string.Join(", ", argumentTexts)})";
     }
 
+    /// <summary>
+    /// 变参调用（TraceLog/TextFormat/snprintf 型）：按调用点实参固化完整形参表，
+    /// 生成 C 转发 shim 转调真实函数体（shim TU 已包含原 .c，转发即真语义）。
+    /// 定参位保留声明拼写；变参位按 C 默认实参提升（float→double、小子整型→int）。
+    /// C float 返回 / 函数指针实参无固定签名可承载，诚实跳过。
+    /// </summary>
+    private string? TranslateVariadicCall(
+        string callee,
+        ClangCursor declaration,
+        List<ClangCursor> argumentList,
+        FunctionContext context,
+        TranslationState state)
+    {
+        var functionType = _api.GetCursorType(declaration);
+        var fixedArity = (int)_api.GetNumArgTypes(functionType);
+        var returnCanonical = _api.GetCanonicalType(_api.GetResultType(functionType));
+        var returnSpelling = _api.GetString(_api.GetTypeSpelling(returnCanonical));
+        if (returnSpelling.Contains("(*)") ||
+            (ClangTypeKind)returnCanonical.Kind == ClangTypeKind.Float)
+        {
+            SkipReason = $"call to variadic function '{callee}'";
+            return null;
+        }
+
+        var returnMapping = MapType(_api.GetResultType(functionType));
+        var parameterSpells = new List<string>(argumentList.Count);
+        var parameterMappings = new List<CTypeMapping>(argumentList.Count);
+        for (var i = 0; i < argumentList.Count; i++)
+        {
+            ClangType argumentType;
+            string spell;
+            if (i < fixedArity)
+            {
+                argumentType = _api.GetArgType(functionType, (uint)i);
+                spell = _api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(argumentType)));
+            }
+            else
+            {
+                argumentType = _api.GetCursorType(argumentList[i]);
+                spell = PromoteVariadicArgumentSpelling(_api.GetCanonicalType(argumentType));
+            }
+
+            if ((ClangTypeKind)_api.GetCanonicalType(argumentType).Kind == ClangTypeKind.Float ||
+                spell.Contains("(*)"))
+            {
+                SkipReason = $"call to variadic function '{callee}'";
+                return null;
+            }
+
+            var mapping = MapType(argumentType);
+            if (mapping == null || mapping.EidosType is not ("Int" or "Float" or "RawPtr" or "Unit"))
+            {
+                SkipReason = $"call to variadic function '{callee}'";
+                return null;
+            }
+
+            parameterSpells.Add(spell);
+            parameterMappings.Add(mapping);
+        }
+
+        var digest = MangleSignature(returnSpelling, parameterSpells);
+        var cName = $"c2e_var_{SanitizeIdent(callee)}_{digest}";
+        state.VarArgShims.TryAdd(cName, new VarArgShim(
+            cName,
+            callee,
+            parameterSpells,
+            parameterMappings.Select(static mapping => mapping.EidosType).ToList(),
+            returnSpelling,
+            returnMapping?.EidosType ?? "Unit"));
+        if (!string.IsNullOrEmpty(state.CurrentFunction))
+        {
+            state.FunctionUsesFfi.Add(state.CurrentFunction);
+        }
+
+        var argumentTexts = new List<string>(argumentList.Count);
+        for (var i = 0; i < argumentList.Count; i++)
+        {
+            var translated = TranslateCallArgument(argumentList[i], parameterMappings[i], context, state);
+            if (translated == null)
+            {
+                return null;
+            }
+
+            argumentTexts.Add(translated);
+        }
+
+        return $"{cName}({string.Join(", ", argumentTexts)})";
+    }
+
+    /// <summary>变参位实参的 C 默认实参提升拼写（float→double、小子整型/bool/enum→int）。</summary>
+    private string PromoteVariadicArgumentSpelling(ClangType canonical)
+    {
+        switch ((ClangTypeKind)canonical.Kind)
+        {
+            case ClangTypeKind.Float:
+                return "double";
+            case ClangTypeKind.Bool or ClangTypeKind.Enum or ClangTypeKind.CharS or ClangTypeKind.CharU or
+                ClangTypeKind.SChar or ClangTypeKind.UChar or ClangTypeKind.Short or ClangTypeKind.UShort:
+                return "int";
+            default:
+                return _api.GetString(_api.GetTypeSpelling(canonical));
+        }
+    }
+
     /// <summary>调用实参翻译：指针参数位置的整数字面量按 NULL/句柄语义转换。</summary>
     private string? TranslateCallArgument(ClangCursor argument, CTypeMapping? parameter, FunctionContext context, TranslationState state)
     {
@@ -4614,6 +5919,16 @@ internal sealed class CBodyTranslator
             }
         }
 
+        // 盒化值记录局部按值传参（f(files)，files 因取址被盒化）：重组记录值。
+        if (parameter != null && IsValueRecord(parameter))
+        {
+            var boxedArgument = TryReassembleBoxedRecord(argument, context, state);
+            if (boxedArgument != null)
+            {
+                return boxedArgument;
+            }
+        }
+
         var translated = TranslateExpression(argument, context, state);
         if (translated == null)
         {
@@ -4624,7 +5939,10 @@ internal sealed class CBodyTranslator
         translated = CoerceStringToPointerTarget(argument, translated, parameter?.EidosType, state);
         translated = CoerceBoolToIntValue(argument, translated, parameter?.EidosType);
         translated = CoerceIntToBoolValue(argument, translated, parameter?.EidosType);
-        return CoerceNumeric(translated, EidosTypeOf(argument), parameter?.EidosType, state);
+        // 整型字面量被 clang 隐式转成 float 语境时（DrawCircleSector(v, 0, 360)），
+        // 游标类型已是 Float——按字面量本源（Int）判型，触发 Int→Float 转换。
+        var literalFromType = IsIntegerLiteralValue(argument) ? "Int" : EidosTypeOf(argument);
+        return CoerceNumeric(translated, literalFromType, parameter?.EidosType, state);
     }
 
     /// <summary>
@@ -4664,6 +5982,7 @@ internal sealed class CBodyTranslator
             parameterSpells,
             _api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(_api.GetResultType(functionType)))),
             IsSystemDeclaration(declaration)));
+        MarkFunctionUsesAccessors(state);
 
         var sretName = $"c2e_ext_{callee}_sret";
         state.PendingExterns.TryAdd(callee, new PendingExtern(
@@ -4712,25 +6031,18 @@ internal sealed class CBodyTranslator
             argumentTexts.Add(translated);
         }
 
-        // 槽在块表达式内绑定一次，各字段经 accessor 读取重组。
-        var fields = new List<string>();
-        foreach (var field in record.Fields!)
+        // 槽在块表达式内绑定一次，各字段经 accessor 读取重组（嵌套记录字段递归）。
+        var reassembled = ReassembleRecordAtAddress(record, "slot", state);
+        if (reassembled == null)
         {
-            var fieldClang = TryGetMemberClangType(record.EidosName, field.Name);
-            RegisterMemberAccess(state, new RecordMemberAccess(
-                record.CSpelling,
-                record.EidosName,
-                field.Name,
-                fieldClang != null ? _api.GetString(_api.GetTypeSpelling(fieldClang.Value)) : field.EidosType,
-                field.EidosType,
-                fieldClang != null && (ClangTypeKind)fieldClang.Value.Kind == ClangTypeKind.Float));
-            fields.Add($"{SanitizeIdent(field.Name)}: c2e_{record.EidosName}_{field.Name}_get(slot)");
+            SkipReason = $"extern '{callee}' returns a struct with unstaged fields";
+            return null;
         }
 
         var stagingPrefix = stagingStatements.Count == 0
             ? string.Empty
             : string.Join(Environment.NewLine + "    ", stagingStatements) + Environment.NewLine + "    ";
-        return $"{{{Environment.NewLine}    {stagingPrefix}slot := {sretName}({string.Join(", ", argumentTexts)});{Environment.NewLine}    {record.EidosName} {{ {string.Join(", ", fields)} }}{Environment.NewLine}}}";
+        return $"{{{Environment.NewLine}    {stagingPrefix}slot := {sretName}({string.Join(", ", argumentTexts)});{Environment.NewLine}    {reassembled}{Environment.NewLine}}}";
     }
 
     /// <summary>
@@ -4907,8 +6219,8 @@ internal sealed class CBodyTranslator
 
     /// <summary>
     /// 记录值成员读取（p[i].rec 值位）：成员 _addr 槽上逐字段 accessor 重组记录值
-    ///（struct 无按值 extern ABI，与 sret shim 的 accessor 重组同型）。仅展开一层；
-    /// 嵌套记录字段暂不递归（该位置出现时按未支持处理）。
+    ///（struct 无按值 extern ABI，与 sret shim 的 accessor 重组同型）。嵌套记录字段经
+    /// _addr 递归重组（按值嵌套是 DAG，无环）。
     /// </summary>
     private string? ReassembleRecordAtAddress(RecordSchema record, string slot, TranslationState state)
     {
@@ -4917,15 +6229,39 @@ internal sealed class CBodyTranslator
             return null;
         }
 
+        // 构造 record 值 → 类型声明须发射（MapType 路径经 _usedRecords 自动登记，
+        // 重组路径绕过了它）。
+        if (!_resolvingRecords)
+        {
+            _usedRecords.Add(record.EidosName);
+        }
+
         var fields = new List<string>();
         foreach (var field in record.Fields)
         {
+            var fieldClang = TryGetMemberClangType(record.EidosName, field.Name);
+            if (_records.TryGetValue(field.EidosType, out var nestedRecord) && nestedRecord.Mappable)
+            {
+                // 嵌套记录字段：_addr 槽上递归重组（record 成员无按值 get ABI）。
+                RegisterMemberAccessor(record.EidosName, field.Name, state, needsAddress: true);
+                var nested = ReassembleRecordAtAddress(
+                    nestedRecord,
+                    $"c2e_{record.EidosName}_{field.Name}_addr({slot})",
+                    state);
+                if (nested == null)
+                {
+                    return null;
+                }
+
+                fields.Add($"{SanitizeIdent(field.Name)}: {nested}");
+                continue;
+            }
+
             if (_records.ContainsKey(field.EidosType))
             {
                 return null;
             }
 
-            var fieldClang = TryGetMemberClangType(record.EidosName, field.Name);
             RegisterMemberAccess(state, new RecordMemberAccess(
                 record.CSpelling,
                 record.EidosName,
@@ -4979,11 +6315,15 @@ internal sealed class CBodyTranslator
             }
         }
 
-        if (!state.DeclaredFunctions.TryGetValue(callee, out var declaration) ||
-            _api.CursorIsVariadic(declaration) != 0)
+        if (!state.DeclaredFunctions.TryGetValue(callee, out var declaration))
         {
             SkipReason = $"call to untranslated function '{callee}'";
             return null;
+        }
+
+        if (_api.CursorIsVariadic(declaration) != 0)
+        {
+            return TranslateVariadicCall(callee, declaration, arguments.ToList(), context, state);
         }
 
         // extern 调用（含 float ABI / sret / _v staging 各形态）意味着调用方需要
@@ -5709,6 +7049,9 @@ internal sealed class CBodyTranslator
 
         /// <summary>static 局部：C 名 → 提升后的模块级 mut 绑定名（生命周期跨调用）。</summary>
         public Dictionary<string, string> StaticLocals { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>被取址的值记录局部（&msg 供输出参数写回）：升级为 calloc 存储盒重译。</summary>
+        public HashSet<string> BoxedRecords { get; } = new(StringComparer.Ordinal);
     }
 
     private sealed class TranslationState(
@@ -5726,6 +7069,9 @@ internal sealed class CBodyTranslator
         public Dictionary<string, ICallShim> ICallShims { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, FnAddrShim> FnAddrShims { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, StaticInitShim> StaticInitShims { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, VarArgShim> VarArgShims { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, OpaqueGlobalShim> OpaqueGlobals { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, OsretExtern> OsretExterns { get; } = new(StringComparer.Ordinal);
 
         /// <summary>static 局部提升：模块级 mut 绑定（名, 初始化表达式），发射于全局段。</summary>
         public List<(string Name, string Init)> StaticLocalBindings { get; } = [];

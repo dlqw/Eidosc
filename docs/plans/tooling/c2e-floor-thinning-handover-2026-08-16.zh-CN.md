@@ -47,13 +47,37 @@
 > 验证全套：C2E 13/13（新增 `C2E_TierTwoConstructs_ParityWithClang`）、
 > snake anchor 837999808（regen+rebuild+bench）、GUI 冒烟存活、ecc exit 0。
 >
-> **下一会话开工项**：(a) raylib-full 的 GUI 级冒烟（InitWindow 全路径，snake 的
-> bindgen 包已证翻译层可开窗，full 包尚未试）；(b) rtextures 剩余 414 skip 的主体
-> 是 stb_image 内部（209 个"local X has unsupported type"——结构体数组局部等，
-> tier-3 清单）；rcore 剩余 381 skip 的主体是 120 个"member access on a
-> non-record-pointer base"与 82 个"call to untranslated function"（§3-#5 与
-> 值位 ++/-- 等）；(c) 编译器侧登记项照旧（诊断行号漂移、namer 大模块性能、
-> 效果推断覆盖缺口 §4.4——本轮 module-init 边界再次撞上）。
+> **进度（2026-08-19 第六会话，GUI 全路径冒烟 + record 存储/状态共享）**：包再生成
+> 合并 **1019 函数**（含记录全局族有意留在 C 侧，见下）、`--gate-phase Llvm` 门
+> PASSED（0 错）；**GUI 级冒烟首次全通**：`tmp/c2e-raylib-full-smoke/build/main.exe`
+> 开真实窗口（320x240），InitWindow → IsWindowReady/GetScreenWidth/GetScreenHeight →
+> 三帧 BeginDrawing/ClearBackground/DrawPixel/EndDrawing → GetTime/GetWindowPosition →
+> CloseWindow → IsWindowReady，11/11 检查 rc=0（与 ref/gui_ref.c 同序列）。
+> **本轮落地的新构造（tier-3 主体）**：①不透明 record 存储——不可映射 struct（含
+> 数组/嵌套/匿名成员）局部 `Ffi.calloc`、static 提升复用 StaticInitShim(Count=1)、
+> 全局 C 共享 getter；②**匿名嵌套 struct 路径摊平 accessor**（`c2e_CoreData_Window_
+> screen_width_get`，C 侧 `->Window.screen.width`；游标链 clang_getTypeDeclaration
+> 新导出逐级推进），CoreData 双份状态废弃私有副本；③osret——返回不可映射 record 的
+> 调用 + 结果成员访问（`rlMatrixToFloatV(mat).v`，C 侧 malloc 槽逐调用槽）；④盒化
+> 值记录局部（`&msg` 输出参数 → calloc 盒整体重译，按值使用位重组）；⑤变参调用转发
+> shim（TraceLog 型；变参位按 C 默认实参提升）；⑥record 元素下标读/写与值记录成员写
+> （_addr 槽逐字段装载）。**关键原则——C/Eidos 全局状态共享**：shim 内含原 C 定义，
+> 不透明全局 getter 直接 `extern ... name; return &name;`（static 取址即同 TU）；可映射
+> **值记录全局族**（rtext 的 static Font defaultFont、rshapes 的 static Texture2D
+> shapesTexture）引用函数整体留 C（banned → 调用方回退 extern/sret），杜绝双份状态
+> 分裂（.recs[95] 空指针崩溃即此因）。`_alloca` 纳入 intrinsic 转发；多维数组/函数指针
+> 元素的 extern 声明位拆基类型+维数；accessor 调用方 need ffi 直接标记（计数差只覆盖
+> 首次登记）。整型字面量在 float 语境按本源 Int 判型。验证：C2E 14/14（tier-3 对拍
+> 全 clang 退出码一致）；changelog
+> `2026-08-19-0.9.0-alpha.2-c2e-gui-smoke-and-opaque-record-state.md`。
+>
+> **下一会话开工项**：(a) 剩余 599 skip 的头号是 **158 个语句 kind 215 = GCCAsmStmt**
+> （stbir SSE 内联汇编，诚实跳过——可评估关闭 stbir SIMD 路径或目标架构粘贴等价
+> 标量实现）；次为 88+31 "call to untranslated"级联、50 个更高阶取址、34 个局部不支持
+> 类型（211→34）；(b) 值记录全局族（defaultFont/shapesTexture）的**统一 C 共享模型**
+> 是把这些函数翻译回来（当前留 C）的前置——需要"值记录全局也走 getter+accessor"的
+> 架构决策；(c) 编译器侧登记项照旧（诊断行号漂移、namer 大模块性能、效果推断覆盖
+> 缺口 §4.4）。
 
 > **进度（2026-08-19 第四会话，门全线通过）**：raylib 四真实 TU 合并产物
 > **654 函数，`--gate-phase Llvm` 全后端门 PASSED（0 错误）**——即 parse →

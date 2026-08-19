@@ -27,11 +27,13 @@ public partial class LlvmPipelineIntegrationTests
     /// <summary>
     /// 翻译并保留 input.c 所在目录：union 用例的 C shim 以绝对路径 include 该文件，
     /// 原生编译发生在本方法返回之后，由调用方在用完后删除目录。
+    /// allowedSkips：有意留在 C 侧的函数（如变参实体，调用方经转发 shim 调用）。
     /// </summary>
     private static string TranslateC2EKeepingInputFile(
         string cSource,
         out string nativeShimSource,
-        out string inputDirectory)
+        out string inputDirectory,
+        string[]? allowedSkips = null)
     {
         Assert.True(ClangNative.TryLoad(out var loadError, out var api), loadError);
         inputDirectory = Path.Combine(Path.GetTempPath(), $"c2e_parity_{Guid.NewGuid():N}");
@@ -39,7 +41,15 @@ public partial class LlvmPipelineIntegrationTests
         var cPath = Path.Combine(inputDirectory, "input.c");
         File.WriteAllText(cPath, cSource);
         var result = new CBodyTranslator(api!).Translate(cPath);
-        Assert.Empty(result.SkippedFunctions);
+        if (allowedSkips == null)
+        {
+            Assert.Empty(result.SkippedFunctions);
+        }
+        else
+        {
+            Assert.Subset(allowedSkips.ToHashSet(), result.SkippedFunctions.ToHashSet());
+        }
+
         Assert.False(result.IsEmpty);
         nativeShimSource = result.NativeShimSource;
         return result.Source;
@@ -1463,4 +1473,5 @@ public partial class LlvmPipelineIntegrationTests
             }
         }
     }
+
 }
