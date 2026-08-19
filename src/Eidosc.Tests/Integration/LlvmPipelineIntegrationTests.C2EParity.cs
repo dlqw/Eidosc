@@ -1354,4 +1354,113 @@ public partial class LlvmPipelineIntegrationTests
             }
         }
     }
+
+    [Fact]
+    [Trait(TestCategories.Category, TestCategories.Native)]
+    public void C2E_TierTwoConstructs_ParityWithClang()
+    {
+        if (!ToolExists("clang"))
+        {
+            return;
+        }
+
+        const string cSource = """
+            struct Cfg { int a; int b; int c; };
+
+            int static_counter(void)
+            {
+                static int calls = 0;
+                calls++;
+                return calls;
+            }
+
+            int static_table(int i)
+            {
+                static int tbl[5] = { 3, 5, 11, 17, 23 };
+                static int hits = 0;
+                hits++;
+                return tbl[i] * 100 + hits;
+            }
+
+            int designated(void)
+            {
+                struct Cfg c = { .c = 7, .a = 2 };
+                int arr[6] = { 1, 2, [4] = 40, 5 };
+                return c.a * 1000 + c.b * 100 + c.c * 10 + (arr[1] + arr[4] + arr[5]);
+            }
+
+            int goto_flow(int n)
+            {
+                int acc = 0;
+            again:
+                acc += n;
+                n--;
+                if (n > 0) goto again;
+                if (acc == 0) goto tail;
+                acc += 1000;
+            tail:
+                acc += 7;
+                return acc;
+            }
+
+            static int triple(int v) { return v * 3; }
+
+            int fnptr_flow(int v)
+            {
+                int (*op)(int) = triple;
+                int r = op(v + 1);
+                return r + 1;
+            }
+
+            int compute(void)
+            {
+                return static_counter() + static_counter() * 10
+                    + static_table(2)
+                    + designated()
+                    + goto_flow(4)
+                    + fnptr_flow(6);
+            }
+            """;
+
+        var referenceExit = RunCReference(cSource, "int compute(void);\nint main(void) { return compute(); }\n");
+
+        var inputDirectory = string.Empty;
+        try
+        {
+        var translated = TranslateC2EKeepingInputFile(cSource, out var nativeShimSource, out inputDirectory);
+        // static 局部：标量提升为模块级 mut 绑定；数组经 C 侧 static getter（引用位直呼）。
+        Assert.Contains("mut c2e_static_static_counter_calls := 0;", translated, StringComparison.Ordinal);
+        Assert.Contains("static_table_tbl_init()", translated, StringComparison.Ordinal);
+        // goto：分段包装 + 段号闩锁；顶层局部提升为循环外预声明（跨段词法作用域）。
+        Assert.Contains("mut c2e_goto := 0;", translated, StringComparison.Ordinal);
+        Assert.Contains("c2e_goto := 1; continue;", translated, StringComparison.Ordinal);
+        // 函数指针：addr shim 取址 + icall 间接调用；static 被调方走转发。
+        Assert.Contains("c2e_addr_", translated, StringComparison.Ordinal);
+        Assert.Contains("c2e_icall_", translated, StringComparison.Ordinal);
+
+        var eidosSource = translated + """
+
+            main :: Unit -> Int
+            {
+                _ => compute()
+            }
+            """;
+
+        var execution = CompileAndRunSourceAtNative(
+            eidosSource,
+            "c2e_tiertwo_native.eidos",
+            "c2e_tiertwo_native",
+            nativeCSource: nativeShimSource);
+
+        Assert.Equal(referenceExit, execution.ExitCode);
+        Assert.NotEqual(0, execution.ExitCode);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(inputDirectory))
+            {
+                Directory.Delete(inputDirectory, true);
+            }
+        }
+    }
 }

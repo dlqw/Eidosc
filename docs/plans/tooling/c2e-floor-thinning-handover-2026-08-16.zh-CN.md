@@ -27,6 +27,34 @@
 
 ## 0. 当前状态（新会话先读这段）
 
+> **进度（2026-08-19 第五会话，原生链接 + tier-2）**：raylib 四 TU 合并包
+> **738 函数**（+84），`--gate-phase Llvm` 门 PASSED（0 错），并首次完成**原生链接
+> 与运行**：冒烟工程 `tmp/c2e-raylib-full-smoke` 经 `eidosc build` 产出 `main.exe`，
+> 六个跨 TU 翻译函数（Fade/ColorNormalize/ColorLerp/GetPixelDataSize/GetCodepointNext/
+> TextLength）与 C 参考逐值一致（changelog
+> `2026-08-19-...-c2e-native-link-and-tier-two.md`）。**tier-2 四构造全落地**：
+> static 局部（标量模块 mut 提升；数组一律 C 侧 static getter——模块初始化不得触
+> Ffi/extern）、指派初始化器（libclang 语法序"目标+值"双子包装，记录按字段名/数组
+> 按下标落位，洞=隐式零填充）、goto/labels（分段 loop + 段号闩锁，顶层局部循环外
+> 预声明 + 段内重绑定；跨循环/switch 边界与嵌套标签目标诚实跳过）、函数指针值
+> （icall shim 间接调用——fn-ptr 返回经 typedef 中转；addr shim 取 C 函数地址）。
+> **首次真实链接暴露并修复**：rlgl.h 无包含守卫（驱动改 per-TU shim 文件 + 跨 TU
+> 函数名去重，typedef 行直通）；-D 宏烤入 c2e_config.h + manifest includePaths；
+> const 记录拼写剥离；内部链接/内联/MSVC intrinsic 符号（__cpuid 类）经 TU 内转发
+> shim（linkage/Internal 判定 + canonical 拼写 + fn-ptr 形参 void* 中转）。
+> 模块初始化的效果授权（E3003 module-init）是硬边界：源 extern/块表达式嵌套调用
+> 都不行，预编译 std 直呼可以。glad loader 81 函数因 fn-ptr 返回解锁。
+> 验证全套：C2E 13/13（新增 `C2E_TierTwoConstructs_ParityWithClang`）、
+> snake anchor 837999808（regen+rebuild+bench）、GUI 冒烟存活、ecc exit 0。
+>
+> **下一会话开工项**：(a) raylib-full 的 GUI 级冒烟（InitWindow 全路径，snake 的
+> bindgen 包已证翻译层可开窗，full 包尚未试）；(b) rtextures 剩余 414 skip 的主体
+> 是 stb_image 内部（209 个"local X has unsupported type"——结构体数组局部等，
+> tier-3 清单）；rcore 剩余 381 skip 的主体是 120 个"member access on a
+> non-record-pointer base"与 82 个"call to untranslated function"（§3-#5 与
+> 值位 ++/-- 等）；(c) 编译器侧登记项照旧（诊断行号漂移、namer 大模块性能、
+> 效果推断覆盖缺口 §4.4——本轮 module-init 边界再次撞上）。
+
 > **进度（2026-08-19 第四会话，门全线通过）**：raylib 四真实 TU 合并产物
 > **654 函数，`--gate-phase Llvm` 全后端门 PASSED（0 错误）**——即 parse →
 > namer → types → effects → borrow → MIR → LLVM 全链路通过（changelog

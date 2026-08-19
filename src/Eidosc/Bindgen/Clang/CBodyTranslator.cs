@@ -77,6 +77,38 @@ internal sealed class CBodyTranslator
         IReadOnlyList<(string Spelling, bool IsFloat)> Parameters,
         (string Spelling, bool IsFloat) Return);
 
+    /// <summary>内部链接（static）被调方的转发 shim：static C 符号无法被 extern(c)
+    /// 直接绑定，生成外部链接转发函数（与本 TU 的调用方同编译单元，可见内部符号）。</summary>
+    private sealed record StaticForwarder(
+        string CName,
+        string Target,
+        IReadOnlyList<string> ParameterSpells,
+        string ReturnSpelling);
+
+    /// <summary>经函数指针的间接调用：按被调签名生成 icall shim（void* 转型后调用），
+    /// Eidos 侧首参传函数指针值。</summary>
+    private sealed record ICallShim(
+        string Digest,
+        IReadOnlyList<string> ParameterSpells,
+        IReadOnlyList<string> ParameterEidosTypes,
+        string ReturnSpelling,
+        string ReturnEidosType);
+
+    /// <summary>函数取址（&fn / 函数名值用）：addr shim 返回 C 函数地址。</summary>
+    private sealed record FnAddrShim(
+        string CName,
+        string Target);
+
+    /// <summary>static 数组（零值与非零查表）：C 侧以真正的 static 局部承载
+    ///（非零时 token 原文回填初始化器），Eidos 引用位直呼 getter extern——
+    /// 模块级初始化不得触 Ffi/extern（效果授权不含 module-init），且 C static
+    /// 本就是稳定存储而非堆缓冲。</summary>
+    private sealed record StaticInitShim(
+        string CName,
+        string ElementSpelling,
+        string? InitText,
+        long Count);
+
     /// <summary>
     /// 被翻译函数调用的外部 C 函数。<see cref="ForeignCName"/> 是真正的外来链接符号
     /// （float ABI shim 生效时 <see cref="CName"/> 指向自建 shim）；<see cref="IsFloor"/>
@@ -101,6 +133,20 @@ internal sealed class CBodyTranslator
     private bool IsSystemDeclaration(ClangCursor cursor) =>
         _api.LocationIsInSystemHeader(_api.GetCursorLocation(cursor)) != 0;
 
+    /// <summary>需要经 TU 内转发 shim 暴露的被调方：内部链接（static——定义处可无 static
+    /// 关键字而继承自原型，须按语义 linkage 判定），或头文件内联函数（C 侧调用点内联展开，
+    /// 不存在可绑定的外部定义，如 MSVC intrin/__cpuid 形态）。CXLinkage_Internal == 2。
+    /// 另：系统头声明、无体且双下划线开头的 MSVC intrinsic（__cpuid 类）——clang 在 C 侧
+    /// 按内建内联展开、无库符号，Eidos extern 必须经 C 转发承载。</summary>
+    private bool NeedsForwarderShim(ClangCursor declaration, string callee) =>
+        _api.GetCursorLinkage(declaration) == 2 ||
+        _api.CursorIsFunctionInlined(declaration) != 0 ||
+        (IsSystemDeclaration(declaration) && !HasBody(declaration) && callee.StartsWith("__", StringComparison.Ordinal));
+
+    /// <summary>static 存储的局部 VarDecl（CX_StorageClass_Static == 3）：生命周期跨调用。</summary>
+    private bool IsStaticStorage(ClangCursor cursor) =>
+        _api.GetCursorStorageClass(cursor) == 3;
+
     public C2EResult Translate(string cSourcePath) =>
         Translate(cSourcePath, includePaths: null, defines: null, onlyFunctions: null);
 
@@ -120,6 +166,9 @@ internal sealed class CBodyTranslator
         using var session = new ClangSession(_api);
         _session = session;
         _crossTuFunctions = crossTuFunctions;
+        _sourceTag = new string(Path.GetFileNameWithoutExtension(cSourcePath)
+            .Select(static c => char.IsLetterOrDigit(c) ? c : '_')
+            .ToArray());
         try
         {
             session.Parse(cSourcePath, includePaths: includePaths, defines: defines, skipFunctionBodies: false, systemIncludePaths: systemIncludePaths);
@@ -185,6 +234,13 @@ internal sealed class CBodyTranslator
     /// <summary>当前是否在 switch 体翻译中（continue 需映射为退出包装循环的 break）。</summary>
     private int _inSwitchBody;
 
+    /// <summary>当前是否在 C 循环/switch 体内：goto 的 `continue` 会绑错目标（包装循环），
+    /// 该位置的 goto 诚实跳过。</summary>
+    private int _gotoUnsafe;
+
+    /// <summary>分段模式（函数体含顶层标签）下的标签名 → 段号。</summary>
+    private Dictionary<string, int> _gotoLabelIndices = new(StringComparer.Ordinal);
+
     /// <summary>其它 TU 已翻译函数清单（项目模式第二遍）：调用直呼翻译产物而非 extern 地板。</summary>
     private IReadOnlyDictionary<string, TranslatedFunctionSignature>? _crossTuFunctions;
     private readonly List<string> _usedGlobals = new();
@@ -192,9 +248,34 @@ internal sealed class CBodyTranslator
     private readonly HashSet<string> _translatableCandidates = new(StringComparer.Ordinal);
     private bool _resolvingRecords;
 
+    /// <summary>本 TU 的符号名标签（源文件名消毒）：内部链接符号的转发 shim 命名
+    /// 必须跨 TU 唯一（不同 TU 可各有同名 static 函数）。</summary>
+    private string _sourceTag = "tu";
+
+    /// <summary>剥掉 C 类型的顶层 const/volatile 限定：accessor 转型目标与记录拼写
+    /// 不得带限定（const 基址会使 setter 只读报错）。</summary>
+    private static string StripCQualifiers(string cType)
+    {
+        while (true)
+        {
+            if (cType.StartsWith("const ", StringComparison.Ordinal))
+            {
+                cType = cType["const ".Length..];
+            }
+            else if (cType.StartsWith("volatile ", StringComparison.Ordinal))
+            {
+                cType = cType["volatile ".Length..];
+            }
+            else
+            {
+                return cType;
+            }
+        }
+    }
+
     private void CollectRecord(ClangCursor declaration)
     {
-        var spelling = _api.GetString(_api.GetTypeSpelling(_api.GetCursorType(declaration)));
+        var spelling = StripCQualifiers(_api.GetString(_api.GetTypeSpelling(_api.GetCursorType(declaration))));
         var eidosName = RecordNameFromSpelling(spelling);
         if (string.IsNullOrWhiteSpace(eidosName))
         {
@@ -336,8 +417,10 @@ internal sealed class CBodyTranslator
     private static string SanitizeIdent(string name) =>
         ReservedWords.Contains(name) ? name + "c2e" : name;
 
-    /// <summary>局部/参数的 C 名 → Eidos 名（保留字加 c2e 后缀，声明与引用一致）。</summary>
+    /// <summary>局部/参数的 C 名 → Eidos 名（保留字加 c2e 后缀，声明与引用一致；
+    /// static 局部改指模块级提升绑定）。</summary>
     private static string EidosRefName(string cName, FunctionContext context) =>
+        context.StaticLocals.TryGetValue(cName, out var promoted) ? promoted :
         context.RenamedLocals.TryGetValue(cName, out var renamed) ? renamed : cName;
 
     /// <summary>使用到的记录闭包：字段引用的嵌套记录一并发射声明。</summary>
@@ -589,6 +672,21 @@ internal sealed class CBodyTranslator
             sb.AppendLine();
         }
 
+        // static 局部提升绑定：非零查表的取址 extern 先行（绑定初始化引用它），
+        // 整体置于枚举常量与全局之后（标量初始化可引用它们）。
+        foreach (var staticInit in state.StaticInitShims.Values)
+        {
+            sb.AppendLine($"@[extern(c, name: \"{staticInit.CName}\")]");
+            sb.AppendLine($"{staticInit.CName} :: Unit -> RawPtr need ffi;");
+            sb.AppendLine();
+        }
+
+        foreach (var (name, init) in state.StaticLocalBindings)
+        {
+            sb.AppendLine($"mut {name} := {init};");
+            sb.AppendLine();
+        }
+
         foreach (var externDeclaration in state.PendingExterns.Values)
         {
             sb.AppendLine($"@[extern(c, name: \"{externDeclaration.CName}\")]");
@@ -596,6 +694,23 @@ internal sealed class CBodyTranslator
                 ? $"Unit -> {externDeclaration.ReturnType}"
                 : $"{string.Join(" -> ", externDeclaration.ParameterTypes)} -> {externDeclaration.ReturnType}";
             sb.AppendLine($"{externDeclaration.EidosName} :: {signature} need ffi;");
+            sb.AppendLine();
+        }
+
+        foreach (var icall in state.ICallShims.Values)
+        {
+            sb.AppendLine($"@[extern(c, name: \"c2e_icall_{icall.Digest}\")]");
+            var signature = icall.ParameterEidosTypes.Count == 0
+                ? $"RawPtr -> {icall.ReturnEidosType}"
+                : $"RawPtr -> {string.Join(" -> ", icall.ParameterEidosTypes)} -> {icall.ReturnEidosType}";
+            sb.AppendLine($"c2e_icall_{icall.Digest} :: {signature} need ffi;");
+            sb.AppendLine();
+        }
+
+        foreach (var addr in state.FnAddrShims.Values)
+        {
+            sb.AppendLine($"@[extern(c, name: \"{addr.CName}\")]");
+            sb.AppendLine($"{addr.CName} :: Unit -> RawPtr need ffi;");
             sb.AppendLine();
         }
 
@@ -657,6 +772,10 @@ internal sealed class CBodyTranslator
         {
             BuildRecordMemberShimSource(cSourcePath, state.RecordMembers.Values),
             BuildFloatShimSource(cSourcePath, state.FloatShims.Values),
+            BuildStaticForwarderShimSource(state.StaticForwarders.Values),
+            BuildICallShimSource(state.ICallShims.Values),
+            BuildFnAddrShimSource(state.FnAddrShims.Values),
+            BuildStaticInitShimSource(state.StaticInitShims.Values),
             BuildSretShimSource(cSourcePath, state.SretExterns.Values),
             BuildStructArgShimSource(cSourcePath, state.StructArgExterns.Values)
         };
@@ -682,13 +801,14 @@ internal sealed class CBodyTranslator
 
         // extern 三级分类：系统头声明 = L1 地板符号（链接契约），项目头/主文件声明 = 跨 TU 符号。
         // 注：不动点重试期间可能留下未被最终引用的 extern（上游被禁后其引用消失），清单为保守过近似。
+        // 转发 shim 符号（c2e_ext_*_st）由自建 shim 提供，不属于地板/跨 TU 链接契约，排除。
         var floorSymbols = state.PendingExterns.Values
-            .Where(static pending => pending.IsFloor)
+            .Where(static pending => pending.IsFloor && !pending.ForeignCName.EndsWith("_st", StringComparison.Ordinal))
             .Select(static pending => pending.ForeignCName)
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToList();
         var crossTuSymbols = state.PendingExterns.Values
-            .Where(static pending => !pending.IsFloor)
+            .Where(static pending => !pending.IsFloor && !pending.ForeignCName.EndsWith("_st", StringComparison.Ordinal))
             .Select(static pending => pending.ForeignCName)
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToList();
@@ -770,6 +890,292 @@ internal sealed class CBodyTranslator
     }
 
     /// <summary>C float ABI 中转 shim：Eidos Float(f64) ↔ C float，C 侧显式窄化。</summary>
+    /// <summary>经函数指针的间接调用：callee 类型解到函数原型，按签名生成/复用 icall
+    /// shim（跨 TU 以签名摘要命名，同签名自动合流），Eidos 侧首参传指针值。
+    /// 函数指针签名涉及 C float（32 位）或按值结构体时不支持（ABI 中转未设计）。</summary>
+    private string? TranslateIndirectCall(
+        ClangCursor calleeCursor,
+        IEnumerable<ClangCursor> arguments,
+        FunctionContext context,
+        TranslationState state)
+    {
+        var proto = _api.GetCanonicalType(_api.GetCursorType(calleeCursor));
+        if ((ClangTypeKind)proto.Kind == ClangTypeKind.Pointer)
+        {
+            proto = _api.GetCanonicalType(_api.GetPointeeType(proto));
+        }
+
+        if ((ClangTypeKind)proto.Kind is not (ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto))
+        {
+            SkipReason = "indirect call through a non-function pointer";
+            return null;
+        }
+
+        var argumentList = arguments.ToList();
+        var arity = _api.GetNumArgTypes(proto);
+        if ((ClangTypeKind)proto.Kind == ClangTypeKind.FunctionProto && arity != argumentList.Count)
+        {
+            SkipReason = "indirect call does not match its function pointer signature";
+            return null;
+        }
+
+        var returnCanonical = _api.GetCanonicalType(_api.GetResultType(proto));
+        var returnSpelling = _api.GetString(_api.GetTypeSpelling(returnCanonical));
+        // 函数指针返回（glad loader 的 GLADloadproc 形态）：C 侧以 void* 中转（cast 位
+        // 保留真签名），Eidos 侧即 RawPtr。
+        var returnsFunctionPointer = returnSpelling.Contains("(*)");
+        var returnMapping = MapType(_api.GetResultType(proto));
+        if (returnsFunctionPointer && returnMapping?.EidosType != "RawPtr")
+        {
+            SkipReason = "function pointer signature returns a function pointer";
+            return null;
+        }
+        if ((ClangTypeKind)returnCanonical.Kind == ClangTypeKind.Float ||
+            (returnMapping != null && returnMapping.EidosType == "Float"))
+        {
+            SkipReason = "function pointer signature involves a C float return";
+            return null;
+        }
+
+        var paramSpells = new List<string>((int)arity);
+        var paramMappings = new List<CTypeMapping>((int)arity);
+        for (var i = 0; i < arity; i++)
+        {
+            var argType = _api.GetArgType(proto, (uint)i);
+            if ((ClangTypeKind)_api.GetCanonicalType(argType).Kind == ClangTypeKind.Float)
+            {
+                SkipReason = "function pointer signature involves a C float parameter";
+                return null;
+            }
+
+            var mapping = MapType(argType);
+            if (mapping == null || mapping.EidosType is not ("Int" or "RawPtr" or "Unit"))
+            {
+                SkipReason = "function pointer signature has an unsupported parameter type";
+                return null;
+            }
+
+            paramSpells.Add(_api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(argType))));
+            paramMappings.Add(mapping);
+        }
+
+        var digest = MangleSignature(returnSpelling, paramSpells);
+        state.ICallShims.TryAdd(digest, new ICallShim(
+            digest,
+            paramSpells,
+            paramMappings.Select(static mapping => mapping.EidosType).ToList(),
+            returnSpelling,
+            returnMapping?.EidosType ?? "Unit"));
+        if (!string.IsNullOrEmpty(state.CurrentFunction))
+        {
+            state.FunctionUsesFfi.Add(state.CurrentFunction);
+        }
+
+        var functionPointer = TranslateExpression(calleeCursor, context, state);
+        if (functionPointer == null)
+        {
+            return null;
+        }
+
+        var argumentTexts = new List<string>(argumentList.Count) { functionPointer };
+        for (var i = 0; i < argumentList.Count; i++)
+        {
+            var translated = TranslateCallArgument(argumentList[i], paramMappings[Math.Min(i, paramMappings.Count - 1)], context, state);
+            if (translated == null)
+            {
+                return null;
+            }
+
+            argumentTexts.Add(translated);
+        }
+
+        return $"c2e_icall_{digest}({string.Join(", ", argumentTexts)})";
+    }
+
+    private string TranslateFunctionAddress(string name, TranslationState state)
+    {
+        var cName = $"c2e_addr_{_sourceTag}_{name}";
+        state.FnAddrShims.TryAdd(name, new FnAddrShim(cName, name));
+        if (!string.IsNullOrEmpty(state.CurrentFunction))
+        {
+            state.FunctionUsesFfi.Add(state.CurrentFunction);
+        }
+
+        return $"{cName}()";
+    }
+
+    /// <summary>签名摘要（icall 命名）：返回类型与参数 C 拼接后压缩为标识符字符。</summary>
+    private static string MangleSignature(string returnSpelling, IReadOnlyList<string> paramSpells)
+    {
+        var joined = returnSpelling + "|" + string.Join("|", paramSpells);
+        var mangled = new StringBuilder();
+        var underscore = false;
+        foreach (var c in joined)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                mangled.Append(c);
+                underscore = false;
+            }
+            else if (!underscore)
+            {
+                mangled.Append('_');
+                underscore = true;
+            }
+        }
+
+        return mangled.ToString();
+    }
+
+    private string BuildICallShimSource(IEnumerable<ICallShim> shims)
+    {
+        var list = shims.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            var parameters = "void* __fp";
+            if (entry.ParameterSpells.Count > 0)
+            {
+                // 函数指针形参的声明位不能用抽象声明符（`float (*)(...) a0` 非法），
+                // 以 void* 中转（cast 位保留真签名，ABI 等价）。
+                parameters += ", " + string.Join(", ", entry.ParameterSpells.Select(static (spell, index) =>
+                    $"{(spell.Contains("(*)") ? "void*" : spell)} a{index}"));
+            }
+
+            var callArguments = string.Join(", ", entry.ParameterSpells.Select(static (_, index) => $"a{index}"));
+            string cast;
+            var returnsFunctionPointer = entry.ReturnSpelling.Contains("(*)");
+            var returnDeclarator = entry.ReturnSpelling;
+            if (returnsFunctionPointer)
+            {
+                // 返回函数指针：cast 的抽象声明符须嵌套——typedef 中转
+                //（名字插进返回类型的 (*) 槽位）。
+                shim.AppendLine($"typedef {entry.ReturnSpelling.Replace("(*)", $"(*c2e_icall_{entry.Digest}_ret)")};");
+                cast = $"(c2e_icall_{entry.Digest}_ret (*)({string.Join(", ", entry.ParameterSpells)}))";
+                returnDeclarator = "void*";
+            }
+            else
+            {
+                cast = $"({entry.ReturnSpelling} (*)({string.Join(", ", entry.ParameterSpells)}))";
+            }
+
+            shim.AppendLine($"{returnDeclarator} c2e_icall_{entry.Digest}({parameters})");
+            shim.AppendLine("{");
+            if (entry.ReturnSpelling == "void")
+            {
+                shim.AppendLine($"    ({cast}__fp)({callArguments});");
+            }
+            else if (returnsFunctionPointer)
+            {
+                shim.AppendLine($"    return (void*)(({cast}__fp)({callArguments}));");
+            }
+            else
+            {
+                shim.AppendLine($"    return ({cast}__fp)({callArguments});");
+            }
+
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
+    private string BuildFnAddrShimSource(IEnumerable<FnAddrShim> shims)
+    {
+        var list = shims.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            shim.AppendLine($"void* {entry.CName}(void)");
+            shim.AppendLine("{");
+            shim.AppendLine($"    return (void*)&{entry.Target};");
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
+    private string BuildStaticInitShimSource(IEnumerable<StaticInitShim> shims)
+    {
+        var list = shims.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            // 函数指针元素类型不能直接作数组声明符：typedef 中转（名字插进 (*) 槽位）。
+            var element = entry.ElementSpelling;
+            if (element.Contains("(*)"))
+            {
+                shim.AppendLine($"typedef {element.Replace("(*)", $"(*{entry.CName}_t)")};");
+                element = $"{entry.CName}_t";
+            }
+
+            var storage = entry.InitText == null
+                ? $"{entry.CName}_storage[{entry.Count}]"
+                : $"{entry.CName}_storage[] = {entry.InitText}";
+            shim.AppendLine($"void* {entry.CName}(void)");
+            shim.AppendLine("{");
+            shim.AppendLine($"    static {element} {storage};");
+            shim.AppendLine($"    return (void*){entry.CName}_storage;");
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
+    private string BuildStaticForwarderShimSource(IEnumerable<StaticForwarder> forwarders)
+    {
+        var list = forwarders.ToList();
+        if (list.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var shim = new StringBuilder();
+        foreach (var entry in list)
+        {
+            // 函数指针形参的声明位不能用抽象声明符（`void (*)(...) p0` 非法），
+            // 以 void* 中转；调用位 cast 回原签名（ABI 等价）。
+            var parameters = string.Join(", ", entry.ParameterSpells.Select(static (spell, index) =>
+                $"{(spell.Contains("(*)") ? "void*" : spell)} p{index}"));
+            if (parameters.Length == 0)
+            {
+                parameters = "void";
+            }
+
+            var callArguments = string.Join(", ", entry.ParameterSpells.Select(static (spell, index) =>
+                spell.Contains("(*)") ? $"({spell})p{index}" : $"p{index}"));
+            shim.AppendLine($"{entry.ReturnSpelling} {entry.CName}({parameters})");
+            shim.AppendLine("{");
+            if (entry.ReturnSpelling == "void")
+            {
+                shim.AppendLine($"    {entry.Target}({callArguments});");
+            }
+            else
+            {
+                shim.AppendLine($"    return {entry.Target}({callArguments});");
+            }
+
+            shim.AppendLine("}");
+        }
+
+        return shim.ToString();
+    }
+
     private string BuildFloatShimSource(string cSourcePath, IEnumerable<FloatAbiShim> shims)
     {
         var list = shims.ToList();
@@ -822,8 +1228,9 @@ internal sealed class CBodyTranslator
         }
 
         var shim = new StringBuilder();
-        foreach (var access in list)
+        foreach (var rawAccess in list)
         {
+            var access = rawAccess with { RecordSpelling = StripCQualifiers(rawAccess.RecordSpelling) };
             // 外部链接：Eidos 侧的 extern(c) 引用来自其他编译单元，static 会导致链接期 undefined symbol。
             // C float（32 位）成员以 double 签名中转：Eidos Float extern ABI 是 f64，
             // 直接返回 float 会把 xmm0 高 32 位的未定义位带进 Eidos 侧。
@@ -843,6 +1250,13 @@ internal sealed class CBodyTranslator
             {
                 shim.AppendLine($"double {prefix}_get(void* __p) {{ return (double)((({access.RecordSpelling}*)__p)->{access.Member}); }}");
                 shim.AppendLine($"void {prefix}_set(void* __p, double __v) {{ (({access.RecordSpelling}*)__p)->{access.Member} = ({access.MemberCType})__v; }}");
+            }
+            else if (access.MemberCType.Contains("(*)"))
+            {
+                // 函数指针成员：`float (*)(float, void*)` 形态不能作声明符返回类型，
+                // 以 void* 中转（作 cast 合法）；Eidos 侧该成员即 RawPtr。
+                shim.AppendLine($"void* {prefix}_get(void* __p) {{ return (void*)((({access.RecordSpelling}*)__p)->{access.Member}); }}");
+                shim.AppendLine($"void {prefix}_set(void* __p, void* __v) {{ (({access.RecordSpelling}*)__p)->{access.Member} = ({access.MemberCType})__v; }}");
             }
             else
             {
@@ -873,7 +1287,7 @@ internal sealed class CBodyTranslator
         // 参数类型：标量或指针（RawPtr），其余不支持。
         var paramTypes = new List<string>();
         var paramNames = new List<string>();
-        var context = new FunctionContext();
+        var context = new FunctionContext { FunctionName = _api.GetString(_api.GetCursorSpelling(function)) };
         foreach (var child in children)
         {
             if ((ClangCursorKind)child.Kind != ClangCursorKind.ParmDecl)
@@ -1344,7 +1758,7 @@ internal sealed class CBodyTranslator
         string? bodyText;
         while (true)
         {
-            bodyText = TranslateStatements(body, context, state);
+            bodyText = TranslateSegmentedOrPlainBody(body, context, state);
             if (bodyText != null)
             {
                 break;
@@ -1389,6 +1803,160 @@ internal sealed class CBodyTranslator
         return string.Join(Environment.NewLine, lines);
     }
 
+    /// <summary>goto/labels：顶层标签把函数体切为顺序段，包装 loop + 段号闩锁（c2e_goto）。
+    /// 段号 ≤ i 的段自入口顺序执行 = C 落穿语义；`goto L` → 设段号并 continue 包装循环
+    /// （前跳落段、回跳成环）。goto 出现在 C 循环/switch 体内（continue 绑错目标）或
+    /// 目标不是顶层标签时诚实跳过；未被引用的嵌套标签丢弃为空语句。</summary>
+    private string? TranslateSegmentedOrPlainBody(List<ClangCursor> body, FunctionContext context, TranslationState state)
+    {
+        var labelIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        var index = 0;
+        foreach (var statement in body)
+        {
+            if (statement.Kind == ClangCursorKind2.LabelStmt)
+            {
+                index++;
+                labelIndex[_api.GetString(_api.GetCursorSpelling(statement))] = index;
+            }
+        }
+
+        if (labelIndex.Count == 0)
+        {
+            return TranslateStatements(body, context, state);
+        }
+
+        foreach (var gotoStmt in CollectGotos(body))
+        {
+            var target = GotoTargetName(gotoStmt);
+            if (target == null || !labelIndex.ContainsKey(target))
+            {
+                SkipReason = $"goto to a nested or unknown label '{target ?? "?"}'";
+                return null;
+            }
+        }
+
+        var savedIndices = _gotoLabelIndices;
+        var savedUnsafe = _gotoUnsafe;
+        _gotoLabelIndices = labelIndex;
+        _gotoUnsafe = 0;
+        try
+        {
+            var sb = new StringBuilder();
+            // 顶层局部提升为循环外预声明（零值），段内声明改为重绑定——C 的函数体块级
+            // 作用域跨标签连续，且回跳重入会重新执行声明语句（重绑定语义一致）。
+            // static 局部已提升为模块绑定，不参与（避免遮蔽）。
+            var hoistedDeclarations = new List<string>();
+            sb.AppendLine("mut c2e_goto := 0;");
+            sb.AppendLine("loop {");
+            var segment = 0;
+            var segLines = new List<string>();
+            void CloseSegment()
+            {
+                sb.AppendLine($"    if c2e_goto <= {segment} then {{");
+                sb.AppendLine(Indent(segLines.Count == 0 ? "();" : string.Join(Environment.NewLine, segLines), 8));
+                sb.AppendLine("    }");
+                segLines.Clear();
+            }
+
+            foreach (var statement in body)
+            {
+                if (statement.Kind == ClangCursorKind2.LabelStmt)
+                {
+                    CloseSegment();
+                    segment = labelIndex[_api.GetString(_api.GetCursorSpelling(statement))];
+                    // 标签子节点 = 被标记语句，属于新段的首批内容。
+                    foreach (var labeled in Children(statement))
+                    {
+                        var labeledText = TranslateStatement(labeled, context, state);
+                        if (labeledText == null)
+                        {
+                            return null;
+                        }
+
+                        segLines.Add(labeledText);
+                    }
+
+                    continue;
+                }
+
+                var translated = TranslateStatement(statement, context, state);
+                if (translated == null)
+                {
+                    return null;
+                }
+
+                if (statement.Kind == ClangCursorKind2.DeclStmt)
+                {
+                    // 直接枚举声明子节点（VarTypes 差集在参数变异重试后为空，不可用）。
+                    foreach (var declared in Children(statement))
+                    {
+                        if ((ClangCursorKind)declared.Kind != ClangCursorKind.VarDecl || IsStaticStorage(declared))
+                        {
+                            continue;
+                        }
+
+                        var introduced = _api.GetString(_api.GetCursorSpelling(declared));
+                        if (!context.VarTypes.TryGetValue(introduced, out var mapping))
+                        {
+                            continue;
+                        }
+
+                        hoistedDeclarations.Add($"mut {EidosRefName(introduced, context)} := {ZeroOf(mapping.EidosType, state)};");
+                    }
+
+                    translated = System.Text.RegularExpressions.Regex.Replace(translated, @"(?m)^(\s*)mut (\w+ :=)", "$1$2");
+                }
+
+                segLines.Add(translated);
+            }
+
+            CloseSegment();
+            sb.AppendLine("    break;");
+            sb.AppendLine("}");
+            if (hoistedDeclarations.Count > 0)
+            {
+                return string.Join(Environment.NewLine, hoistedDeclarations) + Environment.NewLine + sb.ToString().TrimEnd();
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+        finally
+        {
+            _gotoLabelIndices = savedIndices;
+            _gotoUnsafe = savedUnsafe;
+        }
+    }
+
+    private List<ClangCursor> CollectGotos(List<ClangCursor> statements)
+    {
+        var gotos = new List<ClangCursor>();
+        void Walk(ClangCursor cursor)
+        {
+            foreach (var child in Children(cursor))
+            {
+                if (child.Kind == ClangCursorKind2.GotoStmt)
+                {
+                    gotos.Add(child);
+                }
+
+                Walk(child);
+            }
+        }
+
+        foreach (var statement in statements)
+        {
+            Walk(statement);
+        }
+
+        return gotos;
+    }
+
+    private string? GotoTargetName(ClangCursor gotoStmt)
+    {
+        var children = Children(gotoStmt);
+        return children.Count == 0 ? null : _api.GetString(_api.GetCursorSpelling(children[0]));
+    }
+
     /// <summary>语句体子节点：花括号体取内部语句，无花括号单语句体保持原样。</summary>
     private List<ClangCursor> StatementBodyChildren(ClangCursor body) =>
         body.Kind == ClangCursorKind2.CompoundStmt ? Children(body) : [body];
@@ -1399,6 +1967,238 @@ internal sealed class CBodyTranslator
     /// 记录/嵌套数组元素仅支持无初始化器形态（成员经下标基 accessor 访问）；
     /// char 数组的字符串字面量初始化本轮不支持。
     /// </summary>
+    /// <summary>static 局部提升为模块级 mut 绑定（C 静态存储 = 文件作用域生命周期）。
+    /// 数组仅接受零初始化（calloc 即 C 静态零初始化）；标量经与全局一致的初始化翻译。</summary>
+    private bool TryHoistStaticLocal(
+        ClangCursor varDecl,
+        string varName,
+        ClangType declarationType,
+        ClangType canonicalType,
+        bool isArray,
+        FunctionContext context,
+        TranslationState state,
+        out string promotedName)
+    {
+        promotedName = $"c2e_static_{SanitizeIdent(context.FunctionName ?? "fn")}_{SanitizeIdent(varName)}";
+        var initChildren = ValueChildren(varDecl);
+
+        if (isArray)
+        {
+            var totalSize = _api.TypeGetSizeOf(canonicalType);
+            var elementCanonical = _api.GetCanonicalType(_api.GetArrayElementType(canonicalType));
+            var elementSize = _api.TypeGetSizeOf(elementCanonical);
+            var count = _api.GetArraySize(canonicalType);
+            if (totalSize <= 0 || elementSize <= 0 || count <= 0)
+            {
+                SkipReason = $"static local array '{varName}' has an unknown size";
+                return false;
+            }
+
+            var elementKind = (ClangTypeKind)elementCanonical.Kind;
+            if (elementKind is ClangTypeKind.Record or ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray)
+            {
+                SkipReason = $"static local array '{varName}' has an unsupported element type";
+                return false;
+            }
+
+            // 初始化器解包（与 TranslateLocalArray 同规则）；零形态（含 {0}/{NULL}）走 C 静态零初始化。
+            string? initText = null;
+            if (initChildren.Count > 0)
+            {
+                var last = initChildren[^1];
+                while (last.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr)
+                {
+                    var inner = ValueChildren(last);
+                    if (inner.Count != 1)
+                    {
+                        break;
+                    }
+
+                    last = inner[0];
+                }
+
+                if (last.Kind == ClangCursorKind2.StringLiteral)
+                {
+                    SkipReason = $"static local array '{varName}' has a string literal initializer";
+                    return false;
+                }
+
+                if (last.Kind == ClangCursorKind2.InitListExpr && !IsZeroInitializerExpr(last))
+                {
+                    initText = string.Join(" ", Tokenize(last).Select(static token => token.Spelling));
+                    if (initText.Length == 0)
+                    {
+                        SkipReason = $"static local array '{varName}' has an unreadable initializer";
+                        return false;
+                    }
+                }
+            }
+
+            // C 侧 static 承载 + getter：Eidos 引用位以 getter 调用为基址（数组不可整体赋值，
+            // 基址只读成立）。调用方经 need ffi 授权。
+            var shimCName = $"c2e_static_{_sourceTag}_{SanitizeIdent(context.FunctionName ?? "fn")}_{SanitizeIdent(varName)}_init";
+            state.StaticInitShims[promotedName] = new StaticInitShim(
+                shimCName,
+                _api.GetString(_api.GetTypeSpelling(elementCanonical)),
+                initText,
+                count);
+            if (!string.IsNullOrEmpty(context.FunctionName))
+            {
+                state.FunctionUsesFfi.Add(context.FunctionName);
+            }
+
+            promotedName = $"{shimCName}()";
+            return true;
+        }
+
+        var varType = MapType(declarationType);
+        if (varType == null)
+        {
+            SkipReason = $"static local '{varName}' has unsupported type";
+            return false;
+        }
+
+        string? init;
+        if (initChildren.Count > 0)
+        {
+            init = TranslateExpression(initChildren[0], context, state);
+            if (init != null)
+            {
+                if (varType.EidosType == "Float" && IsIntegerLiteralValue(initChildren[0]))
+                {
+                    // 模块初始化不得触源 extern（E3003 module-init）：整型字面量直接拼 .0。
+                    init += ".0";
+                }
+                else if (varType.EidosType == "Int" && EidosTypeOf(initChildren[0]) == "Float")
+                {
+                    SkipReason = $"static local '{varName}' has a float-to-int initializer";
+                    return false;
+                }
+                else
+                {
+                    init = CoerceNumeric(init, EidosTypeOf(initChildren[0]), varType.EidosType, state);
+                    init = CoerceStringToPointerTarget(initChildren[0], init, varType.EidosType, state);
+                    init = CoercePointerLiteralTarget(initChildren[0], init, varType.EidosType, state);
+                    init = CoerceBoolToIntValue(initChildren[0], init, varType.EidosType);
+                    init = CoerceIntToBoolValue(initChildren[0], init, varType.EidosType);
+                }
+            }
+        }
+        else
+        {
+            init = ZeroOf(varType.EidosType, state);
+        }
+
+        if (init == null)
+        {
+            return false;
+        }
+
+        state.StaticLocalBindings.Add((promotedName, init));
+        return true;
+    }
+
+    /// <summary>零值初始化器判定：{0}/{NULL}/{} 及其嵌套/隐式填充形态（ImplicitValueInitExpr
+    /// 在 libclang 中为无子 UnexposedExpr）。指派初始化器解包到值（clang 语义序已重排）。</summary>
+    private bool IsZeroInitializerExpr(ClangCursor cursor)
+    {
+        if (cursor.Kind == ClangCursorKind2.InitListExpr)
+        {
+            var children = ValueChildren(cursor);
+            return children.Count == 0 || children.All(IsZeroInitializerExpr);
+        }
+
+        if (cursor.Kind == ClangCursorKind2.DesignatedInitExpr)
+        {
+            var inner = Children(cursor);
+            return inner.Count == 0 || IsZeroInitializerExpr(inner[^1]);
+        }
+
+        if (cursor.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr or ClangCursorKind2.CStyleCastExpr)
+        {
+            var inner = ValueChildren(cursor);
+            return inner.Count == 0 || (inner.Count == 1 && IsZeroInitializerExpr(inner[0]));
+        }
+
+        return IsZeroIntegerLiteral(cursor);
+    }
+
+    /// <summary>指派初始化器（.field = v / [i] = v）解包：DesignatedInitExpr 的最后一个
+    /// 子节点是值表达式；libclang 实际以"2 子 UnexposedExpr（指派目标 + 值）"形态暴露。</summary>
+    private ClangCursor UnwrapDesignated(ClangCursor cursor)
+    {
+        while (true)
+        {
+            if (cursor.Kind == ClangCursorKind2.DesignatedInitExpr)
+            {
+                var inner = Children(cursor);
+                if (inner.Count == 0)
+                {
+                    return cursor;
+                }
+
+                cursor = inner[^1];
+                continue;
+            }
+
+            if (cursor.Kind == ClangCursorKind2.UnexposedExpr)
+            {
+                var inner = Children(cursor);
+                if (inner.Count == 2)
+                {
+                    cursor = inner[^1];
+                    continue;
+                }
+            }
+
+            return cursor;
+        }
+    }
+
+    /// <summary>指派初始化项解析：libclang 以"目标 + 值"双子（DesignatedInitExpr 或其
+    /// UnexposedExpr 包装）暴露；目标拼写为字段名（.f = v）或下标数字（[i] = v），
+    /// 目标自身可能再包一层空拼写的 UnexposedExpr。</summary>
+    private bool TryGetDesignation(ClangCursor element, out string target, out ClangCursor value)
+    {
+        target = string.Empty;
+        value = element;
+        if (element.Kind is not (ClangCursorKind2.DesignatedInitExpr or ClangCursorKind2.UnexposedExpr))
+        {
+            return false;
+        }
+
+        var kids = Children(element);
+        if (kids.Count != 2)
+        {
+            return false;
+        }
+
+        var designator = kids[0];
+        for (var depth = 0; depth < 4 && designator.Kind is ClangCursorKind2.UnexposedExpr or ClangCursorKind2.ParenExpr; depth++)
+        {
+            var inner = Children(designator);
+            if (inner.Count != 1)
+            {
+                break;
+            }
+
+            designator = inner[0];
+        }
+
+        // 数组下标指派的目标是 IntegerLiteral：游标拼写为空，值在 token 里。
+        target = designator.Kind == ClangCursorKind2.IntegerLiteral
+            ? Tokenize(designator).FirstOrDefault().Spelling ?? string.Empty
+            : _api.GetString(_api.GetCursorSpelling(designator));
+        value = kids[1];
+        return target.Length > 0;
+    }
+
+    /// <summary>隐式零填充（指派初始化留下的洞，或数组/记录缺省元素）：
+    /// libclang 以无子 UnexposedExpr 表示。</summary>
+    private bool IsImplicitZeroInit(ClangCursor cursor) =>
+        cursor.Kind == ClangCursorKind2.UnexposedExpr && Children(cursor).Count == 0;
+
+
     private List<string>? TranslateLocalArray(
         ClangCursor varDecl,
         ClangType canonicalArrayType,
@@ -1466,36 +2266,91 @@ internal sealed class CBodyTranslator
             return null;
         }
 
-        var eidosVarName = EidosRefName(varName, context);
-        var lines = new List<string> { $"mut {eidosVarName} := Ffi.calloc({count})({elementSize});" };
-        var elementType = MapType(elementCanonical)?.EidosType;
-        for (var i = 0; i < elements.Count; i++)
-        {
-            var value = TranslateExpression(elements[i], context, state);
-            if (value == null)
+            var eidosVarName = EidosRefName(varName, context);
+            var lines = new List<string> { $"mut {eidosVarName} := Ffi.calloc({count})({elementSize});" };
+            var elementType = MapType(elementCanonical)?.EidosType;
+            long storeIndex = 0;
+            for (var i = 0; i < elements.Count; i++)
             {
-                return null;
+                // 指派项（[i] = v）按下标落位；洞 = 缺省零元素（calloc 已零化）；
+                // 位置项接续当前下标游标。
+                ClangCursor element;
+                if (TryGetDesignation(elements[i], out var target, out var designatedValue))
+                {
+                    if (!long.TryParse(target, out storeIndex) || storeIndex < 0 || storeIndex >= count)
+                    {
+                        SkipReason = $"local array '{varName}' has an unreadable designated index";
+                        return null;
+                    }
+
+                    element = designatedValue;
+                }
+                else if (IsImplicitZeroInit(elements[i]))
+                {
+                    storeIndex++;
+                    continue;
+                }
+                else
+                {
+                    if (storeIndex >= count)
+                    {
+                        SkipReason = $"local array '{varName}' initializer has more elements than its length";
+                        return null;
+                    }
+
+                    element = elements[i];
+                }
+
+                var value = TranslateExpression(element, context, state);
+                if (value == null)
+                {
+                    return null;
+                }
+
+                value = CoerceNumeric(value, EidosTypeOf(element), elementType, state);
+                value = CoercePointerLiteralTarget(element, value, elementType, state);
+                var store = FormatElementStore(
+                    elementCanonical,
+                    $"Ffi.offset_bytes({eidosVarName})({storeIndex} * {elementSize})",
+                    value,
+                    state);
+                if (store == null)
+                {
+                    return null;
+                }
+
+                lines.Add($"{store};");
+                storeIndex++;
             }
 
-            value = CoerceNumeric(value, EidosTypeOf(elements[i]), elementType, state);
-            value = CoercePointerLiteralTarget(elements[i], value, elementType, state);
-            var store = FormatElementStore(
-                elementCanonical,
-                $"Ffi.offset_bytes({eidosVarName})({i} * {elementSize})",
-                value,
-                state);
-            if (store == null)
-            {
-                return null;
-            }
-
-            lines.Add($"{store};");
+            return lines;
         }
 
-        return lines;
+    private string? TranslateStatement(ClangCursor statement, FunctionContext context, TranslationState state)
+    {
+        // goto 安全位：C 循环/switch 体会翻译为真实的 Eidos 循环，goto 的 continue
+        // 会绑到最近的内层循环而非分段包装循环——该位置禁止 goto。
+        var entersLoop = statement.Kind
+            is ClangCursorKind2.WhileStmt or ClangCursorKind2.DoStmt or ClangCursorKind2.ForStmt or ClangCursorKind2.SwitchStmt;
+        if (entersLoop)
+        {
+            _gotoUnsafe++;
+        }
+
+        try
+        {
+            return TranslateStatementCore(statement, context, state);
+        }
+        finally
+        {
+            if (entersLoop)
+            {
+                _gotoUnsafe--;
+            }
+        }
     }
 
-    private string? TranslateStatement(ClangCursor statement, FunctionContext context, TranslationState state)
+    private string? TranslateStatementCore(ClangCursor statement, FunctionContext context, TranslationState state)
     {
         switch (statement.Kind)
         {
@@ -1512,6 +2367,38 @@ internal sealed class CBodyTranslator
                 // switch 体内的 C continue：退出 switch 包装循环即等价于"跳过 switch 余下
                 // 部分"，与落到包装循环尾的 break 相同（外层循环随后照常推进）。
                 return _inSwitchBody > 0 ? "break;" : "continue;";
+
+            case ClangCursorKind2.LabelStmt:
+            {
+                // 标签的子节点是被标记的语句（标签行与语句分离时也如此）——内容必须执行。
+                // 顶层标签由分段模式处理（段边界）；未被 goto 引用的嵌套标签丢弃标记、保留内容。
+                var labeled = Children(statement);
+                if (labeled.Count == 0)
+                {
+                    return "();";
+                }
+
+                var labeledText = TranslateStatements(labeled, context, state);
+                return labeledText == null ? null : labeledText;
+            }
+
+            case ClangCursorKind2.GotoStmt:
+            {
+                if (_gotoUnsafe > 0)
+                {
+                    SkipReason = "goto crossing a loop/switch boundary";
+                    return null;
+                }
+
+                var target = GotoTargetName(statement);
+                if (target == null || !_gotoLabelIndices.TryGetValue(target, out var segment))
+                {
+                    SkipReason = $"goto to a nested or unknown label '{target ?? "?"}'";
+                    return null;
+                }
+
+                return $"c2e_goto := {segment}; continue;";
+            }
 
             case ClangCursorKind2.DeclRefExpr:
                 // 裸引用语句（多为 (void)x 展开/空宏残留）：无可观测副作用，丢弃。
@@ -1533,6 +2420,28 @@ internal sealed class CBodyTranslator
                     var canonicalDeclType = _api.GetCanonicalType(declarationType);
                     var isArrayLocal = (ClangTypeKind)canonicalDeclType.Kind
                         is ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray;
+
+                    // static 局部：生命周期跨调用 → 提升为模块级 mut 绑定（C 语义即文件作用域存储）。
+                    if (IsStaticStorage(varDecl))
+                    {
+                        if (!TryHoistStaticLocal(varDecl, varName, declarationType, canonicalDeclType, isArrayLocal, context, state,
+                                out var promotedName))
+                        {
+                            return null;
+                        }
+
+                        var staticMapping = MapType(declarationType, allowArrays: isArrayLocal);
+                        if (staticMapping == null)
+                        {
+                            SkipReason = $"static local '{varName}' has unsupported type";
+                            return null;
+                        }
+
+                        context.VarTypes[varName] = staticMapping;
+                        context.StaticLocals[varName] = promotedName;
+                        continue;
+                    }
+
                     var varType = MapType(declarationType, allowArrays: isArrayLocal);
                     if (varType == null)
                     {
@@ -1987,7 +2896,13 @@ internal sealed class CBodyTranslator
             case ClangCursorKind2.UnexposedExpr:
             {
                 var inner = Children(expression);
-                return inner.Count == 1 ? TranslateExpression(inner[0], context, state, asStatement) : null;
+                if (inner.Count != 1)
+                {
+                    SkipReason = $"unexposed expression with {inner.Count} children";
+                    return null;
+                }
+
+                return TranslateExpression(inner[0], context, state, asStatement);
             }
 
             case ClangCursorKind2.ParenExpr:
@@ -2099,12 +3014,11 @@ internal sealed class CBodyTranslator
                 }
 
                 // 函数名出现在值位（函数指针实参，如 glad 的 loader 回调）：
-                // Eidos 无法对函数取址，诚实跳过。
+                // 经 addr shim 取 C 函数地址（TU 内生成，static/内联函数同样可取）。
                 if (!context.VarTypes.ContainsKey(name) && !_globals.ContainsKey(name) &&
                     state.DeclaredFunctions.ContainsKey(name))
                 {
-                    SkipReason = $"function '{name}' used as a value (function pointer)";
-                    return null;
+                    return TranslateFunctionAddress(name, state);
                 }
 
                 return EidosRefName(name, context);
@@ -2139,7 +3053,9 @@ internal sealed class CBodyTranslator
 
             case ClangCursorKind2.InitListExpr:
             {
-                // 位置初始化列表 → 记录构造；C 缺省字段补零值。
+                // 初始化列表 → 记录构造；C 缺省字段补零值。libclang 暴露语法序：
+                // 指派项（.f = v / [i] = v）是"目标 + 值"的双子包装，须按目标落位，
+                // 位置项接续当前字段游标。
                 var mapping = MapType(_api.GetCursorType(expression));
                 if (mapping == null || !IsValueRecord(mapping) || !_records.TryGetValue(mapping.EidosType, out var record) || !record.Mappable)
                 {
@@ -2148,23 +3064,48 @@ internal sealed class CBodyTranslator
                 }
 
                 var values = ValueChildren(expression);
-                if (values.Count > record.Fields!.Count)
+                var fieldValues = new Dictionary<string, ClangCursor>(StringComparer.Ordinal);
+                var positionalIndex = 0;
+                foreach (var element in values)
                 {
-                    SkipReason = $"init list has more initializers than '{record.EidosName}' has fields";
-                    return null;
+                    if (TryGetDesignation(element, out var target, out var designatedValue))
+                    {
+                        if (!record.Fields!.Any(field => field.Name == target))
+                        {
+                            SkipReason = $"designated initializer targets unknown field '{target}'";
+                            return null;
+                        }
+
+                        fieldValues[target] = designatedValue;
+                        continue;
+                    }
+
+                    if (IsImplicitZeroInit(element))
+                    {
+                        positionalIndex++;
+                        continue;
+                    }
+
+                    if (positionalIndex >= record.Fields!.Count)
+                    {
+                        SkipReason = $"init list has more initializers than '{record.EidosName}' has fields";
+                        return null;
+                    }
+
+                    fieldValues[record.Fields[positionalIndex].Name] = element;
+                    positionalIndex++;
                 }
 
                 var parts = new List<string>();
-                for (var i = 0; i < record.Fields.Count; i++)
+                foreach (var field in record.Fields!)
                 {
-                    var field = record.Fields[i];
-                    if (i >= values.Count)
+                    if (!fieldValues.TryGetValue(field.Name, out var valueCursor))
                     {
                         parts.Add($"{SanitizeIdent(field.Name)}: {ZeroOf(field.EidosType, state)}");
                         continue;
                     }
 
-                    var value = TranslateExpression(values[i], context, state);
+                    var value = TranslateExpression(valueCursor, context, state);
                     if (value == null)
                     {
                         return null;
@@ -2172,18 +3113,18 @@ internal sealed class CBodyTranslator
 
                     // C 允许 { 0 } 跨类型零初始化（整型 0 写 float 字段）；
                     // 字面量可能被隐式转换节点包裹，先解包再判定。
-                    if (IsZeroIntegerLiteral(values[i]) && field.EidosType is not ("Int" or "Float"))
+                    if (IsZeroIntegerLiteral(valueCursor) && field.EidosType is not ("Int" or "Float"))
                     {
                         // { 0 } 对记录/指针字段是整体零值（嵌套记录逐字段零、指针为 NULL）。
                         value = ZeroOf(field.EidosType, state);
                     }
-                    else if (field.EidosType == "Float" && IsIntegerLiteralValue(values[i]))
+                    else if (field.EidosType == "Float" && IsIntegerLiteralValue(valueCursor))
                     {
                         value += ".0";
                     }
                     else
                     {
-                        value = CoerceNumeric(value, EidosTypeOf(values[i]), field.EidosType, state);
+                        value = CoerceNumeric(value, EidosTypeOf(valueCursor), field.EidosType, state);
                     }
 
                     parts.Add($"{SanitizeIdent(field.Name)}: {value}");
@@ -2427,9 +3368,16 @@ internal sealed class CBodyTranslator
 
                 if (string.IsNullOrEmpty(callee))
                 {
-                    // 经函数指针的间接调用（GL loader 等）：无被调名，本轮不支持。
-                    SkipReason = "indirect (function pointer) call";
-                    return null;
+                    // 经函数指针的间接调用（GL loader 等）：按被调签名走 icall shim。
+                    return TranslateIndirectCall(calleeCursor, operands.Skip(1), context, state);
+                }
+
+                // 具名函数指针局部/参数的调用（int (*op)(int) = fn; op(x)）：
+                // 名字不是函数，是 RawPtr 值——同样走 icall。
+                if (!state.DefinedNames.Contains(callee) && !state.DeclaredFunctions.ContainsKey(callee) &&
+                    context.VarTypes.TryGetValue(callee, out var calleeMapping) && calleeMapping.EidosType == "RawPtr")
+                {
+                    return TranslateIndirectCall(calleeCursor, operands.Skip(1), context, state);
                 }
 
                 if (state.DefinedNames.Contains(callee))
@@ -4137,12 +5085,28 @@ internal sealed class CBodyTranslator
         {
             // float ABI shim 生效时，Eidos 侧 extern 绑定到 shim 符号（c2e_ext_<name>_f）。
             // 分类：声明在系统头 → L1 地板（无 C 源可翻）；否则为跨 TU 项目符号（供人工核对并入翻译）。
+            // static 被调方：内部链接符号链不上，改绑 TU 内转发 shim（c2e_ext_<tu>_<name>_st）。
+            var forwarderName = NeedsForwarderShim(declaration, callee) ? $"c2e_ext_{_sourceTag}_{callee}_st" : null;
+            if (forwarderName != null)
+            {
+                state.StaticForwarders[callee] = new StaticForwarder(
+                    forwarderName,
+                    callee,
+                    // canonical 拼写：内置声明可能用 __size_t/__builtin_va_list 等内部名，
+                    // 转发签名只需 ABI 等价（canonical 展开为基础类型）。
+                    parameterSpells.Select((_, i) =>
+                        _api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(_api.GetArgType(functionType, (uint)i))))).ToList(),
+                    _api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(_api.GetResultType(functionType)))));
+            }
+
+            var linkName = forwarderName ?? (floatShimNeeded ? $"c2e_ext_{callee}_f" : callee);
+            var eidosName = forwarderName ?? (floatShimNeeded ? $"c2e_ext_{callee}_f" : $"c2e_ext_{callee}");
             pending = new PendingExtern(
-                floatShimNeeded ? $"c2e_ext_{callee}_f" : callee,
-                floatShimNeeded ? $"c2e_ext_{callee}_f" : $"c2e_ext_{callee}",
+                linkName,
+                eidosName,
                 parameterMappings.Select(static mapping => mapping.EidosType).ToList(),
                 returnMapping.EidosType,
-                callee,
+                linkName,
                 IsSystemDeclaration(declaration));
             state.PendingExterns[callee] = pending;
         }
@@ -4610,11 +5574,13 @@ internal sealed class CBodyTranslator
         return children;
     }
 
-    /// <summary>过滤掉 TypeRef（类型注解）后的值子节点，用于 InitList/复合字面量等混排形态。</summary>
+    /// <summary>过滤掉 TypeRef（类型注解）与 ParmDecl（函数指针声明器的形参注记，kind 10）
+    /// 后的值子节点，用于 InitList/复合字面量等混排形态。</summary>
     private List<ClangCursor> ValueChildren(ClangCursor cursor)
     {
         var children = Children(cursor);
-        children.RemoveAll(static child => child.Kind == ClangCursorKind2.TypeRef);
+        children.RemoveAll(static child =>
+            child.Kind == ClangCursorKind2.TypeRef || (int)child.Kind == (int)ClangCursorKind.ParmDecl);
         return children;
     }
 
@@ -4733,12 +5699,16 @@ internal sealed class CBodyTranslator
         public Dictionary<string, CTypeMapping> VarTypes { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ParameterNames { get; } = new(StringComparer.Ordinal);
         public string? ReturnEidosType { get; set; }
+        public string? FunctionName { get; set; }
 
         /// <summary>被 C 直接改写的参数：体首影拷贝为 mut 局部（遮蔽不可变参数绑定）。</summary>
         public HashSet<string> MutableParams { get; } = new(StringComparer.Ordinal);
 
         /// <summary>C 名 → Eidos 名（保留字标识符重命名表）。</summary>
         public Dictionary<string, string> RenamedLocals { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>static 局部：C 名 → 提升后的模块级 mut 绑定名（生命周期跨调用）。</summary>
+        public Dictionary<string, string> StaticLocals { get; } = new(StringComparer.Ordinal);
     }
 
     private sealed class TranslationState(
@@ -4752,6 +5722,13 @@ internal sealed class CBodyTranslator
         public Dictionary<string, PendingExtern> PendingExterns { get; } = new(StringComparer.Ordinal);
         public Dictionary<(string Record, string Member), RecordMemberAccess> RecordMembers { get; } = new();
         public Dictionary<string, FloatAbiShim> FloatShims { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, StaticForwarder> StaticForwarders { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, ICallShim> ICallShims { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, FnAddrShim> FnAddrShims { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, StaticInitShim> StaticInitShims { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>static 局部提升：模块级 mut 绑定（名, 初始化表达式），发射于全局段。</summary>
+        public List<(string Name, string Init)> StaticLocalBindings { get; } = [];
         public Dictionary<string, SretExtern> SretExterns { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, StructArgExtern> StructArgExterns { get; } = new(StringComparer.Ordinal);
         public bool NeedsFfiImport { get; private set; }
@@ -4802,9 +5779,12 @@ internal static class ClangCursorKind2
     internal const int CStyleCastExpr = 117;
     internal const int CompoundLiteralExpr = 118;
     internal const int InitListExpr = 119;
+    internal const int DesignatedInitExpr = 120;
     internal const int NullStmt = 230;
     internal const int UnexposedStmt = 200;
+    internal const int LabelStmt = 201;
     internal const int CompoundStmt = 202;
+    internal const int GotoStmt = 210;
     internal const int IfStmt = 205;
     internal const int CaseStmt = 203;
     internal const int DefaultStmt = 204;

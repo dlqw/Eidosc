@@ -255,6 +255,12 @@ internal delegate ClangSourceLocation ClangGetCursorLocationFn(ClangCursor curso
 internal delegate int ClangLocationIsInSystemHeaderFn(ClangSourceLocation location);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangGetCursorStorageClassFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangGetCursorLinkageFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void ClangGetFileLocationFn(
     ClangSourceLocation location,
     out IntPtr file,
@@ -374,6 +380,8 @@ internal sealed class ClangApi
         DisposeDiagnostic = GetExport<ClangDisposeDiagnosticFn>(library, "clang_disposeDiagnostic");
         GetCursorLocation = GetExport<ClangGetCursorLocationFn>(library, "clang_getCursorLocation");
         LocationIsInSystemHeader = GetExport<ClangLocationIsInSystemHeaderFn>(library, "clang_Location_isInSystemHeader");
+        GetCursorStorageClass = GetExport<ClangGetCursorStorageClassFn>(library, "clang_Cursor_getStorageClass");
+        GetCursorLinkage = GetExport<ClangGetCursorLinkageFn>(library, "clang_getCursorLinkage");
         GetFileLocation = GetExport<ClangGetFileLocationFn>(library, "clang_getFileLocation");
         GetFileName = GetExport<ClangGetFileNameFn>(library, "clang_getFileName");
         GetClangVersion = GetExport<ClangGetClangVersionFn>(library, "clang_getClangVersion");
@@ -429,6 +437,8 @@ internal sealed class ClangApi
     internal ClangDisposeDiagnosticFn DisposeDiagnostic { get; }
     internal ClangGetCursorLocationFn GetCursorLocation { get; }
     internal ClangLocationIsInSystemHeaderFn LocationIsInSystemHeader { get; }
+    internal ClangGetCursorStorageClassFn GetCursorStorageClass { get; }
+    internal ClangGetCursorLinkageFn GetCursorLinkage { get; }
     internal ClangGetFileLocationFn GetFileLocation { get; }
     internal ClangGetFileNameFn GetFileName { get; }
     internal ClangGetClangVersionFn GetClangVersion { get; }
