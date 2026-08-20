@@ -490,7 +490,8 @@ public sealed partial class SymbolTable
         SourceSpan span,
         int fieldOffset,
         TypeId fieldTypeId,
-        bool isGetter)
+        bool isGetter,
+        IReadOnlyList<int>? cStructFieldTypeArguments = null)
     {
         var returnType = isGetter ? fieldTypeId : new TypeId(WellKnownTypeIds.UnitId);
         List<TypeId> paramTypes = isGetter
@@ -510,6 +511,7 @@ public sealed partial class SymbolTable
             IsCStructAccessor = true,
             CStructFieldOffset = fieldOffset,
             CStructFieldTypeId = fieldTypeId,
+            CStructFieldTypeArguments = cStructFieldTypeArguments ?? [],
             IsCStructGetter = isGetter
         };
 

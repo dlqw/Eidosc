@@ -318,7 +318,12 @@ public enum BinaryOp
     Ge,
     And,
     Or,
-    Concat
+    Concat,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr
 }
 
 /// <summary>
@@ -351,6 +356,11 @@ public static class BinaryOpExtensions
         BinaryOp.And => WellKnownStrings.Operators.And,
         BinaryOp.Or => WellKnownStrings.Operators.Or,
         BinaryOp.Concat => WellKnownStrings.Operators.Concat,
+        BinaryOp.BitAnd => WellKnownStrings.Operators.BitAnd,
+        BinaryOp.BitOr => WellKnownStrings.Operators.BitOr,
+        BinaryOp.BitXor => WellKnownStrings.Operators.BitXor,
+        BinaryOp.Shl => WellKnownStrings.Operators.ShiftLeft,
+        BinaryOp.Shr => WellKnownStrings.Operators.ShiftRight,
         _ => "?"
     };
 }

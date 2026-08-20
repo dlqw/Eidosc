@@ -97,6 +97,9 @@ public static class SyntaxKindHelper
         ["+:"] = SyntaxKind.OpPrepend,
         [":+"] = SyntaxKind.OpAppendLast,
         ["?"] = SyntaxKind.OpQuestion,
+        ["^"] = SyntaxKind.OpCaret,
+        ["<<"] = SyntaxKind.OpLessLess,
+        [">>"] = SyntaxKind.OpGreaterGreater,
 
         // 标点
         ["`"] = SyntaxKind.PtBacktick,

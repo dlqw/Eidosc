@@ -114,6 +114,8 @@ public static class EidosFixtureInventory
         Success("borrow/valid/basic_move.eidos", Borrow),
         Success("borrow/valid/borrow_shared.eidos", Borrow),
         Success("borrow/valid/generic_nonzero_partial_ctor_field_move_ok.eidos", Borrow),
+        Success("borrow/valid/generic_nonzero_partial_dynamic_index_seq_owned_ok.eidos", Borrow),
+        Success("borrow/valid/shared_borrow_dead_before_reassign_ok.eidos", Borrow),
         Success("borrow/valid/last_use.eidos", Borrow),
         Success("borrow/valid/projection_alias_cross_stage.eidos", Borrow),
         Success("traits/basic_impl.eidos", Trait),
@@ -132,8 +134,6 @@ public static class EidosFixtureInventory
         Error("borrow/errors/affine_reuse.eidos", "E1001"),
         Error("borrow/errors/double_move.eidos", "E1001"),
         Error("borrow/errors/generic_nonzero_partial_deref_noncopy_error.eidos", "E1002"),
-        Error("borrow/errors/generic_nonzero_partial_dynamic_index_noncopy_error.eidos", "E1002"),
-        Error("borrow/errors/mutable_borrow_conflict.eidos", "E1002"),
         Error("borrow/errors/use_after_move.eidos", "E1001")
     ];
 

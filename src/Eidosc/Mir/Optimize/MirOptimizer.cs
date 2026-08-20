@@ -21,6 +21,19 @@ public sealed partial class MirOptimizer
     }
 
     /// <summary>
+    /// 由 HIR 类型描述表构造 Ref/MutRef 判定：内联器据此把借用参数绑定为
+    /// 借用而非 move。三条管线（主构建/恢复/查询驱动）共用此实现避免漂移。
+    /// </summary>
+    public static Func<TypeId, bool> CreateBorrowTypeResolver(
+        IReadOnlyDictionary<int, TypeDescriptor>? typeDescriptors)
+    {
+        return typeId => typeId.IsValid &&
+                         typeDescriptors != null &&
+                         typeDescriptors.TryGetValue(typeId.Value, out var descriptor) &&
+                         descriptor is TypeDescriptor.Ref or TypeDescriptor.MutRef;
+    }
+
+    /// <summary>
     /// 已注册的优化 Pass 名称（按执行顺序）
     /// </summary>
     public List<string> PassNames => _passes.Select(pass => pass.Name).ToList();
@@ -150,7 +163,8 @@ public sealed partial class MirOptimizer
     /// </summary>
     public static MirOptimizer CreateDefault(
         Func<string, IDisposable>? measureSubphase = null,
-        IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries = null)
+        IReadOnlyDictionary<SymbolId, FunctionEffectSummary>? effectSummaries = null,
+        Func<TypeId, bool>? isBorrowType = null)
     {
         var optimizer = new MirOptimizer(measureSubphase, effectSummaries);
 
@@ -169,7 +183,7 @@ public sealed partial class MirOptimizer
         // the expanded bodies and keep their instruction-site identities
         // consistent. Inlining runs before ownership finalization so inserted
         // drops cover the inlined code.
-        optimizer.RegisterPass(new Inlining());
+        optimizer.RegisterPass(new Inlining(30, isBorrowType));
         optimizer.RegisterPass(new SequenceBuilderFusionPass());
         optimizer.RegisterPass(new TraversableConsumerSpecializationPass());
 

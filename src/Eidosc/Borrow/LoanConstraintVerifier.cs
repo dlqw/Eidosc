@@ -59,8 +59,10 @@ public sealed partial class LoanConstraintVerifier
     private readonly Func<TypeId, bool> _hasCopyImplResolver;
     private readonly IReadOnlyDictionary<int, string>? _dynamicTypeKeys;
     private readonly BorrowCapabilitySnapshot? _capabilitySnapshot;
+    private readonly LivenessAnalyzer? _liveness;
     private MirFunc? _currentFunction;
     private Dictionary<LocalId, MirLocal> _localsById = [];
+    private Dictionary<BlockId, MirBasicBlock> _blocksById = [];
     private IReadOnlyDictionary<LocalId, int> _localIndexMap = new Dictionary<LocalId, int>();
     private LocalId[] _localsByIndex = [];
     private readonly HashSet<string> _reportedDiagnostics = [];
@@ -76,7 +78,8 @@ public sealed partial class LoanConstraintVerifier
         SymbolTable symbolTable,
         BorrowCapabilitySnapshot? capabilitySnapshot = null,
         bool capturePointStates = true,
-        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null)
+        IReadOnlyDictionary<int, string>? dynamicTypeKeys = null,
+        LivenessAnalyzer? liveness = null)
     {
         _signatureCache = signatureCache;
         _symbolTable = symbolTable;
@@ -84,6 +87,7 @@ public sealed partial class LoanConstraintVerifier
         _dynamicTypeKeys = dynamicTypeKeys;
         _capabilitySnapshot = capabilitySnapshot;
         _capturePointStates = capturePointStates;
+        _liveness = liveness;
     }
 
     public LoanConstraintResult VerifyCall(
@@ -111,6 +115,7 @@ public sealed partial class LoanConstraintVerifier
         var controlFlow = cfg ?? new ControlFlowGraph(function);
         var oneShotBackedgeSuppressions = OneShotLoopMoveAnalysis.CollectBackedgeSuppressions(function, controlFlow);
         var blockById = function.BasicBlocks.ToDictionary(block => block.Id);
+        _blocksById = blockById;
         var blockOutStates = new Dictionary<BlockId, LoanVerifierState>();
         var pendingBlocks = new Queue<BlockId>(function.BasicBlocks.Select(block => block.Id));
         var queuedBlocks = function.BasicBlocks.Select(block => block.Id).ToHashSet();
@@ -542,6 +547,9 @@ public sealed partial class LoanConstraintVerifier
             return movedResult;
         }
 
+        // 借用者已死的旧借用不构成新借用的冲突（循环携带别名的同一类收敛）。
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
         var mutableBorrows = GetActiveBorrows(borrowTarget, state)
             .Where(borrow => borrow.IsMutable)
             .ToList();
@@ -589,6 +597,8 @@ public sealed partial class LoanConstraintVerifier
         {
             return movedResult;
         }
+
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
 
         var activeBorrows = GetActiveBorrows(borrowTarget, state);
         if (activeBorrows.Count == 0)
@@ -690,6 +700,8 @@ public sealed partial class LoanConstraintVerifier
         var borrowTargets = ResolveBorrowTargets(localId, state);
         foreach (var borrowTarget in borrowTargets)
         {
+            EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
             var mutableBorrows = GetActiveBorrows(borrowTarget, state)
                 .Where(borrow => borrow.IsMutable)
                 .ToList();
@@ -744,6 +756,8 @@ public sealed partial class LoanConstraintVerifier
         var borrowTargets = ResolveBorrowTargets(localId, state);
         foreach (var borrowTarget in borrowTargets)
         {
+            EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
             var activeBorrows = GetActiveBorrows(borrowTarget, state);
             if (activeBorrows.Count == 0)
             {
@@ -1468,6 +1482,29 @@ public sealed partial class LoanConstraintVerifier
         state.MovedVars.Remove(localId);
     }
 
+    /// <summary>
+    /// 终结目标上"借用者已死"的借用：borrower 在写入点之后不再被读取
+    ///（块内先重定义后使用，或既无块内后续使用也不在 LiveOut）时，
+    /// 重定义 borrowee 不会使借用悬空，应从状态收缩而非报冲突。
+    /// </summary>
+    private void EndDeadBorrowsForTarget(BorrowTarget target, BlockId blockId, int instructionIndex, LoanVerifierState state)
+    {
+        if (!target.IsValid)
+        {
+            return;
+        }
+
+        state.EndBorrowsByBorrowee(
+            target.BaseLocal,
+            borrow => IsBorrowerDeadAfter(borrow.Borrower, blockId, instructionIndex),
+            (blockId, instructionIndex));
+    }
+
+    private bool IsBorrowerDeadAfter(LocalId borrower, BlockId blockId, int instructionIndex)
+    {
+        return BorrowLivenessGate.IsLocalDeadAfter(borrower, blockId, instructionIndex, _blocksById, _liveness);
+    }
+
     private void ReportMutateWhileBorrowedConflict(
         BorrowTarget borrowTarget,
         SourceSpan span,
@@ -1476,6 +1513,11 @@ public sealed partial class LoanConstraintVerifier
         LoanVerifierState state,
         List<LoanConstraintResult> results)
     {
+        // 写入前先收缩状态：借用者在此点之后已死的借用随重定义终结，
+        // 否则自递归循环（尾调用转 loop）会把守卫求值的别名带回回边，
+        // 在下一轮迭代重定义临时量时误报 MutateWhileBorrowed。
+        EndDeadBorrowsForTarget(borrowTarget, blockId, instructionIndex, state);
+
         var activeBorrows = GetActiveBorrows(borrowTarget, state);
         if (activeBorrows.Count == 0)
         {
@@ -1533,6 +1575,8 @@ public sealed partial class LoanConstraintVerifier
                 span,
                 hint: DiagnosticMessages.BorrowMoveOrCopyHint);
         }
+
+        EndDeadBorrowsForTarget(BorrowTarget.ForLocal(localId), blockId, instructionIndex, state);
 
         var activeBorrows = GetActiveBorrows(BorrowTarget.ForLocal(localId), state);
         if (activeBorrows.Count == 0)
@@ -1635,6 +1679,15 @@ internal sealed class LoanVerifierState
     {
         _state.EndBorrowsByBorrowee(
             borrowee,
+            borrow => borrow.EndLocation = endLocation);
+    }
+
+    /// <summary>按谓词终结 borrowee 上的借用：借用者已死时收缩状态，避免跨回边累积。</summary>
+    public void EndBorrowsByBorrowee(LocalId borrowee, Func<ActiveBorrowInfo, bool> shouldEnd, (BlockId Block, int Index) endLocation)
+    {
+        _state.EndBorrowsByBorrowee(
+            borrowee,
+            shouldEnd,
             borrow => borrow.EndLocation = endLocation);
     }
 

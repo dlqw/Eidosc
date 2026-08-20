@@ -21,6 +21,12 @@ Ffi :: module {
 
     ptr_add :: RawPtr -> Int -> RawPtr compiler(internal, intrinsic: "ptr_add") need ffi;
 
+    ptr_to_int :: RawPtr -> Int compiler(internal, intrinsic: "ptr_to_int") need ffi;
+
+    int_to_ptr :: Int -> RawPtr compiler(internal, intrinsic: "int_to_ptr") need ffi;
+
+    float_to_int :: Float -> Int compiler(internal, intrinsic: "float_to_int") need ffi;
+
 
 
 
@@ -65,6 +71,12 @@ Ffi :: module {
 
     ptr_load_bool :: RawPtr -> Bool compiler(internal, intrinsic: "ptr_load_bool") need ffi;
 
+    // C 定宽元素的类型化加载（C2E 下标/解引用按元素宽度选择）：
+    // i16/f32 加载后拓宽（zext/fpext）到 Eidos Int/Float（i64/f64）。
+    ptr_load_i16 :: RawPtr -> Int compiler(internal, intrinsic: "ptr_load_i16") need ffi compiler(llvm_abi: "ptr -> i16");
+
+    ptr_load_f32 :: RawPtr -> Float compiler(internal, intrinsic: "ptr_load_f32") need ffi compiler(llvm_abi: "ptr -> float");
+
 
 
 
@@ -97,6 +109,10 @@ Ffi :: module {
 
     ptr_store_bool :: RawPtr -> Bool -> Unit compiler(internal, intrinsic: "ptr_store_bool") need ffi;
 
+    ptr_store_i16 :: RawPtr -> Int -> Unit compiler(internal, intrinsic: "ptr_store_i16") need ffi compiler(llvm_abi: "ptr, i16 -> void");
+
+    ptr_store_f32 :: RawPtr -> Float -> Unit compiler(internal, intrinsic: "ptr_store_f32") need ffi compiler(llvm_abi: "ptr, float -> void");
+
 
 
 
@@ -113,6 +129,9 @@ Ffi :: module {
 
 
 
+    // cfn_from/cfn_call/cfn_ctx_* 是编译器 intrinsic：类型推断按被转函数的
+    // 完整 arity 构造 Cfn[A..., R]，后端任意 arity。下面 0..12 参是预编译
+    // 标准库的公开声明锚点；超出 12 参的调用仍由 intrinsic 路径直接支持。
     export cfn_from[R] :: (Unit -> R) -> Cfn[R] compiler(intrinsic: "cfn_from") need ffi;
     export cfn_from[A, R] :: (A -> R) -> Cfn[A, R] compiler(intrinsic: "cfn_from") need ffi;
     export cfn_from[A, B, R] :: (A -> B -> R) -> Cfn[A, B, R] compiler(intrinsic: "cfn_from") need ffi;
@@ -120,6 +139,12 @@ Ffi :: module {
     export cfn_from[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> Cfn[A, B, C, D, R] compiler(intrinsic: "cfn_from") need ffi;
     export cfn_from[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> Cfn[A, B, C, D, E, R] compiler(intrinsic: "cfn_from") need ffi;
     export cfn_from[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> Cfn[A, B, C, D, E, F, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, R] :: (A -> B -> C -> D -> E -> F -> G -> R) -> Cfn[A, B, C, D, E, F, G, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> R) -> Cfn[A, B, C, D, E, F, G, H, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> R) -> Cfn[A, B, C, D, E, F, G, H, I, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, R] compiler(intrinsic: "cfn_from") need ffi;
+    export cfn_from[A, B, C, D, E, F, G, H, I, J, K, L, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> R) -> Cfn[A, B, C, D, E, F, G, H, I, J, K, L, R] compiler(intrinsic: "cfn_from") need ffi;
 
     export cfn_call[R] :: Cfn[R] -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, R] :: Cfn[A, R] -> A -> R compiler(intrinsic: "cfn_call") need ffi;
@@ -128,6 +153,12 @@ Ffi :: module {
     export cfn_call[A, B, C, D, R] :: Cfn[A, B, C, D, R] -> A -> B -> C -> D -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, B, C, D, E, R] :: Cfn[A, B, C, D, E, R] -> A -> B -> C -> D -> E -> R compiler(intrinsic: "cfn_call") need ffi;
     export cfn_call[A, B, C, D, E, F, R] :: Cfn[A, B, C, D, E, F, R] -> A -> B -> C -> D -> E -> F -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, R] :: Cfn[A, B, C, D, E, F, G, R] -> A -> B -> C -> D -> E -> F -> G -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, R] :: Cfn[A, B, C, D, E, F, G, H, R] -> A -> B -> C -> D -> E -> F -> G -> H -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, R] :: Cfn[A, B, C, D, E, F, G, H, I, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> R compiler(intrinsic: "cfn_call") need ffi;
+    export cfn_call[A, B, C, D, E, F, G, H, I, J, K, L, R] :: Cfn[A, B, C, D, E, F, G, H, I, J, K, L, R] -> A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> R compiler(intrinsic: "cfn_call") need ffi;
 
     // ctx-pointer 约定回调：闭包 invoke thunk 的 ABI 恰为 (closure_ptr, args...)，
     // 与 C 侧 callback(void* ctx, args...) 同构。cfn_ctx_from 取 invoke_fn 作为
@@ -140,6 +171,12 @@ Ffi :: module {
     export cfn_ctx_from[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> Cfn[RawPtr, A, B, C, D, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
     export cfn_ctx_from[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> Cfn[RawPtr, A, B, C, D, E, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
     export cfn_ctx_from[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> Cfn[RawPtr, A, B, C, D, E, F, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, G, R] :: (A -> B -> C -> D -> E -> F -> G -> R) -> Cfn[RawPtr, A, B, C, D, E, F, G, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, G, H, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> R) -> Cfn[RawPtr, A, B, C, D, E, F, G, H, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, G, H, I, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> R) -> Cfn[RawPtr, A, B, C, D, E, F, G, H, I, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, G, H, I, J, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> R) -> Cfn[RawPtr, A, B, C, D, E, F, G, H, I, J, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, G, H, I, J, K, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> R) -> Cfn[RawPtr, A, B, C, D, E, F, G, H, I, J, K, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
+    export cfn_ctx_from[A, B, C, D, E, F, G, H, I, J, K, L, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> R) -> Cfn[RawPtr, A, B, C, D, E, F, G, H, I, J, K, L, R] compiler(intrinsic: "cfn_ctx_from") need ffi;
 
     export cfn_ctx_data[R] :: (Unit -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
     export cfn_ctx_data[A, R] :: (A -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
@@ -148,6 +185,12 @@ Ffi :: module {
     export cfn_ctx_data[A, B, C, D, R] :: (A -> B -> C -> D -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
     export cfn_ctx_data[A, B, C, D, E, R] :: (A -> B -> C -> D -> E -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
     export cfn_ctx_data[A, B, C, D, E, F, R] :: (A -> B -> C -> D -> E -> F -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, G, R] :: (A -> B -> C -> D -> E -> F -> G -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, G, H, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, G, H, I, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, G, H, I, J, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, G, H, I, J, K, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
+    export cfn_ctx_data[A, B, C, D, E, F, G, H, I, J, K, L, R] :: (A -> B -> C -> D -> E -> F -> G -> H -> I -> J -> K -> L -> R) -> RawPtr compiler(intrinsic: "cfn_ctx_data") need ffi;
 
 
 
@@ -234,6 +277,66 @@ Ffi :: module {
     export store[T] :: RawPtr -> T -> Unit need ffi
     {
         ptr => value => ptr_store_as[T](ptr)(value)
+    }
+
+    // 按宽度命名的指针读写（C int/short/char/float 元素）：
+    // Ffi.load[Int]/store[Int] 是 i64 存取，C 定宽元素必须用对应宽度变体，
+    // 否则相邻元素会被跨写/读到合并值。
+    // 指针↔整数（ptrdiff 算术）与 C 截断语义的 Float→Int（fptosi，向零截断）。
+    export ptr_as_int :: RawPtr -> Int need ffi
+    {
+        p => ptr_to_int(p)
+    }
+
+    // 整数位模式回指针（C 的 (T*)n，如 Win32 MAKEINTRESOURCE 资源句柄形态）。
+    export int_as_ptr :: Int -> RawPtr need ffi
+    {
+        v => int_to_ptr(v)
+    }
+
+    export trunc_to_int :: Float -> Int need ffi
+    {
+        v => float_to_int(v)
+    }
+
+    export load_i32 :: RawPtr -> Int need ffi
+    {
+        ptr => ptr_load_i32(ptr)
+    }
+
+    export store_i32 :: RawPtr -> Int -> Unit need ffi
+    {
+        ptr => value => ptr_store_i32(ptr)(value)
+    }
+
+    export load_i16 :: RawPtr -> Int need ffi
+    {
+        ptr => ptr_load_i16(ptr)
+    }
+
+    export store_i16 :: RawPtr -> Int -> Unit need ffi
+    {
+        ptr => value => ptr_store_i16(ptr)(value)
+    }
+
+    export load_i8 :: RawPtr -> Int need ffi
+    {
+        ptr => ptr_load_i8(ptr)
+    }
+
+    export store_i8 :: RawPtr -> Int -> Unit need ffi
+    {
+        ptr => value => ptr_store_i8(ptr)(value)
+    }
+
+    export load_f32 :: RawPtr -> Float need ffi
+    {
+        ptr => ptr_load_f32(ptr)
+    }
+
+    export store_f32 :: RawPtr -> Float -> Unit need ffi
+    {
+        ptr => value => ptr_store_f32(ptr)(value)
     }
 
     export to_c_string :: String -> RawPtr need ffi

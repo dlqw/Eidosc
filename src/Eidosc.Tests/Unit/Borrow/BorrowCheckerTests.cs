@@ -20,14 +20,17 @@ public class BorrowCheckerTests
     }
 
     [Fact]
-    public void CompilationPipeline_MutableBorrowConflictFixture_ReportsE1002()
+    public void CompilationPipeline_SharedBorrowDeadBeforeReassign_CompilesWithoutE1002()
     {
+        // 比较临时量的共享借用在其最后一次使用后死亡（借用按活性终结）：
+        // 随后的 mut 重绑定不得被陈旧别名阻塞；原 mutable_borrow_conflict
+        // 夹具编码的是旧的全程序存活近似，见 2026-08-17 changelog。
         var result = RunFixture(
-            Paths.Fixture("borrow/errors/mutable_borrow_conflict.eidos"),
+            Paths.Fixture("borrow/valid/shared_borrow_dead_before_reassign_ok.eidos"),
             stopAtBorrow: false,
             isolateSingleFile: true);
 
-        Assert.Contains(
+        Assert.DoesNotContain(
             result.Diagnostics,
             diagnostic => diagnostic.Level == DiagnosticLevel.Error && diagnostic.Code == "E1002");
     }

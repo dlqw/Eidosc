@@ -472,7 +472,8 @@ public sealed partial class QueryDrivenPipeline
                 // The abilities phase runs unconditionally before MIR and
                 // aborts compilation on failure, so the inferer is present.
                 optimizer = MirOptimizer.CreateDefault(
-                    effectSummaries: typeInf.EffectInferer!.FunctionSummariesBySymbol);
+                    effectSummaries: typeInf.EffectInferer!.FunctionSummariesBySymbol,
+                    isBorrowType: MirOptimizer.CreateBorrowTypeResolver(hirOut.TypeDescriptors));
             }
 
             var specializationResult = CompilationPipeline.RunSpecializationLoop(mirModule, genericSpecializer, optimizer);

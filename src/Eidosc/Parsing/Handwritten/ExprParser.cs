@@ -23,12 +23,27 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         return ParseExpr(0);
     }
 
+    public EidosAstNode ParseExpr(bool stopAtBitBar)
+    {
+        return ParseExpr(0, _allowLambda, stopAtBitBar);
+    }
+
     public EidosAstNode ParseExpr(int minPrec)
     {
         return ParseExpr(minPrec, _allowLambda);
     }
 
     public EidosAstNode ParseExpr(int minPrec, bool allowLambda)
+    {
+        return ParseExpr(minPrec, allowLambda, stopAtBitBar: false);
+    }
+
+    /// <summary>
+    /// stopAtBitBar：本调用层的二元循环遇 `|` 停止（不按位或消费），仅沿二元/赋值右操作数
+    /// 递归传播；括号等新表达式上下文自然复位。供列表推导 `[e | quals]` 与决策表键列表
+    /// `| k1 | k2` 区分分隔符与位或。
+    /// </summary>
+    public EidosAstNode ParseExpr(int minPrec, bool allowLambda, bool stopAtBitBar)
     {
         var prevLambda = _allowLambda;
         _allowLambda = allowLambda;
@@ -42,7 +57,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                 if (!ctx.IsNameFirstSyntax && ctx.Check(":=") && Precedence.Assign >= minPrec)
                 {
                     ctx.Advance();
-                    var value = ParseExpr(Precedence.Assign);
+                    var value = ParseExpr(Precedence.Assign, _allowLambda, stopAtBitBar);
                     var assignment = new Assignment();
                     assignment.SetSpan(ctx.SpanFrom(startToken));
                     assignment.SetTargetExpression(left);
@@ -60,6 +75,11 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                 var prec = builtinPrec ?? (isCustomOperator
                     ? new PrecEntry(Precedence.Additive, Assoc.Left)
                     : null);
+                if (stopAtBitBar && text == WellKnownStrings.Operators.BitOr)
+                {
+                    break;
+                }
+
                 if (prec == null || prec.Value.Level < minPrec)
                     break;
 
@@ -67,7 +87,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
                 ctx.Advance(); // consume operator
 
                 var nextMinPrec = assoc == Assoc.Right ? level : level + 1;
-                var right = ParseExpr(nextMinPrec);
+                var right = ParseExpr(nextMinPrec, _allowLambda, stopAtBitBar);
 
                 if (isCustomOperator)
                 {
@@ -105,6 +125,11 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
     public EidosAstNode ParseExprNoLambda()
     {
         return ParseExpr(0, false);
+    }
+
+    public EidosAstNode ParseExprNoLambda(bool stopAtBitBar)
+    {
+        return ParseExpr(0, false, stopAtBitBar);
     }
 
     private SelectionExpr ParseSelectionSuffix(Token startToken, EidosAstNode subject)
@@ -641,9 +666,10 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return list;
         }
 
-        var first = ParseExpr();
-
         // Seq comprehension: [expr | pat <- list, filter, ...]
+        // 输出表达式的二元脊柱遇 `|` 即停（见 ParseExpr 的 stopAtBitBar），避免位或吞掉限定符分隔符。
+        var first = ParseExpr(stopAtBitBar: true);
+
         if (ctx.Match("|"))
         {
             var comp = new ListComprehension();
@@ -2327,11 +2353,16 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         "!="  => BinaryOp.NotEqual,
         "<"   => BinaryOp.Less,
         ">"   => BinaryOp.Greater,
-        "<="  => BinaryOp.LessEqual,
-        ">="  => BinaryOp.GreaterEqual,
-        "&&"  => BinaryOp.And,
-        "||"  => BinaryOp.Or,
-        _ => BinaryOp.Add
+                "<="  => BinaryOp.LessEqual,
+                ">="  => BinaryOp.GreaterEqual,
+                "&&"  => BinaryOp.And,
+                "||"  => BinaryOp.Or,
+                "<<"  => BinaryOp.ShiftLeft,
+                ">>"  => BinaryOp.ShiftRight,
+                "&"   => BinaryOp.BitAnd,
+                "^"   => BinaryOp.BitXor,
+                "|"   => BinaryOp.BitOr,
+                _ => BinaryOp.Add
     };
 
     private static UnaryOp MapUnaryOp(string op) => op switch

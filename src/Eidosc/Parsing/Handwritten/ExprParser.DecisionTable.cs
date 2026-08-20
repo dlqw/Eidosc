@@ -182,10 +182,11 @@ public sealed partial class ExprParser
 
     private List<EidosAstNode> ParseDecisionKeyList()
     {
-        var keys = new List<EidosAstNode> { ParseExprNoLambda() };
+        // 键之间的 `|` 是分隔符：键表达式遇 `|` 即停，不按位或继续消费。
+        var keys = new List<EidosAstNode> { ParseExprNoLambda(stopAtBitBar: true) };
         while (ctx.Match("|"))
         {
-            keys.Add(ParseExprNoLambda());
+            keys.Add(ParseExprNoLambda(stopAtBitBar: true));
         }
 
         return keys;

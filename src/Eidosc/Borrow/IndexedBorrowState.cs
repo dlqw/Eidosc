@@ -191,6 +191,26 @@ internal sealed class IndexedBorrowState<TBorrow, TKey>
         EndBorrows(_borrowKeysByBorrowee, localId, onBorrowEnded);
     }
 
+    /// <summary>按谓词选择性终结 borrowee 上的借用（用于借用者已死时的活性收敛）。</summary>
+    public void EndBorrowsByBorrowee(LocalId localId, Func<TBorrow, bool> shouldEnd, Action<TBorrow> onBorrowEnded)
+    {
+        if (!_borrowKeysByBorrowee.TryGetValue(localId, out var keys) || keys.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var key in keys.ToList())
+        {
+            if (!_borrowsByKey.TryGetValue(key, out var borrow) || !shouldEnd(borrow))
+            {
+                continue;
+            }
+
+            onBorrowEnded(borrow);
+            RemoveBorrow(key, borrow);
+        }
+    }
+
     public void EndBorrowsByBorrowTarget(BorrowTarget target, Action<TBorrow> onBorrowEnded)
     {
         if (!target.IsValid || !_borrowKeysByBorrowee.TryGetValue(target.BaseLocal, out var keys) || keys.Count == 0)

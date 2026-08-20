@@ -1555,6 +1555,7 @@ public static class SymbolTableStateBuilder
             ExternalSymbolName = EmptyToNull(GetFact(payload, "externalSymbolName")),
             ExternalLibrary = EmptyToNull(GetFact(payload, "externalLibrary")),
             CStructFieldTypeId = RemapTypeId(GetFactInt(payload, "cStructFieldTypeId"), typeRemap),
+            CStructFieldTypeArguments = ParseNonNegativeInts(GetFact(payload, "cStructFieldTypeArgs")).ToList(),
             IsCStructAccessor = ParseBool(GetFact(payload, "isCStructAccessor")),
             CStructFieldOffset = GetFactInt(payload, "cStructFieldOffset"),
             IsCStructGetter = ParseBool(GetFact(payload, "isCStructGetter")),

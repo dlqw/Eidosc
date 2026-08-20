@@ -10,6 +10,7 @@ namespace Eidosc.Mir.Optimize;
 public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofConsumer
 {
     private readonly int _maxInlineSize;
+    private readonly Func<TypeId, bool>? _isBorrowType;
     private FunctionOptimizationProofIndex _functionProofs = FunctionOptimizationProofIndex.Empty;
 
     public string Name => "Inlining";
@@ -21,9 +22,10 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
 
     public Inlining() : this(30) { }
 
-    public Inlining(int maxInlineSize)
+    public Inlining(int maxInlineSize, Func<TypeId, bool>? isBorrowType = null)
     {
         _maxInlineSize = maxInlineSize;
+        _isBorrowType = isBorrowType;
     }
 
     public MirModule Run(MirModule module)
@@ -514,6 +516,24 @@ public sealed class Inlining : IMirOptimizationPass, IFunctionOptimizationProofC
                 TypeId = parameters[i].TypeId,
                 Span = call.Span
             };
+
+            // Ref/MutRef 参数按借用绑定（镜像 MirBuilder 的 ref 实参制备）：
+            // 内联物化成 move 会吞掉调用方的所有权，使源码层的"借用后使用"
+            // 变成 DoubleMove/UseAfterMove。
+            if (parameters[i].TypeId.IsValid &&
+                _isBorrowType?.Invoke(parameters[i].TypeId) == true &&
+                call.Arguments[i] is MirPlace { Kind: PlaceKind.Local } borrowablePlace)
+            {
+                result.Add(new MirLoad
+                {
+                    Target = target,
+                    Source = borrowablePlace,
+                    CreatesBorrowAlias = true,
+                    Span = call.Span
+                });
+                continue;
+            }
+
             result.Add(CreateOwnershipBinding(
                 target,
                 call.Arguments[i],

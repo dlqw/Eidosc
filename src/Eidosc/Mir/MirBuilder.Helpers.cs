@@ -887,6 +887,21 @@ public sealed partial class MirBuilder
             case Eidosc.Hir.BinaryOp.Concat:
                 mirOperator = BinaryOp.Concat;
                 return true;
+            case Eidosc.Hir.BinaryOp.BitAnd:
+                mirOperator = BinaryOp.BitAnd;
+                return true;
+            case Eidosc.Hir.BinaryOp.BitOr:
+                mirOperator = BinaryOp.BitOr;
+                return true;
+            case Eidosc.Hir.BinaryOp.BitXor:
+                mirOperator = BinaryOp.BitXor;
+                return true;
+            case Eidosc.Hir.BinaryOp.Shl:
+                mirOperator = BinaryOp.Shl;
+                return true;
+            case Eidosc.Hir.BinaryOp.Shr:
+                mirOperator = BinaryOp.Shr;
+                return true;
             default:
                 mirOperator = default;
                 return false;

@@ -867,7 +867,7 @@ public sealed partial class NameResolver
         adtSymbol.IsCStruct = true;
 
         // 收集字段信息并验证 FFI 安全性
-        var fieldEntries = new List<(string Name, TypeId TypeId, string TypeName)>();
+        var fieldEntries = new List<(string Name, TypeId TypeId, string TypeName, IReadOnlyList<int> TypeArguments)>();
         for (var i = 0; i < adt.Fields.Count; i++)
         {
             var field = adt.Fields[i];
@@ -894,7 +894,19 @@ public sealed partial class NameResolver
 
             // 查找 TypeId（使用基础类型名或全局类型查找）
             var fieldTypeId = ResolveCStructFieldTypeId(typeName);
-            fieldEntries.Add((field.Name, fieldTypeId, typeName));
+
+            // Cfn 字段携带完整类型实参（Cfn[A..., R]），供访问器保留签名。
+            var typeArguments = ResolveCStructFieldTypeArguments(field, typeName);
+            if (typeArguments == null)
+            {
+                AddError(field.Span, DiagnosticMessages.CStructFieldTypeNotFfiSafe(
+                    adt.Name,
+                    field.Name,
+                    FormatCStructFieldTypeName(typePath)));
+                continue;
+            }
+
+            fieldEntries.Add((field.Name, fieldTypeId, typeName, typeArguments));
         }
 
         if (fieldEntries.Count != adt.Fields.Count)
@@ -904,7 +916,7 @@ public sealed partial class NameResolver
 
         // 计算布局
         var layoutFields = fieldEntries
-            .Select(f => (f.Name, f.TypeId))
+            .Select(f => (f.Name, f.TypeId, f.TypeArguments))
             .ToList();
 
         var layout = CStructLayoutComputer.Compute(
@@ -916,6 +928,57 @@ public sealed partial class NameResolver
 
         // 注册字段访问器内置函数
         RegisterCStructAccessors(adt.Name, layout, adt.Span);
+    }
+
+    /// <summary>
+    /// 解析 @cstruct 字段的完整类型实参。仅 Cfn[A..., R] 需要保留实参；
+    /// 其余 FFI-safe 字段（含 Ptr[T]）都按单一 TypeId 承载。
+    /// </summary>
+    private IReadOnlyList<int>? ResolveCStructFieldTypeArguments(Field field, string typeName)
+    {
+        if (field.Type is not TypePath typePath || typePath.TypeArgs.Count == 0)
+        {
+            return [];
+        }
+
+        if (!string.Equals(typeName, WellKnownStrings.BuiltinTypes.Cfn, StringComparison.Ordinal))
+        {
+            return [];
+        }
+
+        var arguments = new List<int>(typePath.TypeArgs.Count);
+        foreach (var typeArg in typePath.TypeArgs)
+        {
+            // Cfn 字段实参限定为无嵌套的 FFI-safe 标量/指针类型；
+            // 嵌套 Cfn 与泛型实参的完整类型结构由 C2E 走 C 侧 accessor 桥承载。
+            if (typeArg is not TypePath argPath ||
+                argPath.TypeArgs.Count != 0 ||
+                CStructLayoutComputer.GetTypeInfoByName(argPath.TypeName) == null)
+            {
+                return null;
+            }
+
+            var argumentId = ResolveCStructFieldTypeId(argPath.TypeName);
+            if (!argumentId.IsValid)
+            {
+                return null;
+            }
+
+            arguments.Add(argumentId.Value);
+        }
+
+        return arguments;
+    }
+
+    private static string FormatCStructFieldTypeName(TypePath path)
+    {
+        if (path.TypeArgs.Count == 0)
+        {
+            return path.TypeName;
+        }
+
+        return $"{path.TypeName}[{string.Join(", ", path.TypeArgs.Select(static argument =>
+            argument is TypePath argumentPath ? argumentPath.TypeName : "..."))}]";
     }
 
     /// <summary>
@@ -971,11 +1034,13 @@ public sealed partial class NameResolver
         {
             // Getter: {prefix}_{field}(ptr) -> FieldType
             var getterName = $"{prefix}_{field.Name}";
-            _symbolTable.RegisterCStructAccessor(getterName, span, field.Offset, field.TypeId, isGetter: true);
+            _symbolTable.RegisterCStructAccessor(
+                getterName, span, field.Offset, field.TypeId, isGetter: true, field.TypeArguments);
 
             // Setter: {prefix}_{field}_set(ptr, value) -> Unit
             var setterName = $"{prefix}_{field.Name}_set";
-            _symbolTable.RegisterCStructAccessor(setterName, span, field.Offset, field.TypeId, isGetter: false);
+            _symbolTable.RegisterCStructAccessor(
+                setterName, span, field.Offset, field.TypeId, isGetter: false, field.TypeArguments);
         }
     }
 

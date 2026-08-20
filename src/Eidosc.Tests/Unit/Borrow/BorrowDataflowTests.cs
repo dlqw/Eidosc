@@ -434,7 +434,12 @@ public partial class BorrowDataflowTests
                             }
                         }
                     ],
-                    Terminator = new MirReturn { Value = null }
+                    // 借用者经由返回值保持活跃：字段敏感冲突锚点依赖"借用者存活"，
+                    // 借用按活性终结后，未使用的借用不再构成冲突。
+                    Terminator = new MirReturn
+                    {
+                        Value = new MirPlace { Kind = PlaceKind.Local, Local = borrowed, TypeId = intType }
+                    }
                 }
             ]
         };
@@ -567,7 +572,11 @@ public partial class BorrowDataflowTests
                             Value = new MirConstant { TypeId = intType, Value = new MirConstantValue.IntValue(1) }
                         }
                     ],
-                    Terminator = new MirReturn { Value = null }
+                    // 借用者经由返回值保持活跃：符号化索引的保守冲突锚点依赖"借用者存活"。
+                    Terminator = new MirReturn
+                    {
+                        Value = new MirPlace { Kind = PlaceKind.Local, Local = borrowed, TypeId = intType }
+                    }
                 }
             ]
         };

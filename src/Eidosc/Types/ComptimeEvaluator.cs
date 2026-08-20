@@ -2098,6 +2098,21 @@ internal static partial class ComptimeEvaluator
 
                 value = new ComptimeIntegerValue(a % b);
                 return true;
+            case BinaryOp.BitAnd:
+                value = new ComptimeIntegerValue(a & b);
+                return true;
+            case BinaryOp.BitOr:
+                value = new ComptimeIntegerValue(a | b);
+                return true;
+            case BinaryOp.BitXor:
+                value = new ComptimeIntegerValue(a ^ b);
+                return true;
+            case BinaryOp.ShiftLeft:
+                value = new ComptimeIntegerValue(a << (int)b);
+                return true;
+            case BinaryOp.ShiftRight:
+                value = new ComptimeIntegerValue(a >> (int)b);
+                return true;
             case BinaryOp.Less:
                 value = new ComptimeBoolValue(a < b);
                 return true;

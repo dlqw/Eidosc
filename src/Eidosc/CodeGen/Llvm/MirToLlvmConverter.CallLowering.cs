@@ -246,6 +246,27 @@ public sealed partial class MirToLlvmConverter
             return ConvertPtrAdd(call);
         }
 
+        // FFI: ptr_to_int(ptr) — 指针转整数（ptrdiff）
+        if (call.Function is MirFunctionRef ptrToIntRef &&
+            TryGetBuiltinIntrinsicName(ptrToIntRef, WellKnownStrings.InternalNames.PtrToInt, out _))
+        {
+            return ConvertPtrToInt(call);
+        }
+
+        // FFI: int_to_ptr(v) — 整数位模式回指针（(T*)n）
+        if (call.Function is MirFunctionRef intToPtrRef &&
+            TryGetBuiltinIntrinsicName(intToPtrRef, WellKnownStrings.InternalNames.IntToPtr, out _))
+        {
+            return ConvertIntToPtr(call);
+        }
+
+        // FFI: float_to_int(v) — C 截断语义的 Float→Int
+        if (call.Function is MirFunctionRef floatToIntRef &&
+            TryGetBuiltinIntrinsicName(floatToIntRef, WellKnownStrings.InternalNames.FloatToInt, out _))
+        {
+            return ConvertFloatToInt(call);
+        }
+
         if (call.Function is MirFunctionRef valueBoxRef &&
             TryGetBuiltinIntrinsicName(valueBoxRef, WellKnownStrings.InternalNames.ValueBox, out _))
         {

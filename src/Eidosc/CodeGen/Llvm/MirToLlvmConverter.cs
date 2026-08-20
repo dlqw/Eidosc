@@ -1783,6 +1783,12 @@ public sealed partial class MirToLlvmConverter
             BinaryOp.Mod => left.Type is LlvmFloatType ? "frem" : isUnsigned ? "urem" : "srem",
             BinaryOp.And => "and",
             BinaryOp.Or => "or",
+            BinaryOp.BitAnd => "and",
+            BinaryOp.BitOr => "or",
+            BinaryOp.BitXor => "xor",
+            BinaryOp.Shl => "shl",
+            // 右移按符号性：无符号 lshr，有符号 ashr（与 udiv/sdiv 的 isUnsigned 判定一致）
+            BinaryOp.Shr => isUnsigned ? "lshr" : "ashr",
             _ => "add"
         };
 
@@ -1806,6 +1812,13 @@ public sealed partial class MirToLlvmConverter
             resultType = LlvmIntType.I1;
             left = CoerceIntegerToWidth(left, 1, "bin_l");
             right = CoerceIntegerToWidth(right, 1, "bin_r");
+        }
+        else if (binOp.Operator is BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor or BinaryOp.Shl or BinaryOp.Shr)
+        {
+            // 位运算仅 Int：操作数提升到 i64 字宽后按位计算。
+            resultType = LlvmIntType.I64;
+            left = CoerceIntOperandToWord(left, binOp.Left.TypeId);
+            right = CoerceIntOperandToWord(right, binOp.Right.TypeId);
         }
 
         var llvmBinOp = new LlvmBinOp

@@ -135,7 +135,12 @@ public enum BinaryOp
     Ge,
     And,
     Or,
-    Concat
+    Concat,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr
 }
 
 /// <summary>

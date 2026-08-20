@@ -213,6 +213,12 @@ internal delegate uint ClangIsConstQualifiedTypeFn(ClangType type);
 internal delegate long ClangGetArraySizeFn(ClangType type);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangType ClangGetArrayElementTypeFn(ClangType type);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate ClangCursor ClangGetTypeDeclarationFn(ClangType type);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate long ClangCursorGetOffsetOfFieldFn(ClangCursor cursor);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -249,6 +255,15 @@ internal delegate void ClangDisposeDiagnosticFn(IntPtr diagnostic);
 internal delegate ClangSourceLocation ClangGetCursorLocationFn(ClangCursor cursor);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangLocationIsInSystemHeaderFn(ClangSourceLocation location);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangGetCursorStorageClassFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate int ClangGetCursorLinkageFn(ClangCursor cursor);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate void ClangGetFileLocationFn(
     ClangSourceLocation location,
     out IntPtr file,
@@ -282,6 +297,9 @@ internal delegate int ClangEvalResultGetAsIntFn(IntPtr evalResult);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate long ClangEvalResultGetAsLongLongFn(IntPtr evalResult);
+
+[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+internal delegate double ClangEvalResultGetAsDoubleFn(IntPtr evalResult);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate IntPtr ClangEvalResultGetAsStrFn(IntPtr evalResult);
@@ -351,6 +369,8 @@ internal sealed class ClangApi
         GetPointeeType = GetExport<ClangGetPointeeTypeFn>(library, "clang_getPointeeType");
         IsConstQualifiedType = GetExport<ClangIsConstQualifiedTypeFn>(library, "clang_isConstQualifiedType");
         GetArraySize = GetExport<ClangGetArraySizeFn>(library, "clang_getArraySize");
+        GetArrayElementType = GetExport<ClangGetArrayElementTypeFn>(library, "clang_getArrayElementType");
+        GetTypeDeclaration = GetExport<ClangGetTypeDeclarationFn>(library, "clang_getTypeDeclaration");
         CursorGetOffsetOfField = GetExport<ClangCursorGetOffsetOfFieldFn>(library, "clang_Cursor_getOffsetOfField");
         TypeGetSizeOf = GetExport<ClangTypeGetSizeOfFn>(library, "clang_Type_getSizeOf");
         TypeGetAlignOf = GetExport<ClangTypeGetAlignOfFn>(library, "clang_Type_getAlignOf");
@@ -363,6 +383,9 @@ internal sealed class ClangApi
         GetDiagnosticSpelling = GetExport<ClangGetDiagnosticSpellingFn>(library, "clang_getDiagnosticSpelling");
         DisposeDiagnostic = GetExport<ClangDisposeDiagnosticFn>(library, "clang_disposeDiagnostic");
         GetCursorLocation = GetExport<ClangGetCursorLocationFn>(library, "clang_getCursorLocation");
+        LocationIsInSystemHeader = GetExport<ClangLocationIsInSystemHeaderFn>(library, "clang_Location_isInSystemHeader");
+        GetCursorStorageClass = GetExport<ClangGetCursorStorageClassFn>(library, "clang_Cursor_getStorageClass");
+        GetCursorLinkage = GetExport<ClangGetCursorLinkageFn>(library, "clang_getCursorLinkage");
         GetFileLocation = GetExport<ClangGetFileLocationFn>(library, "clang_getFileLocation");
         GetFileName = GetExport<ClangGetFileNameFn>(library, "clang_getFileName");
         GetClangVersion = GetExport<ClangGetClangVersionFn>(library, "clang_getClangVersion");
@@ -373,6 +396,7 @@ internal sealed class ClangApi
         EvalResultGetKind = GetExport<ClangEvalResultGetKindFn>(library, "clang_EvalResult_getKind");
         EvalResultGetAsInt = GetExport<ClangEvalResultGetAsIntFn>(library, "clang_EvalResult_getAsInt");
         EvalResultGetAsLongLong = GetExport<ClangEvalResultGetAsLongLongFn>(library, "clang_EvalResult_getAsLongLong");
+        EvalResultGetAsDouble = GetExport<ClangEvalResultGetAsDoubleFn>(library, "clang_EvalResult_getAsDouble");
         EvalResultGetAsStr = GetExport<ClangEvalResultGetAsStrFn>(library, "clang_EvalResult_getAsStr");
         EvalResultDispose = GetExport<ClangEvalResultDisposeFn>(library, "clang_EvalResult_dispose");
         GetCursorExtent = GetExport<ClangGetCursorExtentFn>(library, "clang_getCursorExtent");
@@ -403,6 +427,8 @@ internal sealed class ClangApi
     internal ClangGetPointeeTypeFn GetPointeeType { get; }
     internal ClangIsConstQualifiedTypeFn IsConstQualifiedType { get; }
     internal ClangGetArraySizeFn GetArraySize { get; }
+    internal ClangGetArrayElementTypeFn GetArrayElementType { get; }
+    internal ClangGetTypeDeclarationFn GetTypeDeclaration { get; }
     internal ClangCursorGetOffsetOfFieldFn CursorGetOffsetOfField { get; }
     internal ClangTypeGetSizeOfFn TypeGetSizeOf { get; }
     internal ClangTypeGetAlignOfFn TypeGetAlignOf { get; }
@@ -415,6 +441,9 @@ internal sealed class ClangApi
     internal ClangGetDiagnosticSpellingFn GetDiagnosticSpelling { get; }
     internal ClangDisposeDiagnosticFn DisposeDiagnostic { get; }
     internal ClangGetCursorLocationFn GetCursorLocation { get; }
+    internal ClangLocationIsInSystemHeaderFn LocationIsInSystemHeader { get; }
+    internal ClangGetCursorStorageClassFn GetCursorStorageClass { get; }
+    internal ClangGetCursorLinkageFn GetCursorLinkage { get; }
     internal ClangGetFileLocationFn GetFileLocation { get; }
     internal ClangGetFileNameFn GetFileName { get; }
     internal ClangGetClangVersionFn GetClangVersion { get; }
@@ -425,6 +454,7 @@ internal sealed class ClangApi
     internal ClangEvalResultGetKindFn EvalResultGetKind { get; }
     internal ClangEvalResultGetAsIntFn EvalResultGetAsInt { get; }
     internal ClangEvalResultGetAsLongLongFn EvalResultGetAsLongLong { get; }
+    internal ClangEvalResultGetAsDoubleFn EvalResultGetAsDouble { get; }
     internal ClangEvalResultGetAsStrFn EvalResultGetAsStr { get; }
     internal ClangEvalResultDisposeFn EvalResultDispose { get; }
     internal ClangGetCursorExtentFn GetCursorExtent { get; }

@@ -24,6 +24,8 @@ internal static partial class DiagnosticMessages
     public static string OpenDynamicTypeReachedLlvmLowering(string typeKey, TypeId typeId) =>
         Format(nameof(OpenDynamicTypeReachedLlvmLowering), typeKey, typeId);
 
+    public static string BitwiseOperandMustBeInt => Get(nameof(BitwiseOperandMustBeInt));
+
     public static string DiagnosticLevelError => Get(nameof(DiagnosticLevelError));
 
     public static string DiagnosticLevelWarning => Get(nameof(DiagnosticLevelWarning));

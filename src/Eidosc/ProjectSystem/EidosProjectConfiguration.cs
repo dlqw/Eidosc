@@ -30,6 +30,7 @@ public sealed record EidosFfiConfiguration
     public string[] IncludePaths { get; init; } = [];
     public string[] NativeSources { get; init; } = [];
     public string[] LinkerFlags { get; init; } = [];
+    public string[] FloorSymbols { get; init; } = [];
     public Dictionary<string, string[]>? Platform { get; init; }
 }
 
@@ -284,6 +285,7 @@ public static class EidosProjectConfigurationLoader
                     IncludePaths = NormalizeImportRoots(configDocument.Ffi.IncludePaths, baseDirectory),
                     NativeSources = NormalizeFileLikePaths(configDocument.Ffi.NativeSources, baseDirectory),
                     LinkerFlags = NormalizeReferenceNames(configDocument.Ffi.LinkerFlags),
+                    FloorSymbols = (configDocument.Ffi.FloorSymbols ?? []).Distinct(StringComparer.Ordinal).ToArray(),
                     Platform = configDocument.Ffi.Platform
                 };
             }

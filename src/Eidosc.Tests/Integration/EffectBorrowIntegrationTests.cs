@@ -11,17 +11,17 @@ public class EffectBorrowIntegrationTests
     [Fact]
     public void EffectDefinitions_WithBorrowConflict_StillReportsE1002()
     {
+        // mref 借用者在共享借用创建点仍活跃（结尾使用 y）：真冲突；
+        // 效果定义存在时借用检查照常报告。
         const string source = """
 Console :: effect;
 
-main[A] :: Int -> A
+demo :: Int -> Int
 {
-    _ => {
-        mut x := "hello";
-        mut cond := x == "hello";
-        x := "world";
-        cond := false;
-        0;
+    x => {
+        mref y := x;
+        ref z := x;
+        x + y + z
     }
 }
 """;
@@ -30,7 +30,7 @@ main[A] :: Int -> A
         {
             InputFile = "effect_borrow_conflict.eidos",
             StopAtPhase = CompilationPhase.Borrow,
-            UseColors = false
+                UseColors = false
         };
 
         var result = new CompilationPipeline(source, options).Run();

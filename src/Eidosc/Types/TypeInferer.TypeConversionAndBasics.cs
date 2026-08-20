@@ -103,6 +103,11 @@ public sealed partial class TypeInferer
             };
         }
 
+        if (TryCreateCStructAccessorFunctionType(funcSymbol, out var cstructAccessorType))
+        {
+            return cstructAccessorType;
+        }
+
         var paramTypes = Enumerable.Range(0, funcSymbol.Parameters.Count)
             .Select(index => index < funcSymbol.ParamTypes.Count && funcSymbol.ParamTypes[index].IsValid
                 ? CreateMetadataType(funcSymbol.ParamTypes[index])
@@ -361,6 +366,8 @@ public sealed partial class TypeInferer
         {
             BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply or
             BinaryOp.Divide or BinaryOp.Modulo => InferArithmeticBinary(leftType, rightType, binary.Span),
+            BinaryOp.ShiftLeft or BinaryOp.ShiftRight or BinaryOp.BitAnd or
+            BinaryOp.BitXor or BinaryOp.BitOr => InferBitwiseBinary(leftType, rightType, binary.Span),
             BinaryOp.Concat => InferConcatBinary(leftType, rightType, binary.Span),
             BinaryOp.Less or BinaryOp.Greater or BinaryOp.LessEqual or
             BinaryOp.GreaterEqual or BinaryOp.Equal or BinaryOp.NotEqual
@@ -719,6 +726,24 @@ public sealed partial class TypeInferer
     private Type InferArithmeticBinary(Type leftType, Type rightType, SourceSpan span)
     {
         return TryUnify(leftType, rightType, span, DiagnosticMessages.ArithmeticOperandTypeMismatch);
+    }
+
+    /// <summary>位运算（& | ^ << >>）：仅 Int 参与，结果 Int；Bool/Float 不进入。</summary>
+    private Type InferBitwiseBinary(Type leftType, Type rightType, SourceSpan span)
+    {
+        var leftResult = TryUnify(leftType, BaseTypes.Int, span, DiagnosticMessages.BitwiseOperandMustBeInt);
+        if (ContainsErrorRecoveryType(leftResult))
+        {
+            return CreateErrorRecoveryType();
+        }
+
+        var rightResult = TryUnify(rightType, BaseTypes.Int, span, DiagnosticMessages.BitwiseOperandMustBeInt);
+        if (ContainsErrorRecoveryType(rightResult))
+        {
+            return CreateErrorRecoveryType();
+        }
+
+        return BaseTypes.Int;
     }
 
     private Type InferConcatBinary(Type leftType, Type rightType, SourceSpan span)

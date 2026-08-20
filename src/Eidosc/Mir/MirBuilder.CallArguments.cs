@@ -318,17 +318,112 @@ public sealed partial class MirBuilder
         {
             Target = temp,
             Source = place,
-            CreatesBorrowAlias = ShouldCreateBorrowAliasForProjectedArgument(typeId, forceCopy),
+            CreatesBorrowAlias = ShouldCreateBorrowAliasForProjectedArgument(place, typeId, forceCopy),
             Span = span
         });
         return temp;
     }
 
-    private bool ShouldCreateBorrowAliasForProjectedArgument(TypeId typeId, bool forceCopy)
+    /// <summary>
+    /// Seq 索引投影（xs[i]）可靠判别：基位置的类型是内建 Seq TyCon。
+    /// 判据链：基 place 的 TypeId →（Local 基）当前函数局部声明类型表 → 描述符/
+    /// 动态键里的 TyCon 构造键 == SymbolTable 解析到的 Seq 符号（缓存）。
+    /// 嵌套投影（xs[i][j]）与 Ref[Seq] 解引用基经 Deref/Index place 自带的
+    /// TypeId 走主路径。
+    /// </summary>
+    private TypeConstructorKey? _sequenceConstructorKey;
+    private readonly HashSet<int> _sequenceTypeIds = [];
+    private MirFunc? _sequenceLocalTypesFunc;
+    private Dictionary<LocalId, TypeId>? _sequenceLocalTypes;
+
+    private bool IsSequenceIndexProjection(MirPlace place)
+    {
+        if (place.Kind != PlaceKind.Index || place.Base == null)
+        {
+            return false;
+        }
+
+        var baseTypeId = place.Base.TypeId;
+        if (!baseTypeId.IsValid &&
+            place.Base.Kind == PlaceKind.Local &&
+            TryGetLocalTypeId(place.Base.Local, out var declaredTypeId))
+        {
+            baseTypeId = declaredTypeId;
+        }
+
+        return IsSequenceTypeId(baseTypeId);
+    }
+
+    /// <summary>当前函数的局部 → 声明类型表（按函数缓存，避免逐次线性扫描）。</summary>
+    private bool TryGetLocalTypeId(LocalId localId, out TypeId typeId)
+    {
+        typeId = TypeId.None;
+        if (_currentFunc == null)
+        {
+            return false;
+        }
+
+        if (_sequenceLocalTypesFunc != _currentFunc || _sequenceLocalTypes == null)
+        {
+            _sequenceLocalTypesFunc = _currentFunc;
+            _sequenceLocalTypes = _currentFunc.Locals.ToDictionary(static local => local.Id, static local => local.TypeId);
+        }
+
+        return _sequenceLocalTypes.TryGetValue(localId, out typeId!) && typeId.IsValid;
+    }
+
+    private bool IsSequenceTypeId(TypeId typeId)
+    {
+        if (!typeId.IsValid)
+        {
+            return false;
+        }
+
+        if (_sequenceTypeIds.Contains(typeId.Value))
+        {
+            return true;
+        }
+
+        _sequenceConstructorKey ??= _symbolTable?.LookupType(WellKnownStrings.BuiltinTypes.Seq) is { } sequenceSymbolId
+            ? TypeConstructorKey.FromSymbol(sequenceSymbolId)
+            : null;
+        if (_sequenceConstructorKey is not { } sequenceKey)
+        {
+            return false;
+        }
+
+        if (_typeDescriptorsById.TryGetValue(typeId.Value, out var descriptor) &&
+            descriptor is TypeDescriptor.TyCon { Constructor: var constructor } &&
+            constructor == sequenceKey)
+        {
+            _sequenceTypeIds.Add(typeId.Value);
+            return true;
+        }
+
+        if (_dynamicTypeKeysById.TryGetValue(typeId.Value, out var typeKey) &&
+            TypeKeyParsing.TryParseTyConTypeKey(typeKey, out var dynamicConstructor, out _) &&
+            dynamicConstructor == sequenceKey)
+        {
+            _sequenceTypeIds.Add(typeId.Value);
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool ShouldCreateBorrowAliasForProjectedArgument(MirPlace place, TypeId typeId, bool forceCopy)
     {
         _ = forceCopy;
 
         if (IsFirstClassReferenceType(typeId))
+        {
+            return false;
+        }
+
+        // Seq 索引投影按运行时语义是独立引用计数副本（非别名载入会 IncRef，
+        // 见 MirToLlvmConverter 的托管 RC 投影载入路径），不是"从 owning
+        // aggregate 移出"——直接作所有权实参是合法的。
+        if (IsSequenceIndexProjection(place))
         {
             return false;
         }

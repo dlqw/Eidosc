@@ -104,4 +104,9 @@ public enum SyntaxKind
     PtUnderscore,   // _
     PtColon,        // :
     PtAt,           // @
+
+    // 位运算符（追加在尾部以保持既有 kind 数值稳定）
+    OpCaret,        // ^
+    OpLessLess,     // <<
+    OpGreaterGreater, // >>
 }

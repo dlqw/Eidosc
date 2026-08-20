@@ -37,6 +37,11 @@ public sealed partial class HirBuilder
         [Ast.BinaryOp.And] = Hir.BinaryOp.And,
         [Ast.BinaryOp.Or] = Hir.BinaryOp.Or,
         [Ast.BinaryOp.Concat] = Hir.BinaryOp.Concat,
+        [Ast.BinaryOp.BitAnd] = Hir.BinaryOp.BitAnd,
+        [Ast.BinaryOp.BitOr] = Hir.BinaryOp.BitOr,
+        [Ast.BinaryOp.BitXor] = Hir.BinaryOp.BitXor,
+        [Ast.BinaryOp.ShiftLeft] = Hir.BinaryOp.Shl,
+        [Ast.BinaryOp.ShiftRight] = Hir.BinaryOp.Shr,
     }.ToFrozenDictionary();
 
     private sealed record StdlibDesugaring(
