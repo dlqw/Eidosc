@@ -3612,6 +3612,21 @@ internal sealed class CBodyTranslator
                     return casted;
                 }
 
+                if (castMapping.IsFunctionPointer &&
+                    innerMapping?.IsFunctionPointer == true &&
+                    castMapping.EidosType != innerMapping.EidosType)
+                {
+                    // C 显式函数指针 cast（glad loader：GLADloadproc → PFNGL...）。
+                    // Cfn 是不同签名类型，经 RawPtr 中转重建目标签名（C ABI 同为指针）。
+                    var casted = TranslateExpression(inner[0], context, state, asStatement);
+                    if (casted == null)
+                    {
+                        return null;
+                    }
+
+                    return $"{{{Environment.NewLine}    c2e_cfn_ptr: RawPtr := {casted};{Environment.NewLine}    c2e_cfn_typed: {castMapping.EidosType} := c2e_cfn_ptr;{Environment.NewLine}    c2e_cfn_typed{Environment.NewLine}}}";
+                }
+
                 if (castMapping.EidosType == innerMapping?.EidosType)
                 {
                     // 同 Eidos 类型（含记录、整数宽度变化）按值域内语义透明透传。

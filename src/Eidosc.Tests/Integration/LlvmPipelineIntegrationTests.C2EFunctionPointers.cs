@@ -30,9 +30,12 @@ public partial class LlvmPipelineIntegrationTests
 
         const string cSource = """
             typedef int (*BinOp)(int, int);
+            typedef void (*VoidFn)(void);
 
             static int add(int a, int b) { return a + b; }
             static int mul(int a, int b) { return a * b; }
+
+            BinOp promote(VoidFn fn) { return (BinOp)fn; }
 
             static BinOp g_op = mul;
 
@@ -118,6 +121,7 @@ public partial class LlvmPipelineIntegrationTests
             Assert.Contains("Ffi.pointer_eq(left)(right)", translated, StringComparison.Ordinal);
             Assert.Contains("Ffi.load[Cfn[Int, Int, Int]]", translated, StringComparison.Ordinal);
             Assert.Contains("Ffi.store[Cfn[Int, Int, Int]]", translated, StringComparison.Ordinal);
+            Assert.Contains("c2e_cfn_typed: Cfn[Int, Int, Int] := c2e_cfn_ptr", translated, StringComparison.Ordinal);
 
             var eidosSource = translated + """
 
