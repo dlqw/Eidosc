@@ -1456,6 +1456,19 @@ public sealed partial class TypeInferer
 
     private Type ResolveCStructAccessorFieldType(FuncSymbol getterSymbol)
     {
+        if (getterSymbol.CStructFieldTypeId.Value == BaseTypes.CfnId &&
+            getterSymbol.CStructFieldTypeArguments.Count > 0)
+        {
+            return new TyCon
+            {
+                Name = WellKnownStrings.BuiltinTypes.Cfn,
+                Id = new TypeId(BaseTypes.CfnId),
+                Args = getterSymbol.CStructFieldTypeArguments
+                    .Select(static argumentId => CreateMetadataType(new TypeId(argumentId)))
+                    .ToList()
+            };
+        }
+
         return getterSymbol.CStructFieldTypeId.Value switch
         {
             BaseTypes.IntId => BaseTypes.Int,

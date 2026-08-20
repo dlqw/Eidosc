@@ -103,6 +103,11 @@ public sealed partial class TypeInferer
             };
         }
 
+        if (TryCreateCStructAccessorFunctionType(funcSymbol, out var cstructAccessorType))
+        {
+            return cstructAccessorType;
+        }
+
         var paramTypes = Enumerable.Range(0, funcSymbol.Parameters.Count)
             .Select(index => index < funcSymbol.ParamTypes.Count && funcSymbol.ParamTypes[index].IsValid
                 ? CreateMetadataType(funcSymbol.ParamTypes[index])

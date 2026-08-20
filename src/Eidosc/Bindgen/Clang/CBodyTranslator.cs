@@ -1006,15 +1006,10 @@ internal sealed class CBodyTranslator
 
         var returnCanonical = _api.GetCanonicalType(_api.GetResultType(proto));
         var returnSpelling = _api.GetString(_api.GetTypeSpelling(returnCanonical));
-        // 函数指针返回（glad loader 的 GLADloadproc 形态）：C 侧以 void* 中转（cast 位
-        // 保留真签名），Eidos 侧即 RawPtr。
+        // 函数指针返回（glad loader 的 GLADloadproc 形态）：Cfn 直译保留签名；
+        // 摘要 shim 路径仍以 C 侧 void* 中转（cast 位保留真签名）。
         var returnsFunctionPointer = returnSpelling.Contains("(*)");
         var returnMapping = MapType(_api.GetResultType(proto));
-        if (returnsFunctionPointer && returnMapping?.EidosType != "RawPtr")
-        {
-            SkipReason = "function pointer signature returns a function pointer";
-            return null;
-        }
         if ((ClangTypeKind)returnCanonical.Kind == ClangTypeKind.Float ||
             (returnMapping != null && returnMapping.EidosType == "Float"))
         {
@@ -1034,7 +1029,9 @@ internal sealed class CBodyTranslator
             }
 
             var mapping = MapType(argType);
-            if (mapping == null || mapping.EidosType is not ("Int" or "RawPtr" or "Unit"))
+            if (mapping == null ||
+                mapping.EidosType is not ("Int" or "RawPtr" or "Unit" or "Bool") &&
+                !mapping.EidosType.StartsWith("Cfn[", StringComparison.Ordinal))
             {
                 SkipReason = "function pointer signature has an unsupported parameter type";
                 return null;
@@ -1042,6 +1039,48 @@ internal sealed class CBodyTranslator
 
             paramSpells.Add(_api.GetString(_api.GetTypeSpelling(_api.GetCanonicalType(argType))));
             paramMappings.Add(mapping);
+        }
+
+        var calleeMapping = MapType(_api.GetCursorType(calleeCursor));
+        var functionPointer = TranslateExpression(calleeCursor, context, state);
+        if (functionPointer == null)
+        {
+            return null;
+        }
+
+        var argumentTexts = new List<string>(argumentList.Count + 1) { functionPointer };
+        for (var i = 0; i < argumentList.Count; i++)
+        {
+            var translated = TranslateCallArgument(
+                argumentList[i],
+                paramMappings[Math.Min(i, paramMappings.Count - 1)],
+                context,
+                state);
+            if (translated == null)
+            {
+                return null;
+            }
+
+            argumentTexts.Add(translated);
+        }
+
+        // 类型化 Cfn 指针：直接用编译器内建 cfn_call（签名由 Cfn[A..., R] 静态携带），
+        // 不再为同一签名生成 C 摘要 shim。
+        if (calleeMapping?.IsFunctionPointer == true)
+        {
+            state.MarkFfiImport();
+            if (!string.IsNullOrEmpty(state.CurrentFunction))
+            {
+                state.FunctionUsesFfi.Add(state.CurrentFunction);
+            }
+
+            return $"Ffi.cfn_call({string.Join(", ", argumentTexts)})";
+        }
+
+        if (returnsFunctionPointer && returnMapping?.EidosType != "RawPtr")
+        {
+            SkipReason = "function pointer signature returns a function pointer";
+            return null;
         }
 
         var digest = MangleSignature(returnSpelling, paramSpells);
@@ -1056,29 +1095,33 @@ internal sealed class CBodyTranslator
             state.FunctionUsesFfi.Add(state.CurrentFunction);
         }
 
-        var functionPointer = TranslateExpression(calleeCursor, context, state);
-        if (functionPointer == null)
-        {
-            return null;
-        }
-
-        var argumentTexts = new List<string>(argumentList.Count) { functionPointer };
-        for (var i = 0; i < argumentList.Count; i++)
-        {
-            var translated = TranslateCallArgument(argumentList[i], paramMappings[Math.Min(i, paramMappings.Count - 1)], context, state);
-            if (translated == null)
-            {
-                return null;
-            }
-
-            argumentTexts.Add(translated);
-        }
-
         return $"c2e_icall_{digest}({string.Join(", ", argumentTexts)})";
     }
 
     private string TranslateFunctionAddress(string name, TranslationState state)
     {
+        // 翻译产物与 extern 绑定都有 Eidos 函数值：直接 cfn_from（零捕获函数引用）。
+        // 只有无法生成 Eidos 函数绑定的 C 符号（static/内联/内建）才回退 C 侧地址 shim。
+        if (_translatableCandidates.Contains(name) && !_bannedCallees.Contains(name))
+        {
+            state.MarkFfiImport();
+            return $"Ffi.cfn_from({name})";
+        }
+
+        if (state.PendingExterns.TryGetValue(name, out var pending))
+        {
+            state.MarkFfiImport();
+            return $"Ffi.cfn_from({pending.EidosName})";
+        }
+
+        if (state.DeclaredFunctions.TryGetValue(name, out var declaration) &&
+            !NeedsForwarderShim(declaration, name) &&
+            TryBuildExternBinding(name, declaration, state, out var eidosName))
+        {
+            state.MarkFfiImport();
+            return $"Ffi.cfn_from({eidosName})";
+        }
+
         var cName = $"c2e_addr_{_sourceTag}_{name}";
         state.FnAddrShims.TryAdd(name, new FnAddrShim(cName, name));
         if (!string.IsNullOrEmpty(state.CurrentFunction))
@@ -1087,6 +1130,54 @@ internal sealed class CBodyTranslator
         }
 
         return $"{cName}()";
+    }
+
+    /// <summary>为只取址、未直接调用的外部函数按需建立 extern(c) 绑定（无 float/sret 桥）。</summary>
+    private bool TryBuildExternBinding(
+        string name,
+        ClangCursor declaration,
+        TranslationState state,
+        out string eidosName)
+    {
+        eidosName = $"c2e_ext_{name}";
+        if (state.PendingExterns.ContainsKey(name))
+        {
+            return true;
+        }
+
+        var functionType = _api.GetCursorType(declaration);
+        var arity = _api.GetNumArgTypes(functionType);
+        if (arity < 0)
+        {
+            return false;
+        }
+
+        var parameterTypes = new List<string>(arity);
+        for (var i = 0; i < arity; i++)
+        {
+            var mapping = MapType(_api.GetArgType(functionType, (uint)i));
+            if (mapping == null || IsValueRecord(mapping))
+            {
+                return false;
+            }
+
+            parameterTypes.Add(mapping.EidosType);
+        }
+
+        var returnMapping = MapType(_api.GetResultType(functionType));
+        if (returnMapping == null || IsValueRecord(returnMapping))
+        {
+            return false;
+        }
+
+        state.PendingExterns.TryAdd(name, new PendingExtern(
+            name,
+            eidosName,
+            parameterTypes,
+            returnMapping.EidosType,
+            name,
+            IsSystemDeclaration(declaration)));
+        return true;
     }
 
     /// <summary>签名摘要（icall 命名）：返回类型与参数 C 拼接后压缩为标识符字符。</summary>
@@ -1641,7 +1732,7 @@ internal sealed class CBodyTranslator
         }
 
         // C 指针真值（if (p)）：Eidos 侧 Bool 语境必须经 pointer_eq 判空。
-        if (EidosTypeOf(conditionCursor) == "RawPtr")
+        if (IsPointerLikeEidosType(EidosTypeOf(conditionCursor)))
         {
             state.MarkFfiImport();
             return $"(!(Ffi.pointer_eq({condition})(Ffi.null_pointer())))";
@@ -3682,6 +3773,7 @@ internal sealed class CBodyTranslator
                     else
                     {
                         value = CoerceNumeric(value, EidosTypeOf(valueCursor), field.EidosType, state);
+                        value = CoercePointerLiteralTarget(valueCursor, value, field.EidosType, state);
                     }
 
                     parts.Add($"{SanitizeIdent(field.Name)}: {value}");
@@ -3714,12 +3806,12 @@ internal sealed class CBodyTranslator
                 var resultEidosType = MapType(_api.GetCursorType(expression))?.EidosType;
                 var thenType = EidosTypeOf(operands[1]);
                 var elseType = EidosTypeOf(operands[2]);
-                if (resultEidosType == "RawPtr")
+                if (IsPointerLikeEidosType(resultEidosType))
                 {
-                    thenText = CoerceStringToPointerTarget(operands[1], thenText, "RawPtr", state);
-                    thenText = CoercePointerLiteralTarget(operands[1], thenText, "RawPtr", state);
-                    elseText = CoerceStringToPointerTarget(operands[2], elseText, "RawPtr", state);
-                    elseText = CoercePointerLiteralTarget(operands[2], elseText, "RawPtr", state);
+                    thenText = CoerceStringToPointerTarget(operands[1], thenText, resultEidosType, state);
+                    thenText = CoercePointerLiteralTarget(operands[1], thenText, resultEidosType, state);
+                    elseText = CoerceStringToPointerTarget(operands[2], elseText, resultEidosType, state);
+                    elseText = CoercePointerLiteralTarget(operands[2], elseText, resultEidosType, state);
                 }
                 else if (thenType == "Float" && elseType == "Int")
                 {
@@ -3925,12 +4017,20 @@ internal sealed class CBodyTranslator
 
                 if (string.IsNullOrEmpty(callee))
                 {
-                    // 经函数指针的间接调用（GL loader 等）：按被调签名走 icall shim。
+                    // 经函数指针的间接调用（GL loader 等）：按被调签名走 cfn_call/icall shim。
                     return TranslateIndirectCall(calleeCursor, operands.Skip(1), context, state);
                 }
 
-                // 具名函数指针局部/参数的调用（int (*op)(int) = fn; op(x)）：
-                // 名字不是函数，是 RawPtr 值——同样走 icall。
+                // 具名函数指针局部/参数/member 的调用（int (*op)(int) = fn; op(x)）：
+                // 名字不是已声明的函数，是 Cfn/RawPtr 值——走间接调用。
+                // 直接函数调用的 callee 也会被 clang 包成 Pointer（函数名退化），必须排除。
+                if (!state.DefinedNames.Contains(callee) &&
+                    !state.DeclaredFunctions.ContainsKey(callee) &&
+                    IsFunctionPointerValue(calleeCursor))
+                {
+                    return TranslateIndirectCall(calleeCursor, operands.Skip(1), context, state);
+                }
+
                 if (!state.DefinedNames.Contains(callee) && !state.DeclaredFunctions.ContainsKey(callee) &&
                     context.VarTypes.TryGetValue(callee, out var calleeMapping) && calleeMapping.EidosType == "RawPtr")
                 {
@@ -4040,7 +4140,17 @@ internal sealed class CBodyTranslator
             case ClangTypeKind.Double:
                 return $"Ffi.load[Float]({address})";
             case ClangTypeKind.Pointer:
+            {
+                // 函数指针元素：按完整 Cfn[A..., R] 类型 load，供 cfn_call 静态检查。
+                var pointerPointee = _api.GetCanonicalType(_api.GetPointeeType(elementCanonical));
+                if ((ClangTypeKind)pointerPointee.Kind is ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto &&
+                    MapFunctionPointerType(pointerPointee) is { } functionPointerMapping)
+                {
+                    return $"Ffi.load[{functionPointerMapping.EidosType}]({address})";
+                }
+
                 return $"Ffi.load[RawPtr]({address})";
+            }
             case ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray:
                 // m[i]（元素本身是数组）退化为元素首地址，供外层下标/指针语境使用。
                 return address;
@@ -4094,7 +4204,17 @@ internal sealed class CBodyTranslator
             case ClangTypeKind.Double:
                 return $"Ffi.store[Float]({address})({value})";
             case ClangTypeKind.Pointer:
+            {
+                // 函数指针元素：按完整 Cfn[A..., R] 类型 store。
+                var pointerPointee = _api.GetCanonicalType(_api.GetPointeeType(elementCanonical));
+                if ((ClangTypeKind)pointerPointee.Kind is ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto &&
+                    MapFunctionPointerType(pointerPointee) is { } functionPointerMapping)
+                {
+                    return $"Ffi.store[{functionPointerMapping.EidosType}]({address})({value})";
+                }
+
                 return $"Ffi.store[RawPtr]({address})({value})";
+            }
             case ClangTypeKind.Record:
             {
                 // 记录元素写（recs[i] = rec）：地址上逐字段 accessor 装载
@@ -4300,6 +4420,16 @@ internal sealed class CBodyTranslator
                     TryGetOpaqueRecordName(_api.GetCanonicalType(_api.GetCursorType(operandGlobal)), out _))
                 {
                     return RegisterOpaqueGlobal(operandName, operandGlobal, state);
+                }
+            }
+
+            // &fn：C 函数取址与函数名退化等价，经 Eidos 函数引用转 Cfn。
+            if (current.Kind == ClangCursorKind2.DeclRefExpr)
+            {
+                var functionName = _api.GetString(_api.GetCursorSpelling(current));
+                if (state.DeclaredFunctions.ContainsKey(functionName))
+                {
+                    return TranslateFunctionAddress(functionName, state);
                 }
             }
 
@@ -5634,7 +5764,8 @@ internal sealed class CBodyTranslator
         string? targetEidosType,
         TranslationState state)
     {
-        if (valueText == null || targetEidosType != "RawPtr")
+        if (valueText == null ||
+            (targetEidosType != "RawPtr" && !(targetEidosType?.StartsWith("Cfn[", StringComparison.Ordinal) ?? false)))
         {
             return valueText;
         }
@@ -5898,7 +6029,7 @@ internal sealed class CBodyTranslator
     /// <summary>调用实参翻译：指针参数位置的整数字面量按 NULL/句柄语义转换。</summary>
     private string? TranslateCallArgument(ClangCursor argument, CTypeMapping? parameter, FunctionContext context, TranslationState state)
     {
-        if (parameter?.EidosType == "RawPtr")
+        if (IsPointerLikeEidosType(parameter?.EidosType))
         {
             switch (ClassifyPointerLiteral(argument))
             {
@@ -5937,6 +6068,7 @@ internal sealed class CBodyTranslator
 
         // 字符串字面量落在 RawPtr 参数位（const char* 形参）：边界处转 C 字符串。
         translated = CoerceStringToPointerTarget(argument, translated, parameter?.EidosType, state);
+        translated = CoercePointerLiteralTarget(argument, translated, parameter?.EidosType, state);
         translated = CoerceBoolToIntValue(argument, translated, parameter?.EidosType);
         translated = CoerceIntToBoolValue(argument, translated, parameter?.EidosType);
         // 整型字面量被 clang 隐式转成 float 语境时（DrawCircleSector(v, 0, 360)），
@@ -6469,6 +6601,23 @@ internal sealed class CBodyTranslator
     private bool IsPointerTyped(ClangCursor operand) =>
         (ClangTypeKind)_api.GetCanonicalType(_api.GetCursorType(operand)).Kind == ClangTypeKind.Pointer;
 
+    /// <summary>表达式是函数指针值（函数名退化、Cfn 局部/参数或 record member 读）。</summary>
+    private bool IsFunctionPointerValue(ClangCursor operand)
+    {
+        var canonical = _api.GetCanonicalType(_api.GetCursorType(operand));
+        if ((ClangTypeKind)canonical.Kind != ClangTypeKind.Pointer)
+        {
+            return false;
+        }
+
+        return (ClangTypeKind)_api.GetCanonicalType(_api.GetPointeeType(canonical)).Kind
+            is ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto;
+    }
+
+    private static bool IsPointerLikeEidosType(string? eidosType) =>
+        eidosType == "RawPtr" ||
+        (eidosType?.StartsWith("Cfn[", StringComparison.Ordinal) ?? false);
+
     private enum PointerLiteralKind
     {
         NotLiteral,
@@ -6739,7 +6888,13 @@ internal sealed class CBodyTranslator
     };
 
     /// <summary>标量与指针的 Eidos 类型映射；指针额外携带元素类型 / 记录（union、struct）事实。</summary>
-    private sealed record CTypeMapping(string EidosType, string? ElementEidosType, string? RecordSpelling, string? RecordName);
+    private sealed record CTypeMapping(
+        string EidosType,
+        string? ElementEidosType,
+        string? RecordSpelling,
+        string? RecordName,
+        bool IsFunctionPointer = false,
+        string? FunctionPointerSignatureSpelling = null);
 
     private CTypeMapping? MapType(ClangType type, bool allowArrays = false)
     {
@@ -6820,6 +6975,12 @@ internal sealed class CBodyTranslator
             return "Ffi.null_pointer()";
         }
 
+        if (eidosType.StartsWith("Cfn[", StringComparison.Ordinal))
+        {
+            state.MarkFfiImport();
+            return "Ffi.null_pointer()";
+        }
+
         return "0";
     }
 
@@ -6840,6 +7001,9 @@ internal sealed class CBodyTranslator
             case ClangTypeKind.Pointer:
                 // 元素本身是指针（int* a[N]）：下标读取得到 RawPtr（Ffi.load[RawPtr]）。
                 return new CTypeMapping("RawPtr", "RawPtr", null, null);
+            case ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto:
+                // 函数指针数组（void (*handlers[N])(int)）：元素下标读出 Cfn 指针值。
+                return MapFunctionPointerType(element);
             case ClangTypeKind.ConstantArray or ClangTypeKind.IncompleteArray:
                 // 多维数组（T a[N][M]）按平坦缓冲承载：内层下标经数组退化语义复合寻址。
                 return new CTypeMapping("RawPtr", null, null, null);
@@ -6869,6 +7033,8 @@ internal sealed class CBodyTranslator
         var pointee = _api.GetCanonicalType(_api.GetPointeeType(canonicalPointer));
         switch ((ClangTypeKind)pointee.Kind)
         {
+            case ClangTypeKind.FunctionProto or ClangTypeKind.FunctionNoProto:
+                return MapFunctionPointerType(pointee);
             case ClangTypeKind.Int or ClangTypeKind.Long or ClangTypeKind.LongLong or
                 ClangTypeKind.Short or ClangTypeKind.CharS or ClangTypeKind.SChar or
                 ClangTypeKind.UInt or ClangTypeKind.ULong or ClangTypeKind.ULongLong or
@@ -6898,6 +7064,60 @@ internal sealed class CBodyTranslator
                 // void*、多级指针等：可传递比较，不可解引用。
                 return new CTypeMapping("RawPtr", null, null, null);
         }
+    }
+
+    /// <summary>
+    /// C 函数指针类型 → 类型化 Cfn[A..., R]。C float（32 位）与按值记录
+    /// 仍不可承载（前者 ABI 未定，后者无按值 FFI），返回 null 由调用方 skip。
+    /// </summary>
+    private CTypeMapping? MapFunctionPointerType(ClangType canonicalFunction)
+    {
+        var arity = _api.GetNumArgTypes(canonicalFunction);
+        if (arity < 0)
+        {
+            return null;
+        }
+
+        var parameterMappings = new List<CTypeMapping>(arity);
+        for (var i = 0; i < arity; i++)
+        {
+            var argType = _api.GetArgType(canonicalFunction, (uint)i);
+            if ((ClangTypeKind)_api.GetCanonicalType(argType).Kind == ClangTypeKind.Float)
+            {
+                return null;
+            }
+
+            var mapping = MapType(argType);
+            if (mapping == null || IsValueRecord(mapping))
+            {
+                return null;
+            }
+
+            parameterMappings.Add(mapping);
+        }
+
+        var resultType = _api.GetResultType(canonicalFunction);
+        if ((ClangTypeKind)_api.GetCanonicalType(resultType).Kind == ClangTypeKind.Float)
+        {
+            return null;
+        }
+
+        var resultMapping = MapType(resultType);
+        if (resultMapping == null || IsValueRecord(resultMapping))
+        {
+            return null;
+        }
+
+        var parts = parameterMappings
+            .Select(static mapping => mapping.EidosType)
+            .Append(resultMapping.EidosType);
+        return new CTypeMapping(
+            $"Cfn[{string.Join(", ", parts)}]",
+            null,
+            null,
+            null,
+            IsFunctionPointer: true,
+            FunctionPointerSignatureSpelling: _api.GetString(_api.GetTypeSpelling(canonicalFunction)));
     }
 
     private List<(ClangTokenKind Kind, string Spelling)> Tokenize(ClangCursor cursor) =>

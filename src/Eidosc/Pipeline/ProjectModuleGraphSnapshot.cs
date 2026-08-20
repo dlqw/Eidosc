@@ -834,6 +834,7 @@ internal static class ProjectModuleTypedSemanticSignatureBuilder
         yield return $"cstructAccessor:{function.IsCStructAccessor}";
         yield return $"cstructOffset:{function.CStructFieldOffset}";
         yield return $"cstructFieldType:{FormatType(symbolTable, function.CStructFieldTypeId, canonical)}";
+        yield return $"cstructFieldTypeArgs:{string.Join(",", function.CStructFieldTypeArguments.OrderBy(static value => value))}";
         yield return $"cstructGetter:{function.IsCStructGetter}";
         yield return $"intrinsic:{function.IntrinsicName ?? ""}";
         yield return $"builtinIntrinsicRole:{function.BuiltinIntrinsicRole}";

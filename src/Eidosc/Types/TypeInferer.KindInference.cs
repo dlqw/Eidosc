@@ -325,6 +325,21 @@ public sealed partial class TypeInferer
         IReadOnlyDictionary<string, Kind> kindByTypeParamName,
         KindInferer kindUnifier)
     {
+        // Cfn[A..., R] 是编译器内建的多参类型（参数任选、末参为返回类型），
+        // 不参与固定 arity 的 kind 应用规则。
+        if (path.ModulePath.Count == 0 &&
+            string.Equals(path.TypeName, WellKnownStrings.BuiltinTypes.Cfn, StringComparison.Ordinal) &&
+            path.TypeArgs.Count > 0)
+        {
+            foreach (var typeArg in path.TypeArgs)
+            {
+                var argumentKind = InferTypeNodeKindForAdtInference(typeArg, kindByTypeParamName, kindUnifier);
+                kindUnifier.UnifyKinds(argumentKind, Kind.KStar.Instance);
+            }
+
+            return Kind.KStar.Instance;
+        }
+
         var constructorKind = ResolveKind(GetTypePathConstructorKindForAdtInference(path, kindByTypeParamName));
         if (path.TypeArgs.Count == 0)
         {

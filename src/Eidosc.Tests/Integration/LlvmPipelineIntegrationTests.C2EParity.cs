@@ -1444,9 +1444,10 @@ public partial class LlvmPipelineIntegrationTests
         // goto：分段包装 + 段号闩锁；顶层局部提升为循环外预声明（跨段词法作用域）。
         Assert.Contains("mut c2e_goto := 0;", translated, StringComparison.Ordinal);
         Assert.Contains("c2e_goto := 1; continue;", translated, StringComparison.Ordinal);
-        // 函数指针：addr shim 取址 + icall 间接调用；static 被调方走转发。
-        Assert.Contains("c2e_addr_", translated, StringComparison.Ordinal);
-        Assert.Contains("c2e_icall_", translated, StringComparison.Ordinal);
+        // 函数指针：Eidos 函数引用经 cfn_from 直译，间接调用经 cfn_call；
+        // static 被调方同样有 Eidos 翻译体，不再依赖 addr/icall 摘要 shim。
+        Assert.Contains("Ffi.cfn_from(triple)", translated, StringComparison.Ordinal);
+        Assert.Contains("Ffi.cfn_call(op, v + 1)", translated, StringComparison.Ordinal);
 
         var eidosSource = translated + """
 

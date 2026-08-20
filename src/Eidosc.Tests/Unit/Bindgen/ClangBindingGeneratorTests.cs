@@ -48,6 +48,28 @@ public sealed class ClangBindingGeneratorTests
     }
 
     [Fact]
+    public void TypeMapper_FunctionPointerZeroAndHighArityMapToCfn()
+    {
+        using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");
+        var header = workspace.WriteText(
+            "demo.h",
+            "int zero(int (*fn)(void)); int seven(int (*fn)(int, int, int, int, int, int, int));\n");
+        var result = new ClangHeaderParser(RequireClangApi()).Parse(header);
+
+        Assert.Empty(result.Errors);
+        var ir = result.Ir!;
+        var mapper = new BindingTypeMapper(ir);
+
+        var zero = mapper.Map(ir.Functions.Single(f => f.Name == "zero").Parameters[0].Type);
+        Assert.Equal(BindingTypeCategory.Direct, zero.Category);
+        Assert.Equal("Cfn[Int32]", zero.EidosType);
+
+        var seven = mapper.Map(ir.Functions.Single(f => f.Name == "seven").Parameters[0].Type);
+        Assert.Equal(BindingTypeCategory.Direct, seven.Category);
+        Assert.Equal("Cfn[Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32]", seven.EidosType);
+    }
+
+    [Fact]
     public void BindingPackageGenerator_ClangMode_GeneratesPackage()
     {
         using var workspace = TestTempWorkspace.Create("eidosc_clang_bind");

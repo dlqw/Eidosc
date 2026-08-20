@@ -211,6 +211,65 @@ main :: Unit -> Int {
     }
 
     [Fact]
+    public void CfnPointerSemantics_NullAndEquality_Compiles()
+    {
+        const string source = """
+main :: Unit -> Bool
+{
+    _ => {
+        fp: Cfn[Int, Int] := Ffi.null_pointer();
+        n1 := Ffi.is_null(fp);
+        n2 := Ffi.pointer_eq(fp, fp);
+        n1 && n2
+    }
+}
+""";
+
+        var result = RunPipeline(source);
+
+        Assert.True(result.Success, $"Expected success but got errors: {string.Join(", ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => d.Message))}");
+    }
+
+    [Fact]
+    public void CfnPointerSemantics_RawPtrInterchange_Compiles()
+    {
+        const string source = """
+main :: Unit -> Int
+{
+    _ => {
+        fp: Cfn[Int, Int] := Ffi.null_pointer();
+        rp: RawPtr := fp;
+        back: Cfn[Int, Int] := rp;
+        0
+    }
+}
+""";
+
+        var result = RunPipeline(source);
+
+        Assert.True(result.Success, $"Expected success but got errors: {string.Join(", ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => d.Message))}");
+    }
+
+    [Fact]
+    public void CfnPointerSemantics_CfnList_Compiles()
+    {
+        const string source = """
+main :: Unit -> Int
+{
+    _ => {
+        fp: Cfn[Int, Int] := Ffi.null_pointer();
+        fns := [fp, fp];
+        fns.len()
+    }
+}
+""";
+
+        var result = RunPipeline(source);
+
+        Assert.True(result.Success, $"Expected success but got errors: {string.Join(", ", result.Diagnostics.Where(d => d.Level == DiagnosticLevel.Error).Select(d => d.Message))}");
+    }
+
+    [Fact]
     public void CfnFrom_CapturingClosure_ReportsE3053BeforeNative()
     {
         const string source = """

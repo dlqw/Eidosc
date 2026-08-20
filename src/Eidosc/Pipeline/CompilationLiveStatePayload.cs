@@ -301,6 +301,7 @@ public sealed record SymbolPayload(
                 facts["externalSymbolName"] = func.ExternalSymbolName ?? "";
                 facts["externalLibrary"] = func.ExternalLibrary ?? "";
                 facts["cStructFieldTypeId"] = func.CStructFieldTypeId.Value.ToString();
+                facts["cStructFieldTypeArgs"] = string.Join(",", func.CStructFieldTypeArguments);
                 facts["isCStructAccessor"] = func.IsCStructAccessor.ToString();
                 facts["cStructFieldOffset"] = func.CStructFieldOffset.ToString();
                 facts["isCStructGetter"] = func.IsCStructGetter.ToString();

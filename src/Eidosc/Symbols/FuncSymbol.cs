@@ -132,6 +132,11 @@ public sealed record FuncSymbol : Symbol
     public TypeId CStructFieldTypeId { get; set; } = TypeId.None;
 
     /// <summary>
+    /// Cfn 字段的完整类型实参（Cfn[A..., R]；仅当 IsCStructAccessor 且字段为 Cfn 时非空）
+    /// </summary>
+    public IReadOnlyList<int> CStructFieldTypeArguments { get; init; } = [];
+
+    /// <summary>
     /// 是否是 getter（true）或 setter（false）。
     /// 仅当 IsCStructAccessor 为 true 时有效。
     /// </summary>

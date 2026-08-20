@@ -71,6 +71,13 @@ public sealed class KindInferer
     /// </summary>
     private Kind InferTyCon(TyCon con)
     {
+        // Cfn[A..., R] 是内建多参类型：任一实参数量下都是完整类型。
+        if (con.Args.Count > 0 &&
+            string.Equals(con.Name, WellKnownStrings.BuiltinTypes.Cfn, StringComparison.Ordinal))
+        {
+            return Kind.KStar.Instance;
+        }
+
         Kind constructorKind;
         if (con.ConstructorVarIndex.HasValue)
         {

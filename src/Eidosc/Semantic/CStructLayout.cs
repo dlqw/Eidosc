@@ -32,6 +32,11 @@ public sealed record CStructFieldInfo
     /// 字段的对齐要求
     /// </summary>
     public int Alignment { get; init; }
+
+    /// <summary>
+    /// Cfn 字段的完整类型实参（Cfn[A..., R]）；非 Cfn 字段为空。
+    /// </summary>
+    public IReadOnlyList<int> TypeArguments { get; init; } = [];
 }
 
 /// <summary>
@@ -90,7 +95,7 @@ public static class CStructLayoutComputer
     /// <returns>完整的结构体布局信息</returns>
     public static CStructLayout Compute(
         string structName,
-        IReadOnlyList<(string Name, TypeId TypeId)> fields,
+        IReadOnlyList<(string Name, TypeId TypeId, IReadOnlyList<int> TypeArguments)> fields,
         Func<TypeId, (int Size, int Alignment)> getTypeInfo)
     {
         var fieldLayouts = new List<CStructFieldInfo>(fields.Count);
@@ -99,7 +104,7 @@ public static class CStructLayoutComputer
 
         for (var i = 0; i < fields.Count; i++)
         {
-            var (name, typeId) = fields[i];
+            var (name, typeId, typeArguments) = fields[i];
             var (size, alignment) = getTypeInfo(typeId);
 
             // 更新结构体对齐为最大字段对齐
@@ -117,7 +122,8 @@ public static class CStructLayoutComputer
                 TypeId = typeId,
                 Offset = currentOffset,
                 Size = size,
-                Alignment = alignment
+                Alignment = alignment,
+                TypeArguments = typeArguments
             });
 
             currentOffset += size;

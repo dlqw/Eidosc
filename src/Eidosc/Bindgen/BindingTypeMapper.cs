@@ -109,8 +109,8 @@ public sealed class BindingTypeMapper
     }
 
     /// <summary>
-    /// 函数指针 → Eidos <c>Cfn[参数..., 返回]</c>（1..6 参、零捕获）。
-    /// 超出 Cfn 能力或包含不可映射类型的回调降级为 Unsupported（由 shim 兜底）。
+    /// 函数指针 → Eidos <c>Cfn[参数..., 返回]</c>（任意 arity、零捕获）。
+    /// 包含不可映射类型的回调降级为 Unsupported（由 shim 兜底）。
     /// </summary>
     /// <summary>
     /// 将 struct 按值参数递归展开为叶子字段类型（供 Eidos 签名使用，全部 64 位）。
@@ -161,8 +161,8 @@ public sealed class BindingTypeMapper
 
     private BindingTypeMapping MapFunctionPointer(CBindingType type)
     {
-        if (type.FunctionPointerArity is < 1 or > 6)
-            return new("RawPtr", BindingTypeCategory.Unsupported, $"callback arity {type.FunctionPointerArity} exceeds Cfn 1..6");
+        if (type.FunctionPointerArity < 0)
+            return new("RawPtr", BindingTypeCategory.Unsupported, $"callback arity {type.FunctionPointerArity} is invalid");
 
         var parameterTypes = type.FunctionPointerParameterTypes;
         var returnType = type.FunctionPointerReturnType;
