@@ -82,7 +82,17 @@ public static class BuiltinTraits
     /// <returns>是否实现了该 Trait</returns>
     public static bool HasTrait(string typeName, string traitName)
     {
-        return _typeTraits.TryGetValue(typeName, out var traits) && traits.Contains(traitName);
+        if (_typeTraits.TryGetValue(typeName, out var traits) && traits.Contains(traitName))
+        {
+            return true;
+        }
+
+        if (BaseTypes.TryParseIntegerTypeName(typeName, out _, out var width) && width > 1)
+        {
+            return traitName is TraitNames.Eq or TraitNames.Ord or TraitNames.Num or TraitNames.Show or TraitNames.Clone or TraitNames.Hash or TraitNames.Copy;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -101,7 +111,19 @@ public static class BuiltinTraits
     public static IReadOnlySet<string> GetTraits(string typeName)
     {
         if (_typeTraits.TryGetValue(typeName, out var traits))
+        {
             return traits;
+        }
+
+        if (BaseTypes.TryParseIntegerTypeName(typeName, out _, out var width) && width > 1)
+        {
+            return new HashSet<string>
+            {
+                TraitNames.Eq, TraitNames.Ord, TraitNames.Num, TraitNames.Show,
+                TraitNames.Clone, TraitNames.Hash, TraitNames.Copy
+            };
+        }
+
         return new HashSet<string>();
     }
 
@@ -110,7 +132,8 @@ public static class BuiltinTraits
     /// </summary>
     public static bool IsBuiltinType(string typeName)
     {
-        return _typeTraits.ContainsKey(typeName);
+        return _typeTraits.ContainsKey(typeName) ||
+               BaseTypes.TryParseIntegerTypeName(typeName, out _, out _);
     }
 
     /// <summary>

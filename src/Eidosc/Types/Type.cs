@@ -413,6 +413,11 @@ public static class BaseTypes
     public const int CfnId = 9;
 
     /// <summary>
+    /// C 字符串类型 ID（FFI 用，CString 表示 C char*，方案 B 直接跨 FFI）。
+    /// </summary>
+    public const int CStringId = WellKnownTypeIds.CStringId;
+
+    /// <summary>
     /// 编译期类型等式证据 TypeEq[A, B]，运行时擦除。
     /// </summary>
     public const int TypeEqId = 10;
@@ -435,6 +440,13 @@ public static class BaseTypes
     public const int UInt32Id = WellKnownTypeIds.UInt32Id;
     public const int UInt16Id = WellKnownTypeIds.UInt16Id;
     public const int UInt8Id = WellKnownTypeIds.UInt8Id;
+
+    /// <summary>
+    /// 任意位宽整数 TypeId 编码基线。
+    /// 在 TypeIdRegistry 动态类型 ID（>=1000）之上保留一段确定编码空间，
+    /// 使每个位宽/符号组合都能稳定映射，无需进程级状态。
+    /// </summary>
+    public const int IntegerTypeIdBase = 1_000_000;
 
     /// <summary>
     /// 整数类型
@@ -490,6 +502,11 @@ public static class BaseTypes
     public static TyCon Cfn { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Cfn, Id = new TypeId(CfnId) };
 
     /// <summary>
+    /// C 字符串类型（FFI 方案 B：CString 直接作为 C char* 跨边界）。
+    /// </summary>
+    public static TyCon CString { get; } = new() { Name = WellKnownStrings.BuiltinTypes.CString, Id = new TypeId(CStringId) };
+
+    /// <summary>
     /// 类型等式证据类型。
     /// </summary>
     public static TyCon TypeEq { get; } = new() { Name = WellKnownStrings.BuiltinTypes.TypeEq, Id = new TypeId(TypeEqId) };
@@ -506,33 +523,177 @@ public static class BaseTypes
     /// </summary>
     /// <param name="name">类型名称</param>
     /// <returns>TypeId，如果不是内置类型返回 None</returns>
-    public static TypeId GetBuiltInTypeId(string name) => name switch
+    public static TypeId GetBuiltInTypeId(string name)
     {
-        WellKnownStrings.BuiltinTypes.Int => new TypeId(IntId),
-        WellKnownStrings.BuiltinTypes.Int64 => new TypeId(Int64Id),
-        WellKnownStrings.BuiltinTypes.Int32 => new TypeId(Int32Id),
-        WellKnownStrings.BuiltinTypes.Int16 => new TypeId(Int16Id),
-        WellKnownStrings.BuiltinTypes.Int8 => new TypeId(Int8Id),
-        WellKnownStrings.BuiltinTypes.Float => new TypeId(FloatId),
-        WellKnownStrings.BuiltinTypes.Float64 => new TypeId(Float64Id),
-        WellKnownStrings.BuiltinTypes.Float32 => new TypeId(Float32Id),
-        WellKnownStrings.BuiltinTypes.Float16 => new TypeId(Float16Id),
-        WellKnownStrings.BuiltinTypes.UInt64 => new TypeId(UInt64Id),
-        WellKnownStrings.BuiltinTypes.UInt32 => new TypeId(UInt32Id),
-        WellKnownStrings.BuiltinTypes.UInt16 => new TypeId(UInt16Id),
-        WellKnownStrings.BuiltinTypes.UInt8 => new TypeId(UInt8Id),
-        WellKnownStrings.BuiltinTypes.Bool => new TypeId(BoolId),
-        WellKnownStrings.BuiltinTypes.String => new TypeId(StringId),
-        WellKnownStrings.BuiltinTypes.Char => new TypeId(CharId),
-        "()" or WellKnownStrings.BuiltinTypes.Unit => new TypeId(UnitId),
-        "ErasedCallable" => new TypeId(ErasedCallableId),
-        WellKnownStrings.BuiltinTypes.RawPtr => new TypeId(RawPtrId),
-        WellKnownStrings.BuiltinTypes.Cfn => new TypeId(CfnId),
-        WellKnownStrings.BuiltinTypes.TypeEq => new TypeId(TypeEqId),
-        WellKnownStrings.BuiltinTypes.Never => new TypeId(NeverId),
-        WellKnownStrings.BuiltinTypes.Type => new TypeId(TypeValueId),
-        _ => TypeId.None
-    };
+        if (TryParseIntegerTypeName(name, out var unsigned, out var width))
+        {
+            return GetIntegerTypeId(unsigned, width);
+        }
+
+        return name switch
+        {
+            WellKnownStrings.BuiltinTypes.Int => new TypeId(IntId),
+            WellKnownStrings.BuiltinTypes.Int64 => new TypeId(Int64Id),
+            WellKnownStrings.BuiltinTypes.Int32 => new TypeId(Int32Id),
+            WellKnownStrings.BuiltinTypes.Int16 => new TypeId(Int16Id),
+            WellKnownStrings.BuiltinTypes.Int8 => new TypeId(Int8Id),
+            WellKnownStrings.BuiltinTypes.Float => new TypeId(FloatId),
+            WellKnownStrings.BuiltinTypes.Float64 => new TypeId(Float64Id),
+            WellKnownStrings.BuiltinTypes.Float32 => new TypeId(Float32Id),
+            WellKnownStrings.BuiltinTypes.Float16 => new TypeId(Float16Id),
+            WellKnownStrings.BuiltinTypes.UInt64 => new TypeId(UInt64Id),
+            WellKnownStrings.BuiltinTypes.UInt32 => new TypeId(UInt32Id),
+            WellKnownStrings.BuiltinTypes.UInt16 => new TypeId(UInt16Id),
+            WellKnownStrings.BuiltinTypes.UInt8 => new TypeId(UInt8Id),
+            WellKnownStrings.BuiltinTypes.Bool => new TypeId(BoolId),
+            WellKnownStrings.BuiltinTypes.String => new TypeId(StringId),
+            WellKnownStrings.BuiltinTypes.Char => new TypeId(CharId),
+            "()" or WellKnownStrings.BuiltinTypes.Unit => new TypeId(UnitId),
+            "ErasedCallable" => new TypeId(ErasedCallableId),
+            WellKnownStrings.BuiltinTypes.RawPtr => new TypeId(RawPtrId),
+            WellKnownStrings.BuiltinTypes.Cfn => new TypeId(CfnId),
+            WellKnownStrings.BuiltinTypes.CString => new TypeId(CStringId),
+            WellKnownStrings.BuiltinTypes.TypeEq => new TypeId(TypeEqId),
+            WellKnownStrings.BuiltinTypes.Never => new TypeId(NeverId),
+            WellKnownStrings.BuiltinTypes.Type => new TypeId(TypeValueId),
+            _ => TypeId.None
+        };
+    }
+
+    /// <summary>
+    /// 解析 Eidos 可读整数拼写：I&lt;N&gt; 表示有符号 N 位，U&lt;N&gt; 表示无符号 N 位。
+    /// 例如 I8、I24、U1、U512。
+    /// </summary>
+    public static bool TryParseIntegerTypeName(string name, out bool unsigned, out int width)
+    {
+        unsigned = false;
+        width = 0;
+        if (string.IsNullOrEmpty(name) || name.Length < 2)
+        {
+            return false;
+        }
+
+        var prefix = name[0];
+        if (prefix != 'I' && prefix != 'U')
+        {
+            return false;
+        }
+
+        if (!int.TryParse(name.AsSpan(1), out width) || width <= 0)
+        {
+            return false;
+        }
+
+        unsigned = prefix == 'U';
+        return true;
+    }
+
+    /// <summary>
+    /// 获取任意位宽整数类型的 TypeId。标准宽度映射到已有内建类型 ID，
+    /// 1 位整数统一映射到 BoolId（Bool 与 I1/U1 同一类型）。
+    /// </summary>
+    public static TypeId GetIntegerTypeId(bool unsigned, int width)
+    {
+        if (width <= 0)
+        {
+            return TypeId.None;
+        }
+
+        if (width == 1)
+        {
+            return new TypeId(BoolId);
+        }
+
+        if (!unsigned)
+        {
+            return width switch
+            {
+                8 => new TypeId(Int8Id),
+                16 => new TypeId(Int16Id),
+                32 => new TypeId(Int32Id),
+                64 => new TypeId(IntId),
+                _ => new TypeId(IntegerTypeIdBase + width * 2)
+            };
+        }
+
+        return width switch
+        {
+            8 => new TypeId(UInt8Id),
+            16 => new TypeId(UInt16Id),
+            32 => new TypeId(UInt32Id),
+            64 => new TypeId(UInt64Id),
+            _ => new TypeId(IntegerTypeIdBase + width * 2 + 1)
+        };
+    }
+
+    /// <summary>
+    /// 判断一个 TypeId 是否是整数类型，并取出符号性与位宽。
+    /// </summary>
+    public static bool TryGetIntegerTypeInfo(TypeId id, out bool unsigned, out int width)
+    {
+        unsigned = false;
+        width = 0;
+
+        switch (id.Value)
+        {
+            case IntId:
+            case Int64Id:
+                unsigned = false;
+                width = 64;
+                return true;
+            case Int32Id:
+                unsigned = false;
+                width = 32;
+                return true;
+            case Int16Id:
+                unsigned = false;
+                width = 16;
+                return true;
+            case Int8Id:
+                unsigned = false;
+                width = 8;
+                return true;
+            case UInt64Id:
+                unsigned = true;
+                width = 64;
+                return true;
+            case UInt32Id:
+                unsigned = true;
+                width = 32;
+                return true;
+            case UInt16Id:
+                unsigned = true;
+                width = 16;
+                return true;
+            case UInt8Id:
+                unsigned = true;
+                width = 8;
+                return true;
+            case BoolId:
+                // Bool 与 I1 是同一 1 位整数类型。
+                unsigned = false;
+                width = 1;
+                return true;
+        }
+
+        if (id.Value < IntegerTypeIdBase)
+        {
+            return false;
+        }
+
+        var offset = id.Value - IntegerTypeIdBase;
+        if (offset < 2)
+        {
+            return false;
+        }
+
+        width = offset / 2;
+        unsigned = (offset & 1) != 0;
+        return width > 0;
+    }
+
+    public static bool IsIntegerType(TypeId id) =>
+        TryGetIntegerTypeInfo(id, out _, out _);
 
     /// <summary>
     /// 检查 TypeId 是否是内置类型
@@ -540,10 +701,12 @@ public static class BaseTypes
     /// <param name="id">TypeId</param>
     /// <returns>是否是内置类型</returns>
     public static bool IsBuiltIn(TypeId id) =>
-        id.Value is >= 1 and <= TypeValueId or
+        (id.Value is >= 1 and <= TypeValueId or
             Int64Id or Int32Id or Int16Id or Int8Id or
             Float64Id or Float32Id or Float16Id or
-            UInt64Id or UInt32Id or UInt16Id or UInt8Id;
+            UInt64Id or UInt32Id or UInt16Id or UInt8Id or
+            CStringId) ||
+        IsIntegerType(id);
 
     public static bool IsCompilerMeta(TypeId id) =>
         id.Value is >= WellKnownTypeIds.MetaTypeShapeId and <= WellKnownTypeIds.MetaResolveFailureId or

@@ -363,6 +363,22 @@ public sealed partial class TypeInferer
         };
     }
 
+    private static bool IsIntegerLiteralType(Type type)
+    {
+        return type is TyCon { Name: var name } &&
+               (name is WellKnownStrings.BuiltinTypes.Int or
+                    WellKnownStrings.BuiltinTypes.Int8 or
+                    WellKnownStrings.BuiltinTypes.Int16 or
+                    WellKnownStrings.BuiltinTypes.Int32 or
+                    WellKnownStrings.BuiltinTypes.Int64 or
+                    WellKnownStrings.BuiltinTypes.UInt8 or
+                    WellKnownStrings.BuiltinTypes.UInt16 or
+                    WellKnownStrings.BuiltinTypes.UInt32 or
+                    WellKnownStrings.BuiltinTypes.UInt64 or
+                    WellKnownStrings.BuiltinTypes.Bool ||
+                BaseTypes.TryParseIntegerTypeName(name, out _, out _));
+    }
+
     /// <summary>
     /// 推断标识符的类型
     /// </summary>
@@ -1404,6 +1420,13 @@ public sealed partial class TypeInferer
     private Type InferExpressionWithExpectedType(EidosAstNode expr, Type expectedType)
     {
         var resolvedExpected = _substitution.Apply(expectedType);
+        if (expr is LiteralExpr { Kind: LiteralKind.Integer } integerLiteral &&
+            IsIntegerLiteralType(resolvedExpected))
+        {
+            integerLiteral.InferredType = resolvedExpected;
+            return resolvedExpected;
+        }
+
         if (expr is LambdaExpr lambda && resolvedExpected is TyFun expectedFunctionType)
         {
             var lambdaType = InferLambda(lambda, expectedFunctionType);

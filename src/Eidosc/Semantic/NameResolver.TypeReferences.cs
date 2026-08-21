@@ -646,6 +646,31 @@ public sealed partial class NameResolver
             return;
         }
 
+        // 任意位宽整数（I24/U512 等）没有对应的符号表类型符号，
+        // 由 BaseTypes.GetBuiltInTypeId 按名称在后续阶段解析。
+        if (typePath.ModulePath.Count == 0 &&
+            string.IsNullOrWhiteSpace(typePath.PackageAlias) &&
+            _symbolTable.LookupType(typePath.TypeName) == null &&
+            BaseTypes.GetBuiltInTypeId(typePath.TypeName).IsValid)
+        {
+            if (typePath.GenericArguments.Count > 0)
+            {
+                typePath.SetGenericArguments(ResolveGenericArguments(
+                    typePath.SymbolId,
+                    typePath.GenericArguments,
+                    typePath.Span));
+            }
+            else
+            {
+                foreach (var arg in typePath.TypeArgs)
+                {
+                    ResolveTypeReferences(arg);
+                }
+            }
+
+            return;
+        }
+
         var parts = typePath.ToQualifiedPathParts();
 
         var result = !string.IsNullOrWhiteSpace(typePath.PackageAlias)

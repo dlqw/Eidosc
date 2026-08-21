@@ -155,6 +155,7 @@ public static class CStructLayoutComputer
             BaseTypes.UnitId => (0, 1),      // void — 零大小
             BaseTypes.RawPtrId => (8, 8),    // ptr (64-bit)
             BaseTypes.CfnId => (8, 8),       // 函数指针 = ptr
+            BaseTypes.CStringId => (8, 8),   // CString → char*
             _ => null
         };
     }
@@ -180,7 +181,7 @@ public static class CStructLayoutComputer
             WellKnownStrings.BuiltinTypes.UInt8 => (1, 1),
             WellKnownStrings.BuiltinTypes.Bool => (1, 1),
             WellKnownStrings.BuiltinTypes.Unit => (0, 1),
-            WellKnownStrings.BuiltinTypes.RawPtr or WellKnownStrings.BuiltinTypes.Ptr or WellKnownStrings.BuiltinTypes.Cfn => (8, 8),
+            WellKnownStrings.BuiltinTypes.RawPtr or WellKnownStrings.BuiltinTypes.Ptr or WellKnownStrings.BuiltinTypes.Cfn or WellKnownStrings.BuiltinTypes.CString => (8, 8),
             _ => null
         };
     }

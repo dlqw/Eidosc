@@ -52,6 +52,7 @@ public static class WellKnownStrings
         public const string RawPtr = "RawPtr";
         public const string Ptr = "Ptr";
         public const string Cfn = "Cfn";
+        public const string CString = "CString";
         public const string TypeEq = "TypeEq";
     }
 

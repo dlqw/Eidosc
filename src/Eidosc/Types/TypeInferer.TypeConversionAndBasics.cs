@@ -358,6 +358,8 @@ public sealed partial class TypeInferer
 
         var rightType = SafeInferExpression(binary.Right);
 
+        AdaptLiteralIntegerOperands(binary, ref leftType, ref rightType);
+
         // Auto-deref: Ref[T]/MRef[T] → T for binary operands
         leftType = TryInsertBinaryDeref(binary, isLeft: true, leftType);
         rightType = TryInsertBinaryDeref(binary, isLeft: false, rightType);
@@ -726,6 +728,27 @@ public sealed partial class TypeInferer
     private Type InferArithmeticBinary(Type leftType, Type rightType, SourceSpan span)
     {
         return TryUnify(leftType, rightType, span, DiagnosticMessages.ArithmeticOperandTypeMismatch);
+    }
+
+    private void AdaptLiteralIntegerOperands(BinaryExpr binary, ref Type leftType, ref Type rightType)
+    {
+        var resolvedLeft = _substitution.Apply(leftType);
+        var resolvedRight = _substitution.Apply(rightType);
+
+        if (binary.Left is LiteralExpr { Kind: LiteralKind.Integer } leftLiteral &&
+            IsIntegerLiteralType(resolvedRight))
+        {
+            leftLiteral.InferredType = resolvedRight;
+            leftType = resolvedRight;
+            return;
+        }
+
+        if (binary.Right is LiteralExpr { Kind: LiteralKind.Integer } rightLiteral &&
+            IsIntegerLiteralType(resolvedLeft))
+        {
+            rightLiteral.InferredType = resolvedLeft;
+            rightType = resolvedLeft;
+        }
     }
 
     /// <summary>位运算（& | ^ << >>）：仅 Int 参与，结果 Int；Bool/Float 不进入。</summary>

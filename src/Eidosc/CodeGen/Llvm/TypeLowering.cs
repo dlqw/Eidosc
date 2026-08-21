@@ -322,6 +322,10 @@ public sealed class TypeLowering
         {
             result = inlineRecordType;
         }
+        else if (BaseTypes.TryGetIntegerTypeInfo(typeId, out _, out var integerWidth))
+        {
+            result = new LlvmIntType { Bits = integerWidth };
+        }
         else if (_dynamicTypeKeyById.TryGetValue(typeId.Value, out var dynamicTypeKey) &&
             TryLowerDynamicType(dynamicTypeKey, allowOpenDynamicTypes, out var loweredDynamicType))
         {
@@ -362,6 +366,7 @@ public sealed class TypeLowering
                 BaseTypes.ErasedCallableId => LlvmPointerType.VoidPtr(),
                 BaseTypes.RawPtrId => LlvmPointerType.VoidPtr(),
                 BaseTypes.CfnId => LlvmPointerType.VoidPtr(),
+                BaseTypes.CStringId => LlvmPointerType.VoidPtr(),
                 _ when typeId == TypeId.None || !typeId.IsValid => LlvmPointerType.VoidPtr(),
                 _ => LlvmPointerType.VoidPtr()
             };
@@ -810,6 +815,11 @@ public sealed class TypeLowering
             });
         }
 
+        if (BaseTypes.TryGetIntegerTypeInfo(typeId, out _, out var integerWidth))
+        {
+            return (integerWidth + 7) / 8;
+        }
+
         return typeId.Value switch
         {
             BaseTypes.IntId or BaseTypes.Int64Id or BaseTypes.FloatId or BaseTypes.Float64Id or BaseTypes.UInt64Id => 8,
@@ -924,7 +934,7 @@ public sealed class TypeLowering
 
     private static bool IsBuiltinLoweringType(TypeId typeId)
     {
-        return typeId.Value is
+        return (typeId.Value is
             BaseTypes.IntId or
             BaseTypes.Int64Id or
             BaseTypes.Int32Id or
@@ -946,7 +956,9 @@ public sealed class TypeLowering
             BaseTypes.NeverId or
             BaseTypes.ErasedCallableId or
             BaseTypes.RawPtrId or
-            BaseTypes.CfnId;
+            BaseTypes.CfnId or
+            BaseTypes.CStringId) ||
+        BaseTypes.IsIntegerType(typeId);
     }
 
     private bool TryResolveFlattenedFunctionType(

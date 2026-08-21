@@ -1243,7 +1243,7 @@ public sealed class MirValidator
 
     private static bool IsBuiltinLoweringType(TypeId typeId)
     {
-        return typeId.Value is
+        return (typeId.Value is
             BaseTypes.IntId or
             BaseTypes.Int64Id or
             BaseTypes.Int32Id or
@@ -1265,7 +1265,9 @@ public sealed class MirValidator
             BaseTypes.NeverId or
             BaseTypes.ErasedCallableId or
             BaseTypes.RawPtrId or
-            BaseTypes.CfnId;
+            BaseTypes.CfnId or
+            BaseTypes.CStringId) ||
+        BaseTypes.IsIntegerType(typeId);
     }
 
     private static bool AllowsTypeErasedSignature(
