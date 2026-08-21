@@ -363,6 +363,9 @@ public static class MirFunctionFingerprintBuilder
             case MirConstantValue.IntValue value:
                 writer.Add(value.Value);
                 break;
+            case MirConstantValue.BigIntValue value:
+                writer.Add(value.Value.ToString());
+                break;
             case MirConstantValue.FloatValue value:
                 writer.Add(BitConverter.DoubleToInt64Bits(value.Value));
                 break;

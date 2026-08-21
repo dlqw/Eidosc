@@ -6779,10 +6779,10 @@ internal sealed class CBodyTranslator
 
     /// <summary>
     /// 整数字面量文本：Eidos 词法默认按 Int32 解析，超出 i32 值域的 C 无符号常量
-    /// （如 2864434397 = 0xAABBCCDD）必须带 Int64 后缀 l。
+    /// （如 2864434397 = 0xAABBCCDD）必须带 Int64 后缀 i64。
     /// </summary>
     private static string FormatIntLiteral(long value) =>
-        value is > int.MaxValue or < int.MinValue ? $"{value}l" : value.ToString();
+        value is > int.MaxValue or < int.MinValue ? $"{value}i64" : value.ToString();
 
     private static string NormalizeFloat(string text)
     {

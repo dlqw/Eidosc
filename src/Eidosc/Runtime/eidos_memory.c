@@ -2921,6 +2921,10 @@ EidosString* eidos_string_from_cstr_raw(const char* cstr) {
     return eidos_string_from_cstr(cstr);
 }
 
+void* eidos_cstring_to_ptr(void* cstr) {
+    return cstr;
+}
+
 void* eidos_ptr_null(void) {
     return NULL;
 }

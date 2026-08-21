@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Numerics;
 using Eidosc.Mir;
 using Eidosc.Symbols;
 using Eidosc.Types;
@@ -1125,7 +1127,8 @@ public sealed record MirStateConstantValuePayload(
     double FloatValue = 0,
     string? StringValue = null,
     int CharValue = 0,
-    bool BoolValue = false)
+    bool BoolValue = false,
+    string? BigIntText = null)
 {
     public static MirStateConstantValuePayload Create(MirConstantValue value, MirStatePayloadCreateContext context)
     {
@@ -1133,6 +1136,7 @@ public sealed record MirStateConstantValuePayload(
         return value switch
         {
             MirConstantValue.IntValue intValue => new MirStateConstantValuePayload(nameof(MirConstantValue.IntValue), IntValue: intValue.Value),
+            MirConstantValue.BigIntValue bigIntValue => new MirStateConstantValuePayload(nameof(MirConstantValue.BigIntValue), BigIntText: bigIntValue.Value.ToString(CultureInfo.InvariantCulture)),
             MirConstantValue.FloatValue floatValue => new MirStateConstantValuePayload(nameof(MirConstantValue.FloatValue), FloatValue: floatValue.Value),
             MirConstantValue.StringValue stringValue => new MirStateConstantValuePayload(nameof(MirConstantValue.StringValue), StringValue: stringValue.Value),
             MirConstantValue.RawStringValue rawStringValue => new MirStateConstantValuePayload(nameof(MirConstantValue.RawStringValue), StringValue: rawStringValue.Value),
@@ -1147,6 +1151,7 @@ public sealed record MirStateConstantValuePayload(
         Kind switch
         {
             nameof(MirConstantValue.IntValue) => new MirConstantValue.IntValue(IntValue),
+            nameof(MirConstantValue.BigIntValue) => new MirConstantValue.BigIntValue(BigInteger.Parse(BigIntText ?? "0", CultureInfo.InvariantCulture)),
             nameof(MirConstantValue.FloatValue) => new MirConstantValue.FloatValue(FloatValue),
             nameof(MirConstantValue.StringValue) => new MirConstantValue.StringValue(StringValue ?? ""),
             nameof(MirConstantValue.RawStringValue) => new MirConstantValue.RawStringValue(StringValue ?? ""),
@@ -1630,7 +1635,7 @@ public sealed class MirStatePayloadCreateContext
 
     public void ObserveConstantValue(MirConstantValue value)
     {
-        if (value is not (MirConstantValue.IntValue or MirConstantValue.FloatValue or MirConstantValue.StringValue or
+        if (value is not (MirConstantValue.IntValue or MirConstantValue.BigIntValue or MirConstantValue.FloatValue or MirConstantValue.StringValue or
             MirConstantValue.RawStringValue or MirConstantValue.CharValue or MirConstantValue.BoolValue or
             MirConstantValue.UnitValue))
         {

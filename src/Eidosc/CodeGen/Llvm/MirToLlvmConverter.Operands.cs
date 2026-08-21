@@ -1,3 +1,4 @@
+using System.Numerics;
 using Eidosc.Symbols;
 using System.Text;
 using Eidosc.Borrow;
@@ -883,6 +884,7 @@ public sealed partial class MirToLlvmConverter
         var value = constOp.Value switch
         {
             MirConstantValue.IntValue intVal => (object?)intVal.Value,
+            MirConstantValue.BigIntValue bigIntVal => bigIntVal.Value,
             MirConstantValue.FloatValue floatVal => floatVal.Value,
             MirConstantValue.StringValue strVal => strVal.Value,
             MirConstantValue.CharValue charVal => (object?)(long)charVal.Value,
@@ -906,14 +908,25 @@ public sealed partial class MirToLlvmConverter
             return converted;
         }
 
-        if (expectedType is LlvmIntType intType &&
-            TryGetIntegerLikeConstantValue(converted.Value, out var intValue))
+        if (expectedType is LlvmIntType intType)
         {
-            return new LlvmConstant
+            if (converted.Value is BigInteger bigIntValue)
             {
-                Value = intValue,
-                Type = intType
-            };
+                return new LlvmConstant
+                {
+                    Value = bigIntValue,
+                    Type = intType
+                };
+            }
+
+            if (TryGetIntegerLikeConstantValue(converted.Value, out var intValue))
+            {
+                return new LlvmConstant
+                {
+                    Value = intValue,
+                    Type = intType
+                };
+            }
         }
 
         if (expectedType is LlvmPointerType && converted.Value == null)
@@ -936,7 +949,8 @@ public sealed partial class MirToLlvmConverter
 
         return constOp.Value switch
         {
-            MirConstantValue.IntValue => loweredType is LlvmIntType intType ? intType : LlvmIntType.I64,
+            MirConstantValue.IntValue or MirConstantValue.BigIntValue =>
+                loweredType is LlvmIntType intType ? intType : LlvmIntType.I64,
             MirConstantValue.FloatValue => loweredType is LlvmFloatType floatType ? floatType : LlvmFloatType.Double,
             MirConstantValue.StringValue => LlvmPointerType.VoidPtr(),
             MirConstantValue.CharValue => loweredType is LlvmIntType charType ? charType : LlvmIntType.I32,
@@ -1858,6 +1872,7 @@ public sealed partial class MirToLlvmConverter
                 inferredType = LlvmIntType.I1;
                 return true;
             case MirConstantValue.IntValue:
+            case MirConstantValue.BigIntValue:
             case MirConstantValue.CharValue:
                 inferredType = LlvmIntType.I64;
                 return true;

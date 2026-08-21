@@ -339,14 +339,28 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
+        // 解析期错误（越界/未知转义/非法字符）在此上报，但继续给出可推断类型以避免连锁。
+        if (lit.ErrorMessage != null)
+        {
+            AddError(lit.Span, lit.ErrorMessage, "E4016");
+        }
+
         if (lit.TypeSuffix != LiteralTypeSuffix.None)
         {
             return lit.TypeSuffix switch
             {
+                LiteralTypeSuffix.Int8 => BaseTypes.Int8,
+                LiteralTypeSuffix.Int16 => BaseTypes.Int16,
+                LiteralTypeSuffix.Int32 => BaseTypes.Int32,
+                LiteralTypeSuffix.Int64 => BaseTypes.Int,
                 LiteralTypeSuffix.UInt8 => BaseTypes.UInt8,
                 LiteralTypeSuffix.UInt16 => BaseTypes.UInt16,
                 LiteralTypeSuffix.UInt32 => BaseTypes.UInt32,
                 LiteralTypeSuffix.UInt64 => BaseTypes.UInt64,
+                LiteralTypeSuffix.Float32 => BaseTypes.Float32,
+                LiteralTypeSuffix.Float64 => BaseTypes.Float,
+                LiteralTypeSuffix.IntArbitrary or LiteralTypeSuffix.UIntArbitrary =>
+                    CreateIntegerLiteralType(lit),
                 _ => BaseTypes.Int
             };
         }
@@ -359,8 +373,21 @@ public sealed partial class TypeInferer
             LiteralKind.Char => BaseTypes.Char,
             LiteralKind.Boolean => BaseTypes.Bool,
             LiteralKind.Unit => BaseTypes.Unit,
+            LiteralKind.ByteString => CreateErrorRecoveryType(),
             _ => InferUnsupportedLiteral(lit)
         };
+    }
+
+    private static Type CreateIntegerLiteralType(LiteralExpr lit)
+    {
+        var unsigned = lit.TypeSuffix == LiteralTypeSuffix.UIntArbitrary;
+        var width = lit.IntegerSuffixWidth ?? 0;
+        if (width <= 0 || width > BaseTypes.MaxIntegerWidth)
+        {
+            return BaseTypes.Int;
+        }
+
+        return BaseTypes.GetIntegerType(unsigned, width);
     }
 
     private static bool IsIntegerLiteralType(Type type)
@@ -1420,11 +1447,13 @@ public sealed partial class TypeInferer
     private Type InferExpressionWithExpectedType(EidosAstNode expr, Type expectedType)
     {
         var resolvedExpected = _substitution.Apply(expectedType);
-        if (expr is LiteralExpr { IsRecoveredError: false, Kind: LiteralKind.Integer } integerLiteral &&
-            IsIntegerLiteralType(resolvedExpected))
+
+        // 字面量上下文适配：无后缀数值字面量按期望的基元数值类型解释（Rust 语义）。
+        if (resolvedExpected is TyCon expectedCon &&
+            TryAdaptLiteralToExpectedType(expr, expectedCon, out var adaptedType))
         {
-            integerLiteral.InferredType = resolvedExpected;
-            return resolvedExpected;
+            expr.InferredType = adaptedType;
+            return adaptedType;
         }
 
         if (expr is LambdaExpr lambda && resolvedExpected is TyFun expectedFunctionType)

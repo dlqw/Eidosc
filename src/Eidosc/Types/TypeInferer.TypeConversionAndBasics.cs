@@ -348,17 +348,18 @@ public sealed partial class TypeInferer
             return CreateErrorRecoveryType();
         }
 
-        var leftType = SafeInferExpression(binary.Left);
-        if (binary.Operator == BinaryOp.Pipe &&
-            binary.Right is IdentifierExpr pipeTarget)
+        if (!TryAdaptBinaryLiteralOperands(binary, out var leftType, out var rightType))
         {
-            leftType = TryInsertBinaryDeref(binary, isLeft: true, leftType);
-            return InferPipeToCandidateIdentifier(leftType, pipeTarget, binary.Span);
+            leftType = SafeInferExpression(binary.Left);
+            if (binary.Operator == BinaryOp.Pipe &&
+                binary.Right is IdentifierExpr pipeTarget)
+            {
+                leftType = TryInsertBinaryDeref(binary, isLeft: true, leftType);
+                return InferPipeToCandidateIdentifier(leftType, pipeTarget, binary.Span);
+            }
+
+            rightType = SafeInferExpression(binary.Right);
         }
-
-        var rightType = SafeInferExpression(binary.Right);
-
-        AdaptLiteralIntegerOperands(binary, ref leftType, ref rightType);
 
         // Auto-deref: Ref[T]/MRef[T] → T for binary operands
         leftType = TryInsertBinaryDeref(binary, isLeft: true, leftType);
@@ -730,43 +731,48 @@ public sealed partial class TypeInferer
         return TryUnify(leftType, rightType, span, DiagnosticMessages.ArithmeticOperandTypeMismatch);
     }
 
-    private void AdaptLiteralIntegerOperands(BinaryExpr binary, ref Type leftType, ref Type rightType)
+    /// <summary>位运算（& | ^ << >>）：仅整数类型参与，结果与操作数同宽；Bool/Float 不进入。</summary>
+    private Type InferBitwiseBinary(Type leftType, Type rightType, SourceSpan span)
     {
         var resolvedLeft = _substitution.Apply(leftType);
         var resolvedRight = _substitution.Apply(rightType);
-
-        if (binary.Left is LiteralExpr { Kind: LiteralKind.Integer } leftLiteral &&
-            IsIntegerLiteralType(resolvedRight))
+        // 参数类型在子类型化/函数签名统一完成前可能是未解析的 TyVar；
+        // 位运算语义要求最终为整数，未解析变量交由后续统一约束，具体非整数类型仍立即报错。
+        if (!IsIntegerType(resolvedLeft) && resolvedLeft is not TyVar)
         {
-            leftLiteral.InferredType = resolvedRight;
-            leftType = resolvedRight;
-            return;
+            AddError(span, DiagnosticMessages.BitwiseOperandMustBeInt);
+            return CreateErrorRecoveryType();
         }
 
-        if (binary.Right is LiteralExpr { Kind: LiteralKind.Integer } rightLiteral &&
-            IsIntegerLiteralType(resolvedLeft))
+        if (!IsIntegerType(resolvedRight) && resolvedRight is not TyVar)
         {
-            rightLiteral.InferredType = resolvedLeft;
-            rightType = resolvedLeft;
+            AddError(span, DiagnosticMessages.BitwiseOperandMustBeInt);
+            return CreateErrorRecoveryType();
         }
+
+        var result = TryUnify(resolvedLeft, resolvedRight, span, DiagnosticMessages.ArithmeticOperandTypeMismatch);
+        if (ContainsErrorRecoveryType(result))
+        {
+            return CreateErrorRecoveryType();
+        }
+
+        return _substitution.Apply(result);
     }
 
-    /// <summary>位运算（& | ^ << >>）：仅 Int 参与，结果 Int；Bool/Float 不进入。</summary>
-    private Type InferBitwiseBinary(Type leftType, Type rightType, SourceSpan span)
+    private static bool IsIntegerType(Type type)
     {
-        var leftResult = TryUnify(leftType, BaseTypes.Int, span, DiagnosticMessages.BitwiseOperandMustBeInt);
-        if (ContainsErrorRecoveryType(leftResult))
+        while (type is TyVar { Instance: not null } typeVar)
         {
-            return CreateErrorRecoveryType();
+            type = typeVar.Instance;
         }
 
-        var rightResult = TryUnify(rightType, BaseTypes.Int, span, DiagnosticMessages.BitwiseOperandMustBeInt);
-        if (ContainsErrorRecoveryType(rightResult))
+        if (type is not TyCon tyCon)
         {
-            return CreateErrorRecoveryType();
+            return false;
         }
 
-        return BaseTypes.Int;
+        var id = tyCon.Id.IsValid ? tyCon.Id : BaseTypes.GetBuiltInTypeId(tyCon.Name);
+        return BaseTypes.IsIntegerType(id);
     }
 
     private Type InferConcatBinary(Type leftType, Type rightType, SourceSpan span)

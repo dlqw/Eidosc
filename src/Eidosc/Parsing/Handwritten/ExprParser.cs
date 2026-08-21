@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Numerics;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
@@ -192,6 +194,137 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         }
     }
 
+    /// <summary>
+    /// 把解析期字面量错误（越界/未知转义/非法字符）上报为 E4016 诊断。
+    /// </summary>
+    private static void ReportLiteralError(ParserContext ctx, LiteralExpr lit)
+    {
+        if (lit.ErrorMessage != null)
+        {
+            ctx.Error(lit.ErrorMessage, "E4016", lit.Span.Location);
+        }
+    }
+
+    /// <summary>
+    /// 把字节字符串 `b"..."` 展开为 <see cref="Seq[T]"/> 对应的 UInt8 列表字面量。
+    /// </summary>
+    private static EidosAstNode ExpandByteString(ParserContext ctx, string rawText, SourceSpan span)
+    {
+        var list = new ListExpr();
+        list.SetSpan(span);
+
+        var bytes = new List<int>();
+        int innerStart = 2; // 跳过 b"
+        int innerEnd = rawText.Length - 1;
+
+        for (int i = innerStart; i < innerEnd; i++)
+        {
+            char c = rawText[i];
+            int code;
+            if (c == '\\' && i + 1 < innerEnd)
+            {
+                char esc = rawText[i + 1];
+                switch (esc)
+                {
+                    case 'n': code = '\n'; i += 1; break;
+                    case 'r': code = '\r'; i += 1; break;
+                    case 't': code = '\t'; i += 1; break;
+                    case '0': code = '\0'; i += 1; break;
+                    case '\\': code = '\\'; i += 1; break;
+                    case '"': code = '"'; i += 1; break;
+                    case '\'': code = '\''; i += 1; break;
+                    case 'a': code = '\a'; i += 1; break;
+                    case 'b': code = '\b'; i += 1; break;
+                    case 'v': code = '\v'; i += 1; break;
+                    case 'f': code = '\f'; i += 1; break;
+                    case 'u' when i + 2 < innerEnd && rawText[i + 2] == '{':
+                    {
+                        int close = rawText.IndexOf('}', i + 3);
+                        if (close < 0 || close >= innerEnd ||
+                            !int.TryParse(
+                                rawText.AsSpan(i + 3, close - (i + 3)),
+                                NumberStyles.HexNumber,
+                                CultureInfo.InvariantCulture,
+                                out code) ||
+                            code is < 0 or > 0xFF)
+                        {
+                            ctx.Error("invalid or out-of-range byte string unicode escape \\u{...}", "E4016", span.Location);
+                            return list;
+                        }
+
+                        i = close;
+                        break;
+                    }
+                    default:
+                        ctx.Error($"unknown escape sequence '\\{esc}' in byte string", "E4016", span.Location);
+                        return list;
+                }
+            }
+            else if (c >= 0x80)
+            {
+                ctx.Error("byte string may only contain ASCII characters or escapes", "E4016", span.Location);
+                return list;
+            }
+            else
+            {
+                code = c;
+            }
+
+            bytes.Add(code);
+        }
+
+        foreach (int b in bytes)
+        {
+            var elem = new LiteralExpr();
+            elem.SetSpan(span);
+            elem.SetValueAndKind((byte)b, LiteralKind.Integer, LiteralTypeSuffix.UInt8);
+            list.AddElement(elem);
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// `-` + 有符号整数同后缀字面量的折叠：允许 Int8 的 -128 这类最小值。
+    /// 仅当该字面量解析时已因「正数幅度超 Max」置错、且幅度 ≤ |Min| 才触发。
+    /// </summary>
+    private static LiteralExpr? FuseNegativeLiteral(EidosAstNode operand)
+    {
+        if (operand is not LiteralExpr lit ||
+            lit.Kind != LiteralKind.Integer ||
+            lit.TypeSuffix == LiteralTypeSuffix.None ||
+            !LiteralSuffixTable.IsSigned(lit.TypeSuffix) ||
+            lit.ErrorMessage == null ||
+            !lit.TryGetBigIntegerMagnitude(out BigInteger mag) ||
+            !LiteralSuffixTable.TryGetBigIntegerSignedMinMagnitude(lit.TypeSuffix, lit.IntegerSuffixWidth ?? 0, out BigInteger minMag) ||
+            mag > minMag)
+        {
+            return null;
+        }
+
+        object value;
+        if (lit.TypeSuffix == LiteralTypeSuffix.IntArbitrary)
+        {
+            value = -mag;
+        }
+        else if (lit.TypeSuffix == LiteralTypeSuffix.Int64 && mag == 9223372036854775808UL)
+        {
+            value = long.MinValue;
+        }
+        else if (mag > long.MaxValue)
+        {
+            value = unchecked((long)mag);
+        }
+        else
+        {
+            value = -(long)mag;
+        }
+
+        var neg = new LiteralExpr();
+        neg.SetNegativeLiteral("-" + lit.RawText, value, lit.TypeSuffix, LiteralKind.Integer, lit.IntegerSuffixWidth);
+        return neg;
+    }
+
     private EidosAstNode ParsePrefix()
     {
         var startToken = ctx.Current;
@@ -203,6 +336,14 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         {
             ctx.Advance(); // consume prefix op
             var operand = ParseExpr(prec.Value.Level);
+
+            // Rust 风格：`-128i8` 允许有符号最小值（- 折叠为负字面量）
+            if (text == "-" && FuseNegativeLiteral(operand) is { } fused)
+            {
+                fused.SetSpan(ctx.SpanFrom(startToken));
+                return fused;
+            }
+
             var unary = new UnaryExpr();
             unary.SetSpan(ctx.SpanFrom(startToken));
             unary.SetOperator(MapUnaryOp(text));
@@ -463,18 +604,23 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
         // String literal
         if (TokenKind.IsString(ctx.Current))
         {
-            var text = ctx.GetLiteralRawText();
+            var text = ctx.GetText(); // 原始文本（含 r"/b" 前缀与外侧引号）
             ctx.Advance();
             var lit = new LiteralExpr();
             lit.SetSpan(ctx.SpanFrom(startToken));
             lit.SetLiteral(text);
+            if (!lit.IsRecoveredError && lit.Kind == LiteralKind.ByteString)
+            {
+                return ExpandByteString(ctx, text, lit.Span);
+            }
+
             return lit;
         }
 
         // Char literal
         if (TokenKind.IsChar(ctx.Current))
         {
-            var text = ctx.GetLiteralRawText();
+            var text = ctx.GetText(); // 原始文本（含 b' 前缀与外侧引号）
             ctx.Advance();
             var lit = new LiteralExpr();
             lit.SetSpan(ctx.SpanFrom(startToken));
@@ -1489,7 +1635,7 @@ public sealed partial class ExprParser(ParserContext ctx, PatternParser patternP
             return true;
         }
 
-        return ctx.GetText() is "=>" or "when" or "," or "}" or ")" or "]";
+        return ctx.GetRawText() is "=>" or "when" or "," or "}" or ")" or "]";
     }
 
     private static EidosAstNode? CombineGuards(IReadOnlyList<EidosAstNode> guards)

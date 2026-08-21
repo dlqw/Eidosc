@@ -159,7 +159,7 @@ public static class LexerTableBuilder
                 EnableHex = true,
                 AllowUnderscore = true,
                 AllowLeadingDot = false,
-                AllowLeadingSign = true,
+                AllowLeadingSign = false,
                 CaseSensitive = true,
                 Suffixes =
                 [

@@ -1802,9 +1802,15 @@ public sealed partial class MirToLlvmConverter
             }
             else
             {
-                resultType = LlvmIntType.I64;
-                left = CoerceIntOperandToWord(left, binOp.Left.TypeId);
-                right = CoerceIntOperandToWord(right, binOp.Right.TypeId);
+                // 整数运算保持语义位宽（含任意 iN），不统一提升到 i64。
+                // 类型检查已保证两侧同宽；若出现常量/变量位宽不一致，由 LLVM 校验暴露。
+                resultType = LowerTypeIdOrReport(binOp.Left.TypeId, "binary operation operand");
+                if (left.Type is LlvmIntType leftInt && right.Type is LlvmIntType rightInt &&
+                    leftInt.Bits != rightInt.Bits)
+                {
+                    left = CoerceIntegerToWidth(left, leftInt.Bits, "bin_l");
+                    right = CoerceIntegerToWidth(right, leftInt.Bits, "bin_r");
+                }
             }
         }
         else if (binOp.Operator is BinaryOp.And or BinaryOp.Or)
@@ -1815,10 +1821,14 @@ public sealed partial class MirToLlvmConverter
         }
         else if (binOp.Operator is BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor or BinaryOp.Shl or BinaryOp.Shr)
         {
-            // 位运算仅 Int：操作数提升到 i64 字宽后按位计算。
-            resultType = LlvmIntType.I64;
-            left = CoerceIntOperandToWord(left, binOp.Left.TypeId);
-            right = CoerceIntOperandToWord(right, binOp.Right.TypeId);
+            // 位运算保持整数语义位宽（含任意 iN）；Bool/Float 不进入。
+            resultType = LowerTypeIdOrReport(binOp.Left.TypeId, "binary operation operand");
+            if (left.Type is LlvmIntType leftInt && right.Type is LlvmIntType rightInt &&
+                leftInt.Bits != rightInt.Bits)
+            {
+                left = CoerceIntegerToWidth(left, leftInt.Bits, "bin_l");
+                right = CoerceIntegerToWidth(right, leftInt.Bits, "bin_r");
+            }
         }
 
         var llvmBinOp = new LlvmBinOp
@@ -1853,11 +1863,7 @@ public sealed partial class MirToLlvmConverter
 
     private static bool IsUnsignedIntegerType(TypeId typeId)
     {
-        return typeId.Value is
-            BaseTypes.UInt64Id or
-            BaseTypes.UInt32Id or
-            BaseTypes.UInt16Id or
-            BaseTypes.UInt8Id;
+        return BaseTypes.TryGetIntegerTypeInfo(typeId, out var unsigned, out _) && unsigned;
     }
 
     /// <summary>

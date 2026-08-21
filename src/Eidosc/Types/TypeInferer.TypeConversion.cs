@@ -952,10 +952,14 @@ public sealed partial class TypeInferer
             return expandedAliasType;
         }
 
+        var builtinTypeId = path.ModulePath.Count == 0 && string.IsNullOrEmpty(path.PackageAlias)
+            ? BaseTypes.GetBuiltInTypeId(name)
+            : TypeId.None;
         return new TyCon
         {
             Name = name,
             Symbol = path.SymbolId,
+            Id = builtinTypeId,
             Args = args,
             ValueArgs = valueArgs,
             EffectArgs = effectArgs
@@ -1158,6 +1162,7 @@ public sealed partial class TypeInferer
             ComptimeUnitValue => "()",
             ComptimeBoolValue scalar => scalar.Value ? "true" : "false",
             ComptimeIntegerValue scalar => scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ComptimeBigIntegerValue scalar => scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ComptimeFloatValue scalar => scalar.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
             ComptimeCharValue scalar => $"'{scalar.Value}'",
             ComptimeStringValue scalar => $"\"{scalar.Value}\"",

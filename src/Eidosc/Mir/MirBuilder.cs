@@ -1,3 +1,4 @@
+using System.Numerics;
 using Eidosc.Symbols;
 using Eidosc.Diagnostic;
 using Eidosc.Hir;
@@ -948,7 +949,7 @@ public sealed partial class MirBuilder
     {
         MirConstantValue constantValue = lit.LiteralKind switch
         {
-            LiteralKind.Int => new MirConstantValue.IntValue(lit.Value is long l ? l : Convert.ToInt64(lit.Value)),
+            LiteralKind.Int => ConvertLiteralInt(lit),
             LiteralKind.Float => new MirConstantValue.FloatValue(Convert.ToDouble(lit.Value)),
             LiteralKind.String => new MirConstantValue.StringValue(lit.Value?.ToString() ?? ""),
             LiteralKind.Char => new MirConstantValue.CharValue(lit.Value is char c ? c : Convert.ToChar(lit.Value)),
@@ -961,6 +962,23 @@ public sealed partial class MirBuilder
             Value = constantValue,
             Span = lit.Span,
             TypeId = lit.TypeId
+        };
+    }
+
+    private static MirConstantValue ConvertLiteralInt(HirLiteral lit)
+    {
+        return lit.Value switch
+        {
+            long l => new MirConstantValue.IntValue(l),
+            int i => new MirConstantValue.IntValue(i),
+            uint ui => new MirConstantValue.IntValue(ui),
+            byte b => new MirConstantValue.IntValue(b),
+            sbyte sb => new MirConstantValue.IntValue(sb),
+            short s => new MirConstantValue.IntValue(s),
+            ushort us => new MirConstantValue.IntValue(us),
+            ulong u => new MirConstantValue.IntValue(unchecked((long)u)),
+            BigInteger big => new MirConstantValue.BigIntValue(big),
+            _ => new MirConstantValue.IntValue(lit.Value is null ? 0 : Convert.ToInt64(lit.Value))
         };
     }
 

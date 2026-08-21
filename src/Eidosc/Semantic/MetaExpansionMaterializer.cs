@@ -1072,7 +1072,12 @@ internal sealed class MetaExpansionMaterializer(
                 result = CreateDeclarationReference(declaration);
                 return true;
             case "expr.int":
-                return TryCreateLiteral<ComptimeIntegerValue>(expression, value => value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), out result, out reason);
+                if (TryCreateLiteral<ComptimeIntegerValue>(expression, value => value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), out result, out reason))
+                {
+                    return true;
+                }
+
+                return TryCreateLiteral<ComptimeBigIntegerValue>(expression, value => value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture), out result, out reason);
             case "expr.bool":
                 return TryCreateLiteral<ComptimeBoolValue>(expression, value => value.Value ? "true" : "false", out result, out reason);
             case "expr.string":

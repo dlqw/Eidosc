@@ -224,6 +224,11 @@ internal static class ComptimeSyntaxEvaluator
                 tokenOrdinal++;
                 reason = string.Empty;
                 return true;
+            case ComptimeBigIntegerValue scalar:
+                AddGenerated(tokens, SyntaxKind.NumberLiteral, "numberLiteral", scalar.Value.ToString(CultureInfo.InvariantCulture), leadingTrivia, span, null);
+                tokenOrdinal++;
+                reason = string.Empty;
+                return true;
             case ComptimeFloatValue scalar:
                 AddGenerated(tokens, SyntaxKind.NumberLiteral, "numberLiteral", scalar.Value.ToString("R", CultureInfo.InvariantCulture), leadingTrivia, span, null);
                 tokenOrdinal++;

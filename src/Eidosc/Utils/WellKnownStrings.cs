@@ -295,6 +295,7 @@ public static class WellKnownStrings
         public const string StringIntern = "eidos_string_intern";
         public const string StringFromCstrRaw = "eidos_string_from_cstr_raw";
         public const string StringToCstr = "eidos_string_to_cstr";
+        public const string CStringToPtr = "eidos_cstring_to_ptr";
         public const string StringToFloat = "eidos_string_to_float";
         public const string IntToString = "eidos_int_to_string";
         public const string FloatToString = "eidos_float_to_string";

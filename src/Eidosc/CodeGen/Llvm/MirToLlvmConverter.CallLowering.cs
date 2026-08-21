@@ -1625,7 +1625,8 @@ public sealed partial class MirToLlvmConverter
             8 => LlvmIntType.I8,
             16 => LlvmIntType.I16,
             32 => LlvmIntType.I32,
-            _ => LlvmIntType.I64
+            64 => LlvmIntType.I64,
+            _ => new LlvmIntType { Bits = bits }
         };
 
         if (sourceInt.Bits < bits)

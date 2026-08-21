@@ -449,6 +449,11 @@ public static class BaseTypes
     public const int IntegerTypeIdBase = 1_000_000;
 
     /// <summary>
+    /// 任意位宽整数的最大位宽（RFC 约定 1..4096）。
+    /// </summary>
+    public const int MaxIntegerWidth = 4096;
+
+    /// <summary>
     /// 整数类型
     /// </summary>
     public static TyCon Int { get; } = new() { Name = WellKnownStrings.BuiltinTypes.Int, Id = new TypeId(IntId) };
@@ -579,7 +584,7 @@ public static class BaseTypes
             return false;
         }
 
-        if (!int.TryParse(name.AsSpan(1), out width) || width <= 0)
+        if (!int.TryParse(name.AsSpan(1), out width) || width <= 0 || width > MaxIntegerWidth)
         {
             return false;
         }
@@ -594,7 +599,7 @@ public static class BaseTypes
     /// </summary>
     public static TypeId GetIntegerTypeId(bool unsigned, int width)
     {
-        if (width <= 0)
+        if (width <= 0 || width > MaxIntegerWidth)
         {
             return TypeId.None;
         }
@@ -629,6 +634,18 @@ public static class BaseTypes
     /// <summary>
     /// 判断一个 TypeId 是否是整数类型，并取出符号性与位宽。
     /// </summary>
+    /// <summary>
+    /// 创建任意位宽整数类型。标准宽度仍返回既有内建类型 ID，1 位统一为 Bool。
+    /// </summary>
+    public static TyCon GetIntegerType(bool unsigned, int width)
+    {
+        return new TyCon
+        {
+            Name = (unsigned ? "U" : "I") + width.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Id = GetIntegerTypeId(unsigned, width)
+        };
+    }
+
     public static bool TryGetIntegerTypeInfo(TypeId id, out bool unsigned, out int width)
     {
         unsigned = false;
@@ -670,8 +687,8 @@ public static class BaseTypes
                 width = 8;
                 return true;
             case BoolId:
-                // Bool 与 I1 是同一 1 位整数类型。
-                unsigned = false;
+                // Bool 与 I1/U1 是同一 1 位整数类型；取值 0..1，按无符号 1 位处理。
+                unsigned = true;
                 width = 1;
                 return true;
         }
@@ -689,7 +706,7 @@ public static class BaseTypes
 
         width = offset / 2;
         unsigned = (offset & 1) != 0;
-        return width > 0;
+        return width > 0 && width <= MaxIntegerWidth;
     }
 
     public static bool IsIntegerType(TypeId id) =>

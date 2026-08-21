@@ -1,6 +1,7 @@
 namespace Eidosc.Pipeline;
 
 using System.Collections.Immutable;
+using System.Numerics;
 using Eidosc.Ast.Declarations;
 using Eidosc.Symbols;
 using Eidosc.Syntax;
@@ -573,6 +574,9 @@ public sealed record ComptimeValuePayload(
             case ComptimeIntegerValue scalar:
                 payload = CreateScalar(scalar, nameof(Int64), scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 return true;
+            case ComptimeBigIntegerValue scalar:
+                payload = CreateScalar(scalar, nameof(BigInteger), scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                return true;
             case ComptimeFloatValue scalar:
                 payload = CreateScalar(scalar, nameof(Double), scalar.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                 return true;
@@ -1007,6 +1011,9 @@ public sealed record ComptimeValuePayload(
                 return true;
             case nameof(Int64) when long.TryParse(ScalarValue, System.Globalization.NumberStyles.Integer, culture, out var scalar):
                 value = new ComptimeIntegerValue(scalar);
+                return true;
+            case nameof(BigInteger) when BigInteger.TryParse(ScalarValue, System.Globalization.NumberStyles.Integer, culture, out var scalar):
+                value = new ComptimeBigIntegerValue(scalar);
                 return true;
             case nameof(Double) when double.TryParse(ScalarValue, System.Globalization.NumberStyles.Float, culture, out var scalar):
                 value = new ComptimeFloatValue(scalar);

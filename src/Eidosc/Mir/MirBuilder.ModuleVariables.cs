@@ -450,6 +450,13 @@ public sealed partial class MirBuilder
                             TypeId = unaryOp.TypeId.IsValid ? unaryOp.TypeId : baseConstant.TypeId,
                             Span = unaryOp.Span
                         },
+                    MirConstantValue.BigIntValue bigIntValue =>
+                        new MirConstant
+                        {
+                            Value = new MirConstantValue.BigIntValue(-bigIntValue.Value),
+                            TypeId = unaryOp.TypeId.IsValid ? unaryOp.TypeId : baseConstant.TypeId,
+                            Span = unaryOp.Span
+                        },
                     MirConstantValue.FloatValue floatValue =>
                         new MirConstant
                         {
