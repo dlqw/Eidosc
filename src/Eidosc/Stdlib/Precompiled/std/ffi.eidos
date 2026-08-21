@@ -200,6 +200,10 @@ Ffi :: module {
 
     cstr_to_string :: RawPtr -> String compiler(internal, intrinsic: "cstr_to_string") need ffi;
 
+    string_to_cstring :: String -> CString compiler(internal, intrinsic: "string_to_cstring") need ffi;
+
+    cstring_to_string :: CString -> String compiler(internal, intrinsic: "cstring_to_string") need ffi;
+
 
 
     @[extern(c, name: "malloc")]
@@ -347,6 +351,16 @@ Ffi :: module {
     export from_c_string :: RawPtr -> String need ffi
     {
         ptr => cstr_to_string(ptr)
+    }
+
+    export cstring_from_string :: String -> CString need ffi
+    {
+        text => string_to_cstring(text)
+    }
+
+    export cstring_to_string :: CString -> String need ffi
+    {
+        cstr => cstring_to_string(cstr)
     }
 
     export is_non_null :: RawPtr -> Bool need ffi
