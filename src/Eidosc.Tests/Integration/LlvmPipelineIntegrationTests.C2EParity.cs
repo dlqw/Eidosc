@@ -1332,7 +1332,7 @@ public partial class LlvmPipelineIntegrationTests
             Assert.Contains("Ffi.offset_bytes(", translated, StringComparison.Ordinal);
             Assert.Contains("Ffi.ptr_as_int(", translated, StringComparison.Ordinal);
             Assert.Contains("Ffi.null_pointer()", translated, StringComparison.Ordinal);
-            Assert.Contains("3993919788l", translated, StringComparison.Ordinal);
+            Assert.Contains("3993919788i64", translated, StringComparison.Ordinal);
             Assert.Contains("Ffi.to_c_string(", translated, StringComparison.Ordinal);
             Assert.Contains("Ffi.trunc_to_int(", translated, StringComparison.Ordinal);
 

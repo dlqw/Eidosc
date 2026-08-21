@@ -196,14 +196,24 @@ internal sealed class TypeIdRegistry
 
         if (node is LiteralExpr lit)
         {
-            if (lit.TypeSuffix != Ast.Expressions.LiteralTypeSuffix.None)
+            if (lit.TypeSuffix != LiteralTypeSuffix.None)
             {
                 return lit.TypeSuffix switch
                 {
-                    Ast.Expressions.LiteralTypeSuffix.UInt8 => new TypeId(BaseTypes.UInt8Id),
-                    Ast.Expressions.LiteralTypeSuffix.UInt16 => new TypeId(BaseTypes.UInt16Id),
-                    Ast.Expressions.LiteralTypeSuffix.UInt32 => new TypeId(BaseTypes.UInt32Id),
-                    Ast.Expressions.LiteralTypeSuffix.UInt64 => new TypeId(BaseTypes.UInt64Id),
+                    LiteralTypeSuffix.Int8 => new TypeId(BaseTypes.Int8Id),
+                    LiteralTypeSuffix.Int16 => new TypeId(BaseTypes.Int16Id),
+                    LiteralTypeSuffix.Int32 => new TypeId(BaseTypes.Int32Id),
+                    LiteralTypeSuffix.Int64 => new TypeId(BaseTypes.IntId), // Int 与 Int64 同构：统一到 Int
+                    LiteralTypeSuffix.UInt8 => new TypeId(BaseTypes.UInt8Id),
+                    LiteralTypeSuffix.UInt16 => new TypeId(BaseTypes.UInt16Id),
+                    LiteralTypeSuffix.UInt32 => new TypeId(BaseTypes.UInt32Id),
+                    LiteralTypeSuffix.UInt64 => new TypeId(BaseTypes.UInt64Id),
+                    LiteralTypeSuffix.Float32 => new TypeId(BaseTypes.Float32Id),
+                    LiteralTypeSuffix.Float64 => new TypeId(BaseTypes.FloatId), // Float 与 Float64 同构
+                    LiteralTypeSuffix.IntArbitrary or LiteralTypeSuffix.UIntArbitrary =>
+                        BaseTypes.GetIntegerTypeId(
+                            lit.TypeSuffix == LiteralTypeSuffix.UIntArbitrary,
+                            lit.IntegerSuffixWidth ?? 0),
                     _ => new TypeId(BaseTypes.IntId)
                 };
             }

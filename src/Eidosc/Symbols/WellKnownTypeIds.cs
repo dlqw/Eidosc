@@ -105,4 +105,5 @@ public static class WellKnownTypeIds
     public const int UInt32Id = 98;
     public const int UInt16Id = 99;
     public const int UInt8Id = 100;
+    public const int CStringId = 101;
 }

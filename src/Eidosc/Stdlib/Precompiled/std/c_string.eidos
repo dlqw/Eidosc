@@ -1,0 +1,20 @@
+CString :: module {
+    import Ffi
+
+    cstring_to_string :: CString -> String compiler(internal, intrinsic: "cstring_to_string") need ffi;
+
+    export from_string :: String -> CString need ffi
+    {
+        text => Ffi.cstring_from_string(text)
+    }
+
+    export to_string :: CString -> String need ffi
+    {
+        cstr => cstring_to_string(cstr)
+    }
+
+    export as_ptr :: CString -> RawPtr need ffi
+    {
+        cstr => Ffi.cstring_as_ptr(cstr)
+    }
+}

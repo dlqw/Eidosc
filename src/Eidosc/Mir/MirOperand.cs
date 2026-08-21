@@ -1,3 +1,4 @@
+using System.Numerics;
 using Eidosc.Symbols;
 using Eidosc.Semantic;
 using Eidosc.Utils;
@@ -140,6 +141,14 @@ public abstract record MirConstantValue
     /// 整数常量
     /// </summary>
     public sealed record IntValue(long Value) : MirConstantValue
+    {
+        public override string ToString() => Value.ToString();
+    }
+
+    /// <summary>
+    /// 任意位宽整数常量（超出 64 位时使用）。
+    /// </summary>
+    public sealed record BigIntValue(BigInteger Value) : MirConstantValue
     {
         public override string ToString() => Value.ToString();
     }

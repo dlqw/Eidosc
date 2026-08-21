@@ -1301,6 +1301,8 @@ public sealed partial class MirToLlvmConverter
     private static string ResolveRuntimeFunctionLlvmSourceName(string logicalName) => logicalName switch
     {
         "cstr_to_string" => "string_from_cstr_raw",
+        "string_to_cstring" => "string_to_cstr",
+        "cstring_to_string" => "string_from_cstr_raw",
         _ => logicalName
     };
 
@@ -1334,6 +1336,9 @@ public sealed partial class MirToLlvmConverter
         Add("int_to_float",   f64, [i64]);
         Add("string_from_cstr", ptr, [ptr]);
         Add("cstr_to_string", ptr, [ptr]);
+        Add("string_to_cstring", ptr, [ptr]);
+        Add("cstring_to_string", ptr, [ptr]);
+        Add("cstring_to_ptr", ptr, [ptr]);
         Add("http_get_text",  ptr, [ptr]);
         Add("http_request_text", ptr, [ptr, ptr, ptr, ptr]);
         Add("http_request_text_with_headers", ptr, [ptr, ptr, ptr, ptr, ptr]);
@@ -1941,6 +1946,7 @@ public sealed partial class MirToLlvmConverter
         // FFI 辅助函数
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.StringToCstr, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.StringFromCstrRaw, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());
+        AddRuntimeDeclaration(module, WellKnownStrings.Runtime.CStringToPtr, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PtrNull, LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PtrIsNull, LlvmIntType.I1, LlvmPointerType.VoidPtr());
         AddRuntimeDeclaration(module, WellKnownStrings.Runtime.PtrEquals, LlvmIntType.I1, LlvmPointerType.VoidPtr(), LlvmPointerType.VoidPtr());

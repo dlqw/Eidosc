@@ -1,3 +1,4 @@
+using System.Numerics;
 using Eidosc.Ast;
 using Eidosc.Ast.Declarations;
 using Eidosc.Ast.Expressions;
@@ -1962,7 +1963,7 @@ internal static partial class ComptimeEvaluator
         switch (unary.Operator)
         {
             case UnaryOp.Negate when TryGetInteger(operand, out var intValue):
-                value = new ComptimeIntegerValue(-intValue);
+                value = CreateIntegerValue(-intValue);
                 return Succeed(out reason);
 
             case UnaryOp.Negate when TryGetFloat(operand, out var floatValue):
@@ -2072,13 +2073,13 @@ internal static partial class ComptimeEvaluator
         switch (op)
         {
             case BinaryOp.Add:
-                value = new ComptimeIntegerValue(a + b);
+                value = CreateIntegerValue(a + b);
                 return true;
             case BinaryOp.Subtract:
-                value = new ComptimeIntegerValue(a - b);
+                value = CreateIntegerValue(a - b);
                 return true;
             case BinaryOp.Multiply:
-                value = new ComptimeIntegerValue(a * b);
+                value = CreateIntegerValue(a * b);
                 return true;
             case BinaryOp.Divide:
                 if (b == 0)
@@ -2087,7 +2088,7 @@ internal static partial class ComptimeEvaluator
                     return false;
                 }
 
-                value = new ComptimeIntegerValue(a / b);
+                value = CreateIntegerValue(a / b);
                 return true;
             case BinaryOp.Modulo:
                 if (b == 0)
@@ -2096,22 +2097,22 @@ internal static partial class ComptimeEvaluator
                     return false;
                 }
 
-                value = new ComptimeIntegerValue(a % b);
+                value = CreateIntegerValue(a % b);
                 return true;
             case BinaryOp.BitAnd:
-                value = new ComptimeIntegerValue(a & b);
+                value = CreateIntegerValue(a & b);
                 return true;
             case BinaryOp.BitOr:
-                value = new ComptimeIntegerValue(a | b);
+                value = CreateIntegerValue(a | b);
                 return true;
             case BinaryOp.BitXor:
-                value = new ComptimeIntegerValue(a ^ b);
+                value = CreateIntegerValue(a ^ b);
                 return true;
             case BinaryOp.ShiftLeft:
-                value = new ComptimeIntegerValue(a << (int)b);
+                value = CreateIntegerValue(a << (int)b);
                 return true;
             case BinaryOp.ShiftRight:
-                value = new ComptimeIntegerValue(a >> (int)b);
+                value = CreateIntegerValue(a >> (int)b);
                 return true;
             case BinaryOp.Less:
                 value = new ComptimeBoolValue(a < b);
@@ -2263,7 +2264,7 @@ internal static partial class ComptimeEvaluator
         }
     }
 
-    private static bool TryGetInteger(ComptimeValue value, out long result)
+    private static bool TryGetInteger(ComptimeValue value, out BigInteger result)
     {
         if (value is ComptimeIntegerValue integer)
         {
@@ -2271,8 +2272,24 @@ internal static partial class ComptimeEvaluator
             return true;
         }
 
-        result = 0;
+        if (value is ComptimeBigIntegerValue bigInteger)
+        {
+            result = bigInteger.Value;
+            return true;
+        }
+
+        result = BigInteger.Zero;
         return false;
+    }
+
+    private static ComptimeValue CreateIntegerValue(BigInteger value)
+    {
+        if (value >= long.MinValue && value <= long.MaxValue)
+        {
+            return new ComptimeIntegerValue((long)value);
+        }
+
+        return new ComptimeBigIntegerValue(value);
     }
 
     private static bool TryGetFloat(ComptimeValue value, out double result)

@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
 using Eidosc.CodeGen.Llvm;
@@ -1026,7 +1027,7 @@ Main :: module {
                             Span = Span(30),
                             Instructions =
                             [
-                                new MirAssign { Target = local, Source = ConstInt(42, intType), Span = Span(31) },
+                                new MirAssign { Target = local, Source = ConstBigInt(42, intType), Span = Span(31) },
                                 new MirCaseInject
                                 {
                                     Target = local,
@@ -1115,6 +1116,14 @@ Main :: module {
             TypeId = typeId,
             Value = new MirConstantValue.IntValue(value),
             Span = Span(100)
+        };
+
+    private static MirConstant ConstBigInt(BigInteger value, TypeId typeId) =>
+        new()
+        {
+            TypeId = typeId,
+            Value = new MirConstantValue.BigIntValue(value),
+            Span = Span(107)
         };
 
     private static MirConstant ConstFloat(double value) =>

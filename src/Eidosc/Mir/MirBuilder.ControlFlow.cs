@@ -312,6 +312,16 @@ public sealed partial class MirBuilder
                 Value = new MirConstantValue.IntValue(longValue),
                 TypeId = new TypeId(BaseTypes.IntId)
             },
+            ulong ulongValue => new MirConstant
+            {
+                Value = new MirConstantValue.IntValue(unchecked((long)ulongValue)),
+                TypeId = new TypeId(BaseTypes.IntId)
+            },
+            System.Numerics.BigInteger bigIntegerValue => new MirConstant
+            {
+                Value = new MirConstantValue.BigIntValue(bigIntegerValue),
+                TypeId = new TypeId(BaseTypes.IntId)
+            },
             float floatValue => new MirConstant
             {
                 Value = new MirConstantValue.FloatValue(floatValue),

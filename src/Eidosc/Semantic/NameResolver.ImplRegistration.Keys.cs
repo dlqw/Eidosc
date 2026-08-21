@@ -343,7 +343,7 @@ public sealed partial class NameResolver
 
         return value switch
         {
-            ComptimeIntegerValue => new TypeId(BaseTypes.IntId),
+            ComptimeIntegerValue or ComptimeBigIntegerValue => new TypeId(BaseTypes.IntId),
             ComptimeFloatValue => new TypeId(BaseTypes.FloatId),
             ComptimeBoolValue => new TypeId(BaseTypes.BoolId),
             ComptimeStringValue => new TypeId(BaseTypes.StringId),
@@ -358,6 +358,7 @@ public sealed partial class NameResolver
         ComptimeUnitValue => "()",
         ComptimeBoolValue scalar => scalar.Value ? "true" : "false",
         ComptimeIntegerValue scalar => scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        ComptimeBigIntegerValue scalar => scalar.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
         ComptimeFloatValue scalar => scalar.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
         ComptimeCharValue scalar => $"'{scalar.Value}'",
         ComptimeStringValue scalar => $"\"{scalar.Value}\"",

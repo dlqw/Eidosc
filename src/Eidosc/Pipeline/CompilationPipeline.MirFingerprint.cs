@@ -442,6 +442,10 @@ public sealed partial class CompilationPipeline
                 Append(builder, nameof(MirConstantValue.IntValue));
                 Append(builder, intValue.Value);
                 break;
+            case MirConstantValue.BigIntValue bigIntValue:
+                Append(builder, nameof(MirConstantValue.BigIntValue));
+                Append(builder, bigIntValue.Value.ToString(CultureInfo.InvariantCulture));
+                break;
             case MirConstantValue.FloatValue floatValue:
                 Append(builder, nameof(MirConstantValue.FloatValue));
                 Append(builder, floatValue.Value.ToString("R", CultureInfo.InvariantCulture));

@@ -1540,6 +1540,10 @@ public sealed partial class HirBuilder
                 node = CreateComptimeLiteral(LiteralKind.Int, scalar.Value, typeId, span);
                 reason = "";
                 return true;
+            case ComptimeBigIntegerValue scalar:
+                node = CreateComptimeLiteral(LiteralKind.Int, scalar.Value, typeId, span);
+                reason = "";
+                return true;
             case ComptimeFloatValue scalar:
                 node = CreateComptimeLiteral(LiteralKind.Float, scalar.Value, typeId, span);
                 reason = "";

@@ -1,3 +1,4 @@
+using System.Numerics;
 using Eidosc.Symbols;
 using Eidosc.Ast.Patterns;
 using Eidosc.Diagnostic;
@@ -81,31 +82,300 @@ public sealed partial class TypeInferer
 
     private Type InferLiteralPattern(LiteralPattern lit, Type? expectedType = null)
     {
-        var literalType = lit.Type switch
+        // 解析期错误（越界/未知转义/非法字符）在此上报，但继续给出可推断类型以避免连锁。
+        if (lit.ErrorMessage != null)
         {
-            LiteralType.Integer => (Type)BaseTypes.Int,
-            LiteralType.Float => BaseTypes.Float,
-            LiteralType.String => BaseTypes.String,
-            LiteralType.Char => BaseTypes.Char,
-            LiteralType.Boolean => BaseTypes.Bool,
-            _ => InferUnsupportedLiteralPattern(lit)
-        };
+            AddError(lit.Span, lit.ErrorMessage, "E4016");
+        }
 
-        if (expectedType == null)
+        var resolvedExpected = expectedType == null ? null : _substitution.Apply(expectedType);
+
+        // Char 字面模式对整型主题保留 C `case 'a':` 语义，并对窄型做值域检查。
+        if (lit.Type == LiteralType.Char &&
+            resolvedExpected is TyCon charExpected &&
+            IsIntegerBaseType(charExpected))
         {
+            if (!IsCharPatternValueInRange(lit, charExpected))
+            {
+                AddError(lit.Span, LiteralPatternOutOfRangeMessage(lit, charExpected), "E4016");
+            }
+
+            lit.InferredType = charExpected;
+            return charExpected;
+        }
+
+        var literalType = lit.TypeSuffix != LiteralTypeSuffix.None
+            ? GetBaseTypeForLiteralSuffix(lit.TypeSuffix, lit.IntegerSuffixWidth)
+            : lit.Type switch
+            {
+                LiteralType.Integer => (Type)BaseTypes.Int,
+                LiteralType.Float => BaseTypes.Float,
+                LiteralType.String => BaseTypes.String,
+                LiteralType.Char => BaseTypes.Char,
+                LiteralType.Boolean => BaseTypes.Bool,
+                _ => InferUnsupportedLiteralPattern(lit)
+            };
+
+        if (resolvedExpected is TyCon expectedCon &&
+            TryAdaptLiteralPatternToExpectedType(lit, expectedCon, out var adapted))
+        {
+            lit.InferredType = adapted;
+            return adapted;
+        }
+
+        if (resolvedExpected == null)
+        {
+            lit.InferredType = literalType;
             return literalType;
         }
 
-        if (lit.Type == LiteralType.Char && IsIntType(expectedType))
-        {
-            lit.InferredType = expectedType;
-            return expectedType;
-        }
-
-        var resultType = TryUnify(expectedType, literalType, lit.Span, DiagnosticMessages.LiteralPatternTypeMismatch);
+        var resultType = TryUnify(
+            resolvedExpected!,
+            literalType,
+            lit.Span,
+            DiagnosticMessages.LiteralPatternTypeMismatch);
         var resolved = _substitution.Apply(resultType);
         lit.InferredType = resolved;
         return resolved;
+    }
+
+    /// <summary>
+    /// 无后缀数值字面模式按主题基元类型解释（后缀 RFC 的上下文适配），
+    /// 范围外报 E4016 专用诊断、不静默窄化。
+    /// 与表达式侧不同，模式侧负字面量是单个 LiteralPattern（无 UnaryExpr 双层），
+    /// 因此 `-128` 可安全适配到 Int8 主题（RFC §4.3 的示例语义优先于 §4.6 的边界陈述）。
+    /// </summary>
+    private bool TryAdaptLiteralPatternToExpectedType(LiteralPattern lit, TyCon expected, out Type adapted)
+    {
+        adapted = expected;
+
+        if (lit.Type is not (LiteralType.Integer or LiteralType.Float) ||
+            lit.TypeSuffix != LiteralTypeSuffix.None ||
+            !TryGetSuffixForBaseType(expected, out var target, out var arbitraryWidth) ||
+            target == LiteralTypeSuffix.None)
+        {
+            return false;
+        }
+
+        if (lit.Type == LiteralType.Float)
+        {
+            if (!LiteralSuffixTable.IsFloat(target))
+            {
+                return false;
+            }
+
+            var floatValue = lit.Value switch
+            {
+                double d => d,
+                float f => f,
+                _ => double.NaN
+            };
+            lit.SetValueAndKind(
+                target == LiteralTypeSuffix.Float32 ? (object)(float)floatValue : floatValue,
+                LiteralType.Float,
+                target,
+                arbitraryWidth);
+            return true;
+        }
+
+        // 整数 → 浮点主题（Rust 语义：`match f: Float { 0 => ... }`）。
+        if (LiteralSuffixTable.IsFloat(target))
+        {
+            if (!TryGetIntegerPatternBigIntegerMagnitude(lit, out var integerMagnitude))
+            {
+                return false;
+            }
+
+            lit.SetValueAndKind(
+                target == LiteralTypeSuffix.Float32 ? (object)(float)integerMagnitude : (double)integerMagnitude,
+                LiteralType.Float,
+                target,
+                arbitraryWidth);
+            return true;
+        }
+
+        // 整数 → 窄整数主题。
+        if (TryGetIntegerPatternNegativeValue(lit, out var negativeValue))
+        {
+            if (!LiteralSuffixTable.IsSigned(target) ||
+                !TryGetBigIntegerSignedRange(target, arbitraryWidth, out var signedMin, out _) ||
+                negativeValue < signedMin)
+            {
+                AddError(lit.Span, LiteralPatternOutOfRangeMessage(lit, expected), "E4016");
+                return true;
+            }
+
+            lit.SetValueAndKind(negativeValue, LiteralType.Integer, target, arbitraryWidth);
+            return true;
+        }
+
+        if (!TryGetIntegerPatternBigIntegerMagnitude(lit, out var magnitude) ||
+            !LiteralSuffixTable.TryGetBigIntegerMagnitudeLimit(target, arbitraryWidth ?? 0, out var magnitudeLimit))
+        {
+            return false;
+        }
+
+        if (magnitude > magnitudeLimit)
+        {
+            AddError(lit.Span, LiteralPatternOutOfRangeMessage(lit, expected), "E4016");
+            return true;
+        }
+
+        object value = magnitude <= long.MaxValue
+            ? (object)(long)magnitude
+            : magnitude <= ulong.MaxValue
+                ? (object)(ulong)magnitude
+                : magnitude;
+        lit.SetValueAndKind(value, LiteralType.Integer, target, arbitraryWidth);
+        return true;
+    }
+
+    private static bool TryGetIntegerPatternBigIntegerMagnitude(LiteralPattern lit, out BigInteger magnitude)
+    {
+        switch (lit.Value)
+        {
+            case BigInteger bigValue when bigValue >= 0:
+                magnitude = bigValue;
+                return true;
+            case long longValue when longValue >= 0:
+                magnitude = longValue;
+                return true;
+            case byte byteValue:
+                magnitude = byteValue;
+                return true;
+            case ushort ushortValue:
+                magnitude = ushortValue;
+                return true;
+            case uint uintValue:
+                magnitude = uintValue;
+                return true;
+            case ulong ulongValue:
+                magnitude = ulongValue;
+                return true;
+            case int intValue when intValue >= 0:
+                magnitude = intValue;
+                return true;
+            default:
+                magnitude = BigInteger.Zero;
+                return false;
+        }
+    }
+
+    private static bool TryGetIntegerPatternNegativeValue(LiteralPattern lit, out BigInteger negativeValue)
+    {
+        switch (lit.Value)
+        {
+            case BigInteger bigValue when bigValue < 0:
+                negativeValue = bigValue;
+                return true;
+            case long longValue when longValue < 0:
+                negativeValue = longValue;
+                return true;
+            default:
+                negativeValue = BigInteger.Zero;
+                return false;
+        }
+    }
+
+    private static bool TryGetBigIntegerSignedRange(
+        LiteralTypeSuffix suffix,
+        int? arbitraryWidth,
+        out BigInteger min,
+        out BigInteger max)
+    {
+        if (suffix == LiteralTypeSuffix.IntArbitrary)
+        {
+            int bits = arbitraryWidth ?? 0;
+            if (bits <= 0 || bits > BaseTypes.MaxIntegerWidth)
+            {
+                min = BigInteger.Zero;
+                max = BigInteger.Zero;
+                return false;
+            }
+
+            min = -(BigInteger.One << (bits - 1));
+            max = (BigInteger.One << (bits - 1)) - 1;
+            return true;
+        }
+
+        (long fixedMin, long fixedMax) = suffix switch
+        {
+            LiteralTypeSuffix.Int8 => (sbyte.MinValue, (long)sbyte.MaxValue),
+            LiteralTypeSuffix.Int16 => (short.MinValue, (long)short.MaxValue),
+            LiteralTypeSuffix.Int32 => (int.MinValue, int.MaxValue),
+            LiteralTypeSuffix.Int64 => (long.MinValue, long.MaxValue),
+            _ => (0L, 0L)
+        };
+        min = fixedMin;
+        max = fixedMax;
+        return fixedMin != 0;
+    }
+
+    private static Type GetBaseTypeForLiteralSuffix(LiteralTypeSuffix suffix, int? arbitraryWidth = null) => suffix switch
+    {
+        LiteralTypeSuffix.Int8 => BaseTypes.Int8,
+        LiteralTypeSuffix.Int16 => BaseTypes.Int16,
+        LiteralTypeSuffix.Int32 => BaseTypes.Int32,
+        LiteralTypeSuffix.Int64 => BaseTypes.Int,
+        LiteralTypeSuffix.UInt8 => BaseTypes.UInt8,
+        LiteralTypeSuffix.UInt16 => BaseTypes.UInt16,
+        LiteralTypeSuffix.UInt32 => BaseTypes.UInt32,
+        LiteralTypeSuffix.UInt64 => BaseTypes.UInt64,
+        LiteralTypeSuffix.Float32 => BaseTypes.Float32,
+        LiteralTypeSuffix.Float64 => BaseTypes.Float,
+        LiteralTypeSuffix.IntArbitrary or LiteralTypeSuffix.UIntArbitrary =>
+            arbitraryWidth is > 0 and <= BaseTypes.MaxIntegerWidth
+                ? BaseTypes.GetIntegerType(suffix == LiteralTypeSuffix.UIntArbitrary, arbitraryWidth.Value)
+                : BaseTypes.Int,
+        _ => BaseTypes.Int
+    };
+
+    private static bool IsCharPatternValueInRange(LiteralPattern lit, TyCon expected)
+    {
+        if (lit.Value is not char charValue ||
+            !TryGetSuffixForBaseType(expected, out var target, out var arbitraryWidth) ||
+            target == LiteralTypeSuffix.None)
+        {
+            return true;
+        }
+
+        if (!LiteralSuffixTable.IsInteger(target))
+        {
+            return true;
+        }
+
+        if (LiteralSuffixTable.IsSigned(target))
+        {
+            return charValue <= GetSignedMax(target, arbitraryWidth);
+        }
+
+        return (ulong)charValue <= GetUnsignedMax(target, arbitraryWidth);
+    }
+
+    private static long GetSignedMax(LiteralTypeSuffix suffix, int? arbitraryWidth = null) => suffix switch
+    {
+        LiteralTypeSuffix.Int8 => sbyte.MaxValue,
+        LiteralTypeSuffix.Int16 => short.MaxValue,
+        LiteralTypeSuffix.Int32 => int.MaxValue,
+        LiteralTypeSuffix.Int64 => long.MaxValue,
+        LiteralTypeSuffix.IntArbitrary when arbitraryWidth is > 0 and <= 63 => (1L << (arbitraryWidth.Value - 1)) - 1,
+        _ => long.MaxValue
+    };
+
+    private static ulong GetUnsignedMax(LiteralTypeSuffix suffix, int? arbitraryWidth = null) => suffix switch
+    {
+        LiteralTypeSuffix.UInt8 => byte.MaxValue,
+        LiteralTypeSuffix.UInt16 => ushort.MaxValue,
+        LiteralTypeSuffix.UInt32 => uint.MaxValue,
+        LiteralTypeSuffix.UInt64 => ulong.MaxValue,
+        LiteralTypeSuffix.UIntArbitrary when arbitraryWidth is > 0 and <= 63 => (1UL << arbitraryWidth.Value) - 1,
+        _ => ulong.MaxValue
+    };
+
+    private string LiteralPatternOutOfRangeMessage(LiteralPattern lit, Type expected)
+    {
+        var display = string.IsNullOrWhiteSpace(lit.RawText) ? "?" : lit.RawText;
+        return $"literal pattern '{display}' is out of range for scrutinee type '{_substitution.Apply(expected)}'";
     }
 
     private Type InferUnsupportedLiteralPattern(LiteralPattern lit)
@@ -116,9 +386,9 @@ public sealed partial class TypeInferer
         return recovered;
     }
 
-    private static bool IsIntType(Type type)
+    private static bool IsIntegerBaseType(Type type)
     {
-        return type is TyCon { Id.Value: BaseTypes.IntId };
+        return type is TyCon { Id: var typeId } && BaseTypes.IsIntegerType(typeId);
     }
 
     private Type InferCtorPattern(CtorPattern ctor, Type? expectedType = null)
@@ -512,8 +782,8 @@ public sealed partial class TypeInferer
             return;
         }
 
-        if (!TryConvertRangeBoundaryToComparable(rangePattern.Start, out var startValue) ||
-            !TryConvertRangeBoundaryToComparable(rangePattern.End, out var endValue))
+        if (!TryGetRangeBoundaryValue(rangePattern.Start, out var startValue) ||
+            !TryGetRangeBoundaryValue(rangePattern.End, out var endValue))
         {
             return;
         }
@@ -636,22 +906,48 @@ public sealed partial class TypeInferer
         _recoveryContext.RecordError();
     }
 
-    private static bool TryConvertRangeBoundaryToComparable(LiteralPattern boundary, out long value)
+    private static bool TryGetRangeBoundaryValue(LiteralPattern boundary, out BigInteger value)
     {
-        value = 0;
-
         switch (boundary.Value)
         {
-            case long intValue:
+            case BigInteger bigValue:
+                value = bigValue;
+                return true;
+            case long longValue:
+                value = longValue;
+                return true;
+            case int intValue:
                 value = intValue;
                 return true;
-            case int int32Value:
-                value = int32Value;
+            case short shortValue:
+                value = shortValue;
+                return true;
+            case sbyte sbyteValue:
+                value = sbyteValue;
+                return true;
+            case byte byteValue:
+                value = byteValue;
+                return true;
+            case ushort ushortValue:
+                value = ushortValue;
+                return true;
+            case uint uintValue:
+                value = uintValue;
+                return true;
+            case ulong ulongValue:
+                value = ulongValue;
                 return true;
             case char charValue:
                 value = charValue;
                 return true;
+            case string text when boundary.Type == LiteralType.Char && text.Length == 1:
+                value = text[0];
+                return true;
+            case string text when BigInteger.TryParse(text, out var parsed):
+                value = parsed;
+                return true;
             default:
+                value = BigInteger.Zero;
                 return false;
         }
     }
@@ -788,8 +1084,8 @@ public sealed partial class TypeInferer
             return false;
         }
 
-        return typeCon.Id.Value is BaseTypes.IntId or BaseTypes.CharId ||
-               string.Equals(typeCon.Name, WellKnownStrings.BuiltinTypes.Int, StringComparison.Ordinal) ||
+        return IsIntegerBaseType(typeCon) ||
+               typeCon.Id.Value is BaseTypes.CharId ||
                string.Equals(typeCon.Name, WellKnownStrings.BuiltinTypes.Char, StringComparison.Ordinal);
     }
 

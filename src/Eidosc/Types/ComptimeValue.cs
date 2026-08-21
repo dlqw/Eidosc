@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using Eidosc.Ast.Types;
@@ -50,6 +51,9 @@ internal abstract record ComptimeValue
                 return true;
             case long scalar:
                 comptimeValue = new ComptimeIntegerValue(scalar);
+                return true;
+            case BigInteger scalar:
+                comptimeValue = new ComptimeBigIntegerValue(scalar);
                 return true;
             case float scalar:
                 comptimeValue = new ComptimeFloatValue(scalar);
@@ -105,6 +109,17 @@ internal sealed record ComptimeBoolValue(bool Value) : ComptimeValue
 }
 
 internal sealed record ComptimeIntegerValue(long Value) : ComptimeValue
+{
+    protected override string UntypedCanonicalText => $"int:{Value.ToString(CultureInfo.InvariantCulture)}";
+
+    public override bool TryGetRuntimeLiteral(out object? value)
+    {
+        value = Value;
+        return true;
+    }
+}
+
+internal sealed record ComptimeBigIntegerValue(BigInteger Value) : ComptimeValue
 {
     protected override string UntypedCanonicalText => $"int:{Value.ToString(CultureInfo.InvariantCulture)}";
 

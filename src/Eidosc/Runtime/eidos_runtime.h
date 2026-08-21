@@ -325,6 +325,13 @@ void* eidos_string_to_cstr(EidosString* str);
 EidosString* eidos_string_from_cstr_raw(const char* cstr);
 
 /**
+ * Expose a CString handle as its underlying RawPtr (identity cast).
+ * @param cstr C string handle
+ * @return Raw pointer to the C string buffer
+ */
+void* eidos_cstring_to_ptr(void* cstr);
+
+/**
  * Return a null pointer.
  * @return NULL
  */

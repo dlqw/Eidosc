@@ -96,8 +96,39 @@ public sealed class ExprParserTests
         var lit = Assert.IsType<LiteralExpr>(result);
         Assert.Equal(LiteralKind.Integer, lit.Kind);
         Assert.Equal(expectedSuffix, lit.TypeSuffix);
-        Assert.Equal(expectedValue, lit.Value);
+        Assert.Equal((long)expectedValue, lit.Value);
         Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Theory]
+    [InlineData("42i24", LiteralTypeSuffix.IntArbitrary, 24, 42)]
+    [InlineData("42I24", LiteralTypeSuffix.IntArbitrary, 24, 42)]
+    [InlineData("7u512", LiteralTypeSuffix.UIntArbitrary, 512, 7)]
+    [InlineData("1u1", LiteralTypeSuffix.UIntArbitrary, 1, 1)]
+    public void Parse_arbitrary_width_suffix_literal(string source, LiteralTypeSuffix expectedSuffix, int expectedWidth, int expectedValue)
+    {
+        var ctx = MakeCtx(Num(source));
+        var parser = new ExprParser(ctx);
+        var result = parser.ParseExpr();
+        var lit = Assert.IsType<LiteralExpr>(result);
+        Assert.Equal(LiteralKind.Integer, lit.Kind);
+        Assert.Equal(expectedSuffix, lit.TypeSuffix);
+        Assert.Equal(expectedWidth, lit.IntegerSuffixWidth);
+        Assert.Equal((long)expectedValue, lit.Value);
+        Assert.Empty(ctx.Diagnostics);
+    }
+
+    [Fact]
+    public void Parse_arbitrary_width_suffix_out_of_range_reports_parse_error()
+    {
+        var ctx = MakeCtx(Num("1i5000"));
+        var parser = new ExprParser(ctx);
+        var result = parser.ParseExpr();
+        var lit = Assert.IsType<LiteralExpr>(result);
+        Assert.Equal(LiteralTypeSuffix.IntArbitrary, lit.TypeSuffix);
+        Assert.Equal(5000, lit.IntegerSuffixWidth);
+        Assert.NotNull(lit.ErrorMessage);
+        Assert.Contains("exceeds the maximum supported width", lit.ErrorMessage);
     }
 
     [Fact]

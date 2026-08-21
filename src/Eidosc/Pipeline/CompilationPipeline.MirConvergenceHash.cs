@@ -528,6 +528,10 @@ public sealed partial class CompilationPipeline
                 h.Add(1);
                 h.Add(intValue.Value.ToString(CultureInfo.InvariantCulture));
                 break;
+            case MirConstantValue.BigIntValue bigIntValue:
+                h.Add(20);
+                h.Add(bigIntValue.Value.ToString(CultureInfo.InvariantCulture));
+                break;
             case MirConstantValue.FloatValue floatValue:
                 h.Add(2);
                 h.Add(floatValue.Value.ToString("R", CultureInfo.InvariantCulture));

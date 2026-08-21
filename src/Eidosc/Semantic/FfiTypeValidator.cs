@@ -25,7 +25,8 @@ public sealed class FfiTypeValidator
         BaseTypes.FloatId,     // Float / Float64 → f64
         BaseTypes.BoolId,      // Bool → i1
         BaseTypes.UnitId,      // Unit → void
-        BaseTypes.RawPtrId     // RawPtr / Ptr[T] → ptr
+        BaseTypes.RawPtrId,    // RawPtr / Ptr[T] → ptr
+        BaseTypes.CStringId    // CString → const char* / char*
     ];
 
     /// <summary>
@@ -50,7 +51,8 @@ public sealed class FfiTypeValidator
         "UInt32",   // UInt32 → i32
         "UInt16",   // UInt16 → i16
         "UInt8",    // UInt8 → i8
-        WellKnownStrings.BuiltinTypes.Cfn       // Cfn[A..., Ret] → ptr（函数指针）
+        WellKnownStrings.BuiltinTypes.Cfn,      // Cfn[A..., Ret] → ptr（函数指针）
+        WellKnownStrings.BuiltinTypes.CString   // CString → const char* / char*
     ];
 
     /// <summary>

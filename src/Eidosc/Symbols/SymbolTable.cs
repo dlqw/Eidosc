@@ -297,6 +297,7 @@ public sealed partial class SymbolTable
     private static readonly TypeId T_Char = new(WellKnownTypeIds.CharId);
     private static readonly TypeId T_Unit = new(WellKnownTypeIds.UnitId);
     private static readonly TypeId T_RawPtr = new(WellKnownTypeIds.RawPtrId);
+    private static readonly TypeId T_CString = new(WellKnownTypeIds.CStringId);
 
     private static readonly string[] A_IO = [WellKnownStrings.BuiltinAbilities.IO];
     private static readonly string[] A_FFI = [WellKnownStrings.BuiltinAbilities.FFI];
@@ -406,6 +407,8 @@ public sealed partial class SymbolTable
         // FFI: 辅助函数
         new("string_to_cstr", T_RawPtr, [T_String], A_FFI),
         new("cstr_to_string", T_String, [T_RawPtr], A_FFI),
+        new("string_to_cstring", T_CString, [T_String], A_FFI),
+        new("cstring_to_string", T_String, [T_CString], A_FFI),
 
         // FFI: 指针基础
         new(WellKnownStrings.InternalNames.PtrNull, T_RawPtr, []),

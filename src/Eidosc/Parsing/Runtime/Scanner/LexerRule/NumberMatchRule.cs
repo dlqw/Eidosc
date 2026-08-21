@@ -6,23 +6,21 @@ using MemoryPack;
 namespace Eidosc;
 
 /// <summary>
-/// 数字字面量规则
-/// 支持：Hex(0x), Bin(0b), Oct(0c), 科学计数法(1e10), 类型后缀(100L, 1.5f)
+/// 数字字面量规则（结构层）：dec/hex/oct/bin、分隔符 `_`、后缀 i8..u64/f32/f64。
+/// 只做结构校验与 token 化；宽度范围校验（含有符号最小值经一元负号）下沉到
+/// AST/类型层（见 <see cref="Ast.Expressions.LiteralExpr"/> / TypeInferer）。
 /// </summary>
 [MemoryPackable]
 public partial class NumberLiteralRule : LiteralRule
 {
-    // 配置数据
     public readonly NumberConfig Config;
     public SyntaxKind Kind;
 
-    // 运行时缓存 (SIMD)
     private readonly char[] _firstsCache;
     private static readonly SearchValues<char> DecDigits = SearchValues.Create("0123456789");
     private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
-
-    // 后缀映射表 (如 'L' -> Int64, 'f' -> Single)
-    private readonly Dictionary<char, TypeCode> _suffixMap;
+    private static readonly SearchValues<char> OctDigits = SearchValues.Create("01234567");
+    private static readonly SearchValues<char> BinDigits = SearchValues.Create("01");
 
     [MemoryPackConstructor]
     public NumberLiteralRule(int terminalId, NumberConfig config, SyntaxKind kind = default) : base(terminalId)
@@ -30,19 +28,6 @@ public partial class NumberLiteralRule : LiteralRule
         Config = config;
         Kind = kind;
 
-        // 构建后缀映射
-        _suffixMap = new Dictionary<char, TypeCode>();
-        foreach (var suffix in config.Suffixes)
-        {
-            _suffixMap[suffix.Symbol] = suffix.TargetType;
-            if (!config.CaseSensitive)
-            {
-                _suffixMap[char.ToLowerInvariant(suffix.Symbol)] = suffix.TargetType;
-                _suffixMap[char.ToUpperInvariant(suffix.Symbol)] = suffix.TargetType;
-            }
-        }
-
-        // 构建首字符缓存
         var firsts = new HashSet<char> { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
         if (config.AllowLeadingSign)
         {
@@ -63,265 +48,283 @@ public partial class NumberLiteralRule : LiteralRule
     public override Token? Tokenize(LexerContext context)
     {
         var stream = context.Source;
-        if (stream.Eof()) return null;
+        if (stream.Eof())
+        {
+            return null;
+        }
 
-        // 1. 快速预检查
         char first = stream.PreviewChar;
-        // 注意：此处可优化，直接判断 first 是否在 _firstsCache 范围内
         bool isDigit = char.IsAsciiDigit(first);
-        if (!isDigit && first != '.' && first != '+' && first != '-') return null;
-
-        // 2. 初始化上下文
-        LiteralContext ctx = default;
-        ctx.Base = 10;
-        ctx.TargetType = TypeCode.Int32; // 默认类型
+        if (!isDigit && first != '.' && first != '+' && first != '-')
+        {
+            return null;
+        }
 
         string text = stream.Text;
         int startPos = stream.PreviewPosition;
         int pos = startPos;
         int maxLen = text.Length;
 
-        // 3. 处理符号 (+/-)
         if (Config.AllowLeadingSign && (first == '+' || first == '-'))
         {
             pos++;
-            if (pos >= maxLen) return null; // 只有符号没有数字
+            if (pos >= maxLen || !char.IsAsciiDigit(text[pos]))
+            {
+                return null; // 符号后无数字 → 不是数字字面量
+            }
         }
 
-        // 4. 处理进制前缀 (0x, 0b)
-        // 只有当以 '0' 开头时才可能是进制前缀
+        int fromBase = 10;
         if (pos + 1 < maxLen && text[pos] == '0')
         {
-            char next = text[pos + 1];
-            // 检查 Hex
-            if (Config.EnableHex && (next == 'x' || next == 'X'))
+            char p = text[pos + 1];
+            if (p == 'x' || p == 'X')
             {
-                ctx.Base = 16;
+                if (!Config.EnableHex)
+                {
+                    return null;
+                }
+
+                fromBase = 16;
                 pos += 2;
             }
-            // 检查 Binary
-            else if (Config.EnableBinary && (next == 'b' || next == 'B'))
+            else if (p == 'o' || p == 'O')
             {
-                ctx.Base = 2;
+                fromBase = 8;
+                pos += 2;
+            }
+            else if (p == 'b' || p == 'B')
+            {
+                if (!Config.EnableBinary)
+                {
+                    return null;
+                }
+
+                fromBase = 2;
                 pos += 2;
             }
         }
 
-        // 5. 扫描数字主体
-        int bodyStart = pos;
-        bool hasDot = false;
-        bool hasExp = false;
+        SearchValues<char> digits = fromBase switch
+        {
+            16 => HexDigits,
+            8 => OctDigits,
+            2 => BinDigits,
+            _ => DecDigits
+        };
 
-        // 根据进制选择字符集
-        var validDigits = ctx.Base == 16 ? HexDigits : DecDigits;
+        // 扫描数字体（允许分隔符 `_`，含进制前缀后立即 `_`）
+        int bodyStart = pos;
+        int bodyEnd = pos;
+        bool anyDigit = false;
+        while (pos < maxLen)
+        {
+            char c = text[pos];
+            if (digits.Contains(c))
+            {
+                anyDigit = true;
+                bodyEnd = pos + 1;
+                pos++;
+                continue;
+            }
+
+            if (c == '_')
+            {
+                bodyEnd = pos + 1;
+                pos++;
+                continue;
+            }
+
+            break;
+        }
+
+        if (!anyDigit)
+        {
+            // 例如 "0x"、"0o" 只有前缀没有数字 → 结构错误
+            string prefix = fromBase switch { 16 => "0x", 8 => "0o", 2 => "0b", _ => "" };
+            stream.PreviewPosition = pos > bodyStart ? pos : startPos + Math.Min(2, maxLen - startPos);
+            return Token.CreateErrorToken(
+                stream,
+                prefix.Length > 0
+                    ? $"expected a digit after '{prefix}' in integer literal"
+                    : "invalid numeric literal");
+        }
+
+        // 浮点（仅十进制）：数字体后紧跟 '.' 或 'e/E'
+        if (fromBase == 10 && pos < maxLen && (text[pos] == '.' || text[pos] == 'e' || text[pos] == 'E'))
+        {
+            if (!TryScanFloat(text, ref pos, maxLen, digits, out string? floatError))
+            {
+                stream.PreviewPosition = Math.Min(pos + 1, maxLen);
+                return Token.CreateErrorToken(stream, floatError ?? "invalid float literal");
+            }
+
+            // 浮点后缀
+            if (LiteralSuffixTable.TryMatch(text.AsSpan(), pos, out _, out int fLen))
+            {
+                pos += fLen;
+            }
+
+            stream.PreviewPosition = pos;
+            var fValue = ParseFloatValue(text, bodyStart, pos);
+            return Token.CreateContentToken(stream, Kind, context.Terminals[TerminalId], fValue);
+        }
+
+        // 整数后缀
+        LiteralTypeSuffix suffix = LiteralTypeSuffix.None;
+        if (LiteralSuffixTable.TryMatch(text.AsSpan(), pos, out suffix, out int suffixLen))
+        {
+            pos += suffixLen;
+        }
+
+        stream.PreviewPosition = pos;
+        var intValue = ParseIntegerValue(text, bodyStart, bodyEnd, fromBase, suffix);
+        return Token.CreateContentToken(stream, Kind, context.Terminals[TerminalId], intValue);
+    }
+
+    private static bool TryScanFloat(
+        string text,
+        ref int pos,
+        int maxLen,
+        SearchValues<char> digits,
+        out string? error)
+    {
+        error = null;
+        bool sawDot = false;
+        bool sawExp = false;
+        bool dotDigit = false;
+        bool expDigit = false;
 
         while (pos < maxLen)
         {
             char c = text[pos];
-
-            // A. 合法数字
-            if (validDigits.Contains(c))
+            if (digits.Contains(c))
             {
-                pos++;
-                continue;
-            }
-
-            // B. 下划线 (忽略)
-            if (Config.AllowUnderscore && c == '_')
-            {
-                pos++;
-                continue;
-            }
-
-            // C. 小数点 (仅十进制)
-            if (c == '.' && ctx.Base == 10)
-            {
-                if (pos + 1 < maxLen && text[pos + 1] == '.')
+                if (sawExp)
                 {
-                    break; 
+                    expDigit = true;
+                }
+                else if (sawDot)
+                {
+                    dotDigit = true;
                 }
 
-                if (hasDot || hasExp) break; // 已经有小数点了或在指数后
+                pos++;
+                continue;
+            }
+
+            if (c == '_')
+            {
+                pos++;
+                continue;
+            }
+
+            if (c == '.' && !sawDot && !sawExp)
+            {
+                // `..` 是 range pattern 运算符：小数点后必须紧跟数字，
+                // 否则不把 '.' 吞入浮点体（保留 `1..10`、`-10..-1` 的词法形态）。
                 if (pos + 1 >= maxLen || !char.IsAsciiDigit(text[pos + 1]))
                 {
                     break;
                 }
-                hasDot = true;
-                ctx.TargetType = TypeCode.Double; // 升级为浮点
+
+                sawDot = true;
                 pos++;
                 continue;
             }
 
-            // D. 指数 (e/E) (仅十进制)
-            if (ctx.Base == 10 && (c == 'e' || c == 'E'))
+            if ((c == 'e' || c == 'E') && !sawExp)
             {
-                if (hasExp) break;
-                hasExp = true;
-                ctx.TargetType = TypeCode.Double;
+                sawExp = true;
                 pos++;
-
-                // 指数后允许带符号
-                if (pos < maxLen)
+                if (pos < maxLen && (text[pos] == '+' || text[pos] == '-'))
                 {
-                    char nextE = text[pos];
-                    if (nextE == '+' || nextE == '-') pos++;
+                    pos++;
                 }
 
                 continue;
             }
 
-            // 其他字符，结束扫描
             break;
         }
 
-        // 如果没有读取到任何有效数字位 (例如只读了前缀 "0x")
-        if (pos == bodyStart) return null;
-
-        // 记录数字主体结束位置（不含后缀）
-        var bodyEnd = pos;
-
-        // 6. 处理后缀 (u8, u16, u32, u64, f, d, m, L, U...)
-        if (pos < maxLen)
+        if (!dotDigit && !expDigit && !(sawExp && expDigit))
         {
-            var unsignedType = MatchUnsignedSuffix(text, pos, maxLen, out var unsignedLength);
-            if (unsignedType.HasValue)
+            // 至少要有小数点后数字或指数 digit
+            if (sawExp && !expDigit)
             {
-                ctx.TargetType = unsignedType.Value;
-                pos += unsignedLength;
-            }
-            else
-            {
-                char potentialSuffix = text[pos];
-                if (_suffixMap.TryGetValue(potentialSuffix, out TypeCode typeCode))
-                {
-                    ctx.TargetType = typeCode;
-                    pos++;
-                }
+                error = "expected a digit after the exponent in float literal";
+                return false;
             }
         }
 
-        // 7. 提取 Body 并转换（不含后缀）
-        ctx.BodySpan = text.AsSpan(startPos, bodyEnd - startPos);
-
-        // 验证结果
-        if (ConvertNumber(ref ctx))
-        {
-            stream.PreviewPosition = pos;
-            return Token.CreateContentToken(stream, Kind, context.Terminals[TerminalId], ctx.ResultValue);
-        }
-
-        // 转换失败（溢出或格式错误）
-        stream.PreviewPosition = pos; // 仍然消耗掉字符，避免死循环，但返回错误
-        return Token.CreateErrorToken(stream, GetErrorMessage(LexerErrorCode.InvalidNumber));
+        return true;
     }
 
-    private static TypeCode? MatchUnsignedSuffix(string text, int pos, int maxLen, out int length)
+    private static object? ParseIntegerValue(
+        string text,
+        int bodyStart,
+        int bodyEnd,
+        int fromBase,
+        LiteralTypeSuffix suffix)
     {
-        length = 0;
-        if (pos + 1 >= maxLen || text[pos] != 'u')
+        var digits = StripSeparators(text.AsSpan(bodyStart, bodyEnd - bodyStart));
+        if (digits.Length == 0)
         {
             return null;
         }
 
-        var remaining = maxLen - pos;
-        if (remaining >= 2 && text[pos + 1] == '8')
+        ulong magnitude = 0;
+        foreach (char c in digits)
         {
-            length = 2;
-            return TypeCode.Byte;
+            int d = c switch
+            {
+                >= '0' and <= '9' => c - '0',
+                >= 'a' and <= 'f' => c - 'a' + 10,
+                >= 'A' and <= 'F' => c - 'A' + 10,
+                _ => -1
+            };
+            if (d < 0 || d >= fromBase)
+            {
+                return null;
+            }
+
+            if (magnitude > (ulong.MaxValue - (ulong)d) / (ulong)fromBase)
+            {
+                return null; // 超出 u64 → AST 层报「too large」
+            }
+
+            magnitude = magnitude * (ulong)fromBase + (ulong)d;
         }
-        if (remaining >= 3 && text[pos + 1] == '1' && text[pos + 2] == '6')
+
+        return magnitude > long.MaxValue ? magnitude : (long)magnitude;
+    }
+
+    private static object? ParseFloatValue(string text, int bodyStart, int pos)
+    {
+        var body = StripSeparators(text.AsSpan(bodyStart, pos - bodyStart));
+        var culture = CultureInfo.InvariantCulture;
+        if (double.TryParse(body, NumberStyles.Float, culture, out double d))
         {
-            length = 3;
-            return TypeCode.UInt16;
-        }
-        if (remaining >= 3 && text[pos + 1] == '3' && text[pos + 2] == '2')
-        {
-            length = 3;
-            return TypeCode.UInt32;
-        }
-        if (remaining >= 3 && text[pos + 1] == '6' && text[pos + 2] == '4')
-        {
-            length = 3;
-            return TypeCode.UInt64;
+            return d;
         }
 
         return null;
     }
 
-    private bool ConvertNumber(ref LiteralContext ctx)
+    private static string StripSeparators(ReadOnlySpan<char> span)
     {
-        var span = ctx.BodySpan;
-
-        // 移除下划线 (如果存在)
-        // 优化：先检查 Contains，不存在则直接用原 Span
-        if (Config.AllowUnderscore && span.Contains('_'))
+        if (!span.Contains('_'))
         {
-            Span<char> buffer = stackalloc char[span.Length];
-            int w = 0;
-            foreach (char c in span)
-            {
-                if (c != '_') buffer[w++] = c;
-            }
-
-            span = new ReadOnlySpan<char>(buffer[..w].ToArray()); // 注意：TryParse 需要特定格式，这里简化处理
-            // 实际上对于 TryParse，我们需要去掉 0x 等前缀，这里为了简化，
-            // 建议使用 .NET 自带的 NumberStyles，或者手动切片。
+            return span.ToString();
         }
 
-        // 准备 NumberStyles
-        NumberStyles style = NumberStyles.None;
-        if (ctx.Base == 16) style = NumberStyles.HexNumber;
-        else
-        {
-            style = NumberStyles.Integer;
-            if (ctx.TargetType is TypeCode.Double or TypeCode.Single or TypeCode.Decimal)
-                style |= NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
-        }
-
-        style |= NumberStyles.AllowLeadingSign;
-
-        // 处理进制前缀对 Parse 的影响
-        // int.TryParse 不支持 "0x" 前缀，需要手动切除
-        if (ctx.Base == 16 && (span.StartsWith("0x") || span.StartsWith("0X"))) span = span[2..];
-        else if (ctx.Base == 2 && (span.StartsWith("0b") || span.StartsWith("0B"))) span = span[2..];
-
-        // 只有 10 进制时符号位才需要在 span 里；
-        // 如果是 16 进制，AllowLeadingSign 通常用于负补码，但在 C# 字面量中 0x 通常被视为无符号或取决于目标类型
-        // 这里简化：如果是 Hex，暂不处理负号，除非手动逻辑。
-
-        try
-        {
-            var culture = CultureInfo.InvariantCulture;
-            return ctx.TargetType switch
-            {
-                TypeCode.Int32 => int.TryParse(span, style, culture, out int i) && SetResult(ref ctx, i),
-                TypeCode.Int64 => long.TryParse(span, style, culture, out long l) && SetResult(ref ctx, l),
-                TypeCode.Single => float.TryParse(span, style, culture, out float f) && SetResult(ref ctx, f),
-                TypeCode.Double => double.TryParse(span, style, culture, out double d) && SetResult(ref ctx, d),
-                TypeCode.Decimal => decimal.TryParse(span, style, culture, out decimal m) && SetResult(ref ctx, m),
-                TypeCode.UInt32 => uint.TryParse(span, style, culture, out uint ui) && SetResult(ref ctx, ui),
-                TypeCode.UInt64 => ulong.TryParse(span, style, culture, out ulong ul) && SetResult(ref ctx, ul),
-                TypeCode.Byte => byte.TryParse(span, style, culture, out byte by) && SetResult(ref ctx, by),
-                TypeCode.UInt16 => ushort.TryParse(span, style, culture, out ushort us) && SetResult(ref ctx, us),
-                _ => double.TryParse(span, style, culture, out double def) && SetResult(ref ctx, def)
-            };
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool SetResult(ref LiteralContext ctx, object val)
-    {
-        ctx.ResultValue = val;
-        return true;
+        return new string(span.ToArray().Where(static c => c != '_').ToArray());
     }
 }
 
 /// <summary>
-/// 数字规则配置项
+/// 数字规则配置项。
 /// </summary>
 [MemoryPackable]
 public partial struct NumberConfig
@@ -331,13 +334,13 @@ public partial struct NumberConfig
     public bool AllowLeadingSign;
     public bool AllowLeadingDot; // .5
     public bool AllowUnderscore; // 1_000
-    public bool CaseSensitive; // 后缀大小写敏感
+    public bool CaseSensitive; // 后缀大小写敏感（本方案统一接受大小写）
     public List<NumberSuffix> Suffixes;
 }
 
 [MemoryPackable]
 public readonly partial struct NumberSuffix
-{   
+{
     public readonly char Symbol;
     public readonly TypeCode TargetType;
 
