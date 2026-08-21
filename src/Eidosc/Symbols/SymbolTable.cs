@@ -259,18 +259,6 @@ public sealed partial class SymbolTable
         CurrentScope!.BindType(WellKnownStrings.BuiltinTypes.Cfn, cfnId);
         _globalTypes[WellKnownStrings.BuiltinTypes.Cfn] = cfnId;
 
-        // FFI C 字符串类型 CString（方案 B：直接作为 C char* 跨边界）
-        var cStringSymbol = new AdtSymbol
-        {
-            Id = NewSymbolId(),
-            Name = WellKnownStrings.BuiltinTypes.CString,
-            IsModuleLevel = true,
-            TypeId = new TypeId(WellKnownTypeIds.CStringId)
-        };
-        var cStringId = RegisterSymbol(cStringSymbol);
-        CurrentScope!.BindType(WellKnownStrings.BuiltinTypes.CString, cStringId);
-        _globalTypes[WellKnownStrings.BuiltinTypes.CString] = cStringId;
-
         // 保持作用域开启，让后续声明在同一个模块作用域中
 
         // 内建能力符号（无需用户声明即可使用）

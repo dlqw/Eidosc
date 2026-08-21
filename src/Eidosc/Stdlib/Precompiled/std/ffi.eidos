@@ -202,7 +202,7 @@ Ffi :: module {
 
     string_to_cstring :: String -> CString compiler(internal, intrinsic: "string_to_cstring") need ffi;
 
-    cstring_to_string :: CString -> String compiler(internal, intrinsic: "cstring_to_string") need ffi;
+    cstring_to_string_raw :: CString -> String compiler(internal, intrinsic: "cstring_to_string") need ffi;
 
 
 
@@ -360,7 +360,7 @@ Ffi :: module {
 
     export cstring_to_string :: CString -> String need ffi
     {
-        cstr => cstring_to_string(cstr)
+        cstr => cstring_to_string_raw(cstr)
     }
 
     export is_non_null :: RawPtr -> Bool need ffi

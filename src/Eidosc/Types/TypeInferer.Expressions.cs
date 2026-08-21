@@ -1420,7 +1420,7 @@ public sealed partial class TypeInferer
     private Type InferExpressionWithExpectedType(EidosAstNode expr, Type expectedType)
     {
         var resolvedExpected = _substitution.Apply(expectedType);
-        if (expr is LiteralExpr { Kind: LiteralKind.Integer } integerLiteral &&
+        if (expr is LiteralExpr { IsRecoveredError: false, Kind: LiteralKind.Integer } integerLiteral &&
             IsIntegerLiteralType(resolvedExpected))
         {
             integerLiteral.InferredType = resolvedExpected;
